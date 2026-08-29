@@ -351,6 +351,17 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 - [ ] Live language switching; **working** RTL
 - [ ] Accessibility pass: VoiceOver, keyboard-only, contrast, 200% text
 
+## Third-party validation (Blender) — wired in 2026-08-29
+
+`tools/run_blender_validation.sh` — exits non-zero on disagreement. 3/3 exports
+agree today (geometry, UVs, and 169.5 cm under three unit conventions).
+
+- [ ] Extend it to **rigged** exports: armature present, 163 bones, weights
+      non-zero. The current check is geometry only, and skinning is where a
+      silent convention error would hurt most.
+- [ ] Extend it to a **posed** mesh, so LBS output is checked by a third party
+      rather than only against the reference.
+
 ## Research notes (2026-08-29) — owner asked for modern approaches
 
 **Skinning: offer dual-quaternion alongside LBS.** LBS is notorious for the

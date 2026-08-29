@@ -4,6 +4,62 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 027 · Blender as a third implementation
+
+**Ended:** 2026-08-29 15:47:01 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+Owner pointed out Blender headless is available. It is worth more than it first
+looks, because **every existing check shares lineage with what it checks**:
+parity tests compare us against the Python reference we were ported *from*, and
+the glTF/FBX tests read back through assimp, which also *wrote* the FBX. A
+convention both sides get wrong the same way passes all of it.
+
+Blender 5.2 has never seen this codebase. **3/3 exports agree.**
+
+| export | vertices | triangles | tallest extent |
+|---|---|---|---|
+| `base.obj` | 19,158 welded | 36,972 | 16.9455 (dm) |
+| `base.glb` | 21,833 unwelded | 36,972 | 1.69455 (m) |
+| `base.fbx` | 21,833 unwelded | 36,972 | 1.69455 (m via cm) |
+
+All three are the same **169.5 cm** body under three different unit
+conventions. That is exactly the check that would catch the reference's
+documented FBX 10× unit error — now confirmed by something with no stake in our
+conventions.
+
+### I got it wrong first, and it looked like a real bug
+
+**Blender is Z-UP** and rotates every Y-up file on import, so the model's height
+arrives as Blender's **Z**. My first script read the Y component, reported 4.36,
+and made the exporter look broken. It was measuring the body's *depth*.
+
+Recorded in the script docstring and `memory/test.md`, because it reads as a 4×
+unit error rather than a reader mistake.
+
+### Two of my own shell bugs, same root
+
+`$?` after a pipe reads the **last** command's status, not the script's. It made
+a failing gate look like it exited 0, twice. Exit codes are now verified without
+a pipe. The summary line also printed negative totals (`len(seen) - failures`).
+
+Both found by *proving the gate fires* — which is now paying for itself.
+
+### On the licence-inventory job
+
+Owner asked; checked rather than assumed. **18 of the last 20 runs green, last
+6 consecutive green.** Two failures, both mine, both fixed in the next commit:
+a gate matching a comment, and a stray zero-byte file. Both were real problems
+the gate correctly caught, not flakes.
+
+279/279 across all four builds. CI 7/7.
+
+**Next:** body pose units (`body-poseunits.json` — bone → quaternion directly,
+not BVH frames), then `.mhupb` expression files. Also worth doing now that
+Blender is wired in: export a **rigged** mesh and have Blender confirm the
+armature, bone count and weights — the current check is geometry only.
+
+---
+
 ## 2026-08-29 — Session 026 · pose units, and a blend that must stay asymmetric
 
 **Ended:** 2026-08-29 15:26:24 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
