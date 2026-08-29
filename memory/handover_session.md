@@ -4,6 +4,53 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 031 · USD export, written not linked
+
+**Ended:** 2026-08-29 16:41:55 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+**Checked availability before choosing.** assimp has **no USD support at all** —
+neither import nor export — verified against the linked build's own format list
+rather than assumed from docs. OpenUSD is the alternative but is a very large
+build for a mesh export, and carries Pixar's modified Apache-2.0 with a
+trademark clause.
+
+`.usda` is documented text, so it is written directly: no new dependency, and it
+stays on the permissive side. I learned the exact syntax by **exporting a cube
+from Blender and reading it** — the "learn from their implementation, write our
+own" the owner asked for.
+
+Blender confirms: 21,833 verts / 36,972 tris / 1 UV layer / **169.5 cm** —
+identical to glTF and FBX. **7/7 exports now agree across four formats.**
+
+### Three conventions that differ from glTF
+
+1. **USD's UV origin is bottom-left**, same as OBJ and MakeHuman. glTF's is
+   top-left and flips V; doing that here would mirror every texture vertically.
+   A test asserts 0.25 stays 0.25 rather than becoming 0.75.
+2. **USD records its up axis** in the header — a consumer never has to guess it
+   from geometry the way a BVH reader must.
+3. **`subdivisionScheme = "none"`** written explicitly: without it a consumer may
+   treat the mesh as a subdivision cage and render a smoothed, shrunken body.
+
+`interpolation = "vertex"` rather than `"faceVarying"` because RenderView is
+already unwelded — one normal and one UV per point, no per-corner variation left.
+
+### A test bug, found by the test failing
+
+The marker `"int[] faceVertexCounts = ["` **itself contains a `]`**, so searching
+for the closing bracket from the marker's *start* finds that one four characters
+in and yields an empty array — it counted zero 3s out of 36,972. Both array
+lookups now search from *after* the marker. Worth remembering when parsing any
+format whose type syntax includes brackets.
+
+296/296 across all four builds. CI 7/7.
+
+**Next:** M7 leftovers — USDZ is a zip of the `.usda` (packaging, not geometry),
+and UsdSkel would add the rig. glTF and FBX already carry the rig, so the
+per-format docs (`docs/formats/*.md`) may be the more valuable next step.
+
+---
+
 ## 2026-08-29 — Session 030 · FBX rig and blendshapes
 
 **Ended:** 2026-08-29 16:29:16 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
