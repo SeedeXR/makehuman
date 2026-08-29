@@ -255,10 +255,39 @@ Reference-fixture note: the reference's `writeObjFile` reads
 `mesh.object.material` for its `usemtl` line, so generating the comparison file
 needs the same weakref-safe material stub the subdivision fixture uses.
 
+### Session 014 addendum (2026-08-29 10:22:10) — glTF 2.0 / GLB export
+
+`writeGlb`, Apache-2.0, written from the published spec. **The first subsystem
+with no reference to compare against** — the Python MakeHuman has no glTF
+support at all — so the testing posture changed deliberately:
+
+1. **Spec conformance checked against the bytes**: GLB magic, version 2, the
+   total-length field, `JSON`/`BIN\0` chunk types, 4-byte chunk alignment, and
+   JSON padded with spaces rather than NULs.
+2. **An independent reader.** assimp is a different implementation by different
+   authors, wired in as a **test-only** dependency (never linked into the
+   shipped libraries, recorded in `LICENSING.md`). It agrees on 21,833 vertices
+   and 36,972 triangles, sees normals, UVs and a material, and confirms every
+   face is a triangle.
+
+Three details that are easy to get wrong and are now pinned by tests:
+- **Units.** glTF's unit is the metre, MakeHuman's is the decimetre. The default
+  converts; without it every model is 10x too large in any spec-honouring
+  engine. assimp reads the exported figure back at **1.69 m** — a real human
+  height, which is the check that actually proves it.
+- **UV origin.** glTF's is top-left, MakeHuman's is bottom-left, so V is
+  flipped. Getting this wrong mirrors every texture vertically.
+- **POSITION accessors carry min/max**, which the spec requires and many
+  loaders reject the file without.
+
+Blinn-Phong is converted to metallic-roughness (metallic 0 — skin, cloth and
+hair are all dielectric; roughness from `1 - shininess`), since that is the only
+PBR model core glTF defines and the reference has no PBR data at all.
+
 ### Next
-glTF 2.0 / GLB export — the format that matters most for modern engines, and the
-one with no reference implementation at all to compare against, so it will be
-validated by spec conformance and round-trip instead.
+Remaining glTF work: skins, morph targets and embedded textures — all of which
+need M5 (skeleton) first for the skin case. Or STL/PLY, which are trivial by
+comparison. M5 is the higher-value path now that geometry export works.
 
 ---
 

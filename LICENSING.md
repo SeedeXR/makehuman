@@ -130,7 +130,7 @@ are licensed **Apache-2.0**:
 | Qt | 6.11.0 | LGPL-3.0 (dynamic) / GPL-3.0 | `LGPL-3.0-only` | UI, RHI, shader tools |
 | Eigen | 5.0.1 | MPL-2.0 | `MPL-2.0` | Linear algebra |
 | oneTBB | 2023.1.0 | Apache-2.0 | `Apache-2.0` | Job system |
-| assimp | 6.0.4_1 | BSD-3-Clause | `BSD-3-Clause` | Mesh import |
+| assimp | 6.0.4_1 | BSD-3-Clause | `BSD-3-Clause` | Mesh import; **currently test-only**, as an independent reader validating formats we write. Never linked into the shipped libraries. |
 | Catch2 | v3 (planned) | BSL-1.0 | `BSL-1.0` | Tests |
 | Lucide | latest (planned) | ISC | `ISC` | Icons |
 | 42dot Sans | (planned, **unconfirmed**) | SIL OFL 1.1 | `OFL-1.1` | Typeface — see §7 |

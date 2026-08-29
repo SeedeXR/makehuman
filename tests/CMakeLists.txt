@@ -21,6 +21,7 @@ add_executable(mh_tests
     golden/test_mhm_parity.cpp
     golden/test_proxy_parity.cpp
     golden/test_obj_writer_parity.cpp
+    golden/test_gltf_writer.cpp
     regression/test_review_findings.cpp)
 
 target_link_libraries(mh_tests
@@ -38,6 +39,11 @@ target_compile_definitions(mh_tests PRIVATE
 get_target_property(_catch2_inc Catch2::Catch2 INTERFACE_INCLUDE_DIRECTORIES)
 if(_catch2_inc)
     target_include_directories(mh_tests SYSTEM PRIVATE ${_catch2_inc})
+endif()
+
+if(assimp_FOUND)
+    target_link_libraries(mh_tests PRIVATE assimp::assimp)
+    target_compile_definitions(mh_tests PRIVATE MH_HAVE_ASSIMP=1)
 endif()
 
 catch_discover_tests(mh_tests)

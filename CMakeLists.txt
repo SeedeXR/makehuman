@@ -50,6 +50,17 @@ endif()
 # Eigen, TBB, assimp and Qt are found by the module that first needs them,
 # not up front. Nothing links them yet.
 
+# assimp is used ONLY by the test suite, as an INDEPENDENT reader for the
+# formats we write. glTF has no reference implementation in this project to
+# compare against, so "a different library agrees" is the strongest available
+# check. It is never linked into the shipped libraries.
+find_package(assimp QUIET CONFIG)
+if(assimp_FOUND)
+    message(STATUS "assimp: found, independent format validation enabled")
+else()
+    message(STATUS "assimp: not found, format validation tests will be skipped")
+endif()
+
 if(MH_BUILD_TESTS)
     include(FetchContent)
     FetchContent_Declare(Catch2

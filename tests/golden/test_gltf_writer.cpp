@@ -1,0 +1,250 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// glTF/GLB export. Unlike every other format in this port there is NO reference
+// implementation to compare against -- the Python MakeHuman has no glTF support
+// at all -- so this is validated two ways instead:
+//
+//   1. Spec conformance, checked directly against the bytes: GLB magic,
+//      version, chunk types and the 4-byte chunk alignment the spec requires.
+//   2. An INDEPENDENT reader. assimp is a different implementation by different
+//      authors; if it agrees on the counts and bounds, the file is not merely
+//      self-consistent.
+
+#include "makehuman/io/GltfWriter.h"
+
+#include "makehuman/core/ObjReader.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
+
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <string>
+#include <vector>
+
+#if defined(MH_HAVE_ASSIMP)
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
+#include <assimp/Importer.hpp>
+#endif
+
+using Catch::Matchers::WithinAbs;
+using namespace mh;
+
+namespace {
+
+std::vector<uint8_t> readFile(const std::filesystem::path& p) {
+    std::ifstream in(p, std::ios::binary | std::ios::ate);
+    if (!in) return {};
+    const auto n = static_cast<size_t>(in.tellg());
+    in.seekg(0);
+    std::vector<uint8_t> out(n);
+    in.read(reinterpret_cast<char*>(out.data()), static_cast<std::streamsize>(n));
+    return out;
+}
+
+uint32_t readU32(const std::vector<uint8_t>& b, size_t off) {
+    uint32_t v{};
+    std::memcpy(&v, b.data() + off, sizeof(v));
+    return v;  // the format is little-endian, and so is every target we build for
+}
+
+std::filesystem::path tempGlb(const char* stem) {
+    return std::filesystem::temp_directory_path() / (std::string("mh_glb_") + stem + ".glb");
+}
+
+core::Mesh quad() {
+    core::Mesh m("quad", 4);
+    REQUIRE(m.setCoords({{0, 0, 0}, {2, 0, 0}, {2, 0, 3}, {0, 0, 3}}).has_value());
+    REQUIRE(m.setUVs({{0, 0}, {1, 0}, {1, 1}, {0, 1}}).has_value());
+    m.addFaceGroup("g");
+    REQUIRE(m.setFaces({0, 1, 2, 3}, {0, 1, 2, 3}, {0}).has_value());
+    m.buildAdjacency();
+    m.calcNormals();
+    return m;
+}
+
+}  // namespace
+
+TEST_CASE("the GLB container conforms to the spec", "[io][gltf]") {
+    const auto out = tempGlb("header");
+    const auto m   = quad();
+    REQUIRE(io::writeGlb(out, m).has_value());
+
+    const auto b = readFile(out);
+    REQUIRE(b.size() >= 28);
+
+    CHECK(readU32(b, 0) == 0x46546C67);  // "glTF"
+    CHECK(readU32(b, 4) == 2);           // version 2
+    CHECK(readU32(b, 8) == b.size());    // total length includes the header
+
+    const uint32_t jsonLen = readU32(b, 12);
+    CHECK(readU32(b, 16) == 0x4E4F534A);  // "JSON"
+    CHECK(jsonLen % 4 == 0);              // chunks are 4-byte aligned
+
+    const size_t binHeader = 20 + jsonLen;
+    const uint32_t binLen  = readU32(b, binHeader);
+    CHECK(readU32(b, binHeader + 4) == 0x004E4942);  // "BIN\0"
+    CHECK(binLen % 4 == 0);
+
+    // The two chunks plus their headers must account for the whole file.
+    CHECK(12 + 8 + jsonLen + 8 + binLen == b.size());
+
+    // JSON padding is spaces, not NULs (spec requirement).
+    const std::string json(reinterpret_cast<const char*>(b.data()) + 20, jsonLen);
+    CHECK(json.front() == '{');
+    CHECK((json.back() == '}' || json.back() == ' '));
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("the JSON declares the accessors glTF requires", "[io][gltf]") {
+    const auto out = tempGlb("json");
+    const auto m   = quad();
+    REQUIRE(io::writeGlb(out, m).has_value());
+
+    const auto b           = readFile(out);
+    const uint32_t jsonLen = readU32(b, 12);
+    const std::string json(reinterpret_cast<const char*>(b.data()) + 20, jsonLen);
+
+    CHECK(json.find("\"version\":\"2.0\"") != std::string::npos);
+    CHECK(json.find("\"POSITION\"") != std::string::npos);
+    CHECK(json.find("\"NORMAL\"") != std::string::npos);
+    CHECK(json.find("\"TEXCOORD_0\"") != std::string::npos);
+    CHECK(json.find("\"mode\":4") != std::string::npos);  // TRIANGLES
+    CHECK(json.find("\"pbrMetallicRoughness\"") != std::string::npos);
+    // POSITION accessors MUST carry min and max; many loaders reject the file
+    // without them.
+    CHECK(json.find("\"min\":[") != std::string::npos);
+    CHECK(json.find("\"max\":[") != std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("quads are triangulated for export", "[io][gltf]") {
+    // glTF has no quad primitive.
+    const auto out = tempGlb("tris");
+    const auto m   = quad();
+    const auto r   = io::writeGlb(out, m);
+    REQUIRE(r.has_value());
+    CHECK(r->triangles == 2);  // one quad -> two triangles
+    CHECK(r->vertices == 4);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("the default unit is metres, not decimetres", "[io][gltf]") {
+    // glTF's unit is the metre and MakeHuman's is the decimetre. Writing
+    // decimetres would make every model ten times too large in any engine that
+    // honours the spec.
+    io::GltfWriteOptions opt;
+    CHECK(opt.unit == io::Unit::Meter);
+    CHECK_THAT(io::unitScale(opt.unit), WithinAbs(0.1, 1e-6));
+}
+
+TEST_CASE("an empty mesh is rejected", "[io][gltf]") {
+    const core::Mesh m;
+    const auto r = io::writeGlb(tempGlb("empty"), m);
+    REQUIRE_FALSE(r.has_value());
+    CHECK(r.error().kind == io::GltfWriteErrorKind::EmptyMesh);
+    CHECK_FALSE(r.error().message().empty());
+}
+
+#if defined(MH_HAVE_ASSIMP)
+TEST_CASE("an independent library reads the exported GLB", "[io][gltf][assimp]") {
+    const auto src = std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj";
+    if (!std::filesystem::exists(src)) SKIP("base.obj not present");
+
+    const auto mesh = core::loadObj(src);
+    REQUIRE(mesh.has_value());
+
+    const auto out = tempGlb("assimp");
+    const auto r   = io::writeGlb(out, *mesh);
+    REQUIRE(r.has_value());
+
+    Assimp::Importer importer;
+    const aiScene* scene = importer.ReadFile(out.string(), 0);
+    INFO("assimp: " << importer.GetErrorString());
+    REQUIRE(scene != nullptr);
+    REQUIRE(scene->mNumMeshes == 1);
+
+    const aiMesh* am = scene->mMeshes[0];
+    CHECK(am->mNumVertices == r->vertices);
+    CHECK(am->mNumFaces == r->triangles);
+    CHECK(am->HasNormals());
+    CHECK(am->HasTextureCoords(0));
+    CHECK(scene->mNumMaterials >= 1);
+
+    // Every face must be a triangle.
+    size_t nonTriangles = 0;
+    for (unsigned i = 0; i < am->mNumFaces; ++i) {
+        if (am->mFaces[i].mNumIndices != 3) ++nonTriangles;
+    }
+    CHECK(nonTriangles == 0);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("the exported model is metre-scaled and human-sized", "[io][gltf][assimp]") {
+    // A unit error is the single most common export bug and the easiest to
+    // miss, so assert real-world plausibility through the independent reader.
+    const auto src = std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj";
+    if (!std::filesystem::exists(src)) SKIP("base.obj not present");
+
+    const auto mesh = core::loadObj(src);
+    REQUIRE(mesh.has_value());
+    const auto out = tempGlb("scale");
+    REQUIRE(io::writeGlb(out, *mesh).has_value());
+
+    Assimp::Importer importer;
+    const aiScene* scene = importer.ReadFile(out.string(), 0);
+    REQUIRE(scene != nullptr);
+    const aiMesh* am = scene->mMeshes[0];
+
+    float lo = 1e30F, hi = -1e30F;
+    for (unsigned i = 0; i < am->mNumVertices; ++i) {
+        lo = std::min(lo, am->mVertices[i].y);
+        hi = std::max(hi, am->mVertices[i].y);
+    }
+    const float heightMetres = hi - lo;
+    INFO("height = " << heightMetres << " m");
+    CHECK(heightMetres > 1.4F);
+    CHECK(heightMetres < 2.1F);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("feet on ground places the model at y = 0", "[io][gltf][assimp]") {
+    const auto src = std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj";
+    if (!std::filesystem::exists(src)) SKIP("base.obj not present");
+
+    const auto mesh = core::loadObj(src);
+    REQUIRE(mesh.has_value());
+
+    io::GltfWriteOptions opt;
+    opt.feetOnGround = true;
+    const auto out   = tempGlb("ground");
+    REQUIRE(io::writeGlb(out, *mesh, opt).has_value());
+
+    Assimp::Importer importer;
+    const aiScene* scene = importer.ReadFile(out.string(), 0);
+    REQUIRE(scene != nullptr);
+    const aiMesh* am = scene->mMeshes[0];
+
+    float lo = 1e30F;
+    for (unsigned i = 0; i < am->mNumVertices; ++i)
+        lo = std::min(lo, am->mVertices[i].y);
+    CHECK_THAT(lo, WithinAbs(0.0, 1e-4));
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+#endif

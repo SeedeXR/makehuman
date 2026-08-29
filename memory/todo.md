@@ -168,7 +168,11 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [ ] `mh::io::Scene` intermediate representation
 - [ ] One `UnitSystem`/`Transform` consumed by **every** reader and writer
 - [ ] **Import**: OBJ, glTF/GLB, FBX, USD, STL, DAE (assimp-backed where sensible)
-- [ ] **Export** glTF 2.0 / GLB — from spec; PBR, skins, blendshapes, embedded buffers
+- [x] **Export glTF 2.0 / GLB** — from spec, single self-contained `.glb`,
+      metallic-roughness material, correct metre units, V flipped for glTF's
+      top-left UV origin. Validated by spec conformance **and by assimp**, an
+      independent implementation.
+- [ ] glTF: skins, blendshapes (morph targets), embedded textures, Draco
 - [ ] **Export** FBX 7.4/7.5 — from spec, **not** by translating the GPL Blender code
 - [ ] **Export** USD / USDZ
 - [x] **Export OBJ** (`mh::io`, Apache-2.0) — face lines byte-identical to the

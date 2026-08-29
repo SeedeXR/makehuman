@@ -6,7 +6,8 @@
 # depend on one.
 
 add_library(mh_io STATIC
-    ObjWriter.cpp)
+    ObjWriter.cpp
+    GltfWriter.cpp)
 add_library(mh::io ALIAS mh_io)
 
 target_include_directories(mh_io PUBLIC
