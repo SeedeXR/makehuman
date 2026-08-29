@@ -151,7 +151,31 @@ Three ways out; this is a decision, not a bug to quietly patch:
 `mh_foundation` (added for the charconv fix) is the first piece of (1) and is
 correctly Apache-2.0 depending on nothing of ours.
 
-- [ ] **Decide.** Blocks any claim that the io layer is separately reusable.
+**Owner decision (2026-08-29): option 1 — move shared types down.**
+
+**The audit changes what option 1 can reach.** Measured by counting `file.py:line`
+citations, which are this project's own record of where code was translated
+from:
+
+| Type | Citations | Verdict |
+|---|---|---|
+| `Types.h` (Vec2/3/4, FaceGroup, unit constant) | 3 | **Moved.** All three record *facts* checked against the reference — a unit conversion, a coordinate convention, what a face group holds — not translated expression. `Vec3` with `+ - * dot cross` is nobody's authorship. |
+| `Mesh` | 14 (.h) + 9 (.cpp) | **Cannot move.** `calcVertexNormals`, `calcVertexTangents`, `vertsPerFaceForExport`, the dual index space and the degenerate-quad convention are all ports of `module3d.py`. |
+| `Material` | 7 (.h) + 12 (.cpp) | **Cannot move.** The parser is a port of `material.py`. |
+
+Moving `Mesh`/`Material` wholesale would put translated AGPL code inside an
+Apache-2.0 module — hard rule 4, and a worse violation than the one being
+fixed.
+
+- [x] `Types.h` -> `mh_foundation` (Apache-2.0), re-exported into `mh::core` so
+      no call site changed. 232/232 still pass.
+- [ ] **`MeshView` / `MaterialDesc` in foundation** — plain span-based views
+      (`coord`, `fvert`, `fuvs`, `texco`, `vnorm`, counts) plus plain material
+      values. Measured what io actually touches: only accessors and, on the
+      import path, `setCoords`/`setFaces`/`setUVs`/`calcNormals`. **No ported
+      algorithm is used across the boundary at all**, so a plain-data view is
+      sufficient and lets io stop including `core/*.h` entirely.
+      This is what completes the owner's decision; the type move alone does not.
 
 ## M4 — Proxies, materials, assets (`mh-asset`)
 
