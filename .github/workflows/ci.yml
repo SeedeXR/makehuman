@@ -193,7 +193,7 @@ jobs:
       - name: Apache-2.0 modules do not depend on AGPL ones
         run: |
           fail=0
-          for permissive in io foundation; do
+          for permissive in io foundation render; do
             # Strip comments first: this file EXPLAINS why it must not link
             # mh::core, and a naive grep flags that explanation. Same trap as
             # the FBX gate below.
@@ -202,6 +202,7 @@ jobs:
               echo "::error::src/$permissive links mh::core (AGPL); it is Apache-2.0"
               fail=1
             fi
+            [ -d "src/$permissive" ] || continue
             hits=$(grep -rln 'makehuman/core/' "src/$permissive" "include/makehuman/$permissive" \
                    2>/dev/null || true)
             if [ -n "$hits" ]; then

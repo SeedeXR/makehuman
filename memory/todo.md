@@ -288,7 +288,20 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 
 ## M6 — Renderer (`mh-render`)
 
-- [ ] Qt RHI device + swapchain, Metal backend, MSAA **on**
+- [x] **It renders.** Qt RHI on Metal, offscreen, with the ported litsphere
+      shader. `mh_render_probe` draws the base mesh to a PNG and reports pixel
+      statistics, because a blank frame is the failure that reads as success in
+      a log. Verified: **7.9% coverage, luminance 37..212, mean 156.1**, and the
+      image is a recognisable human.
+      The renderer is **optional in the build** — `find_package(Qt6 QUIET)`, so
+      the CI runner (no Qt) still builds and tests everything else. Verified
+      with `-DCMAKE_DISABLE_FIND_PACKAGE_Qt6=ON`: renderer disabled, 301/301.
+      **`base.obj` is 138 parts helper geometry to 1 part body.** Drawing it raw
+      gives a figure in a solid skirt with a box over its face — which reads as
+      a renderer bug. `Mesh::staticFaceMask()` applies the reference's rule
+      (`apps/human.py:274-289`): hide any group named `joint-*` or `helper-*`.
+      13,378 of 18,486 faces remain.
+- [ ] Qt RHI **swapchain** and MSAA — the interactive widget, not offscreen
 - [ ] Persistent vertex/index buffers; partial updates from dirty ranges
 - [ ] Quad→triangle conversion at buffer-build time
 - [~] Shader port to `.qsb`: **litsphere done** (`resources/shaders/rhi/`),

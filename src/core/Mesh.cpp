@@ -330,6 +330,22 @@ std::optional<std::pair<Vec3, Vec3>> Mesh::boundingBox() const {
     return std::make_pair(lo, hi);
 }
 
+std::vector<uint8_t> Mesh::staticFaceMask() const {
+    std::vector<uint8_t> groupVisible(faceGroups_.size(), 1U);
+    for (const auto& g : faceGroups_) {
+        if (g.name.starts_with("joint-") || g.name.starts_with("helper-")) {
+            groupVisible[g.idx] = 0U;
+        }
+    }
+
+    std::vector<uint8_t> faceVisible(faceCount(), 1U);
+    for (size_t f = 0; f < faceCount(); ++f) {
+        const uint16_t g = group_[f];
+        if (g < groupVisible.size()) faceVisible[f] = groupVisible[g];
+    }
+    return faceVisible;
+}
+
 std::expected<std::vector<uint8_t>, MeshError> Mesh::faceMaskForVisibleVertices(
     std::span<const uint8_t> vertexVisible) const {
     if (vertexVisible.size() != coord_.size()) return std::unexpected(MeshError::MaskSizeMismatch);

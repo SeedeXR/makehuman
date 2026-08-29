@@ -71,3 +71,20 @@ add_executable(mh_export_fixture mh_export_fixture.cpp)
 target_link_libraries(mh_export_fixture PRIVATE mh::core mh::rig mh::warnings)
 target_compile_definitions(mh_export_fixture PRIVATE MH_DATA_DIR="${MH_DATA_DIR}")
 set_target_properties(mh_export_fixture PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
+
+# The renderer tests need Qt and a Metal device, so they are only built when the
+# renderer is. They run offscreen -- no window is created.
+if(MH_HAVE_RENDER)
+    add_executable(mh_render_tests render/test_offscreen_render.cpp)
+    target_link_libraries(mh_render_tests
+        PRIVATE mh::core mh::render Catch2::Catch2WithMain mh::warnings)
+    target_compile_definitions(mh_render_tests PRIVATE
+        MH_DATA_DIR="${MH_DATA_DIR}"
+        MH_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders")
+    set_target_properties(mh_render_tests PROPERTIES
+        CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
+    add_dependencies(mh_render_tests mh_shaders)
+    add_test(NAME render COMMAND mh_render_tests)
+    # Offscreen platform: these must not try to open a window on a build box.
+    set_tests_properties(render PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()

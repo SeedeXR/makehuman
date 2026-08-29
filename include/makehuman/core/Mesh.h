@@ -127,6 +127,21 @@ public:
     /// mesh gets exactly the same checks as one built in process.
     [[nodiscard]] static std::expected<Mesh, MeshError> fromData(foundation::MeshData data);
 
+    /// The base mesh's **static** face mask: hides helper geometry.
+    ///
+    /// `base.obj` carries 139 face groups of which **138 are helpers** --
+    /// `joint-*` markers and `helper-*` cages used to fit clothes. Only `body`
+    /// is the visible human. Rendering the raw mesh draws all of it, which
+    /// looks like a figure wearing a solid skirt with a box over its face --
+    /// plausible enough that it reads as a renderer bug rather than as
+    /// geometry that was never meant to be shown.
+    ///
+    /// The rule is the reference's: hide any group whose name starts with
+    /// `joint-` or `helper-` (`apps/human.py:274-289`).
+    ///
+    /// @return one byte per face, nonzero = visible.
+    [[nodiscard]] std::vector<uint8_t> staticFaceMask() const;
+
     /// Face visibility derived from vertex visibility, 1 = visible.
     ///
     /// **A face is visible if ANY of its corners is visible**, and is hidden
