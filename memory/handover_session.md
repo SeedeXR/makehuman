@@ -4,6 +4,58 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 028 · rigged glTF, checked by Blender
+
+**Ended:** 2026-08-29 16:04:29 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+The 4-influence compile from session 022 finally has a consumer. A rigged GLB
+carries `JOINTS_0`, `WEIGHTS_0`, `inverseBindMatrices` and one node per bone.
+
+**Blender confirms it independently: 163 bones, 1 armature, all 21,833 vertices
+skinned.** 4/4 exports agree. That is a check neither our code nor the Python
+reference can make about itself.
+
+### Three things that fail quietly, all now pinned
+
+1. **glTF matrices are COLUMN-major**; ours are row-major, so they transpose on
+   the way out. Writing them unchanged gives a file that loads, poses, and is
+   wrong in a way that looks like bad weights.
+2. **Joints must scale with the mesh.** The writer derives node transforms *and*
+   inverse binds from one scaled array rather than trusting the caller, so they
+   cannot drift. A test asserts both scale by exactly 10× between metres and
+   decimetres. A rig 10× the mesh reads as a rigging bug, not a unit bug.
+3. **Weights are per MESH vertex (19,158); glTF's are per RENDER vertex
+   (21,833).** They are vertex attributes. Skipping the `vmap` expansion leaves
+   everything past the first UV seam weighted to the wrong bone.
+
+### Blender's own helper geometry
+
+Its glTF importer creates an Icosphere as the custom bone shape for all 163
+bones and parks it in a collection named `glTF_not_exported`. Counting it made a
+**correct** export look like it had 42 stray vertices and a second mesh. The
+validator now skips anything Blender marks not-for-export, and reports vertex
+groups and skinned vertices — an armature with no weights looks fine in a static
+screenshot and deforms nothing.
+
+### Two of my own mistakes, caught by review rather than CI
+
+- A test compared a value **to itself** (`joints[i] != joints[i]`), so it could
+  never fail. Now compares against the compiled source weights.
+- I asserted two exports at different scales would be the **same file size**.
+  The numbers are text, so "0.5" and "5" differ in length. Replaced with the
+  property actually worth checking.
+
+Also: `SkinView::valid()` hardcoded glTF's influence count of 4 into a
+format-neutral type. Structure is the type's business; the count is the
+format's.
+
+283/283 across all four builds. CI 7/7.
+
+**Next:** blendshape (morph target) export — dead in the reference everywhere,
+so there is no oracle and Blender becomes the primary check.
+
+---
+
 ## 2026-08-29 — Session 027 · Blender as a third implementation
 
 **Ended:** 2026-08-29 15:47:01 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
