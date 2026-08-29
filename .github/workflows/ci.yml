@@ -116,6 +116,11 @@ jobs:
             id=${line#SPDX-License-Identifier: }
             case "$id" in
               AGPL-3.0-or-later|Apache-2.0) ;;
+              # BSD-3-Clause is admitted for ports of third-party BSD code that
+              # MakeHuman vendored -- currently only the transformations.py
+              # port (C. Gohlke). Those files must retain the upstream notice.
+              # See LICENSING.md 4.1.
+              BSD-3-Clause) ;;
               *) echo "::error file=$f::unexpected licence '$id'"; fail=1 ;;
             esac
           done < <(find src include tests benchmarks \( -name '*.cpp' -o -name '*.h' \) -print0)
@@ -150,6 +155,21 @@ jobs:
             fi
           done < <(find CMakeLists.txt cmake src include tests benchmarks \
                      \( -name CMakeLists.txt -o -name '*.cmake' \) -print0 2>/dev/null)
+          exit $fail
+
+      # A BSD-3-Clause file must carry the upstream copyright notice, or we
+      # are redistributing it in breach of the one condition BSD imposes.
+      - name: BSD-licensed files retain their upstream notice
+        run: |
+          fail=0
+          while IFS= read -r -d '' f; do
+            if head -3 "$f" | grep -q 'SPDX-License-Identifier: BSD-3-Clause'; then
+              grep -q 'Copyright (c)' "$f" || {
+                echo "::error file=$f::BSD-3-Clause file without a copyright notice"
+                fail=1
+              }
+            fi
+          done < <(find src include \( -name '*.cpp' -o -name '*.h' \) -print0)
           exit $fail
 
       # The licence boundary, enforced rather than documented.

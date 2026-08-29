@@ -4,7 +4,7 @@
 # contains no ported logic -- only platform and standard-library plumbing --
 # so it is Apache-2.0 and depends on nothing of ours. See LICENSING.md 4.
 
-add_library(mh_foundation STATIC Chars.cpp)
+add_library(mh_foundation STATIC Chars.cpp Transform.cpp)
 add_library(mh::foundation ALIAS mh_foundation)
 
 target_include_directories(mh_foundation PUBLIC

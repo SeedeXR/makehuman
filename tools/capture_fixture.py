@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import subprocess
 import sys
@@ -563,6 +564,93 @@ def capture_skinning() -> None:
     })
 
 
+def capture_transform() -> None:
+    """Euler and quaternion conversions, over all 24 axis conventions.
+
+    `core/transformations.py` is Christoph Gohlke's BSD-3-Clause library,
+    vendored into MakeHuman (which then stamped its AGPL boilerplate into the
+    module docstring -- see LICENSING.md). The maths is standard, but the 24
+    conventions differ from each other only by an axis permutation, a parity
+    flip and a static/rotating frame bit, so an implementation can be right for
+    `sxyz` and wrong for the other 23. Every one is captured.
+    """
+    import transformations as tm
+
+    print("capturing: transform")
+
+    conventions = sorted(tm._AXES2TUPLE.keys())
+
+    # Deliberately awkward angles: no zeros, no equal pairs, nothing near a
+    # gimbal-lock singularity for the first set, and one set that IS near it.
+    # The last two MUST use math.pi/2 exactly, not a truncated decimal.
+    # _EPS is 8.9e-16; with 1.5707963 the guard value is ~1e-8 and the singular
+    # branch is never reached, so a fixture written that way tests the
+    # gimbal-lock path zero times while appearing to cover it. Verified: with
+    # math.pi/2, 24 of 120 cases take the singular branch; with the decimal, 0.
+    half_pi = math.pi / 2.0
+    angle_sets = [
+        (0.1, 0.2, 0.3),
+        (-0.7, 1.1, 2.4),
+        (2.9, -1.3, 0.45),
+        (0.0, half_pi, 0.0),    # exactly +90 deg on the middle axis
+        (1.2, -half_pi, -0.8),  # exactly -90 deg
+    ]
+
+    mats, quats, back = [], [], []
+    for axes in conventions:
+        for (ai, aj, ak) in angle_sets:
+            m = tm.euler_matrix(ai, aj, ak, axes)
+            mats.append(m)
+            quats.append(tm.quaternion_from_matrix(m))
+            back.append(tm.euler_from_matrix(m, axes))
+
+    # Quaternion algebra, on values that are not unit-adjacent.
+    q0 = tm.quaternion_from_matrix(tm.euler_matrix(0.3, -0.8, 1.7, "sxyz"))
+    q1 = tm.quaternion_from_matrix(tm.euler_matrix(-1.1, 0.5, 0.9, "sxyz"))
+    fractions = [0.0, 0.15, 0.5, 0.85, 1.0]
+    slerps = [tm.quaternion_slerp(q0, q1, f) for f in fractions]
+    product = tm.quaternion_multiply(q0, q1)
+
+    # rotation_matrix about an arbitrary, non-axis-aligned direction.
+    rot_axis = [0.3, -0.5, 0.81]
+    rots = [tm.rotation_matrix(a, rot_axis) for a in (0.0, 0.6, -1.9, 3.14159)]
+
+    out = GOLDEN / "transform"
+    out.mkdir(parents=True, exist_ok=True)
+
+    entries = {
+        "euler_matrices": _write_blob(
+            out / "euler_matrices.bin", np.stack(mats).astype(np.float64), "f8"),
+        "quaternions": _write_blob(
+            out / "quaternions.bin", np.stack(quats).astype(np.float64), "f8"),
+        "euler_back": _write_blob(
+            out / "euler_back.bin", np.asarray(back, dtype=np.float64), "f8"),
+        "slerps": _write_blob(out / "slerps.bin", np.stack(slerps).astype(np.float64), "f8"),
+        "product": _write_blob(out / "product.bin", np.asarray(product, dtype=np.float64), "f8"),
+        "rotations": _write_blob(
+            out / "rotations.bin", np.stack(rots).astype(np.float64), "f8"),
+    }
+    (out / "cases.json").write_text(json.dumps({
+        "conventions": conventions,
+        "angle_sets": [list(a) for a in angle_sets],
+        "slerp_fractions": fractions,
+        "slerp_q0": [float(x) for x in q0],
+        "slerp_q1": [float(x) for x in q1],
+        "rotation_axis": rot_axis,
+        "rotation_angles": [0.0, 0.6, -1.9, 3.14159],
+    }, indent=2))
+
+    _finish("transform", entries, {
+        "source": "legacy/python/core/transformations.py (BSD-3-Clause, C. Gohlke)",
+        "convention_count": len(conventions),
+        "angle_sets": len(angle_sets),
+        "cases": len(conventions) * len(angle_sets),
+        "quaternion_layout": "[w, x, y, z] -- scalar FIRST",
+        "note": "float64 throughout: these are conversions, and capturing them "
+                "at float32 would hide real error behind rounding.",
+    })
+
+
 def capture_mask() -> None:
     """Face hiding: vertex mask -> face mask -> filtered index buffer.
 
@@ -734,6 +822,7 @@ SUBSYSTEMS = {
     "mask": capture_mask,
     "weights": capture_weights,
     "skinning": capture_skinning,
+    "transform": capture_transform,
 }
 
 

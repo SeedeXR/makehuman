@@ -121,6 +121,33 @@ are licensed **Apache-2.0**:
 5. The combined *binary* is AGPL-3.0 — that is what users receive. The Apache-2.0
    modules are separately reusable **as source**.
 
+### 4.1 A third licence: BSD-3-Clause, for one vendored file
+
+`legacy/python/core/transformations.py` carries **two** licence statements, and
+they conflict:
+
+- Lines 6-33 are Christoph Gohlke's **BSD-3-Clause** notice, in real `#`
+  comments — the file's actual licence header.
+- Lines 47-66 are MakeHuman's **AGPL-3.0** boilerplate, inside the module
+  **docstring**, on a file whose stated author is Gohlke.
+
+Applying an AGPL header to someone else's BSD code does not relicense it.
+MakeHuman may distribute it under BSD terms and the combined work may be AGPL,
+but the file itself remains BSD-3-Clause, and BSD's one real condition is that
+the notice travels with the code.
+
+So `include/makehuman/foundation/Transform.h` and `src/foundation/Transform.cpp`
+are **SPDX `BSD-3-Clause`** and reproduce Gohlke's notice verbatim. They are the
+only files in this project under a third licence.
+
+This is *better* for us, not worse: BSD is permissive, so these conversions sit
+legitimately in the Apache-2.0 `mh_foundation` module rather than being trapped
+on the AGPL side.
+
+**Two CI gates cover it:** the SPDX gate admits `BSD-3-Clause`, and a second
+gate fails any BSD-licensed file that does not carry a `Copyright (c)` line —
+because dropping the notice is the single way to actually breach BSD.
+
 ## 5. Dependencies
 
 ### 5.1 Current (verified present on the build machine)

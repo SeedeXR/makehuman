@@ -233,7 +233,15 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       index**, matching Python's `sorted(reverse=True)` over `(w, idx)` tuples.
       Arbitrary, but it decides which influence survives on symmetric vertices.
 - [ ] Influence clamping surfaced in the glTF exporter (JOINTS_0/WEIGHTS_0)
-- [ ] Euler conventions — all 24, `[w,x,y,z]` quaternions (Eigen `.coeffs()` is `[x,y,z,w]`)
+- [x] Euler conventions — **all 24**, plus quaternion matrix/from-matrix/
+      multiply/slerp and arbitrary-axis rotation. 120 captured cases
+      (24 conventions x 5 angle sets), worst matrix delta at float32 epsilon.
+      `[w,x,y,z]` scalar-FIRST throughout; Eigen's `.coeffs()` is `[x,y,z,w]`,
+      so any future Eigen interop must reorder.
+      Licensing: `transformations.py` is **BSD-3-Clause** (C. Gohlke) with
+      MakeHuman's AGPL boilerplate wrongly stamped into its docstring — see
+      `LICENSING.md` §4.1. The port is BSD and lives in `mh_foundation`.
+- [ ] Wire the Euler/quaternion helpers into pose loading (`.mhpose`, BVH)
 - [x] **CPU LBS — parity on all 19,158 vertices** under a real pose (7 bones
       rotated, 18,069 vertices moved, 3.2 dm max displacement). Worst vertex
       delta **3.8e-6 dm (0.38 um)**; worst pose-matrix delta 6.7e-6 — float32

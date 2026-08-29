@@ -1,0 +1,77 @@
+{
+  "subsystem": "transform",
+  "captured_at": "2026-08-29T11:36:27.682778+00:00",
+  "reference_commit": "967652c60b1d2a3dcb4d6b25221073c5e625a33e",
+  "python": "3.14.6",
+  "numpy": "2.5.2",
+  "platform": "darwin",
+  "entries": {
+    "euler_matrices": {
+      "file": "euler_matrices.bin",
+      "dtype": "f8",
+      "shape": [
+        120,
+        4,
+        4
+      ],
+      "count": 1920,
+      "sha256": "9933ba9119e73a2ff118d2a3e3ff86750f67f928b33407da35cee7138ecdcab6"
+    },
+    "quaternions": {
+      "file": "quaternions.bin",
+      "dtype": "f8",
+      "shape": [
+        120,
+        4
+      ],
+      "count": 480,
+      "sha256": "926a78fc36e321111b004520f6edc140ca3830e651aa691cb77f2e137a55f261"
+    },
+    "euler_back": {
+      "file": "euler_back.bin",
+      "dtype": "f8",
+      "shape": [
+        120,
+        3
+      ],
+      "count": 360,
+      "sha256": "645b52d770d5e866774ec3db38552db0676b7044436cd8dcc8eb7da29693b477"
+    },
+    "slerps": {
+      "file": "slerps.bin",
+      "dtype": "f8",
+      "shape": [
+        5,
+        4
+      ],
+      "count": 20,
+      "sha256": "1f511d27918cd11471d344b5e95e0f8151c7781a51e980283e8f3b4106736b3b"
+    },
+    "product": {
+      "file": "product.bin",
+      "dtype": "f8",
+      "shape": [
+        4
+      ],
+      "count": 4,
+      "sha256": "d21c9bf70e8dbeb80d0f9dc7c45580aac11b823a74df34ec4c70656f4f62d093"
+    },
+    "rotations": {
+      "file": "rotations.bin",
+      "dtype": "f8",
+      "shape": [
+        4,
+        4,
+        4
+      ],
+      "count": 64,
+      "sha256": "d5d5a38e82dca164d4b7111b3f44956c0ef757812cc5f0842a1bd0a841094aaf"
+    }
+  },
+  "source": "legacy/python/core/transformations.py (BSD-3-Clause, C. Gohlke)",
+  "convention_count": 24,
+  "angle_sets": 5,
+  "cases": 120,
+  "quaternion_layout": "[w, x, y, z] -- scalar FIRST",
+  "note": "float64 throughout: these are conversions, and capturing them at float32 would hide real error behind rounding."
+}
