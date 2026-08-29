@@ -13,14 +13,33 @@ Mesh::Mesh(std::string name, uint8_t vertsPerPrimitive)
       vertsPerPrimitive_(vertsPerPrimitive),
       vertsPerFaceForExport_(vertsPerPrimitive) {}
 
-void Mesh::setCoords(std::vector<Vec3> coords) {
+std::expected<void, MeshError> Mesh::setCoords(std::vector<Vec3> coords) {
+    if (!fvert_.empty()) {
+        const auto n = static_cast<uint32_t>(coords.size());
+        for (const uint32_t v : fvert_) {
+            if (v >= n) return std::unexpected(MeshError::VertexIndexOutOfRange);
+        }
+    }
+
     coord_     = std::move(coords);
     origCoord_ = coord_;  // the morph base, module3d.py:532
-    vnorm_.assign(coord_.size(), Vec3{});
+    // Left EMPTY, not zero-filled: a size-based "do I have normals?" guard is
+    // only meaningful if the absent state is distinguishable. Zero-filling made
+    // calcVertexTangents orthogonalise against the zero vector.
+    vnorm_.clear();
+    vtang_.clear();
+    return {};
 }
 
-void Mesh::setUVs(std::vector<Vec2> uvs) {
+std::expected<void, MeshError> Mesh::setUVs(std::vector<Vec2> uvs) {
+    if (!fuvs_.empty()) {
+        const auto n = static_cast<uint32_t>(uvs.size());
+        for (const uint32_t t : fuvs_) {
+            if (t >= n) return std::unexpected(MeshError::UvIndexOutOfRange);
+        }
+    }
     texco_ = std::move(uvs);
+    return {};
 }
 
 std::expected<void, MeshError> Mesh::setFaces(std::vector<uint32_t> faceVerts,
@@ -56,13 +75,14 @@ std::expected<void, MeshError> Mesh::setFaces(std::vector<uint32_t> faceVerts,
     if (group_.size() != nFaces) {
         group_.assign(nFaces, 0);
     }
-    fnorm_.assign(nFaces, Vec3{});
-
     // The face set just changed, so any adjacency built from the previous one
     // is stale and its indices may point past the new fnorm_. Clearing forces
     // calcVertexNormals to rebuild instead of reading through dead indices.
     vface_.clear();
     nfaces_.clear();
+    fnorm_.assign(nFaces, Vec3{});
+    vnorm_.clear();
+    vtang_.clear();
 
     // A triangle mesh is stored as quads with corner 0 repeated. The reference
     // decides this from the FIRST face only (module3d.py:634-639); a mixed
@@ -206,64 +226,71 @@ void Mesh::calcVertexTangents() {
     const size_t vpp    = vertsPerPrimitive_;
     if (vpp < 3 || nVerts == 0) return;
 
-    if (vnorm_.size() != nVerts) calcVertexNormals();
-    if (vface_.size() != nVerts * static_cast<size_t>(maxValence_)) buildAdjacency();
+    if (vnorm_.size() != nVerts) calcNormals();
 
-    // Per-face tangent/bitangent directions (Lengyel). Accumulated per vertex
-    // below, weighted implicitly by triangle area because sdir/tdir are not
-    // normalised -- the same reason face normals are left unnormalised.
-    std::vector<Vec3> sdir(nFaces, Vec3{});
-    std::vector<Vec3> tdir(nFaces, Vec3{});
+    // Accumulate per TRIANGLE, over the same fan a renderer draws:
+    // (0,1,2), (0,2,3), ... Building one basis from corners 0,1,2 and
+    // broadcasting it to the whole face would give corner 3 a basis from a
+    // triangle it is not part of, and would discard triangle (0,2,3) entirely.
+    std::vector<Vec3> sAcc(nVerts, Vec3{});
+    std::vector<Vec3> tAcc(nVerts, Vec3{});
 
     for (size_t f = 0; f < nFaces; ++f) {
         const size_t base = f * vpp;
-        const Vec3& p1    = coord_[fvert_[base + 0]];
-        const Vec3& p2    = coord_[fvert_[base + 1]];
-        const Vec3& p3    = coord_[fvert_[base + 2]];
-        const Vec2& w1    = texco_[fuvs_[base + 0]];
-        const Vec2& w2    = texco_[fuvs_[base + 1]];
-        const Vec2& w3    = texco_[fuvs_[base + 2]];
 
-        const float x1 = p2.x - p1.x, x2 = p3.x - p1.x;
-        const float y1 = p2.y - p1.y, y2 = p3.y - p1.y;
-        const float z1 = p2.z - p1.z, z2 = p3.z - p1.z;
+        for (size_t c = 2; c < vpp; ++c) {
+            const uint32_t i0 = fvert_[base + 0];
+            const uint32_t i1 = fvert_[base + c - 1];
+            const uint32_t i2 = fvert_[base + c];
+            // A repeated corner marks a triangle stored as a degenerate quad
+            // (wavefront.py:105-106); it has no area and no basis.
+            if (i0 == i1 || i1 == i2 || i0 == i2) continue;
 
-        const float s1 = w2.x - w1.x, s2 = w3.x - w1.x;
-        const float t1 = w2.y - w1.y, t2 = w3.y - w1.y;
+            const Vec3& p1 = coord_[i0];
+            const Vec3& p2 = coord_[i1];
+            const Vec3& p3 = coord_[i2];
+            const Vec2& w1 = texco_[fuvs_[base + 0]];
+            const Vec2& w2 = texco_[fuvs_[base + c - 1]];
+            const Vec2& w3 = texco_[fuvs_[base + c]];
 
-        // A degenerate UV triangle has no tangent basis. The reference nudges
-        // each zero component to 1e-7 (module3d.py:414-417), which invents a
-        // direction from nothing; skipping the face's contribution instead
-        // lets its neighbours determine the vertex tangent.
-        const float det = s1 * t2 - s2 * t1;
-        if (std::abs(det) < 1e-12F) continue;
-        const float r = 1.0F / det;
+            const float x1 = p2.x - p1.x, x2 = p3.x - p1.x;
+            const float y1 = p2.y - p1.y, y2 = p3.y - p1.y;
+            const float z1 = p2.z - p1.z, z2 = p3.z - p1.z;
 
-        sdir[f] = Vec3{(t2 * x1 - t1 * x2) * r, (t2 * y1 - t1 * y2) * r, (t2 * z1 - t1 * z2) * r};
-        tdir[f] = Vec3{(s1 * x2 - s2 * x1) * r, (s1 * y2 - s2 * y1) * r, (s1 * z2 - s2 * z1) * r};
+            const float s1 = w2.x - w1.x, s2 = w3.x - w1.x;
+            const float t1 = w2.y - w1.y, t2 = w3.y - w1.y;
+
+            // A degenerate UV triangle has no tangent basis. The reference
+            // nudges each zero delta to 1e-7 (module3d.py:414-417), inventing a
+            // direction from nothing; skipping lets neighbours decide instead.
+            const float det = s1 * t2 - s2 * t1;
+            if (std::abs(det) < 1e-12F) continue;
+            const float r = 1.0F / det;
+
+            // Note: these are dPosition/dUV, so a face with a small UV
+            // footprint carries a LARGER weight. That is Lengyel's method as
+            // published; it is not area weighting.
+            const Vec3 sd{(t2 * x1 - t1 * x2) * r, (t2 * y1 - t1 * y2) * r,
+                          (t2 * z1 - t1 * z2) * r};
+            const Vec3 td{(s1 * x2 - s2 * x1) * r, (s1 * y2 - s2 * y1) * r,
+                          (s1 * z2 - s2 * z1) * r};
+
+            for (const uint32_t v : {i0, i1, i2}) {
+                sAcc[v] += sd;
+                tAcc[v] += td;
+            }
+        }
     }
 
     vtang_.assign(nVerts, Vec4{});
     for (size_t v = 0; v < nVerts; ++v) {
-        Vec3 sAcc{};
-        Vec3 tAcc{};
-        // Masked by nfaces_: the unused tail of a vface_ row is zero-filled, so
-        // summing the whole row would fold face 0 into every low-valence vertex.
-        const uint32_t n = nfaces_[v];
-        for (uint32_t k = 0; k < n; ++k) {
-            const uint32_t f = vface_[v * maxValence_ + k];
-            sAcc += sdir[f];
-            tAcc += tdir[f];
-        }
-
         const Vec3& nrm = vnorm_[v];
-        Vec3 t          = sAcc - nrm * dot(nrm, sAcc);  // Gram-Schmidt
+        Vec3 t          = sAcc[v] - nrm * dot(nrm, sAcc[v]);  // Gram-Schmidt
         float len       = std::sqrt(dot(t, t));
 
         if (!(len > 1e-8F)) {
-            // No usable tangent (no UV gradient here, or it was parallel to the
-            // normal). Any unit vector orthogonal to the normal is valid; pick
-            // one deterministically so output stays reproducible.
+            // No usable tangent here. Any unit vector orthogonal to the normal
+            // is valid; pick one deterministically so output is reproducible.
             const Vec3 axis = (std::abs(nrm.x) < 0.9F) ? Vec3{1, 0, 0} : Vec3{0, 1, 0};
             t               = axis - nrm * dot(nrm, axis);
             len             = std::sqrt(dot(t, t));
@@ -274,7 +301,8 @@ void Mesh::calcVertexTangents() {
         }
         t *= 1.0F / len;
 
-        const float handedness = (dot(cross(nrm, sAcc), tAcc) < 0.0F) ? -1.0F : 1.0F;
+        // Handedness uses the raw accumulated sAcc, per Lengyel.
+        const float handedness = (dot(cross(nrm, sAcc[v]), tAcc[v]) < 0.0F) ? -1.0F : 1.0F;
         vtang_[v]              = Vec4{t.x, t.y, t.z, handedness};
     }
 }

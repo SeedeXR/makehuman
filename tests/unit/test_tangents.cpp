@@ -23,8 +23,8 @@ namespace {
 /// (dU direction) must run along +X and its bitangent along +Z.
 Mesh makeUvQuad() {
     Mesh m("quad", 4);
-    m.setCoords({{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}});
-    m.setUVs({{0, 0}, {1, 0}, {1, 1}, {0, 1}});
+    REQUIRE(m.setCoords({{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}}).has_value());
+    REQUIRE(m.setUVs({{0, 0}, {1, 0}, {1, 1}, {0, 1}}).has_value());
     m.addFaceGroup("g");
     REQUIRE(m.setFaces({0, 1, 2, 3}, {0, 1, 2, 3}, {0}).has_value());
     m.buildAdjacency();
@@ -36,7 +36,7 @@ Mesh makeUvQuad() {
 
 TEST_CASE("tangents are empty without UVs", "[core][tangent]") {
     Mesh m("t", 4);
-    m.setCoords({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}});
+    REQUIRE(m.setCoords({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}).has_value());
     m.addFaceGroup("g");
     REQUIRE(m.setFaces({0, 1, 2, 0}, {}, {0}).has_value());
     m.calcNormals();
@@ -93,8 +93,8 @@ TEST_CASE("mirrored UVs flip handedness", "[core][tangent]") {
     a.calcVertexTangents();
 
     Mesh b("quad", 4);
-    b.setCoords({{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}});
-    b.setUVs({{0, 1}, {1, 1}, {1, 0}, {0, 0}});  // V mirrored
+    REQUIRE(b.setCoords({{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}}).has_value());
+    REQUIRE(b.setUVs({{0, 1}, {1, 1}, {1, 0}, {0, 0}}).has_value());  // V mirrored
     b.addFaceGroup("g");
     REQUIRE(b.setFaces({0, 1, 2, 3}, {0, 1, 2, 3}, {0}).has_value());
     b.buildAdjacency();
@@ -110,8 +110,8 @@ TEST_CASE("a degenerate UV triangle does not poison its vertices", "[core][tange
     // reference nudges the zero deltas to 1e-7 and invents a direction; we skip
     // the face and fall back to something orthonormal.
     Mesh m("degen", 4);
-    m.setCoords({{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}});
-    m.setUVs({{0.5F, 0.5F}});
+    REQUIRE(m.setCoords({{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}}).has_value());
+    REQUIRE(m.setUVs({{0.5F, 0.5F}}).has_value());
     m.addFaceGroup("g");
     REQUIRE(m.setFaces({0, 1, 2, 3}, {0, 0, 0, 0}, {0}).has_value());
     m.buildAdjacency();

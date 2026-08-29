@@ -245,8 +245,15 @@ std::expected<Mesh, ObjError> loadObj(const std::filesystem::path& path) {
         }
     }
 
-    mesh.setCoords(std::move(coords));
-    if (sawAnyUv) mesh.setUVs(std::move(uvs));
+    // Cannot fail here: faces are set after this, so fvert_ is still empty.
+    if (!mesh.setCoords(std::move(coords))) {
+        return std::unexpected(ObjError{ObjErrorKind::InvalidTopology, path.string(), 0,
+                                        "vertex array rejected by Mesh::setCoords"});
+    }
+    if (sawAnyUv && !mesh.setUVs(std::move(uvs))) {
+        return std::unexpected(ObjError{ObjErrorKind::InvalidTopology, path.string(), 0,
+                                        "UV array rejected by Mesh::setUVs"});
+    }
 
     const auto applied =
         sawAnyUv ? mesh.setFaces(std::move(faceVerts), std::move(faceUVs), std::move(faceGroup))

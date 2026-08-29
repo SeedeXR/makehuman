@@ -90,8 +90,15 @@ public:
     [[nodiscard]] std::span<Vec3> mutableCoord() noexcept { return coord_; }
 
     // -- construction -------------------------------------------------------
-    void setCoords(std::vector<Vec3> coords);
-    void setUVs(std::vector<Vec2> uvs);
+    /// Sets vertex positions and captures them as the morph base. Rejected if
+    /// it would strand a vertex index already recorded in the face arrays --
+    /// the same reasoning as setUVs.
+    [[nodiscard]] std::expected<void, MeshError> setCoords(std::vector<Vec3> coords);
+    /// Sets the UV array. Rejected if it would strand a UV index already
+    /// recorded in the face arrays -- setFaces validates against the UVs
+    /// present at that moment, so shrinking them afterwards would leave
+    /// out-of-range indices for the next consumer to read through.
+    [[nodiscard]] std::expected<void, MeshError> setUVs(std::vector<Vec2> uvs);
 
     /// Sets the face arrays, validating every index against the current vertex
     /// and UV counts. Call setCoords() (and setUVs(), if any) first.
@@ -148,8 +155,8 @@ public:
     /// (https://terathon.com/blog/tangent-space.html), Gram-Schmidt
     /// orthogonalised against the vertex normal, with handedness in `w`.
     ///
-    /// No-op when the mesh has no UVs. Requires normals, so it calls
-    /// calcVertexNormals() itself if they are missing.
+    /// No-op when the mesh has no UVs. Computes normals first if they are
+    /// missing, since the Gram-Schmidt step needs them.
     ///
     /// @warning This deliberately does **not** reproduce the reference
     /// (module3d.py:371-449), which is wrong in three independent ways:

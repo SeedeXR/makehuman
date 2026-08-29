@@ -4,6 +4,61 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 003 · M1 complete, M2 tangents + unweld
+
+**Ended:** 2026-08-29 05:05:04 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+### Delivered
+- **M1 complete**: `.clang-format`, `.clang-tidy`, CI (format · build/test across
+  debug+release+asan · benchmark · three licence gates), `tools/capture_fixture.py`.
+- **Golden fixtures**: 65 files / 3.4 MB captured from the reference, each with a
+  MANIFEST recording reference commit + interpreter + numpy version.
+- **Byte-level parity tests**: coord, fvert, fuvs, texco, vnorm, group compared
+  element-by-element over the whole base mesh. 18 assertions, all passing.
+- **Correct tangents** (Lengyel + Gram-Schmidt + handedness).
+- **`RenderMesh`**: the GPU unweld. 19,158 → 21,833 render verts, 110,916
+  indices, 139 draw ranges, fan triangulation.
+
+### Two review rounds, 19 findings total, all fixed
+Round 1 (11 findings) on the build-system commit — 3 memory-safety.
+Round 2 (12 findings) on tangents + RenderMesh — 4 HIGH:
+
+| Sev | Defect | Fix |
+|---|---|---|
+| HIGH | tangents used corners 0,1,2 only and broadcast to all 4, so corner 3 got a basis from a triangle it is not in and triangle (0,2,3) contributed nothing — **179° max error on real base-mesh data** | accumulate per triangle over the same fan a renderer draws |
+| HIGH | the "compute normals if missing" guard could never fire — `setCoords` zero-filled `vnorm_`, so tangents were orthogonalised against the **zero vector** and handedness was always +1 | `vnorm_` left empty; guard calls `calcNormals()` |
+| HIGH | `setUVs` after `setFaces` could shrink `texco_`, stranding UV indices → ASan heap-buffer-overflow | `setUVs` validates and returns `expected` |
+| HIGH | `setCoords` after `setFaces` could shrink `coord_`, stranding vertex indices → ASan heap-buffer-overflow | `setCoords` validates and returns `expected` |
+| MED | group ranges sized from `faceGroups().size()`, so a larger group id left indices unreachable from every draw range | sized from `max(group)+1`, as the reference does (module3d.py:857) |
+| MED | `vertsPerPrimitive > 4` silently lost geometry (a pentagon gave 2 triangles, not 3) | general fan triangulation |
+| MED | `refreshPositions` gathered through a stale table after a topology change | O(1) topology fingerprint + `matches()` |
+| LOW | `tmap()` documented as an index into `texco()` but all-zero when there are no UVs | cleared when absent |
+
+**Correction to my own earlier record:** the reference's tangent code has
+**three** bugs, not two. Beyond `module3d.py:411` and `:429`, it also never masks
+`vface` by `nfaces` — unlike `calcVertexNormals` at `:366` — so face 0 is folded
+into every vertex whose valence is below the array stride.
+
+**Process note:** the round-2 review found a bug I introduced *while fixing*
+round 1. Writing the failing test first was what made each fix verifiable. Two of
+my own patches also silently failed to apply because clang-format had changed the
+whitespace my anchors matched on — worth checking `grep` after a scripted edit
+rather than trusting that a replace landed.
+
+### Verified
+72/72 tests pass in debug, release and ASan+UBSan (111,906 assertions).
+Clean under `-Werror`; clang-format and SPDX gates pass.
+
+Benchmarks (release): load base.obj 11.2 ms vs 211.8 ms (19x) · calcNormals
+0.09 ms vs 5.18 ms (56x) · calcVertexTangents 0.20 ms · RenderMesh::build
+2.14 ms vs 3.43 ms · refreshPositions 0.04 ms.
+
+### Next
+Catmull-Clark subdivision — compute `maxpole` first (`todo.md` caveat), then
+parity against the reference's 75,008 verts / 73,944 faces.
+
+---
+
 ## 2026-08-29 — Session 002 · M1 build system + M2 mesh core
 
 **Started:** 2026-08-29 03:58:00

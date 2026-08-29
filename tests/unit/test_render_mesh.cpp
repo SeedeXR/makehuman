@@ -19,9 +19,10 @@ namespace {
 /// a UV seam. This is the case the unweld exists for.
 Mesh makeSeamedPair() {
     Mesh m("seam", 4);
-    m.setCoords({{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}, {2, 0, 0}, {2, 0, 1}});
+    REQUIRE(m.setCoords({{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}, {2, 0, 0}, {2, 0, 1}})
+                .has_value());
     // Vertices 1 and 2 get two different UVs each (indices 1,2 and 4,5).
-    m.setUVs({{0, 0}, {1, 0}, {1, 1}, {0, 1}, {0, 0}, {0, 1}, {1, 0}, {1, 1}});
+    REQUIRE(m.setUVs({{0, 0}, {1, 0}, {1, 1}, {0, 1}, {0, 0}, {0, 1}, {1, 0}, {1, 1}}).has_value());
     m.addFaceGroup("a");
     m.addFaceGroup("b");
     REQUIRE(m.setFaces({0, 1, 2, 3, 1, 4, 5, 2}, {0, 1, 2, 3, 4, 6, 7, 5}, {0, 1}).has_value());
@@ -67,8 +68,8 @@ TEST_CASE("a triangle stored as a degenerate quad yields one triangle", "[core][
     // wavefront.py:105-106 stores tris as quads with corner 0 repeated. Emitting
     // the second triangle would produce a zero-area face.
     Mesh m("tri", 4);
-    m.setCoords({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}});
-    m.setUVs({{0, 0}, {1, 0}, {0, 1}});
+    REQUIRE(m.setCoords({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}).has_value());
+    REQUIRE(m.setUVs({{0, 0}, {1, 0}, {0, 1}}).has_value());
     m.addFaceGroup("g");
     REQUIRE(m.setFaces({0, 1, 2, 0}, {0, 1, 2, 0}, {0}).has_value());
     m.buildAdjacency();

@@ -68,7 +68,16 @@ public:
     /// Re-gathers positions (and normals/tangents when present) after the mesh
     /// has been morphed, without rebuilding the topology. This is the hot path:
     /// the unweld table only changes when faces change, which morphing never does.
+    ///
+    /// Does nothing if @p mesh no longer has the vertex and face counts this
+    /// table was built from -- the mapping would be stale, and indexing through
+    /// it would read out of bounds. Rebuild with build() instead.
     void refreshPositions(const Mesh& mesh);
+
+    /// True when this table still matches @p mesh's topology.
+    [[nodiscard]] bool matches(const Mesh& mesh) const noexcept {
+        return builtVertexCount_ == mesh.vertexCount() && builtFaceCount_ == mesh.faceCount();
+    }
 
 private:
     std::vector<uint32_t> vmap_;
@@ -81,6 +90,10 @@ private:
 
     std::vector<uint32_t> index_;
     std::vector<GroupRange> groupRanges_;
+
+    // Topology fingerprint, so a stale table is detected in O(1).
+    size_t builtVertexCount_{};
+    size_t builtFaceCount_{};
 };
 
 }  // namespace mh::core

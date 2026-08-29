@@ -58,7 +58,7 @@ RenderMesh RenderMesh::build(const Mesh& mesh) {
     rm.vmap_.shrink_to_fit();
     rm.tmap_.shrink_to_fit();
 
-    // 4. Faces sorted by group, so every group is one contiguous draw range.
+    // 3. Faces sorted by group, so every group is one contiguous draw range.
     //    Stable, so face order within a group is preserved (module3d.py:847-849).
     std::vector<uint32_t> faceOrder(nFaces);
     std::iota(faceOrder.begin(), faceOrder.end(), 0U);
@@ -66,14 +66,20 @@ RenderMesh RenderMesh::build(const Mesh& mesh) {
     std::ranges::stable_sort(faceOrder,
                              [&](uint32_t a, uint32_t b) { return groups[a] < groups[b]; });
 
-    // 5. Triangulate. A quad becomes (0,1,2) + (0,2,3); a triangle stored as a
-    //    degenerate quad (corner 3 == corner 0) contributes only its first
-    //    triangle, since the second would be degenerate.
-    const size_t trisPerFace = (vpp >= 4) ? 2 : 1;
-    rm.index_.reserve(nFaces * trisPerFace * 3);
+    // 4. Fan-triangulate: (0,1,2), (0,2,3), ... for any corner count. A quad
+    //    gives the usual two triangles; a triangle stored as a degenerate quad
+    //    (corner 3 == corner 0) gives one, because the second is degenerate.
+    //    Metal and every modern API dropped GL_QUADS, which the reference still
+    //    submits (glmodule.py:66).
+    rm.index_.reserve(nFaces * (vpp - 2) * 3);
 
-    const size_t nGroups = mesh.faceGroups().empty() ? 1 : mesh.faceGroups().size();
-    rm.groupRanges_.assign(nGroups, GroupRange{});
+    // Sized from the largest group id actually used, as the reference does
+    // (module3d.py:857). Sizing from faceGroups().size() would leave the
+    // indices of any face with a larger id unreachable from every draw range.
+    uint16_t maxGroup = 0;
+    for (const uint16_t g : groups)
+        maxGroup = std::max(maxGroup, g);
+    rm.groupRanges_.assign(static_cast<size_t>(maxGroup) + 1U, GroupRange{});
 
     for (const uint32_t f : faceOrder) {
         const size_t base = static_cast<size_t>(f) * vpp;
@@ -81,37 +87,44 @@ RenderMesh RenderMesh::build(const Mesh& mesh) {
 
         const uint32_t before = static_cast<uint32_t>(rm.index_.size());
 
-        const uint32_t c0 = cornerToRender[base + 0];
-        const uint32_t c1 = cornerToRender[base + 1];
-        const uint32_t c2 = cornerToRender[base + 2];
-        rm.index_.insert(rm.index_.end(), {c0, c1, c2});
+        for (size_t c = 2; c < vpp; ++c) {
+            const uint32_t v0 = mesh.fvert()[base + 0];
+            const uint32_t v1 = mesh.fvert()[base + c - 1];
+            const uint32_t v2 = mesh.fvert()[base + c];
+            if (v0 == v1 || v1 == v2 || v0 == v2) continue;  // zero-area
 
-        if (vpp >= 4) {
-            const uint32_t c3 = cornerToRender[base + 3];
-            // Skip the second triangle of a degenerate quad (a stored triangle).
-            if (mesh.fvert()[base + 3] != mesh.fvert()[base + 0]) {
-                rm.index_.insert(rm.index_.end(), {c0, c2, c3});
-            }
+            rm.index_.insert(
+                rm.index_.end(),
+                {cornerToRender[base + 0], cornerToRender[base + c - 1], cornerToRender[base + c]});
         }
 
         const uint32_t added = static_cast<uint32_t>(rm.index_.size()) - before;
-        if (g < rm.groupRanges_.size()) {
-            if (rm.groupRanges_[g].count == 0) rm.groupRanges_[g].first = before;
-            rm.groupRanges_[g].count += added;
-        }
+        if (rm.groupRanges_[g].count == 0) rm.groupRanges_[g].first = before;
+        rm.groupRanges_[g].count += added;
     }
 
-    // 6. Gather the attribute streams.
-    rm.texco_.resize(rm.vmap_.size());
+    // 5. Gather the attribute streams.
     if (hasUV) {
+        rm.texco_.resize(rm.vmap_.size());
         for (size_t j = 0; j < rm.vmap_.size(); ++j)
             rm.texco_[j] = mesh.texco()[rm.tmap_[j]];
+    } else {
+        // tmap_ is documented as an index into texco(); with no UVs it would be
+        // an all-zero index into an empty array, so clear it rather than lie.
+        rm.tmap_.clear();
     }
+    rm.builtVertexCount_ = mesh.vertexCount();
+    rm.builtFaceCount_   = mesh.faceCount();
     rm.refreshPositions(mesh);
     return rm;
 }
 
 void RenderMesh::refreshPositions(const Mesh& mesh) {
+    // vmap_/tmap_ were validated against the mesh as it was at build time. If
+    // its topology changed, every index here may be stale and gathering
+    // through them would read out of bounds.
+    if (!matches(mesh)) return;
+
     const size_t n = vmap_.size();
 
     coord_.resize(n);

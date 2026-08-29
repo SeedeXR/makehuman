@@ -12,8 +12,8 @@ namespace {
 /// A unit quad in the XZ plane, wound so its normal points along +Y.
 Mesh makeUnitQuad() {
     Mesh m("quad", 4);
-    m.setCoords({{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}});
-    m.setUVs({{0, 0}, {1, 0}, {1, 1}, {0, 1}});
+    REQUIRE(m.setCoords({{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}}).has_value());
+    REQUIRE(m.setUVs({{0, 0}, {1, 0}, {1, 1}, {0, 1}}).has_value());
     m.addFaceGroup("g");
     REQUIRE(m.setFaces({0, 1, 2, 3}, {0, 1, 2, 3}, {0}).has_value());
     m.buildAdjacency();
@@ -35,7 +35,7 @@ TEST_CASE("mesh reports basic counts", "[core][mesh]") {
 TEST_CASE("triangles stored as degenerate quads are tagged for export as tris", "[core][mesh]") {
     // wavefront.py:105-106 repeats corner 0; module3d.py:634-639 detects it.
     Mesh m("tri", 4);
-    m.setCoords({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}});
+    REQUIRE(m.setCoords({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}).has_value());
     m.addFaceGroup("g");
     REQUIRE(m.setFaces({0, 1, 2, 0}, {}, {0}).has_value());
     REQUIRE(m.vertsPerFaceForExport() == 3);
@@ -72,7 +72,7 @@ TEST_CASE("adjacency records the incident face for every vertex", "[core][mesh]"
 
 TEST_CASE("adjacency counts a vertex once per face in a degenerate quad", "[core][mesh]") {
     Mesh m("tri", 4);
-    m.setCoords({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}});
+    REQUIRE(m.setCoords({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}).has_value());
     m.addFaceGroup("g");
     REQUIRE(m.setFaces({0, 1, 2, 0}, {}, {0}).has_value());
     m.buildAdjacency();
@@ -97,7 +97,7 @@ TEST_CASE("resetToOriginal restores the morph base", "[core][mesh]") {
 TEST_CASE("height is the Y extent in decimetres scaled to centimetres", "[core][mesh][units]") {
     // human.py:694-699 -- internal units are decimetres.
     Mesh m("bar", 4);
-    m.setCoords({{0, 0, 0}, {1, 17.5F, 0}, {1, 17.5F, 1}, {0, 0, 1}});
+    REQUIRE(m.setCoords({{0, 0, 0}, {1, 17.5F, 0}, {1, 17.5F, 1}, {0, 0, 1}}).has_value());
     m.addFaceGroup("g");
     REQUIRE(m.setFaces({0, 1, 2, 3}, {}, {0}).has_value());
     REQUIRE_THAT(m.heightCm(), WithinAbs(175.0, 1e-4));
