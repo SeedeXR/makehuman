@@ -144,6 +144,26 @@ jobs:
           fi
           exit 0
 
+      # <charconv> is confined to mh_foundation. Floating-point from_chars and
+      # to_chars do not exist in every libc++ we build on (the macos-15
+      # runner's Xcode 16.4 lacks them), so a direct call compiles locally and
+      # fails in CI. That reached CI TWICE: once because five call sites each
+      # had their own parser, and again because a sixth used a different helper
+      # name and was missed by a hand audit.
+      #
+      # "Don't call std::from_chars on a float" cannot be checked. This can.
+      - name: charconv is confined to foundation
+        run: |
+          hits=$(grep -rln 'charconv' src include \
+                   --include='*.cpp' --include='*.h' \
+                 | grep -v '/foundation/' || true)
+          if [ -n "$hits" ]; then
+            echo "::error::<charconv> outside mh_foundation:"; echo "$hits"
+            echo "Use mh::foundation::parseFloat / parseInteger / format* instead."
+            exit 1
+          fi
+          exit 0
+
       - name: Forbidden dependencies absent
         run: |
           # LICENSING.md section 5.2. The FBX SDK's licence is incompatible with

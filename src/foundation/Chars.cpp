@@ -4,10 +4,10 @@
 #include <cmath>
 #include <cstdio>
 
-#if MH_HAVE_FP_CHARCONV
 #include <charconv>
 #include <system_error>
-#else
+
+#if !MH_HAVE_FP_CHARCONV
 #include <locale.h>
 #include <cstdlib>
 #if __has_include(<xlocale.h>)
@@ -54,6 +54,31 @@ private:
 #endif
 
 }  // namespace
+
+namespace {
+
+/// The integral overloads exist on every libc++ we build on, so there is no
+/// fallback branch here -- only containment.
+template <typename T>
+bool parseIntegralImpl(std::string_view text, T& out) {
+    if (text.empty()) return false;
+    const auto r = std::from_chars(text.data(), text.data() + text.size(), out);
+    return r.ec == std::errc{} && r.ptr == text.data() + text.size();
+}
+
+}  // namespace
+
+bool parseInteger(std::string_view text, int& out) {
+    return parseIntegralImpl(text, out);
+}
+
+bool parseInteger(std::string_view text, unsigned& out) {
+    return parseIntegralImpl(text, out);
+}
+
+bool parseInteger(std::string_view text, long& out) {
+    return parseIntegralImpl(text, out);
+}
 
 bool parseFloat(std::string_view text, float& out) {
     if (text.empty()) return false;

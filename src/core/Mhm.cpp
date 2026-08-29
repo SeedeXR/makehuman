@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "makehuman/core/Mhm.h"
+#include "makehuman/foundation/Chars.h"
 
 #include "makehuman/core/Modifier.h"
 
-#include <charconv>
 #include <fstream>
 #include <sstream>
 
@@ -50,8 +50,7 @@ std::vector<std::string> splitSemicolons(const std::string& s) {
 }
 
 bool parseFloat(const std::string& s, float& out) {
-    const auto r = std::from_chars(s.data(), s.data() + s.size(), out);
-    return r.ec == std::errc{} && r.ptr == s.data() + s.size();
+    return foundation::parseFloat(s, out);
 }
 
 /// Extracts the leading "vN.N" of a version string.
@@ -61,11 +60,18 @@ std::pair<int, int> majorMinor(std::string_view v) {
     if (dot == std::string_view::npos) return {-1, -1};
     int major = 0;
     int minor = 0;
-    auto r1   = std::from_chars(v.data() + 1, v.data() + dot, major);
-    if (r1.ec != std::errc{}) return {-1, -1};
-    const char* mEnd = v.data() + v.size();
-    const auto r2    = std::from_chars(v.data() + dot + 1, mEnd, minor);
-    if (r2.ec != std::errc{}) return {-1, -1};
+    if (!foundation::parseInteger(v.substr(1, dot - 1), major)) return {-1, -1};
+
+    // "v1.3.0" carries a patch component that this comparison ignores, so take
+    // only the digit run after the first dot. The previous code got this from
+    // std::from_chars stopping at the second '.', which made the intent an
+    // accident of the API rather than something stated -- and it broke the
+    // moment parsing moved behind a helper that demands full consumption.
+    const size_t mStart = dot + 1;
+    size_t mEnd         = mStart;
+    while (mEnd < v.size() && v[mEnd] >= '0' && v[mEnd] <= '9')
+        ++mEnd;
+    if (!foundation::parseInteger(v.substr(mStart, mEnd - mStart), minor)) return {-1, -1};
     return {major, minor};
 }
 

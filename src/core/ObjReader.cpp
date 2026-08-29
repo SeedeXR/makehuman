@@ -2,7 +2,6 @@
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/foundation/Chars.h"
 
-#include <charconv>
 #include <cstdio>
 #include <fstream>
 #include <string_view>
@@ -47,10 +46,8 @@ bool parseCorner(std::string_view tok, long& vIdx, long& tIdx, bool& hasUv) {
     const std::string_view vPart =
         (firstSlash == std::string_view::npos) ? tok : tok.substr(0, firstSlash);
     if (vPart.empty()) return false;
-    const auto vres = std::from_chars(vPart.data(), vPart.data() + vPart.size(), vIdx);
-    if (vres.ec != std::errc{} || vres.ptr != vPart.data() + vPart.size()) {
-        return false;  // reject trailing garbage, e.g. "1x"
-    }
+    // parseInteger requires the whole view, so "1x" is rejected.
+    if (!foundation::parseInteger(vPart, vIdx)) return false;
 
     if (firstSlash == std::string_view::npos) return true;
 
@@ -59,10 +56,7 @@ bool parseCorner(std::string_view tok, long& vIdx, long& tIdx, bool& hasUv) {
     const std::string_view tPart =
         (secondSlash == std::string_view::npos) ? rest : rest.substr(0, secondSlash);
     if (!tPart.empty()) {
-        const auto tres = std::from_chars(tPart.data(), tPart.data() + tPart.size(), tIdx);
-        if (tres.ec != std::errc{} || tres.ptr != tPart.data() + tPart.size()) {
-            return false;
-        }
+        if (!foundation::parseInteger(tPart, tIdx)) return false;
         hasUv = true;
     }
     return true;

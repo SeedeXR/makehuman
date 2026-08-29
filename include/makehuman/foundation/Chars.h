@@ -39,6 +39,20 @@ namespace mh::foundation {
 /// reference's `float()` accepts) and rejects non-finite results.
 [[nodiscard]] bool parseFloat(std::string_view text, float& out);
 
+/// Integer parsing, for the same reason of containment rather than necessity:
+/// the INTEGRAL from_chars overloads exist everywhere. Routing them here too
+/// means `<charconv>` appears in exactly one translation unit, which CI can
+/// enforce with a grep -- and enforcement is the point. The float bug reached
+/// CI twice: once because five call sites each had their own parser, and again
+/// because a sixth (`Mhm.cpp`) used a different helper name and was missed.
+/// A rule that says "don't call std::from_chars on a float" cannot be checked;
+/// "only foundation includes <charconv>" can.
+///
+/// All of these require the ENTIRE view to be consumed.
+[[nodiscard]] bool parseInteger(std::string_view text, int& out);
+[[nodiscard]] bool parseInteger(std::string_view text, unsigned& out);
+[[nodiscard]] bool parseInteger(std::string_view text, long& out);
+
 /// Fixed-point, @p decimals after the point. Used by the OBJ writer.
 [[nodiscard]] std::string formatFixed(float value, int decimals);
 

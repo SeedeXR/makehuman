@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <charconv>
 #include <cmath>
 #include <fstream>
 #include <sstream>
@@ -45,13 +44,11 @@ bool parseFloat(const std::string& s, float& out) {
 }
 
 bool parseUint(const std::string& s, uint32_t& out) {
-    const auto r = std::from_chars(s.data(), s.data() + s.size(), out);
-    return r.ec == std::errc{} && r.ptr == s.data() + s.size();
+    return foundation::parseInteger(s, out);
 }
 
 bool parseInt(const std::string& s, int32_t& out) {
-    const auto r = std::from_chars(s.data(), s.data() + s.size(), out);
-    return r.ec == std::errc{} && r.ptr == s.data() + s.size();
+    return foundation::parseInteger(s, out);
 }
 
 std::string joinFrom(const std::vector<std::string>& tok, size_t first) {

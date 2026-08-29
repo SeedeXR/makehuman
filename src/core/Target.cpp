@@ -3,7 +3,6 @@
 #include "makehuman/foundation/Chars.h"
 
 #include <algorithm>
-#include <charconv>
 #include <fstream>
 #include <string_view>
 
@@ -36,8 +35,7 @@ bool parseFloat(std::string_view s, float& out) {
 }
 
 bool parseIndex(std::string_view s, uint32_t& out) {
-    const auto r = std::from_chars(s.data(), s.data() + s.size(), out);
-    return r.ec == std::errc{} && r.ptr == s.data() + s.size();
+    return foundation::parseInteger(s, out);
 }
 
 }  // namespace
