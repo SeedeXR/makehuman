@@ -4,6 +4,55 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 033 · format documentation
+
+**Ended:** 2026-08-29 17:07:49 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+Eight documents in `docs/formats/`. The seven native formats have **no
+specification anywhere** — the Python source was the only definition — so this
+is how that knowledge stops being locked inside `legacy/python/`, which is
+scheduled for deletion.
+
+### The one worth keeping if only one could be
+
+`docs/formats/README.md` — UV origin, up axis, matrix order and units for every
+format we touch, with **what each disagreement actually cost**:
+
+- glTF's UV origin is **top-left**, so V is flipped. Everything else is
+  bottom-left.
+- USD's is bottom-left, so V must **not** be flipped — having just written the
+  glTF flip, carrying it over is the natural mistake.
+- glTF matrices are **column-major**; ours are row-major.
+- BVH **does not record its up axis at all**. Both shipped pose files are Z-up;
+  assuming Y-up yields a plausible skeleton lying on its side.
+- **Blender's world is Z-up**, so height arrives as its Z — reading Y reports the
+  body's depth and looks like a 4× unit error that is not there.
+
+Every one produces a plausible wrong answer rather than an error, and three of
+them cost real time before being understood.
+
+### `.mhpose` is documented as `bvh.md`
+
+There are **no `.mhpose` files in `data/` at all** — the shipped pose data is
+BVH. Documenting a format nothing uses would have been fiction.
+
+### Facts checked, not recalled
+
+A script verified all **14 Python citations** resolve to files that exist and to
+line numbers within them, and all **17 repo paths** exist.
+
+It caught a real error: `mhmat.md` claimed to show "a real example" while
+quoting the tag as `MakeHuman(tm)` when the shipped file says `MakeHuman™`. A
+document that shows a real example must show the real text.
+
+301/301 in debug and release. CI 7/7.
+
+**Next:** M7 has USDZ (a zip — packaging, not geometry) and UsdSkel left, but
+both are lower value than starting **M8, the application shell** — the whole
+point of the port is a working desktop app, and nothing yet renders.
+
+---
+
 ## 2026-08-29 — Session 032 · unit correctness, the reference's known defect
 
 **Ended:** 2026-08-29 16:55:34 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
