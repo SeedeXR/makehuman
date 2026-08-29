@@ -136,13 +136,21 @@ jobs:
       # The Python-era tree is kept as a reference oracle only. If the C++
       # build ever reaches into it, the port has a hidden dependency on code
       # that is meant to be deleted at the end.
+      # Comments are stripped first. Every module's CMakeLists explains WHICH
+      # legacy/ file it ports -- that is provenance we want to keep, and it is
+      # not a build dependency. This gate matched that prose three separate
+      # times before the stripping was made uniform; a gate that greps for a
+      # forbidden string will always match the document forbidding it.
       - name: Legacy tree is not part of the build
         run: |
-          if grep -rn "legacy/" --include=CMakeLists.txt --include="*.cmake" \
-               CMakeLists.txt cmake src include tests benchmarks 2>/dev/null; then
-            echo "::error::the build references legacy/"; exit 1
-          fi
-          exit 0
+          fail=0
+          while IFS= read -r -d '' f; do
+            if sed 's/#.*//' "$f" | grep -qn "legacy/"; then
+              echo "::error file=$f::the build references legacy/"; fail=1
+            fi
+          done < <(find CMakeLists.txt cmake src include tests benchmarks \
+                     \( -name CMakeLists.txt -o -name '*.cmake' \) -print0 2>/dev/null)
+          exit $fail
 
       # The licence boundary, enforced rather than documented.
       #
@@ -185,8 +193,10 @@ jobs:
       # "Don't call std::from_chars on a float" cannot be checked. This can.
       - name: charconv is confined to foundation
         run: |
-          hits=$(grep -rln 'charconv' src include \
-                   --include='*.cpp' --include='*.h' \
+          # Match the INCLUDE, not the word: several files explain in prose why
+          # they must not use <charconv> directly.
+          hits=$(grep -rlnE '^[[:space:]]*#[[:space:]]*include[[:space:]]*<charconv>' \
+                   src include --include='*.cpp' --include='*.h' \
                  | grep -v '/foundation/' || true)
           if [ -n "$hits" ]; then
             echo "::error::<charconv> outside mh_foundation:"; echo "$hits"

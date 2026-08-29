@@ -6,6 +6,30 @@ Coding standards, repository conventions, workflows. Binding for all contributor
 
 ---
 
+## CI gates: a grep will match the document that forbids the thing
+
+Three separate gates in `.github/workflows/ci.yml` have failed on the **comment
+explaining the rule** rather than on a violation of it:
+
+| Gate | Matched | Should have matched |
+|---|---|---|
+| Forbidden dependencies | prose about the Autodesk SDK in `SceneIO.h` | `#include <fbxsdk`, `-lfbxsdk`, a CMake link |
+| Apache/AGPL boundary | `src/io/CMakeLists.txt` saying "must never depend on one" | an actual `mh::core` in `target_link_libraries` |
+| Legacy tree | `src/rig/CMakeLists.txt` recording which `legacy/` file it ports | an actual `include_directories(legacy/...)` |
+
+The third happened in the same session the second was written up — recording the
+pattern was not enough to avoid it.
+
+**The rule, then:** a gate that greps for a forbidden string must match the
+*construct*, not the word.
+
+- strip comments first (`sed 's/#.*//'`), or
+- anchor on syntax (`^\s*#\s*include\s*<charconv>`, `target_link_libraries.*mh::core`).
+
+And prove it both ways before committing: introduce a real violation and watch
+it fire, then revert and watch it go quiet. A gate that has only ever been seen
+passing is not known to work.
+
 ## 1. Language and toolchain
 
 | Item | Choice | Verified on this machine |
