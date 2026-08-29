@@ -5,9 +5,7 @@
 // Apache-2.0 and what that requires.
 #pragma once
 
-#include "makehuman/core/Material.h"
-#include "makehuman/core/Mesh.h"
-#include "makehuman/core/Types.h"
+#include "makehuman/foundation/Geometry.h"
 
 #include <cstdint>
 #include <expected>
@@ -79,7 +77,7 @@ struct ObjWriteResult {
 /// quads; a mesh whose quads are degenerate triangles is written as triangles,
 /// following `vertsPerFaceForExport`.
 [[nodiscard]] std::expected<ObjWriteResult, ObjWriteError> writeObj(
-    const std::filesystem::path& path, const core::Mesh& mesh, const ObjWriteOptions& options = {},
-    const core::Material* material = nullptr);
+    const std::filesystem::path& path, const foundation::MeshView& mesh,
+    const ObjWriteOptions& options = {}, const foundation::MaterialDesc* material = nullptr);
 
 }  // namespace mh::io

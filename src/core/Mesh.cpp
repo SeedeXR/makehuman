@@ -356,4 +356,17 @@ float Mesh::heightCm() const {
     return (bb->second.y - bb->first.y) * kDecimetresToCentimetres;
 }
 
+std::expected<Mesh, MeshError> Mesh::fromData(foundation::MeshData data) {
+    Mesh m(std::move(data.name), data.vertsPerPrimitive);
+    if (auto r = m.setCoords(std::move(data.coord)); !r) return std::unexpected(r.error());
+    if (!data.texco.empty()) {
+        if (auto r = m.setUVs(std::move(data.texco)); !r) return std::unexpected(r.error());
+    }
+    m.addFaceGroup("imported");
+    if (auto r = m.setFaces(std::move(data.fvert), std::move(data.fuvs), {}); !r) {
+        return std::unexpected(r.error());
+    }
+    return m;
+}
+
 }  // namespace mh::core

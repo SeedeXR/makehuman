@@ -467,4 +467,15 @@ std::expected<void, MaterialError> saveMaterial(const std::filesystem::path& pat
     return {};
 }
 
+foundation::MaterialDesc Material::desc() const {
+    return foundation::MaterialDesc{name,
+                                    ambient,
+                                    diffuse,
+                                    specular,
+                                    shininess,
+                                    opacity,
+                                    texture(TextureChannel::Diffuse).path,
+                                    texture(TextureChannel::NormalMap).path};
+}
+
 }  // namespace mh::core

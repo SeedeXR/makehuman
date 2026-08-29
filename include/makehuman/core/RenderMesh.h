@@ -3,6 +3,7 @@
 
 #include "makehuman/core/Mesh.h"
 #include "makehuman/core/Types.h"
+#include "makehuman/foundation/Geometry.h"
 
 #include <cstdint>
 #include <span>
@@ -56,6 +57,11 @@ public:
     /// two triangles (0,1,2) and (0,2,3) — Metal and every modern API dropped
     /// GL_QUADS, which the reference still submits (glmodule.py:66).
     [[nodiscard]] std::span<const uint32_t> index() const noexcept { return index_; }
+
+    /// A plain-data view for the format layer (see Mesh::view()).
+    [[nodiscard]] foundation::RenderView view() const noexcept {
+        return foundation::RenderView{coord_, texco_, vnorm_, vtang_, index_};
+    }
 
     /// Per face group: {first index, index count} into index(). Faces are
     /// sorted by group so each group is one contiguous draw range.

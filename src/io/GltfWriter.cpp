@@ -2,8 +2,6 @@
 #include "makehuman/io/GltfWriter.h"
 #include "makehuman/foundation/Chars.h"
 
-#include "makehuman/core/RenderMesh.h"
-
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -14,6 +12,11 @@
 #include <vector>
 
 namespace mh::io {
+
+using foundation::Vec2;
+using foundation::Vec3;
+using foundation::Vec4;
+
 namespace {
 
 // ---- glTF 2.0 / GLB constants, from the published specification ------------
@@ -103,16 +106,14 @@ std::string GltfWriteError::message() const {
 }
 
 std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::path& path,
-                                                        const core::Mesh& mesh,
+                                                        const foundation::RenderView& mesh,
                                                         const GltfWriteOptions& options,
-                                                        const core::Material* material) {
-    if (mesh.faceCount() == 0 || mesh.vertexCount() == 0) {
-        return std::unexpected(GltfWriteError{GltfWriteErrorKind::EmptyMesh, path.string(), {}});
-    }
-
-    // glTF wants one attribute per index and has no quad primitive; RenderMesh
-    // already produces exactly that (unweld + fan triangulation).
-    const core::RenderMesh rm = core::RenderMesh::build(mesh);
+                                                        const foundation::MaterialDesc* material) {
+    // glTF wants one attribute per index and has no quad primitive. The caller
+    // supplies geometry already in that shape: the unweld is a port of
+    // module3d.py and lives in the AGPL core, so running it here would drag
+    // this Apache-2.0 module back across the licence boundary.
+    const foundation::RenderView& rm = mesh;
     if (rm.vertexCount() == 0 || rm.indexCount() == 0) {
         return std::unexpected(GltfWriteError{GltfWriteErrorKind::EmptyMesh, path.string(), {}});
     }
@@ -126,7 +127,7 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
     // writeGlb still reported success. Reject at the boundary instead. Note
     // std::clamp does not filter NaN (both `nan < lo` and `hi < nan` are
     // false), so clamping the material later is not a substitute.
-    for (const auto& c : rm.coord()) {
+    for (const auto& c : rm.coord) {
         if (!std::isfinite(c.x) || !std::isfinite(c.y) || !std::isfinite(c.z)) {
             return std::unexpected(GltfWriteError{GltfWriteErrorKind::NonFiniteValue, path.string(),
                                                   "vertex position"});
@@ -148,24 +149,24 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
     float groundOffset = 0.0F;
     if (options.feetOnGround) {
         float lowest = std::numeric_limits<float>::infinity();
-        for (const core::Vec3& v : rm.coord())
+        for (const Vec3& v : rm.coord)
             lowest = std::min(lowest, v.y * scale);
         if (std::isfinite(lowest)) groundOffset = -lowest;
     }
 
-    const bool withNormals = options.writeNormals && rm.vnorm().size() == rm.vertexCount();
-    const bool withUVs     = options.writeUVs && rm.texco().size() == rm.vertexCount();
+    const bool withNormals = options.writeNormals && rm.vnorm.size() == rm.vertexCount();
+    const bool withUVs     = options.writeUVs && rm.texco.size() == rm.vertexCount();
 
     // ---- binary buffer ----------------------------------------------------
     std::vector<uint8_t> bin;
     bin.reserve(rm.vertexCount() * 32 + rm.indexCount() * 4);
 
-    core::Vec3 lo{std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(),
-                  std::numeric_limits<float>::infinity()};
-    core::Vec3 hi{-lo.x, -lo.y, -lo.z};
+    Vec3 lo{std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(),
+            std::numeric_limits<float>::infinity()};
+    Vec3 hi{-lo.x, -lo.y, -lo.z};
 
     const size_t posOffset = bin.size();
-    for (const core::Vec3& v : rm.coord()) {
+    for (const Vec3& v : rm.coord) {
         const float x = v.x * scale;
         const float y = v.y * scale + groundOffset;
         const float z = v.z * scale;
@@ -185,7 +186,7 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
     if (withNormals) {
         padTo4(bin);
         normOffset = bin.size();
-        for (const core::Vec3& n : rm.vnorm()) {
+        for (const Vec3& n : rm.vnorm) {
             appendFloat(bin, n.x);
             appendFloat(bin, n.y);
             appendFloat(bin, n.z);
@@ -197,7 +198,7 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
     if (withUVs) {
         padTo4(bin);
         uvOffset = bin.size();
-        for (const core::Vec2& t : rm.texco()) {
+        for (const Vec2& t : rm.texco) {
             // glTF's UV origin is top-left; OBJ/MakeHuman's is bottom-left, so V
             // is flipped. Getting this wrong mirrors every texture vertically.
             appendFloat(bin, t.x);
@@ -208,7 +209,7 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
 
     padTo4(bin);
     const size_t idxOffset = bin.size();
-    for (const uint32_t i : rm.index())
+    for (const uint32_t i : rm.index)
         appendU32(bin, i);
     const size_t idxBytes = bin.size() - idxOffset;
 

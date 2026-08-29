@@ -2,6 +2,7 @@
 #pragma once
 
 #include "makehuman/core/Types.h"
+#include "makehuman/foundation/Geometry.h"
 
 #include <array>
 #include <cstdint>
@@ -111,6 +112,9 @@ struct Material {
     /// (material.py:956-1016). **Sorted**, because the sorted list is the
     /// shader-variant cache key (:1015) and asset shaders depend on it.
     [[nodiscard]] std::vector<std::string> effectiveDefines() const;
+
+    /// The subset a format writer needs, as plain data (see Mesh::view()).
+    [[nodiscard]] foundation::MaterialDesc desc() const;
 };
 
 enum class MaterialErrorKind { NotFound, Unreadable, MalformedLine, Unwritable };

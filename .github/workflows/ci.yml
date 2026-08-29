@@ -144,6 +144,37 @@ jobs:
           fi
           exit 0
 
+      # The licence boundary, enforced rather than documented.
+      #
+      # LICENSING.md 4: an Apache-2.0 module may be depended ON by an AGPL one,
+      # never the reverse. mh_io violated that for months -- it was stamped
+      # Apache-2.0 while PUBLIC-linking mh::core (AGPL) and calling
+      # RenderMesh::build, a port of module3d.py. Its Apache stamp bought
+      # nobody anything: linking io pulled in AGPL regardless.
+      #
+      # The SPDX gate above cannot catch this. It checks that each file
+      # DECLARES a licence, not that the dependency direction is legal.
+      - name: Apache-2.0 modules do not depend on AGPL ones
+        run: |
+          fail=0
+          for permissive in io foundation; do
+            # Strip comments first: this file EXPLAINS why it must not link
+            # mh::core, and a naive grep flags that explanation. Same trap as
+            # the FBX gate below.
+            if sed 's/#.*//' "src/$permissive/CMakeLists.txt" \
+                 | grep -qE 'mh::core|mh_core'; then
+              echo "::error::src/$permissive links mh::core (AGPL); it is Apache-2.0"
+              fail=1
+            fi
+            hits=$(grep -rln 'makehuman/core/' "src/$permissive" "include/makehuman/$permissive" \
+                   2>/dev/null || true)
+            if [ -n "$hits" ]; then
+              echo "::error::Apache-2.0 module includes an AGPL header:"; echo "$hits"
+              fail=1
+            fi
+          done
+          exit $fail
+
       # <charconv> is confined to mh_foundation. Floating-point from_chars and
       # to_chars do not exist in every libc++ we build on (the macos-15
       # runner's Xcode 16.4 lacks them), so a direct call compiles locally and

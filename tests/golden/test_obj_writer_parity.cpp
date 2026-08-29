@@ -77,7 +77,7 @@ TEST_CASE("exported OBJ has the same element counts as the reference",
     REQUIRE(mesh.has_value());
 
     const auto out = tempObj("counts");
-    const auto r   = io::writeObj(out, *mesh);
+    const auto r   = io::writeObj(out, mesh->view());
     REQUIRE(r.has_value());
 
     const ObjCounts got  = scan(out);
@@ -105,7 +105,7 @@ TEST_CASE("exported OBJ face indices match the reference exactly", "[golden][par
     const auto mesh = core::loadObj(src);
     REQUIRE(mesh.has_value());
     const auto out = tempObj("faces");
-    REQUIRE(io::writeObj(out, *mesh).has_value());
+    REQUIRE(io::writeObj(out, mesh->view()).has_value());
 
     std::ifstream a(out);
     std::ifstream b(ref);
@@ -143,7 +143,7 @@ TEST_CASE("exported vertex positions match the reference", "[golden][parity][io]
     const auto mesh = core::loadObj(src);
     REQUIRE(mesh.has_value());
     const auto out = tempObj("verts");
-    REQUIRE(io::writeObj(out, *mesh).has_value());
+    REQUIRE(io::writeObj(out, mesh->view()).has_value());
 
     // Both are written at 4 decimals, so the text should agree exactly.
     const ObjCounts got  = scan(out);
@@ -164,7 +164,7 @@ TEST_CASE("an exported OBJ reads back identically", "[io][obj]") {
     REQUIRE(mesh.has_value());
 
     const auto out = tempObj("roundtrip");
-    REQUIRE(io::writeObj(out, *mesh).has_value());
+    REQUIRE(io::writeObj(out, mesh->view()).has_value());
 
     const auto back = core::loadObj(out);
     REQUIRE(back.has_value());
@@ -201,7 +201,7 @@ TEST_CASE("unit conversion scales the output", "[io][obj]") {
     io::ObjWriteOptions opt;
     opt.unit       = io::Unit::Centimeter;
     const auto out = tempObj("units");
-    REQUIRE(io::writeObj(out, m, opt).has_value());
+    REQUIRE(io::writeObj(out, m.view(), opt).has_value());
 
     const auto back = core::loadObj(out);
     REQUIRE(back.has_value());
@@ -222,7 +222,7 @@ TEST_CASE("feet on ground puts the lowest vertex at zero", "[io][obj]") {
     io::ObjWriteOptions opt;
     opt.feetOnGround = true;
     const auto out   = tempObj("ground");
-    REQUIRE(io::writeObj(out, m, opt).has_value());
+    REQUIRE(io::writeObj(out, m.view(), opt).has_value());
 
     const auto back = core::loadObj(out);
     REQUIRE(back.has_value());
@@ -247,7 +247,7 @@ TEST_CASE("a face mask omits the masked faces", "[io][obj]") {
     opt.faceMask = mask;
 
     const auto out = tempObj("mask");
-    const auto r   = io::writeObj(out, m, opt);
+    const auto r   = io::writeObj(out, m.view(), opt);
     REQUIRE(r.has_value());
     CHECK(r->faces == 1);
     CHECK(r->skipped == 1);
@@ -266,14 +266,14 @@ TEST_CASE("a wrong-sized face mask is rejected", "[io][obj]") {
     io::ObjWriteOptions opt;
     opt.faceMask = mask;
 
-    const auto r = io::writeObj(tempObj("badmask"), m, opt);
+    const auto r = io::writeObj(tempObj("badmask"), m.view(), opt);
     REQUIRE_FALSE(r.has_value());
     CHECK(r.error().kind == io::ObjWriteErrorKind::MaskSizeMismatch);
 }
 
 TEST_CASE("an empty mesh is rejected rather than writing a broken file", "[io][obj]") {
     const core::Mesh m;
-    const auto r = io::writeObj(tempObj("empty"), m);
+    const auto r = io::writeObj(tempObj("empty"), m.view());
     REQUIRE_FALSE(r.has_value());
     CHECK(r.error().kind == io::ObjWriteErrorKind::EmptyMesh);
     CHECK_FALSE(r.error().message().empty());

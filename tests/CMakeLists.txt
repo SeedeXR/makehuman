@@ -28,10 +28,11 @@ add_executable(mh_tests
     regression/test_review_findings.cpp
     regression/test_io_review_findings.cpp)
 
+# Both are listed because mh::io no longer PUBLIC-links mh::core -- that
+# inversion was the licence bug (LICENSING.md 4). The tests legitimately use
+# both sides of the boundary: core to build a mesh, io to write it.
 target_link_libraries(mh_tests
-    # mh::io PUBLIC-links mh::core, so listing both makes the linker see
-    # libmh_core.a twice and warn. Depend on io and inherit core.
-    PRIVATE mh::io Catch2::Catch2WithMain mh::warnings mh::sanitize)
+    PRIVATE mh::core mh::io Catch2::Catch2WithMain mh::warnings mh::sanitize)
 
 target_compile_definitions(mh_tests PRIVATE
     MH_DATA_DIR="${MH_DATA_DIR}"

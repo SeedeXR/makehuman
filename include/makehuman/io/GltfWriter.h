@@ -7,8 +7,8 @@
 // independent library, not by parity.
 #pragma once
 
-#include "makehuman/core/Material.h"
-#include "makehuman/core/Mesh.h"
+#include "makehuman/foundation/Geometry.h"
+
 #include "makehuman/io/ObjWriter.h"  // Unit
 
 #include <cstdint>
@@ -63,7 +63,7 @@ struct GltfWriteResult {
 /// index and has no quad primitive, whereas MakeHuman stores quads with
 /// independent position and UV index spaces.
 [[nodiscard]] std::expected<GltfWriteResult, GltfWriteError> writeGlb(
-    const std::filesystem::path& path, const core::Mesh& mesh, const GltfWriteOptions& options = {},
-    const core::Material* material = nullptr);
+    const std::filesystem::path& path, const foundation::RenderView& mesh,
+    const GltfWriteOptions& options = {}, const foundation::MaterialDesc* material = nullptr);
 
 }  // namespace mh::io

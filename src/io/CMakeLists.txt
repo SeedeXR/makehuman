@@ -18,8 +18,14 @@ target_include_directories(mh_io PUBLIC
 # assimp (BSD-3-Clause) backs the multi-format path. It is licence-compatible
 # with both AGPL and Apache-2.0, unlike the Autodesk FBX SDK -- see the note at
 # the top of include/makehuman/io/SceneIO.h and LICENSING.md section 5.
+# mh_io links mh::foundation (Apache-2.0) and NOTHING of ours besides.
+#
+# It used to PUBLIC-link mh::core, which is AGPL -- so its Apache-2.0 stamp
+# bought nobody anything: anyone linking io pulled in AGPL regardless. The
+# boundary is now real, and CMake is what enforces it: adding mh::core here
+# would make the io headers compile again and silently re-break it, so don't.
 target_link_libraries(mh_io
-    PUBLIC  mh::core mh::foundation
+    PUBLIC  mh::foundation
     PRIVATE mh::warnings mh::sanitize assimp::assimp)
 
 set_target_properties(mh_io PROPERTIES

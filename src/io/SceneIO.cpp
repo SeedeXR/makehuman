@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "makehuman/io/SceneIO.h"
 
-#include "makehuman/core/RenderMesh.h"
-
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 #include <assimp/Exporter.hpp>
@@ -15,6 +13,11 @@
 #include <memory>
 
 namespace mh::io {
+
+using foundation::Vec2;
+using foundation::Vec3;
+using foundation::Vec4;
+
 namespace {
 
 /// assimp takes ownership of everything hung off an aiScene and frees it with
@@ -64,16 +67,13 @@ std::string SceneIoError::message() const {
     return m;
 }
 
-std::expected<SceneExportResult, SceneIoError> exportScene(const std::filesystem::path& path,
-                                                           const core::Mesh& mesh,
-                                                           SceneFormat format,
-                                                           const SceneExportOptions& options,
-                                                           const core::Material* material) {
-    if (mesh.faceCount() == 0 || mesh.vertexCount() == 0) {
-        return std::unexpected(SceneIoError{SceneIoErrorKind::EmptyMesh, path.string(), {}});
-    }
-
-    const core::RenderMesh rm = core::RenderMesh::build(mesh);
+std::expected<SceneExportResult, SceneIoError> exportScene(
+    const std::filesystem::path& path, const foundation::RenderView& mesh, SceneFormat format,
+    const SceneExportOptions& options, const foundation::MaterialDesc* material) {
+    // The caller supplies render-ready geometry: the unweld is a port of
+    // module3d.py and lives in the AGPL core, so running it here would drag
+    // this Apache-2.0 module back across the licence boundary.
+    const foundation::RenderView& rm = mesh;
     if (rm.vertexCount() == 0 || rm.indexCount() == 0) {
         return std::unexpected(SceneIoError{SceneIoErrorKind::EmptyMesh, path.string(), {}});
     }
@@ -83,13 +83,13 @@ std::expected<SceneExportResult, SceneIoError> exportScene(const std::filesystem
     float groundOffset = 0.0F;
     if (options.feetOnGround) {
         float lowest = std::numeric_limits<float>::infinity();
-        for (const core::Vec3& v : rm.coord())
+        for (const Vec3& v : rm.coord)
             lowest = std::min(lowest, v.y * scale);
         if (std::isfinite(lowest)) groundOffset = -lowest;
     }
 
-    const bool withNormals = options.writeNormals && rm.vnorm().size() == rm.vertexCount();
-    const bool withUVs     = options.writeUVs && rm.texco().size() == rm.vertexCount();
+    const bool withNormals = options.writeNormals && rm.vnorm.size() == rm.vertexCount();
+    const bool withUVs     = options.writeUVs && rm.texco.size() == rm.vertexCount();
 
     // aiScene owns everything below; it is released by the unique_ptr on any
     // early return and handed to the exporter otherwise.
@@ -131,15 +131,15 @@ std::expected<SceneExportResult, SceneIoError> exportScene(const std::filesystem
     am->mVertices    = allocArray<aiVector3D>(rm.vertexCount());
 
     for (size_t i = 0; i < rm.vertexCount(); ++i) {
-        const core::Vec3& v = rm.coord()[i];
-        am->mVertices[i]    = aiVector3D(v.x * scale, v.y * scale + groundOffset, v.z * scale);
+        const Vec3& v    = rm.coord[i];
+        am->mVertices[i] = aiVector3D(v.x * scale, v.y * scale + groundOffset, v.z * scale);
     }
 
     if (withNormals) {
         am->mNormals = allocArray<aiVector3D>(rm.vertexCount());
         for (size_t i = 0; i < rm.vertexCount(); ++i) {
-            const core::Vec3& n = rm.vnorm()[i];
-            am->mNormals[i]     = aiVector3D(n.x, n.y, n.z);
+            const Vec3& n   = rm.vnorm[i];
+            am->mNormals[i] = aiVector3D(n.x, n.y, n.z);
         }
     }
 
@@ -147,7 +147,7 @@ std::expected<SceneExportResult, SceneIoError> exportScene(const std::filesystem
         am->mNumUVComponents[0] = 2;
         am->mTextureCoords[0]   = allocArray<aiVector3D>(rm.vertexCount());
         for (size_t i = 0; i < rm.vertexCount(); ++i) {
-            const core::Vec2& t      = rm.texco()[i];
+            const Vec2& t            = rm.texco[i];
             am->mTextureCoords[0][i] = aiVector3D(t.x, t.y, 0.0F);
         }
     }
@@ -159,9 +159,9 @@ std::expected<SceneExportResult, SceneIoError> exportScene(const std::filesystem
         aiFace& face     = am->mFaces[f];
         face.mNumIndices = 3;
         face.mIndices    = allocArray<unsigned>(3);
-        face.mIndices[0] = rm.index()[f * 3 + 0];
-        face.mIndices[1] = rm.index()[f * 3 + 1];
-        face.mIndices[2] = rm.index()[f * 3 + 2];
+        face.mIndices[0] = rm.index[f * 3 + 0];
+        face.mIndices[1] = rm.index[f * 3 + 1];
+        face.mIndices[2] = rm.index[f * 3 + 2];
     }
 
     scene->mRootNode->mNumMeshes = 1;
@@ -220,64 +220,51 @@ std::expected<ImportedMesh, SceneIoError> importMesh(const std::filesystem::path
     }
 
     ImportedMesh out;
-    out.meshCount = scene->mNumMeshes;
-    out.mesh      = core::Mesh(path.stem().string(), 3);  // triangulated on import
+    out.meshCount              = scene->mNumMeshes;
+    out.mesh.name              = path.stem().string();
+    out.mesh.vertsPerPrimitive = 3;  // triangulated on import
 
     // Import is a trust boundary. NaN and infinity survive assimp's validator
-    // (a NaN ASCII STL imports "successfully"), and once inside a Mesh they
+    // (a NaN ASCII STL imports "successfully"), and once inside a mesh they
     // poison bounding boxes, normals and every exporter downstream.
-    std::vector<core::Vec3> coords(am->mNumVertices);
+    out.mesh.coord.resize(am->mNumVertices);
     for (unsigned i = 0; i < am->mNumVertices; ++i) {
         const auto& v = am->mVertices[i];
         if (!std::isfinite(v.x) || !std::isfinite(v.y) || !std::isfinite(v.z)) {
             return std::unexpected(SceneIoError{SceneIoErrorKind::ImportFailed, path.string(),
                                                 "file contains a non-finite vertex coordinate"});
         }
-        coords[i] = core::Vec3{v.x, v.y, v.z};
-    }
-    if (!out.mesh.setCoords(std::move(coords))) {
-        return std::unexpected(
-            SceneIoError{SceneIoErrorKind::ImportFailed, path.string(), "vertex array rejected"});
+        out.mesh.coord[i] = Vec3{v.x, v.y, v.z};
     }
 
     const bool hasUV = am->HasTextureCoords(0);
     if (hasUV) {
-        std::vector<core::Vec2> uvs(am->mNumVertices);
+        out.mesh.texco.resize(am->mNumVertices);
         for (unsigned i = 0; i < am->mNumVertices; ++i) {
-            uvs[i] = core::Vec2{am->mTextureCoords[0][i].x, am->mTextureCoords[0][i].y};
-        }
-        if (!out.mesh.setUVs(std::move(uvs))) {
-            return std::unexpected(
-                SceneIoError{SceneIoErrorKind::ImportFailed, path.string(), "uv array rejected"});
+            out.mesh.texco[i] = Vec2{am->mTextureCoords[0][i].x, am->mTextureCoords[0][i].y};
         }
     }
 
-    out.mesh.addFaceGroup(am->mName.length > 0 ? std::string(am->mName.C_Str()) : "imported");
-
-    std::vector<uint32_t> fvert;
-    std::vector<uint32_t> fuvs;
-    std::vector<uint16_t> group;
-    fvert.reserve(static_cast<size_t>(am->mNumFaces) * 3);
+    out.mesh.fvert.reserve(static_cast<size_t>(am->mNumFaces) * 3);
     for (unsigned f = 0; f < am->mNumFaces; ++f) {
         const aiFace& face = am->mFaces[f];
         if (face.mNumIndices != 3) continue;  // Triangulate should prevent this
         for (unsigned c = 0; c < 3; ++c) {
-            fvert.push_back(face.mIndices[c]);
-            if (hasUV) fuvs.push_back(face.mIndices[c]);
+            // MeshData is unvalidated by contract, but an index past the end is
+            // a corrupt file, not a caller error -- report it here rather than
+            // hand back something whose only safe consumer is Mesh::fromData.
+            if (face.mIndices[c] >= am->mNumVertices) {
+                return std::unexpected(SceneIoError{SceneIoErrorKind::ImportFailed, path.string(),
+                                                    "face index out of range"});
+            }
+            out.mesh.fvert.push_back(face.mIndices[c]);
+            if (hasUV) out.mesh.fuvs.push_back(face.mIndices[c]);
         }
-        group.push_back(0);
     }
-    if (fvert.empty()) {
+    if (out.mesh.fvert.empty()) {
         return std::unexpected(
             SceneIoError{SceneIoErrorKind::ImportFailed, path.string(), "no triangular faces"});
     }
-
-    if (auto r = out.mesh.setFaces(std::move(fvert), std::move(fuvs), std::move(group)); !r) {
-        return std::unexpected(
-            SceneIoError{SceneIoErrorKind::ImportFailed, path.string(), "face arrays rejected"});
-    }
-    out.mesh.buildAdjacency();
-    out.mesh.calcNormals();
 
     return out;
 }

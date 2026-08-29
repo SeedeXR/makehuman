@@ -9,6 +9,11 @@
 #include <limits>
 
 namespace mh::io {
+
+using foundation::Vec2;
+using foundation::Vec3;
+using foundation::Vec4;
+
 namespace {
 
 /// Fixed-point formatting, locale-independently. OBJ is an ASCII format read
@@ -66,9 +71,9 @@ std::string ObjWriteError::message() const {
 }
 
 std::expected<ObjWriteResult, ObjWriteError> writeObj(const std::filesystem::path& path,
-                                                      const core::Mesh& mesh,
+                                                      const foundation::MeshView& mesh,
                                                       const ObjWriteOptions& options,
-                                                      const core::Material* material) {
+                                                      const foundation::MaterialDesc* material) {
     const size_t nFaces = mesh.faceCount();
     if (nFaces == 0 || mesh.vertexCount() == 0) {
         return std::unexpected(ObjWriteError{ObjWriteErrorKind::EmptyMesh, path.string(), {}});
@@ -86,13 +91,13 @@ std::expected<ObjWriteResult, ObjWriteError> writeObj(const std::filesystem::pat
     float groundOffset = 0.0F;
     if (options.feetOnGround) {
         float lowest = std::numeric_limits<float>::infinity();
-        for (const core::Vec3& v : mesh.coord())
+        for (const Vec3& v : mesh.coord)
             lowest = std::min(lowest, v.y * scale);
         if (std::isfinite(lowest)) groundOffset = -lowest;
     }
 
     const bool withUVs     = options.writeUVs && mesh.hasUV();
-    const bool withNormals = options.writeNormals && mesh.vnorm().size() == mesh.vertexCount();
+    const bool withNormals = options.writeNormals && mesh.vnorm.size() == mesh.vertexCount();
 
     std::ofstream out(path);
     if (!out) {
@@ -118,7 +123,7 @@ std::expected<ObjWriteResult, ObjWriteError> writeObj(const std::filesystem::pat
         buf += '\n';
     }
 
-    for (const core::Vec3& v : mesh.coord()) {
+    for (const Vec3& v : mesh.coord) {
         buf += "v ";
         appendFixed(buf, v.x * scale, 4);
         buf += ' ';
@@ -130,7 +135,7 @@ std::expected<ObjWriteResult, ObjWriteError> writeObj(const std::filesystem::pat
     }
 
     if (withNormals) {
-        for (const core::Vec3& n : mesh.vnorm()) {
+        for (const Vec3& n : mesh.vnorm) {
             buf += "vn ";
             appendFixed(buf, n.x, 4);
             buf += ' ';
@@ -142,7 +147,7 @@ std::expected<ObjWriteResult, ObjWriteError> writeObj(const std::filesystem::pat
     }
 
     if (withUVs) {
-        for (const core::Vec2& t : mesh.texco()) {
+        for (const Vec2& t : mesh.texco) {
             buf += "vt ";
             appendFixed(buf, t.x, 6);
             buf += ' ';
@@ -162,8 +167,8 @@ std::expected<ObjWriteResult, ObjWriteError> writeObj(const std::filesystem::pat
     buf += '\n';
 
     // Indices are 1-based in OBJ.
-    const size_t vpp     = mesh.vertsPerPrimitive();
-    const size_t corners = mesh.vertsPerFaceForExport();
+    const size_t vpp     = mesh.vertsPerPrimitive;
+    const size_t corners = mesh.vertsPerFaceForExport;
 
     for (size_t f = 0; f < nFaces; ++f) {
         if (!options.faceMask.empty() && options.faceMask[f] == 0) {
@@ -172,12 +177,12 @@ std::expected<ObjWriteResult, ObjWriteError> writeObj(const std::filesystem::pat
         }
         buf += 'f';
         for (size_t c = 0; c < corners; ++c) {
-            const uint32_t v = mesh.fvert()[f * vpp + c] + 1;
+            const uint32_t v = mesh.fvert[f * vpp + c] + 1;
             buf += ' ';
             buf += std::to_string(v);
             if (withUVs) {
                 buf += '/';
-                buf += std::to_string(mesh.fuvs()[f * vpp + c] + 1);
+                buf += std::to_string(mesh.fuvs[f * vpp + c] + 1);
                 if (withNormals) {
                     buf += '/';
                     buf += std::to_string(v);
@@ -220,16 +225,16 @@ std::expected<ObjWriteResult, ObjWriteError> writeObj(const std::filesystem::pat
             mtl << "d " << fixed(material->opacity, 6) << '\n';
             mtl << "illum 2\n";
 
-            const auto& diffuseTex = material->texture(core::TextureChannel::Diffuse);
-            if (diffuseTex.present()) {
-                mtl << "map_Kd " << diffuseTex.path.filename().string() << '\n';
+            const auto& diffuseTex = material->diffuseTexture;
+            if (!diffuseTex.empty()) {
+                mtl << "map_Kd " << diffuseTex.filename().string() << '\n';
             }
             // The reference copies a normal map into textures/ and then never
             // references it (wavefront.py:277-280, map_Disp commented out).
             // Emitting map_Bump is strictly more useful and costs nothing.
-            const auto& normalTex = material->texture(core::TextureChannel::NormalMap);
-            if (normalTex.present()) {
-                mtl << "map_Bump " << normalTex.path.filename().string() << '\n';
+            const auto& normalTex = material->normalTexture;
+            if (!normalTex.empty()) {
+                mtl << "map_Bump " << normalTex.filename().string() << '\n';
             }
             mtl.close();
             if (!mtl) {

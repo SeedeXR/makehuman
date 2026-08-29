@@ -8,6 +8,7 @@
 #include "makehuman/core/Material.h"
 #include "makehuman/core/Mesh.h"
 #include "makehuman/core/Proxy.h"
+#include "makehuman/core/RenderMesh.h"
 #include "makehuman/io/GltfWriter.h"
 #include "makehuman/io/ObjWriter.h"
 #include "makehuman/io/SceneIO.h"
@@ -253,8 +254,8 @@ TEST_CASE("writers do not honour the decimal-comma locale", "[regression][io][lo
     const auto obj  = dir / "mh_locale_test.obj";
     const auto glb  = dir / "mh_locale_test.glb";
 
-    const auto o = mh::io::writeObj(obj, mesh, {});
-    const auto g = mh::io::writeGlb(glb, mesh, {});
+    const auto o = mh::io::writeObj(obj, mesh.view(), {});
+    const auto g = mh::io::writeGlb(glb, mh::core::RenderMesh::build(mesh).view(), {});
 
     std::locale::global(saved);  // restore before asserting, so a failure cannot leak it
 
@@ -293,8 +294,9 @@ TEST_CASE("an unwritable .mtl is reported", "[regression][io]") {
 
     const auto mesh = triangleMesh();
     mh::core::Material mat;
-    mat.name     = "m";
-    const auto r = mh::io::writeObj(dir / "blocked.obj", mesh, {}, &mat);
+    mat.name           = "m";
+    const auto matDesc = mat.desc();
+    const auto r       = mh::io::writeObj(dir / "blocked.obj", mesh.view(), {}, &matDesc);
 
     CHECK_FALSE(r.has_value());  // used to return success with wroteMtl == false
     std::filesystem::remove_all(dir, ec);
@@ -309,7 +311,7 @@ TEST_CASE("non-finite geometry is refused rather than written", "[regression][io
     REQUIRE(m.setFaces({0, 1, 2, 3}, {}, {0}).has_value());
 
     const auto glb = std::filesystem::temp_directory_path() / "mh_nonfinite.glb";
-    const auto r   = mh::io::writeGlb(glb, m, {});
+    const auto r   = mh::io::writeGlb(glb, mh::core::RenderMesh::build(m).view(), {});
     REQUIRE_FALSE(r.has_value());
     CHECK(r.error().kind == mh::io::GltfWriteErrorKind::NonFiniteValue);
 
@@ -333,7 +335,7 @@ TEST_CASE("a non-finite coordinate is refused on import", "[regression][io][scen
     const auto r = mh::io::importMesh(stl.path());
     if (r.has_value()) {
         // assimp may reject it first; either way no NaN may reach the Mesh.
-        for (const auto& c : r->mesh.coord()) {
+        for (const auto& c : r->mesh.coord) {
             CHECK(std::isfinite(c.x));
             CHECK(std::isfinite(c.y));
             CHECK(std::isfinite(c.z));

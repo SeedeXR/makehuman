@@ -10,6 +10,7 @@
 //      authors; if it agrees on the counts and bounds, the file is not merely
 //      self-consistent.
 
+#include "makehuman/core/RenderMesh.h"
 #include "makehuman/io/GltfWriter.h"
 
 #include "makehuman/core/ObjReader.h"
@@ -72,7 +73,7 @@ core::Mesh quad() {
 TEST_CASE("the GLB container conforms to the spec", "[io][gltf]") {
     const auto out = tempGlb("header");
     const auto m   = quad();
-    REQUIRE(io::writeGlb(out, m).has_value());
+    REQUIRE(io::writeGlb(out, core::RenderMesh::build(m).view()).has_value());
 
     const auto b = readFile(out);
     REQUIRE(b.size() >= 28);
@@ -105,7 +106,7 @@ TEST_CASE("the GLB container conforms to the spec", "[io][gltf]") {
 TEST_CASE("the JSON declares the accessors glTF requires", "[io][gltf]") {
     const auto out = tempGlb("json");
     const auto m   = quad();
-    REQUIRE(io::writeGlb(out, m).has_value());
+    REQUIRE(io::writeGlb(out, core::RenderMesh::build(m).view()).has_value());
 
     const auto b           = readFile(out);
     const uint32_t jsonLen = readU32(b, 12);
@@ -130,7 +131,7 @@ TEST_CASE("quads are triangulated for export", "[io][gltf]") {
     // glTF has no quad primitive.
     const auto out = tempGlb("tris");
     const auto m   = quad();
-    const auto r   = io::writeGlb(out, m);
+    const auto r   = io::writeGlb(out, core::RenderMesh::build(m).view());
     REQUIRE(r.has_value());
     CHECK(r->triangles == 2);  // one quad -> two triangles
     CHECK(r->vertices == 4);
@@ -150,7 +151,7 @@ TEST_CASE("the default unit is metres, not decimetres", "[io][gltf]") {
 
 TEST_CASE("an empty mesh is rejected", "[io][gltf]") {
     const core::Mesh m;
-    const auto r = io::writeGlb(tempGlb("empty"), m);
+    const auto r = io::writeGlb(tempGlb("empty"), core::RenderMesh::build(m).view());
     REQUIRE_FALSE(r.has_value());
     CHECK(r.error().kind == io::GltfWriteErrorKind::EmptyMesh);
     CHECK_FALSE(r.error().message().empty());
@@ -165,7 +166,7 @@ TEST_CASE("an independent library reads the exported GLB", "[io][gltf][assimp]")
     REQUIRE(mesh.has_value());
 
     const auto out = tempGlb("assimp");
-    const auto r   = io::writeGlb(out, *mesh);
+    const auto r   = io::writeGlb(out, core::RenderMesh::build(*mesh).view());
     REQUIRE(r.has_value());
 
     Assimp::Importer importer;
@@ -201,7 +202,7 @@ TEST_CASE("the exported model is metre-scaled and human-sized", "[io][gltf][assi
     const auto mesh = core::loadObj(src);
     REQUIRE(mesh.has_value());
     const auto out = tempGlb("scale");
-    REQUIRE(io::writeGlb(out, *mesh).has_value());
+    REQUIRE(io::writeGlb(out, core::RenderMesh::build(*mesh).view()).has_value());
 
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(out.string(), 0);
@@ -232,7 +233,7 @@ TEST_CASE("feet on ground places the model at y = 0", "[io][gltf][assimp]") {
     io::GltfWriteOptions opt;
     opt.feetOnGround = true;
     const auto out   = tempGlb("ground");
-    REQUIRE(io::writeGlb(out, *mesh, opt).has_value());
+    REQUIRE(io::writeGlb(out, core::RenderMesh::build(*mesh).view(), opt).has_value());
 
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(out.string(), 0);

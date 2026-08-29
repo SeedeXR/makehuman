@@ -2,6 +2,7 @@
 #pragma once
 
 #include "makehuman/core/Types.h"
+#include "makehuman/foundation/Geometry.h"
 
 #include <cstdint>
 #include <expected>
@@ -101,6 +102,30 @@ public:
     [[nodiscard]] std::span<const uint16_t> group() const noexcept { return group_; }
 
     [[nodiscard]] const std::vector<FaceGroup>& faceGroups() const noexcept { return faceGroups_; }
+
+    /// A plain-data view for the format layer.
+    ///
+    /// `mh_io` is Apache-2.0 and must not link this AGPL module, so it takes
+    /// `foundation::MeshView` rather than a `Mesh`. This is the one place that
+    /// bridges the two, and it goes in the AGPL direction, which is legal.
+    [[nodiscard]] foundation::MeshView view() const noexcept {
+        return foundation::MeshView{coord_,
+                                    texco_,
+                                    vnorm_,
+                                    fvert_,
+                                    fuvs_,
+                                    group_,
+                                    faceGroups_,
+                                    vertsPerPrimitive_,
+                                    vertsPerFaceForExport()};
+    }
+
+    /// Adopts geometry produced by an importer, validating every index.
+    ///
+    /// `foundation::MeshData` is unvalidated by construction -- it comes from a
+    /// file. Routing it through setCoords/setUVs/setFaces means an imported
+    /// mesh gets exactly the same checks as one built in process.
+    [[nodiscard]] static std::expected<Mesh, MeshError> fromData(foundation::MeshData data);
 
     /// Face visibility derived from vertex visibility, 1 = visible.
     ///

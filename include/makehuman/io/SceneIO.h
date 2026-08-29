@@ -21,8 +21,8 @@
 // See LICENSING.md section 5.
 #pragma once
 
-#include "makehuman/core/Material.h"
-#include "makehuman/core/Mesh.h"
+#include "makehuman/foundation/Geometry.h"
+
 #include "makehuman/io/ObjWriter.h"  // Unit
 
 #include <cstdint>
@@ -95,11 +95,11 @@ struct SceneExportResult {
 /// The mesh is unwelded and triangulated first, since every format here wants
 /// one attribute per index and none of them has a quad primitive we rely on.
 [[nodiscard]] std::expected<SceneExportResult, SceneIoError> exportScene(
-    const std::filesystem::path& path, const core::Mesh& mesh, SceneFormat format,
-    const SceneExportOptions& options = {}, const core::Material* material = nullptr);
+    const std::filesystem::path& path, const foundation::RenderView& mesh, SceneFormat format,
+    const SceneExportOptions& options = {}, const foundation::MaterialDesc* material = nullptr);
 
 struct ImportedMesh {
-    core::Mesh mesh;
+    foundation::MeshData mesh;
     size_t meshCount{};  ///< meshes in the file; only the first is returned
 };
 

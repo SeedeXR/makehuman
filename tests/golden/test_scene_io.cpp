@@ -5,6 +5,7 @@
 // blendshapes, and has a verified 10x unit bug; this path writes 7500 (2016)
 // and round-trips.
 
+#include "makehuman/core/RenderMesh.h"
 #include "makehuman/io/SceneIO.h"
 
 #include "makehuman/core/ObjReader.h"
@@ -56,7 +57,8 @@ TEST_CASE("FBX export is BINARY, version 7500", "[io][fbx]") {
 
     const core::Mesh m = baseMeshOrSkip();
     const auto out     = tempFile("bin", ".fbx");
-    const auto r       = io::exportScene(out, m, io::SceneFormat::FbxBinary);
+    const auto r =
+        io::exportScene(out, core::RenderMesh::build(m).view(), io::SceneFormat::FbxBinary);
     REQUIRE(r.has_value());
     CHECK(r->triangles == 36972);
 
@@ -81,7 +83,8 @@ TEST_CASE("an exported FBX imports back with its geometry intact", "[io][fbx]") 
 
     const core::Mesh m = baseMeshOrSkip();
     const auto out     = tempFile("roundtrip", ".fbx");
-    const auto w       = io::exportScene(out, m, io::SceneFormat::FbxBinary);
+    const auto w =
+        io::exportScene(out, core::RenderMesh::build(m).view(), io::SceneFormat::FbxBinary);
     REQUIRE(w.has_value());
 
     const auto back = io::importMesh(out);
@@ -99,7 +102,7 @@ TEST_CASE("an exported FBX imports back with its geometry intact", "[io][fbx]") 
     CHECK(back->meshCount == 1);
 
     // Imported meshes are triangulated.
-    CHECK(back->mesh.vertsPerPrimitive() == 3);
+    CHECK(back->mesh.vertsPerPrimitive == 3);
 
     std::error_code ec;
     std::filesystem::remove(out, ec);
@@ -113,7 +116,8 @@ TEST_CASE("ASCII FBX is distinguishable from binary", "[io][fbx]") {
     m.calcNormals();
 
     const auto out = tempFile("ascii", ".fbx");
-    REQUIRE(io::exportScene(out, m, io::SceneFormat::FbxAscii).has_value());
+    REQUIRE(io::exportScene(out, core::RenderMesh::build(m).view(), io::SceneFormat::FbxAscii)
+                .has_value());
 
     const auto b = head(out, 32);
     const std::string magic(reinterpret_cast<const char*>(b.data()),
@@ -140,7 +144,7 @@ TEST_CASE("every declared format exports and is non-empty", "[io][scene]") {
     for (const io::SceneFormat f : formats) {
         INFO("format: " << io::formatId(f));
         const auto out = tempFile("all", io::formatExtension(f));
-        const auto r   = io::exportScene(out, m, f);
+        const auto r   = io::exportScene(out, core::RenderMesh::build(m).view(), f);
         REQUIRE(r.has_value());
         CHECK(r->triangles == 2);
         CHECK(r->fileBytes > 0);
@@ -171,7 +175,7 @@ TEST_CASE("import reads the formats we export", "[io][scene]") {
     for (const Case& c : cases) {
         INFO("format: " << io::formatId(c.format));
         const auto out = tempFile("imp", c.ext);
-        REQUIRE(io::exportScene(out, m, c.format).has_value());
+        REQUIRE(io::exportScene(out, core::RenderMesh::build(m).view(), c.format).has_value());
 
         const auto back = io::importMesh(out);
         REQUIRE(back.has_value());
@@ -191,7 +195,7 @@ TEST_CASE("our own GLB imports through the multi-format path", "[io][scene][gltf
 
     const core::Mesh m = baseMeshOrSkip();
     const auto glb     = tempFile("ours", ".glb");
-    REQUIRE(io::writeGlb(glb, m).has_value());
+    REQUIRE(io::writeGlb(glb, core::RenderMesh::build(m).view()).has_value());
 
     const auto back = io::importMesh(glb);
     REQUIRE(back.has_value());
@@ -212,13 +216,14 @@ TEST_CASE("unit conversion reaches the exported file", "[io][scene]") {
     CHECK(opt.unit == io::Unit::Centimeter);
 
     const auto out = tempFile("units", ".fbx");
-    REQUIRE(io::exportScene(out, m, io::SceneFormat::FbxBinary, opt).has_value());
+    REQUIRE(io::exportScene(out, core::RenderMesh::build(m).view(), io::SceneFormat::FbxBinary, opt)
+                .has_value());
 
     const auto back = io::importMesh(out);
     REQUIRE(back.has_value());
 
     float lo = 1e30F, hi = -1e30F;
-    for (const auto& v : back->mesh.coord()) {
+    for (const auto& v : back->mesh.coord) {
         lo = std::min(lo, v.y);
         hi = std::max(hi, v.y);
     }
@@ -233,7 +238,8 @@ TEST_CASE("unit conversion reaches the exported file", "[io][scene]") {
 
 TEST_CASE("an empty mesh is rejected", "[io][scene]") {
     const core::Mesh m;
-    const auto r = io::exportScene(tempFile("empty", ".fbx"), m, io::SceneFormat::FbxBinary);
+    const auto r = io::exportScene(tempFile("empty", ".fbx"), core::RenderMesh::build(m).view(),
+                                   io::SceneFormat::FbxBinary);
     REQUIRE_FALSE(r.has_value());
     CHECK(r.error().kind == io::SceneIoErrorKind::EmptyMesh);
 }

@@ -120,62 +120,36 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [ ] **Parity fixtures**: default stack, extreme macro combinations, every modifier at ±1
 - [ ] `data/modifiers/*.json` loader
 
-## OPEN ISSUE — the licence boundary is inverted in practice
+## RESOLVED — the licence boundary (2026-08-29)
 
-`src/io/CMakeLists.txt` says, three lines above the offending call:
+`mh_io` was stamped Apache-2.0 while `PUBLIC`-linking `mh::core` (AGPL) and
+calling `core::RenderMesh::build`, a port of `module3d.py`. Its Apache stamp
+bought nobody anything: linking io pulled in AGPL regardless.
 
-> It may be depended on by AGPL modules; **it must never depend on one.**
+**Fixed.** `mh_io` now links `mh::foundation` and nothing else of ours.
+Verified, not asserted: `nm -u libmh_io.a | c++filt | grep mh::core` returns
+**0 undefined symbols**, and CI gates both the CMake link and any
+`makehuman/core/` include from a permissive module.
 
-It then does exactly that: `target_link_libraries(mh_io PUBLIC mh::core)`, and
-every `include/makehuman/io/*.h` includes `makehuman/core/Mesh.h` and
-`Material.h`. `mh_io` is stamped Apache-2.0 but cannot be used without linking
-AGPL code, so **its Apache-2.0 stamp buys nobody anything today** — the
-combined work is AGPL either way.
+The audit determined what could and could not move:
 
-This matters because separate reusability of the io layer is a stated project
-objective (`project_context.md` §4.2), and CI does not catch it: the SPDX gate
-checks that each file *declares* a licence, not that the dependency direction
-is legal.
-
-Three ways out; this is a decision, not a bug to quietly patch:
-
-1. **Move the shared data types down** — `Mesh`, `Material`, `Vec3` into
-   `mh_foundation` (Apache-2.0). They are plain data with no ported algorithms,
-   so this is defensible, but each type must be audited for whether it was
-   *translated* from the AGPL reference.
-2. **Relicense `mh_io` as AGPL-3.0.** Honest and free, and gives up the
-   separate-reuse objective.
-3. **Invert the interface** — `mh_io` defines its own geometry structs and
-   `mh_core` adapts to them. Most work, cleanest boundary.
-
-`mh_foundation` (added for the charconv fix) is the first piece of (1) and is
-correctly Apache-2.0 depending on nothing of ours.
-
-**Owner decision (2026-08-29): option 1 — move shared types down.**
-
-**The audit changes what option 1 can reach.** Measured by counting `file.py:line`
-citations, which are this project's own record of where code was translated
-from:
-
-| Type | Citations | Verdict |
+| Type | Citations | Outcome |
 |---|---|---|
-| `Types.h` (Vec2/3/4, FaceGroup, unit constant) | 3 | **Moved.** All three record *facts* checked against the reference — a unit conversion, a coordinate convention, what a face group holds — not translated expression. `Vec3` with `+ - * dot cross` is nobody's authorship. |
-| `Mesh` | 14 (.h) + 9 (.cpp) | **Cannot move.** `calcVertexNormals`, `calcVertexTangents`, `vertsPerFaceForExport`, the dual index space and the degenerate-quad convention are all ports of `module3d.py`. |
-| `Material` | 7 (.h) + 12 (.cpp) | **Cannot move.** The parser is a port of `material.py`. |
+| `Types.h` | 3 (facts, not expression) | moved to `mh_foundation` |
+| `Mesh` | 14 + 9 | stayed AGPL; exposes `view()` |
+| `Material` | 7 + 12 | stayed AGPL; exposes `desc()` |
 
-Moving `Mesh`/`Material` wholesale would put translated AGPL code inside an
-Apache-2.0 module — hard rule 4, and a worse violation than the one being
-fixed.
+The bridge is `foundation::MeshView` / `RenderView` / `MeshData` /
+`MaterialDesc` — **data, no behaviour**. `core` produces them, `io` consumes
+them, so the dependency runs AGPL -> Apache, which is legal.
 
-- [x] `Types.h` -> `mh_foundation` (Apache-2.0), re-exported into `mh::core` so
-      no call site changed. 232/232 still pass.
-- [ ] **`MeshView` / `MaterialDesc` in foundation** — plain span-based views
-      (`coord`, `fvert`, `fuvs`, `texco`, `vnorm`, counts) plus plain material
-      values. Measured what io actually touches: only accessors and, on the
-      import path, `setCoords`/`setFaces`/`setUVs`/`calcNormals`. **No ported
-      algorithm is used across the boundary at all**, so a plain-data view is
-      sufficient and lets io stop including `core/*.h` entirely.
-      This is what completes the owner's decision; the type move alone does not.
+The unweld moved OUT of the writers: glTF and FBX now take a `RenderView` the
+caller has already built. That makes the cost visible at the call site instead
+of hidden in a writer, and is what actually removed the last AGPL call from io.
+
+- [ ] `mh_rig`, `mh_asset`, `mh_render`, `mh_ui` must respect the same rule as
+      they are created. The CI gate covers `io` and `foundation`; extend its
+      module list rather than trusting review.
 
 ## M4 — Proxies, materials, assets (`mh-asset`)
 
