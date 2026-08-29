@@ -11,6 +11,7 @@
 //      self-consistent.
 
 #include "makehuman/core/RenderMesh.h"
+#include "makehuman/core/Target.h"
 #include "makehuman/io/GltfWriter.h"
 #include "makehuman/rig/Skeleton.h"
 #include "makehuman/rig/Skinning.h"
@@ -448,4 +449,134 @@ TEST_CASE("a skin that does not describe the mesh is refused", "[gltf][skin]") {
 
     std::error_code ec;
     std::filesystem::remove(out, ec);
+}
+
+// ----------------------------------------------------------- morph targets
+
+namespace {
+
+/// Loads a target and expands it onto the render vertices, as an exporter must.
+std::vector<foundation::Vec3> expandedTarget(const core::Mesh& mesh, const core::RenderMesh& rm,
+                                             const char* rel) {
+    auto t = core::loadTarget(std::filesystem::path(MH_DATA_DIR) / "targets" / rel);
+    REQUIRE(t.has_value());
+    std::vector<foundation::Vec3> deltas;
+    REQUIRE(core::expandTargetToRenderVertices(*t, rm.vmap(), mesh.vertexCount(), deltas));
+    return deltas;
+}
+
+}  // namespace
+
+// A target touches mesh vertices; glTF morph targets are per RENDER vertex. A
+// UV seam maps several render vertices to one mesh vertex, and each must get
+// the SAME delta or the seam tears open when the target is applied.
+TEST_CASE("a target expands onto render vertices, seams included", "[gltf][morph]") {
+    const auto mesh = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+    const auto rm = core::RenderMesh::build(*mesh);
+
+    auto t = core::loadTarget(std::filesystem::path(MH_DATA_DIR) / "targets" / "head" /
+                              "head-oval.target");
+    REQUIRE(t.has_value());
+    std::vector<foundation::Vec3> deltas;
+    REQUIRE(core::expandTargetToRenderVertices(*t, rm.vmap(), mesh->vertexCount(), deltas));
+    REQUIRE(deltas.size() == rm.vertexCount());
+
+    // Build the sparse source as a lookup and confirm every render vertex got
+    // exactly its mesh vertex's delta.
+    std::vector<foundation::Vec3> perMesh(mesh->vertexCount(), foundation::Vec3{});
+    for (size_t i = 0; i < t->verts.size(); ++i)
+        perMesh[t->verts[i]] = t->offsets[i];
+
+    size_t wrong = 0;
+    size_t moved = 0;
+    for (size_t rv = 0; rv < rm.vertexCount(); ++rv) {
+        const auto& want = perMesh[rm.vmap()[rv]];
+        const auto& got  = deltas[rv];
+        if (got.x != want.x || got.y != want.y || got.z != want.z) ++wrong;
+        if (want.x != 0.0F || want.y != 0.0F || want.z != 0.0F) ++moved;
+    }
+    CHECK(wrong == 0);
+    // Seams duplicate, so more render vertices move than mesh vertices.
+    CHECK(moved > t->verts.size());
+}
+
+TEST_CASE("a morphed GLB carries targets, names and default weights", "[gltf][morph]") {
+    const auto mesh = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+    const auto rm = core::RenderMesh::build(*mesh);
+
+    const auto a = expandedTarget(*mesh, rm, "head/head-oval.target");
+    const auto b = expandedTarget(*mesh, rm, "nose/nose-base-up.target");
+    const std::vector<foundation::MorphTarget> morphs{{"head-oval", a}, {"nose-base-up", b}};
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_morph_test.glb";
+    REQUIRE(io::writeGlb(out, rm.view(), {}, nullptr, nullptr, morphs).has_value());
+
+    const std::string j = glbJson(out);
+    CHECK(j.find("\"targets\":[") != std::string::npos);
+    CHECK(j.find("\"weights\":[0,0]") != std::string::npos);
+    // targetNames is what a DCC reads to label the shape keys; without it they
+    // import as "Key 1", "Key 2" and become unusable.
+    CHECK(j.find("\"targetNames\":[\"head-oval\",\"nose-base-up\"]") != std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+// The spec requires min/max on every POSITION accessor, and a morph target's
+// deltas are one. Omitting it is the most common way a hand-written morph
+// export fails validation while still loading in some engines.
+TEST_CASE("morph target accessors carry min and max", "[gltf][morph]") {
+    const auto mesh = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+    const auto rm = core::RenderMesh::build(*mesh);
+    const auto a  = expandedTarget(*mesh, rm, "head/head-oval.target");
+    const std::vector<foundation::MorphTarget> morphs{{"head-oval", a}};
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_morph_minmax.glb";
+    REQUIRE(io::writeGlb(out, rm.view(), {}, nullptr, nullptr, morphs).has_value());
+
+    const std::string j = glbJson(out);
+    // POSITION (the base mesh) plus one morph target: two accessors with min.
+    size_t mins = 0;
+    for (size_t at = j.find("\"min\":["); at != std::string::npos; at = j.find("\"min\":[", at + 1))
+        ++mins;
+    CHECK(mins == 2);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("a morph target of the wrong length is refused", "[gltf][morph]") {
+    const auto mesh = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+    const auto rm = core::RenderMesh::build(*mesh);
+
+    const std::vector<foundation::Vec3> tooShort(10, foundation::Vec3{});
+    const std::vector<foundation::MorphTarget> bad{{"short", tooShort}};
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_morph_bad.glb";
+    const auto r   = io::writeGlb(out, rm.view(), {}, nullptr, nullptr, bad);
+    REQUIRE_FALSE(r.has_value());
+    CHECK(r.error().kind == io::GltfWriteErrorKind::InvalidMorphTarget);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+// The .target files contain literal (0,0,0) rows -- nose-base-up has 11 of 305.
+// They are no-ops, and the count only matters because it explains why Blender
+// reports fewer moved vertices than the file has rows.
+TEST_CASE("zero-offset rows in a target are no-ops", "[gltf][morph]") {
+    auto t = core::loadTarget(std::filesystem::path(MH_DATA_DIR) / "targets" / "nose" /
+                              "nose-base-up.target");
+    REQUIRE(t.has_value());
+    CHECK(t->verts.size() == 305);
+
+    size_t zero = 0;
+    for (const auto& o : t->offsets) {
+        if (o.x == 0.0F && o.y == 0.0F && o.z == 0.0F) ++zero;
+    }
+    CHECK(zero == 11);  // 305 - 11 = 294, which is what Blender reports moving
 }

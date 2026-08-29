@@ -19,6 +19,18 @@ EXPECT = {
         "vertices": 21833, "triangles": 36972, "tallest": 1.69455, "uv_layers": 1,
         "bones": 163, "armatures": 1, "skinned": 21833,
     },
+    # Morph targets. The moved-vertex counts are the source .target files'
+    # NON-ZERO rows plus their UV-seam duplicates -- nose-base-up has 305 rows
+    # of which 11 are literally (0,0,0), so only 294 move. A shape key that
+    # exists but displaces nothing is the failure a name-only check misses.
+    "morphed.glb": {
+        "vertices": 21833, "triangles": 36972, "tallest": 1.69455, "uv_layers": 1,
+        "shape_keys": {
+            "head-oval": 2200,
+            "head-trans-backward": 5865,
+            "nose-base-up": 294,
+        },
+    },
 }
 
 failures = 0
@@ -57,6 +69,16 @@ for line in sys.stdin:
         problems.append(f"armatures {d.get('armatures')} != {want['armatures']}")
     if "skinned" in want and d.get("skinned_vertices") != want["skinned"]:
         problems.append(f"skinned vertices {d.get('skinned_vertices')} != {want['skinned']}")
+    if "shape_keys" in want:
+        got = {k["name"]: k["moved"] for k in d.get("shape_keys", [])}
+        for key, moved in want["shape_keys"].items():
+            if key not in got:
+                problems.append(f"shape key '{key}' missing")
+            elif got[key] != moved:
+                problems.append(f"shape key '{key}' moves {got[key]} verts, expected {moved}")
+        for key in got:
+            if key not in want["shape_keys"]:
+                problems.append(f"unexpected shape key '{key}'")
 
     if problems:
         print(f"FAIL {name}: " + "; ".join(problems))
@@ -65,6 +87,8 @@ for line in sys.stdin:
         extra = ""
         if d.get("bones"):
             extra = f", {d['bones']} bones, {d['skinned_vertices']} skinned"
+        if d.get("shape_keys"):
+            extra += f", {len(d['shape_keys'])} shape keys"
         print(f"ok   {name}: {d['vertices']} verts, {d['triangles']} tris, "
               f"tallest {d['tallest_extent']}, {d['uv_layers']} uv layer(s){extra}")
 

@@ -136,6 +136,22 @@ struct SkinView {
     }
 };
 
+/// One morph target (blend shape), as a format writer needs it.
+///
+/// `deltas` are **displacements from the base mesh**, not absolute positions,
+/// and there is one per RENDER vertex — glTF morph targets are parallel
+/// attribute arrays, so they are indexed exactly like POSITION.
+///
+/// MakeHuman stores targets sparsely (a few thousand touched vertices out of
+/// 19,158), which is the better representation and is why applying one is
+/// cheap. glTF can express that with a sparse accessor, but support is patchy;
+/// dense is what every engine reads. The caller therefore chooses which targets
+/// to export -- all 1,280 densely would be ~335 MB.
+struct MorphTarget {
+    std::string name;
+    std::span<const Vec3> deltas;
+};
+
 /// The material values a format writer needs. Deliberately not the whole
 /// `core::Material`: exporters use these eight fields and nothing else, and the
 /// full parser is a port of `material.py` that cannot cross into Apache code.

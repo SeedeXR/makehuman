@@ -104,4 +104,20 @@ private:
     std::unordered_map<std::string, Target> cache_;
 };
 
+/// Expands a sparse target into dense per-RENDER-vertex deltas for export.
+///
+/// A target touches a few thousand of the 19,158 mesh vertices, which is why
+/// applying one is cheap. glTF morph targets are dense parallel attribute
+/// arrays, so they must be one delta per RENDER vertex (21,833 after UV seams
+/// split) -- indexed like POSITION, not like the mesh.
+///
+/// @param vmap RenderMesh::vmap(): render vertex -> mesh vertex. A UV seam maps
+///             several render vertices to one mesh vertex, and each must get
+///             the same delta or the seam tears open when the target is applied.
+/// @param out  resized to vmap.size(); untouched vertices are left at zero.
+/// @return false if the target references a vertex the mesh does not have.
+[[nodiscard]] bool expandTargetToRenderVertices(const Target& target,
+                                                std::span<const uint32_t> vmap,
+                                                size_t meshVertexCount, std::vector<Vec3>& out);
+
 }  // namespace mh::core

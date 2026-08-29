@@ -8,6 +8,7 @@
 #include <cstring>
 #include <fstream>
 #include <limits>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -106,17 +107,17 @@ std::string GltfWriteError::message() const {
         case GltfWriteErrorKind::TooManyVertices: k = "too many vertices"; break;
         case GltfWriteErrorKind::NonFiniteValue: k = "non-finite value"; break;
         case GltfWriteErrorKind::InvalidSkin: k = "invalid skin"; break;
+        case GltfWriteErrorKind::InvalidMorphTarget: k = "invalid morph target"; break;
     }
     std::string m = file + ": " + k;
     if (!detail.empty()) m += " (" + detail + ")";
     return m;
 }
 
-std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::path& path,
-                                                        const foundation::RenderView& mesh,
-                                                        const GltfWriteOptions& options,
-                                                        const foundation::MaterialDesc* material,
-                                                        const foundation::SkinView* skin) {
+std::expected<GltfWriteResult, GltfWriteError> writeGlb(
+    const std::filesystem::path& path, const foundation::RenderView& mesh,
+    const GltfWriteOptions& options, const foundation::MaterialDesc* material,
+    const foundation::SkinView* skin, std::span<const foundation::MorphTarget> morphTargets) {
     // glTF wants one attribute per index and has no quad primitive. The caller
     // supplies geometry already in that shape: the unweld is a port of
     // module3d.py and lives in the AGPL core, so running it here would drag
@@ -171,6 +172,21 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
                 return std::unexpected(GltfWriteError{
                     GltfWriteErrorKind::InvalidSkin, path.string(),
                     "joint " + std::to_string(i) + " has a parent that does not precede it"});
+            }
+        }
+    }
+
+    for (const auto& t : morphTargets) {
+        if (t.deltas.size() != rm.vertexCount()) {
+            return std::unexpected(
+                GltfWriteError{GltfWriteErrorKind::InvalidMorphTarget, path.string(),
+                               t.name + " has " + std::to_string(t.deltas.size()) + " deltas for " +
+                                   std::to_string(rm.vertexCount()) + " vertices"});
+        }
+        for (const auto& d : t.deltas) {
+            if (!std::isfinite(d.x) || !std::isfinite(d.y) || !std::isfinite(d.z)) {
+                return std::unexpected(GltfWriteError{GltfWriteErrorKind::NonFiniteValue,
+                                                      path.string(), "morph target " + t.name});
             }
         }
     }
@@ -295,6 +311,40 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
         ibmBytes = bin.size() - ibmOffset;
     }
 
+    // Morph targets: dense deltas, one block per target. Scaled like positions,
+    // but WITHOUT the ground offset -- a delta is a displacement, not a point,
+    // so adding the offset would shift the body once per active target.
+    std::vector<size_t> morphOffsets;
+    std::vector<size_t> morphByteCounts;
+    std::vector<Vec3> morphLo;
+    std::vector<Vec3> morphHi;
+
+    for (const auto& t : morphTargets) {
+        padTo4(bin);
+        const size_t off = bin.size();
+        Vec3 tlo{std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(),
+                 std::numeric_limits<float>::infinity()};
+        Vec3 thi{-tlo.x, -tlo.y, -tlo.z};
+        for (const Vec3& d : t.deltas) {
+            const float x = d.x * scale;
+            const float y = d.y * scale;
+            const float z = d.z * scale;
+            appendFloat(bin, x);
+            appendFloat(bin, y);
+            appendFloat(bin, z);
+            tlo.x = std::min(tlo.x, x);
+            tlo.y = std::min(tlo.y, y);
+            tlo.z = std::min(tlo.z, z);
+            thi.x = std::max(thi.x, x);
+            thi.y = std::max(thi.y, y);
+            thi.z = std::max(thi.z, z);
+        }
+        morphOffsets.push_back(off);
+        morphByteCounts.push_back(bin.size() - off);
+        morphLo.push_back(tlo);
+        morphHi.push_back(thi);
+    }
+
     padTo4(bin);
     const size_t idxOffset = bin.size();
     for (const uint32_t i : rm.index)
@@ -373,6 +423,11 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
         j += R"(,{"buffer":0,"byteOffset":)" + std::to_string(ibmOffset) + R"(,"byteLength":)" +
              std::to_string(ibmBytes) + "}";
     }
+    for (size_t t = 0; t < morphTargets.size(); ++t) {
+        j += R"(,{"buffer":0,"byteOffset":)" + std::to_string(morphOffsets[t]) +
+             R"(,"byteLength":)" + std::to_string(morphByteCounts[t]) + R"(,"target":)" +
+             std::to_string(kTargetArrayBuffer) + "}";
+    }
     j += R"(,{"buffer":0,"byteOffset":)" + std::to_string(idxOffset) + R"(,"byteLength":)" +
          std::to_string(idxBytes) + R"(,"target":)" + std::to_string(kTargetElementArray) + "}";
     j += "],";
@@ -414,6 +469,19 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
              std::to_string(kComponentFloat) + R"(,"count":)" + std::to_string(skin->jointCount()) +
              R"(,"type":"MAT4"})";
     }
+    std::vector<int> morphAccessors;
+    morphAccessors.reserve(morphTargets.size());
+    for (size_t t = 0; t < morphTargets.size(); ++t) {
+        morphAccessors.push_back(view);
+        // min/max is required on every POSITION accessor, and a morph target's
+        // deltas are one. Omitting it is the most common way a hand-written
+        // morph export fails validation while still loading in some engines.
+        j += R"(,{"bufferView":)" + std::to_string(view++) + R"(,"componentType":)" +
+             std::to_string(kComponentFloat) + R"(,"count":)" + std::to_string(n) +
+             R"(,"type":"VEC3","min":[)" + fmtFloat(morphLo[t].x) + "," + fmtFloat(morphLo[t].y) +
+             "," + fmtFloat(morphLo[t].z) + R"(],"max":[)" + fmtFloat(morphHi[t].x) + "," +
+             fmtFloat(morphHi[t].y) + "," + fmtFloat(morphHi[t].z) + "]}";
+    }
     const int idxAccessor = view;
     j += R"(,{"bufferView":)" + std::to_string(view) + R"(,"componentType":)" +
          std::to_string(kComponentUnsignedInt) + R"(,"count":)" + std::to_string(rm.indexCount()) +
@@ -428,7 +496,35 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
     if (jointAccessor >= 0) j += R"(,"JOINTS_0":)" + std::to_string(jointAccessor);
     if (weightAccessor >= 0) j += R"(,"WEIGHTS_0":)" + std::to_string(weightAccessor);
     j += R"(},"indices":)" + std::to_string(idxAccessor) + R"(,"material":0,"mode":)" +
-         std::to_string(kModeTriangles) + "}]}],";
+         std::to_string(kModeTriangles);
+    if (!morphTargets.empty()) {
+        j += R"(,"targets":[)";
+        for (size_t t = 0; t < morphTargets.size(); ++t) {
+            if (t != 0) j += ",";
+            j += R"({"POSITION":)" + std::to_string(morphAccessors[t]) + "}";
+        }
+        j += "]";
+    }
+    j += "}]";
+    if (!morphTargets.empty()) {
+        // Default weights: all zero, i.e. the base mesh. A viewer that ignores
+        // them still shows the unmorphed body rather than every target at once.
+        j += R"(,"weights":[)";
+        for (size_t t = 0; t < morphTargets.size(); ++t)
+            j += (t != 0 ? ",0" : "0");
+        j += "]";
+
+        // targetNames is an extras convention rather than core glTF, but it is
+        // what Blender and every DCC read to label the shape keys. Without it
+        // the targets import as "Key 1", "Key 2", ... and become unusable.
+        j += R"(,"extras":{"targetNames":[)";
+        for (size_t t = 0; t < morphTargets.size(); ++t) {
+            if (t != 0) j += ",";
+            j += "\"" + jsonEscape(morphTargets[t].name) + "\"";
+        }
+        j += "]}";
+    }
+    j += "}],";
 
     // material -- Blinn-Phong converted to metallic-roughness, which is the
     // only PBR model core glTF defines. The reference has no PBR data at all,

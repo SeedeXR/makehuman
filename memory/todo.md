@@ -336,7 +336,25 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       face masking; `.mtl` sidecar
 - [ ] Export STL, DAE, BVH
 - [ ] Skin weights: sorted, normalised, clamped to 4 (glTF requirement)
-- [ ] **Blendshape export** — dead in the reference everywhere; must actually work
+- [x] **Blendshape export (glTF)** — dead in the reference everywhere, so there
+      is **no oracle**: Blender is the primary check, not a cross-check.
+      Verified by exact moved-vertex counts, which reconcile to the source files:
+      | target | non-zero rows | Blender moved | seam duplicates |
+      |---|---|---|---|
+      | head-oval | 2,143 | 2,200 | +57 |
+      | head-trans-backward | 5,498 | 5,865 | +367 |
+      | nose-base-up | 294 of **305 rows** | 294 | +0 |
+      The nose figure looked wrong until it wasn't: **11 of its 305 rows are
+      literally (0,0,0)** — no-ops the reference stores happily.
+      Deltas take the unit scale but **not** the ground offset — a delta is a
+      displacement, not a point, so adding the offset would shift the body once
+      per active target.
+      `extras.targetNames` is written: without it a DCC labels the keys
+      "Key 1", "Key 2" and they are unusable.
+- [ ] Blendshape export for **FBX** (assimp's writer may not carry morphs —
+      check before promising it)
+- [ ] Sparse morph accessors — a target touches ~2k of 19,158 vertices, so dense
+      costs ~262 KB each. Fine for a handful, 335 MB for all 1,280.
 - [ ] Texture packing (ORM), GLB embedding, KTX2/Basis, optional Draco
 - [ ] Unit-correctness tests at dm/m/cm/inch (the reference is 10× wrong except dm)
 - [ ] `docs/formats/*.md` for all seven MakeHuman formats

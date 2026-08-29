@@ -5,6 +5,7 @@
 // files for another process rather than asserting anything itself.
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/core/RenderMesh.h"
+#include "makehuman/core/Target.h"
 #include "makehuman/io/GltfWriter.h"
 #include "makehuman/io/ObjWriter.h"
 #include "makehuman/io/SceneIO.h"
@@ -12,8 +13,10 @@
 #include "makehuman/rig/Skinning.h"
 #include "makehuman/rig/VertexWeights.h"
 
+#include <array>
 #include <cstdio>
 #include <filesystem>
+#include <vector>
 
 int main(int argc, char** argv) {
     const std::filesystem::path out = (argc > 1) ? argv[1] : ".";
@@ -75,6 +78,44 @@ int main(int argc, char** argv) {
     std::printf("rigged.glb: %zu joints, %zu influences/vertex\n", skin.globalRest.size(),
                 static_cast<size_t>(skin.influences));
 
-    std::printf("wrote base.obj / base.glb / base.fbx / rigged.glb to %s\n", out.c_str());
+    // A MORPHED export. The reference's blendshape export is dead in every
+    // format (project_context.md 8), so there is no oracle here -- Blender is
+    // the primary check rather than a cross-check.
+    const std::array<const char*, 3> targetFiles{
+        "head/head-oval.target",
+        "head/head-trans-backward.target",
+        "nose/nose-base-up.target",
+    };
+    std::vector<std::vector<mh::foundation::Vec3>> deltaStore;
+    std::vector<mh::foundation::MorphTarget> morphs;
+    deltaStore.reserve(targetFiles.size());
+    morphs.reserve(targetFiles.size());
+
+    for (const char* rel : targetFiles) {
+        const auto tpath = std::filesystem::path(MH_DATA_DIR) / "targets" / rel;
+        auto t           = mh::core::loadTarget(tpath);
+        if (!t) {
+            std::fprintf(stderr, "target %s: %s\n", rel, t.error().message().c_str());
+            return 1;
+        }
+        std::vector<mh::foundation::Vec3> deltas;
+        if (!mh::core::expandTargetToRenderVertices(*t, rm.vmap(), mesh->vertexCount(), deltas)) {
+            std::fprintf(stderr, "target %s: does not fit the mesh\n", rel);
+            return 1;
+        }
+        deltaStore.push_back(std::move(deltas));
+        morphs.push_back(mh::foundation::MorphTarget{t->name, deltaStore.back()});
+    }
+
+    if (const auto r =
+            mh::io::writeGlb(out / "morphed.glb", rm.view(), {}, nullptr, nullptr, morphs);
+        !r) {
+        std::fprintf(stderr, "morphed glb: %s\n", r.error().message().c_str());
+        return 1;
+    }
+    std::printf("morphed.glb: %zu morph targets\n", morphs.size());
+
+    std::printf("wrote base.obj / base.glb / base.fbx / rigged.glb / morphed.glb to %s\n",
+                out.c_str());
     return 0;
 }

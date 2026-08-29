@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <span>
 #include <string>
 
 namespace mh::io {
@@ -49,6 +50,8 @@ enum class GltfWriteErrorKind {
     /// The skin does not describe this mesh: wrong vertex count, a joint index
     /// past the end of the skeleton, or an influence count other than 4.
     InvalidSkin,
+    /// A morph target's delta array is not parallel to the mesh's vertices.
+    InvalidMorphTarget,
 };
 
 struct GltfWriteError {
@@ -73,6 +76,7 @@ struct GltfWriteResult {
 [[nodiscard]] std::expected<GltfWriteResult, GltfWriteError> writeGlb(
     const std::filesystem::path& path, const foundation::RenderView& mesh,
     const GltfWriteOptions& options = {}, const foundation::MaterialDesc* material = nullptr,
-    const foundation::SkinView* skin = nullptr);
+    const foundation::SkinView* skin                      = nullptr,
+    std::span<const foundation::MorphTarget> morphTargets = {});
 
 }  // namespace mh::io

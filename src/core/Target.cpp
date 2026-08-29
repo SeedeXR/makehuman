@@ -142,4 +142,24 @@ std::expected<const Target*, TargetError> TargetLibrary::get(const std::string& 
     return &it->second;
 }
 
+bool expandTargetToRenderVertices(const Target& target, std::span<const uint32_t> vmap,
+                                  size_t meshVertexCount, std::vector<Vec3>& out) {
+    if (target.maxVertexIndex >= meshVertexCount && !target.empty()) return false;
+
+    // Scatter the sparse offsets into a dense per-MESH-vertex array first, then
+    // gather through vmap. Going straight to render vertices would need a
+    // reverse map, and a seam vertex would be visited once per copy.
+    std::vector<Vec3> perMeshVertex(meshVertexCount, Vec3{});
+    for (size_t i = 0; i < target.verts.size(); ++i)
+        perMeshVertex[target.verts[i]] = target.offsets[i];
+
+    out.assign(vmap.size(), Vec3{});
+    for (size_t rv = 0; rv < vmap.size(); ++rv) {
+        const uint32_t mv = vmap[rv];
+        if (mv >= meshVertexCount) return false;
+        out[rv] = perMeshVertex[mv];
+    }
+    return true;
+}
+
 }  // namespace mh::core

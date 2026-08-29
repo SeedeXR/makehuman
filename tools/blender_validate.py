@@ -90,6 +90,24 @@ def describe(path: str) -> dict:
     # an armature but no groups is bound to nothing and will not deform -- which
     # looks fine in a static screenshot.
     vertex_groups = sum(len(o.vertex_groups) for o in meshes)
+
+    # Shape keys are Blender's morph targets. key_blocks[0] is the Basis, so a
+    # file with N morph targets reports N+1. Also count how many vertices each
+    # key actually MOVES: a shape key that exists but displaces nothing is the
+    # failure mode a name-only check cannot see.
+    shape_keys = []
+    for o in meshes:
+        sk = o.data.shape_keys
+        if not sk:
+            continue
+        basis = sk.key_blocks[0]
+        for kb in sk.key_blocks[1:]:
+            moved = sum(
+                1
+                for i, pt in enumerate(kb.data)
+                if (pt.co - basis.data[i].co).length > 1e-6
+            )
+            shape_keys.append({"name": kb.name, "value": round(kb.value, 6), "moved": moved})
     skinned_verts = sum(
         1 for o in meshes for v in o.data.vertices if len(v.groups) > 0
     )
@@ -111,6 +129,7 @@ def describe(path: str) -> dict:
         "armatures": len(armatures),
         "bones": bones,
         "vertex_groups": vertex_groups,
+        "shape_keys": shape_keys,
         "skinned_vertices": skinned_verts,
         "bbox_min": [round(v, 6) for v in lo] if meshes else None,
         "bbox_max": [round(v, 6) for v in hi] if meshes else None,

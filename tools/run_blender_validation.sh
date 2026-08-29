@@ -36,6 +36,6 @@ echo "exporting to $out"
 "$fixture" "$out"
 
 "$BLENDER" --background --python "$repo/tools/blender_validate.py" -- \
-    "$out/base.obj" "$out/base.glb" "$out/base.fbx" "$out/rigged.glb" 2>/dev/null |
+    "$out/base.obj" "$out/base.glb" "$out/base.fbx" "$out/rigged.glb" "$out/morphed.glb" 2>/dev/null |
     grep '^BLENDER_VALIDATE:' | sed 's/^BLENDER_VALIDATE://' |
     python3 "$repo/tools/blender_check.py"
