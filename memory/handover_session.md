@@ -4,6 +4,53 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 019 · the licence boundary is now real
+
+**Ended:** 2026-08-29 13:29:07 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+`mh_io` was stamped Apache-2.0 while `PUBLIC`-linking `mh::core` (AGPL). Fixed:
+it now links `mh::foundation` and nothing else of ours.
+
+**The evidence, because the stamp is not evidence:**
+
+    nm -u libmh_io.a | c++filt | grep mh::core   ->  0 undefined symbols
+
+**A correction I had to make mid-task.** In the previous commit I wrote that no
+ported algorithm crossed the boundary. Wrong — I had grepped `mesh.` call sites
+and missed `core::RenderMesh::build` in the glTF and FBX paths. The unweld is a
+port of `module3d.py` and it was running inside the Apache module. The fix
+moved it out: `writeGlb`/`exportScene` now take a `RenderView` the caller has
+already built, which also makes the unweld's cost visible at the call site.
+
+**The bridge** is four plain-data types in foundation — `MeshView`,
+`RenderView`, `MeshData`, `MaterialDesc`. Data, no behaviour. `core` produces
+them (`Mesh::view()`, `RenderMesh::view()`, `Material::desc()`,
+`Mesh::fromData()`), `io` consumes them, so the dependency runs AGPL → Apache.
+
+**The tests failing to link was the boundary working** — they had been getting
+`mh::core` transitively through io.
+
+**Two CI gates**, because a comment in `src/io/CMakeLists.txt` saying "must
+never depend on one" sat three lines above the line that did, for months. The
+SPDX gate cannot catch this: it checks a file *declares* a licence, not that
+the dependency direction is legal.
+
+The gate strips comments before grepping — `src/io/CMakeLists.txt` explains why
+it must not link `mh::core`, and the naive version flagged that explanation.
+**That is the second time I have made exactly this mistake** (the FBX gate had
+it too). Pattern worth remembering: a gate that greps for a forbidden string
+will match the document that forbids it.
+
+Proved the gate fires by reintroducing the link and watching it trip, then
+reverting.
+
+CI green. 232/232 in debug, release, ASan+UBSan and the forced-fallback build.
+
+**Next:** M5 — `.mhskel` parser against the Mixamo bone order recorded in
+`docs/rig/mixamo_bone_order.md`.
+
+---
+
 ## 2026-08-29 — Session 018 · CI had never passed; resources; Mixamo
 
 **Ended:** 2026-08-29 11:50:38 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
