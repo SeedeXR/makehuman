@@ -228,10 +228,37 @@ Another derived-number slip, caught by the test: I asserted 6 shipped assets
 (3 proxies + 3 materials) when there are 7 — I had forgotten
 `a7_converter.proxy`. Counted from disk this time.
 
+### Session 013 addendum (2026-08-29 09:56:34) — M7 opens: OBJ export
+
+**The first Apache-2.0 module.** `mh::io` is written from the published
+Wavefront specification, not translated from the AGPL reference, so it is
+separately reusable — the licence boundary in `LICENSING.md` §4 is now real code
+rather than a plan. It links `mh::core` (AGPL), which is the allowed direction;
+the reverse would be a violation.
+
+`writeObj` produces **face lines byte-identical to the reference's own export**
+across all 18,486 faces, and the same first-vertex text. Round-tripping the real
+19,158-vertex mesh through our writer and reader gives a max delta of 0.
+
+Two deliberate divergences:
+- **Feet-on-ground uses the mesh's actual minimum**, not the reference's named
+  "ground" joint applied to Y only regardless of orientation — which its own
+  TODO flags as wrong (`core/export.py:102-109`).
+- **`map_Bump` is emitted** when a normal map exists. The reference copies the
+  texture into `textures/` and then never references it
+  (`wavefront.py:277-280`, with `map_Disp` commented out).
+
+Also fixed a duplicate-library linker warning: `mh_io` PUBLIC-links `mh_core`,
+so listing both in the test target made the linker see `libmh_core.a` twice.
+
+Reference-fixture note: the reference's `writeObjFile` reads
+`mesh.object.material` for its `usemtl` line, so generating the comparison file
+needs the same weakref-safe material stub the subdivision fixture uses.
+
 ### Next
-Remaining M4: the `.mhclo` `delete_verts` face-hiding path applied to a real
-body, and proxy material resolution. Then M5 (skeleton/skinning) or M7
-(interchange) — M7 is the higher-value one for the stated goals.
+glTF 2.0 / GLB export — the format that matters most for modern engines, and the
+one with no reference implementation at all to compare against, so it will be
+validated by spec conformance and round-trip instead.
 
 ---
 

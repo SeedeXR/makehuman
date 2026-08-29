@@ -171,7 +171,11 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [ ] **Export** glTF 2.0 / GLB — from spec; PBR, skins, blendshapes, embedded buffers
 - [ ] **Export** FBX 7.4/7.5 — from spec, **not** by translating the GPL Blender code
 - [ ] **Export** USD / USDZ
-- [ ] Export OBJ, STL, DAE, BVH (parity with the reference, minus its bugs)
+- [x] **Export OBJ** (`mh::io`, Apache-2.0) — face lines byte-identical to the
+      reference across all 18,486 faces; unit conversion; feet-on-ground computed
+      from the mesh minimum rather than the reference's Y-only joint offset;
+      face masking; `.mtl` sidecar
+- [ ] Export STL, DAE, BVH
 - [ ] Skin weights: sorted, normalised, clamped to 4 (glTF requirement)
 - [ ] **Blendshape export** — dead in the reference everywhere; must actually work
 - [ ] Texture packing (ORM), GLB embedding, KTX2/Basis, optional Draco

@@ -20,10 +20,13 @@ add_executable(mh_tests
     golden/test_character_parity.cpp
     golden/test_mhm_parity.cpp
     golden/test_proxy_parity.cpp
+    golden/test_obj_writer_parity.cpp
     regression/test_review_findings.cpp)
 
 target_link_libraries(mh_tests
-    PRIVATE mh::core Catch2::Catch2WithMain mh::warnings mh::sanitize)
+    # mh::io PUBLIC-links mh::core, so listing both makes the linker see
+    # libmh_core.a twice and warn. Depend on io and inherit core.
+    PRIVATE mh::io Catch2::Catch2WithMain mh::warnings mh::sanitize)
 
 target_compile_definitions(mh_tests PRIVATE
     MH_DATA_DIR="${MH_DATA_DIR}"

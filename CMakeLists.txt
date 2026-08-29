@@ -64,6 +64,7 @@ endif()
 
 # ---------------------------------------------------------------- modules ----
 add_subdirectory(src/core)
+add_subdirectory(src/io)
 
 if(MH_BUILD_TESTS)
     add_subdirectory(tests)
