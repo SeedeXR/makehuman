@@ -2,6 +2,7 @@
 #pragma once
 
 #include "makehuman/foundation/Geometry.h"
+#include "makehuman/io/ObjWriter.h"  // Unit, unitScale
 
 #include <expected>
 #include <filesystem>
@@ -23,13 +24,20 @@ namespace mh::io {
 
 struct UsdWriteOptions {
     /// USD records real-world scale explicitly, so unlike OBJ there is no
-    /// ambiguity to inherit. 1.0 means the points are metres.
-    double metersPerUnit{1.0};
+    /// ambiguity to inherit. Derived from `unit` rather than set separately:
+    /// two independent knobs for the same physical fact is how a file ends up
+    /// claiming metres while holding centimetres.
+    [[nodiscard]] double metersPerUnit() const noexcept;
     /// Ours is a Y-up world. USD allows "Y" or "Z" and stores which, so a
     /// consumer does not have to guess -- unlike BVH.
     bool yUp{true};
 
-    float scale{0.1F};  ///< decimetres to metres, matching the glTF default
+    /// The same Unit every other writer takes. It was a bare float here, which
+    /// meant USD was the one exporter whose scale could not be set the same way
+    /// as the rest -- exactly the inconsistency M7 exists to remove.
+    Unit unit{Unit::Meter};
+    float scale{1.0F};  ///< extra scale on top of the unit conversion
+
     bool writeNormals{true};
     bool writeUVs{true};
 

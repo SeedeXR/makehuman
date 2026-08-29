@@ -327,7 +327,7 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       Weights are expanded from mesh vertices (19,158) onto **render** vertices
       (21,833) via `vmap`; glTF's are vertex attributes, so skipping that leaves
       everything past the first UV seam weighted to the wrong bone.
-- [ ] glTF: blendshapes (morph targets), embedded textures, Draco
+- [ ] glTF: embedded textures, Draco (blendshapes are done — session 029)
 - [ ] **Export** FBX 7.4/7.5 — from spec, **not** by translating the GPL Blender code
 - [x] **Export USD (`.usda`)** — written from the published format, **not** by
       linking OpenUSD. Checked first: assimp has **no USD support at all**,
@@ -352,7 +352,8 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       from the mesh minimum rather than the reference's Y-only joint offset;
       face masking; `.mtl` sidecar
 - [ ] Export STL, DAE, BVH
-- [ ] Skin weights: sorted, normalised, clamped to 4 (glTF requirement)
+- [x] Skin weights: sorted, normalised, clamped to 4 — `VertexWeights::compile`
+      (session 022), consumed by both the glTF and FBX skin exports.
 - [x] **Blendshape export (glTF)** — dead in the reference everywhere, so there
       is **no oracle**: Blender is the primary check, not a cross-check.
       Verified by exact moved-vertex counts, which reconcile to the source files:
@@ -384,7 +385,18 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 - [ ] Sparse morph accessors — a target touches ~2k of 19,158 vertices, so dense
       costs ~262 KB each. Fine for a handful, 335 MB for all 1,280.
 - [ ] Texture packing (ORM), GLB embedding, KTX2/Basis, optional Draco
-- [ ] Unit-correctness tests at dm/m/cm/inch (the reference is 10× wrong except dm)
+- [x] **Unit-correctness at dm/m/cm/inch, for every writer.** Each height is
+      measured back out of the file the writer produced, not taken from its
+      return value: OBJ from its `v` lines, glTF from the POSITION min/max, USD
+      from `extent`, FBX by re-importing.
+      Plus the property a user actually depends on: **all writers agree at the
+      same unit**, so the same character is the same size in two tools.
+      This is the reference's documented defect — `fbx_binary.py:736` hardcodes
+      `scale_factor = 10.0` with the correct `10.0/config.scale` commented out
+      one line above, so only its decimetre case is right.
+      Checked the test is not self-cancelling: assimp does **not** normalise
+      units on FBX import, so dm and cm really do come back 16.9455 and
+      169.455 — ratio exactly 10.0.
 - [ ] `docs/formats/*.md` for all seven MakeHuman formats
 - [ ] Round-trip + malformed-input tests for every format
 

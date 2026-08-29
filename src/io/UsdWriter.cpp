@@ -26,6 +26,19 @@ std::string num(double v) {
 
 }  // namespace
 
+double UsdWriteOptions::metersPerUnit() const noexcept {
+    // How many metres one exported unit represents. Points are written in
+    // `unit`, so this is the inverse of the decimetre->unit scale, times the
+    // decimetre->metre factor.
+    switch (unit) {
+        case Unit::Decimeter: return 0.1;
+        case Unit::Meter: return 1.0;
+        case Unit::Centimeter: return 0.01;
+        case Unit::Inch: return 0.0254;
+    }
+    return 1.0;
+}
+
 std::string UsdWriteError::message() const {
     const char* k = "unknown error";
     switch (kind) {
@@ -56,7 +69,7 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsda(const std::filesystem::pa
         return std::unexpected(UsdWriteError{UsdWriteErrorKind::CannotOpen, path.string(), {}});
     }
 
-    const float s          = options.scale;
+    const float s          = unitScale(options.unit) * options.scale;
     const bool withNormals = options.writeNormals && mesh.vnorm.size() == mesh.vertexCount();
     const bool withUVs     = options.writeUVs && mesh.texco.size() == mesh.vertexCount();
     const size_t nTris     = mesh.indexCount() / 3;
@@ -76,7 +89,7 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsda(const std::filesystem::pa
     out << "#usda 1.0\n(\n";
     out << "    defaultPrim = \"" << options.primName << "\"\n";
     out << "    doc = \"MakeHuman C++ USD writer\"\n";
-    out << "    metersPerUnit = " << num(options.metersPerUnit) << "\n";
+    out << "    metersPerUnit = " << num(options.metersPerUnit()) << "\n";
     // USD stores the up axis, so a consumer never has to guess it from the
     // geometry the way a BVH reader must.
     out << "    upAxis = \"" << (options.yUp ? "Y" : "Z") << "\"\n";

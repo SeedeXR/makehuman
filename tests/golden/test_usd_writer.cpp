@@ -11,10 +11,13 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <vector>
 
 using namespace mh;
 
@@ -133,26 +136,69 @@ TEST_CASE("USDA does not flip V", "[usd]") {
     std::filesystem::remove(out, ec);
 }
 
-TEST_CASE("USDA scale reaches the points and the extent", "[usd]") {
+TEST_CASE("USDA honours every unit, in the points and the header", "[usd][units]") {
     const auto mesh = baseMesh();
     const auto rm   = core::RenderMesh::build(mesh);
 
-    io::UsdWriteOptions dm;
-    dm.scale       = 1.0F;  // keep decimetres
-    const auto out = std::filesystem::temp_directory_path() / "mh_usd_dm.usda";
-    REQUIRE(io::writeUsda(out, rm.view(), dm).has_value());
-    const std::string t = readAll(out);
+    // The base mesh is 16.9455 dm tall -- 169.5 cm, a real human height.
+    struct Case {
+        io::Unit unit;
+        const char* name;
+        double height;
+        const char* metersPerUnit;
+    };
 
-    // The base mesh is 16.9455 dm tall; at scale 1 the extent must show that,
-    // not the 1.69 metres the default produces.
-    const auto extAt = t.find("float3[] extent = [");
-    REQUIRE(extAt != std::string::npos);
-    const auto extEnd    = t.find("]\n", extAt);
-    const std::string ex = t.substr(extAt, extEnd - extAt);
-    CHECK(ex.find("8.4") != std::string::npos);  // the y bounds are ~+/-8.45 dm
+    const std::array<Case, 4> cases{{
+        {io::Unit::Decimeter, "dm", 16.9455, "0.1"},
+        {io::Unit::Meter, "m", 1.69455, "1"},
+        {io::Unit::Centimeter, "cm", 169.455, "0.01"},
+        {io::Unit::Inch, "in", 66.7146, "0.0254"},
+    }};
 
-    std::error_code ec;
-    std::filesystem::remove(out, ec);
+    for (const auto& c : cases) {
+        CAPTURE(c.name);
+        io::UsdWriteOptions o;
+        o.unit = c.unit;
+
+        const auto out = std::filesystem::temp_directory_path() /
+                         ("mh_usd_unit_" + std::string(c.name) + ".usda");
+        REQUIRE(io::writeUsda(out, rm.view(), o).has_value());
+        const std::string t2 = readAll(out);
+
+        // metersPerUnit must AGREE with the points. Two independent knobs for
+        // one physical fact is how a file claims metres while holding
+        // centimetres.
+        CHECK(t2.find(std::string("metersPerUnit = ") + c.metersPerUnit) != std::string::npos);
+
+        // Measure the body from the extent rather than trusting the header.
+        const std::string exMarker = "float3[] extent = [";
+        const auto exAt            = t2.find(exMarker);
+        REQUIRE(exAt != std::string::npos);
+        const auto exFrom = exAt + exMarker.size();
+        const auto exEnd  = t2.find("]\n", exFrom);
+        REQUIRE(exEnd != std::string::npos);
+
+        // extent is [(minx, miny, minz), (maxx, maxy, maxz)]; y is index 1 and 4.
+        const std::string ex = t2.substr(exFrom, exEnd - exFrom);
+        std::vector<double> nums;
+        const char* p2 = ex.c_str();
+        while (*p2 != 0 && nums.size() < 6) {
+            if ((*p2 >= '0' && *p2 <= '9') || *p2 == '-') {
+                char* end = nullptr;
+                nums.push_back(std::strtod(p2, &end));
+                p2 = end;
+            } else {
+                ++p2;
+            }
+        }
+        REQUIRE(nums.size() == 6);
+        const double height = nums[4] - nums[1];
+        INFO("height " << height << " expected " << c.height);
+        CHECK(std::abs(height - c.height) < c.height * 1e-4);
+
+        std::error_code ec;
+        std::filesystem::remove(out, ec);
+    }
 }
 
 TEST_CASE("an empty mesh and a bad path are refused", "[usd]") {
