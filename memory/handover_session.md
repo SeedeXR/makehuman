@@ -4,6 +4,61 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 032 · unit correctness, the reference's known defect
+
+**Ended:** 2026-08-29 16:55:34 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+`fbx_binary.py:736` hardcodes `scale_factor = 10.0` with the correct
+`10.0/config.scale` commented out **one line above**, so every non-decimetre FBX
+export in the reference is off by the configured scale. A character that is 1.7 m
+in one exporter and 17 m in another is the commonest interchange failure there
+is, and it stays invisible until someone opens the file in a tool that respects
+units.
+
+Every writer is now checked at **all four units** (dm, m, cm, inch), with the
+height measured back **out of the file** rather than taken from the writer's
+return value:
+
+| format | measured from |
+|---|---|
+| OBJ | its own `v` lines |
+| glTF | the POSITION min/max |
+| USD | `extent` |
+| FBX | re-importing it |
+
+Plus the property a user actually depends on: **all writers agree at the same
+unit**, so the same character is the same size in two tools.
+
+### Checked the test was not self-cancelling
+
+If assimp normalised units on FBX import, the round trip would cancel and the
+test would measure nothing. It does not: dm returns **16.9455**, cm returns
+**169.455** — ratio exactly 10.0. Worth doing before trusting any round-trip
+test.
+
+### A real inconsistency, found while writing the test
+
+`UsdWriteOptions` took a bare `float scale` while every other writer takes a
+`Unit` — USD was the one exporter whose scale could not be set the same way as
+the rest, which is exactly the "one UnitSystem consumed by every writer" M7
+exists to establish. Now takes `Unit`, and `metersPerUnit` is **derived** from
+it rather than set independently: two knobs for one physical fact is how a file
+ends up claiming metres while holding centimetres.
+
+### Memory reconciled against reality
+
+Three todo entries were stale — skin-weight clamping (session 022) and glTF
+blendshapes (session 029) were both done but still listed open. Session-start
+rule applied: state beats memory.
+
+301/301 across all four builds. 7/7 agree with Blender. CI 7/7.
+
+**Next:** `docs/formats/*.md`. The per-format conventions have now cost real time
+three times (glTF's flipped V, USD's un-flipped V, BVH's guessed up axis) and
+they are scattered across code comments.
+
+---
+
 ## 2026-08-29 — Session 031 · USD export, written not linked
 
 **Ended:** 2026-08-29 16:41:55 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
