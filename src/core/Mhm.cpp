@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 
@@ -263,6 +264,45 @@ MhmFile mhmFromHuman(const Human& human, std::string name) {
         if (value != 0.0F || macro) out.modifiers.emplace_back(m.fullName, value);
     }
     return out;
+}
+
+namespace {
+
+/// @return @p v as a float, or @p fallback when it does not survive the
+/// narrowing. `static_cast<float>(1e300)` is `inf`, and an `inf` written into a
+/// `.mhm` comes out as the unparseable `inf.0`.
+float narrowOr(double v, float fallback) {
+    if (!std::isfinite(v)) return fallback;
+    const float narrowed = static_cast<float>(v);
+    return std::isfinite(narrowed) ? narrowed : fallback;
+}
+
+}  // namespace
+
+std::array<double, 6> mhmCameraFrom(const OrbitView& view) {
+    const bool usable     = std::isfinite(view.distance) && view.distance > 0.0F;
+    const double distance = static_cast<double>(usable ? view.distance : kDefaultOrbitDistance);
+    const double pitch =
+        static_cast<double>(narrowOr(static_cast<double>(view.pitchDegrees), 0.0F));
+    const double yaw = static_cast<double>(narrowOr(static_cast<double>(view.yawDegrees), 0.0F));
+    return {pitch, yaw, 0.0, 0.0, 0.0, static_cast<double>(kDefaultOrbitDistance) / distance};
+}
+
+OrbitView orbitFromMhmCamera(const std::array<double, 6>& camera) {
+    OrbitView view;
+    view.pitchDegrees = narrowOr(camera[0], 0.0F);
+    view.yawDegrees   = narrowOr(camera[1], 0.0F);
+    // camera[2..4] is translation, which this renderer has no equivalent for.
+
+    // A tiny zoom makes the quotient overflow float long before it divides by
+    // zero: 1e-38 already yields `inf`, and an infinite orbit distance renders
+    // an empty viewport with nothing reported.
+    const double zoom = camera[5];
+    view.distance =
+        zoom > 0.0 && std::isfinite(zoom)
+            ? narrowOr(static_cast<double>(kDefaultOrbitDistance) / zoom, kDefaultOrbitDistance)
+            : kDefaultOrbitDistance;
+    return view;
 }
 
 }  // namespace mh::core

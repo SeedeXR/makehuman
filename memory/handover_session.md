@@ -4,6 +4,72 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-30 12:55:41 — Session 040 · **honouring the .mhm fields we only stored**
+
+### What shipped
+`camera` and `subdivide` were parsed, carried and written for four milestones without
+ever being acted on. Both now work.
+
+- **`mhmCameraFrom` / `orbitFromMhmCamera`** — the format stores a *magnification*
+  (`lib/camera.py:454-457`, 0.25..15, default 1.0); this renderer orbits at a distance.
+  Mapped by `zoom = 45 / distance`, anchored so the default view writes the default zoom.
+  Documented as a convention, not a measurement: the projections differ, so a file opens
+  in MakeHuman 1.x at a sensible zoom rather than identical framing.
+- **Subdivision** — `--subdivide` and the `.mhm` flag both drive Catmull-Clark.
+  19,158 → **75,008** verts, 18,486 → **73,944** faces, matching the documented counts.
+  `build()` runs once (6.9 ms) and `refresh()` (0.5 ms) handles every later change.
+- **`ViewportWidget::kMinDistance` / `kMaxDistance` / `kMaxPitchDegrees`** — the
+  navigation clamps are public now, because a camera restored from a file has to obey the
+  same limits the mouse does.
+
+### The defect I introduced and the review caught
+Routing every save through the live view meant the **headless** `--save` path — which has
+no window — rewrote the camera through float. Verified: `-13.399999999999999` came back
+as `-13.399999618530273`, on a framing nobody had touched. `documentFor` now takes
+`std::optional<OrbitView>`; absent means leave the camera line exactly as loaded.
+
+The existing precision test did not catch this because it drives `loadMhm`/`saveMhm`
+directly and no longer covered the program's actual write path — and `reference_save.mhm`
+holds round numbers, so the byte test stayed green.
+
+### Two non-finite holes
+- `parseFloat` rejects `nan`/`inf`, but **`1e300` is a perfectly finite double** and a
+  legal camera rotation. Narrowed to float it became `inf`, and `saveMhm`'s `".0"` fixup
+  wrote **`inf.0`** — unreadable by this loader *and* by MakeHuman 1.x
+  (`float('inf.0')` raises). Now range-checked on the way in.
+- The divide-by-zero guard tested `zoom > 0`, but `45.0 / 1e-38` overflows float long
+  before it divides by zero, giving an infinite orbit distance and an empty viewport with
+  nothing reported. My own test certified a guard that did not hold — it checked `0.0`
+  and `-2.0` only.
+
+### Also fixed
+- A restored camera bypassed the viewport's clamps. MakeHuman's max `zoomFactor` of 15
+  maps to distance 3 — **inside the head** — and this is reachable from a genuine
+  reference file, no corruption needed.
+- `setFaceMask`'s result was checked at one call site and dropped at the other.
+- `displayMesh()` was called twice in one expression. The reviewer traced it as safe today
+  and explained exactly why (`staticFaceMask` returns by value; `topologyVersion_` is
+  bumped in one place that never runs post-startup) — but it ran `refresh()` twice for
+  nothing and was one `std::optional` reassignment from a use-after-free no test would
+  catch. Bound once.
+- A test that could not tell pitch from yaw: the round trip is self-inverse under a
+  consistent swap. Now asserts the slots asymmetrically.
+
+### Verified this session
+- 328/328 in debug, release and ASan; the app ASan-clean subdividing a loaded character.
+- `--load reference_save.mhm --save out` still **byte-identical**.
+- A 17-digit camera survives a headless save unchanged.
+- All 7 licence gates; `mh_ui` → 0 `mh::core`, and `mh_core` → 0 `mh::render` symbols.
+- Subdivider 29.5x / 56.6x the Python baseline.
+
+### Next
+- Camera *pan* has no equivalent here; the loaded translation is carried forward.
+- Snapping with drop indicators, nested/tabbed docking (M8 remainder).
+- Proxies have a loader and 4 shipped assets but no picker, and the viewport draws one
+  mesh, so showing them needs multi-mesh rendering.
+
+---
+
 ## 2026-08-30 11:18:07 — Session 039 · **.mhm save, and a Save that threw the character away**
 
 ### What shipped

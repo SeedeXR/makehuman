@@ -96,4 +96,40 @@ uint32_t applyMhm(const MhmFile& mhm, Human& human, uint32_t* unknown = nullptr)
 /// because the default is 0.5 rather than 0 and omitting it would load as 0.
 [[nodiscard]] MhmFile mhmFromHuman(const Human& human, std::string name);
 
+/// Distance matching the reference's default `zoomFactor` of 1.0.
+///
+/// The format stores a magnification (`lib/camera.py:454-457`: 0.25..15,
+/// default 1.0); this renderer orbits at a distance. The two relate by
+/// `zoom = kDefaultOrbitDistance / distance` -- a convention anchored on the
+/// defaults, not a measurement: the cameras do not share a projection, so a
+/// file written here opens in MakeHuman 1.x at a sensible zoom, not the
+/// identical framing.
+inline constexpr float kDefaultOrbitDistance = 45.0F;
+
+/// The orbit view a `.mhm` camera line describes.
+struct OrbitView {
+    float pitchDegrees{0.0F};
+    float yawDegrees{0.0F};
+    float distance{kDefaultOrbitDistance};
+};
+
+/// Packs an orbit view into the six numbers the format stores.
+///
+/// Translation is written as zeros: this renderer has no camera pan, and
+/// inventing values would be worse than recording that there is none.
+///
+/// A non-finite or non-positive distance falls back to the default rather than
+/// writing `inf`, which neither this loader nor MakeHuman 1.x can read back.
+[[nodiscard]] std::array<double, 6> mhmCameraFrom(const OrbitView& view);
+
+/// The inverse.
+///
+/// The format holds doubles; these fields are float. A value that is finite in
+/// a `.mhm` but out of float range -- `1e300` is a legal camera rotation as far
+/// as the parser is concerned -- would otherwise narrow to `inf`, get written
+/// back as the unparseable `inf.0`, and break the file for every reader. Values
+/// that do not survive the narrowing are replaced by the defaults.
+
+[[nodiscard]] OrbitView orbitFromMhmCamera(const std::array<double, 6>& camera);
+
 }  // namespace mh::core

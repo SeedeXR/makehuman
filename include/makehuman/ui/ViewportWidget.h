@@ -30,6 +30,15 @@ signals:
     void statusChanged(const QString& error);
 
 public:
+    /// Navigation limits, public because a camera restored from a file has to
+    /// respect the same ones the mouse does. MakeHuman's `maxZoomFactor` of 15
+    /// maps to a distance of 3, which is inside the head.
+    static constexpr float kMinDistance = 5.0F;
+    static constexpr float kMaxDistance = 300.0F;
+    /// Beyond this the model rolls past vertical, which is disorienting and has
+    /// no use for a standing figure.
+    static constexpr float kMaxPitchDegrees = 89.0F;
+
     explicit ViewportWidget(std::filesystem::path shaderDir, QWidget* parent = nullptr);
     ~ViewportWidget() override;
 

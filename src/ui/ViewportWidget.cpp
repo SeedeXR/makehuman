@@ -146,7 +146,8 @@ void ViewportWidget::mouseMoveEvent(QMouseEvent* e) {
     d_->camera.pitchDegrees += static_cast<float>(delta.y()) * 0.5F;
     // Clamped so the model cannot roll past vertical, which is disorienting
     // and has no use for a standing figure.
-    d_->camera.pitchDegrees = std::clamp(d_->camera.pitchDegrees, -89.0F, 89.0F);
+    d_->camera.pitchDegrees =
+        std::clamp(d_->camera.pitchDegrees, -kMaxPitchDegrees, kMaxPitchDegrees);
     update();
 }
 
@@ -155,7 +156,7 @@ void ViewportWidget::wheelEvent(QWheelEvent* e) {
     // Multiplicative, so a step feels the same at every distance -- linear
     // dolly crawls when far and overshoots when close.
     d_->camera.distance *= std::pow(0.9F, steps);
-    d_->camera.distance = std::clamp(d_->camera.distance, 5.0F, 300.0F);
+    d_->camera.distance = std::clamp(d_->camera.distance, kMinDistance, kMaxDistance);
     update();
 }
 

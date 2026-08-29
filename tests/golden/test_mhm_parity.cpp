@@ -19,6 +19,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <vector>
 
 using Catch::Matchers::WithinAbs;
@@ -351,4 +352,92 @@ TEST_CASE("loading a second character must reset first, or the two blend", "[mhm
     // And the reset does not throw away what the file DOES set.
     CHECK_THAT(static_cast<double>(clean.modifierValue("macrodetails/Gender")),
                WithinAbs(0.5, 1e-6));
+}
+
+TEST_CASE("the camera mapping round-trips and anchors on the reference's default", "[mhm]") {
+    // The format stores a magnification (lib/camera.py:454-457: 0.25..15,
+    // default 1.0); this renderer orbits at a distance. The mapping is anchored
+    // so the default view writes the default zoom.
+    const OrbitView defaultView{0.0F, 0.0F, kDefaultOrbitDistance};
+    const auto packed = mhmCameraFrom(defaultView);
+    CHECK_THAT(packed[5], WithinAbs(1.0, 1e-9));
+    // Translation is written as zeros: there is no camera pan to record.
+    CHECK_THAT(packed[2], WithinAbs(0.0, 1e-12));
+    CHECK_THAT(packed[3], WithinAbs(0.0, 1e-12));
+    CHECK_THAT(packed[4], WithinAbs(0.0, 1e-12));
+
+    // Closer is a bigger magnification, which is the direction that makes the
+    // sign of the relationship checkable rather than assumed.
+    CHECK(mhmCameraFrom({0.0F, 0.0F, 22.5F})[5] > 1.0);
+    CHECK(mhmCameraFrom({0.0F, 0.0F, 90.0F})[5] < 1.0);
+
+    for (const OrbitView& view :
+         {OrbitView{0.0F, 0.0F, kDefaultOrbitDistance}, OrbitView{-30.0F, 125.0F, 12.0F},
+          OrbitView{89.0F, -359.0F, 300.0F}}) {
+        INFO("pitch " << view.pitchDegrees << " yaw " << view.yawDegrees << " distance "
+                      << view.distance);
+        const OrbitView back = orbitFromMhmCamera(mhmCameraFrom(view));
+        CHECK_THAT(static_cast<double>(back.pitchDegrees),
+                   WithinAbs(static_cast<double>(view.pitchDegrees), 1e-4));
+        CHECK_THAT(static_cast<double>(back.yawDegrees),
+                   WithinAbs(static_cast<double>(view.yawDegrees), 1e-4));
+        CHECK_THAT(static_cast<double>(back.distance),
+                   WithinAbs(static_cast<double>(view.distance), 1e-3));
+    }
+}
+
+TEST_CASE("pitch and yaw go in the slots the format uses", "[mhm]") {
+    // The round trip above is self-inverse under a consistent swap of fields 0
+    // and 1, so it cannot tell pitch from yaw. human.py:1607 writes
+    // getRotation()[:2], and lib/camera.py:603 returns
+    // [verticalInclination, horizontalRotation, 0] -- pitch first.
+    const auto pitchOnly = mhmCameraFrom({7.0F, 0.0F, kDefaultOrbitDistance});
+    CHECK_THAT(pitchOnly[0], WithinAbs(7.0, 1e-5));
+    CHECK_THAT(pitchOnly[1], WithinAbs(0.0, 1e-9));
+
+    const auto yawOnly = mhmCameraFrom({0.0F, 7.0F, kDefaultOrbitDistance});
+    CHECK_THAT(yawOnly[0], WithinAbs(0.0, 1e-9));
+    CHECK_THAT(yawOnly[1], WithinAbs(7.0, 1e-5));
+}
+
+TEST_CASE("a camera the format allows but a float cannot hold is refused", "[mhm]") {
+    // parseFloat rejects nan and inf, but 1e300 is a perfectly finite double
+    // and a legal camera rotation as far as the parser is concerned. Narrowed
+    // to float it becomes inf, and saveMhm's ".0" fixup then writes `inf.0`,
+    // which neither this loader nor MakeHuman 1.x can read.
+    const OrbitView huge = orbitFromMhmCamera({1e300, -1e300, 0, 0, 0, 1.0});
+    CHECK(std::isfinite(huge.pitchDegrees));
+    CHECK(std::isfinite(huge.yawDegrees));
+    CHECK_THAT(static_cast<double>(huge.pitchDegrees), WithinAbs(0.0, 1e-9));
+
+    // And nothing non-finite can escape into a file.
+    for (const double d : mhmCameraFrom(huge))
+        CHECK(std::isfinite(d));
+    for (const double d : mhmCameraFrom({std::numeric_limits<float>::infinity(), 0.0F, 10.0F})) {
+        CHECK(std::isfinite(d));
+    }
+}
+
+TEST_CASE("a zoom too small to divide by is refused, not turned into infinity", "[mhm]") {
+    // The guard used to test only `zoom > 0`, but 45.0 / 1e-38 overflows float
+    // long before it divides by zero -- and an infinite orbit distance renders
+    // an empty viewport with nothing reported.
+    for (const double zoom : {1e-38, 1e-320, 1e-45}) {
+        INFO("zoom " << zoom);
+        const OrbitView view = orbitFromMhmCamera({0, 0, 0, 0, 0, zoom});
+        CHECK(std::isfinite(view.distance));
+        CHECK_THAT(static_cast<double>(view.distance),
+                   WithinAbs(static_cast<double>(kDefaultOrbitDistance), 1e-4));
+    }
+}
+
+TEST_CASE("a zero or absent zoom falls back rather than dividing by zero", "[mhm]") {
+    // A hand-edited or truncated file must not produce an infinite distance and
+    // a viewport showing nothing.
+    CHECK_THAT(static_cast<double>(orbitFromMhmCamera({0, 0, 0, 0, 0, 0.0}).distance),
+               WithinAbs(static_cast<double>(kDefaultOrbitDistance), 1e-6));
+    CHECK_THAT(static_cast<double>(orbitFromMhmCamera({0, 0, 0, 0, 0, -2.0}).distance),
+               WithinAbs(static_cast<double>(kDefaultOrbitDistance), 1e-6));
+    // A distance of zero on the way out would divide by zero too.
+    CHECK_THAT(mhmCameraFrom({0.0F, 0.0F, 0.0F})[5], WithinAbs(1.0, 1e-9));
 }

@@ -478,9 +478,21 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       character, press Save, get back a naked unrigged body. And `applyMhm` does
       not reset, so a second load blends with the first (`human.py:1486`).
       Both fixed and pinned.
-- [ ] `.mhm` camera is preserved on round trip but a NEW character writes no
-      camera line, because the viewport camera is not plumbed into the document.
-      The reference always writes one.
+- [x] **`.mhm` camera and `subdivide` are now honoured, not just stored.**
+      `mhmCameraFrom` / `orbitFromMhmCamera` map the format's *magnification*
+      (`lib/camera.py:454-457`: 0.25..15, default 1.0) onto this renderer's
+      orbit distance by `zoom = 45 / distance` — **a convention anchored on the
+      defaults, not a measurement**, since the two cameras do not share a
+      projection. Restored views are clamped to the viewport's own limits:
+      MakeHuman's max zoom of 15 maps to distance 3, which is inside the head.
+      `--subdivide` and the `.mhm` flag both drive Catmull-Clark: 19,158 → 75,008
+      verts, 18,486 → 73,944 faces.
+      **A headless save leaves the camera line byte-for-byte as loaded** — the
+      format holds doubles and this camera is float, so passing a view through
+      unconditionally rewrote `-13.399999999999999` as `-13.399999618530273` on
+      every save, for a framing nobody touched.
+- [ ] Camera *pan* has no equivalent here; the loaded translation is carried
+      forward untouched rather than flattened to the origin.
 - [ ] Snapping with drop indicators
 - [x] Six-dot panel menu (float/dock/tab/reset/close) — `design.md` §6.3.
       `PanelTitleBar` replaces the whole dock title bar; Qt offers no hook for

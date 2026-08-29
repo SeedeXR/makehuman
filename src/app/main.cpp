@@ -8,6 +8,7 @@
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/core/RenderMesh.h"
 #include "makehuman/core/SliderLayout.h"
+#include "makehuman/core/Subdivider.h"
 #include "makehuman/core/Target.h"
 #include "makehuman/core/TargetIndex.h"
 #include "makehuman/io/GltfWriter.h"
@@ -39,6 +40,7 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -265,17 +267,41 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(const std::string& curr
 /// Starting from a fresh MhmFile instead loses uuid, tags, camera and every
 /// plugin line the loader kept -- open a rigged, clothed character, press Save,
 /// and it reopens naked and unrigged.
+/// The document to write: @p base with its modifiers refreshed from @p human.
+///
+/// Starting from a fresh MhmFile instead loses uuid, tags, camera and every
+/// plugin line the loader kept -- open a rigged, clothed character, press Save,
+/// and it reopens naked and unrigged.
+///
+/// @param view the live viewport framing, or nothing when there is no window.
+///        **Absent means leave the camera line exactly as loaded.** The format
+///        holds doubles and this renderer's camera is float, so passing a view
+///        through unconditionally rewrote `camera -13.399999999999999 ...` as
+///        `-13.399999618530273` on every headless save, for a framing nobody
+///        had touched.
 mh::core::MhmFile documentFor(const mh::core::Human& human, const mh::core::MhmFile& base,
-                              const std::filesystem::path& path) {
+                              const std::filesystem::path& path,
+                              const std::optional<mh::core::OrbitView>& view, bool subdivided) {
     mh::core::MhmFile out = mh::core::mhmFromHuman(human, path.stem().string());
     out.writtenBy         = base.writtenBy;
     out.uuid              = base.uuid;
     out.tags              = base.tags;
-    out.camera            = base.camera;
-    out.hasCamera         = base.hasCamera;
-    out.subdivide         = base.subdivide;
     out.unhandled         = base.unhandled;
+    out.subdivide         = subdivided;
     if (!base.name.empty()) out.name = base.name;
+
+    if (!view) {
+        out.camera    = base.camera;
+        out.hasCamera = base.hasCamera;
+        return out;
+    }
+
+    out.camera    = mh::core::mhmCameraFrom(*view);
+    out.hasCamera = true;
+    // This renderer has no camera pan, so mhmCameraFrom writes zeros there.
+    // Carrying the loaded translation forward keeps a value we cannot represent
+    // rather than silently flattening it to the origin.
+    if (base.hasCamera) std::copy_n(base.camera.begin() + 2, 3, out.camera.begin() + 2);
     return out;
 }
 
@@ -384,6 +410,10 @@ int main(int argc, char** argv) {
     const QCommandLineOption saveOpt(QStringLiteral("save"),
                                      QStringLiteral("Write the character as .mhm and exit."),
                                      QStringLiteral("path"));
+    const QCommandLineOption subdivOpt(
+        QStringLiteral("subdivide"),
+        QStringLiteral("Draw and export the Catmull-Clark subdivided mesh."));
+    parser.addOption(subdivOpt);
     parser.addOption(loadOpt);
     parser.addOption(saveOpt);
     parser.addOption(skinOpt);
@@ -482,17 +512,43 @@ int main(int argc, char** argv) {
     if (!poseInPlace(*mesh, rig)) return 1;
     mesh->calcNormals();
 
-    auto rm = mh::core::RenderMesh::build(*mesh);
+    // Subdivision, honoured rather than merely stored. The .mhm carries the flag
+    // and this build parsed it for three milestones without acting on it.
+    bool subdivided = document.subdivide || parser.isSet(subdivOpt);
+    std::optional<mh::core::Subdivider> subdiv;
+
+    /// The mesh that actually gets drawn and exported.
+    const auto displayMesh = [&]() -> const mh::core::Mesh& {
+        if (!subdivided) return *mesh;
+        // build() is 6.9 ms and refresh() 0.5 ms, so the topology is built once
+        // and only the positions are recomputed as the character changes.
+        if (!subdiv || !subdiv->matches(*mesh)) {
+            auto built = mh::core::Subdivider::build(*mesh);
+            if (!built) {
+                std::fprintf(stderr, "cannot subdivide; drawing the base mesh\n");
+                subdivided = false;
+                return *mesh;
+            }
+            subdiv = std::move(*built);
+        } else {
+            subdiv->refresh(*mesh);
+        }
+        return subdiv->mesh();
+    };
+
+    const mh::core::Mesh& initial = displayMesh();
+    auto rm                       = mh::core::RenderMesh::build(initial);
     // base.obj is 138 parts helper geometry to 1 part body; drawing it raw
     // gives a figure in a solid skirt with a box over its face.
-    if (!rm.setFaceMask(*mesh, mesh->staticFaceMask())) {
+    if (!rm.setFaceMask(initial, initial.staticFaceMask())) {
         std::fprintf(stderr, "cannot apply the static face mask\n");
         return 1;
     }
 
     if (parser.isSet(saveOpt)) {
         const std::filesystem::path file = parser.value(saveOpt).toStdString();
-        const mh::core::MhmFile doc      = documentFor(human, document, file);
+        // No window, so no framing to record: the camera line stays as loaded.
+        const mh::core::MhmFile doc = documentFor(human, document, file, std::nullopt, subdivided);
         if (const auto ok = mh::core::saveMhm(file, doc); !ok) {
             std::fprintf(stderr, "cannot save %s: %s\n", file.string().c_str(),
                          ok.error().message().c_str());
@@ -503,7 +559,7 @@ int main(int argc, char** argv) {
     }
 
     if (parser.isSet(exportOpt)) {
-        return exportMesh(parser.value(exportOpt).toStdString(), *mesh, rm) ? 0 : 1;
+        return exportMesh(parser.value(exportOpt).toStdString(), displayMesh(), rm) ? 0 : 1;
     }
 
     // Built before the window so the initial litsphere is the one the picker
@@ -523,7 +579,21 @@ int main(int argc, char** argv) {
         human.applyStack(*mesh, targets);
         if (!poseInPlace(*mesh, rig)) return;
         mesh->calcNormals();
-        rm.refreshPositions(*mesh);
+
+        const mh::core::Mesh& shown = displayMesh();
+        // refreshPositions keeps the existing buffers only while the topology is
+        // the same one they were built from; toggling subdivision changes it.
+        if (rm.matches(shown)) {
+            rm.refreshPositions(shown);
+        } else {
+            rm = mh::core::RenderMesh::build(shown);
+            if (!rm.setFaceMask(shown, shown.staticFaceMask())) {
+                // Unreachable today -- rm was just built from `shown` -- but
+                // silently leaving every face visible draws the helper geometry
+                // as a solid skirt with no clue why.
+                std::fprintf(stderr, "cannot apply the static face mask after a topology change\n");
+            }
+        }
         w.setMesh(rm.view());
     };
 
@@ -609,14 +679,34 @@ int main(int argc, char** argv) {
         for (const mh::core::Modifier& m : human.modifiers()) {
             panel->setValue(QString::fromStdString(m.fullName), human.modifierValue(m.fullName));
         }
+        if (loaded->hasCamera) {
+            const mh::core::OrbitView view = mh::core::orbitFromMhmCamera(loaded->camera);
+            mh::render::Camera c           = window.viewport()->camera();
+            // Clamped to the same limits the mouse obeys. MakeHuman's maximum
+            // zoomFactor of 15 maps to a distance of 3 -- inside the head --
+            // and setCamera does no clamping of its own.
+            c.pitchDegrees =
+                std::clamp(view.pitchDegrees, -mh::ui::ViewportWidget::kMaxPitchDegrees,
+                           mh::ui::ViewportWidget::kMaxPitchDegrees);
+            c.yawDegrees = view.yawDegrees;
+            c.distance   = std::clamp(view.distance, mh::ui::ViewportWidget::kMinDistance,
+                                      mh::ui::ViewportWidget::kMaxDistance);
+            window.viewport()->setCamera(c);
+        }
+        subdivided = loaded->subdivide;
+
         documentPath = file;
         window.setDocumentPath(file);
         rebuildInto(window);
     };
 
     const auto writeTo = [&](const QString& file) {
+        // What the user is looking at, so Save records the framing.
+        const mh::render::Camera c = window.viewport()->camera();
         const mh::core::MhmFile doc =
-            documentFor(human, document, std::filesystem::path(file.toStdString()));
+            documentFor(human, document, std::filesystem::path(file.toStdString()),
+                        mh::core::OrbitView{c.pitchDegrees, c.yawDegrees, c.distance}, subdivided);
+
         if (const auto ok = mh::core::saveMhm(file.toStdString(), doc); !ok) {
             QMessageBox::warning(&window, QObject::tr("Cannot save"),
                                  QString::fromStdString(ok.error().message()));
