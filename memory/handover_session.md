@@ -172,9 +172,37 @@ alpha-7 converter and declares `alpha_7`. The parser had read it correctly.
 implementing them now would be untestable speculation. Recorded in `todo.md`
 for whenever a community asset needs it.
 
+### Session 011 addendum (2026-08-29 09:07:08) — `.mhmat` materials
+
+`Material` / `loadMaterial`. All keys, the seven texture channels with their
+intensities, SSS scales, shader params and defines, and `shaderConfig`.
+
+`effectiveDefines()` reproduces the reference's derivation (`material.py:956-1016`)
+including that **bump is suppressed when normal is active** (`:984-995`) and that
+a channel contributes nothing without its texture. The list is **sorted**,
+because the sorted define list is the shader-variant cache key (`:1015`) — that
+is a contract, not formatting.
+
+Validation policy, chosen deliberately: a **known** key with an unparseable
+value is an error (silently keeping the default would change the asset's
+appearance with no diagnostic), while an **unknown** key is ignored, because
+community assets carry keys this build has never seen. `-Werror` surfaced this
+design question by flagging the `lineNo` I had declared and never used.
+
+**Process note — the anchor problem, properly diagnosed.** A scripted edit
+failed for the sixth and seventh time this iteration. The root cause is now
+clear and worth recording: I write anchors from memory of the text I authored,
+but clang-format rewrites whitespace immediately afterwards — collapsing
+alignment, and writing `}  // namespace` with two spaces. A regex substitution
+also matched the wrong `return m;` because `MaterialError::message()` has a
+local named `m` too. The assert caught every one before a write, so nothing was
+corrupted. **The reliable procedure is: read the file, copy exact current text,
+or match whitespace-tolerantly — never retype from memory.**
+
 ### Next
-`.mhmat` material parsing, then the asset index (UUID -> path, since `.mhm`
-references proxies by UUID only).
+The asset index: UUID -> path. `.mhm` references proxies by UUID *only*
+(`proxychooser.py:539-552` removed filename loading), so without it a saved
+character's clothes cannot resolve.
 
 ---
 
