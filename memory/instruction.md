@@ -33,6 +33,24 @@ file for `BSD-3-Clause` finds every file that mentions BSD; extracting
 **The general rule:** a gate that greps for a forbidden string must match the
 *construct*, not the word.
 
+### Re-run the gates AFTER proving them
+
+Proving a gate fires means deliberately breaking something. Do that in a temp
+directory, or re-run the full gate set afterwards — not just the one gate.
+
+A redirect in a "prove it fires" step (`grep -v ... > src/foundation/Transform.h`,
+against a path that did not exist) silently CREATED an empty file. The full gate
+run had already happened; CI caught the stray file, not me. Two habits fix it:
+
+- `git status` before every commit, and read it — an unexpected `A` is the tell.
+- Never redirect into a path inside the repo during an experiment.
+
+### Use `/usr/bin/grep` when mirroring a CI gate locally
+
+`grep` on this machine resolves to **ugrep**, which is not what the runner has.
+A gate that passes locally through ugrep can still fail in CI. Mirror gates with
+the absolute path.
+
 - strip comments first (`sed 's/#.*//'`), or
 - anchor on syntax (`^\s*#\s*include\s*<charconv>`, `target_link_libraries.*mh::core`).
 
