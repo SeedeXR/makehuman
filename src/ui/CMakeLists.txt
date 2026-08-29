@@ -13,8 +13,12 @@ set(CMAKE_AUTOMOC ON)
 add_library(mh_ui STATIC
     ViewportWidget.cpp
     MainWindow.cpp
+    Theme.cpp
+    PanelTitleBar.cpp
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/ViewportWidget.h
-    ${CMAKE_SOURCE_DIR}/include/makehuman/ui/MainWindow.h)
+    ${CMAKE_SOURCE_DIR}/include/makehuman/ui/MainWindow.h
+    ${CMAKE_SOURCE_DIR}/include/makehuman/ui/Theme.h
+    ${CMAKE_SOURCE_DIR}/include/makehuman/ui/PanelTitleBar.h)
 add_library(mh::ui ALIAS mh_ui)
 
 target_include_directories(mh_ui PUBLIC
@@ -22,8 +26,10 @@ target_include_directories(mh_ui PUBLIC
     $<INSTALL_INTERFACE:include>)
 
 target_link_libraries(mh_ui
-    PUBLIC  mh::render Qt6::Widgets
+    PUBLIC  mh::render Qt6::Widgets Qt6::Svg
     PRIVATE mh::warnings mh::sanitize)
+
+target_compile_definitions(mh_ui PRIVATE MH_RESOURCE_DIR="${CMAKE_SOURCE_DIR}/resources")
 
 set_target_properties(mh_ui PROPERTIES
     CXX_STANDARD 23

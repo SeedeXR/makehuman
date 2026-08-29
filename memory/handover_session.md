@@ -4,6 +4,105 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 16:02:11 — Session 036 · **the dark theme, and a stylesheet rule that painted over itself**
+
+### What shipped
+- **`ui::theme`** — the `design.md` §3 token table as 21 named `QColor`s, a WCAG 2.1
+  contrast function, a generated stylesheet, `QFontDatabase` registration of the bundled
+  42dot Sans, and Lucide SVGs recoloured at load.
+- **`PanelTitleBar`** — the six-dot panel menu (`design.md` §6.3). Float, Dock
+  Left/Right/Top/Bottom, Tab with…, Reset This Panel, Close. Qt has no hook for extra
+  title-bar buttons, so the whole bar is replaced.
+- 14 new test cases; the UI binary is now 180 assertions across 23 cases.
+
+### The bug the reviewer caught by sampling pixels
+`QWidget { background: bgBase; }` matched **every child of every dock**, so it painted
+the window's base colour opaquely over the `QDockWidget { background: bgPanel }` rule
+below it. The panel-vs-base separation the entire design system rests on never rendered,
+and nothing failed: the app looked plausible and the contrast tests measured text against
+a surface that was never painted.
+
+The fix needed two parts, and the second is a Qt trap worth remembering:
+1. Scope the background rule to `QMainWindow, QDialog`, keep `QWidget { color: … }`
+   (colour inherits without painting).
+2. **Qt does not honour a stylesheet `background` on a plain `QWidget` subclass** unless
+   `WA_StyledBackground` is set. The rule matches, parses, and paints nothing.
+   `PanelTitleBar` needed the attribute.
+
+Verified by sampling the app's own screenshot, which is how the reviewer found it:
+
+| Surface | Sampled | Token |
+|---|---|---|
+| dock title bar | `#2a2a2e` | `--bg-panel` |
+| dock body | `#2a2a2e` | `--bg-panel` |
+| status bar | `#212124` | `--bg-base` |
+| viewport | `#1a1a1c` | `--bg-viewport` |
+
+The viewport had its own drift: `ViewportWidget` hard-coded `#19191b` while the token
+says `#1a1a1c`. Now reads the token.
+
+### design.md was wrong and has been corrected
+The recorded contrast ratios were **13.1 / 6.2 / 3.4**. Measured: **12.12 / 6.05 / 3.17**.
+Every conclusion survives (AAA / AA / large-text-only) but the figures did not.
+`tests/ui/test_theme.cpp` now computes them from the tokens, so the table and the code
+cannot drift again.
+
+### Review findings fixed
+Code review (8) and ponytail (14). The ones that mattered beyond the stylesheet:
+- `buildMenu` documented the menu as caller-owned while giving it a QObject parent —
+  two owners, and only declaration order kept the suite from double-freeing. ASan proved
+  it. Now returns `std::unique_ptr<QMenu>` with no parent.
+- A "Tab with…" entry captured its target dock with the **wrong context object**, so
+  deleting that dock left the action live and handed a freed pointer to
+  `tabifyDockWidget`. Qt 6.11 happens to only pointer-compare, so it silently no-ops —
+  relying on an undocumented internal. Context is now the target itself.
+- `icon()` carried a comment claiming device-pixel-ratio rendering that the code did not
+  do; a 16 px title-bar icon was stretched to 32 device pixels. Now actually rasterised
+  at the DPR.
+- `g_iconDir` had no default and is read during widget construction, so a `MainWindow`
+  built before `setIconDir` got two invisible title-bar buttons. Catch2 randomises order,
+  so which tests saw icons was luck. Defaults to the shipped directory now.
+- The stylesheet test could not catch the bug it looked like it guarded: an unsubstituted
+  `%12` carries no `#`, so the regex sailed past while Qt rejected the whole sheet.
+  Now also asserts no `%` survives.
+
+### Structural fix: CI can no longer skip the renderer silently
+Last session found CI had been green on code it never compiled. Added `MH_REQUIRE_RENDER`,
+set in the CI matrix: a missing Qt module is now a `FATAL_ERROR` instead of a status
+message nobody reads. **Verified by configuring with `-DCMAKE_DISABLE_FIND_PACKAGE_Qt6=ON`**
+— rc=1 with the flag, rc=0 without it, so the no-Qt fallback job still configures.
+
+### Corrections made this session
+- A regex meant to swap `hex(c)` for `c.name()` mangled the `.arg()` chain into unbalanced
+  parentheses. Caught by reading the result, not by the compiler — the file was rewritten
+  rather than patched.
+- Claimed the `#panel\.titlebar { background }` rule was part of the fix. Its edit
+  failed its own assertion and never applied; `WA_StyledBackground` alone was the fix.
+  Reported after re-sampling, not before.
+
+### Deliberate disagreements with the ponytail review
+- **Kept all 21 palette tokens** though 5 have no code consumer yet. The `Palette` is the
+  machine-readable copy of a documented spec, not a speculative abstraction, and the
+  tests validate the whole table. Wired `accentHover`, `accentPress`, `textDisabled` and
+  `bgViewport` into real rules while here.
+- **Kept `setIconDir` and the `fontDir` parameter.** A `.app` bundle resolves resources
+  relative to the executable, not the source tree; `MH_RESOURCE_DIR` is a dev-time
+  default, not the shipping answer.
+
+### Verified this session
+- 309/309 in debug, release and ASan; UI binary 180 assertions / 23 cases.
+- All 7 licence gates `rc=0`; clang-format clean; boundary holds (`mh_ui` → 0 `mh::core`).
+- Benchmarks unchanged against the Python baseline.
+- Qt version corrected to 6.11.1 in `LICENSING.md`, and **Qt Svg** recorded as a newly
+  linked module.
+
+### Next
+- Task-view registry and the modelling sliders — the docks still say "not yet implemented".
+- Nothing in the window selects a pose; `--pose` is still CLI only.
+- `Duplicate` in the panel menu needs a panel factory that does not exist.
+
+---
+
 ## 2026-08-29 15:12:04 — Session 035 · **a window, and a T-pose that is actually a T-pose**
 
 ### What shipped

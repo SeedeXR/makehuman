@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "makehuman/ui/MainWindow.h"
 
+#include "makehuman/ui/PanelTitleBar.h"
 #include "makehuman/ui/ViewportWidget.h"
 
 #include <QDockWidget>
@@ -14,10 +15,14 @@ namespace {
 /// A dock's object name is what QMainWindow::saveState keys on. Without one,
 /// the saved layout silently fails to restore -- Qt warns, and the window comes
 /// back with default docks as if nothing had been saved.
-QDockWidget* makeDock(const QString& title, const QString& objectName, QWidget* parent) {
+QDockWidget* makeDock(const QString& title, const QString& objectName, Qt::DockWidgetArea home,
+                      QWidget* parent) {
     auto* dock = new QDockWidget(title, parent);
     dock->setObjectName(objectName);
     dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    // The six-dot menu (design.md 6.3). Qt has no hook for extra title-bar
+    // buttons, so the whole bar is replaced.
+    dock->setTitleBarWidget(new PanelTitleBar(dock, home));
 
     auto* body = new QLabel(QStringLiteral("%1\n\n(not yet implemented)").arg(title), dock);
     body->setAlignment(Qt::AlignCenter);
@@ -57,9 +62,11 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, QWidget* parent)
     setCentralWidget(d_->viewport);
 
     addDockWidget(Qt::LeftDockWidgetArea,
-                  makeDock(QStringLiteral("Modelling"), QStringLiteral("dock.modelling"), this));
+                  makeDock(QStringLiteral("Modelling"), QStringLiteral("dock.modelling"),
+                           Qt::LeftDockWidgetArea, this));
     addDockWidget(Qt::RightDockWidgetArea,
-                  makeDock(QStringLiteral("Materials"), QStringLiteral("dock.materials"), this));
+                  makeDock(QStringLiteral("Materials"), QStringLiteral("dock.materials"),
+                           Qt::RightDockWidgetArea, this));
 
     // A renderer failure is otherwise a black rectangle and a status bar saying
     // "Ready" -- the message exists, it just never reached anyone.

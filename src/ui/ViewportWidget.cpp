@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "makehuman/ui/ViewportWidget.h"
 
+#include "makehuman/ui/Theme.h"
+
 #include <rhi/qrhi.h>
 #include <QMouseEvent>
 #include <QWheelEvent>
@@ -115,7 +117,7 @@ void ViewportWidget::render(QRhiCommandBuffer* cb) {
                              : 1.0F;
     d_->scene->updateCamera(u, d_->camera, aspect);
 
-    cb->beginPass(renderTarget(), QColor::fromRgbF(0.098F, 0.098F, 0.106F, 1.0F), {1.0F, 0}, u);
+    cb->beginPass(renderTarget(), theme::palette().bgViewport, {1.0F, 0}, u);
     d_->scene->draw(cb, pix);
     cb->endPass();
 }

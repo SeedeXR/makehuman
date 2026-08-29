@@ -42,7 +42,10 @@ jobs:
         run: brew install ninja assimp qt
 
       - name: Configure
-        run: cmake --preset ${{ matrix.preset }} -DCMAKE_PREFIX_PATH="$(brew --prefix qt)"
+        run: >-
+          cmake --preset ${{ matrix.preset }}
+          -DCMAKE_PREFIX_PATH="$(brew --prefix qt)"
+          -DMH_REQUIRE_RENDER=ON
 
       # -Werror is on for our targets, so any new warning fails here.
       - name: Build

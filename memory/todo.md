@@ -442,14 +442,23 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 - [~] `QMainWindow` + `QDockWidget` — two docks, left/right areas, object names
       set so `saveState` actually restores. Nested and tabbed docking not yet.
 - [ ] Snapping with drop indicators
-- [ ] Six-dot panel menu (float/dock/tab/reset/close) — `design.md` §6.3
+- [x] Six-dot panel menu (float/dock/tab/reset/close) — `design.md` §6.3.
+      `PanelTitleBar` replaces the whole dock title bar; Qt offers no hook for
+      extra title-bar buttons. Areas the dock disallows are **not** offered —
+      a menu entry that silently does nothing is worse than none.
+      **Duplicate** is not implemented: it needs a panel factory that does not
+      exist yet. Everything else in the §6.3 sketch is there.
 - [~] Workspaces: save / restore / reset done (QSettings **IniFormat** — the macOS
       native backend ignores `setPath`, so a test could not redirect it away from the
       developer's real preferences). 4 shipped presets and a versioned schema not yet.
-- [x] **Assets in place**: 57 Lucide icons (ISC, normalised to the 1.5 px
+- [x] **Assets in place and loaded**: 57 Lucide icons (ISC, normalised to the 1.5 px
       stroke `design.md` §4 specifies) and 42dot Sans variable (OFL-1.1,
       structurally validated). See `resources/README.md`.
-- [ ] Dark theme from the token table, wired to the token file
+- [x] Dark theme from the token table — `ui::theme::Palette` is the 21-token
+      table; `styleSheet()` is generated from it and a test asserts **every**
+      `#rrggbb` in the sheet is a palette entry, so a hand-typed colour fails
+      the build. Contrast ratios are computed from the tokens and checked
+      against WCAG, which is how `design.md`'s overstated figures were caught.
 - [x] `QRhiWidget` viewport with the documented navigation bindings — Metal, 4x MSAA,
       orbit clamped +/-89 deg, multiplicative dolly clamped 5-300. Verified by
       `makehuman --screenshot`, which exits non-zero on a blank frame.

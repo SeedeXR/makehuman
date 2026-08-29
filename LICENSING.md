@@ -154,7 +154,7 @@ because dropping the notice is the single way to actually breach BSD.
 
 | Dependency | Version | Licence | SPDX | Use |
 |---|---|---|---|---|
-| Qt | 6.11.0 | LGPL-3.0 (dynamic) / GPL-3.0 | `LGPL-3.0-only` | UI, RHI, shader tools |
+| Qt | 6.11.1 | LGPL-3.0 (dynamic) / GPL-3.0 | `LGPL-3.0-only` | Core, Gui, GuiPrivate, Widgets, **Svg**, ShaderTools — UI, RHI, icon rendering, shader tools |
 | Eigen | 5.0.1 | MPL-2.0 | `MPL-2.0` | Linear algebra |
 | oneTBB | 2023.1.0 | Apache-2.0 | `Apache-2.0` | Job system |
 | assimp | 6.0.4_1 | BSD-3-Clause | `BSD-3-Clause` | **Multi-format import/export** (FBX 7500 binary, Collada, STL, 3MF) and an independent reader validating the formats we write ourselves. Linked into `mh_io`. See §5.3. |

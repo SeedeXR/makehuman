@@ -9,7 +9,8 @@ add_executable(makehuman main.cpp)
 target_link_libraries(makehuman PRIVATE mh::core mh::rig mh::ui mh::warnings)
 target_compile_definitions(makehuman PRIVATE
     MH_DATA_DIR="${MH_DATA_DIR}"
-    MH_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders")
+    MH_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders"
+    MH_RESOURCE_DIR="${CMAKE_SOURCE_DIR}/resources")
 set_target_properties(makehuman PROPERTIES
     CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
 add_dependencies(makehuman mh_shaders)

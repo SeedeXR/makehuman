@@ -91,10 +91,12 @@ if(MH_HAVE_RENDER)
 
     # The UI tests provide their own main() so a QApplication exists before any
     # widget is constructed -- Catch2's main would build the widgets first.
-    add_executable(mh_ui_tests ui/test_ui.cpp)
+    add_executable(mh_ui_tests ui/test_ui.cpp ui/test_theme.cpp)
     target_link_libraries(mh_ui_tests
         PRIVATE mh::ui Catch2::Catch2 mh::warnings mh::sanitize)
-    target_compile_definitions(mh_ui_tests PRIVATE MH_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders")
+    target_compile_definitions(mh_ui_tests PRIVATE
+        MH_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders"
+        MH_RESOURCE_DIR="${CMAKE_SOURCE_DIR}/resources")
     set_target_properties(mh_ui_tests PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
     if(_catch2_inc)
         target_include_directories(mh_ui_tests SYSTEM PRIVATE ${_catch2_inc})

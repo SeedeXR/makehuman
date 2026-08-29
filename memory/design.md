@@ -105,10 +105,10 @@ spirit from the reference's `#ffa02f → #e96226` accent
 
 | Token | Hex | Contrast on `--bg-panel` |
 |---|---|---|
-| `--text-primary` | `#ececee` | 13.1:1 — AAA |
-| `--text-secondary` | `#a8a8b0` | 6.2:1 — AA |
-| `--text-tertiary` | `#76767e` | 3.4:1 — large text / non-essential only |
-| `--text-disabled` | `#5a5a62` | decorative only, never sole information |
+| `--text-primary` | `#ececee` | **12.12:1** — AAA |
+| `--text-secondary` | `#a8a8b0` | **6.05:1** — AA |
+| `--text-tertiary` | `#76767e` | **3.17:1** — large text / non-essential only |
+| `--text-disabled` | `#5a5a62` | 2.09:1 — decorative only, never sole information |
 
 ### Accent and semantic
 
@@ -122,6 +122,12 @@ spirit from the reference's `#ffa02f → #e96226` accent
 | `--warning` | `#e0a33e` | |
 | `--danger` | `#e05c5c` | destructive actions |
 | `--info` | `#5b9dd9` | |
+
+> **Corrected 2026-08-29.** The three ratios above were originally recorded as
+> 13.1 / 6.2 / 3.4. Those were overstated — the measured WCAG 2.1 values are
+> 12.12 / 6.05 / 3.17. Every conclusion survives (AAA, AA, large-text-only), but
+> the figures did not. `tests/ui/test_theme.cpp` now computes them from the
+> tokens, so this table and the code cannot drift apart again.
 
 **Accessibility rules:** all body text meets WCAG AA (4.5:1); primary text meets
 AAA. Colour is never the only signal — state also carries an icon, a label, or a

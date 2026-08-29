@@ -99,8 +99,12 @@ add_subdirectory(src/rig)
 # without it this whole subtree is skipped and the render/ui/app code is never
 # compiled, which is exactly how it went unbuilt on CI for weeks.
 option(MH_BUILD_RENDER "Build the Qt RHI renderer (requires Qt6)" ON)
+# CI sets this. Without it, a missing or renamed Qt module downgrades to a
+# message nobody reads and the render/ui/app tree is simply not built -- which
+# is exactly how CI stayed green for weeks on code it never compiled.
+option(MH_REQUIRE_RENDER "Fail configuration if the renderer cannot be enabled" OFF)
 if(MH_BUILD_RENDER)
-    find_package(Qt6 QUIET COMPONENTS Gui GuiPrivate Widgets ShaderTools)
+    find_package(Qt6 QUIET COMPONENTS Gui GuiPrivate Widgets Svg ShaderTools)
     if(Qt6_FOUND AND TARGET Qt6::GuiPrivate)
         message(STATUS "Qt ${Qt6_VERSION}: renderer, UI and app enabled")
         add_subdirectory(src/render)
@@ -109,7 +113,13 @@ if(MH_BUILD_RENDER)
         add_subdirectory(tools)
         set(MH_HAVE_RENDER TRUE)
     else()
-        message(STATUS "Qt6 (Gui, GuiPrivate, Widgets, ShaderTools) not found: renderer and UI disabled")
+        if(MH_REQUIRE_RENDER)
+            message(FATAL_ERROR
+                "MH_REQUIRE_RENDER is set but Qt6 (Gui, GuiPrivate, Widgets, Svg, "
+                "ShaderTools) was not found. Refusing to silently skip the renderer, "
+                "UI and app.")
+        endif()
+        message(STATUS "Qt6 (Gui, GuiPrivate, Widgets, Svg, ShaderTools) not found: renderer and UI disabled")
         set(MH_HAVE_RENDER FALSE)
     endif()
 else()

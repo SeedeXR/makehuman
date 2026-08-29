@@ -15,9 +15,12 @@
 #include "makehuman/rig/Skinning.h"
 #include "makehuman/rig/VertexWeights.h"
 #include "makehuman/ui/MainWindow.h"
+#include "makehuman/ui/Theme.h"
 
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QFont>
+#include <QPixmap>
 #include <QTimer>
 #include "makehuman/ui/ViewportWidget.h"
 
@@ -185,6 +188,17 @@ int main(int argc, char** argv) {
     QCoreApplication::setOrganizationName(QStringLiteral("MakeHuman"));
     QCoreApplication::setApplicationName(QStringLiteral("MakeHumanCpp"));
 
+    // Resources before any widget exists: a stylesheet applied after the fact
+    // repolishes every widget, and a font registered late is not the one the
+    // first layout was measured with.
+    const std::filesystem::path resources(MH_RESOURCE_DIR);
+    mh::ui::theme::setIconDir(resources / "icons" / "lucide");
+    const QString family = mh::ui::theme::installFonts(resources / "fonts");
+    if (!family.isEmpty()) {
+        QApplication::setFont(QFont(family, 13));
+    }
+    app.setStyleSheet(mh::ui::theme::styleSheet());
+
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("MakeHuman (C++/Qt6)"));
     parser.addHelpOption();
@@ -247,11 +261,13 @@ int main(int argc, char** argv) {
         const QString out = parser.value(shotOpt);
         // Let the widget initialise its RHI and draw before grabbing, then quit.
         QTimer::singleShot(600, &app, [&app, &window, out] {
-            // grabFramebuffer asks the viewport to render and hands back what it
-            // drew. window.grab() composites the whole window, and on the
-            // offscreen platform that yields chrome over a hole where the RHI
-            // content would be -- a blank check that passes.
-            const QImage shot = window.viewport()->grabFramebuffer();
+            // Two grabs, deliberately. grabFramebuffer is the viewport's own
+            // output and is what the blank-frame guard must judge -- on a
+            // platform with no RHI, window.grab() returns chrome over a hole
+            // and would pass a blank check. window.grab() is what gets saved,
+            // because the chrome is half of what a screenshot is for.
+            const QImage frame = window.viewport()->grabFramebuffer();
+            const QPixmap shot = window.grab();
 
             // Errors first: reporting success and then contradicting it makes
             // the tool useless as a check.
@@ -262,7 +278,7 @@ int main(int argc, char** argv) {
                 return;
             }
             std::string stats;
-            const bool drew = describe(shot, stats);
+            const bool drew = describe(frame, stats);
             std::fprintf(drew ? stdout : stderr, "%s\n", stats.c_str());
             if (!drew) {
                 // A blank frame saves as a perfectly valid PNG. Exiting 0 here
