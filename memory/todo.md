@@ -60,7 +60,10 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [ ] Face visibility mask + filtered index buffer (arrives with proxy hiding, M4)
 - [ ] `RenderMesh::build` is 2.11 ms — dominated by an indirect-comparator sort.
       Sorting packed (key,corner) pairs directly would help. Load-once path, low priority.
-- [ ] Dirty-range tracking replacing `ucoor`/`unorm`/…
+- [x] Exact staleness detection: `Mesh::topologyVersion()`, recorded by
+      `RenderMesh` and `Subdivider`. Replaces count-comparison, which missed a
+      same-size topology swap and silently produced wrong geometry.
+- [ ] Dirty-range tracking replacing `ucoor`/`unorm`/… (partial buffer updates)
 - [x] Catmull-Clark subdivision (`Subdivider`) — **exact parity: 75,008 verts /
       73,944 faces / 37,364 edges**, matching the reference. Split into a topology
       pass and a geometry pass so a morph costs only the geometry.

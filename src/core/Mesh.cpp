@@ -80,6 +80,7 @@ std::expected<void, MeshError> Mesh::setFaces(std::vector<uint32_t> faceVerts,
     // calcVertexNormals to rebuild instead of reading through dead indices.
     vface_.clear();
     nfaces_.clear();
+    ++topologyVersion_;
     fnorm_.assign(nFaces, Vec3{});
     vnorm_.clear();
     vtang_.clear();

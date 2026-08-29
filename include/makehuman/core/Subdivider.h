@@ -31,12 +31,21 @@ namespace mh::core {
 /// they are omitted here. Masking arrives with proxy geometry hiding (M4).
 class Subdivider {
 public:
-    /// Builds the subdivision topology. Fails on a non-quad mesh — the
-    /// reference bails out the same way (`:516-518`).
+    /// Builds the subdivision topology. Fails unless the mesh is genuinely
+    /// quads: the gate is `vertsPerFaceForExport() != 4`, matching the
+    /// reference (`:516-518`). A triangle mesh loaded from OBJ has
+    /// `vertsPerPrimitive() == 4` (degenerate quads) but export-3, so gating on
+    /// the former would subdivide meshes the reference declines.
+    ///
+    /// Unlike the reference (`:520-521`) a UV-less mesh is accepted; there is
+    /// nothing to subdivide in the UV space, and positions are unaffected.
     [[nodiscard]] static std::expected<Subdivider, MeshError> build(const Mesh& parent);
 
     /// Recomputes subdivided vertex positions from the parent's current
     /// positions, then normals. Cheap: no topology work.
+    ///
+    /// Does nothing if @p parent's topology changed since build() — see
+    /// matches(). Rebuild instead.
     void refresh(const Mesh& parent);
 
     [[nodiscard]] const Mesh& mesh() const noexcept { return mesh_; }
@@ -50,9 +59,11 @@ public:
 
     [[nodiscard]] size_t edgeCount() const noexcept { return edgeVerts_.size(); }
 
-    /// True while this topology still matches @p parent.
+    /// True while this topology still matches @p parent. Exact, not a
+    /// heuristic: a same-size topology swap bumps the parent's topology version.
     [[nodiscard]] bool matches(const Mesh& parent) const noexcept {
-        return builtVertexCount_ == parent.vertexCount() && builtFaceCount_ == parent.faceCount();
+        return builtVertexCount_ == parent.vertexCount() &&
+               builtTopologyVersion_ == parent.topologyVersion();
     }
 
 private:
@@ -74,8 +85,20 @@ private:
     std::vector<uint32_t> nedges_;
     uint32_t maxEdgeValence_{};
 
+    // Parent FACES incident to each parent vertex, counted the way the
+    // reference counts them (module3d.py:709-717): the first
+    // min(vpp, vertsPerFaceForExport) corners of each face, with no dedup of a
+    // repeated vertex. Mesh::buildAdjacency deduplicates, so reusing it would
+    // give a different valence for a triangle stored as a degenerate quad and
+    // flip the interior/boundary branch. Owning this also removes a hidden
+    // precondition: refresh() no longer depends on the parent having had
+    // buildAdjacency() called.
+    std::vector<uint32_t> vfaceOfVert_;
+    std::vector<uint32_t> nfacesOfVert_;
+    uint32_t maxFaceValence_{};
+
     size_t builtVertexCount_{};
-    size_t builtFaceCount_{};
+    uint64_t builtTopologyVersion_{};
 };
 
 }  // namespace mh::core

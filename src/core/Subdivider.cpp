@@ -43,7 +43,11 @@ EdgeTable buildEdges(std::span<const uint32_t> indices, size_t nFaces, size_t vp
 
     std::vector<uint32_t> order(corners);
     std::iota(order.begin(), order.end(), 0U);
-    std::ranges::sort(order, [&](uint32_t x, uint32_t y) { return keys[x] < keys[y]; });
+    // stable_sort, not sort: within an equal-key group the reference's np.unique
+    // takes the MIN and MAX face (:150-152). An unstable sort leaves which corner
+    // lands first unspecified, which changes the edge point on a non-manifold
+    // edge and makes output non-reproducible across toolchains.
+    std::ranges::stable_sort(order, [&](uint32_t x, uint32_t y) { return keys[x] < keys[y]; });
 
     t.cornerEdge.resize(corners);
     uint64_t prev = 0;
@@ -68,7 +72,12 @@ EdgeTable buildEdges(std::span<const uint32_t> indices, size_t nFaces, size_t vp
 
 std::expected<Subdivider, MeshError> Subdivider::build(const Mesh& parent) {
     const size_t vpp = parent.vertsPerPrimitive();
-    if (vpp != 4) return std::unexpected(MeshError::FaceArraySizeMismatch);
+    // The reference gates on vertsPerFaceForExport (:516-518). A triangle mesh
+    // from OBJ is stored as degenerate quads, so vertsPerPrimitive() is 4 while
+    // export is 3 -- gating on the former would subdivide what the reference declines.
+    if (vpp != 4 || parent.vertsPerFaceForExport() != 4) {
+        return std::unexpected(MeshError::FaceArraySizeMismatch);
+    }
 
     const size_t nVerts = parent.vertexCount();
     const size_t nFaces = parent.faceCount();
@@ -96,6 +105,32 @@ std::expected<Subdivider, MeshError> Subdivider::build(const Mesh& parent) {
         if (e.v1 < nVerts) ++counts[e.v1];
     }
     sd.maxEdgeValence_ = counts.empty() ? 1U : std::max(1U, *std::ranges::max_element(counts));
+
+    // Face adjacency, counted as the reference does: the first
+    // min(vpp, vertsPerFaceForExport) corners, no dedup (module3d.py:709-717).
+    const size_t cornersCounted = std::min<size_t>(vpp, parent.vertsPerFaceForExport());
+    std::vector<uint32_t> faceCounts(nVerts, 0);
+    for (size_t f = 0; f < nFaces; ++f) {
+        for (size_t c = 0; c < cornersCounted; ++c) {
+            const uint32_t v = parent.fvert()[f * vpp + c];
+            if (v < nVerts) ++faceCounts[v];
+        }
+    }
+    sd.maxFaceValence_ =
+        faceCounts.empty() ? 1U : std::max(1U, *std::ranges::max_element(faceCounts));
+    sd.vfaceOfVert_.assign(nVerts * sd.maxFaceValence_, 0);
+    sd.nfacesOfVert_.assign(nVerts, 0);
+    for (size_t f = 0; f < nFaces; ++f) {
+        for (size_t c = 0; c < cornersCounted; ++c) {
+            const uint32_t v = parent.fvert()[f * vpp + c];
+            if (v >= nVerts) continue;
+            uint32_t& n = sd.nfacesOfVert_[v];
+            if (n < sd.maxFaceValence_) {
+                sd.vfaceOfVert_[v * sd.maxFaceValence_ + n] = static_cast<uint32_t>(f);
+                ++n;
+            }
+        }
+    }
 
     sd.vedge_.assign(nVerts * sd.maxEdgeValence_, 0);
     sd.nedges_.assign(nVerts, 0);
@@ -192,9 +227,9 @@ std::expected<Subdivider, MeshError> Subdivider::build(const Mesh& parent) {
     }
     out.buildAdjacency();
 
-    sd.mesh_             = std::move(out);
-    sd.builtVertexCount_ = nVerts;
-    sd.builtFaceCount_   = nFaces;
+    sd.mesh_                 = std::move(out);
+    sd.builtVertexCount_     = nVerts;
+    sd.builtTopologyVersion_ = parent.topologyVersion();
     sd.refresh(parent);
     return sd;
 }
@@ -230,7 +265,7 @@ void Subdivider::refresh(const Mesh& parent) {
     // --- repositioned base points (:436-449) --------------------------------
     for (size_t v = 0; v < nVerts; ++v) {
         const uint32_t nEdge = nedges_[v];
-        const uint32_t nFace = parent.nfacesAt(v);
+        const uint32_t nFace = nfacesOfVert_[v];
         const Vec3& P        = parent.coord()[v];
 
         // R: mean of the midpoints of the edges at v.
@@ -252,7 +287,7 @@ void Subdivider::refresh(const Mesh& parent) {
         // F: mean of the face points of the faces at v.
         Vec3 F{};
         for (uint32_t k = 0; k < nFace; ++k) {
-            F += out[cbase_ + parent.faceAt(v, k)];
+            F += out[cbase_ + vfaceOfVert_[v * maxFaceValence_ + k]];
         }
         if (nFace > 0) F *= 1.0F / static_cast<float>(nFace);
 
@@ -273,6 +308,10 @@ void Subdivider::refresh(const Mesh& parent) {
     }
 
     mesh_.calcNormals();
+    // The result's positions are recomputed rather than set once, so its morph
+    // base was still the zero placeholder from build(); resetToOriginal() would
+    // have collapsed the mesh to the origin.
+    mesh_.captureOriginal();
 }
 
 }  // namespace mh::core

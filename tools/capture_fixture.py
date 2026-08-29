@@ -236,8 +236,57 @@ def capture_skeleton() -> None:
     )
 
 
+def capture_subdiv() -> None:
+    """One level of Catmull-Clark on the base mesh, from the reference."""
+    import catmull_clark_subdivision as cks
+    import files3d
+    import material as _material
+
+    print("capturing: subdiv")
+    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+
+    # SubdivisionObject copies mesh.object (catmull_clark_subdivision.py:67),
+    # which is a weakref property (module3d.py:459-464), so the stub must be
+    # kept alive by a strong reference here.
+    class _StubObject:
+        def __init__(self):
+            self.material = _material.Material()
+
+    stub = _StubObject()
+    mesh.object = stub
+    assert mesh.object is not None
+
+    sub = cks.createSubdivisionObject(mesh, None)
+    sub.update_coords()
+
+    out = GOLDEN / "subdiv"
+    out.mkdir(parents=True, exist_ok=True)
+    entries = {
+        "coord": _write_blob(out / "coord.bin", sub.coord, "f4"),
+        "fvert": _write_blob(out / "fvert.bin", sub.fvert, "u4"),
+        "texco": _write_blob(out / "texco.bin", sub.texco, "f4"),
+        "fuvs": _write_blob(out / "fuvs.bin", sub.fuvs, "u4"),
+    }
+    _finish(
+        "subdiv",
+        entries,
+        {
+            "source": "data/3dobjs/base.obj",
+            "parent_verts": int(len(mesh.coord)),
+            "parent_faces": int(len(mesh.fvert)),
+            "verts": int(len(sub.coord)),
+            "faces": int(len(sub.fvert)),
+            "uvs": int(len(sub.texco)),
+            "cbase": int(sub.cbase),
+            "ebase": int(sub.ebase),
+            "note": "layout: [0,cbase) base verts, [cbase,ebase) face points, [ebase,..) edge points",
+        },
+    )
+
+
 SUBSYSTEMS = {
     "mesh": capture_mesh,
+    "subdiv": capture_subdiv,
     "targets": capture_targets,
     "skeleton": capture_skeleton,
 }

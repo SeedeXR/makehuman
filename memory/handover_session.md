@@ -4,6 +4,68 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 004 · Catmull-Clark + review round 3
+
+**Ended:** 2026-08-29 05:45:32 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+### Delivered
+**`Subdivider`** — one level of Catmull-Clark, split into a topology pass and a
+geometry pass. **Byte-level parity with the reference on the full base mesh**:
+75,008 verts / 73,944 faces / 37,364 edges, with `fvert` and `fuvs`
+bit-identical and positions within 1e-5.
+
+| | C++ | Python | |
+|---|---|---|---|
+| `Subdivider::build` | 6.27 ms | 202.30 ms | 32x |
+| `Subdivider::refresh` | **0.46 ms** | 28.21 ms | 61x |
+
+The refresh figure is the headline: the reference's subdivided update path
+(`update_coords` 7.64 ms + `calcNormals` on 75k verts 20.57 ms = 28.21 ms)
+exceeds a 16.6 ms frame budget before anything is drawn, which is why
+subdivided editing cannot hold 60 fps today.
+
+### Review round 3 — 6 findings, all fixed
+The review verified the core math independently with a numpy transcription of
+the reference (bit-identical indices, `max|Δcoord| = 1.9e-6`) and then found six
+issues around it:
+
+| Sev | Defect | Fix |
+|---|---|---|
+| HIGH | `refresh()` read the *parent's* adjacency. If `buildAdjacency()` was never called — or `setFaces()` was called after it, which clears it — every vertex reported 0 faces and silently took the valence<3 fallback | the subdivider owns its face adjacency |
+| MED | `Mesh::buildAdjacency` deduplicates a vertex repeated within one face; the reference does not (`module3d.py:709-717`). A triangle stored as a degenerate quad — exactly what `loadObj` produces — got a different valence, flipping the interior/boundary branch | count per corner over `min(vpp, vertsPerFaceForExport)`, no dedup |
+| MED | gate was `vertsPerPrimitive != 4`; the reference gates on `vertsPerFaceForExport` (`:516-518`), so a triangle OBJ was subdivided where the reference declines | corrected gate |
+| MED | `std::ranges::sort` is unstable, so first/last adjacent face was arbitrary where `np.unique` gives min/max — non-manifold edge points diverged by up to 0.192 and output was not reproducible across toolchains | `stable_sort` (verified: Δ drops to 4.9e-10) |
+| LOW | `matches()` compared counts only, so a same-size topology swap passed and `refresh()` wrote wrong geometry through a stale table | `Mesh::topologyVersion()`, O(1) and exact; applied to `RenderMesh` too |
+| LOW | the result's `origCoord_` stayed at the zero placeholder, so `resetToOriginal()` collapsed it to the origin | `captureOriginal()` after refresh |
+
+**Resolved the `maxpole` caveat by not needing it.** The reference sizes one
+`vface` array to `max(maxFaces, maxpole, 4)` because it reuses that array for
+both faces and edges. Separate face and edge adjacency arrays, each sized from
+its own measured maximum, remove the shared bound entirely.
+
+### New coverage
+- **Golden subdivision fixture** (`tools/capture_fixture.py subdiv`): positions,
+  UVs and both index arrays captured from the reference and compared
+  byte-for-byte. Matching *counts* proves nothing about geometry; this does.
+- The **boundary base-vertex rule** is now exercised. On a rectangular grid every
+  boundary vertex has fewer than 3 faces, so the earlier tests only ever hit the
+  valence<3 fallback — an open 3-quad fan reaches the real boundary branch.
+
+**Process note:** a scripted private-member insert silently failed for the third
+time because clang-format had changed the whitespace the anchor matched. Now
+asserting the edit landed before building, rather than discovering it from a
+compile error.
+
+### Verified
+93/93 tests pass in debug, release and ASan+UBSan (112,145 assertions).
+Clean under `-Werror`; clang-format clean.
+
+### Next
+M3 — targets and modifiers: the `.target` parser, the compiled target blob, and
+the modifier weighting rule (`weight = value x PROD(factors)`).
+
+---
+
 ## 2026-08-29 — Session 003 · M1 complete, M2 tangents + unweld
 
 **Ended:** 2026-08-29 05:05:04 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master

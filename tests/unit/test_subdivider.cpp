@@ -250,3 +250,120 @@ TEST_CASE("subdivision roughly preserves the base mesh's bounds", "[core][subdiv
     CHECK(sb->second.y <= pb->second.y + 1e-3F);
     CHECK(sd->mesh().heightCm() > mesh->heightCm() * 0.9F);
 }
+
+TEST_CASE("the boundary base-vertex rule is exercised", "[core][subdiv]") {
+    // Coverage gap found in review: on a rectangular grid every boundary vertex
+    // has fewer than 3 faces, so makeQuad/makeGrid both land in the valence<3
+    // fallback and the boundary rule at Subdivider.cpp:266 is never reached.
+    //
+    // An open 3-quad fan around vertex 0 gives it 3 faces and 4 edges, so
+    // nFace >= 3 but nEdge != nFace -- the boundary branch.
+    Mesh m("fan", 4);
+    REQUIRE(m.setCoords({{0, 0, 0},
+                         {1, 0, 0},
+                         {1, 0, 1},
+                         {0, 0, 1},
+                         {-1, 0, 1},
+                         {-1, 0, 0},
+                         {-1, 0, -1},
+                         {0, 0, -1}})
+                .has_value());
+    m.addFaceGroup("g");
+    REQUIRE(m.setFaces({0, 1, 2, 3, 0, 3, 4, 5, 0, 5, 6, 7}, {}, {0, 0, 0}).has_value());
+    m.buildAdjacency();
+    m.calcNormals();
+
+    const auto sd = Subdivider::build(m);
+    REQUIRE(sd.has_value());
+
+    // Confirm the branch really is the boundary one, not the interior rule.
+    REQUIRE(m.nfacesAt(0) == 3);
+    CHECK(sd->mesh().vertexCount() == 8 + 3 + 10);  // base + face points + edges
+
+    // Vertex 0 has 4 incident edges, 2 of them boundary (to 1 and to 7). The
+    // boundary rule is (sum of boundary edge midpoints + P) / (count + 1)
+    //   = ((0.5,0,0) + (0,0,-0.5) + (0,0,0)) / 3
+    const Vec3& p = sd->mesh().coord()[0];
+    CHECK_THAT(p.x, WithinAbs(0.5 / 3.0, 1e-5));
+    CHECK_THAT(p.y, WithinAbs(0.0, 1e-6));
+    CHECK_THAT(p.z, WithinAbs(-0.5 / 3.0, 1e-5));
+}
+
+TEST_CASE("a triangle mesh is declined, as the reference declines it", "[core][subdiv]") {
+    // Review finding: the gate must be vertsPerFaceForExport, not
+    // vertsPerPrimitive. A triangle mesh from OBJ is stored as degenerate quads,
+    // so vertsPerPrimitive() is 4 while export is 3 -- gating on the former
+    // would subdivide meshes the reference declines
+    // (catmull_clark_subdivision.py:516-518).
+    Mesh m("tris", 4);
+    REQUIRE(m.setCoords({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}, {1, 0, 1}}).has_value());
+    m.addFaceGroup("g");
+    REQUIRE(m.setFaces({0, 1, 2, 0, 1, 3, 2, 1}, {}, {0, 0}).has_value());
+    REQUIRE(m.vertsPerPrimitive() == 4);
+    REQUIRE(m.vertsPerFaceForExport() == 3);  // degenerate quads
+
+    CHECK_FALSE(Subdivider::build(m).has_value());
+}
+
+TEST_CASE("subdivision does not require the parent's adjacency", "[core][subdiv]") {
+    // Review finding: refresh() read parent.nfacesAt()/faceAt(). If
+    // buildAdjacency() was never called -- or setFaces() was called after it,
+    // which clears them -- every vertex reported 0 faces and silently took the
+    // valence<3 fallback. The subdivider now owns its face adjacency.
+    Mesh with = makeGrid();  // has buildAdjacency()
+    Mesh without("grid", 4);
+    REQUIRE(
+        without.setCoords(std::vector<Vec3>(with.coord().begin(), with.coord().end())).has_value());
+    without.addFaceGroup("g");
+    REQUIRE(without
+                .setFaces(std::vector<uint32_t>(with.fvert().begin(), with.fvert().end()), {},
+                          std::vector<uint16_t>(with.group().begin(), with.group().end()))
+                .has_value());
+    // deliberately NO buildAdjacency()
+
+    const auto a = Subdivider::build(with);
+    const auto b = Subdivider::build(without);
+    REQUIRE(a.has_value());
+    REQUIRE(b.has_value());
+
+    REQUIRE(a->mesh().vertexCount() == b->mesh().vertexCount());
+    for (size_t i = 0; i < a->mesh().vertexCount(); ++i) {
+        CHECK_THAT(b->mesh().coord()[i].x,
+                   WithinAbs(static_cast<double>(a->mesh().coord()[i].x), 1e-6));
+        CHECK_THAT(b->mesh().coord()[i].z,
+                   WithinAbs(static_cast<double>(a->mesh().coord()[i].z), 1e-6));
+    }
+}
+
+TEST_CASE("refresh detects a same-size topology swap", "[core][subdiv]") {
+    // Review finding: matches() compared counts only, so swapping in a
+    // different topology with the same counts passed and refresh() wrote wrong
+    // geometry through a stale edge table with no error.
+    Mesh m  = makeGrid();
+    auto sd = Subdivider::build(m);
+    REQUIRE(sd.has_value());
+    REQUIRE(sd->matches(m));
+
+    // Same vertex count, same face count, different faces.
+    std::vector<uint32_t> swapped(m.fvert().begin(), m.fvert().end());
+    std::swap(swapped[0], swapped[2]);
+    REQUIRE(
+        m.setFaces(std::move(swapped), {}, std::vector<uint16_t>(m.faceCount(), 0)).has_value());
+
+    CHECK_FALSE(sd->matches(m));  // was true before the fix
+}
+
+TEST_CASE("the subdivided mesh's morph base is its own geometry", "[core][subdiv]") {
+    // Review finding: setCoords in build() captured the zero placeholder as
+    // origCoord_, so resetToOriginal() collapsed the mesh to the origin.
+    Mesh m  = makeGrid();
+    auto sd = Subdivider::build(m);
+    REQUIRE(sd.has_value());
+
+    const Vec3 before = sd->mesh().coord()[4];
+    sd->mesh().resetToOriginal();
+    const Vec3 after = sd->mesh().coord()[4];
+
+    CHECK_THAT(after.x, WithinAbs(static_cast<double>(before.x), 1e-6));
+    CHECK_THAT(after.z, WithinAbs(static_cast<double>(before.z), 1e-6));
+}

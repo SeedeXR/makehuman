@@ -1,0 +1,59 @@
+{
+  "subsystem": "subdiv",
+  "captured_at": "2026-08-29T02:42:47.766966+00:00",
+  "reference_commit": "0e5bf0c4bf05d5540b2a70c67fa873c072c22f82",
+  "python": "3.14.6",
+  "numpy": "2.5.2",
+  "platform": "darwin",
+  "entries": {
+    "coord": {
+      "file": "coord.bin",
+      "dtype": "f4",
+      "shape": [
+        75008,
+        3
+      ],
+      "count": 225024,
+      "sha256": "b41f2d5354e75f9ccb8c54c2db96fa883bb60b4eaa580e60aa5aa414812ce5ff"
+    },
+    "fvert": {
+      "file": "fvert.bin",
+      "dtype": "u4",
+      "shape": [
+        73944,
+        4
+      ],
+      "count": 295776,
+      "sha256": "e6b8b899adf9db11a83af3742d8421aa883347843b934ad3a038af90c4f412cd"
+    },
+    "texco": {
+      "file": "texco.bin",
+      "dtype": "f4",
+      "shape": [
+        79477,
+        2
+      ],
+      "count": 158954,
+      "sha256": "69e5aab89f103662a41c539df4013c85ff6031e718b394311a4c55769ce8c6f8"
+    },
+    "fuvs": {
+      "file": "fuvs.bin",
+      "dtype": "u4",
+      "shape": [
+        73944,
+        4
+      ],
+      "count": 295776,
+      "sha256": "de8137abcbda332a8b1302334eea61b24b2aecf6db1e95899c9e4623324f9a2f"
+    }
+  },
+  "source": "data/3dobjs/base.obj",
+  "parent_verts": 19158,
+  "parent_faces": 18486,
+  "verts": 75008,
+  "faces": 73944,
+  "uvs": 79477,
+  "cbase": 19158,
+  "ebase": 37644,
+  "note": "layout: [0,cbase) base verts, [cbase,ebase) face points, [ebase,..) edge points"
+}

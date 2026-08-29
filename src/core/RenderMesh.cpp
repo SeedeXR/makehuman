@@ -113,8 +113,8 @@ RenderMesh RenderMesh::build(const Mesh& mesh) {
         // an all-zero index into an empty array, so clear it rather than lie.
         rm.tmap_.clear();
     }
-    rm.builtVertexCount_ = mesh.vertexCount();
-    rm.builtFaceCount_   = mesh.faceCount();
+    rm.builtVertexCount_     = mesh.vertexCount();
+    rm.builtTopologyVersion_ = mesh.topologyVersion();
     rm.refreshPositions(mesh);
     return rm;
 }

@@ -74,9 +74,11 @@ public:
     /// it would read out of bounds. Rebuild with build() instead.
     void refreshPositions(const Mesh& mesh);
 
-    /// True when this table still matches @p mesh's topology.
+    /// True when this table still matches @p mesh's topology. Exact, not a
+    /// heuristic: a same-size topology swap bumps the mesh's topology version.
     [[nodiscard]] bool matches(const Mesh& mesh) const noexcept {
-        return builtVertexCount_ == mesh.vertexCount() && builtFaceCount_ == mesh.faceCount();
+        return builtVertexCount_ == mesh.vertexCount() &&
+               builtTopologyVersion_ == mesh.topologyVersion();
     }
 
 private:
@@ -93,7 +95,7 @@ private:
 
     // Topology fingerprint, so a stale table is detected in O(1).
     size_t builtVertexCount_{};
-    size_t builtFaceCount_{};
+    uint64_t builtTopologyVersion_{};
 };
 
 }  // namespace mh::core

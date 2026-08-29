@@ -68,10 +68,16 @@ public:
         return v < nfaces_.size() ? nfaces_[v] : 0U;
     }
 
-    /// The @p k-th face incident to vertex @p v, k < nfacesAt(v).
-    [[nodiscard]] uint32_t faceAt(size_t v, uint32_t k) const noexcept {
-        return vface_[v * maxValence_ + k];
-    }
+    /// Bumped every time the face arrays change. Derived structures (RenderMesh,
+    /// Subdivider) record it so they can detect staleness exactly in O(1) --
+    /// comparing vertex and face counts alone misses a same-size topology swap,
+    /// which would silently produce wrong geometry rather than a caught error.
+    [[nodiscard]] uint64_t topologyVersion() const noexcept { return topologyVersion_; }
+
+    /// Re-captures the current positions as the morph base. Meaningful for a
+    /// derived mesh (e.g. a subdivision result) whose positions are recomputed
+    /// rather than set once.
+    void captureOriginal() { origCoord_ = coord_; }
 
     // -- data (read) --------------------------------------------------------
     [[nodiscard]] std::span<const Vec3> coord() const noexcept { return coord_; }
@@ -193,6 +199,7 @@ private:
     uint8_t vertsPerPrimitive_{4};
     uint8_t vertsPerFaceForExport_{4};
     uint32_t maxValence_{4};
+    uint64_t topologyVersion_{1};
 
     // per-vertex
     std::vector<Vec3> coord_;
