@@ -10,6 +10,7 @@
 #include "makehuman/core/Subdivider.h"
 #include "makehuman/core/Target.h"
 #include "makehuman/core/TargetIndex.h"
+#include "makehuman/io/BvhReader.h"
 #include "makehuman/rig/Skeleton.h"
 #include "makehuman/rig/Skinning.h"
 #include "makehuman/rig/VertexWeights.h"
@@ -146,6 +147,16 @@ int main() {
                                medianMs([&] { (void)sk->updateJoints(mesh->coord()); }, 50), 0.0});
         }
     }
+
+    // BVH import: 212 joints x 60 frames of facial pose units.
+    results.push_back({"readBvh (face-poseunits, 212 joints x 60 frames)",
+                       medianMs(
+                           [&] {
+                               (void)mh::io::readBvh(std::filesystem::path(MH_DATA_DIR) /
+                                                     "poseunits" / "face-poseunits.bvh");
+                           },
+                           5),
+                       0.0});
 
     // Catmull-Clark: reference build 202.30 ms, update_coords 7.64 ms,
     // calcNormals on the subdivided mesh 20.57 ms.

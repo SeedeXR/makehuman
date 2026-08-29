@@ -189,6 +189,28 @@ licence or full GPL relinking provisions.
 requires verifying the specific repository and version at the time of use and
 recording it here first.
 
+
+**SMPL / SMPL-X / SMPL+H (Max Planck).** Researched 2026-08-29 because it is
+the obvious thing to reach for in M10 (character generation): a 10,475-vertex
+parametric body with learned corrective blendshapes, articulated hands (MANO)
+and an expressive face (FLAME).
+
+**We cannot use it.** The full model — including the *shape blendshapes*, which
+are the entire point of a parametric generator — is licensed for **research
+purposes only** and requires registration. The permissively licensed
+"SMPL-X Body" subset (CC-BY-4.0) explicitly **excludes** the shape blendshapes
+and the tools to create bodies with them, so it is a mesh and a rig, not a
+generator.
+
+Since a stated objective is that others can build commercial derivatives
+(§1, `project_context.md` §4.2), SMPL-family models are forbidden for the same
+reason as the FBX SDK: the licence blocks the downstream use we promise. The
+*techniques* in the published papers are fair to learn from; the models and
+data are not.
+
+MakeHuman's own 1,280 targets are CC0 and already give us a parametric body.
+That is the asset base to build M10 on.
+
 ### 5.3 The Autodesk FBX SDK — why it is not used
 
 The SDK **is** free of charge, and version 2020.3.9 is installed on the

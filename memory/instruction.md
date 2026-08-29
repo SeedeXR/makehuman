@@ -20,7 +20,17 @@ explaining the rule** rather than on a violation of it:
 The third happened in the same session the second was written up — recording the
 pattern was not enough to avoid it.
 
-**The rule, then:** a gate that greps for a forbidden string must match the
+| BSD notice | `SceneIO.h` saying "assimp (BSD-3-Clause)" | the file's own SPDX field being BSD |
+
+The fourth happened *after* this note existed, because the rule as written
+("match the construct") still allowed a 3-line substring search.
+
+**The sharper rule:** where a gate is about a *field*, PARSE the field and
+compare it. Never substring-search the file for the field's value. Grepping a
+file for `BSD-3-Clause` finds every file that mentions BSD; extracting
+`SPDX-License-Identifier:` and comparing finds the files that ARE BSD.
+
+**The general rule:** a gate that greps for a forbidden string must match the
 *construct*, not the word.
 
 - strip comments first (`sed 's/#.*//'`), or

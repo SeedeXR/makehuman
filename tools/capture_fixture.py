@@ -651,6 +651,71 @@ def capture_transform() -> None:
     })
 
 
+def capture_bvh() -> None:
+    """BVH poses: hierarchy, the Z-up conversion, and the per-frame matrices.
+
+    The shipped pose data is BVH, not .mhpose -- there are no .mhpose files in
+    data/ at all. tpose.bvh is a single frame; face-poseunits.bvh carries the
+    60 facial pose units in 60 frames.
+
+    Both auto-detect as **Z-up**, so the conversion is on for both: offsets
+    become (x, z, -y), the Y and Z position channels swap with a sign flip, and
+    the rotation order letters are remapped -- 'szyx' in the file becomes
+    'syzx'. A reader that skips the guess produces a plausible skeleton lying on
+    its side.
+    """
+    import bvh as bvh_mod
+
+    print("capturing: bvh")
+    out = GOLDEN / "bvh"
+    out.mkdir(parents=True, exist_ok=True)
+
+    entries: dict = {}
+    described: list = []
+
+    for src, stem in (("data/poses/tpose.bvh", "tpose"),
+                      ("data/poseunits/face-poseunits.bvh", "faceposeunits")):
+        b = bvh_mod.load(src)
+        joints = b.getJoints()
+
+        meta = [{
+            "name": j.name,
+            "parent": j.parent.name if j.parent else None,
+            "channels": list(j.channels),
+            "rotOrder": getattr(j, "rotOrder", ""),
+            "isEndConnector": j.isEndConnector(),
+        } for j in joints]
+        (out / f"{stem}_joints.json").write_text(json.dumps(meta, indent=1))
+
+        offsets = np.stack([j.offset for j in joints]).astype(np.float32)
+        positions = np.stack([j.position for j in joints]).astype(np.float32)
+        # matrixPoses is (frames, 3, 4) per joint -> (joints, frames, 3, 4)
+        mats = np.stack([j.matrixPoses for j in joints]).astype(np.float32)
+
+        entries[f"{stem}_offsets"] = _write_blob(out / f"{stem}_offsets.bin", offsets, "f4")
+        entries[f"{stem}_positions"] = _write_blob(out / f"{stem}_positions.bin", positions, "f4")
+        entries[f"{stem}_matrices"] = _write_blob(out / f"{stem}_matrices.bin", mats, "f4")
+
+        described.append({
+            "file": src,
+            "stem": stem,
+            "joints": len(joints),
+            "frames": int(b.frameCount),
+            "frame_time": float(b.frameTime),
+            "convertFromZUp": bool(b.convertFromZUp),
+            "allowTranslation": b.allowTranslation,
+            "matrix_shape": list(mats.shape),
+        })
+
+    _finish("bvh", entries, {
+        "sources": described,
+        "note": "matrices are (joints, frames, 3, 4) -- the reference stores "
+                "only the top 3 rows. Rotation order letters are remapped by "
+                "the Z-up conversion: a file with Xrotation Yrotation Zrotation "
+                "yields 'syzx', not 'szyx'.",
+    })
+
+
 def capture_mask() -> None:
     """Face hiding: vertex mask -> face mask -> filtered index buffer.
 
@@ -823,6 +888,7 @@ SUBSYSTEMS = {
     "weights": capture_weights,
     "skinning": capture_skinning,
     "transform": capture_transform,
+    "bvh": capture_bvh,
 }
 
 

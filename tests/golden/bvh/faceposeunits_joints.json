@@ -1,0 +1,2141 @@
+[
+ {
+  "name": "root",
+  "parent": null,
+  "channels": [
+   "Xposition",
+   "Yposition",
+   "Zposition",
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "spine05",
+  "parent": "root",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "pelvis.L",
+  "parent": "root",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "pelvis.R",
+  "parent": "root",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "spine04",
+  "parent": "spine05",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "upperleg01.L",
+  "parent": "pelvis.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "upperleg01.R",
+  "parent": "pelvis.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "spine03",
+  "parent": "spine04",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "upperleg02.L",
+  "parent": "upperleg01.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "upperleg02.R",
+  "parent": "upperleg01.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "spine02",
+  "parent": "spine03",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "lowerleg01.L",
+  "parent": "upperleg02.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "lowerleg01.R",
+  "parent": "upperleg02.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "spine01",
+  "parent": "spine02",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "breast.R",
+  "parent": "spine02",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "breast.L",
+  "parent": "spine02",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "lowerleg02.L",
+  "parent": "lowerleg01.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "lowerleg02.R",
+  "parent": "lowerleg01.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "neck01",
+  "parent": "spine01",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "clavicle.L",
+  "parent": "spine01",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "clavicle.R",
+  "parent": "spine01",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "End effector",
+  "parent": "breast.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "breast.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "foot.L",
+  "parent": "lowerleg02.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "foot.R",
+  "parent": "lowerleg02.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "neck02",
+  "parent": "neck01",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "shoulder01.L",
+  "parent": "clavicle.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "shoulder01.R",
+  "parent": "clavicle.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe5-1.L",
+  "parent": "foot.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe4-1.L",
+  "parent": "foot.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe2-1.L",
+  "parent": "foot.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe1-1.L",
+  "parent": "foot.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe3-1.L",
+  "parent": "foot.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe4-1.R",
+  "parent": "foot.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe2-1.R",
+  "parent": "foot.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe5-1.R",
+  "parent": "foot.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe1-1.R",
+  "parent": "foot.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe3-1.R",
+  "parent": "foot.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "neck03",
+  "parent": "neck02",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "upperarm01.L",
+  "parent": "shoulder01.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "upperarm01.R",
+  "parent": "shoulder01.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe5-2.L",
+  "parent": "toe5-1.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe4-2.L",
+  "parent": "toe4-1.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe2-2.L",
+  "parent": "toe2-1.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe1-2.L",
+  "parent": "toe1-1.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe3-2.L",
+  "parent": "toe3-1.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe4-2.R",
+  "parent": "toe4-1.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe2-2.R",
+  "parent": "toe2-1.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe5-2.R",
+  "parent": "toe5-1.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe1-2.R",
+  "parent": "toe1-1.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe3-2.R",
+  "parent": "toe3-1.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "head",
+  "parent": "neck03",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "upperarm02.L",
+  "parent": "upperarm01.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "upperarm02.R",
+  "parent": "upperarm01.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe5-3.L",
+  "parent": "toe5-2.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe4-3.L",
+  "parent": "toe4-2.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe2-3.L",
+  "parent": "toe2-2.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "End effector",
+  "parent": "toe1-2.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "toe3-3.L",
+  "parent": "toe3-2.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe4-3.R",
+  "parent": "toe4-2.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe2-3.R",
+  "parent": "toe2-2.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "toe5-3.R",
+  "parent": "toe5-2.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "End effector",
+  "parent": "toe1-2.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "toe3-3.R",
+  "parent": "toe3-2.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "levator02.L",
+  "parent": "head",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "special01",
+  "parent": "head",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "levator02.R",
+  "parent": "head",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "special03",
+  "parent": "head",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "special06.R",
+  "parent": "head",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "jaw",
+  "parent": "head",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "temporalis01.L",
+  "parent": "head",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "temporalis01.R",
+  "parent": "head",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "special06.L",
+  "parent": "head",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "temporalis02.R",
+  "parent": "head",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "temporalis02.L",
+  "parent": "head",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "lowerarm01.L",
+  "parent": "upperarm02.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "lowerarm01.R",
+  "parent": "upperarm02.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "End effector",
+  "parent": "toe5-3.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "toe4-3.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "toe2-3.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "toe3-3.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "toe4-3.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "toe2-3.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "toe5-3.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "toe3-3.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "levator03.L",
+  "parent": "levator02.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "oris04.R",
+  "parent": "special01",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "oris06",
+  "parent": "special01",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "oris04.L",
+  "parent": "special01",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "levator03.R",
+  "parent": "levator02.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "levator06.R",
+  "parent": "special03",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "levator06.L",
+  "parent": "special03",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "special05.R",
+  "parent": "special06.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "tongue00",
+  "parent": "jaw",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "special04",
+  "parent": "jaw",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "oculi02.L",
+  "parent": "temporalis01.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "oculi02.R",
+  "parent": "temporalis01.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "special05.L",
+  "parent": "special06.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "risorius02.R",
+  "parent": "temporalis02.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "risorius02.L",
+  "parent": "temporalis02.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "lowerarm02.L",
+  "parent": "lowerarm01.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "lowerarm02.R",
+  "parent": "lowerarm01.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "levator04.L",
+  "parent": "levator03.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "oris03.R",
+  "parent": "oris04.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "oris05",
+  "parent": "oris06",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "oris03.L",
+  "parent": "oris04.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "levator04.R",
+  "parent": "levator03.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "End effector",
+  "parent": "levator06.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "levator06.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "orbicularis03.R",
+  "parent": "special05.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "orbicularis04.R",
+  "parent": "special05.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "eye.R",
+  "parent": "special05.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "tongue01",
+  "parent": "tongue00",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "oris02",
+  "parent": "special04",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "oris06.R",
+  "parent": "special04",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "oris06.L",
+  "parent": "special04",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "oculi01.L",
+  "parent": "oculi02.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "oculi01.R",
+  "parent": "oculi02.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "orbicularis04.L",
+  "parent": "special05.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "orbicularis03.L",
+  "parent": "special05.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "eye.L",
+  "parent": "special05.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "risorius03.R",
+  "parent": "risorius02.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "risorius03.L",
+  "parent": "risorius02.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "wrist.L",
+  "parent": "lowerarm02.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "wrist.R",
+  "parent": "lowerarm02.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "levator05.L",
+  "parent": "levator04.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "End effector",
+  "parent": "oris03.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "oris05",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "oris03.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "levator05.R",
+  "parent": "levator04.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "End effector",
+  "parent": "orbicularis03.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "orbicularis04.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "eye.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "tongue02",
+  "parent": "tongue01",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "tongue05.L",
+  "parent": "tongue01",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "tongue05.R",
+  "parent": "tongue01",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "oris01",
+  "parent": "oris02",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "oris07.R",
+  "parent": "oris06.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "oris07.L",
+  "parent": "oris06.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "End effector",
+  "parent": "oculi01.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "oculi01.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "orbicularis04.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "orbicularis03.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "eye.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "risorius03.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "risorius03.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "metacarpal4.L",
+  "parent": "wrist.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "metacarpal1.L",
+  "parent": "wrist.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "metacarpal3.L",
+  "parent": "wrist.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "metacarpal2.L",
+  "parent": "wrist.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger1-1.L",
+  "parent": "wrist.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "metacarpal2.R",
+  "parent": "wrist.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "metacarpal3.R",
+  "parent": "wrist.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger1-1.R",
+  "parent": "wrist.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "metacarpal1.R",
+  "parent": "wrist.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "metacarpal4.R",
+  "parent": "wrist.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "End effector",
+  "parent": "levator05.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "levator05.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "tongue03",
+  "parent": "tongue02",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "tongue06.R",
+  "parent": "tongue02",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "tongue06.L",
+  "parent": "tongue02",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "End effector",
+  "parent": "tongue05.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "tongue05.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "oris01",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "oris07.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "oris07.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "finger5-1.L",
+  "parent": "metacarpal4.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger2-1.L",
+  "parent": "metacarpal1.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger4-1.L",
+  "parent": "metacarpal3.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger3-1.L",
+  "parent": "metacarpal2.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger1-2.L",
+  "parent": "finger1-1.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger3-1.R",
+  "parent": "metacarpal2.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger4-1.R",
+  "parent": "metacarpal3.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger1-2.R",
+  "parent": "finger1-1.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger2-1.R",
+  "parent": "metacarpal1.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger5-1.R",
+  "parent": "metacarpal4.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "tongue07.L",
+  "parent": "tongue03",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "tongue07.R",
+  "parent": "tongue03",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "tongue04",
+  "parent": "tongue03",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "End effector",
+  "parent": "tongue06.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "tongue06.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "finger5-2.L",
+  "parent": "finger5-1.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger2-2.L",
+  "parent": "finger2-1.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger4-2.L",
+  "parent": "finger4-1.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger3-2.L",
+  "parent": "finger3-1.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger1-3.L",
+  "parent": "finger1-2.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger3-2.R",
+  "parent": "finger3-1.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger4-2.R",
+  "parent": "finger4-1.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger1-3.R",
+  "parent": "finger1-2.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger2-2.R",
+  "parent": "finger2-1.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger5-2.R",
+  "parent": "finger5-1.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "End effector",
+  "parent": "tongue07.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "tongue07.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "tongue04",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "finger5-3.L",
+  "parent": "finger5-2.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger2-3.L",
+  "parent": "finger2-2.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger4-3.L",
+  "parent": "finger4-2.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger3-3.L",
+  "parent": "finger3-2.L",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "End effector",
+  "parent": "finger1-3.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "finger3-3.R",
+  "parent": "finger3-2.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger4-3.R",
+  "parent": "finger4-2.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "End effector",
+  "parent": "finger1-3.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "finger2-3.R",
+  "parent": "finger2-2.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "finger5-3.R",
+  "parent": "finger5-2.R",
+  "channels": [
+   "Xrotation",
+   "Yrotation",
+   "Zrotation"
+  ],
+  "rotOrder": "syzx",
+  "isEndConnector": false
+ },
+ {
+  "name": "End effector",
+  "parent": "finger5-3.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "finger2-3.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "finger4-3.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "finger3-3.L",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "finger3-3.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "finger4-3.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "finger2-3.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ },
+ {
+  "name": "End effector",
+  "parent": "finger5-3.R",
+  "channels": [],
+  "rotOrder": "s",
+  "isEndConnector": true
+ }
+]

@@ -256,7 +256,20 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 - [ ] GPU LBS (matrix palette UBO/SSBO) — M6
 - [ ] Pose units, `.mhpose`, slerp-composition blend (order-dependent — replicate)
 - [ ] `mixPoses` for face/foot layering
-- [ ] BVH import/export
+- [x] BVH **import** — parity on both shipped files: `tpose.bvh` (222 joints)
+      and `face-poseunits.bvh` (212 joints x 60 frames). 12,942 joint-frames
+      compared, worst delta < 1e-5. 2.04 ms for the 60-frame file.
+      **Written clean-room from the published BVH format**, not translated, so
+      it lives in the Apache-2.0 `mh_io` module rather than under AGPL.
+      Both files auto-detect as **Z-up**: offsets become `(x, z, -y)`, position
+      channels swap with a sign flip, and the rotation order remaps `szyx` ->
+      `syzx`. A reader that skips the detection yields a plausible skeleton
+      lying on its side.
+      Improvement over the reference: every End Site there is named
+      "End effector", so they collide and are unaddressable; ours derives
+      `<parent>_end`.
+- [ ] BVH **export**
+- [ ] Pose units: wire `face-poseunits.json` (60 units) onto the BVH frames
 - [ ] **Parity fixtures**: rest matrices, skinned positions, blended expression
 
 ## M6 — Renderer (`mh-render`)
@@ -323,6 +336,23 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 - [ ] Undo/redo
 - [ ] Live language switching; **working** RTL
 - [ ] Accessibility pass: VoiceOver, keyboard-only, contrast, 200% text
+
+## Research notes (2026-08-29) — owner asked for modern approaches
+
+**Skinning: offer dual-quaternion alongside LBS.** LBS is notorious for the
+"candy-wrapper" collapse on twisted joints, because it interpolates positions
+linearly and loses volume. DQS removes that and preserves volume, but is *not*
+a drop-in: it introduces joint bulging on bends. Disney shipped an enhanced DQS
+on *Frozen* specifically to make it production-viable.
+Plan: keep LBS as the parity path (it is what the reference does, and what glTF
+and every DCC expect), and add DQS as a *display* option in M6, with the
+bulging caveat measured rather than assumed.
+- [ ] DQS skinning path (M6), with a side-by-side against LBS on a twisted limb
+
+**SMPL / SMPL-X is licence-blocked for us** — see `LICENSING.md` §5.2. The full
+parametric model is research-only; the CC-BY subset deliberately omits the shape
+blendshapes that make it a generator. Our own 1,280 CC0 targets are the asset
+base for M10. The papers are fair to learn from; the models are not.
 
 ## M9 — MetaHuman-class character tooling
 

@@ -7,6 +7,7 @@
 
 add_library(mh_io STATIC
     ObjWriter.cpp
+    BvhReader.cpp
     GltfWriter.cpp
     SceneIO.cpp)
 add_library(mh::io ALIAS mh_io)

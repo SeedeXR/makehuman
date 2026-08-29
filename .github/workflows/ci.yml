@@ -163,7 +163,15 @@ jobs:
         run: |
           fail=0
           while IFS= read -r -d '' f; do
-            if head -3 "$f" | grep -q 'SPDX-License-Identifier: BSD-3-Clause'; then
+            # Parse the SPDX FIELD and compare it. Grepping the file for the
+            # string "BSD-3-Clause" matches any prose mentioning it -- SceneIO.h
+            # says assimp is BSD-3-Clause in its second comment line and was
+            # flagged despite being Apache-2.0. Fourth time a gate here has
+            # matched a document instead of a violation; see
+            # memory/instruction.md.
+            line=$(head -3 "$f" | grep -o 'SPDX-License-Identifier: .*' || true)
+            id=${line#SPDX-License-Identifier: }
+            if [ "$id" = "BSD-3-Clause" ]; then
               grep -q 'Copyright (c)' "$f" || {
                 echo "::error file=$f::BSD-3-Clause file without a copyright notice"
                 fail=1
