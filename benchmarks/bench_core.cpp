@@ -3,6 +3,7 @@
 // Compares mh::core against the measured Python baseline in
 // benchmarks/baseline_python.json (see memory/project_context.md section 6).
 
+#include "makehuman/core/Modifier.h"
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/core/RenderMesh.h"
 #include "makehuman/core/Subdivider.h"
@@ -151,6 +152,43 @@ int main() {
     // TargetsCrawler; not separately timed there, so no baseline.
     results.push_back({"TargetIndex::build (index 1280 targets)",
                        medianMs([&] { (void)mh::core::TargetIndex::build(MH_DATA_DIR); }, 3), 0.0});
+
+    // The full character rebuild: reset to the morph base and replay the stack.
+    // The reference's equivalent is applyAllTargets (human.py:1147-1209).
+    {
+        const auto tIdx = mh::core::TargetIndex::build(MH_DATA_DIR);
+        std::vector<mh::core::Modifier> mods;
+        for (const char* f : {"modeling_modifiers.json", "measurement_modifiers.json",
+                              "bodyshapes_modifiers.json"}) {
+            auto m = mh::core::loadModifiers(std::filesystem::path(MH_DATA_DIR) / "modifiers" / f);
+            if (m) mods.insert(mods.end(), m->begin(), m->end());
+        }
+        if (tIdx.componentCount() > 0 && !mods.empty()) {
+            results.push_back(
+                {"loadModifiers (291 modifiers)",
+                 medianMs(
+                     [&] {
+                         for (const char* f :
+                              {"modeling_modifiers.json", "measurement_modifiers.json",
+                               "bodyshapes_modifiers.json"}) {
+                             (void)mh::core::loadModifiers(std::filesystem::path(MH_DATA_DIR) /
+                                                           "modifiers" / f);
+                         }
+                     },
+                     5),
+                 0.0});
+
+            mh::core::Human human(&tIdx, mods);
+            results.push_back({"Human::rebuildStack (all 291 modifiers)",
+                               medianMs([&] { human.rebuildStack(); }, 50), 0.0});
+
+            mh::core::TargetLibrary lib(MH_DATA_DIR);
+            human.applyStack(*mesh, lib);  // warm the target cache
+            results.push_back({"Human::applyStack (character rebuild)",
+                               medianMs([&] { human.applyStack(*mesh, lib); }, 100), 0.0});
+            mesh->resetToOriginal();
+        }
+    }
 
     auto rm = mh::core::RenderMesh::build(*mesh);
     results.push_back({"RenderMesh::refreshPositions (morph hot path)",

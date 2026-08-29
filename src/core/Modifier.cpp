@@ -311,6 +311,25 @@ void Human::accumulate(const Modifier& m, float value) {
     }
 }
 
+uint32_t Human::applyStack(Mesh& mesh, TargetLibrary& targets, uint32_t* missing) const {
+    // human.py:1159 -- restore the morph base before replaying the stack.
+    mesh.resetToOriginal();
+
+    uint32_t applied  = 0;
+    uint32_t notFound = 0;
+    for (const auto& [path, weight] : stack_) {
+        const auto t = targets.get(path);
+        if (!t) {
+            ++notFound;
+            continue;
+        }
+        applyTarget(**t, mesh, weight);
+        ++applied;
+    }
+    if (missing != nullptr) *missing = notFound;
+    return applied;
+}
+
 void Human::rebuildStack() {
     stack_.clear();
     for (const Modifier& m : modifiers_) {

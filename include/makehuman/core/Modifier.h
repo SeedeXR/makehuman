@@ -2,6 +2,7 @@
 #pragma once
 
 #include "makehuman/core/Macro.h"
+#include "makehuman/core/Target.h"
 #include "makehuman/core/TargetIndex.h"
 
 #include <expected>
@@ -116,6 +117,16 @@ public:
     }
 
     [[nodiscard]] size_t stackSize() const noexcept { return stack_.size(); }
+
+    /// Resets @p mesh to its morph base and applies the whole stack.
+    ///
+    /// This mirrors `applyAllTargets` (legacy-python/apps/human.py:1147-1209):
+    /// restore `orig_coord`, then apply every entry at its weight. Application
+    /// is additive and commutative, so stack order does not affect the result.
+    ///
+    /// @return the number of targets applied. Missing targets are skipped and
+    ///         counted in @p missing rather than aborting the rebuild.
+    uint32_t applyStack(Mesh& mesh, TargetLibrary& targets, uint32_t* missing = nullptr) const;
 
 private:
     void accumulate(const Modifier& m, float value);

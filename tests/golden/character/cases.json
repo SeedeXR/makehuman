@@ -1,0 +1,248 @@
+[
+  {
+    "name": "default",
+    "settings": {},
+    "stack": {
+      "../../data/targets/macrodetails/african-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/african-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/asian-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/asian-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/caucasian-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/caucasian-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/universal-female-young-averagemuscle-averageweight.target": 0.5,
+      "../../data/targets/macrodetails/universal-male-young-averagemuscle-averageweight.target": 0.5
+    },
+    "stack_size": 8
+  },
+  {
+    "name": "male",
+    "settings": {
+      "macrodetails/Gender": 1.0
+    },
+    "stack": {
+      "../../data/targets/macrodetails/african-male-young.target": 0.333333,
+      "../../data/targets/macrodetails/asian-male-young.target": 0.333333,
+      "../../data/targets/macrodetails/caucasian-male-young.target": 0.333333,
+      "../../data/targets/macrodetails/universal-male-young-averagemuscle-averageweight.target": 1.0
+    },
+    "stack_size": 4
+  },
+  {
+    "name": "female",
+    "settings": {
+      "macrodetails/Gender": 0.0
+    },
+    "stack": {
+      "../../data/targets/macrodetails/african-female-young.target": 0.333333,
+      "../../data/targets/macrodetails/asian-female-young.target": 0.333333,
+      "../../data/targets/macrodetails/caucasian-female-young.target": 0.333333,
+      "../../data/targets/macrodetails/universal-female-young-averagemuscle-averageweight.target": 1.0
+    },
+    "stack_size": 4
+  },
+  {
+    "name": "baby",
+    "settings": {
+      "macrodetails/Age": 0.0
+    },
+    "stack": {
+      "../../data/targets/macrodetails/african-female-baby.target": 0.166667,
+      "../../data/targets/macrodetails/african-male-baby.target": 0.166667,
+      "../../data/targets/macrodetails/asian-female-baby.target": 0.166667,
+      "../../data/targets/macrodetails/asian-male-baby.target": 0.166667,
+      "../../data/targets/macrodetails/caucasian-female-baby.target": 0.166667,
+      "../../data/targets/macrodetails/caucasian-male-baby.target": 0.166667,
+      "../../data/targets/macrodetails/universal-female-baby-averagemuscle-averageweight.target": 0.5,
+      "../../data/targets/macrodetails/universal-male-baby-averagemuscle-averageweight.target": 0.5
+    },
+    "stack_size": 8
+  },
+  {
+    "name": "old",
+    "settings": {
+      "macrodetails/Age": 1.0
+    },
+    "stack": {
+      "../../data/targets/macrodetails/african-female-old.target": 0.166667,
+      "../../data/targets/macrodetails/african-male-old.target": 0.166667,
+      "../../data/targets/macrodetails/asian-female-old.target": 0.166667,
+      "../../data/targets/macrodetails/asian-male-old.target": 0.166667,
+      "../../data/targets/macrodetails/caucasian-female-old.target": 0.166667,
+      "../../data/targets/macrodetails/caucasian-male-old.target": 0.166667,
+      "../../data/targets/macrodetails/universal-female-old-averagemuscle-averageweight.target": 0.5,
+      "../../data/targets/macrodetails/universal-male-old-averagemuscle-averageweight.target": 0.5
+    },
+    "stack_size": 8
+  },
+  {
+    "name": "muscular",
+    "settings": {
+      "macrodetails-universal/Muscle": 1.0
+    },
+    "stack": {
+      "../../data/targets/macrodetails/african-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/african-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/asian-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/asian-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/caucasian-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/caucasian-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/universal-female-young-maxmuscle-averageweight.target": 0.5,
+      "../../data/targets/macrodetails/universal-male-young-maxmuscle-averageweight.target": 0.5
+    },
+    "stack_size": 8
+  },
+  {
+    "name": "heavy",
+    "settings": {
+      "macrodetails-universal/Weight": 1.0
+    },
+    "stack": {
+      "../../data/targets/macrodetails/african-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/african-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/asian-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/asian-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/caucasian-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/caucasian-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/universal-female-young-averagemuscle-maxweight.target": 0.5,
+      "../../data/targets/macrodetails/universal-male-young-averagemuscle-maxweight.target": 0.5
+    },
+    "stack_size": 8
+  },
+  {
+    "name": "tall",
+    "settings": {
+      "macrodetails-height/Height": 1.0
+    },
+    "stack": {
+      "../../data/targets/macrodetails/african-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/african-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/asian-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/asian-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/caucasian-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/caucasian-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/height/female-young-averagemuscle-averageweight-maxheight.target": 0.5,
+      "../../data/targets/macrodetails/height/male-young-averagemuscle-averageweight-maxheight.target": 0.5,
+      "../../data/targets/macrodetails/universal-female-young-averagemuscle-averageweight.target": 0.5,
+      "../../data/targets/macrodetails/universal-male-young-averagemuscle-averageweight.target": 0.5
+    },
+    "stack_size": 10
+  },
+  {
+    "name": "short",
+    "settings": {
+      "macrodetails-height/Height": 0.0
+    },
+    "stack": {
+      "../../data/targets/macrodetails/african-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/african-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/asian-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/asian-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/caucasian-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/caucasian-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/height/female-young-averagemuscle-averageweight-minheight.target": 0.5,
+      "../../data/targets/macrodetails/height/male-young-averagemuscle-averageweight-minheight.target": 0.5,
+      "../../data/targets/macrodetails/universal-female-young-averagemuscle-averageweight.target": 0.5,
+      "../../data/targets/macrodetails/universal-male-young-averagemuscle-averageweight.target": 0.5
+    },
+    "stack_size": 10
+  },
+  {
+    "name": "african",
+    "settings": {
+      "macrodetails/African": 1.0
+    },
+    "stack": {
+      "../../data/targets/macrodetails/african-female-young.target": 0.5,
+      "../../data/targets/macrodetails/african-male-young.target": 0.5,
+      "../../data/targets/macrodetails/universal-female-young-averagemuscle-averageweight.target": 0.5,
+      "../../data/targets/macrodetails/universal-male-young-averagemuscle-averageweight.target": 0.5
+    },
+    "stack_size": 4
+  },
+  {
+    "name": "asian",
+    "settings": {
+      "macrodetails/Asian": 1.0
+    },
+    "stack": {
+      "../../data/targets/macrodetails/asian-female-young.target": 0.5,
+      "../../data/targets/macrodetails/asian-male-young.target": 0.5,
+      "../../data/targets/macrodetails/universal-female-young-averagemuscle-averageweight.target": 0.5,
+      "../../data/targets/macrodetails/universal-male-young-averagemuscle-averageweight.target": 0.5
+    },
+    "stack_size": 4
+  },
+  {
+    "name": "head_age_incr",
+    "settings": {
+      "head/head-age-decr|incr": 1.0
+    },
+    "stack": {
+      "../../data/targets/head/head-age-incr.target": 1.0,
+      "../../data/targets/macrodetails/african-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/african-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/asian-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/asian-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/caucasian-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/caucasian-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/universal-female-young-averagemuscle-averageweight.target": 0.5,
+      "../../data/targets/macrodetails/universal-male-young-averagemuscle-averageweight.target": 0.5
+    },
+    "stack_size": 9
+  },
+  {
+    "name": "head_age_decr",
+    "settings": {
+      "head/head-age-decr|incr": -1.0
+    },
+    "stack": {
+      "../../data/targets/head/head-age-decr.target": 1.0,
+      "../../data/targets/macrodetails/african-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/african-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/asian-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/asian-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/caucasian-female-young.target": 0.166667,
+      "../../data/targets/macrodetails/caucasian-male-young.target": 0.166667,
+      "../../data/targets/macrodetails/universal-female-young-averagemuscle-averageweight.target": 0.5,
+      "../../data/targets/macrodetails/universal-male-young-averagemuscle-averageweight.target": 0.5
+    },
+    "stack_size": 9
+  },
+  {
+    "name": "mixed",
+    "settings": {
+      "head/head-age-decr|incr": 0.5,
+      "macrodetails-height/Height": 0.75,
+      "macrodetails-universal/Muscle": 0.9,
+      "macrodetails-universal/Weight": 0.2,
+      "macrodetails/Age": 0.8,
+      "macrodetails/Gender": 1.0
+    },
+    "stack": {
+      "../../data/targets/head/head-age-incr.target": 0.5,
+      "../../data/targets/macrodetails/african-male-old.target": 0.2,
+      "../../data/targets/macrodetails/african-male-young.target": 0.133333,
+      "../../data/targets/macrodetails/asian-male-old.target": 0.2,
+      "../../data/targets/macrodetails/asian-male-young.target": 0.133333,
+      "../../data/targets/macrodetails/caucasian-male-old.target": 0.2,
+      "../../data/targets/macrodetails/caucasian-male-young.target": 0.133333,
+      "../../data/targets/macrodetails/height/male-old-averagemuscle-averageweight-maxheight.target": 0.024,
+      "../../data/targets/macrodetails/height/male-old-averagemuscle-minweight-maxheight.target": 0.036,
+      "../../data/targets/macrodetails/height/male-old-maxmuscle-averageweight-maxheight.target": 0.096,
+      "../../data/targets/macrodetails/height/male-old-maxmuscle-minweight-maxheight.target": 0.144,
+      "../../data/targets/macrodetails/height/male-young-averagemuscle-averageweight-maxheight.target": 0.016,
+      "../../data/targets/macrodetails/height/male-young-averagemuscle-minweight-maxheight.target": 0.024,
+      "../../data/targets/macrodetails/height/male-young-maxmuscle-averageweight-maxheight.target": 0.064,
+      "../../data/targets/macrodetails/height/male-young-maxmuscle-minweight-maxheight.target": 0.096,
+      "../../data/targets/macrodetails/universal-male-old-averagemuscle-averageweight.target": 0.048,
+      "../../data/targets/macrodetails/universal-male-old-averagemuscle-minweight.target": 0.072,
+      "../../data/targets/macrodetails/universal-male-old-maxmuscle-averageweight.target": 0.192,
+      "../../data/targets/macrodetails/universal-male-old-maxmuscle-minweight.target": 0.288,
+      "../../data/targets/macrodetails/universal-male-young-averagemuscle-averageweight.target": 0.032,
+      "../../data/targets/macrodetails/universal-male-young-averagemuscle-minweight.target": 0.048,
+      "../../data/targets/macrodetails/universal-male-young-maxmuscle-averageweight.target": 0.128,
+      "../../data/targets/macrodetails/universal-male-young-maxmuscle-minweight.target": 0.192
+    },
+    "stack_size": 23
+  }
+]

@@ -284,11 +284,102 @@ def capture_subdiv() -> None:
     )
 
 
+
+def capture_character() -> None:
+    """End-to-end: modifier values -> target stack -> final vertex positions.
+
+    This is the fixture that validates the whole parameterisation chain at once.
+    """
+    import files3d
+    import human as human_mod
+    import humanmodifier
+
+    print("capturing: character")
+
+    # applyAllTargets drives a progress bar through G.app (shared/progress.py).
+    # Headless there is no app, so supply the smallest stand-in that satisfies it.
+    from core import G
+
+    class _StubApp:
+        def progress(self, *args, **kwargs):
+            pass
+
+        def callAsync(self, fn, *args):
+            fn(*args)
+
+        def callEvent(self, *args, **kwargs):
+            pass
+
+        def addSetting(self, *args, **kwargs):
+            pass
+
+        def getSetting(self, name):
+            return {"realtimeUpdates": False, "realtimeNormalUpdates": False,
+                    "realtimeFitting": False, "cameraAutoZoom": False}.get(name, False)
+
+    G.app = _StubApp()
+
+    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+    h = human_mod.Human(mesh)
+    for f in ("modeling_modifiers.json", "measurement_modifiers.json",
+              "bodyshapes_modifiers.json"):
+        humanmodifier.loadModifiers("data/modifiers/" + f, h)
+
+    # Parameter sets chosen to exercise: the neutral default, each macro axis at
+    # both extremes, a plain shape slider on each side, and a mixed case.
+    cases = [
+        ("default", {}),
+        ("male", {"macrodetails/Gender": 1.0}),
+        ("female", {"macrodetails/Gender": 0.0}),
+        ("baby", {"macrodetails/Age": 0.0}),
+        ("old", {"macrodetails/Age": 1.0}),
+        ("muscular", {"macrodetails-universal/Muscle": 1.0}),
+        ("heavy", {"macrodetails-universal/Weight": 1.0}),
+        ("tall", {"macrodetails-height/Height": 1.0}),
+        ("short", {"macrodetails-height/Height": 0.0}),
+        ("african", {"macrodetails/African": 1.0}),
+        ("asian", {"macrodetails/Asian": 1.0}),
+        ("head_age_incr", {"head/head-age-decr|incr": 1.0}),
+        ("head_age_decr", {"head/head-age-decr|incr": -1.0}),
+        ("mixed", {"macrodetails/Gender": 1.0, "macrodetails/Age": 0.8,
+                   "macrodetails-universal/Muscle": 0.9,
+                   "macrodetails-universal/Weight": 0.2,
+                   "macrodetails-height/Height": 0.75,
+                   "head/head-age-decr|incr": 0.5}),
+    ]
+
+    out = GOLDEN / "character"
+    out.mkdir(parents=True, exist_ok=True)
+    entries: dict = {}
+    described = []
+
+    for name, settings in cases:
+        # Reset every modifier, then apply this case's values.
+        for m in h.modifiers:
+            m.resetValue()
+        for full, val in settings.items():
+            h.getModifier(full).setValue(val)
+        h.applyAllTargets()
+
+        entries[name] = _write_blob(out / (name + ".bin"), mesh.coord, "f4")
+        stack = {os.path.relpath(k, os.path.abspath("data")): round(float(v), 6)
+                 for k, v in h.targetsDetailStack.items()}
+        described.append({"name": name, "settings": settings,
+                          "stack_size": len(stack), "stack": stack})
+
+    (out / "cases.json").write_text(json.dumps(described, indent=2, sort_keys=True))
+    _finish("character", entries,
+            {"source": "data/3dobjs/base.obj", "cases": len(cases),
+             "vertex_count": int(len(mesh.coord)),
+             "note": "each .bin is the full coord array after applyAllTargets for that case"})
+
+
 SUBSYSTEMS = {
     "mesh": capture_mesh,
     "subdiv": capture_subdiv,
     "targets": capture_targets,
     "skeleton": capture_skeleton,
+    "character": capture_character,
 }
 
 

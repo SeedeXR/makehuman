@@ -1,0 +1,154 @@
+{
+  "subsystem": "character",
+  "captured_at": "2026-08-29T04:49:03.753994+00:00",
+  "reference_commit": "8054c1c56723ad51ea9fb475b3165bdfcbfd0895",
+  "python": "3.14.6",
+  "numpy": "2.5.2",
+  "platform": "darwin",
+  "entries": {
+    "default": {
+      "file": "default.bin",
+      "dtype": "f4",
+      "shape": [
+        19158,
+        3
+      ],
+      "count": 57474,
+      "sha256": "2d29d74cc18456932104d8df6b95af31c4fd02a21804d42ec60375f122d07ce9"
+    },
+    "male": {
+      "file": "male.bin",
+      "dtype": "f4",
+      "shape": [
+        19158,
+        3
+      ],
+      "count": 57474,
+      "sha256": "7612541dd2e066b59b15cc8c57f082c1c6ed1dbe27602e9b3d766ef2e94ca5e7"
+    },
+    "female": {
+      "file": "female.bin",
+      "dtype": "f4",
+      "shape": [
+        19158,
+        3
+      ],
+      "count": 57474,
+      "sha256": "9115c5ae6c4b66a789846fe0e728ff6a38f7136d1cdfdc58bf894cc95c5b94d7"
+    },
+    "baby": {
+      "file": "baby.bin",
+      "dtype": "f4",
+      "shape": [
+        19158,
+        3
+      ],
+      "count": 57474,
+      "sha256": "86ed62231513ceffc3fdbc92aeb1b3a2ca8597175620a0d52ef97e1f9f0b4031"
+    },
+    "old": {
+      "file": "old.bin",
+      "dtype": "f4",
+      "shape": [
+        19158,
+        3
+      ],
+      "count": 57474,
+      "sha256": "d50092b0054ab4c076d5ade0fff580ef137bcbca9dc2f321a82313d302ce9d1c"
+    },
+    "muscular": {
+      "file": "muscular.bin",
+      "dtype": "f4",
+      "shape": [
+        19158,
+        3
+      ],
+      "count": 57474,
+      "sha256": "e356d7bdc895558787dc40f072472b59d098e18b1c934e35214aa3db1fe6f450"
+    },
+    "heavy": {
+      "file": "heavy.bin",
+      "dtype": "f4",
+      "shape": [
+        19158,
+        3
+      ],
+      "count": 57474,
+      "sha256": "3d42662179987c5e5b9f62a3c8717710d952e4cedbab610d0ca45c005641dc5d"
+    },
+    "tall": {
+      "file": "tall.bin",
+      "dtype": "f4",
+      "shape": [
+        19158,
+        3
+      ],
+      "count": 57474,
+      "sha256": "a227afa270222e160add811948063f1f8455f4ce360ed4def34a4d644662d2f7"
+    },
+    "short": {
+      "file": "short.bin",
+      "dtype": "f4",
+      "shape": [
+        19158,
+        3
+      ],
+      "count": 57474,
+      "sha256": "4e552b45a82c1b8a1144827c7012524e064644f6af9740ec3643997606ff5642"
+    },
+    "african": {
+      "file": "african.bin",
+      "dtype": "f4",
+      "shape": [
+        19158,
+        3
+      ],
+      "count": 57474,
+      "sha256": "feef6651bd51f32b24e872d5138f4892549c273d89859da7293205b919340c81"
+    },
+    "asian": {
+      "file": "asian.bin",
+      "dtype": "f4",
+      "shape": [
+        19158,
+        3
+      ],
+      "count": 57474,
+      "sha256": "809ee1b75cb0c21655ea63d8714fbd84dda034009febeae47457ca8f1cee04a1"
+    },
+    "head_age_incr": {
+      "file": "head_age_incr.bin",
+      "dtype": "f4",
+      "shape": [
+        19158,
+        3
+      ],
+      "count": 57474,
+      "sha256": "0b6aa79113d616063c71956766791b380039b0de2a1e403ee03e07deb9d3439b"
+    },
+    "head_age_decr": {
+      "file": "head_age_decr.bin",
+      "dtype": "f4",
+      "shape": [
+        19158,
+        3
+      ],
+      "count": 57474,
+      "sha256": "660f9a9e6cb79e3ee0ab3757020761cb680b461581d05f185e4e170d7222197a"
+    },
+    "mixed": {
+      "file": "mixed.bin",
+      "dtype": "f4",
+      "shape": [
+        19158,
+        3
+      ],
+      "count": 57474,
+      "sha256": "297fae40dbff4d488bbd76b8b06d92a9fd8a5c454c5ffdb7980315bcf7165e4b"
+    }
+  },
+  "source": "data/3dobjs/base.obj",
+  "cases": 14,
+  "vertex_count": 19158,
+  "note": "each .bin is the full coord array after applyAllTargets for that case"
+}

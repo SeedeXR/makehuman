@@ -75,7 +75,7 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [ ] Subdivision with a face mask (hidden geometry never generated) — with M4
 - [ ] Heterogeneous lookup in `findFaceGroup` (currently allocates a `std::string`)
 
-## M3 — Targets and modifiers (`mh-core`)
+## M3 — Targets and modifiers (`mh-core`)  ✅ core complete
 
 - [x] `.target` ASCII parser — **all 1,280 shipped targets parse**, 0 failures,
       0 malformed lines, 6,147,800 sparse entries, max index 19,157 (= nVerts-1)
@@ -104,9 +104,12 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [x] `targetWeight` = `value x groupFactor x PROD(macro factors)`
       (`humanmodifier.py:644-652`)
 - [ ] `weight = value × Π factors`
-- [ ] `applyStack` — incremental, not full-reset-and-replay
-- [ ] End-to-end `.mhm` round trip: load a real model file and compare final
-      vertex positions against the reference
+- [x] `applyStack` — reset to morph base + replay, matching `applyAllTargets`
+- [x] **End-to-end parity: 14 characters**, modifier values → macro factors →
+      target weights → applied targets → final vertex positions, all matching
+      the reference within 1e-5 across 19,158 vertices
+- [ ] Incremental stack application (apply only the delta on a slider drag)
+- [ ] `.mhm` file parser (the saved-model format)
 - [ ] **Parity fixtures**: default stack, extreme macro combinations, every modifier at ±1
 - [ ] `data/modifiers/*.json` loader
 
