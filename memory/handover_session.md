@@ -4,6 +4,74 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-30 09:41:22 — Session 038 · **skin and pose pickers, and a 33 cm pose bug**
+
+### What shipped
+- **`ui::AssetPanel`** — labelled pickers, one per asset group, fed plain
+  `foundation::AssetGroup`s. The Materials dock is real.
+- **App** — `--skin` alongside `--pose`; both drive the same state the pickers do, so
+  the panel and the viewport cannot start out disagreeing. Groups are *scanned* from
+  `data/litspheres` and `data/poses`, so a dropped-in asset appears with no code change.
+
+### The bug the review caught, with a number
+Switching pose → pose fitted the rig to the **already-posed** mesh. `loadPoseRig` calls
+`updateJoints(mesh.coord())`, and `poseInPlace` leaves the mesh posed after every
+rebuild — so the second pose was conjugated into the first pose's rest frame. The
+reviewer probed it: **3.33 dm (33 cm) maximum, 0.83 dm mean, across all 19,158
+vertices.** Gross visible corruption, not drift, and it produced a complete, smooth,
+plausible body — which is why nothing looked wrong.
+
+Fix: reset to the morph base (`applyStack`) *before* loading the new rig. Pinned by a
+test that fits the same pose twice — once from rest, once from the posed result — and
+asserts they differ by more than 1 dm while the rest-fitted one matches the reference
+fixture to 1e-3.
+
+### Other review findings fixed
+- **`rebuild` was declared after `window`**, so it died before the panels whose
+  connections referenced it — and the comment above it asserted the opposite ordering
+  was load-bearing. Nothing emits during teardown today, so it was latent, but the
+  invariant was already false. Now `rebuildInto(window)`, declared above the window and
+  taking it as an argument.
+- **`std::error_code` written and never read.** A missing `data/litspheres` left the
+  group empty, `setLitsphere` never called, and `SceneResources::upload` failing
+  *every frame forever* because the viewport deliberately retries. Now reported, and a
+  missing litsphere directory is a clean exit rather than a spinning blank window.
+- **`--skin` typo silently rendered African**, because the fallback took index 0 while
+  the help documented caucasian. Now falls back to the documented default and says so.
+- **Pose alias desync**: `loadPoseRig` accepts `tpose` and `t-pose`, but only the first
+  was matched when selecting the picker entry, so `--pose t-pose` opened a T-posed model
+  over a picker reading "A-pose (rest)" — and clicking that entry was a no-op because
+  the index was already 0. Aliases now compare on the stem with hyphens stripped.
+- Ponytail: `AssetPanel` lost its `QHash` side-index (QObject already indexes children by
+  name), `groupCount()`, `setChoice()` and a stray `<QList>`; both panels' bold headings
+  moved from `QFont` calls into one stylesheet rule.
+
+### Deliberate disagreement
+Ponytail wanted `--skin` cut as "a second way to say one thing". Kept: unlike `--pose`
+it does not change the exported mesh, so `--screenshot` is the **only** headless way to
+exercise the litsphere path — which is how the three skins were shown to render at
+152.3 / 125.6 / 148.4 mean luminance.
+
+### Corrections made this session
+- Claimed `--set` error paths exited non-zero after reading `$?` through a pipe again;
+  the real check needed `${PIPESTATUS[0]}`.
+- A `str.replace` on the stylesheet asserted against a double-escaped string that never
+  matched, so the edit silently did nothing while I reported it as applied. Caught by
+  grepping the file afterwards.
+
+### Verified this session
+- 316/316 in debug, release and ASan; UI binary 226 assertions / 34 cases.
+- The GUI itself ASan-clean (`--skin african --pose t-pose --screenshot`).
+- All 7 licence gates; clang-format clean; `mh_ui` → 0 `mh::core` symbols.
+- Benchmarks unchanged: `applyStack` 0.07 ms, `skinPositions` 0.13 ms.
+
+### Next
+- Snapping with drop indicators, and nested/tabbed docking (M8 remainder).
+- Proxies (clothes, hair, eyes) have a loader and 4 shipped assets but no picker.
+- `.mhm` load/save is not wired to the UI, so a character cannot be saved from the app.
+
+---
+
 ## 2026-08-29 17:04:38 — Session 037 · **291 sliders, and a tab order I had wrong**
 
 ### What shipped

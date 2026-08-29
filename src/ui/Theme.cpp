@@ -119,7 +119,7 @@ QDockWidget > QWidget {
 #panel\.titlebar {
     border-bottom: 1px solid %3;
 }
-#panel\.title {
+#panel\.title, #modifiers\.section, #assets\.group {
     font-weight: 600;
 }
 QStatusBar {

@@ -17,6 +17,7 @@
 #include "makehuman/rig/Skeleton.h"
 #include "makehuman/rig/Skinning.h"
 #include "makehuman/rig/VertexWeights.h"
+#include "makehuman/ui/AssetPanel.h"
 #include "makehuman/ui/MainWindow.h"
 #include "makehuman/ui/ModifierPanel.h"
 #include "makehuman/ui/Theme.h"
@@ -36,6 +37,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <string>
+#include <string_view>
 
 namespace {
 
@@ -161,6 +163,100 @@ bool poseInPlace(mh::core::Mesh& mesh, PoseRig& rig) {
     return true;
 }
 
+/// Files of one extension in @p dir, sorted.
+///
+/// directory_iterator order is unspecified, so without the sort the pickers
+/// reshuffle between machines. The error is reported rather than swallowed: a
+/// missing asset directory used to yield an empty group and, downstream, a
+/// viewport that failed its upload every frame forever.
+std::vector<std::filesystem::path> filesWithExtension(const std::filesystem::path& dir,
+                                                      std::string_view extension) {
+    std::error_code ec;
+    std::vector<std::filesystem::path> found;
+    for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+        if (entry.path().extension() == extension) found.push_back(entry.path());
+    }
+    if (ec) {
+        std::fprintf(stderr, "cannot read %s: %s\n", dir.string().c_str(), ec.message().c_str());
+        return {};
+    }
+    std::sort(found.begin(), found.end());
+    return found;
+}
+
+/// "skinmat_african.png" -> "African"; "tpose.bvh" -> "Tpose".
+///
+/// The assets are named by convention rather than carrying a label, so one is
+/// derived from the filename.
+std::string prettyName(const std::filesystem::path& file, std::string_view prefix) {
+    std::string stem = file.stem().string();
+    if (stem.starts_with(prefix)) stem = stem.substr(prefix.size());
+    if (!stem.empty()) {
+        stem[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(stem[0])));
+    }
+    return stem;
+}
+
+/// True when @p spelling names @p file -- the id itself, or any of the short
+/// aliases loadPoseRig accepts.
+bool namesPose(const std::filesystem::path& file, const std::string& spelling) {
+    if (spelling == file.string()) return true;
+    // loadPoseRig takes "tpose" and "t-pose"; matching only the first left the
+    // picker reading "A-pose (rest)" over a T-posed model, which the obvious
+    // click could not fix because the index was already 0.
+    std::string wanted = spelling;
+    std::erase(wanted, '-');
+    std::string stem = file.stem().string();
+    std::erase(stem, '-');
+    return !wanted.empty() && wanted == stem;
+}
+
+constexpr const char* kDefaultSkin = "caucasian";
+
+/// Skins and poses, from whatever is actually on disk.
+///
+/// Scanned rather than hard-coded so a litsphere or pose dropped into the data
+/// directory appears without a code change -- and so this does not claim assets
+/// that are not there.
+std::vector<mh::foundation::AssetGroup> buildAssetGroups(const std::string& currentPose,
+                                                         const std::string& currentSkin) {
+    namespace fs = std::filesystem;
+    std::vector<mh::foundation::AssetGroup> groups;
+
+    mh::foundation::AssetGroup skins;
+    skins.name      = "Skin";
+    int defaultSkin = -1;
+    for (const fs::path& p : filesWithExtension(fs::path(MH_DATA_DIR) / "litspheres", ".png")) {
+        if (p.stem().string().find("eye") != std::string::npos) continue;  // not a body skin
+        skins.choices.push_back({p.string(), prettyName(p, "skinmat_")});
+        const int index = static_cast<int>(skins.choices.size()) - 1;
+        if (p.stem().string() == std::string("skinmat_") + currentSkin) skins.selected = index;
+        if (p.stem().string() == std::string("skinmat_") + kDefaultSkin) defaultSkin = index;
+    }
+    if (skins.selected < 0 && !skins.choices.empty()) {
+        // Fall back to the DOCUMENTED default rather than whatever sorts first,
+        // and say so -- a typo used to silently render a different skin.
+        std::fprintf(stderr, "unknown --skin \"%s\"; using %s\n", currentSkin.c_str(),
+                     kDefaultSkin);
+        skins.selected = defaultSkin >= 0 ? defaultSkin : 0;
+    }
+    groups.push_back(std::move(skins));
+
+    mh::foundation::AssetGroup poses;
+    poses.name = "Pose";
+    // The rest mesh IS the A-pose, so it is a choice with no file behind it.
+    poses.choices.push_back({"rest", "A-pose (rest)"});
+    poses.selected = 0;
+    for (const fs::path& p : filesWithExtension(fs::path(MH_DATA_DIR) / "poses", ".bvh")) {
+        poses.choices.push_back({p.string(), prettyName(p, "")});
+        if (namesPose(p, currentPose)) {
+            poses.selected = static_cast<int>(poses.choices.size()) - 1;
+        }
+    }
+    groups.push_back(std::move(poses));
+    return groups;
+}
+
 /// Writes the mesh in whichever format @p path's extension names.
 bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
                 const mh::core::RenderMesh& rm) {
@@ -256,6 +352,11 @@ int main(int argc, char** argv) {
         QStringLiteral("Set a modifier before rendering or exporting, as "
                        "<full/name>=<value>. Repeatable."),
         QStringLiteral("modifier=value"));
+    const QCommandLineOption skinOpt(
+        QStringLiteral("skin"),
+        QStringLiteral("Litsphere to shade with: african, asian or caucasian (default)."),
+        QStringLiteral("name"), QStringLiteral("caucasian"));
+    parser.addOption(skinOpt);
     parser.addOption(setOpt);
     parser.addOption(poseOpt);
     parser.addOption(exportOpt);
@@ -337,9 +438,29 @@ int main(int argc, char** argv) {
         return exportMesh(parser.value(exportOpt).toStdString(), *mesh, rm) ? 0 : 1;
     }
 
+    // Built before the window so the initial litsphere is the one the picker
+    // shows -- otherwise the panel and the viewport start out disagreeing.
+    const auto assetGroups =
+        buildAssetGroups(parser.value(poseOpt).toStdString(), parser.value(skinOpt).toStdString());
+
+    // The one rebuild path: sliders, pose and skin all go through it, so the
+    // three controls cannot disagree about what is on screen.
+    //
+    // Declared ABOVE `window` and taking it as an argument rather than
+    // capturing it. The panels are `window`'s children and their connections
+    // reference this lambda, so this must outlive the window -- capturing the
+    // window would force the opposite order and leave those connections holding
+    // a dangling reference through teardown.
+    const auto rebuildInto = [&](mh::ui::MainWindow& w) {
+        human.applyStack(*mesh, targets);
+        if (!poseInPlace(*mesh, rig)) return;
+        mesh->calcNormals();
+        rm.refreshPositions(*mesh);
+        w.setMesh(rm.view());
+    };
+
     mh::ui::MainWindow window(parser.value(shaderOpt).toStdString());
-    window.setLitsphere(std::filesystem::path(MH_DATA_DIR) / "litspheres" /
-                        "skinmat_caucasian.png");
+
     // rm outlives the window, so the non-owning view stays valid.
     window.setMesh(rm.view());
 
@@ -347,10 +468,6 @@ int main(int argc, char** argv) {
     for (const auto& [id, v] : presets)
         panel->setValue(id, v);
     window.setModellingWidget(panel);
-    // Every object this lambda captures is declared ABOVE `window`, and `panel`
-    // is `window`'s child -- so reverse destruction tears down the connection
-    // before any capture dies. That ordering is load-bearing; do not move the
-    // declarations.
     QObject::connect(panel, &mh::ui::ModifierPanel::valueChanged,
                      [&](const QString& id, float value) {
                          human.setModifierValue(id.toStdString(), value);
@@ -358,11 +475,43 @@ int main(int argc, char** argv) {
                          // morph base, so posing has to come after it or the
                          // pose is silently thrown away every time a slider
                          // moves.
+                         rebuildInto(window);
+                     });
+
+    // Skin and pose. Both re-run the same rebuild the sliders do, so the three
+    // controls cannot disagree about what is on screen.
+    auto* assets = new mh::ui::AssetPanel(assetGroups);
+    window.setMaterialsWidget(assets);
+    // Taken from the picker, so the viewport and the panel cannot start out
+    // disagreeing about which skin is shown.
+    const QString skin = assets->choice(QStringLiteral("Skin"));
+    if (skin.isEmpty()) {
+        std::fprintf(stderr,
+                     "no litspheres found in %s -- the viewport cannot shade "
+                     "anything without one\n",
+                     (std::filesystem::path(MH_DATA_DIR) / "litspheres").string().c_str());
+        return 1;
+    }
+    window.setLitsphere(skin.toStdString());
+
+    QObject::connect(assets, &mh::ui::AssetPanel::chosen,
+                     [&](const QString& group, const QString& id) {
+                         if (group == QLatin1String("Skin")) {
+                             window.setLitsphere(id.toStdString());
+                             return;
+                         }
+                         if (group != QLatin1String("Pose")) return;
+                         // Back to the morph base FIRST. loadPoseRig fits the
+                         // skeleton to whatever the mesh currently holds, and
+                         // the mesh is left posed after every rebuild -- so
+                         // switching pose to pose was conjugating into the
+                         // previous pose's rest frame. Measured error: 33 cm
+                         // maximum, 8 cm mean, across all 19,158 vertices.
                          human.applyStack(*mesh, targets);
-                         if (!poseInPlace(*mesh, rig)) return;
-                         mesh->calcNormals();
-                         rm.refreshPositions(*mesh);
-                         window.setMesh(rm.view());
+                         PoseRig next;
+                         if (!loadPoseRig(*mesh, id.toStdString(), next)) return;
+                         rig = std::move(next);
+                         rebuildInto(window);
                      });
 
     window.restoreWorkspace();

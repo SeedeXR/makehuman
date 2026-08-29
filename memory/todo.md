@@ -455,6 +455,17 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       Verified in Blender: default 16.94 dm, Gender=1 17.67 dm, Age=0 6.33 dm
       (a 1-year-old, ~63 cm), and Gender=1 + T-pose keeps the height while the
       span goes 11.35 -> 18.43 dm, so morph and pose compose.
+- [x] **Materials dock: skin and pose pickers** — `ui::AssetPanel`, fed plain
+      `foundation::AssetGroup`s scanned from `data/litspheres` and `data/poses`,
+      so an asset dropped in appears without a code change. `--skin` and
+      `--pose` drive the same state headlessly.
+      Litspheres verified to render differently: mean luminance **152.3
+      (caucasian) / 125.6 (african) / 148.4 (asian)** at identical coverage.
+      **The trap:** `loadPoseRig` fits the skeleton to whatever the mesh holds,
+      and the mesh is left *posed* after every rebuild — so switching pose to
+      pose conjugated into the previous pose's rest frame. Measured **33 cm max
+      / 8 cm mean** error over all 19,158 vertices. Always reset to the morph
+      base first; pinned by `tests/golden/test_body_pose.cpp`.
 - [ ] Snapping with drop indicators
 - [x] Six-dot panel menu (float/dock/tab/reset/close) — `design.md` §6.3.
       `PanelTitleBar` replaces the whole dock title bar; Qt offers no hook for

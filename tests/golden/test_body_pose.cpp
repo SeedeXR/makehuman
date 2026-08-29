@@ -227,3 +227,54 @@ TEST_CASE("a missing pose file is reported, not ignored", "[pose]") {
     REQUIRE_FALSE(pose.has_value());
     CHECK(pose.error().kind == rig::PoseUnitsErrorKind::NotFound);
 }
+
+TEST_CASE("a pose must be fitted to the rest mesh, never to a posed one", "[pose]") {
+    // The trap this pins: loadBodyPose/poseToBoneLocal conjugate by the
+    // skeleton's rest matrices, and those come from updateJoints(mesh). Fit the
+    // rig to an already-posed mesh and the conversion happens in the previous
+    // pose's frame. It does not fail -- it returns a complete, smooth, wrong
+    // body. Switching pose to pose in the UI did exactly this.
+    Rig r = loadRig();
+    const std::vector<foundation::Vec3> rest(r.mesh.coord().begin(), r.mesh.coord().end());
+
+    const auto poseOnce = [&](std::span<const foundation::Vec3> from) {
+        rig::Skeleton skel = *rig::loadSkeleton(data("rigs/default.mhskel"));
+        REQUIRE(skel.updateJoints(from));
+        REQUIRE(skel.buildRestMatrices());
+        const auto bvh = rig::loadBodyPose(data("poses/tpose.bvh"), skel);
+        REQUIRE(bvh.has_value());
+        const auto local    = rig::poseToBoneLocal(skel, *bvh);
+        const auto skinning = rig::computeSkinningMatrices(skel, local);
+        std::vector<foundation::Vec3> out;
+        REQUIRE(rig::skinPositions(rest, r.weights, skinning, out));
+        return out;
+    };
+
+    const std::vector<foundation::Vec3> correct = poseOnce(rest);
+
+    // Now fit the SAME pose to the already-T-posed body, as the buggy path did.
+    const std::vector<foundation::Vec3> wrong = poseOnce(correct);
+
+    float worst = 0.0F;
+    for (size_t i = 0; i < correct.size(); ++i) {
+        worst =
+            std::max({worst, std::abs(correct[i].x - wrong[i].x),
+                      std::abs(correct[i].y - wrong[i].y), std::abs(correct[i].z - wrong[i].z)});
+    }
+    INFO("fitting to a posed mesh moves vertices by up to " << worst << " dm");
+    // Decimetres: this is a gross, visible difference, not numerical drift --
+    // which is exactly why "it looked fine" was not evidence.
+    CHECK(worst > 1.0F);
+
+    // And the correct path is the one that matches the reference.
+    const auto expected =
+        readVec3Blob(std::filesystem::path(MH_GOLDEN_DIR) / "body_pose" / "skinned.bin");
+    REQUIRE(expected.size() == correct.size());
+    float parity = 0.0F;
+    for (size_t i = 0; i < correct.size(); ++i) {
+        parity = std::max({parity, std::abs(correct[i].x - expected[i].x),
+                           std::abs(correct[i].y - expected[i].y),
+                           std::abs(correct[i].z - expected[i].z)});
+    }
+    CHECK(parity < 1e-3F);
+}

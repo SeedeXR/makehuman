@@ -93,23 +93,35 @@ void MainWindow::setLitsphere(std::filesystem::path path) {
     d_->viewport->setLitsphere(std::move(path));
 }
 
-void MainWindow::setModellingWidget(QWidget* widget) {
+namespace {
+
+/// Installs @p widget into @p dock, taking ownership either way.
+void installInDock(QDockWidget* dock, QWidget* widget) {
     if (widget == nullptr) return;
-    auto* dock = findChild<QDockWidget*>(QStringLiteral("dock.modelling"));
     if (dock == nullptr) {
-        // The contract says the dock takes ownership, so it has to hold even
+        // The contract says the window takes ownership, so it has to hold even
         // when there is no dock -- otherwise the caller leaks a top-level
         // window it has no pointer left to.
         delete widget;
         return;
     }
-    // Calling this twice with the same widget must not free it and then reparent
-    // freed memory. ASan caught exactly that.
+    // Calling this twice with the same widget must not free it and then
+    // reparent freed memory. ASan caught exactly that.
     if (dock->widget() == widget) return;
     // setWidget does not delete the old one, and the placeholder would keep
     // living as an invisible child for the life of the window.
     delete dock->widget();
     dock->setWidget(widget);
+}
+
+}  // namespace
+
+void MainWindow::setModellingWidget(QWidget* widget) {
+    installInDock(findChild<QDockWidget*>(QStringLiteral("dock.modelling")), widget);
+}
+
+void MainWindow::setMaterialsWidget(QWidget* widget) {
+    installInDock(findChild<QDockWidget*>(QStringLiteral("dock.materials")), widget);
 }
 
 void MainWindow::saveWorkspace() const {

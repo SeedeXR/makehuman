@@ -6,6 +6,7 @@
 // document that defines it within a release.
 #include "makehuman/core/Modifier.h"
 #include "makehuman/core/SliderLayout.h"
+#include "makehuman/ui/AssetPanel.h"
 #include "makehuman/ui/MainWindow.h"
 #include "makehuman/ui/ModifierPanel.h"
 #include "makehuman/ui/PanelTitleBar.h"
@@ -14,6 +15,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <QComboBox>
 #include <QDockWidget>
 #include <QImage>
 #include <QLabel>
@@ -551,4 +553,60 @@ TEST_CASE("the panel carries the real 291 sliders", "[modifiers][slow]") {
     CHECK(panel.tabs()->count() == 7);
     CHECK(panel.sliderCount() == 291);
     CHECK(panel.visibleSliderCount() == 291);
+}
+
+// --- the asset panel (skin and pose pickers) --------------------------------
+
+namespace {
+
+std::vector<mh::foundation::AssetGroup> toyAssets() {
+    using mh::foundation::AssetGroup;
+    AssetGroup skin{"Skin", {{"/l/african.png", "African"}, {"/l/caucasian.png", "Caucasian"}}, 1};
+    AssetGroup pose{"Pose", {{"rest", "A-pose (rest)"}, {"/p/tpose.bvh", "Tpose"}}, 0};
+    return {skin, pose};
+}
+
+}  // namespace
+
+TEST_CASE("the asset panel builds a picker per group with the right selection", "[assets]") {
+    const auto groups = toyAssets();
+    mh::ui::AssetPanel panel(groups);
+
+    CHECK(panel.findChildren<QComboBox*>().size() == 2);
+    CHECK(panel.choice(QStringLiteral("Skin")) == QStringLiteral("/l/caucasian.png"));
+    CHECK(panel.choice(QStringLiteral("Pose")) == QStringLiteral("rest"));
+    // An unknown group is empty rather than a crash or a wrong answer.
+    CHECK(panel.choice(QStringLiteral("Hair")).isEmpty());
+}
+
+TEST_CASE("choosing emits the group and the id, not the label", "[assets]") {
+    const auto groups = toyAssets();
+    mh::ui::AssetPanel panel(groups);
+
+    QString gotGroup;
+    QString gotId;
+    int emissions = 0;
+    QObject::connect(&panel, &mh::ui::AssetPanel::chosen, [&](const QString& g, const QString& id) {
+        gotGroup = g;
+        gotId    = id;
+        ++emissions;
+    });
+
+    auto* picker = panel.findChild<QComboBox*>(QStringLiteral("assets:Pose"));
+    REQUIRE(picker != nullptr);
+    picker->setCurrentIndex(1);
+
+    CHECK(emissions == 1);
+    CHECK(gotGroup == QStringLiteral("Pose"));
+    // The id, so a translated or renamed label cannot break selection.
+    CHECK(gotId == QStringLiteral("/p/tpose.bvh"));
+}
+
+TEST_CASE("a group with no explicit default shows its first choice", "[assets]") {
+    std::vector<mh::foundation::AssetGroup> groups{{"Hair", {{"a", "A"}, {"b", "B"}}, -1}};
+    mh::ui::AssetPanel panel(groups);
+    // QComboBox selects index 0 on the first insert, so -1 only survives if the
+    // panel does not override it -- which it does not, and that is honest:
+    // "no explicit default" and "the first one" are the same thing to a combo.
+    CHECK(panel.choice(QStringLiteral("Hair")) == QStringLiteral("a"));
 }

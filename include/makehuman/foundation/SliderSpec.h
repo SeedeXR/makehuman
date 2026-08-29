@@ -52,4 +52,22 @@ struct TaskViewSpec {
     }
 };
 
+/// One selectable asset -- a skin, a pose, later a garment.
+///
+/// Plain data for the same reason `SliderSpec` is: the panel that lists these
+/// must not link the AGPL asset layer. `id` is opaque to the UI and comes back
+/// unchanged on selection, so the app can put a path, a UUID or a keyword in it.
+struct AssetChoice {
+    std::string id;
+    std::string label;
+};
+
+/// A labelled set of mutually exclusive choices, e.g. "Skin" or "Pose".
+struct AssetGroup {
+    std::string name;
+    std::vector<AssetChoice> choices;
+    /// Index into `choices` that starts selected; -1 for none.
+    int selected{-1};
+};
+
 }  // namespace mh::foundation

@@ -27,8 +27,11 @@ public:
     void setLitsphere(std::filesystem::path path);
 
     /// Puts @p widget in the Modelling dock, replacing the placeholder.
-    /// The dock takes ownership.
+    /// Ownership passes to this window in every case, including failure.
     void setModellingWidget(QWidget* widget);
+
+    /// The same, for the Materials dock.
+    void setMaterialsWidget(QWidget* widget);
 
     [[nodiscard]] ViewportWidget* viewport() const;
 

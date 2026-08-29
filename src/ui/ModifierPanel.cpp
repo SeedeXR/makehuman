@@ -3,7 +3,6 @@
 
 #include "makehuman/ui/Theme.h"
 
-#include <QFont>
 #include <QHBoxLayout>
 #include <QHash>
 #include <QLabel>
@@ -82,9 +81,6 @@ ModifierPanel::ModifierPanel(std::span<const foundation::TaskViewSpec> views, QW
 
             auto* heading = new QLabel(QString::fromStdString(section.name), box);
             heading->setObjectName(QStringLiteral("modifiers.section"));
-            QFont f = heading->font();
-            f.setBold(true);
-            heading->setFont(f);
             boxColumn->addWidget(heading);
 
             for (const foundation::SliderSpec& spec : section.sliders) {
