@@ -1,0 +1,53 @@
+{
+  "subsystem": "poseunits",
+  "captured_at": "2026-08-29T12:18:05.192641+00:00",
+  "reference_commit": "b5bfaf6d2c4207f3abc7b59b68a90036e365f41b",
+  "python": "3.14.6",
+  "numpy": "2.5.2",
+  "platform": "darwin",
+  "entries": {
+    "unit_data": {
+      "file": "unit_data.bin",
+      "dtype": "f4",
+      "shape": [
+        9780,
+        3,
+        4
+      ],
+      "count": 117360,
+      "sha256": "d287c58e545e9dc5c9c48f3a7fdaeaa576d239d0b9f976d5a92dc041e8adc725"
+    },
+    "blended": {
+      "file": "blended.bin",
+      "dtype": "f4",
+      "shape": [
+        163,
+        3,
+        4
+      ],
+      "count": 1956,
+      "sha256": "07d17b2539a1386ba2d0bc51c1c8a5b5907e6d56119751cfbe05fc95086a2915"
+    },
+    "blended_reversed": {
+      "file": "blended_reversed.bin",
+      "dtype": "f4",
+      "shape": [
+        163,
+        3,
+        4
+      ],
+      "count": 1956,
+      "sha256": "c964b30847137beab1ae3aa8606368f016c194f8e49d6f2de73f0e24b1c6bbfc"
+    }
+  },
+  "source": "data/poseunits/face-poseunits.{bvh,json} + data/rigs/default.mhskel",
+  "units": 60,
+  "bones": 163,
+  "unit_data_shape": [
+    9780,
+    3,
+    4
+  ],
+  "blend_order_matters_by": 0.03422912210226059,
+  "note": "blend is additive by default (weights are NOT normalised) and order-dependent: quat = q_i * quat, left-multiplied."
+}

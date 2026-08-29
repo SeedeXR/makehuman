@@ -254,7 +254,21 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 - [ ] Skin normals/tangents (the w=0 direction path) — needs the renderer to
       have something to shade; positions are the parity target today.
 - [ ] GPU LBS (matrix palette UBO/SSBO) — M6
-- [ ] Pose units, `.mhpose`, slerp-composition blend (order-dependent — replicate)
+- [x] Pose units + slerp-composition blend — **parity on all 60 units x 163
+      bones (9,780 transforms)** and on a five-unit weighted blend, in both
+      orders.
+      The blend is **order-dependent and that is replicated, not fixed**:
+      `quat = q_i * quat`, left-multiplied, and quaternion multiplication does
+      not commute. Measured: reversing a five-unit blend moves the result by
+      **0.034**. Expression files are authored against this. The test asserts
+      both that reversing matches the reference's own reversed result AND that
+      the two differ — without the second, a symmetrising implementation would
+      pass by accident.
+      Weights are **not** normalised: the blend is additive.
+- [ ] `.mhupb` expression files (weighted unit references) — the consumer of
+      the blend above
+- [ ] Body pose units (`body-poseunits.json`) — a different format: bone ->
+      quaternion directly, not BVH frames
 - [ ] `mixPoses` for face/foot layering
 - [x] BVH **import** — parity on both shipped files: `tpose.bvh` (222 joints)
       and `face-poseunits.bvh` (212 joints x 60 frames). 12,942 joint-frames

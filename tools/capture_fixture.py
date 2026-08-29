@@ -716,6 +716,102 @@ def capture_bvh() -> None:
     })
 
 
+def capture_poseunits() -> None:
+    """Face pose units: the 60 named units mapped onto the rig, and a blend.
+
+    `face-poseunits.bvh` carries 60 frames; `face-poseunits.json` names them via
+    `framemapping`. Mapping onto the skeleton walks the rig's own 163 bones and
+    takes each one's matching BVH joint by name, or identity where the BVH has
+    none -- the BVH has 212 joints, the rig 163, and they are not the same set.
+
+    The blend is the interesting part and is order-dependent:
+
+        q_i  = slerp(REST, quat(pose_i), weight_i)
+        quat = q2 * q1, then q_i * quat for each subsequent i
+
+    Quaternion multiplication does not commute, so reordering the inputs
+    changes the result. That is replicated, not corrected.
+    """
+    import animation
+    import bvh as bvh_mod
+    import files3d
+    import skeleton as mhskel
+
+    print("capturing: poseunits")
+    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+
+    from core import G
+
+    class _StubHuman:
+        def __init__(self, m):
+            self.meshData = m
+
+        def getRestposeCoordinates(self):
+            return self.meshData.coord
+
+    class _StubApp:
+        pass
+
+    app = _StubApp()
+    app.selectedHuman = _StubHuman(mesh)
+    G.app = app
+
+    skel = mhskel.load("data/rigs/default.mhskel", mesh)
+    skel.build()
+
+    b = bvh_mod.load("data/poseunits/face-poseunits.bvh", allowTranslation="none")
+    track = b.createAnimationTrack(skel, name="face-poseunits")
+
+    names = json.loads(
+        (REPO / "data/poseunits/face-poseunits.json").read_text(encoding="utf-8")
+    )["framemapping"]
+    if len(names) != b.frameCount:
+        raise RuntimeError("framemapping/frame count mismatch")
+
+    unit = animation.PoseUnit(track.name, track._data, names)
+
+    # A deterministic blend. Chosen to be asymmetric (left/right differ) and to
+    # use more than two units, so the multiplication ORDER matters.
+    blend_names = ["LeftBrowDown", "RightOuterBrowUp", "NoseWrinkler",
+                   "LeftUpperLidClosed", "CheeksPump"]
+    blend_weights = [0.8, 0.35, 1.0, 0.6, 0.25]
+    blended = unit.getBlendedPose(list(blend_names), list(blend_weights), only_data=True)
+
+    # And the reverse order, to prove non-commutativity is real rather than
+    # assumed -- if these matched, replicating the order would not matter.
+    reversed_blend = unit.getBlendedPose(list(reversed(blend_names)),
+                                         list(reversed(blend_weights)), only_data=True)
+
+    out = GOLDEN / "poseunits"
+    out.mkdir(parents=True, exist_ok=True)
+
+    data = np.asarray(unit._data, dtype=np.float32)  # (frames*bones, 3, 4)
+    entries = {
+        "unit_data": _write_blob(out / "unit_data.bin", data, "f4"),
+        "blended": _write_blob(out / "blended.bin", np.asarray(blended, dtype=np.float32), "f4"),
+        "blended_reversed": _write_blob(
+            out / "blended_reversed.bin", np.asarray(reversed_blend, dtype=np.float32), "f4"),
+    }
+    (out / "cases.json").write_text(json.dumps({
+        "names": names,
+        "bone_count": int(skel.getBoneCount()),
+        "frame_count": int(b.frameCount),
+        "blend_names": blend_names,
+        "blend_weights": blend_weights,
+    }, indent=2))
+
+    delta = float(np.abs(np.asarray(blended) - np.asarray(reversed_blend)).max())
+    _finish("poseunits", entries, {
+        "source": "data/poseunits/face-poseunits.{bvh,json} + data/rigs/default.mhskel",
+        "units": len(names),
+        "bones": int(skel.getBoneCount()),
+        "unit_data_shape": list(data.shape),
+        "blend_order_matters_by": delta,
+        "note": "blend is additive by default (weights are NOT normalised) and "
+                "order-dependent: quat = q_i * quat, left-multiplied.",
+    })
+
+
 def capture_mask() -> None:
     """Face hiding: vertex mask -> face mask -> filtered index buffer.
 
@@ -889,6 +985,7 @@ SUBSYSTEMS = {
     "skinning": capture_skinning,
     "transform": capture_transform,
     "bvh": capture_bvh,
+    "poseunits": capture_poseunits,
 }
 
 

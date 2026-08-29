@@ -222,6 +222,15 @@ error. The writer must use the canonical camelCase spellings
 regression here, because our own reader accepts either; the guard is a literal
 string check plus `tools/verify_material_roundtrip.py`.
 
+### 8.0.1 Reference edits made to keep it runnable
+
+Hard rule 2 permits editing `legacy/python/` only to keep the oracle running.
+Recorded here so the diff is never mistaken for a port decision:
+
+| Edit | Why |
+|---|---|
+| `core/transformations.py`: 18 uses of `numpy.array(x, copy=False)` -> `numpy.asarray(x)` | numpy 2.0 made `copy=False` mean "never copy" and raise if a copy is needed, so every quaternion conversion raised `ValueError` on numpy 2.5. `asarray` is the documented replacement and is behaviour-identical on numpy 1.x. Without this the pose-unit fixture cannot be captured at all. |
+
 ### 8.1 Deliberate divergences from the oracle
 
 Not reference *defects* — places where matching the reference exactly would be
