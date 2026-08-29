@@ -1,0 +1,17 @@
+# Written by MakeHuman master:f2ca5b48
+version v1.3.0
+name mixed
+camera 12.0 34.0 1.0 2.0 3.0 1.5
+modifier head/head-age-decr|incr 0.500000
+modifier breast/BreastSize 0.500000
+modifier breast/BreastFirmness 0.500000
+modifier macrodetails/Gender 1.000000
+modifier macrodetails/Age 0.800000
+modifier macrodetails/African 0.333333
+modifier macrodetails/Asian 0.333333
+modifier macrodetails/Caucasian 0.333333
+modifier macrodetails-universal/Muscle 0.900000
+modifier macrodetails-universal/Weight 0.200000
+modifier macrodetails-height/Height 0.750000
+modifier macrodetails-proportions/BodyProportions 0.500000
+subdivide False

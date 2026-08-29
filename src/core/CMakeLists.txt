@@ -12,7 +12,8 @@ add_library(mh_core STATIC
     Target.cpp
     Macro.cpp
     TargetIndex.cpp
-    Modifier.cpp)
+    Modifier.cpp
+    Mhm.cpp)
 add_library(mh::core ALIAS mh_core)
 
 target_include_directories(mh_core PUBLIC

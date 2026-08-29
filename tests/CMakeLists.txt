@@ -16,6 +16,7 @@ add_executable(mh_tests
     golden/test_target_index_parity.cpp
     golden/test_modifier_parity.cpp
     golden/test_character_parity.cpp
+    golden/test_mhm_parity.cpp
     regression/test_review_findings.cpp)
 
 target_link_libraries(mh_tests

@@ -109,7 +109,10 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
       target weights → applied targets → final vertex positions, all matching
       the reference within 1e-5 across 19,158 vertices
 - [ ] Incremental stack application (apply only the delta on a slider drag)
-- [ ] `.mhm` file parser (the saved-model format)
+- [x] `.mhm` saved-model parser + `applyMhm`. **Round-trip parity**: a real
+      `.mhm` written by the reference, loaded in C++ and applied, reproduces the
+      geometry the reference itself produces from that file. Unrecognised lines
+      (skeleton / pose / proxy / material) are preserved verbatim for M4-M5.
 - [ ] **Parity fixtures**: default stack, extreme macro combinations, every modifier at ±1
 - [ ] `data/modifiers/*.json` loader
 

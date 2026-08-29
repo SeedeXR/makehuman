@@ -130,9 +130,29 @@ per-anchor assert caught it again. The lesson has stopped being "check your
 edits" and become structural: anchors matched against clang-formatted C++ are
 inherently fragile, and the assert is what makes that survivable.
 
+### Session 009 addendum (2026-08-29 08:16:24) — .mhm parser, M3 closed
+
+`MhmFile` / `loadMhm` / `applyMhm`. Line-oriented, `#` comments, whitespace
+split (`human.py:1459-1643`). Version comparison uses major.minor only, matching
+the reference's `v(\d)\.(\d)` regex. **Unrecognised lines are preserved
+verbatim** — skeleton, pose, proxy and material lines come from plugins this
+build does not have yet, and dropping them would corrupt a round trip.
+
+**Round-trip parity**: `.mhm` files written by the reference's own `Human.save()`
+are loaded in C++, applied, and produce geometry matching what the reference
+itself produces from the same file, across all 19,158 vertices.
+
+The fixture is self-validating: the reference's `.mhm` load and its direct
+modifier-setting path were compared against each other and agree to 2.9e-6, so
+the fixture is not merely consistent with one code path.
+
+**M3 is closed.** The chain from a saved model file to final geometry is
+complete and parity-tested at every stage.
+
 ### Next
-Incremental stack application (apply only the delta on a slider drag rather
-than a full replay), and the `.mhm` saved-model parser.
+M4 — proxies, materials and assets: the `.mhclo` barycentric fit, `.mhmat`
+parsing, and the asset index. That is what makes clothes, hair and eyes work,
+and it is the last core subsystem before the renderer.
 
 ---
 
