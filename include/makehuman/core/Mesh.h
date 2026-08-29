@@ -16,8 +16,8 @@ namespace mh::core {
 enum class MeshError {
     VertexIndexOutOfRange,
     UvIndexOutOfRange,
-    FaceArraySizeMismatch,   ///< faceVerts not a whole number of primitives
-    UvArraySizeMismatch,     ///< faceUVs present but not parallel to faceVerts
+    FaceArraySizeMismatch,  ///< faceVerts not a whole number of primitives
+    UvArraySizeMismatch,    ///< faceUVs present but not parallel to faceVerts
 };
 
 /// Indexed mesh with a uniform primitive size.
@@ -41,6 +41,7 @@ public:
 
     // -- identity -----------------------------------------------------------
     [[nodiscard]] const std::string& name() const noexcept { return name_; }
+
     [[nodiscard]] uint8_t vertsPerPrimitive() const noexcept { return vertsPerPrimitive_; }
 
     /// 3 when the quads are degenerate triangles, else `vertsPerPrimitive`.
@@ -49,26 +50,36 @@ public:
 
     // -- counts -------------------------------------------------------------
     [[nodiscard]] size_t vertexCount() const noexcept { return coord_.size(); }
-    [[nodiscard]] size_t faceCount()   const noexcept {
+
+    [[nodiscard]] size_t faceCount() const noexcept {
         return vertsPerPrimitive_ ? fvert_.size() / vertsPerPrimitive_ : 0;
     }
-    [[nodiscard]] size_t uvCount()     const noexcept { return texco_.size(); }
+
+    [[nodiscard]] size_t uvCount() const noexcept { return texco_.size(); }
+
     /// True only when UVs exist AND faces carry UV indices. Derived rather than
     /// stored, so it cannot go stale if setUVs/setFaces are called out of order.
-    [[nodiscard]] bool   hasUV()       const noexcept {
-        return !texco_.empty() && !fuvs_.empty();
-    }
+    [[nodiscard]] bool hasUV() const noexcept { return !texco_.empty() && !fuvs_.empty(); }
+
     [[nodiscard]] uint32_t maxValence() const noexcept { return maxValence_; }
 
     // -- data (read) --------------------------------------------------------
-    [[nodiscard]] std::span<const Vec3> coord()     const noexcept { return coord_; }
+    [[nodiscard]] std::span<const Vec3> coord() const noexcept { return coord_; }
+
     [[nodiscard]] std::span<const Vec3> origCoord() const noexcept { return origCoord_; }
-    [[nodiscard]] std::span<const Vec3> vnorm()     const noexcept { return vnorm_; }
-    [[nodiscard]] std::span<const Vec3> fnorm()     const noexcept { return fnorm_; }
-    [[nodiscard]] std::span<const Vec2> texco()     const noexcept { return texco_; }
+
+    [[nodiscard]] std::span<const Vec3> vnorm() const noexcept { return vnorm_; }
+
+    [[nodiscard]] std::span<const Vec3> fnorm() const noexcept { return fnorm_; }
+
+    [[nodiscard]] std::span<const Vec2> texco() const noexcept { return texco_; }
+
     [[nodiscard]] std::span<const uint32_t> fvert() const noexcept { return fvert_; }
-    [[nodiscard]] std::span<const uint32_t> fuvs()  const noexcept { return fuvs_; }
+
+    [[nodiscard]] std::span<const uint32_t> fuvs() const noexcept { return fuvs_; }
+
     [[nodiscard]] std::span<const uint16_t> group() const noexcept { return group_; }
+
     [[nodiscard]] const std::vector<FaceGroup>& faceGroups() const noexcept { return faceGroups_; }
 
     /// Mutable positions, for morph-target application. Callers must call
@@ -90,10 +101,9 @@ public:
     /// @param faceVerts  vertex index per corner, size = nFaces * vertsPerPrimitive
     /// @param faceUVs    UV index per corner, same size, or empty for no UVs
     /// @param faceGroup  group index per face, size = nFaces (empty -> all zero)
-    [[nodiscard]] std::expected<void, MeshError>
-    setFaces(std::vector<uint32_t> faceVerts,
-             std::vector<uint32_t> faceUVs,
-             std::vector<uint16_t> faceGroup);
+    [[nodiscard]] std::expected<void, MeshError> setFaces(std::vector<uint32_t> faceVerts,
+                                                          std::vector<uint32_t> faceUVs,
+                                                          std::vector<uint16_t> faceGroup);
 
     /// Sets the mesh name. OBJ `o` statements route here, matching
     /// wavefront.py:128-129 (which sets the name and creates no face group).
@@ -140,28 +150,28 @@ public:
 
 private:
     std::string name_;
-    uint8_t     vertsPerPrimitive_{4};
-    uint8_t     vertsPerFaceForExport_{4};
-    uint32_t    maxValence_{4};
+    uint8_t vertsPerPrimitive_{4};
+    uint8_t vertsPerFaceForExport_{4};
+    uint32_t maxValence_{4};
 
     // per-vertex
-    std::vector<Vec3>     coord_;
-    std::vector<Vec3>     origCoord_;
-    std::vector<Vec3>     vnorm_;
-    std::vector<uint32_t> vface_;   // flat, stride = maxValence_
+    std::vector<Vec3> coord_;
+    std::vector<Vec3> origCoord_;
+    std::vector<Vec3> vnorm_;
+    std::vector<uint32_t> vface_;  // flat, stride = maxValence_
     std::vector<uint32_t> nfaces_;
 
     // per-UV (independent index space)
     std::vector<Vec2> texco_;
 
     // per-face
-    std::vector<uint32_t> fvert_;   // stride = vertsPerPrimitive_
+    std::vector<uint32_t> fvert_;  // stride = vertsPerPrimitive_
     std::vector<uint32_t> fuvs_;
-    std::vector<Vec3>     fnorm_;
+    std::vector<Vec3> fnorm_;
     std::vector<uint16_t> group_;
 
-    std::vector<FaceGroup>                    faceGroups_;
+    std::vector<FaceGroup> faceGroups_;
     std::unordered_map<std::string, uint16_t> groupsByName_;
 };
 
-} // namespace mh::core
+}  // namespace mh::core

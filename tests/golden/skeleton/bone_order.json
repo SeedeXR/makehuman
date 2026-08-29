@@ -1,0 +1,654 @@
+[
+  {
+    "name": "root",
+    "parent": null
+  },
+  {
+    "name": "spine05",
+    "parent": "root"
+  },
+  {
+    "name": "pelvis.L",
+    "parent": "root"
+  },
+  {
+    "name": "pelvis.R",
+    "parent": "root"
+  },
+  {
+    "name": "spine04",
+    "parent": "spine05"
+  },
+  {
+    "name": "upperleg01.L",
+    "parent": "pelvis.L"
+  },
+  {
+    "name": "upperleg01.R",
+    "parent": "pelvis.R"
+  },
+  {
+    "name": "spine03",
+    "parent": "spine04"
+  },
+  {
+    "name": "upperleg02.L",
+    "parent": "upperleg01.L"
+  },
+  {
+    "name": "upperleg02.R",
+    "parent": "upperleg01.R"
+  },
+  {
+    "name": "spine02",
+    "parent": "spine03"
+  },
+  {
+    "name": "lowerleg01.L",
+    "parent": "upperleg02.L"
+  },
+  {
+    "name": "lowerleg01.R",
+    "parent": "upperleg02.R"
+  },
+  {
+    "name": "breast.L",
+    "parent": "spine02"
+  },
+  {
+    "name": "breast.R",
+    "parent": "spine02"
+  },
+  {
+    "name": "spine01",
+    "parent": "spine02"
+  },
+  {
+    "name": "lowerleg02.L",
+    "parent": "lowerleg01.L"
+  },
+  {
+    "name": "lowerleg02.R",
+    "parent": "lowerleg01.R"
+  },
+  {
+    "name": "clavicle.L",
+    "parent": "spine01"
+  },
+  {
+    "name": "clavicle.R",
+    "parent": "spine01"
+  },
+  {
+    "name": "neck01",
+    "parent": "spine01"
+  },
+  {
+    "name": "foot.L",
+    "parent": "lowerleg02.L"
+  },
+  {
+    "name": "foot.R",
+    "parent": "lowerleg02.R"
+  },
+  {
+    "name": "shoulder01.L",
+    "parent": "clavicle.L"
+  },
+  {
+    "name": "shoulder01.R",
+    "parent": "clavicle.R"
+  },
+  {
+    "name": "neck02",
+    "parent": "neck01"
+  },
+  {
+    "name": "toe1-1.L",
+    "parent": "foot.L"
+  },
+  {
+    "name": "toe2-1.L",
+    "parent": "foot.L"
+  },
+  {
+    "name": "toe3-1.L",
+    "parent": "foot.L"
+  },
+  {
+    "name": "toe4-1.L",
+    "parent": "foot.L"
+  },
+  {
+    "name": "toe5-1.L",
+    "parent": "foot.L"
+  },
+  {
+    "name": "toe1-1.R",
+    "parent": "foot.R"
+  },
+  {
+    "name": "toe2-1.R",
+    "parent": "foot.R"
+  },
+  {
+    "name": "toe3-1.R",
+    "parent": "foot.R"
+  },
+  {
+    "name": "toe4-1.R",
+    "parent": "foot.R"
+  },
+  {
+    "name": "toe5-1.R",
+    "parent": "foot.R"
+  },
+  {
+    "name": "upperarm01.L",
+    "parent": "shoulder01.L"
+  },
+  {
+    "name": "upperarm01.R",
+    "parent": "shoulder01.R"
+  },
+  {
+    "name": "neck03",
+    "parent": "neck02"
+  },
+  {
+    "name": "toe1-2.L",
+    "parent": "toe1-1.L"
+  },
+  {
+    "name": "toe2-2.L",
+    "parent": "toe2-1.L"
+  },
+  {
+    "name": "toe3-2.L",
+    "parent": "toe3-1.L"
+  },
+  {
+    "name": "toe4-2.L",
+    "parent": "toe4-1.L"
+  },
+  {
+    "name": "toe5-2.L",
+    "parent": "toe5-1.L"
+  },
+  {
+    "name": "toe1-2.R",
+    "parent": "toe1-1.R"
+  },
+  {
+    "name": "toe2-2.R",
+    "parent": "toe2-1.R"
+  },
+  {
+    "name": "toe3-2.R",
+    "parent": "toe3-1.R"
+  },
+  {
+    "name": "toe4-2.R",
+    "parent": "toe4-1.R"
+  },
+  {
+    "name": "toe5-2.R",
+    "parent": "toe5-1.R"
+  },
+  {
+    "name": "upperarm02.L",
+    "parent": "upperarm01.L"
+  },
+  {
+    "name": "upperarm02.R",
+    "parent": "upperarm01.R"
+  },
+  {
+    "name": "head",
+    "parent": "neck03"
+  },
+  {
+    "name": "toe2-3.L",
+    "parent": "toe2-2.L"
+  },
+  {
+    "name": "toe3-3.L",
+    "parent": "toe3-2.L"
+  },
+  {
+    "name": "toe4-3.L",
+    "parent": "toe4-2.L"
+  },
+  {
+    "name": "toe5-3.L",
+    "parent": "toe5-2.L"
+  },
+  {
+    "name": "toe2-3.R",
+    "parent": "toe2-2.R"
+  },
+  {
+    "name": "toe3-3.R",
+    "parent": "toe3-2.R"
+  },
+  {
+    "name": "toe4-3.R",
+    "parent": "toe4-2.R"
+  },
+  {
+    "name": "toe5-3.R",
+    "parent": "toe5-2.R"
+  },
+  {
+    "name": "lowerarm01.L",
+    "parent": "upperarm02.L"
+  },
+  {
+    "name": "lowerarm01.R",
+    "parent": "upperarm02.R"
+  },
+  {
+    "name": "jaw",
+    "parent": "head"
+  },
+  {
+    "name": "levator02.L",
+    "parent": "head"
+  },
+  {
+    "name": "levator02.R",
+    "parent": "head"
+  },
+  {
+    "name": "special01",
+    "parent": "head"
+  },
+  {
+    "name": "special03",
+    "parent": "head"
+  },
+  {
+    "name": "special06.L",
+    "parent": "head"
+  },
+  {
+    "name": "special06.R",
+    "parent": "head"
+  },
+  {
+    "name": "temporalis01.L",
+    "parent": "head"
+  },
+  {
+    "name": "temporalis01.R",
+    "parent": "head"
+  },
+  {
+    "name": "temporalis02.L",
+    "parent": "head"
+  },
+  {
+    "name": "temporalis02.R",
+    "parent": "head"
+  },
+  {
+    "name": "lowerarm02.L",
+    "parent": "lowerarm01.L"
+  },
+  {
+    "name": "lowerarm02.R",
+    "parent": "lowerarm01.R"
+  },
+  {
+    "name": "special04",
+    "parent": "jaw"
+  },
+  {
+    "name": "tongue00",
+    "parent": "jaw"
+  },
+  {
+    "name": "levator03.L",
+    "parent": "levator02.L"
+  },
+  {
+    "name": "levator03.R",
+    "parent": "levator02.R"
+  },
+  {
+    "name": "oris04.L",
+    "parent": "special01"
+  },
+  {
+    "name": "oris04.R",
+    "parent": "special01"
+  },
+  {
+    "name": "oris06",
+    "parent": "special01"
+  },
+  {
+    "name": "levator06.L",
+    "parent": "special03"
+  },
+  {
+    "name": "levator06.R",
+    "parent": "special03"
+  },
+  {
+    "name": "special05.L",
+    "parent": "special06.L"
+  },
+  {
+    "name": "special05.R",
+    "parent": "special06.R"
+  },
+  {
+    "name": "oculi02.L",
+    "parent": "temporalis01.L"
+  },
+  {
+    "name": "oculi02.R",
+    "parent": "temporalis01.R"
+  },
+  {
+    "name": "risorius02.L",
+    "parent": "temporalis02.L"
+  },
+  {
+    "name": "risorius02.R",
+    "parent": "temporalis02.R"
+  },
+  {
+    "name": "wrist.L",
+    "parent": "lowerarm02.L"
+  },
+  {
+    "name": "wrist.R",
+    "parent": "lowerarm02.R"
+  },
+  {
+    "name": "oris02",
+    "parent": "special04"
+  },
+  {
+    "name": "oris06.L",
+    "parent": "special04"
+  },
+  {
+    "name": "oris06.R",
+    "parent": "special04"
+  },
+  {
+    "name": "tongue01",
+    "parent": "tongue00"
+  },
+  {
+    "name": "levator04.L",
+    "parent": "levator03.L"
+  },
+  {
+    "name": "levator04.R",
+    "parent": "levator03.R"
+  },
+  {
+    "name": "oris03.L",
+    "parent": "oris04.L"
+  },
+  {
+    "name": "oris03.R",
+    "parent": "oris04.R"
+  },
+  {
+    "name": "oris05",
+    "parent": "oris06"
+  },
+  {
+    "name": "eye.L",
+    "parent": "special05.L"
+  },
+  {
+    "name": "orbicularis03.L",
+    "parent": "special05.L"
+  },
+  {
+    "name": "orbicularis04.L",
+    "parent": "special05.L"
+  },
+  {
+    "name": "eye.R",
+    "parent": "special05.R"
+  },
+  {
+    "name": "orbicularis03.R",
+    "parent": "special05.R"
+  },
+  {
+    "name": "orbicularis04.R",
+    "parent": "special05.R"
+  },
+  {
+    "name": "oculi01.L",
+    "parent": "oculi02.L"
+  },
+  {
+    "name": "oculi01.R",
+    "parent": "oculi02.R"
+  },
+  {
+    "name": "risorius03.L",
+    "parent": "risorius02.L"
+  },
+  {
+    "name": "risorius03.R",
+    "parent": "risorius02.R"
+  },
+  {
+    "name": "finger1-1.L",
+    "parent": "wrist.L"
+  },
+  {
+    "name": "metacarpal1.L",
+    "parent": "wrist.L"
+  },
+  {
+    "name": "metacarpal2.L",
+    "parent": "wrist.L"
+  },
+  {
+    "name": "metacarpal3.L",
+    "parent": "wrist.L"
+  },
+  {
+    "name": "metacarpal4.L",
+    "parent": "wrist.L"
+  },
+  {
+    "name": "finger1-1.R",
+    "parent": "wrist.R"
+  },
+  {
+    "name": "metacarpal1.R",
+    "parent": "wrist.R"
+  },
+  {
+    "name": "metacarpal2.R",
+    "parent": "wrist.R"
+  },
+  {
+    "name": "metacarpal3.R",
+    "parent": "wrist.R"
+  },
+  {
+    "name": "metacarpal4.R",
+    "parent": "wrist.R"
+  },
+  {
+    "name": "oris01",
+    "parent": "oris02"
+  },
+  {
+    "name": "oris07.L",
+    "parent": "oris06.L"
+  },
+  {
+    "name": "oris07.R",
+    "parent": "oris06.R"
+  },
+  {
+    "name": "tongue02",
+    "parent": "tongue01"
+  },
+  {
+    "name": "tongue05.L",
+    "parent": "tongue01"
+  },
+  {
+    "name": "tongue05.R",
+    "parent": "tongue01"
+  },
+  {
+    "name": "levator05.L",
+    "parent": "levator04.L"
+  },
+  {
+    "name": "levator05.R",
+    "parent": "levator04.R"
+  },
+  {
+    "name": "finger1-2.L",
+    "parent": "finger1-1.L"
+  },
+  {
+    "name": "finger2-1.L",
+    "parent": "metacarpal1.L"
+  },
+  {
+    "name": "finger3-1.L",
+    "parent": "metacarpal2.L"
+  },
+  {
+    "name": "finger4-1.L",
+    "parent": "metacarpal3.L"
+  },
+  {
+    "name": "finger5-1.L",
+    "parent": "metacarpal4.L"
+  },
+  {
+    "name": "finger1-2.R",
+    "parent": "finger1-1.R"
+  },
+  {
+    "name": "finger2-1.R",
+    "parent": "metacarpal1.R"
+  },
+  {
+    "name": "finger3-1.R",
+    "parent": "metacarpal2.R"
+  },
+  {
+    "name": "finger4-1.R",
+    "parent": "metacarpal3.R"
+  },
+  {
+    "name": "finger5-1.R",
+    "parent": "metacarpal4.R"
+  },
+  {
+    "name": "tongue03",
+    "parent": "tongue02"
+  },
+  {
+    "name": "tongue06.L",
+    "parent": "tongue02"
+  },
+  {
+    "name": "tongue06.R",
+    "parent": "tongue02"
+  },
+  {
+    "name": "finger1-3.L",
+    "parent": "finger1-2.L"
+  },
+  {
+    "name": "finger2-2.L",
+    "parent": "finger2-1.L"
+  },
+  {
+    "name": "finger3-2.L",
+    "parent": "finger3-1.L"
+  },
+  {
+    "name": "finger4-2.L",
+    "parent": "finger4-1.L"
+  },
+  {
+    "name": "finger5-2.L",
+    "parent": "finger5-1.L"
+  },
+  {
+    "name": "finger1-3.R",
+    "parent": "finger1-2.R"
+  },
+  {
+    "name": "finger2-2.R",
+    "parent": "finger2-1.R"
+  },
+  {
+    "name": "finger3-2.R",
+    "parent": "finger3-1.R"
+  },
+  {
+    "name": "finger4-2.R",
+    "parent": "finger4-1.R"
+  },
+  {
+    "name": "finger5-2.R",
+    "parent": "finger5-1.R"
+  },
+  {
+    "name": "tongue04",
+    "parent": "tongue03"
+  },
+  {
+    "name": "tongue07.L",
+    "parent": "tongue03"
+  },
+  {
+    "name": "tongue07.R",
+    "parent": "tongue03"
+  },
+  {
+    "name": "finger2-3.L",
+    "parent": "finger2-2.L"
+  },
+  {
+    "name": "finger3-3.L",
+    "parent": "finger3-2.L"
+  },
+  {
+    "name": "finger4-3.L",
+    "parent": "finger4-2.L"
+  },
+  {
+    "name": "finger5-3.L",
+    "parent": "finger5-2.L"
+  },
+  {
+    "name": "finger2-3.R",
+    "parent": "finger2-2.R"
+  },
+  {
+    "name": "finger3-3.R",
+    "parent": "finger3-2.R"
+  },
+  {
+    "name": "finger4-3.R",
+    "parent": "finger4-2.R"
+  },
+  {
+    "name": "finger5-3.R",
+    "parent": "finger5-2.R"
+  }
+]

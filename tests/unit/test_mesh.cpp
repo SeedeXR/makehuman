@@ -20,7 +20,7 @@ Mesh makeUnitQuad() {
     return m;
 }
 
-} // namespace
+}  // namespace
 
 TEST_CASE("mesh reports basic counts", "[core][mesh]") {
     const Mesh m = makeUnitQuad();
@@ -32,8 +32,7 @@ TEST_CASE("mesh reports basic counts", "[core][mesh]") {
     REQUIRE(m.vertsPerFaceForExport() == 4);
 }
 
-TEST_CASE("triangles stored as degenerate quads are tagged for export as tris",
-          "[core][mesh]") {
+TEST_CASE("triangles stored as degenerate quads are tagged for export as tris", "[core][mesh]") {
     // wavefront.py:105-106 repeats corner 0; module3d.py:634-639 detects it.
     Mesh m("tri", 4);
     m.setCoords({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}});
@@ -49,7 +48,7 @@ TEST_CASE("face normals are unnormalised and area-weighted", "[core][mesh][norma
     m.calcFaceNormals();
     REQUIRE(m.fnorm().size() == 1);
 
-    const Vec3 n = m.fnorm()[0];
+    const Vec3 n    = m.fnorm()[0];
     const float len = std::sqrt(dot(n, n));
     REQUIRE(len > 0.0F);
     REQUIRE_THAT(n.x / len, WithinAbs(0.0, 1e-6));
@@ -68,11 +67,10 @@ TEST_CASE("vertex normals are unit length", "[core][mesh][normals]") {
 
 TEST_CASE("adjacency records the incident face for every vertex", "[core][mesh]") {
     const Mesh m = makeUnitQuad();
-    REQUIRE(m.maxValence() >= 4);   // floored at 4, module3d.py:764-765
+    REQUIRE(m.maxValence() >= 4);  // floored at 4, module3d.py:764-765
 }
 
-TEST_CASE("adjacency counts a vertex once per face in a degenerate quad",
-          "[core][mesh]") {
+TEST_CASE("adjacency counts a vertex once per face in a degenerate quad", "[core][mesh]") {
     Mesh m("tri", 4);
     m.setCoords({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}});
     m.addFaceGroup("g");
@@ -89,15 +87,14 @@ TEST_CASE("adjacency counts a vertex once per face in a degenerate quad",
 TEST_CASE("resetToOriginal restores the morph base", "[core][mesh]") {
     // The morph base is captured at setCoords, matching module3d.py:532, and
     // restored by algos3d.py:493-494 before every full stack rebuild.
-    Mesh m = makeUnitQuad();
+    Mesh m              = makeUnitQuad();
     m.mutableCoord()[0] = Vec3{9, 9, 9};
     REQUIRE(m.coord()[0] == Vec3{9, 9, 9});
     m.resetToOriginal();
     REQUIRE(m.coord()[0] == Vec3{0, 0, 0});
 }
 
-TEST_CASE("height is the Y extent in decimetres scaled to centimetres",
-          "[core][mesh][units]") {
+TEST_CASE("height is the Y extent in decimetres scaled to centimetres", "[core][mesh][units]") {
     // human.py:694-699 -- internal units are decimetres.
     Mesh m("bar", 4);
     m.setCoords({{0, 0, 0}, {1, 17.5F, 0}, {1, 17.5F, 1}, {0, 0, 1}});

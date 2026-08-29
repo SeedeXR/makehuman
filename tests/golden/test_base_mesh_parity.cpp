@@ -26,7 +26,7 @@ namespace {
 std::filesystem::path baseObjPath() {
     return std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj";
 }
-} // namespace
+}  // namespace
 
 TEST_CASE("base mesh matches the Python reference counts", "[golden][parity][core]") {
     const auto path = baseObjPath();
@@ -39,8 +39,8 @@ TEST_CASE("base mesh matches the Python reference counts", "[golden][parity][cor
 
     // Measured from the reference; see the file header.
     CHECK(mesh->vertexCount() == 19158);
-    CHECK(mesh->faceCount()   == 18486);
-    CHECK(mesh->uvCount()     == 21334);
+    CHECK(mesh->faceCount() == 18486);
+    CHECK(mesh->uvCount() == 21334);
     CHECK(mesh->vertsPerPrimitive() == 4);
     CHECK(mesh->hasUV());
 
@@ -69,18 +69,17 @@ TEST_CASE("base mesh has the expected face groups", "[golden][parity][core]") {
 
     // Joint helpers drive skeleton joint positions (skeleton.py:1366-1384) and
     // helper geometry drives proxy fitting; both must survive loading.
-    size_t jointGroups = 0;
+    size_t jointGroups  = 0;
     size_t helperGroups = 0;
     for (const auto& g : mesh->faceGroups()) {
-        if (g.name.starts_with("joint-"))  ++jointGroups;
+        if (g.name.starts_with("joint-")) ++jointGroups;
         if (g.name.starts_with("helper-")) ++helperGroups;
     }
     CHECK(jointGroups == 125);
     CHECK(helperGroups == 13);
 }
 
-TEST_CASE("base mesh is a plausible human scale in decimetres",
-          "[golden][parity][core][units]") {
+TEST_CASE("base mesh is a plausible human scale in decimetres", "[golden][parity][core][units]") {
     const auto path = baseObjPath();
     if (!std::filesystem::exists(path)) SKIP("base.obj not present");
 
@@ -96,8 +95,7 @@ TEST_CASE("base mesh is a plausible human scale in decimetres",
     CHECK(cm < 210.0F);
 }
 
-TEST_CASE("every base mesh vertex normal is unit length",
-          "[golden][parity][core][normals]") {
+TEST_CASE("every base mesh vertex normal is unit length", "[golden][parity][core][normals]") {
     const auto path = baseObjPath();
     if (!std::filesystem::exists(path)) SKIP("base.obj not present");
 
@@ -125,10 +123,12 @@ TEST_CASE("all face indices are in range", "[golden][parity][core]") {
     const auto nUVs   = static_cast<uint32_t>(mesh->uvCount());
 
     size_t badV = 0;
-    for (const uint32_t v : mesh->fvert()) if (v >= nVerts) ++badV;
+    for (const uint32_t v : mesh->fvert())
+        if (v >= nVerts) ++badV;
     CHECK(badV == 0);
 
     size_t badT = 0;
-    for (const uint32_t t : mesh->fuvs()) if (t >= nUVs) ++badT;
+    for (const uint32_t t : mesh->fuvs())
+        if (t >= nUVs) ++badT;
     CHECK(badT == 0);
 }

@@ -1,0 +1,98 @@
+[
+  {
+    "path": "data/targets/armslegs/l-foot-scale-decr.target",
+    "affected_verts": 1612
+  },
+  {
+    "path": "data/targets/armslegs/l-upperarm-scale-horiz-incr.target",
+    "affected_verts": 2353
+  },
+  {
+    "path": "data/targets/armslegs/r-lowerleg-fat-decr.target",
+    "affected_verts": 318
+  },
+  {
+    "path": "data/targets/asym/asym-eye-2-r.target",
+    "affected_verts": 1968
+  },
+  {
+    "path": "data/targets/bodyshapes/bodyshapes-elvs-fem-thyroid.target",
+    "affected_verts": 12286
+  },
+  {
+    "path": "data/targets/breast/female-child-maxmuscle-maxweight-averagecup-minfirmness.target",
+    "affected_verts": 218
+  },
+  {
+    "path": "data/targets/breast/female-old-averagemuscle-maxweight-mincup-maxfirmness.target",
+    "affected_verts": 693
+  },
+  {
+    "path": "data/targets/breast/female-old-minmuscle-minweight-maxcup-maxfirmness.target",
+    "affected_verts": 644
+  },
+  {
+    "path": "data/targets/breast/female-young-minmuscle-averageweight-averagecup-maxfirmness.target",
+    "affected_verts": 303
+  },
+  {
+    "path": "data/targets/chin/chin-jaw-drop-incr.target",
+    "affected_verts": 42
+  },
+  {
+    "path": "data/targets/expression/units/african/eye-left-opened-up.target",
+    "affected_verts": 194
+  },
+  {
+    "path": "data/targets/expression/units/asian/mouth-open.target",
+    "affected_verts": 1344
+  },
+  {
+    "path": "data/targets/eyebrows/eyebrows-trans-up.target",
+    "affected_verts": 529
+  },
+  {
+    "path": "data/targets/eyes/r-eye-height1-decr.target",
+    "affected_verts": 141
+  },
+  {
+    "path": "data/targets/head/head-trans-in.target",
+    "affected_verts": 5518
+  },
+  {
+    "path": "data/targets/macrodetails/height/female-baby-maxmuscle-minweight-minheight.target",
+    "affected_verts": 19150
+  },
+  {
+    "path": "data/targets/macrodetails/height/female-young-maxmuscle-minweight-maxheight.target",
+    "affected_verts": 19150
+  },
+  {
+    "path": "data/targets/macrodetails/height/male-old-maxmuscle-maxweight-minheight.target",
+    "affected_verts": 453
+  },
+  {
+    "path": "data/targets/macrodetails/proportions/female-old-maxmuscle-maxweight-idealproportions.target",
+    "affected_verts": 19058
+  },
+  {
+    "path": "data/targets/macrodetails/proportions/male-old-maxmuscle-averageweight-uncommonproportions.target",
+    "affected_verts": 10031
+  },
+  {
+    "path": "data/targets/macrodetails/universal-female-old-minmuscle-averageweight.target",
+    "affected_verts": 5258
+  },
+  {
+    "path": "data/targets/measure/measure-calf-circ-incr.target",
+    "affected_verts": 776
+  },
+  {
+    "path": "data/targets/mouth/mouth-lowerlip-width-decr.target",
+    "affected_verts": 110
+  },
+  {
+    "path": "data/targets/nose/nose-hump-incr.target",
+    "affected_verts": 414
+  }
+]

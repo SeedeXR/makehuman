@@ -23,29 +23,35 @@ class TempObj {
 public:
     explicit TempObj(std::string_view contents) {
         static int counter = 0;
-        path_ = std::filesystem::temp_directory_path() /
+        path_              = std::filesystem::temp_directory_path() /
                 ("mh_reg_" + std::to_string(++counter) + ".obj");
         std::ofstream out(path_);
         out << contents;
     }
-    ~TempObj() { std::error_code ec; std::filesystem::remove(path_, ec); }
-    TempObj(const TempObj&) = delete;
+
+    ~TempObj() {
+        std::error_code ec;
+        std::filesystem::remove(path_, ec);
+    }
+
+    TempObj(const TempObj&)            = delete;
     TempObj& operator=(const TempObj&) = delete;
+
     [[nodiscard]] const std::filesystem::path& path() const { return path_; }
+
 private:
     std::filesystem::path path_;
 };
 
-} // namespace
+}  // namespace
 
 // --- Finding 1 -------------------------------------------------------------
 // maxValence_ was uint8_t. A vertex with >=256 incident faces wrapped it to 0,
 // so the adjacency stride became 0, nothing was recorded, and EVERY vertex
 // normal silently fell back to the zero-guard {0,1,0}. No error, no diagnostic.
-TEST_CASE("valence above 255 does not wrap and destroy every normal",
-          "[regression][core][mesh]") {
-    constexpr uint32_t kFan = 300;             // > 255 incident faces on the apex
-    constexpr float    kPi  = 3.14159265358979323846F;
+TEST_CASE("valence above 255 does not wrap and destroy every normal", "[regression][core][mesh]") {
+    constexpr uint32_t kFan = 300;  // > 255 incident faces on the apex
+    constexpr float kPi     = 3.14159265358979323846F;
 
     // A cone, not a flat fan: with a planar fan every true normal really is
     // {0,1,0}, which is indistinguishable from the zero-guard fallback.
@@ -61,7 +67,7 @@ TEST_CASE("valence above 255 does not wrap and destroy every normal",
     for (uint32_t i = 0; i < kFan; ++i) {
         const uint32_t a = i + 1U;
         const uint32_t b = (i + 1U) % kFan + 1U;
-        fv.insert(fv.end(), {0U, a, b, 0U});   // degenerate quad
+        fv.insert(fv.end(), {0U, a, b, 0U});  // degenerate quad
         fg.push_back(0);
     }
 
@@ -101,13 +107,12 @@ TEST_CASE("valence above 255 does not wrap and destroy every normal",
 // the staleness guard in calcVertexNormals still held, so it indexed fnorm_
 // (resized to the NEW, smaller face count) through OLD face indices.
 // ASan: container-overflow in Vec3::operator+=.
-TEST_CASE("replacing the face set invalidates stale adjacency",
-          "[regression][core][mesh]") {
+TEST_CASE("replacing the face set invalidates stale adjacency", "[regression][core][mesh]") {
     Mesh m("m", 4);
     m.setCoords({{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}});
     m.addFaceGroup("g");
 
-    REQUIRE(m.setFaces({0, 1, 2, 3,  0, 1, 2, 3,  0, 1, 2, 3}, {}, {0, 0, 0}).has_value());
+    REQUIRE(m.setFaces({0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3}, {}, {0, 0, 0}).has_value());
     m.buildAdjacency();
     REQUIRE(m.faceCount() == 3);
 
@@ -115,7 +120,7 @@ TEST_CASE("replacing the face set invalidates stale adjacency",
     REQUIRE(m.setFaces({0, 1, 2, 3}, {}, {0}).has_value());
     REQUIRE(m.faceCount() == 1);
 
-    m.calcNormals();                            // read out of bounds before the fix
+    m.calcNormals();  // read out of bounds before the fix
     CHECK(m.vnorm().size() == 4);
 }
 
@@ -123,8 +128,7 @@ TEST_CASE("replacing the face set invalidates stale adjacency",
 // calcFaceNormals indexed coord_[fvert_[...]] with no bounds check while
 // buildAdjacency guarded the same indices. setFaces is public and validated
 // nothing, so an out-of-range index was a heap-buffer-overflow.
-TEST_CASE("setFaces rejects an out-of-range vertex index",
-          "[regression][core][mesh]") {
+TEST_CASE("setFaces rejects an out-of-range vertex index", "[regression][core][mesh]") {
     Mesh m("m", 4);
     m.setCoords({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}});
     m.addFaceGroup("g");
@@ -132,7 +136,7 @@ TEST_CASE("setFaces rejects an out-of-range vertex index",
     const auto r = m.setFaces({0, 1, 99, 2}, {}, {0});
     REQUIRE_FALSE(r.has_value());
     CHECK(r.error() == MeshError::VertexIndexOutOfRange);
-    CHECK(m.faceCount() == 0);                  // mesh left unchanged
+    CHECK(m.faceCount() == 0);  // mesh left unchanged
 }
 
 TEST_CASE("setFaces rejects an out-of-range UV index", "[regression][core][mesh]") {
@@ -164,7 +168,7 @@ TEST_CASE("setFaces rejects a face array that is not a whole number of primitive
     m.setCoords({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}});
     m.addFaceGroup("g");
 
-    const auto r = m.setFaces({0, 1, 2}, {}, {0});   // 3 entries, stride 4
+    const auto r = m.setFaces({0, 1, 2}, {}, {0});  // 3 entries, stride 4
     REQUIRE_FALSE(r.has_value());
     CHECK(r.error() == MeshError::FaceArraySizeMismatch);
 }
@@ -173,13 +177,12 @@ TEST_CASE("setFaces rejects a face array that is not a whole number of primitive
 // hasUV_ was stored and set unconditionally by setUVs, so calling setUVs AFTER
 // setFaces({}) left hasUV() true with an empty fuvs_ — a consumer indexing
 // fuvs() in parallel with fvert() got nothing.
-TEST_CASE("hasUV stays false when faces carry no UV indices",
-          "[regression][core][mesh]") {
+TEST_CASE("hasUV stays false when faces carry no UV indices", "[regression][core][mesh]") {
     Mesh m("m", 4);
     m.setCoords({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}, {1, 0, 1}});
     m.addFaceGroup("g");
     REQUIRE(m.setFaces({0, 1, 2, 3}, {}, {0}).has_value());
-    m.setUVs({{0, 0}, {1, 0}, {1, 1}, {0, 1}});   // out of order, on purpose
+    m.setUVs({{0, 0}, {1, 0}, {1, 1}, {0, 1}});  // out of order, on purpose
 
     CHECK_FALSE(m.hasUV());
     CHECK(m.fuvs().empty());
@@ -188,8 +191,7 @@ TEST_CASE("hasUV stays false when faces carry no UV indices",
 // --- Finding 4 -------------------------------------------------------------
 // A malformed v/vt line was silently dropped, shifting every later index so the
 // file loaded "successfully" as a completely different mesh.
-TEST_CASE("a malformed v line is an error, not a silent index shift",
-          "[regression][core][obj]") {
+TEST_CASE("a malformed v line is an error, not a silent index shift", "[regression][core][obj]") {
     const TempObj f("g t\nv 0 0 0\nv 1 0\nv 1 0 0\nv 0 0 1\nf 1 2 3\n");
     const auto m = loadObj(f.path());
     REQUIRE_FALSE(m.has_value());
@@ -215,8 +217,7 @@ TEST_CASE("a malformed vt line is an error", "[regression][core][obj]") {
 // `o` was treated as `g`, creating a spurious empty face group and never
 // setting the mesh name. wavefront.py:128-129 sets the name and creates no
 // group. data/3dobjs/axis.obj opens with `o Axis` before three `g` statements.
-TEST_CASE("an o statement sets the name and creates no face group",
-          "[regression][core][obj]") {
+TEST_CASE("an o statement sets the name and creates no face group", "[regression][core][obj]") {
     const TempObj f("o Axis\ng red\nv 0 0 0\nv 1 0 0\nv 0 0 1\nf 1 2 3\n");
     const auto m = loadObj(f.path());
     REQUIRE(m.has_value());
@@ -240,8 +241,7 @@ TEST_CASE("the shipped axis.obj loads with the reference's group count",
 // --- Finding 6 -------------------------------------------------------------
 // An f statement with fewer than 3 corners was silently ignored, while >4 was a
 // hard error — asymmetric, and it hid malformed input.
-TEST_CASE("a face with fewer than three corners is an error",
-          "[regression][core][obj]") {
+TEST_CASE("a face with fewer than three corners is an error", "[regression][core][obj]") {
     const TempObj f("g t\nv 0 0 0\nv 1 0 0\nv 0 0 1\nf 1 2\nf 1 2 3\n");
     const auto m = loadObj(f.path());
     REQUIRE_FALSE(m.has_value());
@@ -251,8 +251,7 @@ TEST_CASE("a face with fewer than three corners is an error",
 // --- Finding 7 -------------------------------------------------------------
 // parseCorner checked only from_chars' error code, not that it consumed the
 // whole token, so "1x" parsed as vertex 1.
-TEST_CASE("a face corner with trailing garbage is an error",
-          "[regression][core][obj]") {
+TEST_CASE("a face corner with trailing garbage is an error", "[regression][core][obj]") {
     const TempObj f("g t\nv 0 0 0\nv 1 0 0\nv 0 0 1\nf 1x 2 3\n");
     const auto m = loadObj(f.path());
     REQUIRE_FALSE(m.has_value());

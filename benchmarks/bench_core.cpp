@@ -18,8 +18,8 @@ using Clock = std::chrono::steady_clock;
 
 struct Result {
     std::string label;
-    double      medianMs{};
-    double      baselineMs{};
+    double medianMs{};
+    double baselineMs{};
 };
 
 template <typename Fn>
@@ -36,7 +36,7 @@ double medianMs(Fn&& fn, int repeat) {
     return samples[samples.size() / 2];
 }
 
-} // namespace
+}  // namespace
 
 int main() {
     const std::filesystem::path base = std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj";
@@ -50,8 +50,7 @@ int main() {
     // Baselines are the medians measured from the Python reference on
     // 2026-08-29 (macOS 26.6.2 arm64, Python 3.14.6, numpy 2.5.1).
     results.push_back({"load base.obj (parse + adjacency + normals)",
-                       medianMs([&] { (void)mh::core::loadObj(base); }, 5),
-                       211.8});
+                       medianMs([&] { (void)mh::core::loadObj(base); }, 5), 211.8});
 
     auto mesh = mh::core::loadObj(base);
     if (!mesh) {
@@ -59,24 +58,21 @@ int main() {
         return 1;
     }
 
-    results.push_back({"calcNormals full mesh",
-                       medianMs([&] { mesh->calcNormals(); }, 20), 5.18});
-    results.push_back({"calcFaceNormals only",
-                       medianMs([&] { mesh->calcFaceNormals(); }, 50), 0.68});
-    results.push_back({"calcVertexNormals only",
-                       medianMs([&] { mesh->calcVertexNormals(); }, 50), 1.69});
-    results.push_back({"buildAdjacency",
-                       medianMs([&] { mesh->buildAdjacency(); }, 10), 0.0});
+    results.push_back({"calcNormals full mesh", medianMs([&] { mesh->calcNormals(); }, 20), 5.18});
+    results.push_back(
+        {"calcFaceNormals only", medianMs([&] { mesh->calcFaceNormals(); }, 50), 0.68});
+    results.push_back(
+        {"calcVertexNormals only", medianMs([&] { mesh->calcVertexNormals(); }, 50), 1.69});
+    results.push_back({"buildAdjacency", medianMs([&] { mesh->buildAdjacency(); }, 10), 0.0});
 
-    std::printf("mesh: %zu verts, %zu faces, %zu uvs, maxValence %u\n\n",
-                mesh->vertexCount(), mesh->faceCount(), mesh->uvCount(),
-                static_cast<unsigned>(mesh->maxValence()));
+    std::printf("mesh: %zu verts, %zu faces, %zu uvs, maxValence %u\n\n", mesh->vertexCount(),
+                mesh->faceCount(), mesh->uvCount(), static_cast<unsigned>(mesh->maxValence()));
     std::printf("%-46s %12s %12s %10s\n", "operation", "C++ (ms)", "python (ms)", "speedup");
     std::printf("%s\n", std::string(84, '-').c_str());
     for (const Result& r : results) {
         if (r.baselineMs > 0.0) {
-            std::printf("%-46s %11.2f %11.2f %9.1fx\n", r.label.c_str(), r.medianMs,
-                        r.baselineMs, r.baselineMs / r.medianMs);
+            std::printf("%-46s %11.2f %11.2f %9.1fx\n", r.label.c_str(), r.medianMs, r.baselineMs,
+                        r.baselineMs / r.medianMs);
         } else {
             std::printf("%-46s %11.2f %11s %10s\n", r.label.c_str(), r.medianMs, "-", "-");
         }

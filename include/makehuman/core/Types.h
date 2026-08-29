@@ -24,28 +24,54 @@ struct Vec3 {
     float x{}, y{}, z{};
     friend bool operator==(const Vec3&, const Vec3&) = default;
 
-    Vec3& operator+=(const Vec3& o) { x += o.x; y += o.y; z += o.z; return *this; }
-    Vec3& operator-=(const Vec3& o) { x -= o.x; y -= o.y; z -= o.z; return *this; }
-    Vec3& operator*=(float s)       { x *= s;   y *= s;   z *= s;   return *this; }
+    Vec3& operator+=(const Vec3& o) {
+        x += o.x;
+        y += o.y;
+        z += o.z;
+        return *this;
+    }
+
+    Vec3& operator-=(const Vec3& o) {
+        x -= o.x;
+        y -= o.y;
+        z -= o.z;
+        return *this;
+    }
+
+    Vec3& operator*=(float s) {
+        x *= s;
+        y *= s;
+        z *= s;
+        return *this;
+    }
 };
 
-inline Vec3 operator+(Vec3 a, const Vec3& b) { return a += b; }
-inline Vec3 operator-(Vec3 a, const Vec3& b) { return a -= b; }
-inline Vec3 operator*(Vec3 a, float s)       { return a *= s; }
+inline Vec3 operator+(Vec3 a, const Vec3& b) {
+    return a += b;
+}
+
+inline Vec3 operator-(Vec3 a, const Vec3& b) {
+    return a -= b;
+}
+
+inline Vec3 operator*(Vec3 a, float s) {
+    return a *= s;
+}
 
 inline Vec3 cross(const Vec3& a, const Vec3& b) {
-    return {a.y * b.z - a.z * b.y,
-            a.z * b.x - a.x * b.z,
-            a.x * b.y - a.y * b.x};
+    return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
 }
-inline float dot(const Vec3& a, const Vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+
+inline float dot(const Vec3& a, const Vec3& b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
 
 /// A named subset of faces. The base mesh has 172 of them; they are the unit of
 /// picking and of per-group material tinting.
 /// Reference: legacy-python/core/module3d.py:47-108
 struct FaceGroup {
     std::string name;
-    uint16_t    idx{};
+    uint16_t idx{};
 };
 
-} // namespace mh::core
+}  // namespace mh::core

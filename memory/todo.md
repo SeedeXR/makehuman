@@ -20,7 +20,7 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [x] Write `memory/` — 12 documents
 - [x] `CLAUDE.md`, `AGENT.md`, `LICENSING.md`
 
-## M1 — Build system and core skeleton  [~ mostly done]
+## M1 — Build system and core skeleton  ✅ COMPLETE
 
 - [x] `CMakeLists.txt` + `CMakePresets.json` (macos-arm64 debug/release/asan)
 - [x] Catch2 v3.7.1 via FetchContent (pinned tag); `ctest` wired; Catch2 headers marked SYSTEM
@@ -31,9 +31,11 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - ~~Module targets for `mh-foundation`, `mh-rig`, `mh-io`, `mh-render`, `mh-ui`, `mh-app`~~
   → **deferred**: creating empty targets before they have sources is scaffolding for
   its own sake. Each is added in its own milestone when it gets a first source file.
-- [ ] `.clang-format`, `.clang-tidy`
-- [ ] CI workflow (build · test · asan · bench · licence scan · format)
-- [ ] `tools/capture_fixture.py` — drives the Python reference to emit golden fixtures
+- [x] `.clang-format` + `.clang-tidy`; all sources formatted and compliant
+- [x] CI workflow: format · build+test (debug/release/asan) · benchmark · licence gates
+      (SPDX header check, FetchContent deps recorded in `LICENSING.md`, forbidden-dep scan)
+- [x] `tools/capture_fixture.py` — captures mesh / targets / skeleton fixtures with a
+      MANIFEST recording reference commit, interpreter and numpy version
 
 ## M2 — Core geometry (`mh-core`)  [~ in progress]
 
@@ -43,6 +45,8 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [x] Adjacency build (`vface`/`nfaces`), valence floored at 4 — **matches the reference's 5**
 - [x] `calcFaceNormals` / `calcVertexNormals` — area-weighted, zero-guarded
 - [x] **Parity fixtures**: base mesh counts, face groups, units, normals, index ranges
+- [x] **Byte-level parity vs. the Python reference**: coord, fvert, fuvs, texco, vnorm,
+      group — all 19,158 verts and 18,486 faces match within stated tolerances
 - [x] Benchmarks vs. the Python baseline
 - [ ] **Correct** tangents (reference is broken — `project_context.md` §8)
 - [ ] Unweld / index-buffer build (`vmap`/`tmap`/`grpix`)

@@ -1,0 +1,37 @@
+{
+  "subsystem": "skeleton",
+  "captured_at": "2026-08-29T01:22:36.270402+00:00",
+  "reference_commit": "68b30f6c94abe2469cdb01579cc421fdd063189f",
+  "python": "3.14.6",
+  "numpy": "2.5.2",
+  "platform": "darwin",
+  "entries": {
+    "matRestGlobal": {
+      "file": "rest_global.bin",
+      "dtype": "f4",
+      "shape": [
+        163,
+        4,
+        4
+      ],
+      "count": 2608,
+      "sha256": "1d980d501622705073f55d141618a9936b432d7fde28185558e99df2a4e025a9"
+    },
+    "matRestRelative": {
+      "file": "rest_relative.bin",
+      "dtype": "f4",
+      "shape": [
+        163,
+        4,
+        4
+      ],
+      "count": 2608,
+      "sha256": "4a26cb8f60d45d3731aa8c55806c917c1b95f0a886fdac0280d1972cb631c1f6"
+    }
+  },
+  "source": "data/rigs/default.mhskel",
+  "bone_count": 163,
+  "joint_count": 326,
+  "matrix_layout": "row-major storage, column vectors (v' = M*v), translation in M[:3,3]",
+  "world": "Y-up, model faces +Z, right-handed"
+}

@@ -17,14 +17,18 @@ class TempObj {
 public:
     explicit TempObj(std::string_view contents) {
         static int counter = 0;
-        path_ = std::filesystem::temp_directory_path() /
+        path_              = std::filesystem::temp_directory_path() /
                 ("mh_test_" + std::to_string(++counter) + ".obj");
         std::ofstream out(path_);
         out << contents;
     }
-    ~TempObj() { std::error_code ec; std::filesystem::remove(path_, ec); }
 
-    TempObj(const TempObj&) = delete;
+    ~TempObj() {
+        std::error_code ec;
+        std::filesystem::remove(path_, ec);
+    }
+
+    TempObj(const TempObj&)            = delete;
     TempObj& operator=(const TempObj&) = delete;
 
     [[nodiscard]] const std::filesystem::path& path() const { return path_; }
@@ -33,7 +37,7 @@ private:
     std::filesystem::path path_;
 };
 
-} // namespace
+}  // namespace
 
 TEST_CASE("loads a quad with UVs", "[core][obj]") {
     const TempObj f(R"(
@@ -64,7 +68,7 @@ TEST_CASE("a triangle becomes a degenerate quad", "[core][obj]") {
     REQUIRE(m.has_value());
     REQUIRE(m->faceCount() == 1);
     REQUIRE(m->fvert().size() == 4);
-    REQUIRE(m->fvert()[3] == m->fvert()[0]);   // wavefront.py:105-106
+    REQUIRE(m->fvert()[3] == m->fvert()[0]);  // wavefront.py:105-106
     REQUIRE(m->vertsPerFaceForExport() == 3);
 }
 
@@ -102,8 +106,7 @@ TEST_CASE("a loose vertex is rejected", "[core][obj][error]") {
     REQUIRE(m.error().kind == ObjErrorKind::LooseVertex);
 }
 
-TEST_CASE("an out-of-range face index is rejected, not read out of bounds",
-          "[core][obj][error]") {
+TEST_CASE("an out-of-range face index is rejected, not read out of bounds", "[core][obj][error]") {
     const TempObj f("g t\nv 0 0 0\nv 1 0 0\nv 0 0 1\nf 1 2 99\n");
     const auto m = loadObj(f.path());
     REQUIRE_FALSE(m.has_value());
@@ -118,8 +121,7 @@ TEST_CASE("index zero is rejected", "[core][obj][error]") {
     REQUIRE(m.error().kind == ObjErrorKind::BadIndex);
 }
 
-TEST_CASE("an n-gon is rejected rather than silently truncated",
-          "[core][obj][error]") {
+TEST_CASE("an n-gon is rejected rather than silently truncated", "[core][obj][error]") {
     const TempObj f("g t\nv 0 0 0\nv 1 0 0\nv 1 0 1\nv 0 0 1\nv 2 0 2\nf 1 2 3 4 5\n");
     const auto m = loadObj(f.path());
     REQUIRE_FALSE(m.has_value());

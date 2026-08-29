@@ -9,12 +9,13 @@
 namespace mh::core {
 
 Mesh::Mesh(std::string name, uint8_t vertsPerPrimitive)
-    : name_(std::move(name)), vertsPerPrimitive_(vertsPerPrimitive),
+    : name_(std::move(name)),
+      vertsPerPrimitive_(vertsPerPrimitive),
       vertsPerFaceForExport_(vertsPerPrimitive) {}
 
 void Mesh::setCoords(std::vector<Vec3> coords) {
     coord_     = std::move(coords);
-    origCoord_ = coord_;                 // the morph base, module3d.py:532
+    origCoord_ = coord_;  // the morph base, module3d.py:532
     vnorm_.assign(coord_.size(), Vec3{});
 }
 
@@ -22,10 +23,9 @@ void Mesh::setUVs(std::vector<Vec2> uvs) {
     texco_ = std::move(uvs);
 }
 
-std::expected<void, MeshError>
-Mesh::setFaces(std::vector<uint32_t> faceVerts,
-               std::vector<uint32_t> faceUVs,
-               std::vector<uint16_t> faceGroup) {
+std::expected<void, MeshError> Mesh::setFaces(std::vector<uint32_t> faceVerts,
+                                              std::vector<uint32_t> faceUVs,
+                                              std::vector<uint16_t> faceGroup) {
     const size_t vpp = vertsPerPrimitive_;
     if (vpp == 0 || faceVerts.size() % vpp != 0) {
         return std::unexpected(MeshError::FaceArraySizeMismatch);
@@ -52,7 +52,7 @@ Mesh::setFaces(std::vector<uint32_t> faceVerts,
     fuvs_  = std::move(faceUVs);
 
     const size_t nFaces = faceCount();
-    group_ = std::move(faceGroup);
+    group_              = std::move(faceGroup);
     if (group_.size() != nFaces) {
         group_.assign(nFaces, 0);
     }
@@ -73,7 +73,10 @@ Mesh::setFaces(std::vector<uint32_t> faceVerts,
     if (vertsPerPrimitive_ == 4 && nFaces > 0) {
         bool allDegenerate = true;
         for (size_t f = 0; f < nFaces; ++f) {
-            if (fvert_[f * 4] != fvert_[f * 4 + 3]) { allDegenerate = false; break; }
+            if (fvert_[f * 4] != fvert_[f * 4 + 3]) {
+                allDegenerate = false;
+                break;
+            }
         }
         if (allDegenerate) {
             vertsPerFaceForExport_ = 3;
@@ -113,10 +116,13 @@ void Mesh::buildAdjacency() {
     std::vector<uint32_t> counts(nVerts, 0);
     for (size_t f = 0; f < nFaces; ++f) {
         for (size_t c = 0; c < vpp; ++c) {
-            const uint32_t v = fvert_[f * vpp + c];
+            const uint32_t v    = fvert_[f * vpp + c];
             bool seenInThisFace = false;
             for (size_t p = 0; p < c; ++p) {
-                if (fvert_[f * vpp + p] == v) { seenInThisFace = true; break; }
+                if (fvert_[f * vpp + p] == v) {
+                    seenInThisFace = true;
+                    break;
+                }
             }
             if (!seenInThisFace && v < nVerts) {
                 ++counts[v];
@@ -139,7 +145,10 @@ void Mesh::buildAdjacency() {
             if (v >= nVerts) continue;
             bool seenInThisFace = false;
             for (size_t p = 0; p < c; ++p) {
-                if (fvert_[f * vpp + p] == v) { seenInThisFace = true; break; }
+                if (fvert_[f * vpp + p] == v) {
+                    seenInThisFace = true;
+                    break;
+                }
             }
             if (seenInThisFace) continue;
             uint32_t& n = nfaces_[v];
@@ -197,11 +206,15 @@ std::optional<std::pair<Vec3, Vec3>> Mesh::boundingBox() const {
     if (coord_.empty()) return std::nullopt;
 
     constexpr float inf = std::numeric_limits<float>::infinity();
-    Vec3 lo{ inf,  inf,  inf};
+    Vec3 lo{inf, inf, inf};
     Vec3 hi{-inf, -inf, -inf};
     for (const Vec3& v : coord_) {
-        lo.x = std::min(lo.x, v.x); lo.y = std::min(lo.y, v.y); lo.z = std::min(lo.z, v.z);
-        hi.x = std::max(hi.x, v.x); hi.y = std::max(hi.y, v.y); hi.z = std::max(hi.z, v.z);
+        lo.x = std::min(lo.x, v.x);
+        lo.y = std::min(lo.y, v.y);
+        lo.z = std::min(lo.z, v.z);
+        hi.x = std::max(hi.x, v.x);
+        hi.y = std::max(hi.y, v.y);
+        hi.z = std::max(hi.z, v.z);
     }
     return std::make_pair(lo, hi);
 }
@@ -212,4 +225,4 @@ float Mesh::heightCm() const {
     return (bb->second.y - bb->first.y) * kDecimetresToCentimetres;
 }
 
-} // namespace mh::core
+}  // namespace mh::core

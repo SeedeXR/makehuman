@@ -1,0 +1,480 @@
+{
+  "subsystem": "targets",
+  "captured_at": "2026-08-29T01:22:17.818772+00:00",
+  "reference_commit": "68b30f6c94abe2469cdb01579cc421fdd063189f",
+  "python": "3.14.6",
+  "numpy": "2.5.2",
+  "platform": "darwin",
+  "entries": {
+    "data_targets_armslegs_l-foot-scale-decr.verts": {
+      "file": "data_targets_armslegs_l-foot-scale-decr.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        1612
+      ],
+      "count": 1612,
+      "sha256": "4ff00af3ae444291e6be84da6741ad0f758498ed08b8549e85c219602637f765"
+    },
+    "data_targets_armslegs_l-foot-scale-decr.data": {
+      "file": "data_targets_armslegs_l-foot-scale-decr.data.bin",
+      "dtype": "f4",
+      "shape": [
+        1612,
+        3
+      ],
+      "count": 4836,
+      "sha256": "d97db3bf6241fd70e20578ab4320e907fd5e073148c302a70f8d7baf6aae0b9b"
+    },
+    "data_targets_armslegs_l-upperarm-scale-horiz-incr.verts": {
+      "file": "data_targets_armslegs_l-upperarm-scale-horiz-incr.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        2353
+      ],
+      "count": 2353,
+      "sha256": "0549547d9fc5e4f9ad1130cea5d5d4bdbd423ee809305c5276db1444fb9e93dd"
+    },
+    "data_targets_armslegs_l-upperarm-scale-horiz-incr.data": {
+      "file": "data_targets_armslegs_l-upperarm-scale-horiz-incr.data.bin",
+      "dtype": "f4",
+      "shape": [
+        2353,
+        3
+      ],
+      "count": 7059,
+      "sha256": "f794e4936c54abda99eb4c30a47db99f38b1a5857295de028e206a95a392f291"
+    },
+    "data_targets_armslegs_r-lowerleg-fat-decr.verts": {
+      "file": "data_targets_armslegs_r-lowerleg-fat-decr.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        318
+      ],
+      "count": 318,
+      "sha256": "55efe8dbea9b2b5dd6f1a5b054e3790235cea6a4d1a12d09ec22308aa98adf12"
+    },
+    "data_targets_armslegs_r-lowerleg-fat-decr.data": {
+      "file": "data_targets_armslegs_r-lowerleg-fat-decr.data.bin",
+      "dtype": "f4",
+      "shape": [
+        318,
+        3
+      ],
+      "count": 954,
+      "sha256": "632d128635ed3cccf8999918bdb1743c9159ebf19f2f0b2dba4ba2c242d812c2"
+    },
+    "data_targets_asym_asym-eye-2-r.verts": {
+      "file": "data_targets_asym_asym-eye-2-r.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        1968
+      ],
+      "count": 1968,
+      "sha256": "422af98948cfa75640d9d425d9e78140106c703d9dbd2fde1af2b30887bd6f7f"
+    },
+    "data_targets_asym_asym-eye-2-r.data": {
+      "file": "data_targets_asym_asym-eye-2-r.data.bin",
+      "dtype": "f4",
+      "shape": [
+        1968,
+        3
+      ],
+      "count": 5904,
+      "sha256": "a13a46e12e83e8284f7732d43631d8f8b88eb4f38fc7f3a84738135d10e14119"
+    },
+    "data_targets_bodyshapes_bodyshapes-elvs-fem-thyroid.verts": {
+      "file": "data_targets_bodyshapes_bodyshapes-elvs-fem-thyroid.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        12286
+      ],
+      "count": 12286,
+      "sha256": "d4e4b0c8915decfb88963cd94485dd16d3d5621ae5f3b8ce4c4f14f964998b0d"
+    },
+    "data_targets_bodyshapes_bodyshapes-elvs-fem-thyroid.data": {
+      "file": "data_targets_bodyshapes_bodyshapes-elvs-fem-thyroid.data.bin",
+      "dtype": "f4",
+      "shape": [
+        12286,
+        3
+      ],
+      "count": 36858,
+      "sha256": "cbf9c142525ca7c201ba738b8b3c85280b1f990fb4d2caf66c0933c1aa2a26e8"
+    },
+    "data_targets_breast_female-child-maxmuscle-maxweight-averagecup-minfirmness.verts": {
+      "file": "data_targets_breast_female-child-maxmuscle-maxweight-averagecup-minfirmness.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        218
+      ],
+      "count": 218,
+      "sha256": "e625898e96a740b0aaf40e3b67f464d71fa67e0a59d4043e4fe4d1eb245d67da"
+    },
+    "data_targets_breast_female-child-maxmuscle-maxweight-averagecup-minfirmness.data": {
+      "file": "data_targets_breast_female-child-maxmuscle-maxweight-averagecup-minfirmness.data.bin",
+      "dtype": "f4",
+      "shape": [
+        218,
+        3
+      ],
+      "count": 654,
+      "sha256": "e2df567e1629ff5b905c8ce09835af66a777f247f1873acedac162955dcc98cf"
+    },
+    "data_targets_breast_female-old-averagemuscle-maxweight-mincup-maxfirmness.verts": {
+      "file": "data_targets_breast_female-old-averagemuscle-maxweight-mincup-maxfirmness.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        693
+      ],
+      "count": 693,
+      "sha256": "9c37198e0a90a5ed806f3588ed18e19e1693882ac75f78c083ccc59734fb2ed9"
+    },
+    "data_targets_breast_female-old-averagemuscle-maxweight-mincup-maxfirmness.data": {
+      "file": "data_targets_breast_female-old-averagemuscle-maxweight-mincup-maxfirmness.data.bin",
+      "dtype": "f4",
+      "shape": [
+        693,
+        3
+      ],
+      "count": 2079,
+      "sha256": "8417b6c9be9b5aa8de2c7a71309e5776c3d2d9ad55e3cacdc0b133e952e4875b"
+    },
+    "data_targets_breast_female-old-minmuscle-minweight-maxcup-maxfirmness.verts": {
+      "file": "data_targets_breast_female-old-minmuscle-minweight-maxcup-maxfirmness.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        644
+      ],
+      "count": 644,
+      "sha256": "5a627fe1212f4327987aaf5113aabd3474b959a077e8129c20b2677b19d0f5e2"
+    },
+    "data_targets_breast_female-old-minmuscle-minweight-maxcup-maxfirmness.data": {
+      "file": "data_targets_breast_female-old-minmuscle-minweight-maxcup-maxfirmness.data.bin",
+      "dtype": "f4",
+      "shape": [
+        644,
+        3
+      ],
+      "count": 1932,
+      "sha256": "8de8433eb84851a5f87cc7b1a40d5ed345135939b423a60b12731f50601e34af"
+    },
+    "data_targets_breast_female-young-minmuscle-averageweight-averagecup-maxfirmness.verts": {
+      "file": "data_targets_breast_female-young-minmuscle-averageweight-averagecup-maxfirmness.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        303
+      ],
+      "count": 303,
+      "sha256": "68d558a55cfc7302bc98a52007b7592f9f90d75cf52fa79cf4b8348ecd34841f"
+    },
+    "data_targets_breast_female-young-minmuscle-averageweight-averagecup-maxfirmness.data": {
+      "file": "data_targets_breast_female-young-minmuscle-averageweight-averagecup-maxfirmness.data.bin",
+      "dtype": "f4",
+      "shape": [
+        303,
+        3
+      ],
+      "count": 909,
+      "sha256": "957ca0057a80138b6a0e1bb5407dccbad92ebd7405aa579e00837e03f970c406"
+    },
+    "data_targets_chin_chin-jaw-drop-incr.verts": {
+      "file": "data_targets_chin_chin-jaw-drop-incr.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        42
+      ],
+      "count": 42,
+      "sha256": "72a0672c8908da8e8eaf74dde904cd8efce74e43fbe45f333da1249a7d29c762"
+    },
+    "data_targets_chin_chin-jaw-drop-incr.data": {
+      "file": "data_targets_chin_chin-jaw-drop-incr.data.bin",
+      "dtype": "f4",
+      "shape": [
+        42,
+        3
+      ],
+      "count": 126,
+      "sha256": "1bb74636e60b2d476429b786bdc48347eba0d893c7d00f5fe09eb779f23ae62c"
+    },
+    "data_targets_expression_units_african_eye-left-opened-up.verts": {
+      "file": "data_targets_expression_units_african_eye-left-opened-up.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        194
+      ],
+      "count": 194,
+      "sha256": "1fb0fd5fe9976611301af2e46797298b52ee425fd7880a4c402d60e6e500a9cf"
+    },
+    "data_targets_expression_units_african_eye-left-opened-up.data": {
+      "file": "data_targets_expression_units_african_eye-left-opened-up.data.bin",
+      "dtype": "f4",
+      "shape": [
+        194,
+        3
+      ],
+      "count": 582,
+      "sha256": "3c9482d838367806439557293fd10966b8e9f38343aaeee12e94af040701ed68"
+    },
+    "data_targets_expression_units_asian_mouth-open.verts": {
+      "file": "data_targets_expression_units_asian_mouth-open.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        1344
+      ],
+      "count": 1344,
+      "sha256": "b556ada6bbfe2da7f7e147fb5a920e2745443fad761369d6065de984af77fd87"
+    },
+    "data_targets_expression_units_asian_mouth-open.data": {
+      "file": "data_targets_expression_units_asian_mouth-open.data.bin",
+      "dtype": "f4",
+      "shape": [
+        1344,
+        3
+      ],
+      "count": 4032,
+      "sha256": "c92faf457e843584671f3dedd2f01859daf639f807cf7c67ce341a320aadd141"
+    },
+    "data_targets_eyebrows_eyebrows-trans-up.verts": {
+      "file": "data_targets_eyebrows_eyebrows-trans-up.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        529
+      ],
+      "count": 529,
+      "sha256": "c3eefa235075435fb0a6ab1324f4a36c5198a486ef486b1cced390ceda16b8d4"
+    },
+    "data_targets_eyebrows_eyebrows-trans-up.data": {
+      "file": "data_targets_eyebrows_eyebrows-trans-up.data.bin",
+      "dtype": "f4",
+      "shape": [
+        529,
+        3
+      ],
+      "count": 1587,
+      "sha256": "5a79328a8c78063d0df3a7cde30adeaa0d0619715f10dc9b646dd997f7542e59"
+    },
+    "data_targets_eyes_r-eye-height1-decr.verts": {
+      "file": "data_targets_eyes_r-eye-height1-decr.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        141
+      ],
+      "count": 141,
+      "sha256": "9d51ca93c3bed1fb94c0c64974198868d9de95d643540b34c77ebe92f3c5d3cc"
+    },
+    "data_targets_eyes_r-eye-height1-decr.data": {
+      "file": "data_targets_eyes_r-eye-height1-decr.data.bin",
+      "dtype": "f4",
+      "shape": [
+        141,
+        3
+      ],
+      "count": 423,
+      "sha256": "a95be7dea0f384c9cf45152677b271dfe4525c204a4ab40b361b72800f3a8776"
+    },
+    "data_targets_head_head-trans-in.verts": {
+      "file": "data_targets_head_head-trans-in.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        5518
+      ],
+      "count": 5518,
+      "sha256": "78668080e22f026c85b6ee35bbb4ab1bb46ac87118283f8a0bf9348d488c9b14"
+    },
+    "data_targets_head_head-trans-in.data": {
+      "file": "data_targets_head_head-trans-in.data.bin",
+      "dtype": "f4",
+      "shape": [
+        5518,
+        3
+      ],
+      "count": 16554,
+      "sha256": "a59291a72214e82ab653bd10d53b0b06907de0e648c6de577c85dcbd6c560fdd"
+    },
+    "data_targets_macrodetails_height_female-baby-maxmuscle-minweight-minheight.verts": {
+      "file": "data_targets_macrodetails_height_female-baby-maxmuscle-minweight-minheight.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        19150
+      ],
+      "count": 19150,
+      "sha256": "359212045e0d9c1c7e67f7abbf13e9b35200814d85985d78c384ab4b3c052852"
+    },
+    "data_targets_macrodetails_height_female-baby-maxmuscle-minweight-minheight.data": {
+      "file": "data_targets_macrodetails_height_female-baby-maxmuscle-minweight-minheight.data.bin",
+      "dtype": "f4",
+      "shape": [
+        19150,
+        3
+      ],
+      "count": 57450,
+      "sha256": "2f0b4550ef3b54ff0a6649070cac0321950ad2c590913de85e926642299fe85c"
+    },
+    "data_targets_macrodetails_height_female-young-maxmuscle-minweight-maxheight.verts": {
+      "file": "data_targets_macrodetails_height_female-young-maxmuscle-minweight-maxheight.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        19150
+      ],
+      "count": 19150,
+      "sha256": "359212045e0d9c1c7e67f7abbf13e9b35200814d85985d78c384ab4b3c052852"
+    },
+    "data_targets_macrodetails_height_female-young-maxmuscle-minweight-maxheight.data": {
+      "file": "data_targets_macrodetails_height_female-young-maxmuscle-minweight-maxheight.data.bin",
+      "dtype": "f4",
+      "shape": [
+        19150,
+        3
+      ],
+      "count": 57450,
+      "sha256": "972ca13945de3926a285ecd27dcd02135ea1a37c90c87ec9f93481c0260e6a57"
+    },
+    "data_targets_macrodetails_height_male-old-maxmuscle-maxweight-minheight.verts": {
+      "file": "data_targets_macrodetails_height_male-old-maxmuscle-maxweight-minheight.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        453
+      ],
+      "count": 453,
+      "sha256": "e4e3a8ad387f2151380e13e710f64065673d29f162449d36cb35504ab3bb1561"
+    },
+    "data_targets_macrodetails_height_male-old-maxmuscle-maxweight-minheight.data": {
+      "file": "data_targets_macrodetails_height_male-old-maxmuscle-maxweight-minheight.data.bin",
+      "dtype": "f4",
+      "shape": [
+        453,
+        3
+      ],
+      "count": 1359,
+      "sha256": "d225d4c02d96f01a3143b86d278243f52a71aa93a22fc09242f854a47b333d91"
+    },
+    "data_targets_macrodetails_proportions_female-old-maxmuscle-maxweight-idealproportions.verts": {
+      "file": "data_targets_macrodetails_proportions_female-old-maxmuscle-maxweight-idealproportions.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        19058
+      ],
+      "count": 19058,
+      "sha256": "8b71135c834cc142f750df3d7020320f9771266c79752b6b1837f6afff5811dc"
+    },
+    "data_targets_macrodetails_proportions_female-old-maxmuscle-maxweight-idealproportions.data": {
+      "file": "data_targets_macrodetails_proportions_female-old-maxmuscle-maxweight-idealproportions.data.bin",
+      "dtype": "f4",
+      "shape": [
+        19058,
+        3
+      ],
+      "count": 57174,
+      "sha256": "f4d8edcc6f7ff276684ed9ca02481a3cf77ef60625434b97c0fa3804f930dac9"
+    },
+    "data_targets_macrodetails_proportions_male-old-maxmuscle-averageweight-uncommonproportions.verts": {
+      "file": "data_targets_macrodetails_proportions_male-old-maxmuscle-averageweight-uncommonproportions.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        10031
+      ],
+      "count": 10031,
+      "sha256": "265a1cd25bf37095f16e3f092c86f40c0d1397b3bfcdc026d9642b5dcd2094d9"
+    },
+    "data_targets_macrodetails_proportions_male-old-maxmuscle-averageweight-uncommonproportions.data": {
+      "file": "data_targets_macrodetails_proportions_male-old-maxmuscle-averageweight-uncommonproportions.data.bin",
+      "dtype": "f4",
+      "shape": [
+        10031,
+        3
+      ],
+      "count": 30093,
+      "sha256": "4f115a8d6efdde07e379228868820be5f631b0965966d432377537448b13c3dd"
+    },
+    "data_targets_macrodetails_universal-female-old-minmuscle-averageweight.verts": {
+      "file": "data_targets_macrodetails_universal-female-old-minmuscle-averageweight.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        5258
+      ],
+      "count": 5258,
+      "sha256": "7bf6a30f26396ec6494e2caf5206fdd5b1f20e437e34e71f0eb8f34d3bdda434"
+    },
+    "data_targets_macrodetails_universal-female-old-minmuscle-averageweight.data": {
+      "file": "data_targets_macrodetails_universal-female-old-minmuscle-averageweight.data.bin",
+      "dtype": "f4",
+      "shape": [
+        5258,
+        3
+      ],
+      "count": 15774,
+      "sha256": "4864c46d333d678f4e6ba390a4907941118fdb4e2665514966e2821ee6f3865d"
+    },
+    "data_targets_measure_measure-calf-circ-incr.verts": {
+      "file": "data_targets_measure_measure-calf-circ-incr.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        776
+      ],
+      "count": 776,
+      "sha256": "134df3118c5b3fe1add7dad1931479bd919cc37d7c247a13456f697bbabfa8ea"
+    },
+    "data_targets_measure_measure-calf-circ-incr.data": {
+      "file": "data_targets_measure_measure-calf-circ-incr.data.bin",
+      "dtype": "f4",
+      "shape": [
+        776,
+        3
+      ],
+      "count": 2328,
+      "sha256": "6c1f05db60c01a0736f1c12a3e8738c1992b77570e008ab99747b10e0e42679d"
+    },
+    "data_targets_mouth_mouth-lowerlip-width-decr.verts": {
+      "file": "data_targets_mouth_mouth-lowerlip-width-decr.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        110
+      ],
+      "count": 110,
+      "sha256": "ec7d79eb4e23ec78523cb4c73fa8b8236e13976ec0e6d7ad4ab02ef002303d1b"
+    },
+    "data_targets_mouth_mouth-lowerlip-width-decr.data": {
+      "file": "data_targets_mouth_mouth-lowerlip-width-decr.data.bin",
+      "dtype": "f4",
+      "shape": [
+        110,
+        3
+      ],
+      "count": 330,
+      "sha256": "8de7c3a194dd2cd10c5e74b364a0dffac92c9ef9c31a395423b1d6c1543a4e18"
+    },
+    "data_targets_nose_nose-hump-incr.verts": {
+      "file": "data_targets_nose_nose-hump-incr.verts.bin",
+      "dtype": "u4",
+      "shape": [
+        414
+      ],
+      "count": 414,
+      "sha256": "b6b05fb1f1731bff9bbc495e040cd8da1b69f7c98f2fa8103237f2cd9ed9d0ad"
+    },
+    "data_targets_nose_nose-hump-incr.data": {
+      "file": "data_targets_nose_nose-hump-incr.data.bin",
+      "dtype": "f4",
+      "shape": [
+        414,
+        3
+      ],
+      "count": 1242,
+      "sha256": "d6fbb25e2e8d208bfdd0387d2c474d7d9e08e0275b1b3202b129e3cec41c3e8b"
+    },
+    "applied_coord": {
+      "file": "applied_coord.bin",
+      "dtype": "f4",
+      "shape": [
+        19158,
+        3
+      ],
+      "count": 57474,
+      "sha256": "11d3966ebcbf226efd7d233abca6bc3315a049b85fdf85140b5e2cf9cca65db0"
+    }
+  },
+  "targets_on_disk": 1280,
+  "sampled": 24,
+  "apply_weight": 0.5,
+  "note": "applied_coord = orig_coord with every sampled target applied at 0.5, in listed order"
+}

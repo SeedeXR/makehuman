@@ -12,20 +12,20 @@ namespace mh::core {
 enum class ObjErrorKind {
     NotFound,
     Unreadable,
-    LooseVertex,       ///< a vertex referenced by no face
-    BadIndex,          ///< face index out of range or unparseable
-    MalformedVertex,   ///< a v/vt line with missing or non-numeric components
-    DegenerateFace,    ///< an f statement with fewer than 3 corners
-    MixedPrimitives,   ///< faces with more than 4 corners
+    LooseVertex,      ///< a vertex referenced by no face
+    BadIndex,         ///< face index out of range or unparseable
+    MalformedVertex,  ///< a v/vt line with missing or non-numeric components
+    DegenerateFace,   ///< an f statement with fewer than 3 corners
+    MixedPrimitives,  ///< faces with more than 4 corners
     EmptyMesh,
-    InvalidTopology,   ///< face arrays rejected by Mesh::setFaces
+    InvalidTopology,  ///< face arrays rejected by Mesh::setFaces
 };
 
 struct ObjError {
     ObjErrorKind kind{};
-    std::string  file;
-    uint32_t     line{};
-    std::string  detail;
+    std::string file;
+    uint32_t line{};
+    std::string detail;
 
     [[nodiscard]] std::string message() const;
 };
@@ -48,7 +48,6 @@ struct ObjError {
 ///  * A loose vertex is an error, as in the reference (wavefront.py:132-142).
 ///
 /// Indices may be negative (relative to the end), per the OBJ specification.
-[[nodiscard]] std::expected<Mesh, ObjError>
-loadObj(const std::filesystem::path& path);
+[[nodiscard]] std::expected<Mesh, ObjError> loadObj(const std::filesystem::path& path);
 
-} // namespace mh::core
+}  // namespace mh::core

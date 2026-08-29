@@ -1,0 +1,117 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Gates from memory/instruction.md section 10 and memory/test.md.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    name: clang-format
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check formatting
+        run: |
+          CF=$(xcrun -f clang-format)
+          "$CF" --version
+          find src include tests benchmarks \( -name '*.cpp' -o -name '*.h' \) -print0 \
+            | xargs -0 "$CF" --style=file --dry-run --Werror
+
+  build-test:
+    name: build + test (${{ matrix.preset }})
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [macos-arm64-debug, macos-arm64-release, macos-arm64-asan]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install ninja
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      # -Werror is on for our targets, so any new warning fails here.
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }} -j
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }} --output-on-failure
+        if: matrix.preset != 'macos-arm64-release'
+
+      # No test preset for release; run the binary directly.
+      - name: Test (release)
+        run: ./build/${{ matrix.preset }}/tests/mh_tests
+        if: matrix.preset == 'macos-arm64-release'
+
+  benchmark:
+    name: benchmark vs python baseline
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install ninja
+      - run: cmake --preset macos-arm64-release
+      - run: cmake --build --preset macos-arm64-release -j
+      - name: Run benchmarks
+        run: ./build/macos-arm64-release/benchmarks/mh_bench | tee bench.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: bench.txt
+
+  licence:
+    name: licence inventory
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Every source file must declare an SPDX identifier, and it must be one
+      # of the two the project uses. See LICENSING.md section 4.
+      - name: SPDX headers present and valid
+        run: |
+          fail=0
+          while IFS= read -r -d '' f; do
+            line=$(head -3 "$f" | grep -o 'SPDX-License-Identifier: .*' || true)
+            if [ -z "$line" ]; then
+              echo "::error file=$f::missing SPDX-License-Identifier"; fail=1; continue
+            fi
+            id=${line#SPDX-License-Identifier: }
+            case "$id" in
+              AGPL-3.0-or-later|Apache-2.0) ;;
+              *) echo "::error file=$f::unexpected licence '$id'"; fail=1 ;;
+            esac
+          done < <(find src include tests benchmarks \( -name '*.cpp' -o -name '*.h' \) -print0)
+          exit $fail
+
+      # A dependency that is not recorded in LICENSING.md section 5.1 fails CI
+      # (memory/instruction.md section 7).
+      - name: FetchContent dependencies are recorded in LICENSING.md
+        run: |
+          fail=0
+          for dep in $(grep -oE 'FetchContent_Declare\(([A-Za-z0-9_]+)' CMakeLists.txt | cut -d'(' -f2); do
+            if ! grep -qi "$dep" LICENSING.md; then
+              echo "::error::dependency '$dep' is not recorded in LICENSING.md"; fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Forbidden dependencies absent
+        run: |
+          # LICENSING.md section 5.2. The FBX SDK's licence is incompatible with
+          # AGPL redistribution; MetaHuman content is EULA-restricted.
+          if grep -rniE 'fbxsdk|autodesk.*fbx.*sdk|metahuman' \
+               --include=CMakeLists.txt --include='*.cmake' --include='*.cpp' \
+               --include='*.h' . ; then
+            echo "::error::a forbidden dependency is referenced"; exit 1
+          fi
+          exit 0

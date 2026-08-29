@@ -1,0 +1,97 @@
+{
+  "subsystem": "mesh",
+  "captured_at": "2026-08-29T01:22:17.521807+00:00",
+  "reference_commit": "68b30f6c94abe2469cdb01579cc421fdd063189f",
+  "python": "3.14.6",
+  "numpy": "2.5.2",
+  "platform": "darwin",
+  "entries": {
+    "coord": {
+      "file": "coord.bin",
+      "dtype": "f4",
+      "shape": [
+        19158,
+        3
+      ],
+      "count": 57474,
+      "sha256": "b81d1a6c689a57897bb8692055626f29e88eae65ed1943b532a3d1840b3bc3b8"
+    },
+    "fvert": {
+      "file": "fvert.bin",
+      "dtype": "u4",
+      "shape": [
+        18486,
+        4
+      ],
+      "count": 73944,
+      "sha256": "f8953259fa8a2feeb99666a6e0db67e77f29e7d53f6bec8c04aa1afee8303339"
+    },
+    "vnorm": {
+      "file": "vnorm.bin",
+      "dtype": "f4",
+      "shape": [
+        19158,
+        3
+      ],
+      "count": 57474,
+      "sha256": "8b0732d52f3b5cb92d7265c1275ee8941a91f1f4f037a4a99dcfe50562a7fbf6"
+    },
+    "fnorm": {
+      "file": "fnorm.bin",
+      "dtype": "f4",
+      "shape": [
+        18486,
+        3
+      ],
+      "count": 55458,
+      "sha256": "2d2df9cecf56da894a570a8962e952901ffcbe8fbcfc9816300730b8c9350f5d"
+    },
+    "group": {
+      "file": "group.bin",
+      "dtype": "u2",
+      "shape": [
+        18486
+      ],
+      "count": 18486,
+      "sha256": "2eff17e935744d309ddf44e77c2b372f6b7d230bcbdf5d7754d87b1b1bfcfd23"
+    },
+    "texco": {
+      "file": "texco.bin",
+      "dtype": "f4",
+      "shape": [
+        21334,
+        2
+      ],
+      "count": 42668,
+      "sha256": "4a394a19b446caa8120a309b1267c5875f667cd5faa30fa98e1501b2b6b3ca57"
+    },
+    "fuvs": {
+      "file": "fuvs.bin",
+      "dtype": "u4",
+      "shape": [
+        18486,
+        4
+      ],
+      "count": 73944,
+      "sha256": "b0c64833765a907901f9f43b162b8065f97dfd27caf45e56a72708edc96575ad"
+    }
+  },
+  "source": "data/3dobjs/base.obj",
+  "vertex_count": 19158,
+  "face_count": 18486,
+  "uv_count": 21334,
+  "verts_per_primitive": 4,
+  "verts_per_face_for_export": 4,
+  "max_faces": 5,
+  "face_group_count": 139,
+  "bbox_min": [
+    -4.973199844360352,
+    -8.448800086975098,
+    -1.1033999919891357
+  ],
+  "bbox_max": [
+    4.973199844360352,
+    8.496700286865234,
+    3.2564001083374023
+  ]
+}
