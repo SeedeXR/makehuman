@@ -39,6 +39,13 @@ struct Bone {
     Vec3 head{};
     Vec3 tail{};
 
+    /// Filled by buildRestMatrices(). The bone's rest transform in model space
+    /// and relative to its parent (`skeleton.py` Bone.build).
+    foundation::Mat4 matRestGlobal{foundation::Mat4::identity()};
+    foundation::Mat4 matRestRelative{foundation::Mat4::identity()};
+
+    float length{};
+
     [[nodiscard]] Vec3 direction() const noexcept { return tail - head; }
 };
 
@@ -70,6 +77,11 @@ struct Skeleton {
     /// Plane name -> the three joints defining it, used for bone roll.
     std::unordered_map<std::string, std::array<std::string, 3>> planes;
 
+    /// Every joint's position, filled by updateJoints(). Planes name joints
+    /// that no bone uses, so this is computed for all of them, not just the
+    /// ones that end up as a bone head or tail.
+    std::unordered_map<std::string, Vec3> jointPos;
+
     [[nodiscard]] size_t boneCount() const noexcept { return bones.size(); }
 
     /// Recomputes every bone's head and tail from @p restCoords.
@@ -79,6 +91,29 @@ struct Skeleton {
     ///        so a skeleton built against posed coordinates is silently wrong.
     /// @return false if any joint references a vertex the mesh does not have.
     bool updateJoints(std::span<const Vec3> restCoords);
+
+    /// Computes every bone's rest matrices from the current head/tail
+    /// positions. Call after updateJoints(); the matrices depend on it.
+    ///
+    /// Each bone gets an orthonormal basis anchored at its head
+    /// (`skeleton.py` getMatrix):
+    ///
+    ///   Y = normalize(tail - head)          the bone's own direction
+    ///   Z = normalize(cross(normal, Y))
+    ///   X = normalize(cross(Y, Z))          NOT the input normal
+    ///
+    /// The supplied normal only *seeds* the basis. Z is made perpendicular to
+    /// both it and the bone, then X is rebuilt perpendicular to Y and Z, so the
+    /// result is orthonormal even though the plane normal generally is not
+    /// perpendicular to the bone. The reference has the ideal version commented
+    /// out above it for exactly this reason.
+    ///
+    /// The normal comes from a three-joint plane named by the bone
+    /// (`rotation_plane`): `normalize(cross(normalize(p3-p2), normalize(p2-p1)))`.
+    /// A missing or degenerate plane falls back to +Y, as the reference does.
+    ///
+    /// @return false if a bone is zero-length, which has no definable basis.
+    bool buildRestMatrices();
 };
 
 /// Parses a `.mhskel` (which is JSON).

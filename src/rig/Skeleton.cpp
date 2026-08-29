@@ -3,6 +3,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cmath>
 #include <deque>
 #include <fstream>
 
@@ -34,24 +35,124 @@ std::string SkeletonError::message() const {
 }
 
 bool Skeleton::updateJoints(std::span<const Vec3> restCoords) {
-    // A joint's position is the mean of its vertex cloud (skeleton.py:428-434).
-    const auto meanOf = [&](const std::string& joint, Vec3& out) -> bool {
-        const auto it = jointVerts.find(joint);
-        if (it == jointVerts.end() || it->second.empty()) return false;
+    // A joint's position is the MEAN of its vertex cloud (skeleton.py:428-434).
+    // Computed for every joint, not just the ones bones reference: rotation
+    // planes name joints that no bone uses as a head or tail.
+    jointPos.clear();
+    jointPos.reserve(jointVerts.size());
 
+    for (const auto& [joint, verts] : jointVerts) {
         Vec3 sum{};
-        for (const uint32_t v : it->second) {
-            if (v >= restCoords.size()) return false;
+        for (const uint32_t v : verts) {
+            if (v >= restCoords.size()) return false;  // the reference reads unguarded
             sum = sum + restCoords[v];
         }
-        const auto n = static_cast<float>(it->second.size());
-        out          = sum * (1.0F / n);
-        return true;
+        jointPos.emplace(joint, sum * (1.0F / static_cast<float>(verts.size())));
+    }
+
+    for (Bone& b : bones) {
+        const auto h = jointPos.find(b.headJoint);
+        const auto t = jointPos.find(b.tailJoint);
+        if (h == jointPos.end() || t == jointPos.end()) return false;
+        b.head = h->second;
+        b.tail = t->second;
+    }
+    return true;
+}
+
+namespace {
+
+float length(const Vec3& v) noexcept {
+    return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
+/// Returns false (leaving @p out untouched) when the vector is too short to
+/// have a direction. The reference's matrix.normalize divides unguarded, which
+/// yields inf/nan and propagates into every child matrix.
+bool normalized(const Vec3& v, Vec3& out) noexcept {
+    const float n = length(v);
+    if (!(n > 1e-9F)) return false;
+    out = v * (1.0F / n);
+    return true;
+}
+
+constexpr Vec3 kFallbackNormal{0.0F, 1.0F, 0.0F};
+
+}  // namespace
+
+bool Skeleton::buildRestMatrices() {
+    // A plane normal from three joints, counter-clockwise / right-handed:
+    //     normalize(cross(normalize(p3 - p2), normalize(p2 - p1)))
+    // (skeleton.py get_normal). Note the argument order -- cross(yvec, pvec),
+    // not the other way round; swapping it flips every bone's roll by 180
+    // degrees, which still produces a valid orthonormal basis.
+    const auto planeNormal = [&](const std::string& plane, Vec3& out) -> bool {
+        const auto it = planes.find(plane);
+        if (it == planes.end()) return false;
+
+        std::array<Vec3, 3> p{};
+        for (size_t i = 0; i < 3; ++i) {
+            const auto jp = jointPos.find(it->second[i]);
+            if (jp == jointPos.end()) return false;
+            p[i] = jp->second;
+        }
+        Vec3 pvec;
+        Vec3 yvec;
+        if (!normalized(p[1] - p[0], pvec)) return false;
+        if (!normalized(p[2] - p[1], yvec)) return false;
+        return normalized(foundation::cross(yvec, pvec), out);
     };
 
     for (Bone& b : bones) {
-        if (!meanOf(b.headJoint, b.head)) return false;
-        if (!meanOf(b.tailJoint, b.tail)) return false;
+        Vec3 boneDir;
+        if (!normalized(b.direction(), boneDir)) return false;  // zero-length bone
+
+        Vec3 normal = kFallbackNormal;
+        if (!b.planeName.empty()) {
+            Vec3 n;
+            if (planeNormal(b.planeName, n)) normal = n;
+        }
+
+        // Z perpendicular to (normal, Y); X rebuilt perpendicular to (Y, Z).
+        // The seed normal is generally NOT perpendicular to the bone, which is
+        // why X is recomputed rather than used directly.
+        Vec3 zAxis;
+        if (!normalized(foundation::cross(normal, boneDir), zAxis)) {
+            // normal parallel to the bone: seed with +Y, or +X if the bone is
+            // itself +Y. Any perpendicular is as good as any other here.
+            const Vec3 alt =
+                (std::abs(boneDir.y) > 0.9F) ? Vec3{1.0F, 0.0F, 0.0F} : kFallbackNormal;
+            if (!normalized(foundation::cross(alt, boneDir), zAxis)) return false;
+        }
+        Vec3 xAxis;
+        if (!normalized(foundation::cross(boneDir, zAxis), xAxis)) return false;
+
+        // Axes are COLUMNS; translation is the last column (skeleton.py writes
+        // mat[:3,0], mat[:3,1], mat[:3,2] and mat[:3,3]).
+        foundation::Mat4 g = foundation::Mat4::identity();
+        g.m[0][0]          = xAxis.x;
+        g.m[0][1]          = boneDir.x;
+        g.m[0][2]          = zAxis.x;
+        g.m[0][3]          = b.head.x;
+        g.m[1][0]          = xAxis.y;
+        g.m[1][1]          = boneDir.y;
+        g.m[1][2]          = zAxis.y;
+        g.m[1][3]          = b.head.y;
+        g.m[2][0]          = xAxis.z;
+        g.m[2][1]          = boneDir.z;
+        g.m[2][2]          = zAxis.z;
+        g.m[2][3]          = b.head.z;
+
+        b.matRestGlobal = g;
+        b.length        = length(b.direction());
+
+        // Parents precede children in this list, so the parent's global matrix
+        // is already final. rigidInverse is exact here: the basis is orthonormal
+        // by construction.
+        b.matRestRelative =
+            (b.parent < 0)
+                ? g
+                : foundation::rigidInverse(bones[static_cast<size_t>(b.parent)].matRestGlobal) * g;
     }
     return true;
 }

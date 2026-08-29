@@ -12,11 +12,13 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <set>
 #include <string>
+#include <vector>
 
 using namespace mh;
 
@@ -201,4 +203,143 @@ TEST_CASE("malformed JSON is reported, not crashed on", "[skeleton]") {
 
     std::error_code ec;
     std::filesystem::remove(p, ec);
+}
+
+namespace {
+
+/// Reads a little-endian float32 blob captured by tools/capture_fixture.py.
+std::vector<float> readFloats(const std::filesystem::path& p) {
+    std::ifstream in(p, std::ios::binary | std::ios::ate);
+    if (!in) return {};
+    const auto bytes = static_cast<size_t>(in.tellg());
+    in.seekg(0);
+    std::vector<float> out(bytes / sizeof(float));
+    in.read(reinterpret_cast<char*>(out.data()), static_cast<std::streamsize>(bytes));
+    return out;
+}
+
+/// The rig loaded and fully built against the base mesh in rest pose.
+rig::Skeleton builtRig() {
+    const auto mesh = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+    auto skel = rig::loadSkeleton(rigPath());
+    REQUIRE(skel.has_value());
+    REQUIRE(skel->updateJoints(mesh->coord()));
+    REQUIRE(skel->buildRestMatrices());
+    return std::move(*skel);
+}
+
+}  // namespace
+
+// The real test of the rest-matrix maths: every element of all 163 matrices,
+// against what the reference itself produced.
+//
+// The fixture stores them as numpy wrote them -- row-major (163, 4, 4) -- and
+// our Mat4 is row-major too, so element [b][r][c] maps directly. If either the
+// axis-as-column convention or the row-major storage were wrong, this fails
+// immediately and loudly rather than producing a subtly mis-rolled rig.
+TEST_CASE("rest matrices match the reference", "[skeleton][golden][parity]") {
+    const rig::Skeleton skel = builtRig();
+
+    const auto dir       = std::filesystem::path(MH_GOLDEN_DIR) / "skeleton";
+    const auto expGlobal = readFloats(dir / "rest_global.bin");
+    const auto expRel    = readFloats(dir / "rest_relative.bin");
+
+    REQUIRE(expGlobal.size() == 163 * 16);
+    REQUIRE(expRel.size() == 163 * 16);
+    REQUIRE(skel.boneCount() == 163);
+
+    // Positions are decimetres accumulated through float32 means; 1e-4 is the
+    // tolerance memory/test.md section 3.3 states for derived transforms.
+    constexpr float kTol = 1e-4F;
+
+    size_t globalBad  = 0;
+    size_t relBad     = 0;
+    float worstGlobal = 0.0F;
+    float worstRel    = 0.0F;
+
+    for (size_t b = 0; b < 163; ++b) {
+        for (size_t r = 0; r < 4; ++r) {
+            for (size_t c = 0; c < 4; ++c) {
+                const size_t i = (b * 4 + r) * 4 + c;
+
+                const float dg = std::abs(skel.bones[b].matRestGlobal.m[r][c] - expGlobal[i]);
+                worstGlobal    = std::max(worstGlobal, dg);
+                if (dg > kTol) {
+                    if (globalBad == 0) {
+                        INFO("first global mismatch: bone "
+                             << b << " (" << skel.bones[b].name << ") [" << r << "][" << c
+                             << "] got " << skel.bones[b].matRestGlobal.m[r][c] << " want "
+                             << expGlobal[i]);
+                        CHECK(dg <= kTol);
+                    }
+                    ++globalBad;
+                }
+
+                const float dr = std::abs(skel.bones[b].matRestRelative.m[r][c] - expRel[i]);
+                worstRel       = std::max(worstRel, dr);
+                if (dr > kTol) {
+                    if (relBad == 0) {
+                        INFO("first relative mismatch: bone " << b << " (" << skel.bones[b].name
+                                                              << ") [" << r << "][" << c << "]");
+                        CHECK(dr <= kTol);
+                    }
+                    ++relBad;
+                }
+            }
+        }
+    }
+    INFO("worst global delta " << worstGlobal << ", worst relative delta " << worstRel);
+    CHECK(globalBad == 0);
+    CHECK(relBad == 0);
+}
+
+// Property the parity test cannot express: the basis must be orthonormal for
+// every bone, which is what makes rigidInverse exact.
+TEST_CASE("every rest basis is orthonormal", "[skeleton][parity]") {
+    const rig::Skeleton skel = builtRig();
+
+    for (const auto& b : skel.bones) {
+        CAPTURE(b.name);
+        const auto x = b.matRestGlobal.axis(0);
+        const auto y = b.matRestGlobal.axis(1);
+        const auto z = b.matRestGlobal.axis(2);
+
+        CHECK(std::abs(foundation::dot(x, x) - 1.0F) < 1e-4F);
+        CHECK(std::abs(foundation::dot(y, y) - 1.0F) < 1e-4F);
+        CHECK(std::abs(foundation::dot(z, z) - 1.0F) < 1e-4F);
+        CHECK(std::abs(foundation::dot(x, y)) < 1e-4F);
+        CHECK(std::abs(foundation::dot(y, z)) < 1e-4F);
+        CHECK(std::abs(foundation::dot(x, z)) < 1e-4F);
+
+        // Y is the bone's own direction, by construction.
+        foundation::Vec3 d = b.direction();
+        const float n      = std::sqrt(foundation::dot(d, d));
+        REQUIRE(n > 0.0F);
+        d = d * (1.0F / n);
+        CHECK(std::abs(foundation::dot(y, d) - 1.0F) < 1e-4F);
+    }
+}
+
+// matRestRelative composes back to matRestGlobal through the parent chain.
+// This is the invariant every skinning path depends on.
+TEST_CASE("relative matrices compose back to global", "[skeleton][parity]") {
+    const rig::Skeleton skel = builtRig();
+
+    float worst = 0.0F;
+    for (size_t i = 0; i < skel.bones.size(); ++i) {
+        const auto& b = skel.bones[i];
+        CAPTURE(b.name);
+        const foundation::Mat4 composed =
+            (b.parent < 0)
+                ? b.matRestRelative
+                : skel.bones[static_cast<size_t>(b.parent)].matRestGlobal * b.matRestRelative;
+
+        for (size_t r = 0; r < 4; ++r) {
+            for (size_t c = 0; c < 4; ++c)
+                worst = std::max(worst, std::abs(composed.m[r][c] - b.matRestGlobal.m[r][c]));
+        }
+    }
+    INFO("worst composition error " << worst);
+    CHECK(worst < 1e-4F);
 }

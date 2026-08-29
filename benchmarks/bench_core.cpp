@@ -108,6 +108,14 @@ int main() {
         auto sk =
             mh::rig::loadSkeleton(std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel");
         if (sk) {
+            results.push_back({"Skeleton::buildRestMatrices (163 bones)",
+                               medianMs(
+                                   [&] {
+                                       (void)sk->updateJoints(mesh->coord());
+                                       (void)sk->buildRestMatrices();
+                                   },
+                                   50),
+                               0.0});
             results.push_back({"Skeleton::updateJoints (rig follows the mesh)",
                                medianMs([&] { (void)sk->updateJoints(mesh->coord()); }, 50), 0.0});
         }

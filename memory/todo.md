@@ -207,7 +207,19 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       Note: the Python skeleton baseline cannot run headlessly — `mhskeleton.load`
       reaches `G.app.selectedHuman` — so those benchmark rows have no reference
       number rather than a fabricated one.
-- [ ] Bone rest matrices; `matPoseVerts = matPoseGlobal · inv(matRestGlobal)`
+- [x] Bone rest matrices — **full element-wise parity on all 163 bones**, both
+      `matRestGlobal` and `matRestRelative`, against the captured reference
+      (1,987 of 2,608 fixture floats non-zero, so this is real parity not a
+      comparison of zeros). 0.02 ms to rebuild the whole rig.
+      Conventions that had to be right together: row-major storage with axes as
+      **columns** and translation in the last column; `cross(yvec, pvec)` in the
+      plane normal (swapping it flips every bone's roll 180 degrees and still
+      yields a valid orthonormal basis); and X rebuilt as `cross(Y, Z)` rather
+      than using the plane normal directly, because the normal is generally not
+      perpendicular to the bone.
+      `rigidInverse` is exact here because the basis is orthonormal by
+      construction — verified as its own test, not assumed.
+- [ ] `matPoseVerts = matPoseGlobal · inv(matRestGlobal)` (posing; needs M5 pose data)
 - [ ] Joint positions from vertex clouds (rig follows the mesh)
 - [ ] `.mhw` weights; normalisation; influence clamping
 - [ ] Euler conventions — all 24, `[w,x,y,z]` quaternions (Eigen `.coeffs()` is `[x,y,z,w]`)
