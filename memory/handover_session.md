@@ -4,6 +4,66 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 025 · BVH import, and two owner directives
+
+**Ended:** 2026-08-29 15:13:49 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+### New standing directives from the owner
+
+1. **Where a licence's terms do not suit us, design our own implementation
+   learning from theirs** rather than translating. Applied immediately: BVH is a
+   published open format, so the reader is written from the format spec and
+   lives in the **Apache-2.0** `mh_io` module instead of being trapped under
+   AGPL as a port of `bvh.py` would have been.
+2. **Research modern approaches, published work and libraries.** Two findings
+   recorded below; both change the roadmap.
+
+### BVH import
+
+There are **no `.mhpose` files in `data/` at all** — the shipped pose data is
+BVH. Parity on both: `tpose.bvh` (222 joints) and `face-poseunits.bvh`
+(212 joints × 60 frames). **12,942 joint-frames**, worst delta < 1e-5.
+
+The subtle part is the up axis, which BVH does not record. Both files measure as
+**Z-up**, so offsets become `(x, z, -y)`, position channels swap with a sign
+flip, and the rotation order remaps `szyx` → `syzx`. Getting it wrong does not
+fail — it yields a complete, plausible skeleton **lying on its side**.
+
+Improvement kept: the reference names all 49 End Sites `"End effector"`, so they
+collide; ours derives `<parent>_end`.
+
+### Research
+
+- **DQS** removes LBS's candy-wrapper collapse but is not a drop-in — it adds
+  joint bulging, and Disney shipped an enhanced variant on *Frozen* to make it
+  production-viable. Queued as a **display** option for M6; LBS stays the parity
+  path because glTF and every DCC expect it.
+- **SMPL / SMPL-X is licence-blocked for us.** The full parametric model is
+  research-only; the CC-BY "Body" subset deliberately excludes the shape
+  blendshapes that make it a generator. Forbidden for the same reason as the FBX
+  SDK — it blocks the commercial-derivative use we promise. `LICENSING.md` §5.2.
+  Our 1,280 CC0 targets are the M10 asset base.
+
+### Two failures worth keeping
+
+**A gate matched prose for the fourth time.** The BSD-notice gate flagged
+`SceneIO.h`, which is Apache-2.0 and merely *says* "assimp (BSD-3-Clause)". The
+sharper rule now in `instruction.md`: **where a gate is about a field, parse the
+field** — never substring-search the file for its value.
+
+**I committed a stray empty file.** Proving that gate fires, I redirected into
+`src/foundation/Transform.h`, a path that did not exist — creating a zero-byte
+file. CI caught it; I did not, because I had run the full gate set *before* the
+experiment and never after, and did not read `git status`. Also: local `grep` is
+**ugrep**, not what the runner has — mirrored gates now use `/usr/bin/grep`.
+
+272/272 across all four builds. CI green.
+
+**Next:** wire `face-poseunits.json` (60 named units) onto the BVH frames, then
+the order-dependent slerp blend.
+
+---
+
 ## 2026-08-29 — Session 024 · all 24 Euler conventions, and a third licence
 
 **Ended:** 2026-08-29 14:49:38 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
