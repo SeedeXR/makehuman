@@ -7,6 +7,36 @@
 
 ---
 
+## Third-party validation: Blender
+
+Every other check here shares lineage with what it checks. Parity tests compare
+us against the Python reference we were ported *from*; the glTF and FBX tests
+read back through assimp, which also **wrote** the FBX. A convention that both
+sides get wrong the same way passes all of it.
+
+Blender is a third implementation that has never seen this codebase.
+
+```bash
+cmake --build --preset macos-arm64-release --target mh_export_fixture
+tools/run_blender_validation.sh          # exits non-zero on any disagreement
+```
+
+It round-trips the base mesh through every exporter and checks vertex count,
+triangle count, UV layers and physical size. Current result: **3/3 agree** —
+19,158 welded vertices in OBJ, 21,833 unwelded in glTF/FBX, 36,972 triangles
+throughout, and a **169.5 cm** body in all three despite three different unit
+conventions (decimetres, metres, centimetres). That last one is the check that
+would catch the reference's documented FBX 10x unit error.
+
+**Blender is Z-up.** Every importer rotates a Y-up file on the way in, so the
+model's height arrives as Blender's **Z**. Reading the Y component reports the
+body's *depth* and looks like a 4x unit error that is not there — I made exactly
+that mistake the first time this ran, and briefly believed the exporter was
+broken. Compare `tallest_extent`.
+
+Not in CI: the runner has no Blender and installing it per-run costs more than
+the check is worth at this cadence. Run it after touching an exporter.
+
 ## 1. Why this policy is strict
 
 This is a **port**. The failure mode of a port is not a crash — it is silently

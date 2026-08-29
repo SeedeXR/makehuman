@@ -61,3 +61,11 @@ if(assimp_FOUND)
 endif()
 
 catch_discover_tests(mh_tests)
+
+# Writes the base mesh through every exporter so tools/blender_validate.py can
+# check them in a third implementation. Not a test target: it produces files for
+# another process rather than asserting anything.
+add_executable(mh_export_fixture mh_export_fixture.cpp)
+target_link_libraries(mh_export_fixture PRIVATE mh::core mh::io mh::warnings)
+target_compile_definitions(mh_export_fixture PRIVATE MH_DATA_DIR="${MH_DATA_DIR}")
+set_target_properties(mh_export_fixture PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
