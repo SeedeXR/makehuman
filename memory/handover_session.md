@@ -4,6 +4,88 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 018 · CI had never passed; resources; Mixamo
+
+**Ended:** 2026-08-29 11:50:38 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+### The thing I got wrong
+
+The owner pointed out CI was failing. It had failed on **every push since the
+first C++ commit**, and I had not looked once. I wrote "both new gates pass
+locally" in a commit message and treated that as evidence about CI. It is not
+evidence about CI; it is evidence about this laptop.
+
+Root cause: local is Apple clang 21, the `macos-15` runner is Xcode 16.4, whose
+libc++ has only the **integral** `from_chars`/`to_chars`. The floating-point
+overloads are C++17 on paper and absent in practice, so the float call resolved
+to the deleted `bool` overload. Nothing about this is visible locally.
+
+Fixing it took **two** commits, and the second is the instructive one. The first
+fixed five float parsers and missed a sixth, because `Mhm.cpp` had its own
+`parseFloat` under a name my hand-audit did not match. My forced-fallback build
+could not catch it either: `-DMH_HAVE_FP_CHARCONV=OFF` changes the *shim's*
+internals, not what other files call directly — so the guard I built to prove
+the fix did not cover the thing that broke.
+
+The rule "don't call `std::from_chars` on a float" is not checkable. **"Only
+`foundation` includes `<charconv>`" is**, and that is now a CI gate. Integer
+parsing moved into foundation too — not because the integral overloads are
+missing anywhere, but because containment is what makes the grep possible.
+
+CI is now green, verified by reading the run, not by inferring it: 7/7 jobs.
+
+### New: mh_foundation (Apache-2.0)
+
+Owns float/int parsing and formatting. `std::from_chars`/`to_chars` where the
+library really has them, a `uselocale("C")` fallback where it does not,
+availability decided by CMake `check_cxx_source_compiles` rather than a feature
+macro — the macro is what lied. `uselocale` over the `_l` variants because it is
+thread-local POSIX and exists on glibc too, where `snprintf_l` does not.
+
+A CI job pins the fallback branch open. Newer runners will make it the unused
+path, and it would rot silently until the next machine that needs it.
+
+### Licence boundary — open issue, now recorded in todo.md
+
+While placing the shim I found `mh_io` is stamped Apache-2.0 and
+`PUBLIC`-links `mh::core` (AGPL), violating the rule its own CMakeLists states
+three lines above. Its Apache stamp therefore buys nobody anything today. Not
+silently patched — it is a real decision (move shared types down / relicense io
+/ invert the interface) and it is written up as an OPEN ISSUE.
+
+### Owner decisions this session
+
+- **Bone naming: the Mixamo standard.** `docs/rig/mixamo_bone_order.md` records
+  it as *measured* — 65 bones, extracted with assimp, verified byte-identical
+  across all seven reference clips (7/7, 0 differing). It also records the
+  `$AssimpFbx$` trap: assimp splits each FBX node transform into synthetic
+  Translation/PreRotation/Rotation nodes, so a naive walk gives ~190 nodes and
+  every parent index is wrong. Invisible until the rig is already broken.
+- **Mixamo rigs committed.** I flagged the licensing question; the owner
+  confirmed. `LICENSING.md` §5.5 records the basis and one caveat.
+
+### resources/ populated
+
+57 Lucide icons (ISC, stroke normalised 2 → 1.5 per `design.md` §4, all
+re-validated as XML), 42dot Sans variable (OFL-1.1), and the **litsphere**
+shader ported to Qt RHI GLSL 450 — compiling via `qsb` to SPIR-V + GLSL 450 +
+MSL 12, with the `0.495` constant verified present in the generated Metal.
+
+The font download **truncated silently** the first time — 1.29 MB of 5.77 MB —
+and `file` still reported "TrueType Font data". Now validated by size and by
+walking the sfnt table directory. A header is not evidence of a whole file.
+
+### On the FBX question
+
+The owner asked where the FBX writer is, "given we are using autodesk fbx sdk".
+We are **not** using it, and never have: `LICENSING.md` §5.3 records the EULA
+conflict found by reading the installed `License.rtf`. FBX export/import goes
+through assimp in `src/io/SceneIO.cpp`. Verified this session: base mesh out at
+4,430,208 bytes, magic `Kaydara FBX Binary`, version **7500**, re-imported to
+21,833 verts. `otool -L` confirms no fbxsdk is linked.
+
+---
+
 ## 2026-08-29 — Session 017 · the .mhmat writer, and why a one-sided test lies
 
 **Ended:** 2026-08-29 11:21:33 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master

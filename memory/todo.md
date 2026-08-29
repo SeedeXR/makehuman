@@ -120,6 +120,39 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [ ] **Parity fixtures**: default stack, extreme macro combinations, every modifier at ±1
 - [ ] `data/modifiers/*.json` loader
 
+## OPEN ISSUE — the licence boundary is inverted in practice
+
+`src/io/CMakeLists.txt` says, three lines above the offending call:
+
+> It may be depended on by AGPL modules; **it must never depend on one.**
+
+It then does exactly that: `target_link_libraries(mh_io PUBLIC mh::core)`, and
+every `include/makehuman/io/*.h` includes `makehuman/core/Mesh.h` and
+`Material.h`. `mh_io` is stamped Apache-2.0 but cannot be used without linking
+AGPL code, so **its Apache-2.0 stamp buys nobody anything today** — the
+combined work is AGPL either way.
+
+This matters because separate reusability of the io layer is a stated project
+objective (`project_context.md` §4.2), and CI does not catch it: the SPDX gate
+checks that each file *declares* a licence, not that the dependency direction
+is legal.
+
+Three ways out; this is a decision, not a bug to quietly patch:
+
+1. **Move the shared data types down** — `Mesh`, `Material`, `Vec3` into
+   `mh_foundation` (Apache-2.0). They are plain data with no ported algorithms,
+   so this is defensible, but each type must be audited for whether it was
+   *translated* from the AGPL reference.
+2. **Relicense `mh_io` as AGPL-3.0.** Honest and free, and gives up the
+   separate-reuse objective.
+3. **Invert the interface** — `mh_io` defines its own geometry structs and
+   `mh_core` adapts to them. Most work, cleanest boundary.
+
+`mh_foundation` (added for the charconv fix) is the first piece of (1) and is
+correctly Apache-2.0 depending on nothing of ours.
+
+- [ ] **Decide.** Blocks any claim that the io layer is separately reusable.
+
 ## M4 — Proxies, materials, assets (`mh-asset`)
 
 - [x] `.mhclo`/`.proxy` parser incl. `TMatrix` scale
