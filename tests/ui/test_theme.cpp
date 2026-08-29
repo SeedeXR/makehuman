@@ -11,6 +11,7 @@
 #include "makehuman/ui/ModifierPanel.h"
 #include "makehuman/ui/PanelTitleBar.h"
 #include "makehuman/ui/Theme.h"
+#include "makehuman/ui/Workspace.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -18,7 +19,9 @@
 #include <QAction>
 #include <QComboBox>
 #include <QDockWidget>
+#include <QFile>
 #include <QImage>
+#include <QJsonObject>
 #include <QKeySequence>
 #include <QLabel>
 #include <QMenu>
@@ -26,7 +29,9 @@
 #include <QRegularExpression>
 #include <QSet>
 #include <QSlider>
+#include <QStandardPaths>
 #include <QTabWidget>
+#include <QTemporaryDir>
 #include <QToolButton>
 
 #include <memory>
@@ -50,6 +55,16 @@ std::vector<QColor> allTokens() {
             p.accentHover, p.accentPress,   p.success,      p.warning,      p.danger,
             p.info};
 }
+
+/// QStandardPaths test mode, undone however the scope exits.
+struct TestModePaths {
+    TestModePaths() { QStandardPaths::setTestModeEnabled(true); }
+
+    ~TestModePaths() { QStandardPaths::setTestModeEnabled(false); }
+
+    TestModePaths(const TestModePaths&)            = delete;
+    TestModePaths& operator=(const TestModePaths&) = delete;
+};
 
 /// A window, its Modelling dock and that dock's title bar -- the preamble all
 /// four panel tests need.
@@ -671,4 +686,186 @@ TEST_CASE("the document path shows in the title, and clearing it restores the na
 
     w.setDocumentPath(QString{});
     CHECK(w.windowTitle() == QStringLiteral("MakeHuman"));
+}
+
+// --- workspaces (design.md 6.4) ---------------------------------------------
+
+TEST_CASE("a workspace survives the JSON round trip", "[workspace]") {
+    mh::ui::WorkspaceFile in;
+    in.name = QStringLiteral("Rigging");
+    // Deliberately non-UTF8 bytes: these blobs are binary, which is why they are
+    // base64 in the file rather than dropped into a JSON string raw.
+    // sizeof - 1, not a hand-counted length: the first version said 20 for a
+    // 17-byte literal and ASan caught the two-byte overread.
+    static constexpr char kState[]    = "\x01\x02\xFE\xFF binary state";
+    static constexpr char kGeometry[] = "\xFF\x7F geometry";
+    in.state    = QByteArray(kState, static_cast<qsizetype>(sizeof(kState) - 1));
+    in.geometry = QByteArray(kGeometry, static_cast<qsizetype>(sizeof(kGeometry) - 1));
+
+    const auto back = mh::ui::workspaceFromJson(mh::ui::toJson(in));
+    REQUIRE(back.has_value());
+    CHECK(back->name == in.name);
+    CHECK(back->state == in.state);
+    CHECK(back->geometry == in.geometry);
+    CHECK(back->schemaVersion == mh::ui::kWorkspaceSchemaVersion);
+}
+
+TEST_CASE("a workspace from a newer build is refused, not half-read", "[workspace]") {
+    mh::ui::WorkspaceFile in;
+    in.name            = QStringLiteral("Future");
+    in.state           = QByteArray("x");
+    QJsonObject object = mh::ui::toJson(in);
+
+    object[QStringLiteral("schemaVersion")] = mh::ui::kWorkspaceSchemaVersion + 1;
+    CHECK_FALSE(mh::ui::workspaceFromJson(object).has_value());
+
+    object[QStringLiteral("schemaVersion")] = 0;
+    CHECK_FALSE(mh::ui::workspaceFromJson(object).has_value());
+
+    object.remove(QStringLiteral("schemaVersion"));
+    CHECK_FALSE(mh::ui::workspaceFromJson(object).has_value());
+
+    // A version that is present but not a number is not a version.
+    object[QStringLiteral("schemaVersion")] = QStringLiteral("1");
+    CHECK_FALSE(mh::ui::workspaceFromJson(object).has_value());
+}
+
+TEST_CASE("a corrupt state blob is refused rather than silently ignored", "[workspace]") {
+    // restoreState() returns false on a bad blob and leaves the default layout,
+    // which looks exactly like a successful load of a default workspace. Catch
+    // it at the parse instead.
+    mh::ui::WorkspaceFile in;
+    in.name                         = QStringLiteral("Broken");
+    QJsonObject object              = mh::ui::toJson(in);
+    object[QStringLiteral("state")] = QStringLiteral("not!valid!base64!");
+    CHECK_FALSE(mh::ui::workspaceFromJson(object).has_value());
+
+    // A missing name is not a workspace either.
+    QJsonObject noName = mh::ui::toJson(in);
+    noName.remove(QStringLiteral("name"));
+    CHECK_FALSE(mh::ui::workspaceFromJson(noName).has_value());
+}
+
+TEST_CASE("the four shipped presets are on the menu with the documented shortcuts", "[workspace]") {
+    useShippedIcons();
+    mh::ui::MainWindow w(MH_SHADER_DIR);
+
+    const auto& presets = mh::ui::workspacePresets();
+    REQUIRE(presets.size() == 4);
+    CHECK(presets[0].name == QStringLiteral("Modelling"));
+
+    int i = 0;
+    for (const auto& preset : presets) {
+        const QString& name = preset.name;
+        INFO(name.toStdString());
+        auto* a = w.findChild<QAction*>(QStringLiteral("workspace.") + name);
+        REQUIRE(a != nullptr);
+        CHECK(a->shortcut() == QKeySequence(QStringLiteral("Ctrl+%1").arg(i + 1)));
+        ++i;
+    }
+    CHECK(w.findChild<QAction*>(QStringLiteral("workspace.reset")) != nullptr);
+}
+
+TEST_CASE("a preset shows exactly the docks it names", "[workspace]") {
+    useShippedIcons();
+    mh::ui::MainWindow w(MH_SHADER_DIR);
+    auto* modelling = w.findChild<QDockWidget*>(QStringLiteral("dock.modelling"));
+    auto* materials = w.findChild<QDockWidget*>(QStringLiteral("dock.materials"));
+    REQUIRE(modelling != nullptr);
+    REQUIRE(materials != nullptr);
+
+    REQUIRE(w.applyWorkspacePreset(QStringLiteral("Materials")));
+    CHECK(materials->isVisibleTo(&w));
+    CHECK_FALSE(materials->isHidden());
+    CHECK(modelling->isHidden());
+
+    // Switching preset to preset must not accumulate. Visibility alone cannot
+    // show this -- the loop sets it either way -- so move a dock first and check
+    // the POSITION comes back too, which only the state restore does.
+    w.addDockWidget(Qt::RightDockWidgetArea, modelling);
+    REQUIRE(w.dockWidgetArea(modelling) == Qt::RightDockWidgetArea);
+    REQUIRE(w.applyWorkspacePreset(QStringLiteral("Modelling")));
+    CHECK(w.dockWidgetArea(modelling) == Qt::LeftDockWidgetArea);
+    CHECK_FALSE(modelling->isHidden());
+    CHECK_FALSE(materials->isHidden());
+
+    // Export shows none of them.
+    REQUIRE(w.applyWorkspacePreset(QStringLiteral("Export")));
+    CHECK(modelling->isHidden());
+    CHECK(materials->isHidden());
+
+    CHECK_FALSE(w.applyWorkspacePreset(QStringLiteral("No Such Preset")));
+}
+
+TEST_CASE("a named workspace round-trips through the user directory", "[workspace]") {
+    useShippedIcons();
+    // AppDataLocation redirected so the suite never writes to the real one.
+    // RAII because a failing REQUIRE below would otherwise unwind past the
+    // reset and leave every later test in test mode.
+    const TestModePaths redirected;
+
+    const QString name = QStringLiteral("mh-test-workspace");
+    {
+        mh::ui::MainWindow w(MH_SHADER_DIR);
+        auto* dock = w.findChild<QDockWidget*>(QStringLiteral("dock.modelling"));
+        REQUIRE(dock != nullptr);
+        w.addDockWidget(Qt::RightDockWidgetArea, dock);
+        REQUIRE(w.saveWorkspaceAs(name));
+        CHECK(w.namedWorkspaces().contains(name));
+    }
+
+    mh::ui::MainWindow fresh(MH_SHADER_DIR);
+    REQUIRE(fresh.loadNamedWorkspace(name));
+    auto* dock = fresh.findChild<QDockWidget*>(QStringLiteral("dock.modelling"));
+    REQUIRE(dock != nullptr);
+    CHECK(fresh.dockWidgetArea(dock) == Qt::RightDockWidgetArea);
+
+    // A name that was never written is a clean failure, not a crash.
+    CHECK_FALSE(fresh.loadNamedWorkspace(QStringLiteral("mh-no-such-workspace")));
+    CHECK_FALSE(fresh.saveWorkspaceAs(QString{}));
+
+    QFile::remove(mh::ui::MainWindow::workspaceDirectory() + QLatin1Char('/') + name +
+                  QStringLiteral(".json"));
+}
+
+TEST_CASE("docks can nest and tab, so a drag has somewhere to snap", "[workspace]") {
+    useShippedIcons();
+    mh::ui::MainWindow w(MH_SHADER_DIR);
+    CHECK(w.isDockNestingEnabled());
+    CHECK((w.dockOptions() & QMainWindow::AllowTabbedDocks) != 0);
+    CHECK((w.dockOptions() & QMainWindow::AllowNestedDocks) != 0);
+}
+
+TEST_CASE("a workspace name cannot escape the workspaces directory", "[workspace]") {
+    // The name reaches this from a free-text Save dialog and becomes a path.
+    // `saveWorkspaceAs("../escaped")` used to write one level above the
+    // workspaces directory, truncating whatever was there.
+    for (const char* bad : {"../escaped", "..", ".", "a/b", "a\\b", "", "C:evil"}) {
+        INFO("name \"" << bad << "\"");
+        CHECK_FALSE(mh::ui::isValidWorkspaceName(QString::fromLatin1(bad)));
+    }
+    for (const char* good : {"Modelling", "my.layout", "with space", "Ünïcode"}) {
+        INFO("name \"" << good << "\"");
+        CHECK(mh::ui::isValidWorkspaceName(QString::fromUtf8(good)));
+    }
+
+    const TestModePaths redirected;
+    mh::ui::MainWindow w(MH_SHADER_DIR);
+    CHECK_FALSE(w.saveWorkspaceAs(QStringLiteral("../escaped")));
+    CHECK_FALSE(w.loadNamedWorkspace(QStringLiteral("../escaped")));
+    // Nothing was created outside the directory.
+    CHECK_FALSE(QFile::exists(mh::ui::MainWindow::workspaceDirectory() +
+                              QStringLiteral("/../escaped.json")));
+}
+
+TEST_CASE("a workspace that restores nothing is a failure, not a success", "[workspace]") {
+    // A truncated or hand-edited file used to report success while the layout
+    // sat untouched -- the exact failure the base64 check exists to prevent.
+    mh::ui::WorkspaceFile in;
+    in.name            = QStringLiteral("Empty");
+    QJsonObject object = mh::ui::toJson(in);  // state is empty
+    CHECK_FALSE(mh::ui::workspaceFromJson(object).has_value());
+
+    object.remove(QStringLiteral("state"));
+    CHECK_FALSE(mh::ui::workspaceFromJson(object).has_value());
 }

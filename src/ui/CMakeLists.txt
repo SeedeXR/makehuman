@@ -17,12 +17,14 @@ add_library(mh_ui STATIC
     PanelTitleBar.cpp
     ModifierPanel.cpp
     AssetPanel.cpp
+    Workspace.cpp
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/ViewportWidget.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/MainWindow.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/Theme.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/PanelTitleBar.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/ModifierPanel.h
-    ${CMAKE_SOURCE_DIR}/include/makehuman/ui/AssetPanel.h)
+    ${CMAKE_SOURCE_DIR}/include/makehuman/ui/AssetPanel.h
+    ${CMAKE_SOURCE_DIR}/include/makehuman/ui/Workspace.h)
 add_library(mh::ui ALIAS mh_ui)
 
 target_include_directories(mh_ui PUBLIC

@@ -413,6 +413,11 @@ int main(int argc, char** argv) {
     const QCommandLineOption subdivOpt(
         QStringLiteral("subdivide"),
         QStringLiteral("Draw and export the Catmull-Clark subdivided mesh."));
+    const QCommandLineOption workspaceOpt(
+        QStringLiteral("workspace"),
+        QStringLiteral("Start in a workspace preset: Modelling, Rigging, Materials or Export."),
+        QStringLiteral("name"));
+    parser.addOption(workspaceOpt);
     parser.addOption(subdivOpt);
     parser.addOption(loadOpt);
     parser.addOption(saveOpt);
@@ -738,6 +743,14 @@ int main(int argc, char** argv) {
     });
 
     window.restoreWorkspace();
+    // After restoreWorkspace, so an explicit preset wins over the saved layout.
+    if (parser.isSet(workspaceOpt)) {
+        const QString name = parser.value(workspaceOpt);
+        if (!window.applyWorkspacePreset(name)) {
+            std::fprintf(stderr, "no such workspace preset: \"%s\"\n", name.toStdString().c_str());
+            return 1;
+        }
+    }
     window.show();
 
     if (parser.isSet(shotOpt)) {
@@ -781,8 +794,9 @@ int main(int argc, char** argv) {
     }
 
     const int rc = app.exec();
-    // A screenshot run is not a session: saving its layout would overwrite the
-    // one the user arranged by hand.
-    if (!parser.isSet(shotOpt)) window.saveWorkspace();
+    // Neither a screenshot run nor an explicit --workspace is a session: both
+    // would overwrite the layout the user arranged by hand, and `--workspace
+    // Export` hides every dock, so the next plain launch would come up empty.
+    if (!parser.isSet(shotOpt) && !parser.isSet(workspaceOpt)) window.saveWorkspace();
     return rc;
 }

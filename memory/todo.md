@@ -493,7 +493,21 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       every save, for a framing nobody touched.
 - [ ] Camera *pan* has no equivalent here; the loaded translation is carried
       forward untouched rather than flattened to the origin.
-- [ ] Snapping with drop indicators
+- [x] **Nested and tabbed docking with drop indicators** — `setDockNestingEnabled`
+      plus `AllowNestedDocks | AllowTabbedDocks | GroupedDragging`. Without
+      nesting a dock can only sit in one of the four areas, so there is nothing
+      to snap into.
+- [x] **Workspaces: 4 presets, ⌘1-⌘4, Save As, versioned schema** (`design.md`
+      §6.4). Named layouts are JSON at
+      `~/Library/Application Support/.../workspaces/<name>.json`: schema version
+      plus base64 `saveState`/`saveGeometry`.
+      **Two persistence mechanisms on purpose:** QSettings holds *the last
+      layout* for session restore; the JSON files hold *named* workspaces.
+      Rigging and Export differ from Modelling only by hiding docks whose panels
+      do not exist yet — shipped anyway so the switcher, shortcuts and file
+      format are exercised by four real entries.
+      Verified by measuring the viewport: 2,340,644 -> 2,779,708 -> 3,957,760 px
+      as presets hide panels.
 - [x] Six-dot panel menu (float/dock/tab/reset/close) — `design.md` §6.3.
       `PanelTitleBar` replaces the whole dock title bar; Qt offers no hook for
       extra title-bar buttons. Areas the dock disallows are **not** offered —

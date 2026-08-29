@@ -4,6 +4,77 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-30 14:36:12 — Session 041 · **workspaces, and a path traversal I nearly shipped**
+
+### What shipped
+- **Nested and tabbed docking** — `setDockNestingEnabled` + `AllowNestedDocks |
+  AllowTabbedDocks | GroupedDragging`. Qt draws the drop indicators; without nesting a
+  dock can only sit in one of the four areas, so there was nothing to snap into.
+- **Workspaces** (`design.md` §6.4) — four presets on ⌘1-⌘4, a Saved Layouts submenu,
+  Save Workspace As…, Reset. Named layouts are JSON with a schema version plus base64
+  `saveState`/`saveGeometry` blobs.
+- `--workspace <name>` so a preset is verifiable in a screenshot.
+
+### The security bug
+`saveWorkspaceAs` pasted the name straight into a path. Proven by the reviewer:
+`saveWorkspaceAs("../escaped")` returned **true** and wrote one level above the
+workspaces directory — with `QIODevice::Truncate`. I was in the middle of adding the
+free-text Save dialog that feeds it, so `../../../Desktop/notes` would have replaced that
+file with JSON. `isValidWorkspaceName` now rejects separators, `.`/`..`, `:` and NUL, and
+both the save and load paths check it.
+
+### Two more the review proved rather than asserted
+- **`f.write(json) == json.size()` reports success before any byte reaches the disk.**
+  Demonstrated with a probe: a 4096-byte `write()` returned 4096 while the file on disk
+  was still 0 bytes; it only landed on `close()`, whose error is discarded. Now
+  `QSaveFile` + `commit()`.
+- **`state.isEmpty() || restoreState(...)` reported success for a workspace that restored
+  nothing** — the exact failure my own comment said the base64 check existed to prevent.
+  `workspaceFromJson` now refuses an empty `state` (`saveState()` never produces one).
+
+### A test that could not fail, proven by mutation
+The reviewer deleted `restoreState(d_->defaultState)` from `applyWorkspacePreset`, rebuilt,
+and the suite stayed green: my "must not accumulate" test only asserted `isHidden()`, which
+the visibility loop sets either way. It now moves a dock first and asserts the **position**
+comes back, which only the state restore does.
+
+### ASan caught a bug in my own test — twice
+`QByteArray("\x00\x01\xFE\xFF binary state", 20)` on a 17-byte literal: a two-byte
+global overread, in the test I wrote to check binary blobs survive base64.
+
+**The first fix silently did not apply.** The heredoc turned `\\x00` into a real NUL
+byte in the Python pattern, so `str.replace` matched nothing — and I reported it fixed
+because the filtered `[workspace]` run happened to come back green. The full ASan suite
+caught it again. Lesson already in the log from session 039, now with a second instance:
+**verify a scripted edit by reading the file back, not by the command's exit line.**
+
+### Deliberate disagreements with the ponytail review
+It recommended deleting the whole JSON layer (~200 lines) as having no production caller,
+which was true when it looked. The better answer was to *finish the documented feature*:
+Save Workspace As… and the Saved Layouts submenu now call it. It also wanted `--workspace`
+cut as a duplicate of ⌘1-⌘4; kept for the same reason as `--skin` — it is the only headless
+way to exercise a preset, which is how the viewport measurements exist.
+
+### Also fixed
+- `workspaceDirectory()` created the directory as a side effect of a const query, so
+  merely opening the menu made one for a user who had never saved a workspace.
+- `--workspace Export` was persisted to QSettings on quit, so the next plain launch came
+  up with no panels at all.
+- A dead `QTemporaryDir` in the test, and `setTestModeEnabled(false)` that a failing
+  `REQUIRE` would unwind past, leaving every later test in test mode. Now RAII.
+
+### Verified this session
+- 328/328 in debug, release and ASan.
+- Viewport area measured per preset: 2,340,644 / 2,779,708 / 3,957,760 px.
+- All 7 licence gates; clang-format clean; `mh_ui` → 0 `mh::core` symbols.
+
+### Next
+- M8 remainder: task registry, undo/redo, accessibility pass, symbolic shortcut
+  persistence.
+- Proxies still have no picker; the viewport draws one mesh.
+
+---
+
 ## 2026-08-30 12:55:41 — Session 040 · **honouring the .mhm fields we only stored**
 
 ### What shipped

@@ -4,6 +4,7 @@
 #include "makehuman/foundation/Geometry.h"
 
 #include <QMainWindow>
+#include <QStringList>
 
 #include <filesystem>
 #include <memory>
@@ -43,6 +44,24 @@ public:
     void saveWorkspace() const;
     /// Back to the shipped layout, discarding the saved one.
     void resetWorkspace();
+
+    /// Applies a shipped preset by name (`design.md` §6.4).
+    /// @return false if no preset has that name.
+    bool applyWorkspacePreset(const QString& name);
+
+    /// Writes the current layout to the user's workspace directory.
+    [[nodiscard]] bool saveWorkspaceAs(const QString& name) const;
+
+    /// Restores a named workspace written by saveWorkspaceAs.
+    /// @return false if it is missing, unreadable, or a schema this build does
+    ///         not understand.
+    bool loadNamedWorkspace(const QString& name);
+
+    /// Names of the workspaces on disk, sorted.
+    [[nodiscard]] QStringList namedWorkspaces() const;
+
+    /// Where named workspaces live. Created on demand.
+    [[nodiscard]] static QString workspaceDirectory();
 
 signals:
     /// The File menu, as intent rather than action: this module must not decide
