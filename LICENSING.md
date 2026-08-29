@@ -130,7 +130,7 @@ are licensed **Apache-2.0**:
 | Qt | 6.11.0 | LGPL-3.0 (dynamic) / GPL-3.0 | `LGPL-3.0-only` | UI, RHI, shader tools |
 | Eigen | 5.0.1 | MPL-2.0 | `MPL-2.0` | Linear algebra |
 | oneTBB | 2023.1.0 | Apache-2.0 | `Apache-2.0` | Job system |
-| assimp | 6.0.4_1 | BSD-3-Clause | `BSD-3-Clause` | Mesh import; **currently test-only**, as an independent reader validating formats we write. Never linked into the shipped libraries. |
+| assimp | 6.0.4_1 | BSD-3-Clause | `BSD-3-Clause` | **Multi-format import/export** (FBX 7500 binary, Collada, STL, 3MF) and an independent reader validating the formats we write ourselves. Linked into `mh_io`. See §5.3. |
 | Catch2 | v3 (planned) | BSL-1.0 | `BSL-1.0` | Tests |
 | Lucide | latest (planned) | ISC | `ISC` | Icons |
 | 42dot Sans | (planned, **unconfirmed**) | SIL OFL 1.1 | `OFL-1.1` | Typeface — see §7 |
@@ -146,7 +146,7 @@ licence or full GPL relinking provisions.
 
 | Item | Reason |
 |---|---|
-| **Autodesk FBX SDK** | Proprietary EULA, incompatible with AGPL redistribution |
+| **Autodesk FBX SDK** | See §5.3 — free of charge, but its EULA cannot be combined with AGPL *distribution* |
 | **Epic MetaHuman** assets, SDK, DNA, or exported data | EULA restricts use to the Unreal ecosystem |
 | GPL-2.0-**only** code | Incompatible with AGPL-3.0 |
 | Anything non-commercial or field-of-use restricted | Conflicts with the freedoms we promise |
@@ -155,6 +155,34 @@ licence or full GPL relinking provisions.
 *Note:* Epic's **MetaHuman DNA Calibration** tooling is partly Apache-2.0. Any use
 requires verifying the specific repository and version at the time of use and
 recording it here first.
+
+### 5.3 The Autodesk FBX SDK — why it is not used
+
+The SDK **is** free of charge, and version 2020.3.9 is installed on the
+development machine. The obstacle is not cost; it is that its licence and
+AGPL-3.0 impose contradictory obligations on *distribution*. Read directly from
+`/Applications/Autodesk/FBX SDK/2020.3.9/License.rtf`:
+
+| Clause | Text (abridged) | Conflict |
+|---|---|---|
+| §2.1.5 | Licensee shall ensure its use of open-source software does not "cause the Software to be subject to any licensing terms other than those set forth in this Agreement" | AGPL-3.0 §5 requires exactly that — the whole combined work is licensed under AGPL |
+| §21 | Defines "Open Source" by explicitly naming **GPL and LGPL** as licences requiring source disclosure, derivative-work rights, and free redistribution | The SDK's authors identified this exact incompatibility class by name |
+| §10.2.1(g) | Permitted redistribution must be under an EULA that **prohibits** further redistribution of the component | AGPL-3.0 §6 requires the opposite: recipients must be free to redistribute |
+| §2.1.1(e) | No right to "distribute … or otherwise provide all or any portion of the Autodesk Materials" except as the agreement allows | |
+
+These attach on **distribution**. Building locally for yourself is unaffected;
+shipping an AGPL binary linked against the SDK is not permissible.
+
+**What is used instead: assimp (BSD-3-Clause).** It writes **binary FBX 7500
+(FBX 2016)** — verified from the written bytes — which is *newer* than the
+7300 (FBX 2013) the Python reference emits, and it carries no such restriction.
+It also supplies Collada, STL and 3MF export plus the import capability the
+reference lacks entirely.
+
+**PLY is deliberately not offered.** assimp 6.0.4's PLY exporter writes corrupt
+face indices whenever the mesh has UVs; reimporting segfaults, and assimp's own
+validator rejects the file. Minimal repro and reasoning are recorded at the top
+of `include/makehuman/io/SceneIO.h`.
 
 ## 6. Obligations we must meet when distributing
 

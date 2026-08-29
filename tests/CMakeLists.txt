@@ -22,6 +22,7 @@ add_executable(mh_tests
     golden/test_proxy_parity.cpp
     golden/test_obj_writer_parity.cpp
     golden/test_gltf_writer.cpp
+    golden/test_scene_io.cpp
     regression/test_review_findings.cpp)
 
 target_link_libraries(mh_tests
