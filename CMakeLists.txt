@@ -57,6 +57,25 @@ endif()
 find_package(assimp REQUIRED CONFIG)
 message(STATUS "assimp: found, multi-format IO enabled")
 
+# nlohmann/json (MIT) parses .mhskel, which is JSON.
+#
+# Hand-rolled here would be a mistake: .mhskel is user-editable and community
+# rigs are real, so the parser sits on a trust boundary. We also need
+# `ordered_json` specifically -- the reference loads with OrderedDict and its
+# bone ordering pass iterates in FILE order (skeleton.py:112-121), so a parser
+# that sorts or hashes keys silently produces a different bone order.
+#
+# Pinned to a release archive of just the headers (300 KB) rather than the git
+# repo, and to a SHA256, so the build is reproducible and cannot be changed
+# under us. See LICENSING.md section 5.1.
+include(FetchContent)
+FetchContent_Declare(nlohmann_json
+    URL      https://github.com/nlohmann/json/releases/download/v3.11.3/include.zip
+    URL_HASH SHA256=a22461d13119ac5c78f205d3df1db13403e58ce1bb1794edc9313677313f4a9d)
+FetchContent_MakeAvailable(nlohmann_json)
+add_library(mh_json INTERFACE)
+target_include_directories(mh_json SYSTEM INTERFACE ${nlohmann_json_SOURCE_DIR}/include)
+
 if(MH_BUILD_TESTS)
     include(FetchContent)
     FetchContent_Declare(Catch2
@@ -73,6 +92,7 @@ endif()
 add_subdirectory(src/foundation)
 add_subdirectory(src/core)
 add_subdirectory(src/io)
+add_subdirectory(src/rig)
 
 if(MH_BUILD_TESTS)
     add_subdirectory(tests)

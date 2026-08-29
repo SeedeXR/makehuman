@@ -1,0 +1,227 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+#include "makehuman/rig/Skeleton.h"
+
+#include <nlohmann/json.hpp>
+
+#include <deque>
+#include <fstream>
+
+namespace mh::rig {
+namespace {
+
+using json = nlohmann::ordered_json;
+
+/// `rotation_plane` is either a plane name or a number (0 meaning "none").
+/// skeleton.py:127-131 also guards the hand-edited `[null,null,null]` form.
+std::string planeNameOf(const json& v) {
+    if (v.is_string()) return v.get<std::string>();
+    return {};
+}
+
+}  // namespace
+
+std::string SkeletonError::message() const {
+    const char* k = "unknown error";
+    switch (kind) {
+        case SkeletonErrorKind::NotFound: k = "file not found"; break;
+        case SkeletonErrorKind::Unreadable: k = "file unreadable"; break;
+        case SkeletonErrorKind::Malformed: k = "malformed skeleton"; break;
+        case SkeletonErrorKind::UnreachableBones: k = "bones with an invalid parent"; break;
+    }
+    std::string m = file + ": " + k;
+    if (!detail.empty()) m += " (" + detail + ")";
+    return m;
+}
+
+bool Skeleton::updateJoints(std::span<const Vec3> restCoords) {
+    // A joint's position is the mean of its vertex cloud (skeleton.py:428-434).
+    const auto meanOf = [&](const std::string& joint, Vec3& out) -> bool {
+        const auto it = jointVerts.find(joint);
+        if (it == jointVerts.end() || it->second.empty()) return false;
+
+        Vec3 sum{};
+        for (const uint32_t v : it->second) {
+            if (v >= restCoords.size()) return false;
+            sum = sum + restCoords[v];
+        }
+        const auto n = static_cast<float>(it->second.size());
+        out          = sum * (1.0F / n);
+        return true;
+    };
+
+    for (Bone& b : bones) {
+        if (!meanOf(b.headJoint, b.head)) return false;
+        if (!meanOf(b.tailJoint, b.tail)) return false;
+    }
+    return true;
+}
+
+std::expected<Skeleton, SkeletonError> loadSkeleton(const std::filesystem::path& path) {
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
+        return std::unexpected(SkeletonError{SkeletonErrorKind::NotFound, path.string(), {}});
+    }
+    std::ifstream in(path);
+    if (!in) {
+        return std::unexpected(SkeletonError{SkeletonErrorKind::Unreadable, path.string(), {}});
+    }
+
+    json root;
+    try {
+        // ordered_json preserves key order, which the bone ordering below
+        // depends on. Parsing with exceptions on: this is a trust boundary and
+        // a truncated or hand-broken rig must fail loudly.
+        root = json::parse(in);
+    } catch (const json::parse_error& e) {
+        return std::unexpected(
+            SkeletonError{SkeletonErrorKind::Malformed, path.string(), e.what()});
+    }
+    if (!root.is_object() || !root.contains("bones") || !root["bones"].is_object()) {
+        return std::unexpected(
+            SkeletonError{SkeletonErrorKind::Malformed, path.string(), "no \"bones\" object"});
+    }
+
+    Skeleton skel;
+    skel.name        = root.value("name", std::string{"Skeleton"});
+    skel.description = root.value("description", std::string{});
+    skel.version     = root.value("version", 1);
+    if (root.contains("weights_file") && root["weights_file"].is_string()) {
+        skel.weightsFile = path.parent_path() / root["weights_file"].get<std::string>();
+    }
+
+    for (const auto& [jointName, idxs] : root.value("joints", json::object()).items()) {
+        if (!idxs.is_array() || idxs.empty()) continue;  // skeleton.py:105-107
+        std::vector<uint32_t> v;
+        v.reserve(idxs.size());
+        for (const auto& i : idxs) {
+            if (i.is_number_unsigned()) v.push_back(i.get<uint32_t>());
+        }
+        if (!v.empty()) skel.jointVerts.emplace(jointName, std::move(v));
+    }
+
+    for (const auto& [planeName, joints] : root.value("planes", json::object()).items()) {
+        if (!joints.is_array() || joints.size() != 3) continue;
+        std::array<std::string, 3> p;
+        bool ok = true;
+        for (size_t i = 0; i < 3; ++i) {
+            if (!joints[i].is_string()) {
+                ok = false;
+                break;
+            }
+            p[i] = joints[i].get<std::string>();
+        }
+        if (ok) skel.planes.emplace(planeName, std::move(p));
+    }
+
+    // ---- ordering ---------------------------------------------------------
+    // Repeated relaxation over the bone map IN FILE ORDER, exactly as
+    // skeleton.py:111-121: each pass appends every not-yet-placed bone whose
+    // parent is already placed. `progress` is the reference's `prev_len`
+    // anti-deadlock guard -- a parent cycle makes a pass add nothing, and the
+    // loop must stop rather than spin.
+    const json& boneMap = root["bones"];
+
+    std::vector<std::string> fileOrder;
+    fileOrder.reserve(boneMap.size());
+    for (const auto& [boneName, unused] : boneMap.items()) {
+        (void)unused;
+        fileOrder.push_back(boneName);
+    }
+
+    std::unordered_map<std::string, int32_t> placed;  // name -> index
+    std::vector<std::string> order;
+    order.reserve(fileOrder.size());
+
+    bool progress = true;
+    while (order.size() != fileOrder.size() && progress) {
+        progress = false;
+        for (const std::string& boneName : fileOrder) {
+            if (placed.contains(boneName)) continue;
+
+            const json& def   = boneMap[boneName];
+            const json parent = def.value("parent", json());
+            const bool isRoot = parent.is_null() || (parent.is_string() && parent.empty());
+
+            if (isRoot || placed.contains(parent.get<std::string>())) {
+                placed.emplace(boneName, static_cast<int32_t>(order.size()));
+                order.push_back(boneName);
+                progress = true;
+            }
+        }
+    }
+
+    if (order.size() != fileOrder.size()) {
+        std::string missing;
+        for (const std::string& boneName : fileOrder) {
+            if (!placed.contains(boneName)) {
+                if (!missing.empty()) missing += ", ";
+                missing += boneName;
+            }
+        }
+        // The reference only warns here (skeleton.py:122-124) and carries on
+        // with a partial skeleton. A rig that exports missing limbs with
+        // nothing in the log is worse than a refusal.
+        return std::unexpected(
+            SkeletonError{SkeletonErrorKind::UnreachableBones, path.string(), missing});
+    }
+
+    // ---- second ordering --------------------------------------------------
+    // `order` above is only how bones are ADDED. The canonical index order --
+    // what getBones() returns, what the rest-matrix rows are indexed by, and
+    // what every exporter writes -- is a REAL breadth-first walk from the
+    // roots over each bone's children (skeleton.py:__cacheGetBones, a deque).
+    //
+    // The two are different, and using the first alone produced 153 of 163
+    // bone names in the wrong slot. The first pass still matters: it fixes the
+    // order children are appended to each parent, which is the sibling order
+    // the BFS then emits.
+    std::vector<std::vector<std::string>> childrenOf(order.size());
+    std::vector<std::string> roots;
+    for (const std::string& boneName : order) {
+        const json parent = boneMap[boneName].value("parent", json());
+        if (parent.is_string() && !parent.get<std::string>().empty()) {
+            childrenOf[static_cast<size_t>(placed.at(parent.get<std::string>()))].push_back(
+                boneName);
+        } else {
+            roots.push_back(boneName);
+        }
+    }
+
+    std::vector<std::string> bfs;
+    bfs.reserve(order.size());
+    std::deque<std::string> queue(roots.begin(), roots.end());
+    while (!queue.empty()) {
+        const std::string boneName = queue.front();
+        queue.pop_front();
+        bfs.push_back(boneName);
+        for (const std::string& child : childrenOf[static_cast<size_t>(placed.at(boneName))]) {
+            queue.push_back(child);
+        }
+    }
+
+    // Parent indices must refer to the FINAL order, not the insertion order.
+    std::unordered_map<std::string, int32_t> finalIndex;
+    finalIndex.reserve(bfs.size());
+    for (size_t i = 0; i < bfs.size(); ++i)
+        finalIndex.emplace(bfs[i], static_cast<int32_t>(i));
+
+    skel.bones.reserve(bfs.size());
+    for (const std::string& boneName : bfs) {
+        const json& def = boneMap[boneName];
+        Bone b;
+        b.name      = boneName;
+        b.headJoint = def.value("head", std::string{});
+        b.tailJoint = def.value("tail", std::string{});
+        b.planeName = def.contains("rotation_plane") ? planeNameOf(def["rotation_plane"]) : "";
+
+        const json parent = def.value("parent", json());
+        b.parent          = (parent.is_string() && !parent.get<std::string>().empty())
+                                ? finalIndex.at(parent.get<std::string>())
+                                : -1;
+        skel.bones.push_back(std::move(b));
+    }
+
+    return skel;
+}
+
+}  // namespace mh::rig

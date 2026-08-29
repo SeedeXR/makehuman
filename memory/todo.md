@@ -193,7 +193,20 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       assimp node walk gives ~190 nodes and wrong parents.
 - [ ] MakeHuman(163) -> Mixamo(65) retarget map. Lossy by construction; needs
       an explicit table, not a name-matching heuristic.
-- [ ] `.mhskel` parser — 163 bones, breadth-first ordering, deadlock-guarded
+- [x] `.mhskel` parser (`mh_rig`, AGPL) — **exact bone-order parity on all 163
+      bones** against the captured reference list. 1.21 ms to load;
+      `updateJoints` (rig follows the mesh) is under 0.01 ms, so re-fitting the
+      rig every frame is free.
+      **There are TWO orderings in the reference and they differ.** `fromFile`
+      relaxes in *file order* (fixes sibling order); `getBones()` then does a
+      real BFS from the roots (fixes index order — the rest-matrix rows and
+      every exporter). Using the first alone put 153 of 163 bones in the wrong
+      slot while still producing a valid-looking parents-first list.
+      Divergence: an unreachable bone is an **error** here; the reference warns
+      and exports a partial rig (`skeleton.py:122-124`).
+      Note: the Python skeleton baseline cannot run headlessly — `mhskeleton.load`
+      reaches `G.app.selectedHuman` — so those benchmark rows have no reference
+      number rather than a fabricated one.
 - [ ] Bone rest matrices; `matPoseVerts = matPoseGlobal · inv(matRestGlobal)`
 - [ ] Joint positions from vertex clouds (rig follows the mesh)
 - [ ] `.mhw` weights; normalisation; influence clamping

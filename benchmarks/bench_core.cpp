@@ -10,6 +10,7 @@
 #include "makehuman/core/Subdivider.h"
 #include "makehuman/core/Target.h"
 #include "makehuman/core/TargetIndex.h"
+#include "makehuman/rig/Skeleton.h"
 
 #include <algorithm>
 #include <chrono>
@@ -92,6 +93,24 @@ int main() {
         results.push_back({"Mesh::faceMaskForVisibleVertices",
                            medianMs([&] { (void)mesh->faceMaskForVisibleVertices(visible); }, 50),
                            0.0});
+    }
+
+    // Skeleton: parse 163 bones + 326 joint clouds, then place every bone.
+    {
+        results.push_back({"loadSkeleton (163 bones, JSON)",
+                           medianMs(
+                               [&] {
+                                   (void)mh::rig::loadSkeleton(std::filesystem::path(MH_DATA_DIR) /
+                                                               "rigs" / "default.mhskel");
+                               },
+                               10),
+                           0.0});
+        auto sk =
+            mh::rig::loadSkeleton(std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel");
+        if (sk) {
+            results.push_back({"Skeleton::updateJoints (rig follows the mesh)",
+                               medianMs([&] { (void)sk->updateJoints(mesh->coord()); }, 50), 0.0});
+        }
     }
 
     // Catmull-Clark: reference build 202.30 ms, update_coords 7.64 ms,

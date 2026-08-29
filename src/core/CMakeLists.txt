@@ -28,7 +28,7 @@ target_include_directories(mh_core PUBLIC
 # linked when mh_rig needs quaternions, slerp, and matrix decomposition.
 target_link_libraries(mh_core
     PUBLIC  mh::foundation
-    PRIVATE mh::warnings mh::sanitize)
+    PRIVATE mh::warnings mh::sanitize mh_json)
 
 set_target_properties(mh_core PROPERTIES
     CXX_STANDARD 23

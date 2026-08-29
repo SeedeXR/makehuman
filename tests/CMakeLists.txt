@@ -22,6 +22,7 @@ add_executable(mh_tests
     golden/test_proxy_parity.cpp
     golden/test_face_mask_parity.cpp
     golden/test_material_roundtrip.cpp
+    golden/test_skeleton_parity.cpp
     golden/test_obj_writer_parity.cpp
     golden/test_gltf_writer.cpp
     golden/test_scene_io.cpp
@@ -32,7 +33,7 @@ add_executable(mh_tests
 # inversion was the licence bug (LICENSING.md 4). The tests legitimately use
 # both sides of the boundary: core to build a mesh, io to write it.
 target_link_libraries(mh_tests
-    PRIVATE mh::core mh::io Catch2::Catch2WithMain mh::warnings mh::sanitize)
+    PRIVATE mh::core mh::io mh::rig mh_json Catch2::Catch2WithMain mh::warnings mh::sanitize)
 
 target_compile_definitions(mh_tests PRIVATE
     MH_DATA_DIR="${MH_DATA_DIR}"

@@ -131,11 +131,17 @@ are licensed **Apache-2.0**:
 | Eigen | 5.0.1 | MPL-2.0 | `MPL-2.0` | Linear algebra |
 | oneTBB | 2023.1.0 | Apache-2.0 | `Apache-2.0` | Job system |
 | assimp | 6.0.4_1 | BSD-3-Clause | `BSD-3-Clause` | **Multi-format import/export** (FBX 7500 binary, Collada, STL, 3MF) and an independent reader validating the formats we write ourselves. Linked into `mh_io`. See §5.3. |
-| Catch2 | v3 (planned) | BSL-1.0 | `BSL-1.0` | Tests |
-| Lucide | latest (planned) | ISC | `ISC` | Icons |
-| 42dot Sans | (planned, **unconfirmed**) | SIL OFL 1.1 | `OFL-1.1` | Typeface — see §7 |
+| Catch2 | v3.7.1 (pinned) | BSL-1.0 | `BSL-1.0` | Tests |
+| nlohmann/json (`nlohmann_json`) | v3.11.3 (pinned, SHA256-verified) | MIT | `MIT` | `.mhskel` parsing in `mh_rig`. **`ordered_json` specifically**: the reference loads with `OrderedDict` and its bone ordering pass iterates in file order (`skeleton.py:112-121`), so a parser that sorts or hashes keys silently produces a different bone order. |
+| Lucide | 1.37.0 (bundled) | ISC | `ISC` | Icons — see §5.4 |
+| 42dot Sans | bundled, OFL text included | SIL OFL 1.1 | `OFL-1.1` | Typeface — see §5.4 |
 
 All are compatible with AGPL-3.0 distribution.
+
+**MIT (nlohmann/json)** is permissive and imposes only attribution; the licence
+text ships in the fetched archive (`LICENSE.MIT`). It is fetched as a pinned
+release archive of the headers only, verified by `URL_HASH SHA256=...`, so the
+build cannot be changed under us by a moved tag.
 
 **Qt/LGPL obligation:** Qt must be **dynamically linked**, and the distribution
 must permit relinking against a modified Qt. The macOS bundle ships Qt as

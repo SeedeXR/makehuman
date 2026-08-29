@@ -1,0 +1,204 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// .mhskel parsing, checked against the reference's own bone list.
+//
+// Regenerate the fixture with:
+//     ./.venv-mh/bin/python tools/capture_fixture.py skeleton
+
+#include "makehuman/core/ObjReader.h"
+#include "makehuman/rig/Skeleton.h"
+
+#include <nlohmann/json.hpp>
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <set>
+#include <string>
+
+using namespace mh;
+
+namespace {
+
+std::filesystem::path rigPath() {
+    return std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel";
+}
+
+nlohmann::json boneOrderFixture() {
+    std::ifstream in(std::filesystem::path(MH_GOLDEN_DIR) / "skeleton" / "bone_order.json");
+    REQUIRE(in);
+    return nlohmann::json::parse(in);
+}
+
+}  // namespace
+
+// The order is load-bearing: it is the order every exporter writes bones in,
+// and the row order of the rest-matrix arrays. It is NOT a breadth-first
+// traversal -- see loadSkeleton()'s comment -- so an implementation that used
+// a real BFS would produce a plausible but different list and fail here.
+TEST_CASE("bone order matches the reference exactly", "[skeleton][golden][parity]") {
+    const auto skel = rig::loadSkeleton(rigPath());
+    REQUIRE(skel.has_value());
+
+    const auto expected = boneOrderFixture();
+    REQUIRE(expected.is_array());
+    REQUIRE(expected.size() == 163);
+    REQUIRE(skel->boneCount() == expected.size());
+
+    size_t nameMismatch   = 0;
+    size_t parentMismatch = 0;
+    for (size_t i = 0; i < expected.size(); ++i) {
+        CAPTURE(i);
+        const auto& want     = expected[i];
+        const rig::Bone& got = skel->bones[i];
+
+        if (want["name"].get<std::string>() != got.name) ++nameMismatch;
+
+        const bool wantRoot = want["parent"].is_null();
+        if (wantRoot) {
+            if (got.parent != -1) ++parentMismatch;
+        } else {
+            if (got.parent < 0 || skel->bones[static_cast<size_t>(got.parent)].name !=
+                                      want["parent"].get<std::string>()) {
+                ++parentMismatch;
+            }
+        }
+    }
+    CHECK(nameMismatch == 0);
+    CHECK(parentMismatch == 0);
+}
+
+// Ordering invariant the rest-matrix pass depends on: a bone's parent must
+// already have been processed, so parent index < own index, always.
+TEST_CASE("every parent precedes its child", "[skeleton][parity]") {
+    const auto skel = rig::loadSkeleton(rigPath());
+    REQUIRE(skel.has_value());
+
+    size_t roots = 0;
+    for (size_t i = 0; i < skel->bones.size(); ++i) {
+        CAPTURE(i, skel->bones[i].name);
+        const int32_t p = skel->bones[i].parent;
+        if (p < 0) {
+            ++roots;
+        } else {
+            REQUIRE(static_cast<size_t>(p) < i);
+        }
+    }
+    CHECK(roots == 1);  // "root"
+}
+
+TEST_CASE("joints and planes are read", "[skeleton][parity]") {
+    const auto skel = rig::loadSkeleton(rigPath());
+    REQUIRE(skel.has_value());
+
+    // Counts captured from the reference: 326 joints, 163 planes.
+    CHECK(skel->jointVerts.size() == 326);
+    CHECK(skel->planes.size() == 163);
+    CHECK(skel->version == 110);  // the value in default.mhskel
+    CHECK_FALSE(skel->weightsFile.empty());
+
+    // Every bone's joints must resolve, or updateJoints cannot place it.
+    size_t unresolved = 0;
+    for (const auto& b : skel->bones) {
+        if (!skel->jointVerts.contains(b.headJoint)) ++unresolved;
+        if (!skel->jointVerts.contains(b.tailJoint)) ++unresolved;
+    }
+    CHECK(unresolved == 0);
+}
+
+TEST_CASE("joint positions place the rig inside the body", "[skeleton][parity]") {
+    const auto mesh = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+    auto skel = rig::loadSkeleton(rigPath());
+    REQUIRE(skel.has_value());
+
+    REQUIRE(skel->updateJoints(mesh->coord()));
+
+    const auto bb = mesh->boundingBox();
+    REQUIRE(bb.has_value());
+    const auto [lo, hi] = *bb;
+
+    // A joint is the MEAN of a vertex cloud, so it is inside the convex hull
+    // and therefore inside the bounding box. Anything outside means the wrong
+    // vertices, or indices read against the wrong mesh.
+    size_t outside    = 0;
+    size_t degenerate = 0;
+    for (const auto& b : skel->bones) {
+        CAPTURE(b.name);
+        for (const auto& p : {b.head, b.tail}) {
+            REQUIRE(std::isfinite(p.x));
+            REQUIRE(std::isfinite(p.y));
+            REQUIRE(std::isfinite(p.z));
+            if (p.x < lo.x || p.x > hi.x || p.y < lo.y || p.y > hi.y || p.z < lo.z || p.z > hi.z) {
+                ++outside;
+            }
+        }
+        const auto d = b.direction();
+        if (d.x == 0.0F && d.y == 0.0F && d.z == 0.0F) ++degenerate;
+    }
+    CHECK(outside == 0);
+    CHECK(degenerate == 0);  // a zero-length bone has no definable orientation
+}
+
+TEST_CASE("a joint index past the end of the mesh is refused", "[skeleton]") {
+    auto skel = rig::loadSkeleton(rigPath());
+    REQUIRE(skel.has_value());
+
+    // The rig indexes a 19,158-vertex body; a smaller mesh must not be read
+    // past its end. The reference indexes unguarded here.
+    const std::vector<foundation::Vec3> tiny(10, foundation::Vec3{});
+    CHECK_FALSE(skel->updateJoints(tiny));
+}
+
+TEST_CASE("a bone with a missing parent is an error, not a silent drop", "[skeleton]") {
+    const auto p = std::filesystem::temp_directory_path() / "mh_orphan.mhskel";
+    {
+        std::ofstream out(p);
+        out << R"({"name":"t","bones":{)"
+            << R"("root":{"head":"a","tail":"b","parent":null},)"
+            << R"("orphan":{"head":"a","tail":"b","parent":"nonexistent"}},)"
+            << R"("joints":{"a":[0],"b":[1]}})";
+    }
+    const auto skel = rig::loadSkeleton(p);
+    REQUIRE_FALSE(skel.has_value());
+    CHECK(skel.error().kind == rig::SkeletonErrorKind::UnreachableBones);
+    CHECK(skel.error().detail.find("orphan") != std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(p, ec);
+}
+
+// A parent cycle makes a relaxation pass add nothing. Without the reference's
+// anti-deadlock guard this loops forever; with it, the cycle is reported.
+TEST_CASE("a parent cycle terminates", "[skeleton]") {
+    const auto p = std::filesystem::temp_directory_path() / "mh_cycle.mhskel";
+    {
+        std::ofstream out(p);
+        out << R"({"name":"t","bones":{)"
+            << R"("a":{"head":"j","tail":"k","parent":"b"},)"
+            << R"("b":{"head":"j","tail":"k","parent":"a"}},)"
+            << R"("joints":{"j":[0],"k":[1]}})";
+    }
+    const auto skel = rig::loadSkeleton(p);  // must not hang
+    REQUIRE_FALSE(skel.has_value());
+    CHECK(skel.error().kind == rig::SkeletonErrorKind::UnreachableBones);
+
+    std::error_code ec;
+    std::filesystem::remove(p, ec);
+}
+
+TEST_CASE("malformed JSON is reported, not crashed on", "[skeleton]") {
+    const auto p = std::filesystem::temp_directory_path() / "mh_bad.mhskel";
+    {
+        std::ofstream out(p);
+        out << R"({"name":"t","bones":{"a":)";  // truncated
+    }
+    const auto skel = rig::loadSkeleton(p);
+    REQUIRE_FALSE(skel.has_value());
+    CHECK(skel.error().kind == rig::SkeletonErrorKind::Malformed);
+
+    std::error_code ec;
+    std::filesystem::remove(p, ec);
+}
