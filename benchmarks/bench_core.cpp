@@ -4,6 +4,7 @@
 // benchmarks/baseline_python.json (see memory/project_context.md section 6).
 
 #include "makehuman/core/ObjReader.h"
+#include "makehuman/core/RenderMesh.h"
 
 #include <algorithm>
 #include <chrono>
@@ -64,7 +65,20 @@ int main() {
     results.push_back(
         {"calcVertexNormals only", medianMs([&] { mesh->calcVertexNormals(); }, 50), 1.69});
     results.push_back({"buildAdjacency", medianMs([&] { mesh->buildAdjacency(); }, 10), 0.0});
+    results.push_back(
+        {"calcVertexTangents", medianMs([&] { mesh->calcVertexTangents(); }, 20), 0.0});
 
+    // The reference's nearest equivalent is updateIndexBuffer (unweld + group
+    // sort) at 3.43 ms -- but it does not triangulate, so ours does more work.
+    results.push_back({"RenderMesh::build (unweld + triangulate + sort)",
+                       medianMs([&] { (void)mh::core::RenderMesh::build(*mesh); }, 10), 3.43});
+
+    auto rm = mh::core::RenderMesh::build(*mesh);
+    results.push_back({"RenderMesh::refreshPositions (morph hot path)",
+                       medianMs([&] { rm.refreshPositions(*mesh); }, 50), 0.0});
+
+    std::printf("render: %zu verts (unwelded), %zu indices, %zu groups\n", rm.vertexCount(),
+                rm.indexCount(), rm.groupRanges().size());
     std::printf("mesh: %zu verts, %zu faces, %zu uvs, maxValence %u\n\n", mesh->vertexCount(),
                 mesh->faceCount(), mesh->uvCount(), static_cast<unsigned>(mesh->maxValence()));
     std::printf("%-46s %12s %12s %10s\n", "operation", "C++ (ms)", "python (ms)", "speedup");

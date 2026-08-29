@@ -62,6 +62,13 @@ inline Vec3 cross(const Vec3& a, const Vec3& b) {
     return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
 }
 
+/// xyz plus a scalar; used for tangents, where w carries handedness.
+struct Vec4 {
+    float x{}, y{}, z{}, w{};
+
+    friend bool operator==(const Vec4&, const Vec4&) = default;
+};
+
 inline float dot(const Vec3& a, const Vec3& b) {
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }

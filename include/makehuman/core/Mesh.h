@@ -70,6 +70,9 @@ public:
 
     [[nodiscard]] std::span<const Vec3> vnorm() const noexcept { return vnorm_; }
 
+    /// xyz = tangent, w = handedness (+1 / -1). Empty until calcVertexTangents().
+    [[nodiscard]] std::span<const Vec4> vtang() const noexcept { return vtang_; }
+
     [[nodiscard]] std::span<const Vec3> fnorm() const noexcept { return fnorm_; }
 
     [[nodiscard]] std::span<const Vec2> texco() const noexcept { return texco_; }
@@ -141,6 +144,26 @@ public:
     void calcFaceNormals();
     void calcVertexNormals();
 
+    /// Per-vertex tangents by Lengyel's method
+    /// (https://terathon.com/blog/tangent-space.html), Gram-Schmidt
+    /// orthogonalised against the vertex normal, with handedness in `w`.
+    ///
+    /// No-op when the mesh has no UVs. Requires normals, so it calls
+    /// calcVertexNormals() itself if they are missing.
+    ///
+    /// @warning This deliberately does **not** reproduce the reference
+    /// (module3d.py:371-449), which is wrong in three independent ways:
+    ///   1. `t2 = w3[:,1] = w1[:,1]` (:411) is a chained assignment, so `t2`
+    ///      becomes `w1.y` instead of `w3.y - w1.y`.
+    ///   2. `np.sum(sdir[vface[ix]])` (:429) omits `axis=`, collapsing the
+    ///      per-vertex accumulation to a single scalar.
+    ///   3. Unlike calcVertexNormals (:366), it never masks `vface` by
+    ///      `nfaces`, so face 0 is summed into every vertex whose valence is
+    ///      below the array stride.
+    /// Parity tests must therefore assert mathematical properties here, not
+    /// equality with the reference. See memory/test.md section 3.4.
+    void calcVertexTangents();
+
     /// Axis-aligned bounds over all vertices. Returns nullopt for an empty mesh.
     [[nodiscard]] std::optional<std::pair<Vec3, Vec3>> boundingBox() const;
 
@@ -158,6 +181,7 @@ private:
     std::vector<Vec3> coord_;
     std::vector<Vec3> origCoord_;
     std::vector<Vec3> vnorm_;
+    std::vector<Vec4> vtang_;
     std::vector<uint32_t> vface_;  // flat, stride = maxValence_
     std::vector<uint32_t> nfaces_;
 

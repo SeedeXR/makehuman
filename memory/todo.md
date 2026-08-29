@@ -48,8 +48,18 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [x] **Byte-level parity vs. the Python reference**: coord, fvert, fuvs, texco, vnorm,
       group — all 19,158 verts and 18,486 faces match within stated tolerances
 - [x] Benchmarks vs. the Python baseline
-- [ ] **Correct** tangents (reference is broken — `project_context.md` §8)
-- [ ] Unweld / index-buffer build (`vmap`/`tmap`/`grpix`)
+- [x] **Correct** tangents — Lengyel's method, Gram-Schmidt, handedness in `w`.
+      Reference has **three** independent bugs (`module3d.py:411` chained assignment,
+      `:429` missing `axis=`, and — unlike `calcVertexNormals` at `:366` — no `nfaces`
+      mask, so face 0 folds into every low-valence vertex). Tested by mathematical
+      property, not parity: all 19,158 base-mesh tangents finite, unit, orthogonal.
+- [x] Unweld / index-buffer build → `RenderMesh` (`vmap`/`tmap`/group ranges),
+      matching the reference's `np.unique` ordering. Base mesh: 19,158 → **21,833**
+      render verts (UV seams), 110,916 triangle indices, 139 draw ranges.
+      Quads triangulated (Metal has no `GL_QUADS`); degenerate quads emit one triangle.
+- [ ] Face visibility mask + filtered index buffer (arrives with proxy hiding, M4)
+- [ ] `RenderMesh::build` is 2.11 ms — dominated by an indirect-comparator sort.
+      Sorting packed (key,corner) pairs directly would help. Load-once path, low priority.
 - [ ] Dirty-range tracking replacing `ucoor`/`unorm`/…
 - [ ] Catmull-Clark subdivision — parity on 75,008 verts
       **Caveat:** `Mesh::maxValence()` is max incident *faces*, NOT the reference's

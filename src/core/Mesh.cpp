@@ -197,6 +197,88 @@ void Mesh::calcVertexNormals() {
     }
 }
 
+void Mesh::calcVertexTangents() {
+    vtang_.clear();
+    if (!hasUV()) return;  // module3d.py:375-376 -- no UVs, no tangent basis
+
+    const size_t nVerts = coord_.size();
+    const size_t nFaces = faceCount();
+    const size_t vpp    = vertsPerPrimitive_;
+    if (vpp < 3 || nVerts == 0) return;
+
+    if (vnorm_.size() != nVerts) calcVertexNormals();
+    if (vface_.size() != nVerts * static_cast<size_t>(maxValence_)) buildAdjacency();
+
+    // Per-face tangent/bitangent directions (Lengyel). Accumulated per vertex
+    // below, weighted implicitly by triangle area because sdir/tdir are not
+    // normalised -- the same reason face normals are left unnormalised.
+    std::vector<Vec3> sdir(nFaces, Vec3{});
+    std::vector<Vec3> tdir(nFaces, Vec3{});
+
+    for (size_t f = 0; f < nFaces; ++f) {
+        const size_t base = f * vpp;
+        const Vec3& p1    = coord_[fvert_[base + 0]];
+        const Vec3& p2    = coord_[fvert_[base + 1]];
+        const Vec3& p3    = coord_[fvert_[base + 2]];
+        const Vec2& w1    = texco_[fuvs_[base + 0]];
+        const Vec2& w2    = texco_[fuvs_[base + 1]];
+        const Vec2& w3    = texco_[fuvs_[base + 2]];
+
+        const float x1 = p2.x - p1.x, x2 = p3.x - p1.x;
+        const float y1 = p2.y - p1.y, y2 = p3.y - p1.y;
+        const float z1 = p2.z - p1.z, z2 = p3.z - p1.z;
+
+        const float s1 = w2.x - w1.x, s2 = w3.x - w1.x;
+        const float t1 = w2.y - w1.y, t2 = w3.y - w1.y;
+
+        // A degenerate UV triangle has no tangent basis. The reference nudges
+        // each zero component to 1e-7 (module3d.py:414-417), which invents a
+        // direction from nothing; skipping the face's contribution instead
+        // lets its neighbours determine the vertex tangent.
+        const float det = s1 * t2 - s2 * t1;
+        if (std::abs(det) < 1e-12F) continue;
+        const float r = 1.0F / det;
+
+        sdir[f] = Vec3{(t2 * x1 - t1 * x2) * r, (t2 * y1 - t1 * y2) * r, (t2 * z1 - t1 * z2) * r};
+        tdir[f] = Vec3{(s1 * x2 - s2 * x1) * r, (s1 * y2 - s2 * y1) * r, (s1 * z2 - s2 * z1) * r};
+    }
+
+    vtang_.assign(nVerts, Vec4{});
+    for (size_t v = 0; v < nVerts; ++v) {
+        Vec3 sAcc{};
+        Vec3 tAcc{};
+        // Masked by nfaces_: the unused tail of a vface_ row is zero-filled, so
+        // summing the whole row would fold face 0 into every low-valence vertex.
+        const uint32_t n = nfaces_[v];
+        for (uint32_t k = 0; k < n; ++k) {
+            const uint32_t f = vface_[v * maxValence_ + k];
+            sAcc += sdir[f];
+            tAcc += tdir[f];
+        }
+
+        const Vec3& nrm = vnorm_[v];
+        Vec3 t          = sAcc - nrm * dot(nrm, sAcc);  // Gram-Schmidt
+        float len       = std::sqrt(dot(t, t));
+
+        if (!(len > 1e-8F)) {
+            // No usable tangent (no UV gradient here, or it was parallel to the
+            // normal). Any unit vector orthogonal to the normal is valid; pick
+            // one deterministically so output stays reproducible.
+            const Vec3 axis = (std::abs(nrm.x) < 0.9F) ? Vec3{1, 0, 0} : Vec3{0, 1, 0};
+            t               = axis - nrm * dot(nrm, axis);
+            len             = std::sqrt(dot(t, t));
+            if (!(len > 1e-8F)) {
+                t   = Vec3{1, 0, 0};
+                len = 1.0F;
+            }
+        }
+        t *= 1.0F / len;
+
+        const float handedness = (dot(cross(nrm, sAcc), tAcc) < 0.0F) ? -1.0F : 1.0F;
+        vtang_[v]              = Vec4{t.x, t.y, t.z, handedness};
+    }
+}
+
 void Mesh::calcNormals() {
     calcFaceNormals();
     calcVertexNormals();
