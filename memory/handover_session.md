@@ -4,6 +4,61 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 023 · CPU skinning: the rig deforms the mesh
+
+**Ended:** 2026-08-29 14:29:31 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+Where the rest matrices and the weights finally meet. Both stages match the
+reference under a real pose:
+
+| | scope | worst delta |
+|---|---|---|
+| pose matrices | 163 bones, element-wise | 6.7e-6 |
+| skinned mesh | 19,158 vertices | **3.8e-6 dm** (0.38 µm) |
+
+Float32 rounding, not an algorithmic difference.
+
+### The fixture is a real pose
+
+Seven named bones rotated by set angles: **18,069 of 19,158 vertices move**, max
+displacement 3.2 dm. A test asserts those numbers directly, so if the pose ever
+became trivial, the parity test could not quietly stop testing anything. That
+guard exists because a near-identity fixture is the classic way a skinning test
+passes while proving nothing.
+
+### `matPoseVerts = matPoseGlobal · inv(matRestGlobal)`
+
+The reference wraps that inverse in a bare `except` — a degenerate bone makes
+the matrix singular. **Ours cannot be.** `buildRestMatrices` refuses a
+zero-length bone and produces an orthonormal basis, so `rigidInverse` is exact
+and total, and there is no failure path to swallow. The earlier decision to
+reject degenerate bones pays off here.
+
+### Accumulated matrix skinning
+
+Blend the **matrices**, then apply once — not transform-by-each-bone-and-blend.
+Identical for affine transforms, but one matrix-vector multiply per vertex
+instead of one per influence.
+
+### The property test that needs no fixture
+
+The identity pose must move nothing. It catches a transposed matrix or a wrong
+inverse with no captured data at all, because if `matPoseVerts` is not identity
+at rest, every vertex drifts. Passes to within 1e-4 dm.
+
+### Performance
+
+**0.11 ms** to skin the whole body at 4 influences; under 0.01 ms for the
+skinning matrices. Both comfortably per-frame.
+
+257/257 across all four builds. CI green, 7/7.
+
+**Next:** M5's remaining items — Euler conventions and `[w,x,y,z]` quaternions
+(Eigen's `.coeffs()` is `[x,y,z,w]`, the classic trap), then pose units and
+`.mhpose`.
+
+---
+
 ## 2026-08-29 — Session 022 · vertex weights
 
 **Ended:** 2026-08-29 14:11:59 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
