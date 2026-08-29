@@ -397,7 +397,17 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       Checked the test is not self-cancelling: assimp does **not** normalise
       units on FBX import, so dm and cm really do come back 16.9455 and
       169.455 — ratio exactly 10.0.
-- [ ] `docs/formats/*.md` for all seven MakeHuman formats
+- [x] `docs/formats/*.md` — **8 documents**: the seven native formats plus a
+      cross-format conventions page. Every Python citation was checked to
+      resolve (14/14) and every repo path to exist (17/17); one misquoted
+      example was corrected against the real file.
+      `.mhpose` is documented as **`bvh.md`** because there are no `.mhpose`
+      files in `data/` at all — the shipped pose data is BVH, and documenting a
+      format nothing uses would have been fiction.
+      The conventions table is the point: UV origin, up axis, matrix order and
+      units for every format we touch, with what each disagreement actually
+      cost (glTF's flipped V, USD's un-flipped V, BVH's unrecorded up axis,
+      Blender's Z-up world).
 - [ ] Round-trip + malformed-input tests for every format
 
 ## M8 — Application shell (`mh-app`, `mh-ui`)
