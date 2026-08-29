@@ -39,7 +39,8 @@ RenderMesh RenderMesh::build(const Mesh& mesh) {
     std::iota(order.begin(), order.end(), 0U);
     std::ranges::sort(order, [&](uint32_t a, uint32_t b) { return keys[a] < keys[b]; });
 
-    std::vector<uint32_t> cornerToRender(corners);
+    rm.rFaces_.assign(corners, 0U);
+    auto& cornerToRender = rm.rFaces_;
     rm.vmap_.reserve(corners);
     rm.tmap_.reserve(corners);
 
@@ -58,50 +59,7 @@ RenderMesh RenderMesh::build(const Mesh& mesh) {
     rm.vmap_.shrink_to_fit();
     rm.tmap_.shrink_to_fit();
 
-    // 3. Faces sorted by group, so every group is one contiguous draw range.
-    //    Stable, so face order within a group is preserved (module3d.py:847-849).
-    std::vector<uint32_t> faceOrder(nFaces);
-    std::iota(faceOrder.begin(), faceOrder.end(), 0U);
-    const auto groups = mesh.group();
-    std::ranges::stable_sort(faceOrder,
-                             [&](uint32_t a, uint32_t b) { return groups[a] < groups[b]; });
-
-    // 4. Fan-triangulate: (0,1,2), (0,2,3), ... for any corner count. A quad
-    //    gives the usual two triangles; a triangle stored as a degenerate quad
-    //    (corner 3 == corner 0) gives one, because the second is degenerate.
-    //    Metal and every modern API dropped GL_QUADS, which the reference still
-    //    submits (glmodule.py:66).
-    rm.index_.reserve(nFaces * (vpp - 2) * 3);
-
-    // Sized from the largest group id actually used, as the reference does
-    // (module3d.py:857). Sizing from faceGroups().size() would leave the
-    // indices of any face with a larger id unreachable from every draw range.
-    uint16_t maxGroup = 0;
-    for (const uint16_t g : groups)
-        maxGroup = std::max(maxGroup, g);
-    rm.groupRanges_.assign(static_cast<size_t>(maxGroup) + 1U, GroupRange{});
-
-    for (const uint32_t f : faceOrder) {
-        const size_t base = static_cast<size_t>(f) * vpp;
-        const uint16_t g  = groups[f];
-
-        const uint32_t before = static_cast<uint32_t>(rm.index_.size());
-
-        for (size_t c = 2; c < vpp; ++c) {
-            const uint32_t v0 = mesh.fvert()[base + 0];
-            const uint32_t v1 = mesh.fvert()[base + c - 1];
-            const uint32_t v2 = mesh.fvert()[base + c];
-            if (v0 == v1 || v1 == v2 || v0 == v2) continue;  // zero-area
-
-            rm.index_.insert(
-                rm.index_.end(),
-                {cornerToRender[base + 0], cornerToRender[base + c - 1], cornerToRender[base + c]});
-        }
-
-        const uint32_t added = static_cast<uint32_t>(rm.index_.size()) - before;
-        if (rm.groupRanges_[g].count == 0) rm.groupRanges_[g].first = before;
-        rm.groupRanges_[g].count += added;
-    }
+    rm.rebuildIndex(mesh);
 
     // 5. Gather the attribute streams.
     if (hasUV) {
@@ -146,6 +104,76 @@ void RenderMesh::refreshPositions(const Mesh& mesh) {
     } else {
         vtang_.clear();
     }
+}
+
+void RenderMesh::rebuildIndex(const Mesh& mesh) {
+    const size_t vpp    = mesh.vertsPerPrimitive();
+    const size_t nFaces = mesh.faceCount();
+    const auto groups   = mesh.group();
+
+    // Faces sorted by group, so every group is one contiguous draw range.
+    // Stable, so face order within a group is preserved (module3d.py:847-849).
+    std::vector<uint32_t> faceOrder;
+    faceOrder.reserve(nFaces);
+    for (uint32_t f = 0; f < nFaces; ++f) {
+        if (faceVisible_.empty() || faceVisible_[f] != 0U) faceOrder.push_back(f);
+    }
+    std::ranges::stable_sort(faceOrder,
+                             [&](uint32_t a, uint32_t b) { return groups[a] < groups[b]; });
+
+    // Fan-triangulate: (0,1,2), (0,2,3), ... for any corner count. A quad
+    // gives the usual two triangles; a triangle stored as a degenerate quad
+    // (corner 3 == corner 0) gives one, because the second is degenerate.
+    // Metal and every modern API dropped GL_QUADS, which the reference still
+    // submits (glmodule.py:66).
+    index_.clear();
+    // vpp is unsigned: at vpp == 1, `vpp - 2` wraps to SIZE_MAX and the reserve
+    // throws length_error. A 1-corner Mesh is constructible and setFaces()
+    // accepts it, so this is reachable from public API, not just in theory.
+    index_.reserve(vpp >= 3 ? faceOrder.size() * (vpp - 2) * 3 : 0);
+
+    // Sized from the largest group id actually used, as the reference does
+    // (module3d.py:857). Sizing from faceGroups().size() would leave the
+    // indices of any face with a larger id unreachable from every draw range.
+    //
+    // Deliberate divergence: the reference collapses this to a zero-row array
+    // when the mask hides everything (module3d.py:859-860). We keep one entry
+    // per group id, all zero, so a caller may always index by group id. An
+    // all-zero range draws nothing, so the rendered result is identical.
+    uint16_t maxGroup = 0;
+    for (const uint16_t g : groups)
+        maxGroup = std::max(maxGroup, g);
+    groupRanges_.assign(groups.empty() ? 0U : static_cast<size_t>(maxGroup) + 1U, GroupRange{});
+
+    for (const uint32_t f : faceOrder) {
+        const size_t base = static_cast<size_t>(f) * vpp;
+        const uint16_t g  = groups[f];
+
+        const uint32_t before = static_cast<uint32_t>(index_.size());
+
+        for (size_t c = 2; c < vpp; ++c) {
+            const uint32_t v0 = mesh.fvert()[base + 0];
+            const uint32_t v1 = mesh.fvert()[base + c - 1];
+            const uint32_t v2 = mesh.fvert()[base + c];
+            if (v0 == v1 || v1 == v2 || v0 == v2) continue;  // zero-area
+
+            index_.insert(index_.end(),
+                          {rFaces_[base + 0], rFaces_[base + c - 1], rFaces_[base + c]});
+        }
+
+        const uint32_t added = static_cast<uint32_t>(index_.size()) - before;
+        if (groupRanges_[g].count == 0) groupRanges_[g].first = before;
+        groupRanges_[g].count += added;
+    }
+}
+
+bool RenderMesh::setFaceMask(const Mesh& mesh, std::span<const uint8_t> faceVisible) {
+    if (!matches(mesh)) return false;
+    if (!faceVisible.empty() && faceVisible.size() != mesh.faceCount()) return false;
+
+    faceVisible_.assign(faceVisible.begin(), faceVisible.end());
+    rebuildIndex(mesh);
+    return true;
 }
 
 }  // namespace mh::core

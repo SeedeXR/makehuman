@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "makehuman/io/ObjWriter.h"
 
+#include <charconv>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -10,12 +12,26 @@
 namespace mh::io {
 namespace {
 
-/// Fixed-point formatting, avoiding locale-dependent iostream output. OBJ is an
-/// ASCII format read by other tools; a comma decimal separator would corrupt it.
+/// Fixed-point formatting, locale-independently. OBJ is an ASCII format read by
+/// other tools; a comma decimal separator corrupts it outright.
+///
+/// This used snprintf and claimed that avoided the problem. It does not:
+/// snprintf honours LC_NUMERIC exactly as iostreams do, and
+/// `std::locale::global(std::locale("de_DE.UTF-8"))` sets the C locale too, so
+/// a vertex came out as `v 0,5000 0,0000 0,0000`. std::to_chars is defined to
+/// be locale-independent.
 void appendFixed(std::string& out, float v, int decimals) {
     char buf[64];
-    const int n = std::snprintf(buf, sizeof(buf), "%.*f", decimals, static_cast<double>(v));
-    if (n > 0) out.append(buf, static_cast<size_t>(n));
+    const auto r = std::to_chars(buf, buf + sizeof(buf), v, std::chars_format::fixed, decimals);
+    if (r.ec == std::errc{}) out.append(buf, r.ptr);
+}
+
+/// The .mtl block wrote floats with `operator<<`, which has the same locale
+/// problem (`d 0,5`). Route it through the same helper.
+std::string fixed(float v, int decimals) {
+    std::string s;
+    appendFixed(s, v, decimals);
+    return s;
 }
 
 }  // namespace
@@ -187,19 +203,25 @@ std::expected<ObjWriteResult, ObjWriteError> writeObj(const std::filesystem::pat
     }
 
     if (wantMtl) {
+        // The OBJ already emitted `mtllib`, so a silently skipped .mtl leaves a
+        // dangling reference in a file we reported as written successfully.
         std::ofstream mtl(mtlPath);
-        if (mtl) {
+        if (!mtl) {
+            return std::unexpected(ObjWriteError{ObjWriteErrorKind::CannotOpen, mtlPath.string(),
+                                                 "material library requested but not writable"});
+        }
+        {
             mtl << "# MTL written by MakeHuman\n";
             mtl << "newmtl " << material->name << '\n';
-            mtl << "Ka " << material->ambient.x << ' ' << material->ambient.y << ' '
-                << material->ambient.z << '\n';
-            mtl << "Kd " << material->diffuse.x << ' ' << material->diffuse.y << ' '
-                << material->diffuse.z << '\n';
-            mtl << "Ks " << material->specular.x << ' ' << material->specular.y << ' '
-                << material->specular.z << '\n';
+            mtl << "Ka " << fixed(material->ambient.x, 6) << ' ' << fixed(material->ambient.y, 6)
+                << ' ' << fixed(material->ambient.z, 6) << '\n';
+            mtl << "Kd " << fixed(material->diffuse.x, 6) << ' ' << fixed(material->diffuse.y, 6)
+                << ' ' << fixed(material->diffuse.z, 6) << '\n';
+            mtl << "Ks " << fixed(material->specular.x, 6) << ' ' << fixed(material->specular.y, 6)
+                << ' ' << fixed(material->specular.z, 6) << '\n';
             // OBJ's Ns is a 0..1000 exponent; the material stores 0..1.
-            mtl << "Ns " << material->shininess * 1000.0F << '\n';
-            mtl << "d " << material->opacity << '\n';
+            mtl << "Ns " << fixed(material->shininess * 1000.0F, 6) << '\n';
+            mtl << "d " << fixed(material->opacity, 6) << '\n';
             mtl << "illum 2\n";
 
             const auto& diffuseTex = material->texture(core::TextureChannel::Diffuse);
@@ -212,6 +234,11 @@ std::expected<ObjWriteResult, ObjWriteError> writeObj(const std::filesystem::pat
             const auto& normalTex = material->texture(core::TextureChannel::NormalMap);
             if (normalTex.present()) {
                 mtl << "map_Bump " << normalTex.path.filename().string() << '\n';
+            }
+            mtl.close();
+            if (!mtl) {
+                return std::unexpected(
+                    ObjWriteError{ObjWriteErrorKind::CannotOpen, mtlPath.string(), "write failed"});
             }
             result.wroteMtl = true;
         }

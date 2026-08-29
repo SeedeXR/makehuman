@@ -6,79 +6,86 @@
   "results": [
     {
       "label": "load base.obj (text parse + _update_faces)",
-      "median_ms": 220.45,
-      "min_ms": 218.708,
-      "max_ms": 224.681,
+      "median_ms": 229.992,
+      "min_ms": 229.763,
+      "max_ms": 233.328,
       "runs": 3
     },
     {
       "label": "calcNormals full mesh (face+vertex)",
-      "median_ms": 5.562,
-      "min_ms": 5.281,
-      "max_ms": 5.603,
+      "median_ms": 5.553,
+      "min_ms": 5.548,
+      "max_ms": 5.573,
       "runs": 10
     },
     {
       "label": "calcFaceNormals only",
-      "median_ms": 0.731,
-      "min_ms": 0.679,
-      "max_ms": 0.762,
+      "median_ms": 0.709,
+      "min_ms": 0.706,
+      "max_ms": 0.764,
       "runs": 10
     },
     {
       "label": "calcVertexNormals only",
-      "median_ms": 1.78,
-      "min_ms": 1.712,
-      "max_ms": 1.829,
+      "median_ms": 1.75,
+      "min_ms": 1.739,
+      "max_ms": 1.758,
       "runs": 10
     },
     {
       "label": "updateIndexBuffer (unweld + group sort)",
-      "median_ms": 3.582,
-      "min_ms": 3.432,
-      "max_ms": 3.666,
+      "median_ms": 3.807,
+      "min_ms": 3.715,
+      "max_ms": 3.965,
+      "runs": 10
+    },
+    {
+      "label": "face mask -> index rebuild (hide, no unweld)",
+      "median_ms": 1.849,
+      "min_ms": 1.843,
+      "max_ms": 1.854,
       "runs": 10
     },
     {
       "label": "load 200 targets (text parse)",
-      "median_ms": 106.391,
-      "min_ms": 102.646,
-      "max_ms": 110.306,
+      "median_ms": 108.925,
+      "min_ms": 108.665,
+      "max_ms": 109.374,
       "runs": 3
     },
     {
       "label": "apply 200 targets @0.5 (full stack rebuild)",
-      "median_ms": 4.775,
-      "min_ms": 4.639,
-      "max_ms": 4.845,
+      "median_ms": 5.181,
+      "min_ms": 5.039,
+      "max_ms": 5.262,
       "runs": 10
     },
     {
       "label": "apply 1 target (slider delta)",
-      "median_ms": 0.037,
-      "min_ms": 0.033,
-      "max_ms": 0.047,
+      "median_ms": 0.041,
+      "min_ms": 0.039,
+      "max_ms": 0.045,
       "runs": 200
     },
     {
       "label": "Catmull-Clark subdivide (build)",
-      "median_ms": 202.871,
-      "min_ms": 200.528,
-      "max_ms": 205.515,
+      "median_ms": 213.445,
+      "min_ms": 212.679,
+      "max_ms": 213.669,
       "runs": 3
     },
     {
       "label": "subdiv update_coords",
-      "median_ms": 7.757,
-      "min_ms": 7.51,
-      "max_ms": 7.885,
+      "median_ms": 7.837,
+      "min_ms": 7.809,
+      "max_ms": 7.882,
       "runs": 10
     },
     {
       "label": "subdiv calcNormals",
-      "median_ms": 21.267,
-      "min_ms": 21.2,
-      "max_ms": 21.374,
+      "median_ms": 21.835,
+      "min_ms": 21.684,
+      "max_ms": 22.156,
       "runs": 10
     }
   ],

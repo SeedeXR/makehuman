@@ -4,6 +4,7 @@
 #include "makehuman/core/RenderMesh.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -49,10 +50,20 @@ void padTo4(std::vector<uint8_t>& b, uint8_t fill = 0) {
         b.push_back(fill);
 }
 
+/// JSON numbers, locale-independently.
+///
+/// snprintf was used here and honours LC_NUMERIC just as iostreams do: under
+/// de_DE.UTF-8 it writes "0,5", which turns `"max":[0.2,0.3]` into
+/// `"max":[0,2,0,3]` -- still *valid* JSON, but a three-element array becomes
+/// five and the accessor bounds are silently garbage. std::to_chars is defined
+/// to be locale-independent.
+///
+/// Non-finite values are rejected before they reach here (writeGlb validates),
+/// because "nan"/"inf" are not JSON at all and would make the file unparseable.
 std::string fmtFloat(float v) {
     char buf[32];
-    const int n = std::snprintf(buf, sizeof(buf), "%.7g", static_cast<double>(v));
-    return (n > 0) ? std::string(buf, static_cast<size_t>(n)) : std::string("0");
+    const auto r = std::to_chars(buf, buf + sizeof(buf), v, std::chars_format::general, 7);
+    return (r.ec == std::errc{}) ? std::string(buf, r.ptr) : std::string("0");
 }
 
 /// Minimal JSON string escaping -- enough for names, which is all we emit.
@@ -87,6 +98,7 @@ std::string GltfWriteError::message() const {
         case GltfWriteErrorKind::CannotOpen: k = "cannot open for writing"; break;
         case GltfWriteErrorKind::EmptyMesh: k = "mesh has no geometry"; break;
         case GltfWriteErrorKind::TooManyVertices: k = "too many vertices"; break;
+        case GltfWriteErrorKind::NonFiniteValue: k = "non-finite value"; break;
     }
     std::string m = file + ": " + k;
     if (!detail.empty()) m += " (" + detail + ")";
@@ -110,6 +122,28 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
     if (rm.vertexCount() > std::numeric_limits<uint32_t>::max()) {
         return std::unexpected(
             GltfWriteError{GltfWriteErrorKind::TooManyVertices, path.string(), {}});
+    }
+
+    // NaN and infinity have no JSON representation, so fmtFloat would emit a
+    // bare `nan`/`inf` token and the whole file would fail to parse -- while
+    // writeGlb still reported success. Reject at the boundary instead. Note
+    // std::clamp does not filter NaN (both `nan < lo` and `hi < nan` are
+    // false), so clamping the material later is not a substitute.
+    for (const auto& c : rm.coord()) {
+        if (!std::isfinite(c.x) || !std::isfinite(c.y) || !std::isfinite(c.z)) {
+            return std::unexpected(GltfWriteError{GltfWriteErrorKind::NonFiniteValue, path.string(),
+                                                  "vertex position"});
+        }
+    }
+    if (material != nullptr) {
+        const float mv[] = {material->diffuse.x, material->diffuse.y, material->diffuse.z,
+                            material->opacity, material->shininess};
+        for (const float v : mv) {
+            if (!std::isfinite(v)) {
+                return std::unexpected(GltfWriteError{GltfWriteErrorKind::NonFiniteValue,
+                                                      path.string(), "material value"});
+            }
+        }
     }
 
     const float scale = unitScale(options.unit) * options.scale;
@@ -270,6 +304,17 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
     std::vector<uint8_t> jsonChunk(j.begin(), j.end());
     padTo4(jsonChunk, 0x20);  // JSON chunk pads with spaces
     padTo4(bin, 0x00);        // BIN chunk pads with zeros
+
+    // Every GLB length field is uint32. The TooManyVertices guard above bounds
+    // the vertex COUNT, not the byte size, so a large enough buffer would wrap
+    // `total` and write a truncated chunk header into a file we called valid.
+    constexpr size_t kGlbHeader = 12, kChunkHeader = 8;
+    const size_t totalBytes =
+        kGlbHeader + kChunkHeader + jsonChunk.size() + kChunkHeader + bin.size();
+    if (totalBytes > std::numeric_limits<uint32_t>::max()) {
+        return std::unexpected(GltfWriteError{GltfWriteErrorKind::TooManyVertices, path.string(),
+                                              "GLB exceeds the 4 GiB container limit"});
+    }
 
     const uint32_t total =
         12 + 8 + static_cast<uint32_t>(jsonChunk.size()) + 8 + static_cast<uint32_t>(bin.size());

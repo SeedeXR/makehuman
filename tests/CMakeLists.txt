@@ -20,10 +20,12 @@ add_executable(mh_tests
     golden/test_character_parity.cpp
     golden/test_mhm_parity.cpp
     golden/test_proxy_parity.cpp
+    golden/test_face_mask_parity.cpp
     golden/test_obj_writer_parity.cpp
     golden/test_gltf_writer.cpp
     golden/test_scene_io.cpp
-    regression/test_review_findings.cpp)
+    regression/test_review_findings.cpp
+    regression/test_io_review_findings.cpp)
 
 target_link_libraries(mh_tests
     # mh::io PUBLIC-links mh::core, so listing both makes the linker see

@@ -33,7 +33,15 @@ struct GltfWriteOptions {
     std::string materialName{"Skin"};
 };
 
-enum class GltfWriteErrorKind { CannotOpen, EmptyMesh, TooManyVertices };
+enum class GltfWriteErrorKind {
+    CannotOpen,
+    EmptyMesh,
+    TooManyVertices,
+    /// A coordinate or material value was NaN or infinite. JSON has no literal
+    /// for either, so writing one produces a file no parser will read; we
+    /// refuse rather than emit a plausible-looking corrupt asset.
+    NonFiniteValue,
+};
 
 struct GltfWriteError {
     GltfWriteErrorKind kind{};

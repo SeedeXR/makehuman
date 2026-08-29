@@ -12,6 +12,21 @@
 namespace mh::core {
 namespace {
 
+/// Upper bound on a `delete_verts` index.
+///
+/// These indices come straight from the file and are used to *size* a vector.
+/// The reference indexes a fixed-size array allocated to the body's vertex
+/// count (proxy.py:115), so an out-of-range index simply raises there; growing
+/// on demand is our divergence, and it turns a two-line file into an unbounded
+/// allocation -- or worse: `resize(v + 1)` in uint32 wraps to 0 at UINT32_MAX
+/// and the following write lands out of bounds (confirmed under ASan: "BUS ...
+/// WRITE memory access" at loadProxy). Loading an asset is a trust boundary,
+/// so the index is bounded before it is used for anything.
+///
+/// The base mesh has 19,158 vertices; 2^24 leaves four orders of magnitude of
+/// headroom and caps the allocation at 16 MB.
+constexpr uint32_t kMaxDeleteVertIndex = 1U << 24;
+
 std::vector<std::string> splitWs(const std::string& line) {
     std::vector<std::string> out;
     std::istringstream ss(line);
@@ -116,6 +131,14 @@ std::expected<Proxy, ProxyError> loadProxy(const std::filesystem::path& path) {
     Block block    = Block::None;
     bool sawZDepth = false;
     bool anyTriple = false;
+
+    // `-` ranges carry across lines in the reference: `v0` is a function-level
+    // local there (proxy.py:516-529), so `10` on one line and `- 14` on the
+    // next deletes 10..14. Keeping this state per-line, as it was, deleted only
+    // two vertices instead of five.
+    bool deleteRange        = false;
+    bool sawDeleteVert      = false;
+    uint32_t lastDeleteVert = 0;
 
     std::string line;
     uint32_t lineNo = 0;
@@ -248,32 +271,45 @@ std::expected<Proxy, ProxyError> loadProxy(const std::filesystem::path& path) {
                 p.offsets.push_back(d);
                 p.maxRefIndex_ = std::max({p.maxRefIndex_, v[0], v[1], v[2]});
                 if (w[1] != 0.0F || w[2] != 0.0F) anyTriple = true;
+            } else {
+                // 2..5 tokens used to fall through silently. Proxy vertex n
+                // binds to vertex n of the sibling .obj, so dropping a line
+                // shifts every vertex after it onto the wrong reference
+                // triangle -- plausible-looking, wrong geometry, no
+                // diagnostic. The reference calls fromTriple and raises
+                // IndexError.
+                return std::unexpected(ProxyError{
+                    ProxyErrorKind::MalformedLine, path.string(), lineNo,
+                    "expected 1 or 6+ fields in a verts line, got " + std::to_string(tok.size())});
             }
             continue;
         }
 
         if (block == Block::DeleteVerts) {
             // Integers, with '-' marking an inclusive range (proxy.py:516-529).
-            std::vector<uint32_t> nums;
-            bool range = false;
             for (const std::string& t : tok) {
                 if (t == "-") {
-                    range = true;
+                    deleteRange = true;
                     continue;
                 }
                 uint32_t v{};
                 if (!parseUint(t, v)) continue;
-                if (range && !nums.empty()) {
-                    for (uint32_t i = nums.back() + 1; i <= v; ++i)
-                        nums.push_back(i);
-                    range = false;
-                } else {
-                    nums.push_back(v);
+                if (v > kMaxDeleteVertIndex) {
+                    return std::unexpected(ProxyError{
+                        ProxyErrorKind::IndexOutOfRange, path.string(), lineNo,
+                        "delete_verts index " + std::to_string(v) + " exceeds the maximum of " +
+                            std::to_string(kMaxDeleteVertIndex)});
                 }
-            }
-            for (const uint32_t v : nums) {
-                if (v >= p.deleteVerts.size()) p.deleteVerts.resize(v + 1, 0);
-                p.deleteVerts[v] = 1;
+
+                const uint32_t from = (deleteRange && sawDeleteVert) ? lastDeleteVert : v;
+                deleteRange         = false;
+
+                if (v >= p.deleteVerts.size()) p.deleteVerts.resize(size_t{v} + 1U, 0);
+                for (uint32_t i = from; i <= v; ++i)
+                    p.deleteVerts[i] = 1;
+
+                lastDeleteVert = v;
+                sawDeleteVert  = true;
             }
             continue;
         }
@@ -282,7 +318,10 @@ std::expected<Proxy, ProxyError> loadProxy(const std::filesystem::path& path) {
         // reference's warn-and-continue (proxy.py:449-499).
     }
 
-    if (!sawZDepth || p.zDepth < 0) p.zDepth = 50;  // proxy.py:535-537
+    // The oracle tests `z_depth == -1` exactly, not `< 0`: `z_depth -5` stays
+    // -5 there and became 50 here (proxy.py:535-537). -1 is also the sentinel
+    // for "absent", which is why an unseen key takes the same branch.
+    if (!sawZDepth || p.zDepth == -1) p.zDepth = 50;
     p.exactFitOnly = !anyTriple;
     return p;
 }
@@ -306,6 +345,23 @@ bool fitProxy(const Proxy& proxy, std::span<const Vec3> humanCoords, std::vector
         out[i] = p;
     }
     return true;
+}
+
+std::vector<uint8_t> visibleVertexMask(std::span<const Proxy* const> proxies,
+                                       size_t bodyVertexCount) {
+    std::vector<uint8_t> visible(bodyVertexCount, 1U);
+    for (const Proxy* pxy : proxies) {
+        if (pxy == nullptr) continue;
+        // A proxy authored against a different base mesh can declare more
+        // vertices than this body has; the reference sizes deleteVerts to the
+        // human it was loaded against (proxy.py:115) and would read past the
+        // end here. Clamp instead.
+        const size_t n = std::min(pxy->deleteVerts.size(), bodyVertexCount);
+        for (size_t v = 0; v < n; ++v) {
+            if (pxy->deleteVerts[v] != 0U) visible[v] = 0U;
+        }
+    }
+    return visible;
 }
 
 }  // namespace mh::core

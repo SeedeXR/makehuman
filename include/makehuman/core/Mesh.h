@@ -18,6 +18,7 @@ enum class MeshError {
     UvIndexOutOfRange,
     FaceArraySizeMismatch,  ///< faceVerts not a whole number of primitives
     UvArraySizeMismatch,    ///< faceUVs present but not parallel to faceVerts
+    MaskSizeMismatch,       ///< a vertex mask not parallel to the vertex array
 };
 
 /// Indexed mesh with a uniform primitive size.
@@ -100,6 +101,28 @@ public:
     [[nodiscard]] std::span<const uint16_t> group() const noexcept { return group_; }
 
     [[nodiscard]] const std::vector<FaceGroup>& faceGroups() const noexcept { return faceGroups_; }
+
+    /// Face visibility derived from vertex visibility, 1 = visible.
+    ///
+    /// **A face is visible if ANY of its corners is visible**, and is hidden
+    /// only once every corner is hidden. That is what the reference does:
+    /// `changeVertexMask` (guicommon.py:532-557) builds the face mask through
+    /// `getFaceMaskForVertices` (module3d.py:1149-1159), which marks every face
+    /// incident to a *visible* vertex.
+    ///
+    /// The inverted reading -- hide a face as soon as one corner is hidden --
+    /// is the natural-seeming one and is wrong. It is pinned by the `stride`
+    /// fixture, where hiding every 7th vertex (2,737 of 19,158) hides **zero**
+    /// of the 18,486 faces; the inverted rule would delete most of the mesh.
+    ///
+    /// The reference walks the `vface` adjacency table; this scans the corner
+    /// array instead. Identical result -- `f` is in `vface[v]` exactly when `v`
+    /// is a corner of `f` -- in O(corners) rather than O(verts x MAX_FACES),
+    /// and with no dependence on adjacency being built.
+    ///
+    /// @param vertexVisible  one byte per vertex, nonzero = visible.
+    [[nodiscard]] std::expected<std::vector<uint8_t>, MeshError> faceMaskForVisibleVertices(
+        std::span<const uint8_t> vertexVisible) const;
 
     /// Mutable positions, for morph-target application. Callers must call
     /// calcNormals() afterwards; this deliberately does not do it implicitly.

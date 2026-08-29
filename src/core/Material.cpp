@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <cmath>
 #include <fstream>
 #include <optional>
 #include <sstream>
@@ -33,8 +34,14 @@ bool readBool(const std::string& s) {
 }
 
 bool parseFloat(const std::string& s, float& out) {
-    const auto r = std::from_chars(s.data(), s.data() + s.size(), out);
-    return r.ec == std::errc{} && r.ptr == s.data() + s.size();
+    // from_chars rejects a leading '+' where the oracle's float() accepts it,
+    // so `opacity +0.5` was a hard load failure on a legal asset. It also
+    // accepts "nan"/"inf", which float() accepts too but which then leak into
+    // export as unparseable JSON -- refuse them here, at the boundary.
+    std::string_view v{s};
+    if (v.starts_with('+')) v.remove_prefix(1);
+    const auto r = std::from_chars(v.data(), v.data() + v.size(), out);
+    return r.ec == std::errc{} && r.ptr == v.data() + v.size() && std::isfinite(out);
 }
 
 float clamp01(float v) {
@@ -167,6 +174,19 @@ std::expected<Material, MaterialError> loadMaterial(const std::filesystem::path&
         dst = std::clamp(v, lo, hi);
     };
 
+    // Colours went through `(void)readColor(...)`, so `diffuseColor 0.5 0.5`
+    // and `diffuseColor 0.5 zzz 0.5` both loaded as pure white with no
+    // diagnostic. The oracle raises ValueError on both
+    // (`[float(w) for w in words[1:4]]`), and the policy stated above says a
+    // known key with an unparseable value is an error. Make it one.
+    const auto color = [&](const std::vector<std::string>& t, Vec3& dst) {
+        if (readColor(t, dst)) return;
+        if (!failure) {
+            failure = MaterialError{MaterialErrorKind::MalformedLine, path.string(), lineNo,
+                                    "expected three numbers for '" + t[0] + "'"};
+        }
+    };
+
     while (std::getline(in, line)) {
         ++lineNo;
         if (!line.empty() && line.back() == '\r') line.pop_back();
@@ -194,23 +214,25 @@ std::expected<Material, MaterialError> loadMaterial(const std::filesystem::path&
                 m.description += tok[i];
             }
         } else if (key == "ambientcolor") {
-            (void)readColor(tok, m.ambient);
+            color(tok, m.ambient);
         } else if (key == "diffusecolor") {
-            (void)readColor(tok, m.diffuse);
+            color(tok, m.diffuse);
         } else if (key == "specularcolor") {
-            (void)readColor(tok, m.specular);
+            color(tok, m.specular);
         } else if (key == "emissivecolor") {
-            (void)readColor(tok, m.emissive);
+            color(tok, m.emissive);
         } else if (key == "viewportcolor") {
-            m.hasViewPortColor = readColor(tok, m.viewPortColor);
+            color(tok, m.viewPortColor);
+            m.hasViewPortColor = true;  // material.py:389, set unconditionally
         } else if (key == "viewportalpha" && need(1)) {
             num(tok[1], m.viewPortAlpha, 0.0F, 1.0F);
+            m.hasViewPortColor = true;  // material.py:392 -- alpha sets it too
         } else if (key == "shininess" && need(1)) {
             num(tok[1], m.shininess, 0.0F, 1.0F);
         } else if (key == "opacity" && need(1)) {
             num(tok[1], m.opacity, 0.0F, 1.0F);
         } else if (key == "translucency" && need(1)) {
-            num(tok[1], m.translucency, -1e30F, 1e30F);
+            num(tok[1], m.translucency, 0.0F, 1.0F);
         } else if (key == "shadeless" && need(1)) {
             m.shadeless = readBool(tok[1]);
         } else if (key == "wireframe" && need(1)) {

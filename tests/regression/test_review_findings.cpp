@@ -439,3 +439,18 @@ TEST_CASE("tmap is empty when the mesh has no UVs", "[regression][core][render]"
     CHECK(rm.texco().empty());
     CHECK(rm.tmap().empty());  // documented as an index into texco; must not lie
 }
+
+// Found by self-review of the face-hiding change, then confirmed by running it:
+// a Mesh with vertsPerPrimitive == 1 is constructible, setFaces() accepts it,
+// and RenderMesh::build then threw std::length_error -- `vpp - 2` is size_t
+// arithmetic, so it wrapped to SIZE_MAX and reserve() rejected it. Reachable
+// from public API. Pre-existed the mask work; fixed while it was in hand.
+TEST_CASE("a 1-corner mesh does not underflow the index reserve", "[regression][rendermesh]") {
+    Mesh m("degenerate", 1);
+    REQUIRE(m.setCoords({{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}).has_value());
+    REQUIRE(m.setFaces({0, 1, 2}, {}, {}).has_value());
+    REQUIRE(m.faceCount() == 3);
+
+    const auto rm = RenderMesh::build(m);  // threw std::length_error before
+    CHECK(rm.indexCount() == 0);           // nothing to fan-triangulate
+}

@@ -375,6 +375,87 @@ def capture_character() -> None:
 
 
 
+def capture_mask() -> None:
+    """Face hiding: vertex mask -> face mask -> filtered index buffer.
+
+    No shipped proxy declares `delete_verts` (verified: 0 hits across all four
+    shipped .mhclo/.proxy files), so the mask cannot be sourced from an asset.
+    These masks are synthetic and deterministic, chosen to pin the one rule
+    that is easy to get backwards.
+
+    `changeVertexMask` (guicommon.py:532-557) derives the face mask via
+    `getFaceMaskForVertices` (module3d.py:1149-1159), which marks every face
+    incident to a *visible* vertex. So a face survives if ANY of its corners is
+    still visible, and dies only when ALL of them are hidden -- the docstring's
+    "a face is masked if all of the vertices that define it are masked".
+
+    `stride` exists to make that falsifiable: hiding every 7th vertex leaves
+    almost no face with all four corners hidden, so the "any" rule keeps nearly
+    every face while an "all" rule would delete most of the mesh. The two
+    readings cannot both pass.
+    """
+    import files3d
+
+    print("capturing: mask")
+    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+    nverts = len(mesh.coord)
+
+    # Visible = True, matching the reference's convention (guicommon.py:536-538).
+    ys = mesh.coord[:, 1]
+    masks = {
+        # Nothing hidden: the filtered buffer must equal the unfiltered one.
+        "none": np.ones(nverts, dtype=bool),
+        # A contiguous region with a real boundary -- the interesting edge is
+        # the ring of faces straddling it.
+        "upper": ys <= float(np.median(ys)),
+        # Scattered single vertices: discriminates "any" from "all" (see above).
+        "stride": (np.arange(nverts) % 7) != 0,
+        # Degenerate: everything hidden, so the index buffer must go empty.
+        "all": np.zeros(nverts, dtype=bool),
+    }
+
+    out = GOLDEN / "mask"
+    out.mkdir(parents=True, exist_ok=True)
+    entries: dict = {}
+    described: list = []
+
+    for name, vertsMask in masks.items():
+        verts = np.argwhere(vertsMask)[..., 0]
+        face_mask = mesh.getFaceMaskForVertices(verts)
+
+        mesh.changeFaceMask(face_mask)
+        mesh.updateIndexBufferFaces()
+
+        entries[f"{name}_vertmask"] = _write_blob(
+            out / f"{name}_vertmask.bin", vertsMask.astype(np.uint8), "u1")
+        entries[f"{name}_facemask"] = _write_blob(
+            out / f"{name}_facemask.bin", face_mask.astype(np.uint8), "u1")
+        entries[f"{name}_index"] = _write_blob(
+            out / f"{name}_index.bin", mesh.index, "u4")
+        entries[f"{name}_grpix"] = _write_blob(
+            out / f"{name}_grpix.bin", mesh.grpix, "u4")
+
+        described.append({
+            "name": name,
+            "visible_verts": int(np.count_nonzero(vertsMask)),
+            "hidden_verts": int(nverts - np.count_nonzero(vertsMask)),
+            "visible_faces": int(np.count_nonzero(face_mask)),
+            "hidden_faces": int(len(face_mask) - np.count_nonzero(face_mask)),
+            "index_count": int(mesh.index.size),
+            "group_range_count": int(mesh.grpix.shape[0]),
+        })
+
+    _finish("mask", entries, {
+        "source": "data/3dobjs/base.obj",
+        "vertex_count": int(nverts),
+        "face_count": int(len(mesh.fvert)),
+        "note": "index is QUAD corners here (reference submits GL_QUADS); the "
+                "C++ side triangulates, so tests compare face-mask parity "
+                "exactly and index counts through the quad->tri relation.",
+        "masks": described,
+    })
+
+
 def capture_proxy() -> None:
     """Proxy fitting: the barycentric result for each shipped proxy, on two bodies."""
     import files3d
@@ -462,6 +543,7 @@ SUBSYSTEMS = {
     "skeleton": capture_skeleton,
     "character": capture_character,
     "proxy": capture_proxy,
+    "mask": capture_mask,
 }
 
 

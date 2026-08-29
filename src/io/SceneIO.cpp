@@ -179,7 +179,10 @@ std::expected<SceneExportResult, SceneIoError> exportScene(const std::filesystem
     result.vertices  = rm.vertexCount();
     result.triangles = nTris;
     std::error_code ec;
-    result.fileBytes = std::filesystem::file_size(path, ec);
+    // On failure file_size returns static_cast<uintmax_t>(-1); reporting
+    // SIZE_MAX bytes written is worse than reporting nothing.
+    const auto sz    = std::filesystem::file_size(path, ec);
+    result.fileBytes = ec ? 0U : static_cast<size_t>(sz);
     return result;
 }
 
@@ -220,9 +223,17 @@ std::expected<ImportedMesh, SceneIoError> importMesh(const std::filesystem::path
     out.meshCount = scene->mNumMeshes;
     out.mesh      = core::Mesh(path.stem().string(), 3);  // triangulated on import
 
+    // Import is a trust boundary. NaN and infinity survive assimp's validator
+    // (a NaN ASCII STL imports "successfully"), and once inside a Mesh they
+    // poison bounding boxes, normals and every exporter downstream.
     std::vector<core::Vec3> coords(am->mNumVertices);
     for (unsigned i = 0; i < am->mNumVertices; ++i) {
-        coords[i] = core::Vec3{am->mVertices[i].x, am->mVertices[i].y, am->mVertices[i].z};
+        const auto& v = am->mVertices[i];
+        if (!std::isfinite(v.x) || !std::isfinite(v.y) || !std::isfinite(v.z)) {
+            return std::unexpected(SceneIoError{SceneIoErrorKind::ImportFailed, path.string(),
+                                                "file contains a non-finite vertex coordinate"});
+        }
+        coords[i] = core::Vec3{v.x, v.y, v.z};
     }
     if (!out.mesh.setCoords(std::move(coords))) {
         return std::unexpected(

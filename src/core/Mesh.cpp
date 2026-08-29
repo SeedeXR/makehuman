@@ -330,6 +330,26 @@ std::optional<std::pair<Vec3, Vec3>> Mesh::boundingBox() const {
     return std::make_pair(lo, hi);
 }
 
+std::expected<std::vector<uint8_t>, MeshError> Mesh::faceMaskForVisibleVertices(
+    std::span<const uint8_t> vertexVisible) const {
+    if (vertexVisible.size() != coord_.size()) return std::unexpected(MeshError::MaskSizeMismatch);
+
+    const size_t vpp    = vertsPerPrimitive_;
+    const size_t nFaces = faceCount();
+    std::vector<uint8_t> faceVisible(nFaces, 0U);
+
+    for (size_t f = 0; f < nFaces; ++f) {
+        const size_t base = f * vpp;
+        for (size_t c = 0; c < vpp; ++c) {
+            if (vertexVisible[fvert_[base + c]] != 0U) {
+                faceVisible[f] = 1U;
+                break;  // one visible corner is enough
+            }
+        }
+    }
+    return faceVisible;
+}
+
 float Mesh::heightCm() const {
     const auto bb = boundingBox();
     if (!bb) return 0.0F;

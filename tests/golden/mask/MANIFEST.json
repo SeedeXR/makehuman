@@ -1,0 +1,204 @@
+{
+  "subsystem": "mask",
+  "captured_at": "2026-08-29T07:53:55.592602+00:00",
+  "reference_commit": "869497b28ca9799fd82b2daddb1a25d32db05261",
+  "python": "3.14.6",
+  "numpy": "2.5.2",
+  "platform": "darwin",
+  "entries": {
+    "none_vertmask": {
+      "file": "none_vertmask.bin",
+      "dtype": "u1",
+      "shape": [
+        19158
+      ],
+      "count": 19158,
+      "sha256": "a0a43b664dc2c272426634fdc24e033654e66e400170504b9c1ed31d592ad93e"
+    },
+    "none_facemask": {
+      "file": "none_facemask.bin",
+      "dtype": "u1",
+      "shape": [
+        18486
+      ],
+      "count": 18486,
+      "sha256": "1f14f725f18503918bce245998bf7aa40bd6ae46603a5434ae2d32f6d5c087ee"
+    },
+    "none_index": {
+      "file": "none_index.bin",
+      "dtype": "u4",
+      "shape": [
+        18486,
+        4
+      ],
+      "count": 73944,
+      "sha256": "1b86445fbda42f968f79500470b3e607b7b23c01f2966f79e19a487f75668f10"
+    },
+    "none_grpix": {
+      "file": "none_grpix.bin",
+      "dtype": "u4",
+      "shape": [
+        139,
+        2
+      ],
+      "count": 278,
+      "sha256": "9f4840d7ac9b6a070022381fd7b4a183bceadeb3d02b86d5e39d9b36aeff1a29"
+    },
+    "upper_vertmask": {
+      "file": "upper_vertmask.bin",
+      "dtype": "u1",
+      "shape": [
+        19158
+      ],
+      "count": 19158,
+      "sha256": "e77b086bc6f1a427c26ab656fa425bf6e59b76e49ed22289439b8ba420f339e6"
+    },
+    "upper_facemask": {
+      "file": "upper_facemask.bin",
+      "dtype": "u1",
+      "shape": [
+        18486
+      ],
+      "count": 18486,
+      "sha256": "b7e4028c718d51146487147c0e03293ae3978a41158adedc1ba3a65bf0857aa2"
+    },
+    "upper_index": {
+      "file": "upper_index.bin",
+      "dtype": "u4",
+      "shape": [
+        9456,
+        4
+      ],
+      "count": 37824,
+      "sha256": "98c190dd263cfd55df082fbe4dd44dec4bc14d37de5edfcfe5db34f16fea27a7"
+    },
+    "upper_grpix": {
+      "file": "upper_grpix.bin",
+      "dtype": "u4",
+      "shape": [
+        139,
+        2
+      ],
+      "count": 278,
+      "sha256": "95d47313f0a4d7803bb2c523bb82ac6d1f271b2ec0e1e58eb928109ef7bfb17f"
+    },
+    "stride_vertmask": {
+      "file": "stride_vertmask.bin",
+      "dtype": "u1",
+      "shape": [
+        19158
+      ],
+      "count": 19158,
+      "sha256": "c8c0daf8a70b5862951a4a822158a0fd84c4481dc25ec1bf416613e42e8d565d"
+    },
+    "stride_facemask": {
+      "file": "stride_facemask.bin",
+      "dtype": "u1",
+      "shape": [
+        18486
+      ],
+      "count": 18486,
+      "sha256": "1f14f725f18503918bce245998bf7aa40bd6ae46603a5434ae2d32f6d5c087ee"
+    },
+    "stride_index": {
+      "file": "stride_index.bin",
+      "dtype": "u4",
+      "shape": [
+        18486,
+        4
+      ],
+      "count": 73944,
+      "sha256": "1b86445fbda42f968f79500470b3e607b7b23c01f2966f79e19a487f75668f10"
+    },
+    "stride_grpix": {
+      "file": "stride_grpix.bin",
+      "dtype": "u4",
+      "shape": [
+        139,
+        2
+      ],
+      "count": 278,
+      "sha256": "9f4840d7ac9b6a070022381fd7b4a183bceadeb3d02b86d5e39d9b36aeff1a29"
+    },
+    "all_vertmask": {
+      "file": "all_vertmask.bin",
+      "dtype": "u1",
+      "shape": [
+        19158
+      ],
+      "count": 19158,
+      "sha256": "4f9ee62b2860f4954b5280d4296e6697f97b36ac56c2770fb4703a1fedf61fa4"
+    },
+    "all_facemask": {
+      "file": "all_facemask.bin",
+      "dtype": "u1",
+      "shape": [
+        18486
+      ],
+      "count": 18486,
+      "sha256": "42da10f7fa1704f3760f500bb9f1fea40e3836a3d89251c20879a66236721618"
+    },
+    "all_index": {
+      "file": "all_index.bin",
+      "dtype": "u4",
+      "shape": [
+        0,
+        4
+      ],
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "all_grpix": {
+      "file": "all_grpix.bin",
+      "dtype": "u4",
+      "shape": [
+        0,
+        2
+      ],
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "source": "data/3dobjs/base.obj",
+  "vertex_count": 19158,
+  "face_count": 18486,
+  "note": "index is QUAD corners here (reference submits GL_QUADS); the C++ side triangulates, so tests compare face-mask parity exactly and index counts through the quad->tri relation.",
+  "masks": [
+    {
+      "name": "none",
+      "visible_verts": 19158,
+      "hidden_verts": 0,
+      "visible_faces": 18486,
+      "hidden_faces": 0,
+      "index_count": 73944,
+      "group_range_count": 139
+    },
+    {
+      "name": "upper",
+      "visible_verts": 9580,
+      "hidden_verts": 9578,
+      "visible_faces": 9456,
+      "hidden_faces": 9030,
+      "index_count": 37824,
+      "group_range_count": 139
+    },
+    {
+      "name": "stride",
+      "visible_verts": 16421,
+      "hidden_verts": 2737,
+      "visible_faces": 18486,
+      "hidden_faces": 0,
+      "index_count": 73944,
+      "group_range_count": 139
+    },
+    {
+      "name": "all",
+      "visible_verts": 0,
+      "hidden_verts": 19158,
+      "visible_faces": 0,
+      "hidden_faces": 18486,
+      "index_count": 0,
+      "group_range_count": 0
+    }
+  ]
+}

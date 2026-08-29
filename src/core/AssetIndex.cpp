@@ -79,23 +79,48 @@ AssetIndex AssetIndex::build(std::span<const std::filesystem::path> searchPaths)
         std::error_code ec;
         if (!std::filesystem::exists(root, ec)) continue;
 
-        for (const auto& entry : std::filesystem::recursive_directory_iterator(root, ec)) {
+        // The error_code overload only covers *construction*. The range-for
+        // form then calls operator++, which throws filesystem_error -- so a
+        // single unreadable subdirectory anywhere under a search path used to
+        // terminate the process at startup:
+        //   "terminating due to uncaught exception ... attempting recursion
+        //    into ".../secret": Permission denied"
+        // skip_permission_denied handles the common case; the explicit
+        // increment(ec) makes every other error stop this root's scan instead
+        // of unwinding out of the app.
+        ec.clear();
+        std::filesystem::recursive_directory_iterator it(
+            root, std::filesystem::directory_options::skip_permission_denied, ec);
+        if (ec) continue;
+
+        for (const std::filesystem::recursive_directory_iterator last; it != last;
+             it.increment(ec)) {
             if (ec) break;
-            if (!entry.is_regular_file()) continue;
+
+            const auto& entry = *it;
+            if (!entry.is_regular_file(ec) || ec) {
+                ec.clear();
+                continue;
+            }
             const auto ext = entry.path().extension();
             if (ext != ".mhclo" && ext != ".proxy" && ext != ".mhmat") continue;
 
             AssetEntry a = peekAsset(entry.path());
 
             if (!a.uuid.empty()) {
-                if (const auto it = idx.byUuid_.find(a.uuid); it != idx.byUuid_.end()) {
-                    // First wins. The reference lets the last writer win, which
-                    // makes resolution depend on directory iteration order;
-                    // recording the collision instead keeps it visible.
+                if (idx.byUuid_.contains(a.uuid)) {
+                    // First wins for *resolution*. The reference lets the last
+                    // writer win, which makes resolution depend on directory
+                    // iteration order; recording the collision keeps it visible.
+                    //
+                    // The asset itself is still indexed. Skipping it entirely
+                    // (as this did) also removed it from entries(), findByTag()
+                    // and allTags(), so a copy-pasted UUID silently deleted an
+                    // asset from the browser with nothing to explain it.
                     idx.duplicateUuids_.push_back(a.uuid);
-                    continue;
+                } else {
+                    idx.byUuid_.emplace(a.uuid, idx.entries_.size());
                 }
-                idx.byUuid_.emplace(a.uuid, idx.entries_.size());
             }
             idx.entries_.push_back(std::move(a));
         }

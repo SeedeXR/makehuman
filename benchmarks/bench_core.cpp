@@ -79,6 +79,21 @@ int main() {
     results.push_back({"RenderMesh::build (unweld + triangulate + sort)",
                        medianMs([&] { (void)mh::core::RenderMesh::build(*mesh); }, 10), 3.43});
 
+    // Face hiding. The point of splitting build() from setFaceMask() is that
+    // hiding geometry must not re-unweld: compare this against the line above.
+    {
+        auto rm = mh::core::RenderMesh::build(*mesh);
+        std::vector<uint8_t> visible(mesh->vertexCount(), 1U);
+        for (size_t v = 0; v < visible.size(); v += 7)
+            visible[v] = 0U;
+        const auto fm = mesh->faceMaskForVisibleVertices(visible);
+        results.push_back({"RenderMesh::setFaceMask (hide, no unweld)",
+                           medianMs([&] { (void)rm.setFaceMask(*mesh, *fm); }, 20), 1.85});
+        results.push_back({"Mesh::faceMaskForVisibleVertices",
+                           medianMs([&] { (void)mesh->faceMaskForVisibleVertices(visible); }, 50),
+                           0.0});
+    }
+
     // Catmull-Clark: reference build 202.30 ms, update_coords 7.64 ms,
     // calcNormals on the subdivided mesh 20.57 ms.
     results.push_back({"Subdivider::build (Catmull-Clark topology+geometry)",

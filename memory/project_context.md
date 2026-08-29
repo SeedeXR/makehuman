@@ -210,3 +210,16 @@ C++ implementation is expected to be correct where the reference is wrong.
 | `mhp` pose loader | `legacy/python/shared/animation.py:1254,1292-1293` | `valid_file` never set True; always logs an error |
 | `AnimationTrack.sparsify` | `legacy/python/shared/animation.py:243-261` | Assigns to a read-only property |
 | BVH `NameError` | `legacy/python/shared/bvh.py:358` | Undefined `filepath` in a warning path |
+
+### 8.1 Deliberate divergences from the oracle
+
+Not reference *defects* — places where matching the reference exactly would be
+worse. Parity tests must expect the C++ behaviour, not the Python one.
+
+| Divergence | Why |
+|---|---|
+| **Non-finite values rejected** at three boundaries: `.mhmat` parsing, glTF export, and scene import | The oracle's `float()` accepts `nan`/`inf` and lets them propagate. They then reach the exporter, where JSON has no literal for either: the GLB was written, reported as successful, and rejected outright by every parser. Refusing at the boundary is the only place the value is still attributable to a file. |
+| **`delete_verts` index capped at 2^24** | The oracle indexes a fixed-size array sized to the body (`proxy.py:115`), so an out-of-range index simply raises. We size a vector from the file, which turned a two-line asset into a 4.29 GB allocation — and `resize(v + 1)` in uint32 wrapped at `UINT32_MAX` into an out-of-bounds **write** (ASan: BUS, WRITE). The base mesh has 19,158 vertices. |
+| **Draw ranges stay indexable when everything is hidden** | `module3d.py:859-860` collapses `grpix` to a zero-row array under a fully-hiding mask, so callers can no longer index by group id. We keep one all-zero entry per group. An all-zero range draws nothing, so the rendered result is identical. |
+| **A truncated `verts` line is an error** | The oracle raises `IndexError`; we used to skip the line, which shifts every later proxy vertex onto the wrong reference triangle — wrong geometry with no diagnostic. |
+| **Duplicate UUID: first wins, collision reported** | The oracle lets the last writer win, making resolution depend on directory iteration order. |

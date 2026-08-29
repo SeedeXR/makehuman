@@ -4,6 +4,94 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 016 · face hiding, and 14 review findings
+
+**Ended:** 2026-08-29 11:11:51 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+### Face hiding (closes an M2 item and an M4 item)
+
+The rule that matters, and the one that is easy to get backwards: **a face
+survives if ANY of its corners is still visible.** The reference's docstring
+says "a face is masked if all of the vertices that define it are masked", and
+the code agrees -- `changeVertexMask` (guicommon.py:532-557) derives the mask
+via `getFaceMaskForVertices`, which marks every face incident to a *visible*
+vertex.
+
+I did not want that resting on a reading, so the fixture pins it: the `stride`
+mask hides every 7th vertex -- 2,737 of 19,158 -- and hides **zero** of 18,486
+faces. Under the inverted rule almost the whole mesh would vanish. The two
+readings cannot both pass.
+
+No shipped asset exercises this at all: all four `.mhclo`/`.proxy` files declare
+zero `delete_verts`. The masks are therefore synthetic, but they run through the
+reference's own `getFaceMaskForVertices` + `updateIndexBufferFaces`, so the
+oracle is still the reference's behaviour.
+
+`RenderMesh` now splits the way the reference does -- unweld once, rebuild the
+index per mask. **0.21 ms vs 2.19 ms** for a full rebuild, and 8.7x the
+reference's 1.85 ms. Draw ranges match `grpix` exactly, group by group, for all
+four masks.
+
+One correction along the way: I first compared `grpix` in corner units and it
+failed. `grpix` is in **face** units -- the reference's `index` is a 2-D
+(faces, 4) array, so `np.unique(..., return_index=True)` returns rows. Confirmed
+by summing the counts: 18,486, the face count, not 73,944.
+
+### Review findings — 14 fixed, 2 of them memory safety
+
+The background review of the io/asset layer came back while this was in flight.
+Everything below was reproduced before it was fixed, and each has a regression
+test that fails on the pre-fix code (verified by reverting two of them).
+
+**Both HIGH findings were the same root cause**: `delete_verts` indices from the
+file were used unbounded.
+
+- `resize(v + 1)` in uint32 wrapped to 0 at `UINT32_MAX`, emptying the vector,
+  and the next line wrote to index 4294967295. ASan: *BUS ... WRITE memory
+  access* at `loadProxy`. **A five-line text file was enough.**
+- The `-` range loop never terminated at `UINT32_MAX` (`i` wraps to 0, condition
+  holds again). Without the wrap, `delete_verts 4294967290` still allocated
+  **4.29 GB** from a two-line file.
+
+One bound check at the point the index enters fixes both.
+
+**The comment that was wrong.** `ObjWriter.cpp` said `snprintf` "avoids
+locale-dependent iostream output". It does not -- `snprintf` honours
+`LC_NUMERIC` exactly as iostreams do, and `std::locale::global` sets the C
+locale too. Verified: under `de_DE.UTF-8` a vertex wrote as `v 0,5000 0,0000
+0,0000`. The glTF case is worse because it stays *valid JSON*: `"max":[0.2,0.3]`
+becomes a five-element array, so the accessor bounds are silently garbage and no
+validator reports a parse error. Both writers now use `std::to_chars`, which is
+locale-independent by definition. OBJ byte-parity still passes, so the C-locale
+output is unchanged.
+
+**A startup crash.** `recursive_directory_iterator`'s `operator++` throws; the
+`error_code` overload only covers construction. One unreadable subdirectory
+anywhere under a search path terminated the process.
+
+Also fixed: a duplicate UUID removed the asset from `entries()`/`findByTag()`
+entirely rather than only from resolution; malformed colours loaded silently as
+white; `translucency` was not clamped to 0..1; a leading `+` was rejected on a
+legal asset; `viewPortAlpha` did not set `hasViewPortColor`; a truncated `verts`
+line was skipped rather than rejected (which shifts every later proxy vertex
+onto the wrong reference triangle); an unwritable `.mtl` was reported as
+success after the OBJ had already emitted `mtllib`; a `-` range did not carry
+across a line break as it does in the oracle; `z_depth -5` became 50; the GLB
+byte size was unchecked against its uint32 fields; non-finite values reached
+both the exporter and the importer.
+
+Five of these are **deliberate divergences** from the oracle rather than parity
+fixes, so they are now recorded in `project_context.md` §8.1 -- otherwise a
+future parity test would "correct" them back.
+
+### Verified
+
+227/227 in debug, release and ASan+UBSan. clang-format clean (via
+`xcrun -f clang-format`; there is no Homebrew LLVM on this machine). SPDX clean.
+No benchmark regressed.
+
+---
+
 ## 2026-08-29 — Session 015 · legacy consolidation, reviews, visual reference
 
 **Ended:** 2026-08-29 10:48:44 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master

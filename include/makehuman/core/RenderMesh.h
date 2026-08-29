@@ -22,10 +22,11 @@ namespace mh::core {
 /// uint64 and sorted, so the render-vertex order matches the reference's
 /// `np.unique` result exactly and is directly comparable against a fixture.
 ///
-/// Note: the reference also filters by a per-face visibility mask before
-/// building the index array (module3d.py:843-849). Face masking arrives with
-/// proxy geometry hiding (M4); until something sets a mask there is nothing to
-/// filter, so it is deliberately not modelled here yet.
+/// The split matters for cost. The unweld (`updateIndexBufferVerts`) depends
+/// only on topology; the index buffer and draw ranges (`updateIndexBufferFaces`)
+/// additionally depend on the visibility mask. Hiding geometry therefore
+/// rebuilds only the second, which is why `setFaceMask` keeps the corner ->
+/// render-vertex table rather than recomputing it.
 class RenderMesh {
 public:
     /// Build from a mesh. The mesh must already have faces set; normals and
@@ -74,6 +75,21 @@ public:
     /// it would read out of bounds. Rebuild with build() instead.
     void refreshPositions(const Mesh& mesh);
 
+    /// Hides faces whose visibility byte is zero, rebuilding the index buffer
+    /// and draw ranges in place. The unweld table is untouched: hidden vertices
+    /// stay in the vertex buffer, exactly as the reference leaves them
+    /// (module3d.py:842-849 filters `r_faces`, never `vmap`). Costs one pass
+    /// over the faces, not a re-unweld.
+    ///
+    /// Pass an empty span to clear the mask and show everything again.
+    ///
+    /// @param faceVisible one byte per face, nonzero = visible, or empty.
+    /// @return false if @p mesh's topology has changed since build() or the
+    ///         mask is not parallel to the face array -- in which case the
+    ///         current index buffer is left alone rather than silently
+    ///         rebuilt from a mask that does not describe this mesh.
+    bool setFaceMask(const Mesh& mesh, std::span<const uint8_t> faceVisible);
+
     /// True when this table still matches @p mesh's topology. Exact, not a
     /// heuristic: a same-size topology swap bumps the mesh's topology version.
     [[nodiscard]] bool matches(const Mesh& mesh) const noexcept {
@@ -82,6 +98,9 @@ public:
     }
 
 private:
+    /// Rebuilds index_ and groupRanges_ from rFaces_ under the current mask.
+    void rebuildIndex(const Mesh& mesh);
+
     std::vector<uint32_t> vmap_;
     std::vector<uint32_t> tmap_;
 
@@ -89,6 +108,13 @@ private:
     std::vector<Vec2> texco_;
     std::vector<Vec3> vnorm_;
     std::vector<Vec4> vtang_;
+
+    /// Corner -> render vertex, the reference's `r_faces` (module3d.py:840).
+    /// Kept so a mask change rebuilds the index buffer without re-unwelding.
+    std::vector<uint32_t> rFaces_;
+
+    /// One byte per face, nonzero = visible. Empty means everything visible.
+    std::vector<uint8_t> faceVisible_;
 
     std::vector<uint32_t> index_;
     std::vector<GroupRange> groupRanges_;

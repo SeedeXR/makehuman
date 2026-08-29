@@ -99,6 +99,22 @@ def main():
         bench("updateIndexBuffer (unweld + group sort)", lambda: mesh.updateIndexBuffer(), repeat=10)
     )
 
+    # Face hiding: the reference reapplies the mask by rebuilding only the
+    # index array and draw ranges, never the unweld (guicommon.py:555-556).
+    import numpy as _np
+
+    _verts = _np.argwhere((_np.arange(len(mesh.coord)) % 7) != 0)[..., 0]
+
+    def _mask_and_rebuild():
+        mesh.changeFaceMask(mesh.getFaceMaskForVertices(_verts))
+        mesh.updateIndexBufferFaces()
+
+    results["results"].append(
+        bench("face mask -> index rebuild (hide, no unweld)", _mask_and_rebuild, repeat=10)
+    )
+    mesh.changeFaceMask(_np.ones(len(mesh.fvert), dtype=bool))
+    mesh.updateIndexBufferFaces()
+
     # --- 4. target load + apply ------------------------------------------
     tdir = Path("data/targets")
     target_files = sorted(str(p) for p in tdir.rglob("*.target"))

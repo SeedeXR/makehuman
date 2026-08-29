@@ -115,4 +115,27 @@ struct ProxyError {
 /// @return false if the proxy references a vertex the body does not have.
 bool fitProxy(const Proxy& proxy, std::span<const Vec3> humanCoords, std::vector<Vec3>& out);
 
+/// Accumulates the base-mesh vertices hidden by a set of worn proxies.
+///
+/// Mirrors `updateFaceMasks` (3_libraries_clothes_chooser.py:101-143): start
+/// with everything visible, then clear a bit for every vertex any proxy
+/// declares in its `delete_verts` block. Feed the result to
+/// `Mesh::faceMaskForVisibleVertices` and then `RenderMesh::setFaceMask`.
+///
+/// The reference walks the proxies in reverse render order. That ordering is
+/// only load-bearing for the *proxy-on-proxy* masking it also does on the same
+/// pass (`transferVertexMaskToProxy`, :131-134), where a lower layer sees the
+/// mask accumulated by the layers above it. For the body mask alone the result
+/// is a plain union and order cannot matter, so none is imposed here. Clothes
+/// hiding other clothes is a separate feature and is not implemented yet.
+///
+/// Note: **no shipped asset exercises this.** All four shipped
+/// `.mhclo`/`.proxy` files declare zero `delete_verts`, so the code path is
+/// covered by synthetic masks only (tests/golden/mask).
+///
+/// @param bodyVertexCount vertices in the body mesh the proxies are fitted to.
+/// @return one byte per body vertex, nonzero = visible.
+[[nodiscard]] std::vector<uint8_t> visibleVertexMask(std::span<const Proxy* const> proxies,
+                                                     size_t bodyVertexCount);
+
 }  // namespace mh::core

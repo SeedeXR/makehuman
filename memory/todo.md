@@ -57,7 +57,11 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
       matching the reference's `np.unique` ordering. Base mesh: 19,158 → **21,833**
       render verts (UV seams), 110,916 triangle indices, 139 draw ranges.
       Quads triangulated (Metal has no `GL_QUADS`); degenerate quads emit one triangle.
-- [ ] Face visibility mask + filtered index buffer (arrives with proxy hiding, M4)
+- [x] Face visibility mask + filtered index buffer. `RenderMesh::setFaceMask`
+      rebuilds only the index and draw ranges, never the unweld: **0.21 ms vs
+      2.19 ms** for a full build, and 8.7x the reference's 1.85 ms. Draw ranges
+      match the reference's `grpix` exactly, group by group, for all four
+      captured masks.
 - [ ] `RenderMesh::build` is 2.11 ms — dominated by an indirect-comparator sort.
       Sorting packed (key,corner) pairs directly would help. Load-once path, low priority.
 - [x] Exact staleness detection: `Mesh::topologyVersion()`, recorded by
@@ -123,8 +127,17 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
       including a reshaped body so the `TMatrix` rescaling is actually exercised
 - [ ] `TMatrix` shear forms (`shear_*`, `l_shear_*`, `r_shear_*`) — no shipped
       asset uses them; the three eye/converter proxies are all scale-only
-- [ ] Delete-vert mask → face hiding
-- [ ] `.mhmat` parser/writer — all keys, 7 texture channels, shader config
+- [x] Delete-vert mask -> face hiding. `visibleVertexMask` unions the
+      `delete_verts` of the worn proxies; `Mesh::faceMaskForVisibleVertices`
+      turns that into a face mask. **A face survives if ANY corner is visible**
+      -- pinned by the `stride` fixture, where hiding 2,737 of 19,158 vertices
+      hides zero of 18,486 faces. No shipped asset declares `delete_verts`
+      (0 across all four), so the fixtures are synthetic but run through the
+      reference's own code.
+- [ ] Proxy-on-proxy masking (`transferVertexMaskToProxy`) — clothes hiding
+      clothes. Needs the render-order stack; the body mask does not.
+- [x] `.mhmat` **parser** — all keys, 7 texture channels, shader config
+- [ ] `.mhmat` **writer** — round-trip. Next chunk.
 - [x] Asset index (`AssetIndex`) — replaces the pickle `filecache`, which was an
       RCE vector. Metadata is *peeked*: the scan stops at the `verts` line.
 - [x] UUID→path resolution. `.mhm` references proxies by UUID **only**
