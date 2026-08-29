@@ -35,7 +35,7 @@ __pycache__/
 *.list
 *.bvh
 *.mhskel
-/makehuman/data/*
+# (data/ moved to the repo root in the 2026-08-29 restructure and is tracked)
 base_1-1_contents.txt
 
 # Pydev Eclipse#
@@ -87,3 +87,26 @@ Thumbs.db
 # Python Packages #
 ###################
 .eggs/*
+
+# --- C++/Qt6 port ---
+build/
+build-*/
+cmake-build-*/
+.cache/
+compile_commands.json
+*.qsb
+
+# reference oracle venv (Python, dev only)
+.venv-mh/
+
+# graphify knowledge graph: keep the report, not the 5 MB raw graph
+graphify-out/graph.json
+graphify-out/cache/
+graphify-out/.graphify_*
+
+# benchmark run outputs (the committed baseline is benchmarks/baseline_python.json)
+benchmarks/results/
+
+# macOS
+.DS_Store
+*.dSYM/

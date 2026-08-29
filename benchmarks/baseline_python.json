@@ -1,0 +1,103 @@
+{
+  "harness": "legacy python core",
+  "python": "3.14.6",
+  "numpy": "2.5.2",
+  "platform": "darwin",
+  "results": [
+    {
+      "label": "load base.obj (text parse + _update_faces)",
+      "median_ms": 228.315,
+      "min_ms": 221.948,
+      "max_ms": 229.967,
+      "runs": 3
+    },
+    {
+      "label": "calcNormals full mesh (face+vertex)",
+      "median_ms": 5.334,
+      "min_ms": 4.987,
+      "max_ms": 5.36,
+      "runs": 10
+    },
+    {
+      "label": "calcFaceNormals only",
+      "median_ms": 0.658,
+      "min_ms": 0.646,
+      "max_ms": 0.692,
+      "runs": 10
+    },
+    {
+      "label": "calcVertexNormals only",
+      "median_ms": 1.657,
+      "min_ms": 1.639,
+      "max_ms": 1.71,
+      "runs": 10
+    },
+    {
+      "label": "updateIndexBuffer (unweld + group sort)",
+      "median_ms": 3.44,
+      "min_ms": 3.389,
+      "max_ms": 3.521,
+      "runs": 10
+    },
+    {
+      "label": "load 200 targets (text parse)",
+      "median_ms": 106.624,
+      "min_ms": 102.456,
+      "max_ms": 108.82,
+      "runs": 3
+    },
+    {
+      "label": "apply 200 targets @0.5 (full stack rebuild)",
+      "median_ms": 4.818,
+      "min_ms": 4.786,
+      "max_ms": 4.876,
+      "runs": 10
+    },
+    {
+      "label": "apply 1 target (slider delta)",
+      "median_ms": 0.037,
+      "min_ms": 0.033,
+      "max_ms": 0.048,
+      "runs": 200
+    },
+    {
+      "label": "Catmull-Clark subdivide (build)",
+      "median_ms": 199.201,
+      "min_ms": 196.562,
+      "max_ms": 205.241,
+      "runs": 3
+    },
+    {
+      "label": "subdiv update_coords",
+      "median_ms": 7.806,
+      "min_ms": 7.735,
+      "max_ms": 7.834,
+      "runs": 10
+    },
+    {
+      "label": "subdiv calcNormals",
+      "median_ms": 20.999,
+      "min_ms": 20.252,
+      "max_ms": 21.339,
+      "runs": 10
+    }
+  ],
+  "mesh": {
+    "verts": 19158,
+    "faces": 18486,
+    "uvs": 21334,
+    "verts_per_primitive": 4,
+    "max_faces": 5
+  },
+  "targets_on_disk": 1280,
+  "target_stats": {
+    "sampled": 200,
+    "mean_affected_verts": 983.2,
+    "max_affected_verts": 5480
+  },
+  "subdiv_mesh": {
+    "verts": 75008,
+    "faces": 73944
+  },
+  "skeleton_error": "AttributeError: 'NoneType' object has no attribute 'selectedHuman'"
+}
