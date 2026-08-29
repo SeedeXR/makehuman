@@ -4,6 +4,65 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 034 · **it renders**
+
+**Ended:** 2026-08-29 17:28:50 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+The first thing this port puts on screen. Qt RHI on **Metal**, the ported
+litsphere shader, the base mesh drawn to an image. CI green.
+
+**Offscreen first, deliberately.** A widget cannot be checked in a test; an
+offscreen render produces pixels that can be *measured*. `mh_render_probe`
+reports coverage and luminance because a **blank frame is the failure that reads
+as success in a log**. Measured: 7.9% coverage, luminance 37..212, mean 156.1 —
+and the image is a recognisable human body.
+
+### `base.obj` is 138 parts helper geometry to 1 part body
+
+138 of its 139 face groups are `joint-*` markers and `helper-*` fitting cages;
+only `body` is visible human. Drawing it raw gives a figure in a **solid skirt
+with a box over its face** — plausible enough to read as a renderer bug rather
+than geometry never meant to be shown.
+
+`Mesh::staticFaceMask()` applies the reference's own rule
+(`apps/human.py:274-289`), leaving 13,378 of 18,486 faces. **This is what the
+M2 face-masking work was for.**
+
+### Two of my own assumptions were wrong
+
+Both checked rather than left standing:
+
+1. I wrote that winding is inconsistent after fan triangulation and disabled
+   culling on that basis. **It is consistent** — culling on and off give
+   byte-identical statistics. Culling is now on (free halving of fragment work)
+   and the comment states what was measured.
+2. Dark patches on a forearm and the feet looked like bad normals. The normals
+   are clean — all 19,158 unit, none zero or non-finite. **The cause was mine**:
+   I had bound the litsphere to *both* the litsphere and diffuse slots, so
+   "diffuse" was the matcap sampled by the MESH's UVs. A 1×1 white stand-in
+   fixed it; mean luminance 64.5 → 156.1.
+
+### The renderer is optional in the build
+
+`find_package(Qt6 QUIET)`, so the CI runner (no Qt) builds and tests everything
+else. Verified with `-DCMAKE_DISABLE_FIND_PACKAGE_Qt6=ON`: renderer disabled,
+301/301.
+
+### The licence gate earned its keep again
+
+`mh_render` is Apache-2.0 and links only `mh::foundation` and Qt — but
+`mh_render_probe` links `mh::core`, and having that target in
+`src/render/CMakeLists.txt` made the boundary gate fire on that file. **The gate
+was right**: an Apache module's build file should not mention the AGPL one at
+all. The probe moved to `tools/`, and the gate now covers `render`.
+
+302/302 across all four builds, including 5 render tests that measure pixels.
+
+**Next:** the interactive viewport — swapchain, MSAA, and the documented
+navigation bindings, so the same pipeline drives a window.
+
+---
+
 ## 2026-08-29 — Session 033 · format documentation
 
 **Ended:** 2026-08-29 17:07:49 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
