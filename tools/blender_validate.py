@@ -56,8 +56,16 @@ def describe(path: str) -> dict:
     _clear()
     _import(path)
 
-    meshes = [o for o in bpy.data.objects if o.type == "MESH"]
-    armatures = [o for o in bpy.data.objects if o.type == "ARMATURE"]
+    # Blender's glTF importer creates its own helper geometry -- an Icosphere
+    # used as the custom bone shape for every bone -- and parks it in a
+    # collection named "glTF_not_exported". Counting it makes a correct rigged
+    # export look like it has 42 stray vertices and a second mesh. Skip
+    # anything Blender has marked as not-for-export.
+    def _is_helper(obj) -> bool:
+        return any(c.name == "glTF_not_exported" for c in obj.users_collection)
+
+    meshes = [o for o in bpy.data.objects if o.type == "MESH" and not _is_helper(o)]
+    armatures = [o for o in bpy.data.objects if o.type == "ARMATURE" and not _is_helper(o)]
 
     verts = tris = 0
     uv_layers = 0
@@ -78,6 +86,14 @@ def describe(path: str) -> dict:
 
     bones = sum(len(a.data.bones) for a in armatures)
 
+    # Vertex groups are how Blender represents skin weights. A rigged mesh with
+    # an armature but no groups is bound to nothing and will not deform -- which
+    # looks fine in a static screenshot.
+    vertex_groups = sum(len(o.vertex_groups) for o in meshes)
+    skinned_verts = sum(
+        1 for o in meshes for v in o.data.vertices if len(v.groups) > 0
+    )
+
     # Blender's world is Z-UP, and every importer rotates a Y-up file on the way
     # in. So the model's height is Blender's Z, not its Y -- reading index 1
     # here reports the depth of the body and looks like a 4x unit error that is
@@ -94,6 +110,8 @@ def describe(path: str) -> dict:
         "uv_layers": uv_layers,
         "armatures": len(armatures),
         "bones": bones,
+        "vertex_groups": vertex_groups,
+        "skinned_vertices": skinned_verts,
         "bbox_min": [round(v, 6) for v in lo] if meshes else None,
         "bbox_max": [round(v, 6) for v in hi] if meshes else None,
         "extents": extents,

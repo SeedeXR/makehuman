@@ -99,6 +99,43 @@ struct MeshData {
     [[nodiscard]] bool hasUV() const noexcept { return !texco.empty() && !fuvs.empty(); }
 };
 
+/// A skeleton plus per-vertex influences, as a format writer needs them.
+///
+/// The joint transforms are supplied **unscaled**, in model space. The writer
+/// applies the export unit scale itself and derives both the local node
+/// transforms and the inverse-bind matrices from the scaled result. Supplying
+/// them pre-scaled would let the joints and the mesh drift apart whenever the
+/// two scales disagreed -- and a rig that is 10x the mesh looks like a rigging
+/// bug, not a unit bug.
+struct SkinView {
+    std::span<const std::string> jointNames;
+    /// Parent index per joint, -1 for a root. Parents must precede children.
+    std::span<const int32_t> jointParents;
+    /// Each joint's rest transform in model space, unscaled.
+    std::span<const Mat4> globalRest;
+
+    /// `influences` entries per RENDER vertex (i.e. after the unweld), not per
+    /// mesh vertex. glTF's JOINTS_0/WEIGHTS_0 are attributes, so they are
+    /// indexed exactly like positions.
+    std::span<const uint32_t> joints;
+    std::span<const float> weights;
+    uint8_t influences{4};
+
+    [[nodiscard]] size_t jointCount() const noexcept { return globalRest.size(); }
+
+    [[nodiscard]] size_t vertexCount() const noexcept {
+        return influences != 0 ? joints.size() / influences : 0;
+    }
+
+    /// Structural consistency only. The required influence COUNT is a
+    /// format's business, not this type's -- glTF wants exactly 4, other
+    /// formats differ -- so the writer checks that separately.
+    [[nodiscard]] bool valid() const noexcept {
+        return influences > 0 && !globalRest.empty() && jointParents.size() == globalRest.size() &&
+               jointNames.size() == globalRest.size() && joints.size() == weights.size();
+    }
+};
+
 /// The material values a format writer needs. Deliberately not the whole
 /// `core::Material`: exporters use these eight fields and nothing else, and the
 /// full parser is a port of `material.py` that cannot cross into Apache code.

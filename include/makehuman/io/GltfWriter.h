@@ -33,6 +33,11 @@ struct GltfWriteOptions {
     std::string materialName{"Skin"};
 };
 
+/// glTF's JOINTS_0 / WEIGHTS_0 are 4-wide by definition; a set of 4 is one
+/// attribute pair. More influences need JOINTS_1/WEIGHTS_1, which almost no
+/// engine reads, so 4 is what we write.
+inline constexpr uint8_t kGltfInfluences = 4;
+
 enum class GltfWriteErrorKind {
     CannotOpen,
     EmptyMesh,
@@ -41,6 +46,9 @@ enum class GltfWriteErrorKind {
     /// for either, so writing one produces a file no parser will read; we
     /// refuse rather than emit a plausible-looking corrupt asset.
     NonFiniteValue,
+    /// The skin does not describe this mesh: wrong vertex count, a joint index
+    /// past the end of the skeleton, or an influence count other than 4.
+    InvalidSkin,
 };
 
 struct GltfWriteError {
@@ -64,6 +72,7 @@ struct GltfWriteResult {
 /// independent position and UV index spaces.
 [[nodiscard]] std::expected<GltfWriteResult, GltfWriteError> writeGlb(
     const std::filesystem::path& path, const foundation::RenderView& mesh,
-    const GltfWriteOptions& options = {}, const foundation::MaterialDesc* material = nullptr);
+    const GltfWriteOptions& options = {}, const foundation::MaterialDesc* material = nullptr,
+    const foundation::SkinView* skin = nullptr);
 
 }  // namespace mh::io

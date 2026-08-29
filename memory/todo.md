@@ -318,7 +318,16 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       metallic-roughness material, correct metre units, V flipped for glTF's
       top-left UV origin. Validated by spec conformance **and by assimp**, an
       independent implementation.
-- [ ] glTF: skins, blendshapes (morph targets), embedded textures, Draco
+- [x] glTF **skins** — `JOINTS_0` / `WEIGHTS_0` / `inverseBindMatrices`, one
+      node per bone with the hierarchy, 163 joints. Confirmed by Blender.
+      Two traps pinned: glTF matrices are **column-major** (ours are row-major,
+      so they transpose on the way out), and the joints are scaled by the writer
+      from one array so they cannot drift from the mesh — a test asserts both
+      scale by exactly 10x between metres and decimetres.
+      Weights are expanded from mesh vertices (19,158) onto **render** vertices
+      (21,833) via `vmap`; glTF's are vertex attributes, so skipping that leaves
+      everything past the first UV seam weighted to the wrong bone.
+- [ ] glTF: blendshapes (morph targets), embedded textures, Draco
 - [ ] **Export** FBX 7.4/7.5 — from spec, **not** by translating the GPL Blender code
 - [ ] **Export** USD / USDZ
 - [x] **Export OBJ** (`mh::io`, Apache-2.0) — face lines byte-identical to the
@@ -356,9 +365,9 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 `tools/run_blender_validation.sh` — exits non-zero on disagreement. 3/3 exports
 agree today (geometry, UVs, and 169.5 cm under three unit conventions).
 
-- [ ] Extend it to **rigged** exports: armature present, 163 bones, weights
-      non-zero. The current check is geometry only, and skinning is where a
-      silent convention error would hurt most.
+- [x] Extended to **rigged** exports. Blender confirms 163 bones, 1 armature
+      and **all 21,833 vertices skinned** — independently of our code and of the
+      Python reference. 4/4 exports agree.
 - [ ] Extend it to a **posed** mesh, so LBS output is checked by a third party
       rather than only against the reference.
 

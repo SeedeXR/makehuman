@@ -25,11 +25,12 @@ constexpr uint32_t kGlbVersion    = 2;
 constexpr uint32_t kChunkTypeJson = 0x4E4F534A;  // "JSON"
 constexpr uint32_t kChunkTypeBin  = 0x004E4942;  // "BIN\0"
 
-constexpr uint32_t kComponentFloat       = 5126;
-constexpr uint32_t kComponentUnsignedInt = 5125;
-constexpr uint32_t kTargetArrayBuffer    = 34962;
-constexpr uint32_t kTargetElementArray   = 34963;
-constexpr uint32_t kModeTriangles        = 4;
+constexpr uint32_t kComponentFloat         = 5126;
+constexpr uint32_t kComponentUnsignedInt   = 5125;
+constexpr uint32_t kComponentUnsignedShort = 5123;  // JOINTS_0 for < 65536 joints
+constexpr uint32_t kTargetArrayBuffer      = 34962;
+constexpr uint32_t kTargetElementArray     = 34963;
+constexpr uint32_t kModeTriangles          = 4;
 
 void appendU32(std::vector<uint8_t>& b, uint32_t v) {
     // glTF buffers are little-endian regardless of host.
@@ -37,6 +38,11 @@ void appendU32(std::vector<uint8_t>& b, uint32_t v) {
     b.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
     b.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
     b.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+}
+
+void appendU16(std::vector<uint8_t>& b, uint16_t v) {
+    b.push_back(static_cast<uint8_t>(v & 0xFFU));
+    b.push_back(static_cast<uint8_t>((v >> 8) & 0xFFU));
 }
 
 void appendFloat(std::vector<uint8_t>& b, float v) {
@@ -99,6 +105,7 @@ std::string GltfWriteError::message() const {
         case GltfWriteErrorKind::EmptyMesh: k = "mesh has no geometry"; break;
         case GltfWriteErrorKind::TooManyVertices: k = "too many vertices"; break;
         case GltfWriteErrorKind::NonFiniteValue: k = "non-finite value"; break;
+        case GltfWriteErrorKind::InvalidSkin: k = "invalid skin"; break;
     }
     std::string m = file + ": " + k;
     if (!detail.empty()) m += " (" + detail + ")";
@@ -108,7 +115,8 @@ std::string GltfWriteError::message() const {
 std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::path& path,
                                                         const foundation::RenderView& mesh,
                                                         const GltfWriteOptions& options,
-                                                        const foundation::MaterialDesc* material) {
+                                                        const foundation::MaterialDesc* material,
+                                                        const foundation::SkinView* skin) {
     // glTF wants one attribute per index and has no quad primitive. The caller
     // supplies geometry already in that shape: the unweld is a port of
     // module3d.py and lives in the AGPL core, so running it here would drag
@@ -140,6 +148,29 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
             if (!std::isfinite(v)) {
                 return std::unexpected(GltfWriteError{GltfWriteErrorKind::NonFiniteValue,
                                                       path.string(), "material value"});
+            }
+        }
+    }
+
+    if (skin != nullptr) {
+        if (!skin->valid() || skin->vertexCount() != rm.vertexCount() ||
+            skin->influences != kGltfInfluences) {
+            return std::unexpected(GltfWriteError{GltfWriteErrorKind::InvalidSkin, path.string(),
+                                                  "skin does not describe this mesh"});
+        }
+        for (const uint32_t j : skin->joints) {
+            if (j >= skin->jointCount()) {
+                return std::unexpected(GltfWriteError{GltfWriteErrorKind::InvalidSkin,
+                                                      path.string(),
+                                                      "joint index " + std::to_string(j) + " of " +
+                                                          std::to_string(skin->jointCount())});
+            }
+        }
+        for (size_t i = 0; i < skin->jointCount(); ++i) {
+            if (skin->jointParents[i] >= static_cast<int32_t>(i)) {
+                return std::unexpected(GltfWriteError{
+                    GltfWriteErrorKind::InvalidSkin, path.string(),
+                    "joint " + std::to_string(i) + " has a parent that does not precede it"});
             }
         }
     }
@@ -207,6 +238,63 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
         uvBytes = bin.size() - uvOffset;
     }
 
+    size_t jointOffset = 0, jointBytes = 0, weightOffset = 0, weightBytes = 0;
+    size_t ibmOffset = 0, ibmBytes = 0;
+    std::vector<foundation::Mat4> scaledGlobal;
+    std::vector<foundation::Mat4> localRest;
+
+    if (skin != nullptr) {
+        // Scale the joints exactly as the mesh was scaled: rotation unchanged,
+        // translation through the same scale and ground offset. Doing this here
+        // rather than trusting the caller is what keeps the rig and the mesh in
+        // the same space.
+        scaledGlobal.assign(skin->globalRest.begin(), skin->globalRest.end());
+        for (auto& m : scaledGlobal) {
+            m.m[0][3] *= scale;
+            m.m[1][3] = m.m[1][3] * scale + groundOffset;
+            m.m[2][3] *= scale;
+        }
+
+        // Node transforms are LOCAL to the parent; inverse-bind matrices are
+        // global. Deriving both from one scaled global array means they cannot
+        // disagree.
+        localRest.resize(scaledGlobal.size());
+        for (size_t i = 0; i < scaledGlobal.size(); ++i) {
+            const int32_t p = skin->jointParents[i];
+            localRest[i]    = (p < 0)
+                                  ? scaledGlobal[i]
+                                  : foundation::rigidInverse(scaledGlobal[static_cast<size_t>(p)]) *
+                                     scaledGlobal[i];
+        }
+
+        padTo4(bin);
+        jointOffset = bin.size();
+        for (const uint32_t jIdx : skin->joints)
+            appendU16(bin, static_cast<uint16_t>(jIdx));
+        jointBytes = bin.size() - jointOffset;
+
+        padTo4(bin);
+        weightOffset = bin.size();
+        for (const float w : skin->weights)
+            appendFloat(bin, w);
+        weightBytes = bin.size() - weightOffset;
+
+        padTo4(bin);
+        ibmOffset = bin.size();
+        for (const auto& g : scaledGlobal) {
+            const foundation::Mat4 inv = foundation::rigidInverse(g);
+            // glTF stores matrices COLUMN-major. Ours are row-major, so this
+            // transposes on the way out. Writing them row-major produces a file
+            // that loads, poses, and is wrong in a way that looks like bad
+            // weights.
+            for (size_t c = 0; c < 4; ++c) {
+                for (size_t r = 0; r < 4; ++r)
+                    appendFloat(bin, inv.m[r][c]);
+            }
+        }
+        ibmBytes = bin.size() - ibmOffset;
+    }
+
     padTo4(bin);
     const size_t idxOffset = bin.size();
     for (const uint32_t i : rm.index)
@@ -221,8 +309,44 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
     j.reserve(2048);
 
     j += R"({"asset":{"version":"2.0","generator":"MakeHuman C++ glTF writer"},)";
-    j += R"("scene":0,"scenes":[{"nodes":[0]}],)";
-    j += R"("nodes":[{"mesh":0,"name":")" + jsonEscape(options.meshName) + R"("}],)";
+    // Node 0 is the mesh. Joints follow as nodes 1..N, so a joint's node index
+    // is its skin index + 1 -- the offset the skin's "joints" array encodes.
+    if (skin != nullptr) {
+        // The scene lists the mesh and the skeleton roots. glTF requires every
+        // joint to be a node reachable in the scene graph, not a loose array.
+        j += R"("scene":0,"scenes":[{"nodes":[0)";
+        for (size_t i = 0; i < skin->jointCount(); ++i) {
+            if (skin->jointParents[i] < 0) j += "," + std::to_string(i + 1);
+        }
+        j += R"(]}],)";
+
+        j += R"("nodes":[{"mesh":0,"skin":0,"name":")" + jsonEscape(options.meshName) + R"("})";
+        for (size_t i = 0; i < skin->jointCount(); ++i) {
+            j += R"(,{"name":")" + jsonEscape(skin->jointNames[i]) + R"(","matrix":[)";
+            // Column-major, as glTF requires. Ours are row-major.
+            for (size_t c = 0; c < 4; ++c) {
+                for (size_t r = 0; r < 4; ++r) {
+                    if (c != 0 || r != 0) j += ",";
+                    j += fmtFloat(localRest[i].m[r][c]);
+                }
+            }
+            j += "]";
+
+            bool firstChild = true;
+            for (size_t k = 0; k < skin->jointCount(); ++k) {
+                if (skin->jointParents[k] != static_cast<int32_t>(i)) continue;
+                j += firstChild ? R"(,"children":[)" : ",";
+                j += std::to_string(k + 1);
+                firstChild = false;
+            }
+            if (!firstChild) j += "]";
+            j += "}";
+        }
+        j += "],";
+    } else {
+        j += R"("scene":0,"scenes":[{"nodes":[0]}],)";
+        j += R"("nodes":[{"mesh":0,"name":")" + jsonEscape(options.meshName) + R"("}],)";
+    }
 
     // buffers / bufferViews
     j += R"("buffers":[{"byteLength":)" + std::to_string(bin.size()) + "}],";
@@ -236,6 +360,18 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
     if (withUVs) {
         j += R"(,{"buffer":0,"byteOffset":)" + std::to_string(uvOffset) + R"(,"byteLength":)" +
              std::to_string(uvBytes) + R"(,"target":)" + std::to_string(kTargetArrayBuffer) + "}";
+    }
+    if (skin != nullptr) {
+        j += R"(,{"buffer":0,"byteOffset":)" + std::to_string(jointOffset) + R"(,"byteLength":)" +
+             std::to_string(jointBytes) + R"(,"target":)" + std::to_string(kTargetArrayBuffer) +
+             "}";
+        j += R"(,{"buffer":0,"byteOffset":)" + std::to_string(weightOffset) + R"(,"byteLength":)" +
+             std::to_string(weightBytes) + R"(,"target":)" + std::to_string(kTargetArrayBuffer) +
+             "}";
+        // No "target" on the inverse-bind view: it is not vertex data, and a
+        // validator flags an ARRAY_BUFFER target on a MAT4 accessor.
+        j += R"(,{"buffer":0,"byteOffset":)" + std::to_string(ibmOffset) + R"(,"byteLength":)" +
+             std::to_string(ibmBytes) + "}";
     }
     j += R"(,{"buffer":0,"byteOffset":)" + std::to_string(idxOffset) + R"(,"byteLength":)" +
          std::to_string(idxBytes) + R"(,"target":)" + std::to_string(kTargetElementArray) + "}";
@@ -263,6 +399,21 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
              std::to_string(kComponentFloat) + R"(,"count":)" + std::to_string(n) +
              R"(,"type":"VEC2"})";
     }
+    int jointAccessor = -1, weightAccessor = -1, ibmAccessor = -1;
+    if (skin != nullptr) {
+        jointAccessor = view;
+        j += R"(,{"bufferView":)" + std::to_string(view++) + R"(,"componentType":)" +
+             std::to_string(kComponentUnsignedShort) + R"(,"count":)" + std::to_string(n) +
+             R"(,"type":"VEC4"})";
+        weightAccessor = view;
+        j += R"(,{"bufferView":)" + std::to_string(view++) + R"(,"componentType":)" +
+             std::to_string(kComponentFloat) + R"(,"count":)" + std::to_string(n) +
+             R"(,"type":"VEC4"})";
+        ibmAccessor = view;
+        j += R"(,{"bufferView":)" + std::to_string(view++) + R"(,"componentType":)" +
+             std::to_string(kComponentFloat) + R"(,"count":)" + std::to_string(skin->jointCount()) +
+             R"(,"type":"MAT4"})";
+    }
     const int idxAccessor = view;
     j += R"(,{"bufferView":)" + std::to_string(view) + R"(,"componentType":)" +
          std::to_string(kComponentUnsignedInt) + R"(,"count":)" + std::to_string(rm.indexCount()) +
@@ -274,6 +425,8 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
          R"(","primitives":[{"attributes":{"POSITION":0)";
     if (normAccessor >= 0) j += R"(,"NORMAL":)" + std::to_string(normAccessor);
     if (uvAccessor >= 0) j += R"(,"TEXCOORD_0":)" + std::to_string(uvAccessor);
+    if (jointAccessor >= 0) j += R"(,"JOINTS_0":)" + std::to_string(jointAccessor);
+    if (weightAccessor >= 0) j += R"(,"WEIGHTS_0":)" + std::to_string(weightAccessor);
     j += R"(},"indices":)" + std::to_string(idxAccessor) + R"(,"material":0,"mode":)" +
          std::to_string(kModeTriangles) + "}]}],";
 
@@ -296,7 +449,18 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
          fmtFloat(baseG) + "," + fmtFloat(baseB) + "," + fmtFloat(alpha) +
          R"(],"metallicFactor":0,"roughnessFactor":)" + fmtFloat(roughness) + "}";
     if (alpha < 1.0F) j += R"(,"alphaMode":"BLEND")";
-    j += "}]}";
+    j += "}]";
+
+    if (skin != nullptr) {
+        j +=
+            R"(,"skins":[{"inverseBindMatrices":)" + std::to_string(ibmAccessor) + R"(,"joints":[)";
+        for (size_t i = 0; i < skin->jointCount(); ++i) {
+            if (i != 0) j += ",";
+            j += std::to_string(i + 1);  // node index = joint index + 1
+        }
+        j += "]}]";
+    }
+    j += "}";
 
     // ---- GLB container ----------------------------------------------------
     std::vector<uint8_t> jsonChunk(j.begin(), j.end());

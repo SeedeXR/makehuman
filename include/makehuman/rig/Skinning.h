@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 
+#include "makehuman/foundation/Geometry.h"
 #include "makehuman/foundation/Types.h"
 #include "makehuman/rig/Skeleton.h"
 #include "makehuman/rig/VertexWeights.h"
 
 #include <span>
+#include <string>
 #include <vector>
 
 namespace mh::rig {
@@ -51,5 +53,37 @@ using foundation::Mat4;
 ///         names a bone the pose does not have.
 bool skinPositions(std::span<const foundation::Vec3> rest, const CompiledWeights& weights,
                    std::span<const Mat4> skinning, std::vector<foundation::Vec3>& out);
+
+/// Owns the arrays a foundation::SkinView points at.
+///
+/// The view is non-owning by design, so something has to hold the storage; this
+/// is that something. Keep it alive for as long as the view is used.
+struct SkinData {
+    std::vector<std::string> jointNames;
+    std::vector<int32_t> jointParents;
+    std::vector<Mat4> globalRest;
+    std::vector<uint32_t> joints;
+    std::vector<float> weights;
+    uint8_t influences{4};
+
+    [[nodiscard]] foundation::SkinView view() const {
+        return foundation::SkinView{jointNames, jointParents, globalRest,
+                                    joints,     weights,      influences};
+    }
+};
+
+/// Builds export-ready skin data by expanding per-MESH-vertex weights onto the
+/// unwelded render vertices.
+///
+/// The two vertex counts differ -- 19,158 mesh vertices become 21,833 render
+/// vertices once UV seams are split -- and glTF's JOINTS_0/WEIGHTS_0 are vertex
+/// ATTRIBUTES, so they must be indexed like positions. @p vmap is
+/// RenderMesh::vmap(): render vertex -> mesh vertex. Skipping this expansion
+/// leaves every vertex past the first seam weighted to the wrong bone.
+///
+/// @return empty jointNames if @p weights does not describe the mesh @p vmap
+///         indexes, or if the influence count is not 4.
+[[nodiscard]] SkinData buildSkinData(const Skeleton& skeleton, const CompiledWeights& weights,
+                                     std::span<const uint32_t> vmap);
 
 }  // namespace mh::rig

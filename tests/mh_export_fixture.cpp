@@ -8,6 +8,9 @@
 #include "makehuman/io/GltfWriter.h"
 #include "makehuman/io/ObjWriter.h"
 #include "makehuman/io/SceneIO.h"
+#include "makehuman/rig/Skeleton.h"
+#include "makehuman/rig/Skinning.h"
+#include "makehuman/rig/VertexWeights.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -39,6 +42,39 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::printf("wrote base.obj / base.glb / base.fbx to %s\n", out.c_str());
+    // A RIGGED export, so Blender can check the armature and weights rather
+    // than only the geometry.
+    auto skel =
+        mh::rig::loadSkeleton(std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel");
+    if (!skel) {
+        std::fprintf(stderr, "skeleton: %s\n", skel.error().message().c_str());
+        return 1;
+    }
+    if (!skel->updateJoints(mesh->coord()) || !skel->buildRestMatrices()) {
+        std::fprintf(stderr, "skeleton: could not place the rig\n");
+        return 1;
+    }
+    auto vw = mh::rig::loadWeights(
+        std::filesystem::path(MH_DATA_DIR) / "rigs" / "default_weights.mhw", mesh->vertexCount());
+    if (!vw) {
+        std::fprintf(stderr, "weights: %s\n", vw.error().message().c_str());
+        return 1;
+    }
+    const auto compiled = vw->compile(*skel, mh::io::kGltfInfluences);
+    const auto skin     = mh::rig::buildSkinData(*skel, compiled, rm.vmap());
+    if (skin.jointNames.empty()) {
+        std::fprintf(stderr, "skin: could not expand weights onto render vertices\n");
+        return 1;
+    }
+    const auto skinView = skin.view();
+    if (const auto r = mh::io::writeGlb(out / "rigged.glb", rm.view(), {}, nullptr, &skinView);
+        !r) {
+        std::fprintf(stderr, "rigged glb: %s\n", r.error().message().c_str());
+        return 1;
+    }
+    std::printf("rigged.glb: %zu joints, %zu influences/vertex\n", skin.globalRest.size(),
+                static_cast<size_t>(skin.influences));
+
+    std::printf("wrote base.obj / base.glb / base.fbx / rigged.glb to %s\n", out.c_str());
     return 0;
 }

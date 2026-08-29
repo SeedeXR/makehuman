@@ -66,4 +66,39 @@ bool skinPositions(std::span<const foundation::Vec3> rest, const CompiledWeights
     return true;
 }
 
+SkinData buildSkinData(const Skeleton& skeleton, const CompiledWeights& weights,
+                       std::span<const uint32_t> vmap) {
+    SkinData out;
+    if (weights.influences != 4) return out;
+
+    out.influences = weights.influences;
+    out.jointNames.reserve(skeleton.bones.size());
+    out.jointParents.reserve(skeleton.bones.size());
+    out.globalRest.reserve(skeleton.bones.size());
+
+    for (const auto& b : skeleton.bones) {
+        out.jointNames.push_back(b.name);
+        out.jointParents.push_back(b.parent);
+        out.globalRest.push_back(b.matRestGlobal);
+    }
+
+    const size_t infl = out.influences;
+    out.joints.resize(vmap.size() * infl);
+    out.weights.resize(vmap.size() * infl);
+
+    for (size_t rv = 0; rv < vmap.size(); ++rv) {
+        const uint32_t mv = vmap[rv];
+        if (mv >= weights.vertexCount()) {
+            // vmap indexes a mesh the weights do not describe; returning a
+            // half-filled skin would export silently wrong geometry.
+            return SkinData{};
+        }
+        for (size_t i = 0; i < infl; ++i) {
+            out.joints[rv * infl + i]  = weights.boneIndex[mv * infl + i];
+            out.weights[rv * infl + i] = weights.weight[mv * infl + i];
+        }
+    }
+    return out;
+}
+
 }  // namespace mh::rig
