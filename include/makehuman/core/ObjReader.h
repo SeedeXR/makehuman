@@ -33,7 +33,7 @@ struct ObjError {
 /// Reads a Wavefront OBJ into a Mesh.
 ///
 /// Scope deliberately matches the reference reader
-/// (legacy-python/shared/wavefront.py:47-151), because the base mesh and every
+/// (legacy/python/shared/wavefront.py:47-151), because the base mesh and every
 /// proxy mesh are authored against it:
 ///
 ///  * `v`, `vt`, `f`, `g` are handled. `o` sets the mesh **name** and creates

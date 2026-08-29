@@ -16,9 +16,9 @@ import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-LEGACY = REPO / "legacy-python"
+LEGACY = REPO / "legacy/python"
 
-# MakeHuman resolves system data via getSysPath() == "." (legacy-python/lib/getpath.py:224)
+# MakeHuman resolves system data via getSysPath() == "." (legacy/python/lib/getpath.py:224)
 os.chdir(LEGACY)
 for p in ("", "lib", "core", "apps", "shared"):
     sys.path.insert(0, str(LEGACY / p) if p else str(LEGACY))

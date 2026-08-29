@@ -87,7 +87,7 @@ struct ModifierError {
 /// weighted target stack.
 ///
 /// The stack maps a target's relative path to its weight, and **zero weights
-/// are removed rather than stored** (legacy-python/apps/human.py:918-921) —
+/// are removed rather than stored** (legacy/python/apps/human.py:918-921) —
 /// callers rely on that, since otherwise a full rebuild iterates thousands of
 /// no-ops.
 class Human {
@@ -120,7 +120,7 @@ public:
 
     /// Resets @p mesh to its morph base and applies the whole stack.
     ///
-    /// This mirrors `applyAllTargets` (legacy-python/apps/human.py:1147-1209):
+    /// This mirrors `applyAllTargets` (legacy/python/apps/human.py:1147-1209):
     /// restore `orig_coord`, then apply every entry at its weight. Application
     /// is additive and commutative, so stack order does not affect the result.
     ///

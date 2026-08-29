@@ -49,13 +49,13 @@ The end state: **no Python in the shipped product.** A compilable, notarisable
 
 | Component | Licence | Evidence |
 |---|---|---|
-| MakeHuman source code | **AGPL-3.0-or-later** | `LICENSE.md` §B, per-file headers e.g. `legacy-python/core/export.py:21-30` |
+| MakeHuman source code | **AGPL-3.0-or-later** | `LICENSE.md` §B, per-file headers e.g. `legacy/python/core/export.py:21-30` |
 | MakeHuman bundled assets | **CC0-1.0** | `LICENSE.md` §C, `LICENSE.ASSETS.md`; asset headers e.g. `data/3dobjs/base.obj:3-4` |
 | Output of the application | **Unencumbered** — project explicitly claims nothing | `LICENSE.md` §D |
-| `plugins/9_export_fbx/{encode_bin,data_types,fbx_utils_bin,fbx_binary}.py` | **GPL-2.0-or-later** (Blender 2.79 derived, © Campbell Barton, Bastien Montagne) | `legacy-python/licenses/pyFbx-license.txt:1-20`, `legacy-python/plugins/9_export_fbx/encode_bin.py:21-23` |
-| `plugins/9_massproduce/` | **MIT** | `legacy-python/plugins/9_massproduce/__init__.py:15` |
-| numpy, PyOpenGL, transformations.py | BSD-3-Clause | `legacy-python/licenses/README.txt` |
-| PyQt5 / Qt5 | GPL-3.0 (open-source track) | `legacy-python/licenses/README.txt` |
+| `plugins/9_export_fbx/{encode_bin,data_types,fbx_utils_bin,fbx_binary}.py` | **GPL-2.0-or-later** (Blender 2.79 derived, © Campbell Barton, Bastien Montagne) | `legacy/python/licenses/pyFbx-license.txt:1-20`, `legacy/python/plugins/9_export_fbx/encode_bin.py:21-23` |
+| `plugins/9_massproduce/` | **MIT** | `legacy/python/plugins/9_massproduce/__init__.py:15` |
+| numpy, PyOpenGL, transformations.py | BSD-3-Clause | `legacy/python/licenses/README.txt` |
+| PyQt5 / Qt5 | GPL-3.0 (open-source track) | `legacy/python/licenses/README.txt` |
 
 **Resolved question:** pyFBX is GPL-**2.0-or-later** ("either version 2 of the
 License, or (at your option) any later version", `pyFbx-license.txt:4-6`), not
@@ -130,7 +130,7 @@ identifier, source URL, and why it is needed.
    (capped at 4.1, no compute) — the renderer must not depend on it.
 2. **Qt 6** under LGPL-3.0 (dynamically linked) or GPL-3.0. Never bundle a statically
    linked LGPL Qt without meeting relinking obligations.
-3. **No Python in the shipped product.** Python may remain in `legacy-python/` as a
+3. **No Python in the shipped product.** Python may remain in `legacy/python/` as a
    reference oracle and in `tools/` for build-time asset processing only.
 4. **The CC0 asset set is the crown jewels** — 126 MB of targets, the 19,158-vertex
    base mesh, the 163-bone rig. Never break compatibility with it.
@@ -163,7 +163,7 @@ Targets on disk: **1,280** `.target` files (mean 983 affected verts, max 5,480).
 
 **Interpretation:** subdivided editing cannot hit 60 fps in the reference — normals
 alone (20.57 ms) exceed a 16.6 ms frame budget, before the per-frame client-side
-vertex upload (`legacy-python/lib/glmodule.py:479`, `glVertexPointer` — no VBOs).
+vertex upload (`legacy/python/lib/glmodule.py:479`, `glVertexPointer` — no VBOs).
 
 ### Success metrics
 
@@ -199,14 +199,14 @@ C++ implementation is expected to be correct where the reference is wrong.
 
 | Defect | Location | Nature |
 |---|---|---|
-| Tangent `t2` chained assignment | `legacy-python/core/module3d.py:411` | `t2 = w3[:,1] = w1[:,1]` — `t2` gets `w1`, not the difference. Tangents are wrong. |
-| Tangent sum missing `axis=` | `legacy-python/core/module3d.py:429-430` | `np.sum(sdir[...])` collapses to a scalar |
-| Operator precedence | `legacy-python/core/module3d.py:1212` | `A or B and C` — tangents recomputed regardless of `calculateTangents` |
-| FBX unit scale hardcoded | `legacy-python/plugins/9_export_fbx/fbx_binary.py:736` | `scale_factor = 10.0`; correct line commented at `:735`. Combined with `cfg.scale *= 10` (`plugins/9_export_fbx/__init__.py:112`) this makes every non-decimetre FBX export a **10× error** |
-| FBX forged Creator string | `legacy-python/plugins/9_export_fbx/fbx_binary.py:676-678` | Claims to be "FBX SDK/FBX Plugins version 2013.3" |
-| FBX fixed FileId/CreationTime | `legacy-python/plugins/9_export_fbx/encode_bin.py:285-314` | Every file gets an identical fake FileId |
-| Collada morph controller | `legacy-python/plugins/9_export_collada/dae_controller.py:208` | `NameError` on undefined `rmesh`; never called |
-| `WarpTarget.apply` arg order | `legacy-python/apps/warpmodifier.py:73-74` | Positional args don't match `algos3d.Target.apply` |
-| `mhp` pose loader | `legacy-python/shared/animation.py:1254,1292-1293` | `valid_file` never set True; always logs an error |
-| `AnimationTrack.sparsify` | `legacy-python/shared/animation.py:243-261` | Assigns to a read-only property |
-| BVH `NameError` | `legacy-python/shared/bvh.py:358` | Undefined `filepath` in a warning path |
+| Tangent `t2` chained assignment | `legacy/python/core/module3d.py:411` | `t2 = w3[:,1] = w1[:,1]` — `t2` gets `w1`, not the difference. Tangents are wrong. |
+| Tangent sum missing `axis=` | `legacy/python/core/module3d.py:429-430` | `np.sum(sdir[...])` collapses to a scalar |
+| Operator precedence | `legacy/python/core/module3d.py:1212` | `A or B and C` — tangents recomputed regardless of `calculateTangents` |
+| FBX unit scale hardcoded | `legacy/python/plugins/9_export_fbx/fbx_binary.py:736` | `scale_factor = 10.0`; correct line commented at `:735`. Combined with `cfg.scale *= 10` (`plugins/9_export_fbx/__init__.py:112`) this makes every non-decimetre FBX export a **10× error** |
+| FBX forged Creator string | `legacy/python/plugins/9_export_fbx/fbx_binary.py:676-678` | Claims to be "FBX SDK/FBX Plugins version 2013.3" |
+| FBX fixed FileId/CreationTime | `legacy/python/plugins/9_export_fbx/encode_bin.py:285-314` | Every file gets an identical fake FileId |
+| Collada morph controller | `legacy/python/plugins/9_export_collada/dae_controller.py:208` | `NameError` on undefined `rmesh`; never called |
+| `WarpTarget.apply` arg order | `legacy/python/apps/warpmodifier.py:73-74` | Positional args don't match `algos3d.Target.apply` |
+| `mhp` pose loader | `legacy/python/shared/animation.py:1254,1292-1293` | `valid_file` never set True; always logs an error |
+| `AnimationTrack.sparsify` | `legacy/python/shared/animation.py:243-261` | Assigns to a read-only property |
+| BVH `NameError` | `legacy/python/shared/bvh.py:358` | Undefined `filepath` in a warning path |

@@ -30,10 +30,10 @@ See `architecture.md` §II.2 for the full tree. The rules:
   namespace. Modules: `core`, `rig`, `io`, `render`, `ui`, `app`.
 - **`include/makehuman/<module>/`** — public headers only. If a header is not
   used outside its module it belongs next to the `.cpp` in `src/`.
-- **`legacy-python/`** — the reference oracle. **Read-only.** The only permitted
+- **`legacy/python/`** — the reference oracle. **Read-only.** The only permitted
   edits are those that keep it runnable as a reference.
 - **`data/`** — CC0 assets, shared by both implementations.
-  `legacy-python/data` is a symlink to it.
+  `legacy/python/data` is a symlink to it.
 - **`tests/{unit,integration,regression,golden,smoke}/`** — mirrors `src/` layout.
 - **`memory/`** — this folder. Updated in the same commit as the code it describes.
 
@@ -105,7 +105,7 @@ struct ParseError {
 - **Validate at the trust boundary.** Every file parser checks bounds, counts,
   and index ranges before indexing. A malformed asset must not read out of bounds.
 - **Never catch-and-continue on data integrity.** The reference does this
-  (`legacy-python/plugins/9_export_ogre/mh2ogre.py:191` bare `except: pass`) and
+  (`legacy/python/plugins/9_export_ogre/mh2ogre.py:191` bare `except: pass`) and
   the result is a corrupt file that looks fine. We fail loudly.
 - Errors carry file, line/offset, expected, and found.
 - `assert` is for invariants that indicate a bug in our code. It is not input validation.

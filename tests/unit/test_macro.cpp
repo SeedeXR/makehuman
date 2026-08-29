@@ -10,7 +10,7 @@ using Catch::Matchers::WithinAbs;
 using namespace mh::core;
 
 TEST_CASE("the macro value table matches the reference", "[core][macro]") {
-    // legacy-python/lib/targets.py:50-61. Counted from the reference itself:
+    // legacy/python/lib/targets.py:50-61. Counted from the reference itself:
     //   len(targets._value_cat) == 27, len(targets._categories) == 9.
     // (An earlier note in memory/ said 26; that was wrong -- age has FOUR
     //  values, not three, which is what the extra one is.)

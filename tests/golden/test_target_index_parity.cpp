@@ -4,7 +4,7 @@
 // every group's size, over the whole shipped target set.
 //
 // tests/golden/target_groups.txt is generated from the reference's own
-// targets.getTargets().groups (legacy-python/lib/targets.py:188-227).
+// targets.getTargets().groups (legacy/python/lib/targets.py:188-227).
 
 #include "makehuman/core/TargetIndex.h"
 

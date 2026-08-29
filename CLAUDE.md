@@ -50,7 +50,7 @@ file lies with authority.
 src/{core,rig,io,render,ui,app}   C++ implementation
 include/makehuman/                public headers
 data/                             CC0 assets (136 MB, 1,787 files)
-legacy-python/                    the Python reference — ORACLE ONLY, read-only
+legacy/python/                    the Python reference — ORACLE ONLY, read-only
 tests/{unit,integration,regression,golden,smoke}
 benchmarks/                       baseline_python.json + C++ benchmarks
 memory/                           project memory (above)
@@ -62,7 +62,7 @@ graphify-out/                     knowledge graph, 5,392 nodes / 9,319 edges
 1. **Zero hallucination.** Every claim about code, an API, or state must be
    observed this session and cited `file:line`. Never quote an API from memory
    when it can be checked. "I don't know yet — checking" beats a plausible guess.
-2. **Never edit `legacy-python/`** except to keep the reference runnable.
+2. **Never edit `legacy/python/`** except to keep the reference runnable.
 3. **Never port a known-broken behaviour.** `memory/project_context.md` §8 lists
    verified defects (three tangent bugs, the FBX 10× unit error, dead morph
    export, and more). Parity tests must exclude them explicitly, with a comment.
@@ -89,7 +89,7 @@ ctest --preset macos-arm64-debug --output-on-failure
 
 Reference oracle (Python):
 ```bash
-cd legacy-python && ../.venv-mh/bin/python makehuman.py
+cd legacy/python && ../.venv-mh/bin/python makehuman.py
 ./.venv-mh/bin/python benchmarks/baseline_python_core.py    # from repo root
 ```
 

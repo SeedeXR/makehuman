@@ -16,7 +16,7 @@ class Human;
 /// A parsed `.mhm` saved model.
 ///
 /// Line-oriented UTF-8, `#` comments, whitespace-split
-/// (legacy-python/apps/human.py:1459-1643). The keys below are the ones the
+/// (legacy/python/apps/human.py:1459-1643). The keys below are the ones the
 /// core writes; plugin-contributed lines (skeleton, pose, proxies, materials)
 /// are preserved verbatim in @ref unhandled so a round trip does not lose them,
 /// and so a later milestone can consume them without a format change.

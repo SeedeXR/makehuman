@@ -76,7 +76,7 @@ TEST_CASE("modifier stack matches python reference", "[parity][core]") {
 | Quantity | Tolerance | Justification |
 |---|---|---|
 | Vertex position | `1e-5` mesh units | float32 accumulation over a stack of sparse adds |
-| Vertex position, from a compiled target | `1e-3` | the reference quantises to `int16 * 1e-3` (`legacy-python/core/algos3d.py:221`) |
+| Vertex position, from a compiled target | `1e-3` | the reference quantises to `int16 * 1e-3` (`legacy/python/core/algos3d.py:221`) |
 | Normals | `1e-4` per component | normalisation after an area-weighted sum |
 | Bone matrices | `1e-5` per element | `inv()` round-trip |
 | Skinned position | `1e-4` | matrix blend before transform |
@@ -93,8 +93,8 @@ must **not** assert equality for those. Instead:
 
 ```cpp
 // The reference computes tangents incorrectly:
-//   legacy-python/core/module3d.py:411  t2 = w3[:,1] = w1[:,1]  (chained assignment)
-//   legacy-python/core/module3d.py:429  np.sum(...) with no axis= collapses to a scalar
+//   legacy/python/core/module3d.py:411  t2 = w3[:,1] = w1[:,1]  (chained assignment)
+//   legacy/python/core/module3d.py:429  np.sum(...) with no axis= collapses to a scalar
 // We compute them correctly, so tangents are deliberately NOT parity-tested.
 // Instead we assert the mathematical property the reference fails to satisfy.
 TEST_CASE("tangents are orthonormal to normals", "[core][tangent]") {
@@ -115,7 +115,7 @@ For every importer/exporter pair:
 2. **Numerical round-trip**: positions within `1e-5` after unit conversion.
 3. **Unit correctness**: export at each of dm/m/cm/inch, re-import, assert real
    scale. *This test exists specifically because the reference gets it wrong —
-   `cfg.scale *= 10` (`legacy-python/plugins/9_export_fbx/__init__.py:112`) with a
+   `cfg.scale *= 10` (`legacy/python/plugins/9_export_fbx/__init__.py:112`) with a
    hardcoded `scale_factor = 10.0` (`fbx_binary.py:736`) makes every non-decimetre
    FBX export a 10× error.*
 4. **Malformed input**: truncated file, bad magic, out-of-range indices, negative
@@ -132,7 +132,7 @@ and frame time. Recorded to `benchmarks/results/<date>-<commit>.json`.
 
 | Resource | Budget | Rationale |
 |---|---|---|
-| Peak RSS, default character | **≤ 400 MB** | The reference keeps both seed and subdivided meshes resident plus an unbounded target cache (`legacy-python/core/algos3d.py:64`) |
+| Peak RSS, default character | **≤ 400 MB** | The reference keeps both seed and subdivided meshes resident plus an unbounded target cache (`legacy/python/core/algos3d.py:64`) |
 | Peak RSS, subdivided + 5 proxies | ≤ 900 MB | |
 | Compiled target blob, resident | ≤ 120 MB, mmapped | 1,280 targets; mmap means the OS can evict |
 | GPU memory, default scene | ≤ 256 MB | |

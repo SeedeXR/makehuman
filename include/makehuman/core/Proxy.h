@@ -15,7 +15,7 @@
 
 namespace mh::core {
 
-/// What a proxy replaces or adds. legacy-python/shared/proxy.py:56-57.
+/// What a proxy replaces or adds. legacy/python/shared/proxy.py:56-57.
 enum class ProxyType : uint8_t {
     Proxymeshes,  ///< an alternate body topology, replacing the base mesh
     Clothes,

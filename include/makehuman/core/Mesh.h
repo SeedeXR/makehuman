@@ -22,13 +22,13 @@ enum class MeshError {
 
 /// Indexed mesh with a uniform primitive size.
 ///
-/// This mirrors the reference's `Object3D` (legacy-python/core/module3d.py:110)
+/// This mirrors the reference's `Object3D` (legacy/python/core/module3d.py:110)
 /// closely enough to be parity-testable, while using struct-of-arrays layout
 /// throughout. Two properties of the reference are load-bearing and preserved:
 ///
 /// 1. **Uniform primitive size.** Every face has exactly `vertsPerPrimitive`
 ///    corners (4 for the base mesh). Triangles are stored as *degenerate quads*
-///    by repeating corner 0 — legacy-python/shared/wavefront.py:105-106.
+///    by repeating corner 0 — legacy/python/shared/wavefront.py:105-106.
 ///
 /// 2. **Dual index space.** A face corner references `(fvert[i], fuvs[i])`.
 ///    Positions and UVs have independent index spaces
@@ -139,7 +139,7 @@ public:
     [[nodiscard]] std::optional<uint16_t> findFaceGroup(std::string_view name) const;
 
     /// Restores every vertex to the position captured by setCoords().
-    /// Reference: legacy-python/core/algos3d.py:493-494 (`resetObj`).
+    /// Reference: legacy/python/core/algos3d.py:493-494 (`resetObj`).
     void resetToOriginal();
 
     // -- derived data -------------------------------------------------------
@@ -191,7 +191,7 @@ public:
     [[nodiscard]] std::optional<std::pair<Vec3, Vec3>> boundingBox() const;
 
     /// Height in centimetres, i.e. the Y extent scaled by 10.
-    /// Reference: legacy-python/apps/human.py:694-699.
+    /// Reference: legacy/python/apps/human.py:694-699.
     [[nodiscard]] float heightCm() const;
 
 private:

@@ -100,7 +100,6 @@ struct SceneExportResult {
 
 struct ImportedMesh {
     core::Mesh mesh;
-    std::string sourceFormat;
     size_t meshCount{};  ///< meshes in the file; only the first is returned
 };
 

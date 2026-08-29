@@ -14,7 +14,7 @@ struct ValueInfo {
 };
 
 // Order must match the MacroValue enum, which follows the reference's
-// _cat_data declaration order (legacy-python/lib/targets.py:50-61).
+// _cat_data declaration order (legacy/python/lib/targets.py:50-61).
 constexpr std::array<ValueInfo, kMacroValueCount> kValues{{
     {"male", MacroCategory::Gender},
     {"female", MacroCategory::Gender},

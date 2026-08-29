@@ -4,7 +4,7 @@
 //
 // The expected values were MEASURED from the reference on 2026-08-29 with
 // benchmarks/baseline_python_core.py, which loads data/3dobjs/base.obj through
-// legacy-python/core/files3d.py and reports:
+// legacy/python/core/files3d.py and reports:
 //
 //     {'verts': 19158, 'faces': 18486, 'uvs': 21334,
 //      'verts_per_primitive': 4, 'max_faces': 5}

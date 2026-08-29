@@ -268,11 +268,6 @@ std::expected<ImportedMesh, SceneIoError> importMesh(const std::filesystem::path
     out.mesh.buildAdjacency();
     out.mesh.calcNormals();
 
-    // The extension is the honest answer here: assimp does not expose which
-    // importer it selected without re-deriving it, and guessing would be worse
-    // than reporting what the caller already knows.
-    out.sourceFormat = path.extension().string();
-
     return out;
 }
 

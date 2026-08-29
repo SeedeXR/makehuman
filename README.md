@@ -1,110 +1,97 @@
-# MakeHuman
+# MakeHuman — C++/Qt6
 
-This is the main source code for the MakeHuman application as such. See "Getting started" below for instructions on how to get MakeHuman up and running. Mac users
-_should_ be able to use the same instructions as windows users, although this has not been thoroughly tested.
+A native C++23 port of [MakeHuman](http://www.makehumancommunity.org), the
+parametric 3D human generator. Targets macOS (arm64 first), with a Qt6 UI and a
+Metal-backed renderer replacing the original Python/PyQt5/legacy-OpenGL stack.
 
-## Current status
+**Status: core complete, UI not started.** The port loads MakeHuman's data,
+builds a parameterised character with byte-level fidelity to the original, fits
+proxies, and exports to OBJ, glTF/GLB and FBX.
 
-At the point of writing this, the source code is almost ready for a stable release. 
+## What works today
 
-## Support requests
+| Area | State |
+|---|---|
+| Mesh, OBJ read, normals, tangents, GPU unweld | ✅ parity-tested |
+| Catmull-Clark subdivision | ✅ exact parity — 75,008 verts / 73,944 faces |
+| Targets, macro factors, modifiers, `Human` | ✅ parity-tested end to end |
+| `.mhm` saved models | ✅ round-trip parity |
+| Proxies (`.mhclo`), materials (`.mhmat`), asset index | ✅ parity-tested |
+| **Export** OBJ · glTF 2.0 / GLB · FBX 7500 binary · Collada · STL · 3MF | ✅ |
+| **Import** FBX · glTF · OBJ · Collada · STL | ✅ new capability |
+| Skeleton, skinning, pose | ⬜ not started |
+| Renderer, UI | ⬜ not started |
 
-If you have any questions about the software and its usage, please make a request in our forum: http://www.makehumancommunity.org/forum.
+Every ported subsystem is checked against the original Python implementation,
+which is retained in `legacy/python/` purely as a test oracle and is **not part
+of the build**. CI enforces that.
 
-A quick look through at least the top questions in the FAQ might be a good idea too: http://www.makehumancommunity.org/wiki/FAQ:Index
+## Performance
 
-Please do not use the issue tracker for general tech support. For such questions, please use the forums.
+Measured against the Python original on the same machine and data
+(`benchmarks/`, release build):
 
-## Testing and reporting bugs
+| Operation | C++ | Python | |
+|---|---|---|---|
+| Load base mesh | 5.2 ms | 211.8 ms | **40×** |
+| Catmull-Clark build | 6.3 ms | 202.3 ms | **32×** |
+| Subdivided refresh | 0.46 ms | 28.2 ms | **61×** |
+| Full character rebuild | 0.07 ms | — | |
+| Load all 1,280 targets | 465 ms | 3,226 ms | **6.9×** |
 
-The testing vision for this code is to build a community release that includes main application and often-used, user-contributed 
-plug-ins. We hope that the utility of this integrated functionality is sufficient to entice a larger cohort of testers who get
-value-added in exchange for the possibility of uncovering deficiencies in our application.
+The subdivided-refresh figure is the one that matters: the original needs
+28.2 ms per update, which exceeds a 16.6 ms frame budget before anything is
+drawn. That is why subdivided editing cannot hold 60 fps today.
 
-If you find a bug, please report it in the issues section here on github. In order to make a good bug report, please also include
-the logs: http://www.makehumancommunity.org/wiki/FAQ:How\_to\_provide\_a\_makehuman\_log\_for\_a\_good\_bug\_report%3F
+## Design
 
-## Getting started
+The interface is specified in [`memory/design.md`](memory/design.md), with a
+rendered visual reference:
+**[MakeHuman Interface Kit](https://claude.ai/code/artifact/fddacb8c-5f35-4619-81cc-6e0f45d1a070)**
+— the dark dockable workspace, its tokens, controls and icons, built in the tokens
+it documents.
 
-Builds for Windows platforms can be downloaded from http://www.makehumancommunity.org/content/downloads.html
+## Building
 
-If you rather run the code from source:
+Requires CMake ≥ 3.28, Ninja, a C++23 compiler, and assimp.
 
-* Install python 3.6.x or later from https://www.python.org/ (or via your system's package management). On windows you **MUST** use 64-bit python. 32-bit python will not work.
-* Install python dependencies (see the [Installing python dependencies](#installing-python-dependencies) section below)
-* Install [git](https://git-scm.com/) with [LFS support](https://git-lfs.github.com/). Modern git clients have LFS support included per default. 
-* Make sure the command "git" is available via the PATH variable.
-* Use git to clone https://github.com/makehumancommunity/makehuman.git (or download the source as a zip)
-* Run the "download\_assets\_git.py" script in the "makehuman" subdirectory of the source code.
-* Optionally also run:
-  * compile\_models.py
-  * compile\_proxies.py
-  * compile\_targets.py
- 
-### Installing python dependencies
-MakeHuman depends on the following Python packages:
+```bash
+brew install cmake ninja assimp
+cmake --preset macos-arm64-release
+cmake --build --preset macos-arm64-release -j
+ctest --preset macos-arm64-debug --output-on-failure
+```
 
-* numpy
-* PyQt5
-* PyOpenGL
+Presets: `macos-arm64-debug`, `macos-arm64-release`, `macos-arm64-asan`.
 
-Additionaly MakeHuman's shell plugin can make use of [IPython / Jupyter](https://jupyter.org/). You might also want to install these packages:
+## Layout
 
-* jupyterlab
-* qtconsole
+```
+src/{core,io}      C++ implementation   include/makehuman/  public headers
+data/              CC0 assets           tests/              unit · golden · regression
+benchmarks/        vs. the Python baseline
+memory/            project documentation — start with memory/session_start.md
+legacy/            the Python original: test oracle only, never built
+```
 
-#### Installing python core dependencies on Linux
-It is recommended to install the aforementioned packages via the package manager of the operating system.
+## Licensing
 
-* __Debian / Ubuntu / Mint:__
-  
-  `apt install python3-opengl python3-pyqt5 python3-pyqt5.qtopengl python3-pyqt5.qtsvg`
+Two licences, deliberately separated so downstream users get real reuse rights.
+See **[LICENSING.md](LICENSING.md)** — it is the authoritative document.
 
-* __openSUSE:__
+- **`mh-core` (AGPL-3.0-or-later)** — ported from MakeHuman, so copyleft is
+  permanent and cannot be removed.
+- **`mh-io` (Apache-2.0)** — written from published format specifications, never
+  translated from the original, so it is separately reusable.
 
-  `zypper install python3-numpy python3-qt5 python3-opengl`
+Dependency arrows point one way only: AGPL modules may use Apache-2.0 modules,
+never the reverse. CI checks the SPDX header on every source file.
 
-An alternative way to install dependencies is using __pip__. However, it is best practice to set up an [virtual environment](https://docs.python.org/3/library/venv.html)
-and activate it before using Python's package manager on a Linux system.
-For convenience, you might want to run:
+**Assets are CC0.** Anything you create with this software is yours, with no
+conditions. The application's *source* stays open; a closed-source fork is not
+permitted.
 
-  `pip install -r requirements.txt`
-
-#### Installing python core dependencies on Windows
-You should be able to start the command "pip" by opening a console prompt ("run" -> "cmd.exe") and writing "pip". If not, 
-figure out how to run [__pip__](https://pip.pypa.io/en/stable/) (it should have been installed by python automatically):
-
-Use __pip__ to install dependencies. Running the following command will install all python dependencies:
-
-`pip install -r requirements.txt`
-
-### Installing plugins
-
-If you want to use community plugins like the asset downloader - download them, put in the plugins directory, enable in settings and restart app:
-
-* https://github.com/makehumancommunity/community-plugins-mhapi
-* https://github.com/makehumancommunity/community-plugins-assetdownload
-* https://github.com/makehumancommunity/community-plugins-socket
-* https://github.com/makehumancommunity/makehuman-plugin-for-blender
-
-### Starting MakeHuman
-
-Having done this, you can now start MakeHuman by running the makehuman.py script. On a prompt run 
-
-* python makehuman.py (on Windows)
-* python3 makehuman.py (on Debian, Ubuntu, Mint...)
-
-Alternatively there is a shell script named _makehuman_ to start the application on Linux systems. 
-
-## Branches
-
-There are three standard branches and some additional developer working branches:
-
-* master: This is where you will find the latest version of MakeHuman.
-
-Read-only reference branches
-
-* bitbucket-stable: This is the code as it looks in the "stable" branch at bitbucket. This is the ancestor of what is now the "master" branch.
-* bitbucket-default: This is the code as it looks in the "default" branch at bitbucket.
-
-In addition you may from time to time see feature branches (usually named \_feature...), which are removed after having been merged to the master branch. 
+The Autodesk FBX SDK is **not** used, despite being free of charge — its licence
+and AGPL impose contradictory distribution obligations. FBX support comes from
+assimp (BSD-3), which writes newer FBX than the original did. Reasoning with
+clause references is in LICENSING.md §5.3.

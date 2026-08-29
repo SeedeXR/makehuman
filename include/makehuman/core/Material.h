@@ -16,7 +16,7 @@
 namespace mh::core {
 
 /// The seven texture channels the format defines
-/// (legacy-python/shared/material.py:176). There is no PBR here: the model is
+/// (legacy/python/shared/material.py:176). There is no PBR here: the model is
 /// Blinn-Phong with per-channel intensities. A metallic-roughness conversion
 /// belongs in the renderer (memory/architecture.md §II.4), not in the parser.
 enum class TextureChannel : uint8_t {

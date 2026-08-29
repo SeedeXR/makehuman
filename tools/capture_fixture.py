@@ -31,11 +31,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-LEGACY = REPO / "legacy-python"
+LEGACY = REPO / "legacy/python"
 GOLDEN = REPO / "tests" / "golden"
 
 # The reference resolves system data via getSysPath() == "." and therefore
-# requires CWD == the install dir (legacy-python/lib/getpath.py:224).
+# requires CWD == the install dir (legacy/python/lib/getpath.py:224).
 os.chdir(LEGACY)
 for _p in ("", "lib", "core", "apps", "shared"):
     sys.path.insert(0, str(LEGACY / _p) if _p else str(LEGACY))

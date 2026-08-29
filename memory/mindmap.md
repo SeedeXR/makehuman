@@ -64,7 +64,7 @@ flowchart TD
 **The load-bearing insight:** the mesh is the *source of truth* for the rig, not
 the other way round. Change a slider → vertices move → joint positions move →
 bone rest matrices rebuild. This is why `applyAllTargets` also calls
-`updateJoints` and `resetBakedAnimations` (`legacy-python/apps/human.py:1177-1180`).
+`updateJoints` and `resetBakedAnimations` (`legacy/python/apps/human.py:1177-1180`).
 A port that treats the skeleton as independent will drift.
 
 ## 3. Module dependency graph (C++ target design)
@@ -157,8 +157,8 @@ bounding-box recompute. See `architecture.md` §I.9.
 | Goal | Start here |
 |---|---|
 | Understand the whole thing | this file, then `architecture.md` |
-| Understand modifiers | `architecture.md` §I.4, then `legacy-python/apps/humanmodifier.py:644` |
-| Understand the mesh | `architecture.md` §I.2, then `legacy-python/core/module3d.py:110` |
+| Understand modifiers | `architecture.md` §I.4, then `legacy/python/apps/humanmodifier.py:644` |
+| Understand the mesh | `architecture.md` §I.2, then `legacy/python/core/module3d.py:110` |
 | Add a file format | `instruction.md` §6.2, `architecture.md` §II.5 |
 | Work on the UI | `design.md`, then `architecture.md` §II.6 |
 | Understand licensing | `project_context.md` §4, then `/LICENSING.md` |

@@ -62,7 +62,7 @@ startup does not need SIMD. The frame loop does.
 ## 5. The GPU does graphics work; the CPU orchestrates
 
 The reference does linear-blend skinning on the CPU in NumPy and recomputes all
-normals every pose change (`legacy-python/shared/animation.py:1086-1094`, whose
+normals every pose change (`legacy/python/shared/animation.py:1086-1094`, whose
 own comment says "this is way too slow"). That entire class of work belongs on
 the GPU:
 
@@ -79,7 +79,7 @@ transform vertices.
 Assets are read once and used for the session. Prefer `mmap` over parse-into-heap
 for the compiled target blob. Prefer uploading a buffer slice over rebuilding it.
 The reference re-feeds every vertex array to the driver on every frame
-(`legacy-python/lib/glmodule.py:479`); persistent buffers plus dirty-range updates
+(`legacy/python/lib/glmodule.py:479`); persistent buffers plus dirty-range updates
 are the single largest win available.
 
 ## 7. Explicit over implicit; boring over clever
@@ -93,9 +93,9 @@ are the single largest win available.
 ## 8. Fail loudly, early, and with context
 
 The reference swallows errors: bare `except: pass` in the Ogre exporter
-(`legacy-python/plugins/9_export_ogre/mh2ogre.py:191`), in the FBX template
+(`legacy/python/plugins/9_export_ogre/mh2ogre.py:191`), in the FBX template
 builder (`fbx_utils_bin.py:593-595`), in `Bone.update`
-(`legacy-python/shared/skeleton.py:908-912`). The result is a partially-written
+(`legacy/python/shared/skeleton.py:908-912`). The result is a partially-written
 file indistinguishable from a good one.
 
 Our rules:
@@ -112,7 +112,7 @@ Our rules:
   this" — it needs a justification in review.
 - No raw owning pointers. Raw pointers are non-owning observers only.
 - No reference cycles; the reference's weak-ref `Object3D.object` property
-  (`legacy-python/core/module3d.py:459-464`) exists because Python let a cycle
+  (`legacy/python/core/module3d.py:459-464`) exists because Python let a cycle
   happen. Design the graph so it cannot.
 - RAII for every GPU resource, file handle, and lock.
 

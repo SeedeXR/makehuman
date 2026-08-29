@@ -11,7 +11,7 @@ namespace mh::core {
 
 /// One level of Catmull-Clark subdivision, split into a topology pass and a
 /// geometry pass — mirroring the reference's `create()` / `update_coords()`
-/// (legacy-python/apps/catmull_clark_subdivision.py:75 and :384).
+/// (legacy/python/apps/catmull_clark_subdivision.py:75 and :384).
 ///
 /// The split matters: topology only changes when the face set does, while
 /// geometry changes on every morph. Rebuilding topology per morph is what makes

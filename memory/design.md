@@ -4,11 +4,24 @@
 
 Single source of truth for UI, UX, and interaction. Binding for implementation.
 
+## Visual reference
+
+**→ [MakeHuman Interface Kit](https://claude.ai/code/artifact/fddacb8c-5f35-4619-81cc-6e0f45d1a070)**
+
+A rendered specimen of everything below: the default workspace with a working
+six-dot panel menu, the colour tokens as real swatches with their measured
+contrast ratios, the type scale set in 42dot Sans, the controls, the Lucide icon
+set, and the verification evidence. It is built *in* these tokens rather than
+describing them, so a drift between spec and specimen is visible immediately.
+
+Rebuild it from `memory/design.md` whenever the tokens change — the page and this
+document must not disagree.
+
 > **Note on the existing UI:** none of this is a port. The reference has zero
 > docking infrastructure — verified: no `QDockWidget`, `QSplitter`, `QMdiArea`,
-> `saveState`, or `restoreState` anywhere in `legacy-python/`. Its shell is two
+> `saveState`, or `restoreState` anywhere in `legacy/python/`. Its shell is two
 > levels of Qt tabs with 50 `TaskView` classes each owning a pair of scroll-area
-> panels (`legacy-python/core/gui3d.py:259`). We are building the UI fresh.
+> panels (`legacy/python/core/gui3d.py:259`). We are building the UI fresh.
 
 ---
 
@@ -71,7 +84,7 @@ Never below 11 pt. Never more than three sizes visible in one panel.
 
 Dark-first, single theme at launch. Neutral greys, one warm accent — inherited in
 spirit from the reference's `#ffa02f → #e96226` accent
-(`legacy-python/data/themes/makehuman.qss:40-49`) so existing users feel at home.
+(`legacy/python/data/themes/makehuman.qss:40-49`) so existing users feel at home.
 
 ### Neutrals
 
@@ -101,7 +114,7 @@ spirit from the reference's `#ffa02f → #e96226` accent
 
 | Token | Hex | Use |
 |---|---|---|
-| `--accent` | `#f58220` | primary action, active tab, slider fill — the MakeHuman brand orange, taken from `legacy-python/icons/makehuman.svg` |
+| `--accent` | `#f58220` | primary action, active tab, slider fill — the MakeHuman brand orange, taken from `legacy/python/icons/makehuman.svg` |
 | `--accent-hover` | `#ff9642` | |
 | `--accent-press` | `#d96a10` | |
 | `--accent-muted` | `#f5822033` | selection wash, 20% alpha |
@@ -262,10 +275,10 @@ float/dock. This is the "famous six icon top right of a panel" behaviour.
 
 - 24 px row; 4 px track, `--bg-input`; fill `--accent` from the origin (centre for
   bipolar `[-1,1]`, left for unipolar `[0,1]` — matching
-  `legacy-python/apps/humanmodifier.py:453-459`).
+  `legacy/python/apps/humanmodifier.py:453-459`).
 - Numeric field is editable and mono; commits on Enter or blur.
 - Drag = continuous update; release = commit + undo entry. This mirrors the
-  reference's onChanging/onRelease split (`legacy-python/lib/modifierslider.py:114-172`),
+  reference's onChanging/onRelease split (`legacy/python/lib/modifierslider.py:114-172`),
   which exists for good performance reasons.
 - Shift = fine (0.1×). Alt/⌥-click = reset to default. Scroll adjusts by one step.
 - `⇄` toggles symmetry linking for paired modifiers.
@@ -297,7 +310,7 @@ hair, and eyebrows do not ship in-repo** and must be fetched.
 ## 8. Interaction
 
 ### 8.1 Viewport navigation (defaults preserve the reference's bindings,
-`legacy-python/core/mhmain.py:197-202`)
+`legacy/python/core/mhmain.py:197-202`)
 
 | Input | Action |
 |---|---|
@@ -311,7 +324,7 @@ hair, and eyebrows do not ship in-repo** and must be fetched.
 | `F` | Frame selection |
 
 All bindings are remappable and stored **symbolically** — not as raw Qt enum
-integers, which is what the reference does (`legacy-python/core/mhmain.py:1021-1027`)
+integers, which is what the reference does (`legacy/python/core/mhmain.py:1021-1027`)
 and which does not survive a Qt version change.
 
 ### 8.2 Feedback timing
@@ -340,7 +353,7 @@ loading · error · empty. A component is not done until all applicable states e
   contrast checker, not by eye.
 - **Motion**: honour `NSWorkspace` reduce-motion; animations ≤ 200 ms and always
   skippable. The reference animates camera transitions
-  (`legacy-python/core/mhmain.py:1573-1635`) — keep, but make them respect the setting.
+  (`legacy/python/core/mhmain.py:1573-1635`) — keep, but make them respect the setting.
 - **Text scaling**: layouts must survive 200% without clipping or overlap.
 - **No colour-only signals.**
 
@@ -365,7 +378,7 @@ Settings    General · Appearance · Shortcuts · Mouse · Plugins · Workspaces
 ```
 
 **Import** is new — the reference has no import capability at all (verified: zero
-importer machinery in `legacy-python/`).
+importer machinery in `legacy/python/`).
 
 ---
 
@@ -374,14 +387,14 @@ importer machinery in `legacy-python/`).
 - Styling via a single QSS generated from the token table in
   `resources/themes/dark.qss`, so a token change never requires hunting literals.
   **Do not** repeat the reference's mistake of `url()` paths relative to the
-  process CWD (`legacy-python/data/themes/makehuman.qss:193`) — use Qt resources.
+  process CWD (`legacy/python/data/themes/makehuman.qss:193`) — use Qt resources.
 - Do **not** subclass `QCommonStyle` and hand-forward virtuals; the reference does
   this only because PyQt lacked `QProxyStyle`
-  (`legacy-python/lib/qtgui.py:233-288`). C++ has `QProxyStyle`.
+  (`legacy/python/lib/qtgui.py:233-288`). C++ has `QProxyStyle`.
 - HiDPI is automatic in Qt 6; the reference's pre-`QApplication` settings scan
-  (`legacy-python/lib/core.py:60-78`) is obsolete and is not ported.
+  (`legacy/python/lib/core.py:60-78`) is obsolete and is not ported.
 - Every string is translatable via `tr()`. The reference bakes strings at widget
   construction so language changes need a restart
-  (`legacy-python/plugins/5_settings_0_settings.py:126`) — we support live switching.
+  (`legacy/python/plugins/5_settings_0_settings.py:126`) — we support live switching.
 - RTL must actually work. The reference reads an `rtl` setting and never applies
   it (verified: no `setLayoutDirection` anywhere).

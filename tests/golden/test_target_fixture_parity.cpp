@@ -88,7 +88,7 @@ TEST_CASE("parsed target indices and offsets match the reference",
         const auto dataFile  = fixtureDir() / (blobStem(rel) + ".data.bin");
         if (!std::filesystem::exists(vertsFile)) continue;
 
-        // The fixture records paths relative to legacy-python/, which is where
+        // The fixture records paths relative to legacy/python/, which is where
         // data/ is symlinked from; resolve against the real data root.
         const auto path = std::filesystem::path(MH_DATA_DIR).parent_path() / rel;
         const auto t    = loadTarget(path);

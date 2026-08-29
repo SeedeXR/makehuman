@@ -1,7 +1,7 @@
 {
   "subsystem": "mesh",
-  "captured_at": "2026-08-29T01:22:17.521807+00:00",
-  "reference_commit": "68b30f6c94abe2469cdb01579cc421fdd063189f",
+  "captured_at": "2026-08-29T07:41:17.599778+00:00",
+  "reference_commit": "c8a241f97b67ec5c3409a2fe082ddbcf655ae37c",
   "python": "3.14.6",
   "numpy": "2.5.2",
   "platform": "darwin",

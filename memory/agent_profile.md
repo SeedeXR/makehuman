@@ -217,4 +217,4 @@ Re-read your own diff as a hostile reviewer before presenting it.
    *MetaHuman-class capability* is the goal; *MetaHuman content* is forbidden.
 6. Never weaken or delete a test to go green.
 7. Never `git push --force` to `master`.
-8. Never edit files under `legacy-python/` except to keep the reference runnable.
+8. Never edit files under `legacy/python/` except to keep the reference runnable.

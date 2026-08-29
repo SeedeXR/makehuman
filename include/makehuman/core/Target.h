@@ -18,7 +18,7 @@ namespace mh::core {
 ///
 /// This is MakeHuman's entire modelling primitive. Every slider in the
 /// application resolves to a weighted sum of these
-/// (legacy-python/core/algos3d.py:67).
+/// (legacy/python/core/algos3d.py:67).
 ///
 /// Indices are uint32 here. The reference's compiled form quantises them to
 /// **uint16** (`algos3d.py:220`), capping any mesh at 65,536 vertices — a
@@ -54,7 +54,7 @@ struct TargetError {
 
 /// Parses a `.target` file.
 ///
-/// Format (legacy-python/core/algos3d.py:126-147): one vertex per line,
+/// Format (legacy/python/core/algos3d.py:126-147): one vertex per line,
 /// `index dx dy dz`, with `#` comments. Values use forms like `-.001`.
 ///
 /// The reference silently skips any line that does not split into exactly four

@@ -29,19 +29,8 @@ struct GltfWriteOptions {
     bool writeNormals{true};
     bool writeUVs{true};
 
-    /// Rotate 180 degrees about Y so the character faces the opposite way.
-    ///
-    /// Both glTF and MakeHuman are Y-up and right-handed, so no axis conversion
-    /// is required and none is done. Which way a *character* should face is a
-    /// pipeline convention rather than a spec requirement, so this is offered
-    /// and defaulted off rather than silently applied.
-    bool flipForward{false};
-
     std::string meshName{"MakeHuman"};
     std::string materialName{"Skin"};
-
-    /// Emit a `.gltf` + `.bin` pair instead of a single self-contained `.glb`.
-    bool separateJson{false};
 };
 
 enum class GltfWriteErrorKind { CannotOpen, EmptyMesh, TooManyVertices };
@@ -57,7 +46,6 @@ struct GltfWriteError {
 struct GltfWriteResult {
     size_t vertices{};  ///< render (unwelded) vertices
     size_t triangles{};
-    size_t bufferBytes{};
     size_t fileBytes{};
 };
 

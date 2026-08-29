@@ -7,12 +7,12 @@
 namespace mh::core {
 
 /// MakeHuman's internal length unit is the **decimetre**.
-/// Verified: legacy-python/apps/human.py:694-699 computes
+/// Verified: legacy/python/apps/human.py:694-699 computes
 /// `heightCm = 10 * (bboxMaxY - bboxMinY)`.
 inline constexpr float kDecimetresToCentimetres = 10.0F;
 
 /// World orientation: Y-up, model faces +Z, right-handed.
-/// Verified: legacy-python/shared/skeleton.py:1141-1153 converts to/from
+/// Verified: legacy/python/shared/skeleton.py:1141-1153 converts to/from
 /// "Blender (z is up)", so MakeHuman itself is Y-up.
 
 struct Vec2 {
@@ -75,7 +75,7 @@ inline float dot(const Vec3& a, const Vec3& b) {
 
 /// A named subset of faces. The base mesh has 172 of them; they are the unit of
 /// picking and of per-group material tinting.
-/// Reference: legacy-python/core/module3d.py:47-108
+/// Reference: legacy/python/core/module3d.py:47-108
 struct FaceGroup {
     std::string name;
     uint16_t idx{};

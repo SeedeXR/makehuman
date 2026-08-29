@@ -3,7 +3,7 @@
 **Version:** 1.0 · **Created:** 2026-08-29 · **Status:** design, pre-implementation
 
 > Every "As-is" fact below was verified in-session against the cited `file:line`
-> in `legacy-python/`. Every "To-be" statement is a design decision, not an
+> in `legacy/python/`. Every "To-be" statement is a design decision, not an
 > observation, and is marked as such.
 
 ---
@@ -326,7 +326,7 @@ covers the parts we inherited. See `project_context.md` §4.2.
 ├── cmake/              modules, toolchains
 ├── packaging/macos/    Info.plist, bundle, dmg, notarization
 ├── docs/               authored + generated documentation
-├── legacy-python/      the Python reference — oracle only, never shipped
+├── legacy/python/      the Python reference — oracle only, never shipped
 └── graphify-out/       knowledge graph (5,392 nodes / 9,319 edges)
 ```
 

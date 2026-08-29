@@ -124,7 +124,6 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
 
     const bool withNormals = options.writeNormals && rm.vnorm().size() == rm.vertexCount();
     const bool withUVs     = options.writeUVs && rm.texco().size() == rm.vertexCount();
-    const float fx         = options.flipForward ? -1.0F : 1.0F;
 
     // ---- binary buffer ----------------------------------------------------
     std::vector<uint8_t> bin;
@@ -136,10 +135,9 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
 
     const size_t posOffset = bin.size();
     for (const core::Vec3& v : rm.coord()) {
-        // flipForward is a 180-degree rotation about Y: (x,z) both negate.
-        const float x = v.x * scale * fx;
+        const float x = v.x * scale;
         const float y = v.y * scale + groundOffset;
-        const float z = v.z * scale * fx;
+        const float z = v.z * scale;
         appendFloat(bin, x);
         appendFloat(bin, y);
         appendFloat(bin, z);
@@ -157,9 +155,9 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
         padTo4(bin);
         normOffset = bin.size();
         for (const core::Vec3& n : rm.vnorm()) {
-            appendFloat(bin, n.x * fx);
+            appendFloat(bin, n.x);
             appendFloat(bin, n.y);
-            appendFloat(bin, n.z * fx);
+            appendFloat(bin, n.z);
         }
         normBytes = bin.size() - normOffset;
     }
@@ -299,7 +297,7 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(const std::filesystem::p
             GltfWriteError{GltfWriteErrorKind::CannotOpen, path.string(), "write failed"});
     }
 
-    return GltfWriteResult{rm.vertexCount(), rm.indexCount() / 3, bin.size(), glb.size()};
+    return GltfWriteResult{rm.vertexCount(), rm.indexCount() / 3, glb.size()};
 }
 
 }  // namespace mh::io

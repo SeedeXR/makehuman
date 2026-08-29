@@ -22,7 +22,7 @@ namespace mh::io {
 /// Length units an export can be written in.
 ///
 /// MakeHuman's internal unit is the **decimetre**
-/// (legacy-python/apps/human.py:694-699 computes `heightCm = 10 * bboxY`), and
+/// (legacy/python/apps/human.py:694-699 computes `heightCm = 10 * bboxY`), and
 /// the factors below are the ones its export UI offers
 /// (apps/gui/guiexport.py:124-129).
 enum class Unit : uint8_t { Decimeter, Meter, Centimeter, Inch };

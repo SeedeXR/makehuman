@@ -12,8 +12,8 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [x] Build knowledge graph of the codebase (graphify) — 5,392 nodes / 9,319 edges / 358 communities
 - [x] Deep subsystem analysis: mesh, modifiers, rig, renderer, GUI, export, assets
 - [x] Verify all subagent findings against source (`file:line` spot-checks)
-- [x] Establish repo structure (`src/ include/ tests/ benchmarks/ tools/ resources/ memory/ legacy-python/ data/`)
-- [x] Preserve the Python reference as a runnable oracle (`legacy-python/`, `data/` symlink)
+- [x] Establish repo structure (`src/ include/ tests/ benchmarks/ tools/ resources/ memory/ legacy/python/ data/`)
+- [x] Preserve the Python reference as a runnable oracle (`legacy/python/`, `data/` symlink)
 - [x] Stand up a reference venv (numpy 2.5.1 + PyQt5 + PyOpenGL on Python 3.14.6)
 - [x] Measure the performance baseline → `benchmarks/baseline_python.json`
 - [x] Verify licence position — AGPL-3.0 code / CC0 assets; pyFBX is GPL-2.0-**or-later**, so compatible
@@ -242,7 +242,7 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
       (SIL OFL 1.1) is the assumed match. Needs a one-word confirmation.
 - [ ] **Clarify "open rig".** The instruction mentioned integrating "open rig".
       Candidate readings: (a) the existing open `.mhskel` rig format, (b) OpenSim
-      rigs — `legacy-python/apps/compat.py:181-188` references `opensim.mhskel`
+      rigs — `legacy/python/apps/compat.py:181-188` references `opensim.mhskel`
       as a downloadable community asset, (c) a specific third-party project.
       **Not guessing.** Blocked on clarification; does not block M1–M8.
 - [ ] Evaluate MetaHuman **DNA Calibration** (parts are Apache-2.0) — licence-verify

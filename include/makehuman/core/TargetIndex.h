@@ -20,7 +20,7 @@ namespace mh::core {
 /// A target's path IS its parameterisation. Every path and filename component
 /// is split on `-`, `_` and `.`; a token naming a macro value becomes a
 /// dependency, everything else joins the group key
-/// (legacy-python/lib/targets.py:188-227).
+/// (legacy/python/lib/targets.py:188-227).
 ///
 ///     data/targets/macrodetails/african-female-baby.target
 ///       -> key   = ["macrodetails"]
@@ -83,7 +83,7 @@ struct WeightedTarget {
 ///
 ///     weight(target) = value * PRODUCT(factors[f]) for each dependency f
 ///
-/// legacy-python/apps/humanmodifier.py:644-652. The group name itself is also
+/// legacy/python/apps/humanmodifier.py:644-652. The group name itself is also
 /// a factor there; a caller supplies its contribution through @p groupFactor,
 /// which is 1.0 for a macro group (`humanmodifier.py:607-610`) and the signed
 /// share of the slider for a left/right/centre modifier (`:536-545`).

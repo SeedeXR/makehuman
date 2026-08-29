@@ -37,16 +37,16 @@ proprietary closed fork of it.
 
 | Component | Licence | Evidence |
 |---|---|---|
-| MakeHuman source code | **AGPL-3.0-or-later** | `LICENSE.md` §B; per-file headers, e.g. `legacy-python/core/export.py:21-30` |
+| MakeHuman source code | **AGPL-3.0-or-later** | `LICENSE.md` §B; per-file headers, e.g. `legacy/python/core/export.py:21-30` |
 | Bundled assets (base mesh, targets, proxies, materials, poses, rigs, UVs, litspheres) | **CC0-1.0** | `LICENSE.md` §C; `LICENSE.ASSETS.md`; per-file headers, e.g. `data/3dobjs/base.obj:3-4`, `data/targets/asym/asym-eye-6-l.target:3-4` |
 | UI images, icons, themes, GLSL shaders | **AGPL-3.0** | `LICENSE.md` §B explicitly includes "glsl shaders" and UI images |
 | Output of the application | **Unencumbered** — project claims nothing | `LICENSE.md` §D |
-| `legacy-python/plugins/9_export_fbx/{encode_bin,data_types,fbx_utils_bin,fbx_binary}.py` | **GPL-2.0-or-later** (Blender 2.79, © Campbell Barton, Bastien Montagne) | `legacy-python/licenses/pyFbx-license.txt:1-20`; `legacy-python/plugins/9_export_fbx/encode_bin.py:21-23` |
-| `legacy-python/plugins/9_massproduce/` | **MIT** | `legacy-python/plugins/9_massproduce/__init__.py:15` |
-| `legacy-python/plugins/8_asset_downloader/` | **MIT**, © Joel Palmius 2016 | `legacy-python/plugins/8_asset_downloader/assetdb.py:13-15` |
-| `legacy-python/data/animations/{walks,zombie}` | **AGPL-3.0**, author Jonas Hauquier | `data/animations/zombie/zombie.mhanim:1-3` |
-| numpy, PyOpenGL, `transformations.py` | BSD-3-Clause | `legacy-python/licenses/README.txt` |
-| PyQt5 / Qt5 | GPL-3.0 (open-source track) | `legacy-python/licenses/README.txt` |
+| `legacy/python/plugins/9_export_fbx/{encode_bin,data_types,fbx_utils_bin,fbx_binary}.py` | **GPL-2.0-or-later** (Blender 2.79, © Campbell Barton, Bastien Montagne) | `legacy/python/licenses/pyFbx-license.txt:1-20`; `legacy/python/plugins/9_export_fbx/encode_bin.py:21-23` |
+| `legacy/python/plugins/9_massproduce/` | **MIT** | `legacy/python/plugins/9_massproduce/__init__.py:15` |
+| `legacy/python/plugins/8_asset_downloader/` | **MIT**, © Joel Palmius 2016 | `legacy/python/plugins/8_asset_downloader/assetdb.py:13-15` |
+| `legacy/python/data/animations/{walks,zombie}` | **AGPL-3.0**, author Jonas Hauquier | `data/animations/zombie/zombie.mhanim:1-3` |
+| numpy, PyOpenGL, `transformations.py` | BSD-3-Clause | `legacy/python/licenses/README.txt` |
+| PyQt5 / Qt5 | GPL-3.0 (open-source track) | `legacy/python/licenses/README.txt` |
 
 ### 3.1 Resolved: pyFBX is compatible
 
@@ -54,7 +54,7 @@ An automated pass flagged pyFBX (GPLv2) as possibly incompatible with AGPLv3.
 **That flag was wrong.** The header reads:
 
 > "either version 2 of the License, or (at your option) any later version"
-> — `legacy-python/licenses/pyFbx-license.txt:4-6`
+> — `legacy/python/licenses/pyFbx-license.txt:4-6`
 
 GPL-2.0-**or-later** is upgradeable to GPL-3.0, and GPL-3.0 is explicitly
 compatible with AGPL-3.0 (§13 of both). **No conflict.**
@@ -72,7 +72,7 @@ Two sources disagree about `.target` files:
 |---|---|
 | `LICENSE.md` §C and `LICENSE.ASSETS.md` | Assets — explicitly including "Targets and modifiers" — are **CC0** |
 | Every `.target` file header, e.g. `data/targets/asym/asym-eye-6-l.target:3-4` | "This asset was explicitly released as **CC0** in september 2020" |
-| `legacy-python/core/algos3d.py:507-509` (`defaultTargetLicense()`) | `"license": "AGPL3"` |
+| `legacy/python/core/algos3d.py:507-509` (`defaultTargetLicense()`) | `"license": "AGPL3"` |
 
 **Authoritative reading: CC0.** Two independent explicit statements (the project's
 licence file and the per-asset headers) outweigh a stale default in code. The code
@@ -81,7 +81,7 @@ not silently resolved by whoever reads the code first.
 
 ### 3.3 Asset licence headers are not machine-readable
 
-`LicenseInfo.updateFromComment` (`legacy-python/makehuman.py:378-393`) accepts only
+`LicenseInfo.updateFromComment` (`legacy/python/makehuman.py:378-393`) accepts only
 four lowercase keys — `author`, `license`, `copyright`, `homepage`. Every shipped
 asset header uses prose and a capitalised `# Copyright (C) …`, so **none of them
 set any field**; assets load with the default `LicenseInfo`. Verified: only
@@ -205,7 +205,7 @@ of `include/makehuman/io/SceneIO.h`.
    licence-incompatible data contaminates the output.
 3. **Community assets** downloaded at runtime carry per-asset licences from the
    server as free text, with no validation and nothing written into the installed
-   file (`legacy-python/plugins/8_asset_downloader/remoteasset.py:97`). The port
+   file (`legacy/python/plugins/8_asset_downloader/remoteasset.py:97`). The port
    should persist the declared licence alongside each installed asset.
 
 ## 8. Adding a dependency — required procedure

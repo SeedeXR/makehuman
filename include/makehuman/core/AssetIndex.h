@@ -29,7 +29,7 @@ struct AssetEntry {
 ///
 /// This exists because **a `.mhm` references proxies by UUID only**. Loading a
 /// proxy by filename was deliberately removed upstream
-/// (legacy-python/apps/gui/proxychooser.py:550-552, which logs an error and
+/// (legacy/python/apps/gui/proxychooser.py:550-552, which logs an error and
 /// refuses), so without a UUID index a saved character's clothes, hair and eyes
 /// cannot resolve at all.
 ///

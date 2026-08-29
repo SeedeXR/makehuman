@@ -13,7 +13,7 @@ namespace mh::core {
 /// This table is the load-bearing convention of the whole modelling system: a
 /// target's filename is split on `-`, `_` and `.`, and any token appearing here
 /// becomes a macro dependency rather than part of the target's group name
-/// (legacy-python/lib/targets.py:50-67, :203-215).
+/// (legacy/python/lib/targets.py:50-67, :203-215).
 enum class MacroCategory : uint8_t {
     Gender,
     Age,
@@ -96,7 +96,7 @@ public:
     void setBodyProportions(float v);
 
     /// Sets one ethnic component and renormalises the other two so all three
-    /// sum to 1 (legacy-python/apps/human.py:847-888), including the three
+    /// sum to 1 (legacy/python/apps/human.py:847-888), including the three
     /// degenerate branches.
     void setCaucasian(float v);
     void setAsian(float v);
@@ -130,7 +130,7 @@ public:
     }
 
     /// Age in years. `<0.5` maps 1..25, `>=0.5` maps 25..90
-    /// (legacy-python/apps/human.py:552-559).
+    /// (legacy/python/apps/human.py:552-559).
     [[nodiscard]] float ageYears() const noexcept;
 
 private:

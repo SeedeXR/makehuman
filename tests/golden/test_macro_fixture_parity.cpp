@@ -4,7 +4,7 @@
 // sweep that includes every breakpoint in the piecewise age curve.
 //
 // tests/golden/macro_factors.json is generated from the reference's formulas
-// (legacy-python/apps/human.py:517-888).
+// (legacy/python/apps/human.py:517-888).
 
 #include "makehuman/core/Macro.h"
 

@@ -4,6 +4,57 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 015 · legacy consolidation, reviews, visual reference
+
+**Ended:** 2026-08-29 10:48:44 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+### Repository consolidation
+Everything from the Python era now lives under `legacy/`, moved with `git mv` so
+history is preserved:
+
+    legacy-python/   -> legacy/python/
+    buildscripts/    -> legacy/buildscripts/
+    Jenkinsfile      -> legacy/Jenkinsfile
+    requirements.txt -> legacy/requirements.txt
+    README.md        -> legacy/README.md     (a new root README replaces it)
+
+34 files referencing the old path were rewritten, and the `file:line` citations
+throughout the headers and `memory/` were **spot-checked against the moved
+files** — `module3d.py:411`, `humanmodifier.py:644`, `glmodule.py:479` all still
+land on the code they claim. The reference oracle and `capture_fixture.py` were
+re-run from their new home.
+
+**CI now enforces that `legacy/` is not part of the build.** If the C++ build
+ever reaches into it, the port has acquired a hidden dependency on code meant to
+be deleted at the end.
+
+Also corrected a CI gate that was wrong: the forbidden-dependency scan matched
+the *string* "fbxsdk" anywhere, which would now fail on our own explanatory
+comments about why the Autodesk SDK is not used. It now matches actual use — an
+include, a link flag, or a CMake target.
+
+### Reviews
+Both were skipped on the FBX work; that was a fair criticism and is fixed.
+**Ponytail** cut four items that were declared but never exercised —
+`separateJson`, `flipForward`, `bufferBytes`, `sourceFormat`. `flipForward` is
+the instructive one: it was implemented and plausible-sounding, but both glTF and
+MakeHuman are Y-up right-handed, so it corrected nothing real. Net −20 lines.
+
+### Visual reference
+`memory/design.md` had been prose-only. It now opens with a link to a rendered
+specimen — the workspace with a working six-dot panel menu, colour tokens as real
+swatches with measured contrast, the type scale in 42dot Sans, controls, the
+Lucide set, and the measured verification table. It is built **in** the tokens it
+documents, so spec/specimen drift is visible immediately.
+
+The accent `#f58220` was verified by reading the shipped `icons/makehuman.svg`
+rather than chosen, so the palette is grounded in the existing brand.
+
+### Verified
+205/205 pass in debug, release and ASan+UBSan after a clean from-scratch rebuild.
+
+---
+
 ## 2026-08-29 — Session 005 · M3 targets and macro factors
 
 **Ended:** 2026-08-29 06:36:36 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
@@ -545,7 +596,7 @@ Understand the MakeHuman codebase in depth, establish repository structure and t
 | 03:35 | Verified toolchain: Qt 6.11.0, CMake 4.3.2, Ninja 1.13.2, clang 21, assimp 6.0.4, Eigen 5.0.1, TBB — all present |
 | 03:36 | graphify AST extraction: 5,333 nodes / 10,108 edges |
 | 03:40 | Knowledge graph complete: **5,392 nodes · 9,319 edges · 358 communities** → `graphify-out/` |
-| 03:41 | **Repo restructured**: `makehuman/` → `legacy-python/`, `makehuman/data/` → `data/` (+ symlink), created `src/ include/ tests/ benchmarks/ tools/ resources/ cmake/ packaging/ docs/ third_party/ memory/` |
+| 03:41 | **Repo restructured**: `makehuman/` → `legacy/python/`, `makehuman/data/` → `data/` (+ symlink), created `src/ include/ tests/ benchmarks/ tools/ resources/ cmake/ packaging/ docs/ third_party/ memory/` |
 | 03:39 | Reference venv built: numpy 2.5.1 + PyQt5 + PyOpenGL on Python 3.14.6 |
 | 03:50 | **Performance baseline measured** → `benchmarks/baseline_python.json` |
 | 04:00 | 7 parallel subsystem analyses completed and spot-verified |
@@ -554,7 +605,7 @@ Understand the MakeHuman codebase in depth, establish repository structure and t
 ### Key findings (all verified against source)
 
 1. **Base mesh**: 19,158 verts / 18,486 **quad** faces / 21,334 UVs. Subdivided: 75,008 / 73,944.
-2. **No VBOs anywhere.** `glVertexPointer(3, GL_FLOAT, 0, obj.verts)` — `legacy-python/lib/glmodule.py:479`. Fixed-function, client-side arrays, re-fed every frame. This is hotspot #1 and the reason a Metal/RHI port is transformative.
+2. **No VBOs anywhere.** `glVertexPointer(3, GL_FLOAT, 0, obj.verts)` — `legacy/python/lib/glmodule.py:479`. Fixed-function, client-side arrays, re-fed every frame. This is hotspot #1 and the reason a Metal/RHI port is transformative.
 3. **Zero import capability.** No importer machinery of any kind (grep-verified). Only mesh reader is `wavefront.loadObjFile`, which ignores `vn` and `usemtl`. Import is greenfield.
 4. **Zero docking infrastructure.** No `QDockWidget`/`QSplitter`/`saveState` anywhere. The dockable UI is 100% new work.
 5. **FBX exporter**: hand-rolled, FBX **7300 (2013)**, no animation, no blendshapes, **verified 10× unit bug** at every scale but decimetre (`plugins/9_export_fbx/__init__.py:112` + `fbx_binary.py:736`), forged Creator string, 12+ circular imports. Treat as a format reference only, never port.
@@ -579,17 +630,17 @@ Understand the MakeHuman codebase in depth, establish repository structure and t
 | Apply 1 target | 0.04 ms |
 
 ### Corrections made this session
-- The graphify doc-extraction pass flagged pyFBX GPLv2 as possibly incompatible with AGPLv3. **Wrong** — the header reads "either version 2 … or (at your option) any later version". Verified at `legacy-python/licenses/pyFbx-license.txt:4-6` and retracted.
+- The graphify doc-extraction pass flagged pyFBX GPLv2 as possibly incompatible with AGPLv3. **Wrong** — the header reads "either version 2 … or (at your option) any later version". Verified at `legacy/python/licenses/pyFbx-license.txt:4-6` and retracted.
 - The benchmark harness initially failed on subdivision because `Object3D.object` is a **weakref** property (`core/module3d.py:459-464`) and the stub was collected immediately. Fixed by holding a strong reference.
 
 ### Files changed
-- Restructured: `makehuman/` → `legacy-python/`, `makehuman/data/` → `data/`
+- Restructured: `makehuman/` → `legacy/python/`, `makehuman/data/` → `data/`
 - Added: `memory/` (12 docs), `benchmarks/baseline_python_core.py`, `benchmarks/baseline_python.json`, `graphify-out/`, `CLAUDE.md`, `AGENT.md`, `LICENSING.md`, `.gitignore` updates
 - Created empty: `src/ include/ tests/ tools/ resources/ cmake/ packaging/ docs/ third_party/`
 
 ### Blockers / open questions for the user
 1. **Typeface** — instruction was "red 42 dot sans". Assumed **42dot Sans** (SIL OFL 1.1). Needs confirmation.
-2. **"Open rig"** — ambiguous. Could mean the existing open `.mhskel` format, OpenSim rigs (referenced at `legacy-python/apps/compat.py:181-188` as a downloadable asset), or a specific third-party project. **Not guessing.** Does not block M1–M8.
+2. **"Open rig"** — ambiguous. Could mean the existing open `.mhskel` format, OpenSim rigs (referenced at `legacy/python/apps/compat.py:181-188` as a downloadable asset), or a specific third-party project. **Not guessing.** Does not block M1–M8.
 3. **Commercial-derivative expectation** — AGPL copyleft means a closed-source fork is not possible. Output and assets are fully free (CC0). Mitigation is the Apache-2.0 clean-room module boundary (`architecture.md` §II.1). Flagged for awareness; no action needed to proceed.
 
 ### Next session starts here

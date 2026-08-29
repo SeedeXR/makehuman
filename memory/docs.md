@@ -50,7 +50,7 @@ transferable — to a new contributor, or to an agent starting a fresh session.
 ///
 /// @param stack   Target paths mapped to weights. Zero-weight entries must be
 ///                absent — the reference deletes them
-///                (legacy-python/apps/human.py:920-921) and callers rely on it.
+///                (legacy/python/apps/human.py:920-921) and callers rely on it.
 /// @param out     Destination, resized to the base mesh vertex count.
 /// @return        Number of vertices actually modified, for dirty-range tracking.
 ///
@@ -70,7 +70,7 @@ Comment the non-obvious only. Specifically **do** comment:
 - **Reference-behaviour matching**, with the citation:
   ```cpp
   // Quantised to int16 * 1e-3 to match the compiled-target format
-  // (legacy-python/core/algos3d.py:221). Widening this breaks .npz compatibility.
+  // (legacy/python/core/algos3d.py:221). Widening this breaks .npz compatibility.
   ```
 - **Deliberate simplifications**, naming the ceiling and the upgrade path:
   ```cpp
@@ -98,7 +98,7 @@ Status: Accepted            (Proposed | Accepted | Superseded by ADR-NNNN | Depr
 ## Context
 OpenGL is deprecated on macOS and capped at 4.1. The Python reference uses the
 fixed-function pipeline with client-side vertex arrays and needs nothing above
-GL 2.1 (verified: no glGenBuffers anywhere in legacy-python/lib/glmodule.py).
+GL 2.1 (verified: no glGenBuffers anywhere in legacy/python/lib/glmodule.py).
 We must choose a modern graphics backend.
 
 ## Decision
@@ -135,7 +135,7 @@ Every file format we read or write gets `docs/formats/<format>.md`:
 This matters disproportionately here: `.mhm`, `.mhclo`, `.mhmat`, `.mhskel`,
 `.target`, `.mhw`, `.mhpose` have **no specification anywhere** — the Python source
 is the only definition. Writing these documents is how that knowledge stops being
-locked in `legacy-python/`.
+locked in `legacy/python/`.
 
 ## 6. Diagrams
 
@@ -182,7 +182,7 @@ history explains why things are the way they are.
 - Generic best practice the reader already knows.
 - Aspirational behaviour. Document what **is**. Plans go in `todo.md`.
 
-`legacy-python/core/files3d.py:41-64` is the cautionary example: its docstring
+`legacy/python/core/files3d.py:41-64` is the cautionary example: its docstring
 promises "a range of functions to handle most common 3D file formats" and the
 module reads exactly one — OBJ. Aspirational documentation is a lie with a
 timestamp.
