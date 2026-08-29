@@ -7,7 +7,7 @@ Instructions for Claude Code working in this repository. **Read `memory/` first.
 ## What this project is
 
 A port of **MakeHuman** — a parametric 3D human generator — from Python/PyQt5/legacy
-OpenGL to **native C++20 / Qt6 / Metal (via Qt RHI)** for macOS, with modern DCC
+OpenGL to **native C++23 / Qt6 / Metal (via Qt RHI)** for macOS, with modern DCC
 interchange (FBX, glTF/GLB, USD — **import and export**), a dockable dark UI, and
 MetaHuman-class character tooling. The end state ships **no Python**.
 

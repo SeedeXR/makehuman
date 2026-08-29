@@ -20,28 +20,35 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [x] Write `memory/` — 12 documents
 - [x] `CLAUDE.md`, `AGENT.md`, `LICENSING.md`
 
-## M1 — Build system and core skeleton
+## M1 — Build system and core skeleton  [~ mostly done]
 
-- [ ] `CMakeLists.txt` + `CMakePresets.json` (macos-arm64 debug/release/asan)
-- [ ] Module targets: `mh-foundation`, `mh-core`, `mh-rig`, `mh-io`, `mh-render`, `mh-ui`, `mh-app`
-- [ ] Catch2 v3 via FetchContent; `ctest` wired
-- [ ] `.clang-format`, `.clang-tidy`, `-Wall -Wextra -Wpedantic -Werror`
+- [x] `CMakeLists.txt` + `CMakePresets.json` (macos-arm64 debug/release/asan)
+- [x] Catch2 v3.7.1 via FetchContent (pinned tag); `ctest` wired; Catch2 headers marked SYSTEM
+- [x] `-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion … -Werror` — builds clean
+- [x] ASan+UBSan preset; full suite green under it
+- [x] First module target `mh_core` (`mh::core`)
+- [x] Benchmark target comparing directly against `baseline_python.json`
+- ~~Module targets for `mh-foundation`, `mh-rig`, `mh-io`, `mh-render`, `mh-ui`, `mh-app`~~
+  → **deferred**: creating empty targets before they have sources is scaffolding for
+  its own sake. Each is added in its own milestone when it gets a first source file.
+- [ ] `.clang-format`, `.clang-tidy`
 - [ ] CI workflow (build · test · asan · bench · licence scan · format)
 - [ ] `tools/capture_fixture.py` — drives the Python reference to emit golden fixtures
-- [ ] Smoke test: build, link, run, exit 0
 
-## M2 — Core geometry (`mh-core`)
+## M2 — Core geometry (`mh-core`)  [~ in progress]
 
-- [ ] `Mesh` — SoA layout per `architecture.md` §II.3; dual index space preserved
-- [ ] OBJ reader for the base mesh (quads; degenerate-quad triangles)
-- [ ] Adjacency build (`vface`/`nfaces`) — must beat 211.8 ms by ≥10×
-- [ ] `calcFaceNormals` / `calcVertexNormals` — area-weighted, matching the reference
+- [x] `Mesh` — SoA layout, dual index space preserved, degenerate-quad triangles
+- [x] OBJ reader — `v/vt/f/g/o`, negative indices, leading-dot floats, `vn`/`usemtl` ignored
+- [x] Bounds-checked parsing: bad index, n-gon, loose vertex, empty mesh all return errors
+- [x] Adjacency build (`vface`/`nfaces`), valence floored at 4 — **matches the reference's 5**
+- [x] `calcFaceNormals` / `calcVertexNormals` — area-weighted, zero-guarded
+- [x] **Parity fixtures**: base mesh counts, face groups, units, normals, index ranges
+- [x] Benchmarks vs. the Python baseline
 - [ ] **Correct** tangents (reference is broken — `project_context.md` §8)
 - [ ] Unweld / index-buffer build (`vmap`/`tmap`/`grpix`)
 - [ ] Dirty-range tracking replacing `ucoor`/`unorm`/…
 - [ ] Catmull-Clark subdivision — parity on 75,008 verts
-- [ ] **Parity fixtures**: base mesh, normals, subdivision
-- [ ] Benchmarks for each of the above
+- [ ] Heterogeneous lookup in `findFaceGroup` (currently allocates a `std::string`)
 
 ## M3 — Targets and modifiers (`mh-core`)
 

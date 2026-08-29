@@ -10,7 +10,7 @@ Coding standards, repository conventions, workflows. Binding for all contributor
 
 | Item | Choice | Verified on this machine |
 |---|---|---|
-| Language | **C++20** (`-std=c++20`) | Apple clang 21.0.0 |
+| Language | **C++23** (`-std=c++23`) | Apple clang 21.0.0 — verified `std::expected` available |
 | Build | **CMake ≥ 3.28** + **Ninja** | CMake 4.3.2, Ninja 1.13.2 |
 | UI | **Qt 6.11** (Widgets, Gui, Core, ShaderTools) | qt 6.11.0 via Homebrew |
 | Renderer | **Qt RHI** → Metal on macOS | Xcode 26.6, SDK 26.5 |

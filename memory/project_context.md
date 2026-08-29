@@ -20,7 +20,7 @@ The end state: **no Python in the shipped product.** A compilable, notarisable
 
 | # | Objective | Definition of done |
 |---|---|---|
-| O1 | Port core to C++20 | Mesh, targets, modifiers, proxy, skeleton, skinning in `src/core`, `src/rig`, with parity tests against the Python reference |
+| O1 | Port core to C++23 | Mesh, targets, modifiers, proxy, skeleton, skinning in `src/core`, `src/rig`, with parity tests against the Python reference |
 | O2 | Modern renderer | Qt RHI (Metal on macOS) replacing legacy fixed-function GL; persistent GPU buffers; GPU skinning; PBR |
 | O3 | Robust interchange | **Import and export** OBJ, FBX, glTF 2.0/GLB, USD, STL, Collada, BVH — with skeletons, skinning weights, blendshapes, PBR materials |
 | O4 | MetaHuman-class character tooling | High-fidelity facial rig (FACS), correctives/PSD, LOD chain, groom, physically-based skin |

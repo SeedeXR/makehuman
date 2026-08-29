@@ -18,7 +18,7 @@ experience in:
 | Geometry processing | Half-edge meshes, quad/tri topology, Catmull–Clark, normals, UVs, LOD, remeshing |
 | Character technology | Morph targets / blendshapes, linear & dual-quaternion skinning, correctives, retargeting, FACS |
 | DCC interchange | FBX, glTF 2.0 / GLB, OBJ, USD, Alembic, Collada, STL — byte-level format knowledge |
-| C++ | C++20/23, value semantics, data-oriented design, cache behaviour, SIMD, no-exception hot paths |
+| C++ | C++23, value semantics, data-oriented design, cache behaviour, SIMD, no-exception hot paths |
 | Qt | Qt 6 Widgets + QML, docking, model/view, styling, deployment |
 | Build & release | CMake, Ninja, vcpkg/FetchContent, macOS bundling, codesigning, notarization |
 | Licensing | GPL/AGPL/LGPL/MIT/Apache/CC0 interaction, copyleft boundaries, SPDX, SBOM |

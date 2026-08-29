@@ -4,6 +4,91 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 002 · M1 build system + M2 mesh core
+
+**Started:** 2026-08-29 03:58:00
+**Ended:** 2026-08-29 04:09:41
+**Agent:** Claude Opus 5 (1M context)
+**Branch:** master
+
+### Objective
+Stand up the C++ build system and deliver the first real, tested, benchmarked
+module of the port.
+
+### Delivered
+
+**Build system (M1)**
+- `CMakeLists.txt` + `CMakePresets.json`: `macos-arm64-{debug,release,asan}`
+- **C++23**, not C++20 — `std::expected` is C++23. Verified available in Apple
+  clang 21's libc++ before adopting. All docs claiming C++20 were corrected.
+- Warning set: `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion
+  -Wdouble-promotion …` with **`-Werror` on**. Builds clean.
+- Catch2 v3.7.1 via FetchContent, **pinned tag**, include tree marked `SYSTEM`
+  so third-party warnings never surface without weakening ours.
+
+**`mh::core` (M2, partial)**
+- `Types.h` — `Vec2`/`Vec3`, cross/dot, the decimetre constant.
+- `Mesh` — SoA, dual index space (`fvert`/`fuvs` independent, per module3d.py:627/:629),
+  degenerate-quad triangles, face groups, adjacency, area-weighted normals,
+  bounding box, `heightCm`.
+- `ObjReader` — `std::expected`-based, bounds-checked. Handles `v/vt/f/g/o`,
+  negative indices, leading-dot floats. Rejects loose vertices, out-of-range
+  indices, n-gons, and empty meshes rather than reading out of bounds.
+
+### Verification (all observed this session)
+- **27/27 tests pass**, debug and release.
+- **27/27 pass under ASan + UBSan.**
+- Clean build under `-Werror`.
+
+### Measured — release, vs. the Python baseline
+
+| Operation | C++ | Python | Speedup |
+|---|---|---|---|
+| load base.obj (parse + adjacency + normals) | **5.24 ms** | 211.80 ms | **40.4x** |
+| calcNormals full mesh | 0.07 ms | 5.18 ms | 74.1x |
+| calcFaceNormals | 0.03 ms | 0.68 ms | 25.2x |
+| calcVertexNormals | 0.04 ms | 1.69 ms | 39.8x |
+| buildAdjacency | 0.14 ms | (inside the 211.8 ms) | — |
+
+The ≤20 ms base-mesh-load success metric in `project_context.md` §6 is **met**
+(5.24 ms warm; ~10.7 ms cold file cache).
+
+### Corrections made this session
+1. **`std::expected` is C++23, not C++20.** The build failed on it. Verified the
+   standard level with a scratch compile before bumping, then corrected every
+   doc that said C++20.
+2. **I asserted 172 face groups in a parity test from a subagent's number without
+   verifying it. The test failed at 139.** Root cause: `base.obj` has 172 `g`
+   *statements* but only 139 *distinct* names (`helper-*-eyelashes-*` recur 9x
+   each). The reference keys a dict by name and only creates a group for an
+   unseen name (`wavefront.py:120-123`), so it produces 139. Confirmed by running
+   the reference loader directly: 139 groups, 125 `joint-`, 13 `helper-`. The
+   implementation was right; my assertion was wrong. This is exactly the failure
+   `agent_profile.md` §3.3 warns about — a subagent figure used without a
+   spot-check. The corrected test now asserts all three numbers.
+
+### Ponytail review — applied
+- Dropped `Eigen3::Eigen` from `mh_core`: linked but never included. Eigen is
+  added when `mh_rig` needs quaternions and decomposition.
+- Removed `MH_BUILD_APP` / `MH_USE_ASSIMP` options that gated nothing.
+- Removed `Vec4` and `RGBA8` — declared, zero uses.
+- Kept the POD `Vec3` over `Eigen::Vector3f`: SoA storage wants a
+  trivially-copyable type, and the whole thing is 20 lines.
+
+### Deferred, with reason
+Empty CMake targets for `mh-foundation`/`mh-rig`/`mh-io`/`mh-render`/`mh-ui`/`mh-app`
+were **not** created. Scaffolding targets with no sources is exactly the
+speculative structure `philosophy.md` §2 rejects; each is added with its first
+real source file.
+
+### Next session starts here
+1. Run `memory/session_start.md` in full.
+2. `.clang-format` / `.clang-tidy`, then the CI workflow.
+3. `tools/capture_fixture.py` — golden fixtures gate every subsequent port step.
+4. Then M2 remainder: correct tangents, unweld/index buffer, Catmull-Clark.
+
+---
+
 ## 2026-08-29 — Session 001 · Grounding, restructure, memory bootstrap
 
 **Started:** 2026-08-29 03:30:00
