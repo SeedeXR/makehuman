@@ -125,8 +125,12 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
       asset uses them; the three eye/converter proxies are all scale-only
 - [ ] Delete-vert mask → face hiding
 - [ ] `.mhmat` parser/writer — all keys, 7 texture channels, shader config
-- [ ] Asset index replacing the pickle `filecache` (pickle is an RCE vector)
-- [ ] UUID→path resolution (`.mhm` references proxies by UUID only)
+- [x] Asset index (`AssetIndex`) — replaces the pickle `filecache`, which was an
+      RCE vector. Metadata is *peeked*: the scan stops at the `verts` line.
+- [x] UUID→path resolution. `.mhm` references proxies by UUID **only**
+      (`proxychooser.py:550-552` refuses filenames), so this is what makes a
+      saved character's clothes resolve. Search paths are ordered, earlier wins,
+      and collisions are **reported** rather than silently last-write-wins.
 - [ ] macOS path resolution (`~/Library/Application Support`, bundle Resources)
 - [ ] **Parity fixtures**: eye proxy fit at several body shapes
 

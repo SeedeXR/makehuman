@@ -199,10 +199,39 @@ local named `m` too. The assert caught every one before a write, so nothing was
 corrupted. **The reliable procedure is: read the file, copy exact current text,
 or match whitespace-tolerantly — never retype from memory.**
 
+### Session 012 addendum (2026-08-29 09:30:58) — asset index
+
+`AssetIndex` / `peekAsset`. UUID -> path resolution, tag queries, ordered search
+paths.
+
+This is what makes a saved character's clothes resolve: **`.mhm` references
+proxies by UUID only**. Loading by filename was deliberately removed upstream
+(`proxychooser.py:550-552` logs an error and refuses).
+
+Three decisions worth recording:
+- **Metadata is peeked, not parsed.** The scan stops at the `verts` line, where
+  the megabytes begin (`proxy.py:1035-1036`). A test asserts a bogus `uuid`
+  placed *after* `verts` does not win, so the early exit is behaviour, not just
+  an optimisation.
+- **Earlier search paths win a UUID collision**, matching user-data-over-
+  system-data precedence (`getpath.py:289-308`).
+- **Collisions are reported, not silently resolved.** The reference lets the
+  last writer win (`proxychooser.py:617-623`), which makes resolution depend on
+  directory iteration order. Keeping the first and exposing `duplicateUuids()`
+  makes a packaging mistake visible instead of load-order-dependent.
+
+It also replaces the reference's `filecache`, which is a **Python pickle**
+(`filecache.py:44`) — arbitrary code execution on load, and one of the security
+issues recorded in `project_context.md` §8.
+
+Another derived-number slip, caught by the test: I asserted 6 shipped assets
+(3 proxies + 3 materials) when there are 7 — I had forgotten
+`a7_converter.proxy`. Counted from disk this time.
+
 ### Next
-The asset index: UUID -> path. `.mhm` references proxies by UUID *only*
-(`proxychooser.py:539-552` removed filename loading), so without it a saved
-character's clothes cannot resolve.
+Remaining M4: the `.mhclo` `delete_verts` face-hiding path applied to a real
+body, and proxy material resolution. Then M5 (skeleton/skinning) or M7
+(interchange) — M7 is the higher-value one for the stated goals.
 
 ---
 
