@@ -4,7 +4,10 @@
 // specific, falsifiable claims -- WCAG ratios, a 28-entry icon map, a bundled
 // typeface -- and a design token table that nothing verifies drifts from the
 // document that defines it within a release.
+#include "makehuman/core/Modifier.h"
+#include "makehuman/core/SliderLayout.h"
 #include "makehuman/ui/MainWindow.h"
+#include "makehuman/ui/ModifierPanel.h"
 #include "makehuman/ui/PanelTitleBar.h"
 #include "makehuman/ui/Theme.h"
 
@@ -13,9 +16,13 @@
 
 #include <QDockWidget>
 #include <QImage>
+#include <QLabel>
 #include <QMenu>
+#include <QPushButton>
 #include <QRegularExpression>
 #include <QSet>
+#include <QSlider>
+#include <QTabWidget>
 #include <QToolButton>
 
 #include <memory>
@@ -355,4 +362,193 @@ TEST_CASE("Tab with is disabled when there is nothing to tab with", "[panel]") {
     auto* tabWith                     = menu->findChild<QAction*>(QStringLiteral("panel.tabwith"));
     REQUIRE(tabWith != nullptr);
     CHECK_FALSE(tabWith->isEnabled());
+}
+
+// --- the modifier panel (M8 task registry + sliders) ------------------------
+
+namespace {
+
+/// Catch2's float matchers take double; widening at the call site keeps
+/// -Wdouble-promotion on without weakening it.
+constexpr double d(float v) {
+    return static_cast<double>(v);
+}
+
+/// A small, hand-built layout: two views, three sections, four sliders, with
+/// both range shapes ([0,1] and [-1,1]) and a non-zero default. Using the real
+/// 291 here would make a failure hard to read and the test slow.
+std::vector<mh::foundation::TaskViewSpec> toyLayout() {
+    using mh::foundation::SliderSection;
+    using mh::foundation::SliderSpec;
+    using mh::foundation::TaskViewSpec;
+
+    TaskViewSpec face;
+    face.name = "Face";
+    SliderSection head{"head shape", {}};
+    head.sliders.push_back(
+        SliderSpec{"head/head-age-decr|incr", "Age", "frontView", -1.0F, 1.0F, 0.0F});
+    head.sliders.push_back(SliderSpec{"head/head-oval", "Oval", "", 0.0F, 1.0F, 0.0F});
+    SliderSection nose{"nose", {}};
+    nose.sliders.push_back(
+        SliderSpec{"nose/nose-scale-depth-decr|incr", "Scale Depth", "", -1.0F, 1.0F, 0.25F});
+    face.sections = {head, nose};
+
+    TaskViewSpec gender;
+    gender.name = "Gender";
+    SliderSection macro{"macro", {}};
+    macro.sliders.push_back(SliderSpec{"macrodetails/Gender", "Gender", "", 0.0F, 1.0F, 0.5F});
+    gender.sections = {macro};
+
+    return {face, gender};
+}
+
+}  // namespace
+
+TEST_CASE("the panel builds a tab per view and a slider per spec", "[modifiers]") {
+    const auto layout = toyLayout();
+    mh::ui::ModifierPanel panel(layout);
+
+    CHECK(panel.tabs()->count() == 2);
+    CHECK(panel.tabs()->tabText(0) == QStringLiteral("Face"));
+    CHECK(panel.tabs()->tabText(1) == QStringLiteral("Gender"));
+    CHECK(panel.sliderCount() == 4);
+}
+
+TEST_CASE("a slider starts at its default, including a non-zero one", "[modifiers]") {
+    const auto layout = toyLayout();
+    mh::ui::ModifierPanel panel(layout);
+
+    CHECK_THAT(d(panel.value(QStringLiteral("head/head-age-decr|incr"))), WithinAbs(0.0, 1e-4));
+    // 0.25 on a [-1,1] range is the case a naive 0..1 mapping gets wrong.
+    CHECK_THAT(d(panel.value(QStringLiteral("nose/nose-scale-depth-decr|incr"))),
+               WithinAbs(0.25, 1e-3));
+    CHECK_THAT(d(panel.value(QStringLiteral("macrodetails/Gender"))), WithinAbs(0.5, 1e-3));
+}
+
+TEST_CASE("moving a slider emits its id and mapped value", "[modifiers]") {
+    const auto layout = toyLayout();
+    mh::ui::ModifierPanel panel(layout);
+
+    QString gotId;
+    float gotValue = 0.0F;
+    int emissions  = 0;
+    QObject::connect(&panel, &mh::ui::ModifierPanel::valueChanged, [&](const QString& id, float v) {
+        gotId    = id;
+        gotValue = v;
+        ++emissions;
+    });
+
+    auto* slider = panel.findChild<QSlider*>(QStringLiteral("slider:head/head-age-decr|incr"));
+    REQUIRE(slider != nullptr);
+
+    slider->setValue(slider->maximum());
+    CHECK(emissions == 1);
+    CHECK(gotId == QStringLiteral("head/head-age-decr|incr"));
+    CHECK_THAT(d(gotValue), WithinAbs(1.0, 1e-4));
+
+    slider->setValue(slider->minimum());
+    CHECK_THAT(d(gotValue), WithinAbs(-1.0, 1e-4));
+
+    // The midpoint must be exactly 0 on a symmetric range, not 0.001 -- a
+    // default that cannot be returned to is the bug this pins.
+    slider->setValue((slider->minimum() + slider->maximum()) / 2);
+    CHECK_THAT(d(gotValue), WithinAbs(0.0, 1e-9));
+}
+
+TEST_CASE("setValue moves the slider without emitting", "[modifiers]") {
+    const auto layout = toyLayout();
+    mh::ui::ModifierPanel panel(layout);
+
+    int emissions = 0;
+    QObject::connect(&panel, &mh::ui::ModifierPanel::valueChanged,
+                     [&](const QString&, float) { ++emissions; });
+
+    panel.setValue(QStringLiteral("head/head-oval"), 0.75F);
+    CHECK_THAT(d(panel.value(QStringLiteral("head/head-oval"))), WithinAbs(0.75, 1e-3));
+    // Re-emitting would feed the value straight back to whatever set it.
+    CHECK(emissions == 0);
+
+    // An unknown id is ignored rather than crashing or moving something else:
+    // sliderCount() could never change, so the falsifiable check is that no
+    // known value moved and nothing was emitted.
+    panel.setValue(QStringLiteral("no/such-modifier"), 1.0F);
+    CHECK_THAT(d(panel.value(QStringLiteral("head/head-oval"))), WithinAbs(0.75, 1e-3));
+    CHECK_THAT(d(panel.value(QStringLiteral("macrodetails/Gender"))), WithinAbs(0.5, 1e-3));
+    CHECK(emissions == 0);
+}
+
+TEST_CASE("resetAll returns every slider to its spec default", "[modifiers]") {
+    const auto layout = toyLayout();
+    mh::ui::ModifierPanel panel(layout);
+
+    panel.setValue(QStringLiteral("head/head-age-decr|incr"), -0.8F);
+    panel.setValue(QStringLiteral("nose/nose-scale-depth-decr|incr"), 1.0F);
+    panel.resetAll();
+
+    CHECK_THAT(d(panel.value(QStringLiteral("head/head-age-decr|incr"))), WithinAbs(0.0, 1e-4));
+    CHECK_THAT(d(panel.value(QStringLiteral("nose/nose-scale-depth-decr|incr"))),
+               WithinAbs(0.25, 1e-3));
+}
+
+TEST_CASE("search filters by label and by modifier id", "[modifiers]") {
+    const auto layout = toyLayout();
+    mh::ui::ModifierPanel panel(layout);
+    REQUIRE(panel.visibleSliderCount() == 4);
+
+    panel.filter(QStringLiteral("oval"));  // matches a label
+    CHECK(panel.visibleSliderCount() == 1);
+
+    panel.filter(QStringLiteral("macrodetails"));  // matches an id, not a label
+    CHECK(panel.visibleSliderCount() == 1);
+
+    panel.filter(QStringLiteral("  NOSE  "));  // trimmed and case-insensitive
+    CHECK(panel.visibleSliderCount() == 1);
+
+    panel.filter(QStringLiteral("zzz-nothing"));
+    CHECK(panel.visibleSliderCount() == 0);
+
+    panel.filter(QString{});
+    CHECK(panel.visibleSliderCount() == 4);
+}
+
+TEST_CASE("a section with nothing showing is hidden with its heading", "[modifiers]") {
+    const auto layout = toyLayout();
+    mh::ui::ModifierPanel panel(layout);
+
+    const auto headings = panel.findChildren<QLabel*>(QStringLiteral("modifiers.section"));
+    REQUIRE(headings.size() == 3);
+
+    panel.filter(QStringLiteral("oval"));
+    // Only "head shape" still has a slider; a bare heading over nothing is
+    // noise, not structure.
+    int visible = 0;
+    for (QLabel* h : headings) {
+        if (!h->parentWidget()->isHidden()) ++visible;
+    }
+    CHECK(visible == 1);
+}
+
+TEST_CASE("the panel carries the real 291 sliders", "[modifiers][slow]") {
+    // The toy layout above proves the behaviour; this proves it survives the
+    // actual shipped registry, which is the thing that will be on screen.
+    std::vector<mh::core::Modifier> mods;
+    for (const char* f :
+         {"modeling_modifiers.json", "bodyshapes_modifiers.json", "measurement_modifiers.json"}) {
+        auto m = mh::core::loadModifiers(std::filesystem::path(MH_DATA_DIR) / "modifiers" / f);
+        REQUIRE(m.has_value());
+        mods.insert(mods.end(), m->begin(), m->end());
+    }
+    std::vector<mh::foundation::TaskViewSpec> views;
+    for (const char* f :
+         {"modeling_sliders.json", "bodyshapes_sliders.json", "measurement_sliders.json"}) {
+        auto v =
+            mh::core::loadSliderLayout(std::filesystem::path(MH_DATA_DIR) / "modifiers" / f, mods);
+        REQUIRE(v.has_value());
+        views.insert(views.end(), v->begin(), v->end());
+    }
+
+    mh::ui::ModifierPanel panel(views);
+    CHECK(panel.tabs()->count() == 7);
+    CHECK(panel.sliderCount() == 291);
+    CHECK(panel.visibleSliderCount() == 291);
 }

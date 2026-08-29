@@ -4,6 +4,84 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 17:04:38 — Session 037 · **291 sliders, and a tab order I had wrong**
+
+### What shipped
+- **`core::loadSliderLayout` / `loadStandardLayout`** — ports `modifiers/*_sliders.json`,
+  the reference's own tab registry: **7 task views, 50 sections, 291 sliders**. Full parity
+  on order, labels, ranges, defaults and camera hints (`tests/golden/slider_layout/`,
+  1,912 assertions).
+- **`foundation::SliderSpec`** — the licence bridge, same idea as `RenderView`.
+  `mh_ui` drives 291 modifiers and still has **0 `mh::core` symbols**.
+- **`ui::ModifierPanel`** — tabbed, sectioned, searchable, with a Reset control.
+- **App** — the Modelling dock is real, and `--set <modifier>=<value>` (repeatable) makes
+  render and export scriptable.
+
+### Two ordering traps
+1. **`applyStack` resets the mesh to its morph base**, so posing has to come *after*
+   morphing or the pose is silently discarded on every slider move. The rig is also
+   re-fitted each time (`updateJoints`), because a morphed body has moved its joints.
+2. **Tab order is not file order.** I shipped file order (Face first). The reference sorts
+   by `sortOrder`, assigning a view that gives none the lowest free non-negative integer
+   (`gui3d.py:300-317`), ties keeping load order. Correct order is
+   **Macro modelling, Body shapes, Gender, Face, Torso, Arms and Legs, Measure**.
+   The ponytail review flagged `sortOrder` as a dead field; the right answer was to *use*
+   it, not cut it. Verified by cropping the tab strip out of a screenshot and reading it.
+
+### Verified end to end, in Blender
+| Export | Height | Width |
+|---|---|---|
+| default | 16.94 dm (169 cm) | 10.54 |
+| `Gender=1.0` | 17.67 dm (177 cm) | 11.35 |
+| `Age=0.0` (1 year old) | **6.33 dm (63 cm)** | 3.88 |
+| `Gender=1.0` + T-pose | 17.67 (height unchanged) | **18.43** |
+
+The last row is the point: morph and pose compose. Height matches the un-posed male
+exactly while the span goes 11.35 -> 18.43.
+
+### Review findings fixed
+Code review (7) and ponytail (13). The ones that mattered:
+- **Use-after-free in `setModellingWidget`**: `delete dock->widget()` then `setWidget(widget)`
+  frees and reparents the *same* pointer when called twice. ASan-confirmed SEGV. Guarded.
+- **`--set macrodetails/Gender=nan` produced an all-NaN mesh and exited 0.**
+  `QString::toFloat` accepts "nan" and `std::clamp` passes NaN straight through, because
+  both comparisons are false. `std::isfinite` closes it. A trust boundary, so not a
+  lazy-skip.
+- **`--set` never reached the panel**, so the mesh was morphed while the sliders showed
+  defaults and the first nudge snapped the model back. The same hole would have swallowed
+  `.mhm` loading.
+- The header promised `filter()` hid emptied **tabs**; it only hid sections. Implemented
+  rather than downgrading the comment.
+- `ModifierPanel` lost its pImpl, its precomputed lowercase `haystack`, its `search`
+  member and the O(sections x rows) rescan (one counting pass now).
+- Hand-rolled `split()` -> `std::views::split`; `optString()` -> `json::value()`;
+  `saveName` deleted (it appears in **zero** shipped files).
+- One vacuous test assertion replaced: `sliderCount()` cannot change, so it proved nothing
+  about the unknown-id path.
+
+### Corrections made this session
+- Two `str.replace` edits silently failed to match after clang-format reflowed the code,
+  leaving `d_->` references behind. Caught by the compiler; the lesson is that every
+  scripted edit needs its assertion, which is why the failing ones aborted before writing.
+- I fixed the tab ordering in the tests and **not** in `main.cpp`, so the tests passed
+  while the app still showed file order. Caught by looking at the screenshot rather than
+  trusting the green suite.
+- Read `$?` after a pipe again and reported a failing `--set` as exit 0.
+
+### Verified this session
+- 315/315 in debug, release and ASan; UI binary 217 assertions / 31 cases.
+- The app itself ASan-clean with modifiers + pose + export.
+- All 7 licence gates; clang-format clean; `mh_ui` -> 0 `mh::core` symbols.
+- Benchmarks unchanged (`Human::applyStack` 0.07 ms, `rebuildStack` 0.01 ms).
+
+### Next
+- Materials dock still says "not yet implemented".
+- Nothing in the window selects a pose; `--pose` remains CLI only.
+- `resetAll()` emits 291 changes, each driving a full stack rebuild and re-skin. Fine at
+  0.07 ms each today, but it is 291 of them.
+
+---
+
 ## 2026-08-29 16:02:11 — Session 036 · **the dark theme, and a stylesheet rule that painted over itself**
 
 ### What shipped

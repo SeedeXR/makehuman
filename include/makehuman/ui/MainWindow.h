@@ -26,6 +26,10 @@ public:
     void setMesh(const foundation::RenderView& mesh);
     void setLitsphere(std::filesystem::path path);
 
+    /// Puts @p widget in the Modelling dock, replacing the placeholder.
+    /// The dock takes ownership.
+    void setModellingWidget(QWidget* widget);
+
     [[nodiscard]] ViewportWidget* viewport() const;
 
     /// Restores docks and geometry from QSettings, or lays out the defaults.

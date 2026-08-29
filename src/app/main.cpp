@@ -6,6 +6,9 @@
 #include "makehuman/core/Mesh.h"
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/core/RenderMesh.h"
+#include "makehuman/core/SliderLayout.h"
+#include "makehuman/core/Target.h"
+#include "makehuman/core/TargetIndex.h"
 #include "makehuman/io/GltfWriter.h"
 #include "makehuman/io/ObjWriter.h"
 #include "makehuman/io/SceneIO.h"
@@ -15,6 +18,7 @@
 #include "makehuman/rig/Skinning.h"
 #include "makehuman/rig/VertexWeights.h"
 #include "makehuman/ui/MainWindow.h"
+#include "makehuman/ui/ModifierPanel.h"
 #include "makehuman/ui/Theme.h"
 
 #include <QApplication>
@@ -28,6 +32,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <string>
@@ -76,12 +81,24 @@ bool describe(const QImage& img, std::string& out) {
     return true;
 }
 
-/// Poses @p mesh in place, or leaves it at rest.
+/// Everything needed to re-pose a morphed mesh.
+///
+/// Held together because the rig has to be re-fitted after each morph:
+/// `updateJoints` makes the skeleton follow the body, and skinning a changed
+/// mesh with a stale rig rotates it about joints that have moved.
+struct PoseRig {
+    mh::rig::Skeleton skeleton;
+    mh::rig::CompiledWeights weights;
+    std::vector<mh::foundation::Mat4> localPose;
+    bool active{false};
+};
+
+/// Loads the rig and pose named by @p pose, or leaves @p out inactive.
 ///
 /// "A-pose" is not a file: the MakeHuman base mesh is authored in one, so the
 /// rest mesh IS the A-pose and posing it would be posing it twice. Only a pose
 /// that differs from the authored rest needs a BVH.
-bool applyPose(mh::core::Mesh& mesh, const std::string& pose) {
+bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& out) {
     if (pose == "rest" || pose == "apose" || pose == "a-pose") return true;
 
     std::filesystem::path file = pose;
@@ -114,11 +131,25 @@ bool applyPose(mh::core::Mesh& mesh, const std::string& pose) {
 
     // The file's rotations are in model space; skinning wants them in each
     // bone's rest frame. Skipping this yields a plausible but wrong pose.
-    const auto local    = mh::rig::poseToBoneLocal(*skel, *bodyPose);
-    const auto skinning = mh::rig::computeSkinningMatrices(*skel, local);
+    out.localPose = mh::rig::poseToBoneLocal(*skel, *bodyPose);
+    out.weights   = weights->compile(*skel, 4);
+    out.skeleton  = std::move(*skel);
+    out.active    = true;
+    return true;
+}
+
+/// Applies @p rig's pose to @p mesh in place. A no-op when no pose is loaded.
+bool poseInPlace(mh::core::Mesh& mesh, PoseRig& rig) {
+    if (!rig.active) return true;
+
+    if (!rig.skeleton.updateJoints(mesh.coord()) || !rig.skeleton.buildRestMatrices()) {
+        std::fprintf(stderr, "cannot re-fit the rig to the morphed mesh\n");
+        return false;
+    }
+    const auto skinning = mh::rig::computeSkinningMatrices(rig.skeleton, rig.localPose);
 
     std::vector<mh::foundation::Vec3> posed;
-    if (!mh::rig::skinPositions(mesh.coord(), weights->compile(*skel, 4), skinning, posed)) {
+    if (!mh::rig::skinPositions(mesh.coord(), rig.weights, skinning, posed)) {
         std::fprintf(stderr, "skinning failed\n");
         return false;
     }
@@ -220,6 +251,12 @@ int main(int argc, char** argv) {
         QStringLiteral("Write the posed mesh here and exit. Format from the extension: "
                        ".obj .fbx .glb .usda .dae .stl .3mf"),
         QStringLiteral("path"));
+    const QCommandLineOption setOpt(
+        QStringLiteral("set"),
+        QStringLiteral("Set a modifier before rendering or exporting, as "
+                       "<full/name>=<value>. Repeatable."),
+        QStringLiteral("modifier=value"));
+    parser.addOption(setOpt);
     parser.addOption(poseOpt);
     parser.addOption(exportOpt);
     parser.addOption(shaderOpt);
@@ -231,10 +268,61 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "cannot load the base mesh: %s\n", mesh.error().message().c_str());
         return 1;
     }
-    if (!applyPose(*mesh, parser.value(poseOpt).toStdString())) return 1;
-    // Adjacency is topology and survives posing; normals do not, so they are
-    // computed from the posed positions rather than the rest ones.
+    // The modelling panel. mh_ui never sees a Modifier -- core resolves the
+    // registry and hands down plain TaskViewSpecs, which is what keeps the UI
+    // module Apache-2.0. loadStandardLayout also puts the task views in the
+    // reference's tab order, which is NOT the order the files are written in.
+    auto standard = mh::core::loadStandardLayout(std::filesystem::path(MH_DATA_DIR) / "modifiers");
+    if (!standard) {
+        std::fprintf(stderr, "cannot load the modifier registry: %s\n",
+                     standard.error().message().c_str());
+        return 1;
+    }
+    const std::vector<mh::foundation::TaskViewSpec>& views = standard->views;
+
+    const mh::core::TargetIndex index =
+        mh::core::TargetIndex::build(std::filesystem::path(MH_DATA_DIR) / "targets");
+    mh::core::Human human(&index, standard->modifiers);
+    // Lazy: only the targets a slider actually reaches are read from disk, so
+    // start-up does not pay for all 1,280.
+    mh::core::TargetLibrary targets(std::filesystem::path(MH_DATA_DIR) / "targets");
+
+    // Collected so the panel can be moved to match: a mesh that is morphed
+    // while the sliders show their defaults is a UI that lies, and the first
+    // nudge of such a slider snaps the model back.
+    std::vector<std::pair<QString, float>> presets;
+    for (const QString& assignment : parser.values(setOpt)) {
+        const QStringList halves = assignment.split(QLatin1Char('='));
+        bool ok                  = false;
+        const float v            = halves.size() == 2 ? halves[1].toFloat(&ok) : 0.0F;
+        // std::isfinite matters: QString::toFloat accepts "nan", and
+        // std::clamp passes NaN straight through (both comparisons are false),
+        // so every vertex ends up NaN and the export still exits 0.
+        if (halves.size() != 2 || halves[0].isEmpty() || !ok || !std::isfinite(v)) {
+            std::fprintf(stderr, "--set wants <modifier>=<finite number>, got \"%s\"\n",
+                         assignment.toStdString().c_str());
+            return 1;
+        }
+        if (!human.setModifierValue(halves[0].toStdString(), v)) {
+            std::fprintf(stderr, "no such modifier: \"%s\"\n", halves[0].toStdString().c_str());
+            return 1;
+        }
+        presets.emplace_back(halves[0], v);
+    }
+
+    if (human.stackSize() > 0) {
+        uint32_t missing       = 0;
+        const uint32_t applied = human.applyStack(*mesh, targets, &missing);
+        std::printf("applied %u targets (%u missing)\n", applied, missing);
+    }
+
+    PoseRig rig;
+    if (!loadPoseRig(*mesh, parser.value(poseOpt).toStdString(), rig)) return 1;
+
+    // Adjacency is topology and survives both morphing and posing, so it is
+    // built once. Normals are not, and are recomputed on every rebuild.
     mesh->buildAdjacency();
+    if (!poseInPlace(*mesh, rig)) return 1;
     mesh->calcNormals();
 
     auto rm = mh::core::RenderMesh::build(*mesh);
@@ -254,6 +342,29 @@ int main(int argc, char** argv) {
                         "skinmat_caucasian.png");
     // rm outlives the window, so the non-owning view stays valid.
     window.setMesh(rm.view());
+
+    auto* panel = new mh::ui::ModifierPanel(views);
+    for (const auto& [id, v] : presets)
+        panel->setValue(id, v);
+    window.setModellingWidget(panel);
+    // Every object this lambda captures is declared ABOVE `window`, and `panel`
+    // is `window`'s child -- so reverse destruction tears down the connection
+    // before any capture dies. That ordering is load-bearing; do not move the
+    // declarations.
+    QObject::connect(panel, &mh::ui::ModifierPanel::valueChanged,
+                     [&](const QString& id, float value) {
+                         human.setModifierValue(id.toStdString(), value);
+                         // Order matters: the stack resets the mesh to its
+                         // morph base, so posing has to come after it or the
+                         // pose is silently thrown away every time a slider
+                         // moves.
+                         human.applyStack(*mesh, targets);
+                         if (!poseInPlace(*mesh, rig)) return;
+                         mesh->calcNormals();
+                         rm.refreshPositions(*mesh);
+                         window.setMesh(rm.view());
+                     });
+
     window.restoreWorkspace();
     window.show();
 

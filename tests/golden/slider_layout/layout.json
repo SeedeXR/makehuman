@@ -1,0 +1,2777 @@
+{
+  "Face": {
+    "file": "modeling_sliders.json",
+    "sortOrder": 0.2,
+    "cameraView": "faceCamera",
+    "saveName": null,
+    "sections": {
+      "head shape": [
+        {
+          "mod": "head/head-age-decr|incr",
+          "label": "Age",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "head/head-fat-decr|incr",
+          "label": "Head fat",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "head/head-angle-in|out",
+          "label": "Angle",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "head/head-oval",
+          "label": "Oval",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "head/head-round",
+          "label": "Round",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "head/head-rectangular",
+          "label": "Rectangular",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "head/head-square",
+          "label": "Square",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "head/head-triangular",
+          "label": "Triangular",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "head/head-invertedtriangular",
+          "label": "Invertedtriangular",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "head/head-diamond",
+          "label": "Diamond",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "head/head-back-scale-depth-decr|incr",
+          "label": "Scale depth of parietal side",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "head size": [
+        {
+          "mod": "head/head-scale-depth-decr|incr",
+          "label": "Scale depth",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "head/head-scale-horiz-decr|incr",
+          "label": "Scale horizontally",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "head/head-scale-vert-decr|incr",
+          "label": "Scale vertically",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "head/head-trans-in|out",
+          "label": "Move horizontally",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "head/head-trans-down|up",
+          "label": "Move vertically",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "head/head-trans-backward|forward",
+          "label": "Move depth",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "forehead": [
+        {
+          "mod": "forehead/forehead-trans-backward|forward",
+          "label": "Forehead bulge",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "forehead/forehead-scale-vert-decr|incr",
+          "label": "Scale vertically",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "forehead/forehead-nubian-decr|incr",
+          "label": "Cranic shape",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "forehead/forehead-temple-decr|incr",
+          "label": "Temple bulge",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "eyebrows": [
+        {
+          "mod": "eyebrows/eyebrows-trans-backward|forward",
+          "label": "Eyebrows bulge",
+          "cam": "rightView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyebrows/eyebrows-angle-down|up",
+          "label": "Eyebrows angle",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyebrows/eyebrows-trans-down|up",
+          "label": "Move vert",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "neck": [
+        {
+          "mod": "neck/neck-double-decr|incr",
+          "label": "Double neck",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "neck/neck-scale-depth-decr|incr",
+          "label": "Scale depth",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "neck/neck-scale-horiz-decr|incr",
+          "label": "Scale horizontally",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "neck/neck-scale-vert-decr|incr",
+          "label": "Scale vertically",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "neck/neck-trans-in|out",
+          "label": "Move horizontally.",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "neck/neck-trans-down|up",
+          "label": "Move vertically",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "neck/neck-trans-backward|forward",
+          "label": "Move depth",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "neck/neck-back-scale-depth-decr|incr",
+          "label": "Scale depth of nape",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "right eye": [
+        {
+          "mod": "eyes/r-eye-bag-decr|incr",
+          "label": "Eye bag volume",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/r-eye-bag-in|out",
+          "label": "Eye bag distorsion",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/r-eye-bag-height-decr|incr",
+          "label": "Eye bag height",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/r-eye-eyefold-angle-down|up",
+          "label": "Eyefold angle",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/r-eye-epicanthus-in|out",
+          "label": "Eye epicanthus",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/r-eye-eyefold-concave|convex",
+          "label": "Eyefold volume",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/r-eye-eyefold-down|up",
+          "label": "Eyefold position",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/r-eye-height1-decr|incr",
+          "label": "Scale height 1",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/r-eye-height2-decr|incr",
+          "label": "Scale height 2",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/r-eye-height3-decr|incr",
+          "label": "Scale height 3",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/r-eye-push1-in|out",
+          "label": "Move outer corner horiz.",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/r-eye-push2-in|out",
+          "label": "Move inner corner horiz.",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/r-eye-trans-in|out",
+          "label": "Move eye horizontally",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/r-eye-trans-down|up",
+          "label": "Move eye vertically",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/r-eye-scale-decr|incr",
+          "label": "Scale eye",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/r-eye-corner1-down|up",
+          "label": "Move outer corner vert.",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/r-eye-corner2-down|up",
+          "label": "Move inner corner vert.",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "left eye": [
+        {
+          "mod": "eyes/l-eye-bag-decr|incr",
+          "label": "Eye bag volume",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/l-eye-bag-in|out",
+          "label": "Eye bag distorsion",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/l-eye-bag-height-decr|incr",
+          "label": "Eye bag height",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/l-eye-eyefold-angle-down|up",
+          "label": "Eyefold angle",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/l-eye-epicanthus-in|out",
+          "label": "Eye epicanthus",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/l-eye-eyefold-concave|convex",
+          "label": "Eyefold volume",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/l-eye-eyefold-down|up",
+          "label": "Eyefold position",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/l-eye-height1-decr|incr",
+          "label": "Scale height 1",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/l-eye-height2-decr|incr",
+          "label": "Scale height 2",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/l-eye-height3-decr|incr",
+          "label": "Scale height 3",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/l-eye-push1-in|out",
+          "label": "Move outer corner horiz.",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/l-eye-push2-in|out",
+          "label": "Move inner corner horiz.",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/l-eye-trans-in|out",
+          "label": "Move eye horizontally",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/l-eye-trans-down|up",
+          "label": "Move eye vertically",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/l-eye-scale-decr|incr",
+          "label": "Scale eye",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/l-eye-corner1-down|up",
+          "label": "Move outer corner vert.",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "eyes/l-eye-corner2-down|up",
+          "label": "Move inner corner vert.",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "nose size": [
+        {
+          "mod": "nose/nose-trans-down|up",
+          "label": "Move vertically",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "nose/nose-trans-backward|forward",
+          "label": "Move depth",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "nose/nose-trans-in|out",
+          "label": "Move horizontally",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "nose/nose-scale-vert-decr|incr",
+          "label": "Scale vertically",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "nose/nose-scale-horiz-decr|incr",
+          "label": "Scale horizontally",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "nose/nose-scale-depth-decr|incr",
+          "label": "Scale depth",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "nose size details": [
+        {
+          "mod": "nose/nose-nostrils-width-decr|incr",
+          "label": "Scale nostrils width",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "nose/nose-point-width-decr|incr",
+          "label": "Scale tip width",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "nose/nose-base-down|up",
+          "label": "Move base vert.",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "nose/nose-width1-decr|incr",
+          "label": "Scale width 1",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "nose/nose-width2-decr|incr",
+          "label": "Scale width 2",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "nose/nose-width3-decr|incr",
+          "label": "Scale width 3",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "nose features": [
+        {
+          "mod": "nose/nose-compression-compress|uncompress",
+          "label": "Compression",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "nose/nose-curve-concave|convex",
+          "label": "Curve",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "nose/nose-greek-decr|incr",
+          "label": "Greek",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "nose/nose-hump-decr|incr",
+          "label": "Hump",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "nose/nose-volume-decr|incr",
+          "label": "Volume",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "nose/nose-nostrils-angle-down|up",
+          "label": "Nostrils Angle",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "nose/nose-point-down|up",
+          "label": "Move tip vertically",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "nose/nose-septumangle-decr|incr",
+          "label": "Septum Angle",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "nose/nose-flaring-decr|incr",
+          "label": "Scale nostrils flaring",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "mouth size": [
+        {
+          "mod": "mouth/mouth-scale-horiz-decr|incr",
+          "label": "Scale horizontally",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "mouth/mouth-scale-vert-decr|incr",
+          "label": "Scale vertically",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "mouth/mouth-scale-depth-decr|incr",
+          "label": "Scale depth",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "mouth/mouth-trans-in|out",
+          "label": "Move horizontally",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "mouth/mouth-trans-down|up",
+          "label": "Move vertically",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "mouth/mouth-trans-backward|forward",
+          "label": "Move depth",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "mouth size details": [
+        {
+          "mod": "mouth/mouth-lowerlip-height-decr|incr",
+          "label": "Scale lowerlip height",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "mouth/mouth-lowerlip-width-decr|incr",
+          "label": "Scale lowerlip width",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "mouth/mouth-upperlip-height-decr|incr",
+          "label": "Scale upperlip height",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "mouth/mouth-upperlip-width-decr|incr",
+          "label": "Scale upperlip width",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "mouth/mouth-cupidsbow-width-decr|incr",
+          "label": "Cupid's bow width",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "mouth features": [
+        {
+          "mod": "mouth/mouth-dimples-in|out",
+          "label": "Dimples",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "mouth/mouth-laugh-lines-in|out",
+          "label": "Laugh-lines",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "mouth/mouth-lowerlip-ext-down|up",
+          "label": "Lowerlip curved shape",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "mouth/mouth-angles-down|up",
+          "label": "Move corners vert.",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "mouth/mouth-lowerlip-middle-down|up",
+          "label": "Scale middle lowerlip",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "mouth/mouth-lowerlip-volume-decr|incr",
+          "label": "Scale lowerlip volume",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "mouth/mouth-philtrum-volume-decr|incr",
+          "label": "Scale philtrum volume",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "mouth/mouth-upperlip-volume-decr|incr",
+          "label": "Scale upperlip volume",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "mouth/mouth-upperlip-ext-down|up",
+          "label": "Upperlip curved shape",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "mouth/mouth-upperlip-middle-down|up",
+          "label": "Scale middle upperlip",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "mouth/mouth-cupidsbow-decr|incr",
+          "label": "Cupid's bow shape",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "right ear": [
+        {
+          "mod": "ears/r-ear-trans-backward|forward",
+          "label": "Move depth",
+          "cam": "rightView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "ears/r-ear-scale-decr|incr",
+          "label": "Scale ear",
+          "cam": "rightView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "ears/r-ear-trans-down|up",
+          "label": "Move vertically",
+          "cam": "rightView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "ears/r-ear-scale-vert-decr|incr",
+          "label": "Scale height",
+          "cam": "rightView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "ears/r-ear-lobe-decr|incr",
+          "label": "Scale lobe",
+          "cam": "rightView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "ears/r-ear-shape-pointed|triangle",
+          "label": "Ear shape (pointed-triangle)",
+          "cam": "rightView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "ears/r-ear-rot-backward|forward",
+          "label": "Ear rotation",
+          "cam": "rightView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "ears/r-ear-shape-square|round",
+          "label": "Ear shape (squared-round)",
+          "cam": "rightView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "ears/r-ear-scale-depth-decr|incr",
+          "label": "Scale width",
+          "cam": "rightView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "ears/r-ear-wing-decr|incr",
+          "label": "Ear wing-shaped",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "ears/r-ear-flap-decr|incr",
+          "label": "Ear flapped",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "left ear": [
+        {
+          "mod": "ears/l-ear-trans-backward|forward",
+          "label": "Move depth",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "ears/l-ear-scale-decr|incr",
+          "label": "Scale ear",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "ears/l-ear-trans-down|up",
+          "label": "Move vertically",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "ears/l-ear-scale-vert-decr|incr",
+          "label": "Scale height",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "ears/l-ear-lobe-decr|incr",
+          "label": "Scale lobe",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "ears/l-ear-shape-pointed|triangle",
+          "label": "Ear shape (pointed-triangle)",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "ears/l-ear-rot-backward|forward",
+          "label": "Ear rotation",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "ears/l-ear-shape-square|round",
+          "label": "Ear shape (squared-round)",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "ears/l-ear-scale-depth-decr|incr",
+          "label": "Scale width",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "ears/l-ear-wing-decr|incr",
+          "label": "Ear wing-shaped",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "ears/l-ear-flap-decr|incr",
+          "label": "Ear flapped",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "chin/jaw": [
+        {
+          "mod": "chin/chin-jaw-drop-decr|incr",
+          "label": "Tone of side chin",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "chin/chin-cleft-decr|incr",
+          "label": "Cleft chin",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "chin/chin-prominent-decr|incr",
+          "label": "Scale chin prominence",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "chin/chin-width-decr|incr",
+          "label": "Scale chin width",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "chin/chin-height-decr|incr",
+          "label": "Scale chin height",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "chin/chin-bones-decr|incr",
+          "label": "Scale chin angular",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "chin/chin-prognathism-decr|incr",
+          "label": "Scale chin prognathism",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "left cheek": [
+        {
+          "mod": "cheek/l-cheek-volume-decr|incr",
+          "label": "Cheek outer volume",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "cheek/l-cheek-bones-decr|incr",
+          "label": "Scale cheek prominence",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "cheek/l-cheek-inner-decr|incr",
+          "label": "Cheek inner volume",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "cheek/l-cheek-trans-down|up",
+          "label": "Move vertically",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "right cheek": [
+        {
+          "mod": "cheek/r-cheek-volume-decr|incr",
+          "label": "Cheek outer volume",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "cheek/r-cheek-bones-decr|incr",
+          "label": "Scale cheek prominence",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "cheek/r-cheek-inner-decr|incr",
+          "label": "Cheek inner volume",
+          "cam": "rightView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "cheek/r-cheek-trans-down|up",
+          "label": "Move vertically",
+          "cam": "frontView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ]
+    }
+  },
+  "Torso": {
+    "file": "modeling_sliders.json",
+    "sortOrder": 0.3,
+    "cameraView": null,
+    "saveName": null,
+    "sections": {
+      "Torso": [
+        {
+          "mod": "torso/torso-scale-depth-decr|incr",
+          "label": "Scale depth",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "torso/torso-scale-horiz-decr|incr",
+          "label": "Scale horizontally",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "torso/torso-scale-vert-decr|incr",
+          "label": "Scale vertically",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "torso/torso-trans-in|out",
+          "label": "Move horizontally",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "torso/torso-trans-down|up",
+          "label": "Move vertically",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "torso/torso-trans-backward|forward",
+          "label": "Move depth",
+          "cam": "leftView",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "torso/torso-vshape-decr|incr",
+          "label": "Scale cone-shape",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "torso/torso-muscle-dorsi-decr|incr",
+          "label": "Dorsi muscle",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "torso/torso-muscle-pectoral-decr|incr",
+          "label": "Pectoral muscle",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "Hip": [
+        {
+          "mod": "hip/hip-scale-depth-decr|incr",
+          "label": "Scale depth",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "hip/hip-scale-horiz-decr|incr",
+          "label": "Scale horizontally",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "hip/hip-scale-vert-decr|incr",
+          "label": "Scale vertically",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "hip/hip-trans-in|out",
+          "label": "Move horizontally",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "hip/hip-trans-down|up",
+          "label": "Move vertically",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "hip/hip-trans-backward|forward",
+          "label": "Move depth",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "hip/hip-waist-down|up",
+          "label": "Waist vertical position",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "Stomach": [
+        {
+          "mod": "stomach/stomach-tone-decr|incr",
+          "label": "Muscular tone",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "stomach/stomach-pregnant-decr|incr",
+          "label": "Pregnancy shape",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "stomach/stomach-navel-in|out",
+          "label": "Navel bump",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "stomach/stomach-navel-down|up",
+          "label": "Navel position",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "Buttocks": [
+        {
+          "mod": "buttocks/buttocks-volume-decr|incr",
+          "label": "Buttocks volume",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "Pelvis": [
+        {
+          "mod": "pelvis/pelvis-tone-decr|incr",
+          "label": "Pelvis muscular tone",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "pelvis/bulge-decr|incr",
+          "label": "Genital volume",
+          "cam": "globalCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ]
+    }
+  },
+  "Arms and Legs": {
+    "file": "modeling_sliders.json",
+    "sortOrder": 0.4,
+    "cameraView": null,
+    "saveName": null,
+    "sections": {
+      "right hand": [
+        {
+          "mod": "armslegs/r-hand-fingers-distance-decr|incr",
+          "label": "Fingers distance",
+          "cam": "rightHandFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-hand-fingers-diameter-decr|incr",
+          "label": "Fingers diameter",
+          "cam": "rightHandFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-hand-fingers-length-decr|incr",
+          "label": "Fingers length",
+          "cam": "rightHandFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-hand-scale-decr|incr",
+          "label": "Scale hand",
+          "cam": "rightHandFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-hand-trans-in|out",
+          "label": "Hand position",
+          "cam": "rightHandFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "left hand": [
+        {
+          "mod": "armslegs/l-hand-fingers-distance-decr|incr",
+          "label": "Fingers distance",
+          "cam": "rightHandFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-hand-fingers-diameter-decr|incr",
+          "label": "Fingers diameter",
+          "cam": "leftHandFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-hand-fingers-length-decr|incr",
+          "label": "Fingers length",
+          "cam": "leftHandFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-hand-scale-decr|incr",
+          "label": "Scale hand",
+          "cam": "leftHandFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-hand-trans-in|out",
+          "label": "Hand position",
+          "cam": "leftHandFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "right foot": [
+        {
+          "mod": "armslegs/r-foot-scale-decr|incr",
+          "label": "Scale foot",
+          "cam": "rightFootRightCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-foot-trans-in|out",
+          "label": "Move horizontally",
+          "cam": "rightFootFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-foot-trans-backward|forward",
+          "label": "Move depth",
+          "cam": "rightFootRightCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "left foot": [
+        {
+          "mod": "armslegs/l-foot-scale-decr|incr",
+          "label": "Scale foot",
+          "cam": "leftFootLeftCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-foot-trans-in|out",
+          "label": "Move horizontally",
+          "cam": "leftFootFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-foot-trans-backward|forward",
+          "label": "Move depth",
+          "cam": "leftFootLeftCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "left shoulder": [
+        {
+          "mod": "armslegs/l-upperarm-shoulder-muscle-decr|incr",
+          "label": "Shoulder muscle mass",
+          "cam": "leftArmTopCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "right shoulder": [
+        {
+          "mod": "armslegs/r-upperarm-shoulder-muscle-decr|incr",
+          "label": "Shoulder muscle mass",
+          "cam": "rightArmTopCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "right arm": [
+        {
+          "mod": "armslegs/r-lowerarm-scale-depth-decr|incr",
+          "label": "Lowerarm thickness 1",
+          "cam": "rightArmTopCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-lowerarm-scale-horiz-decr|incr",
+          "label": "Lowerarm length",
+          "cam": "rightArmFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-lowerarm-scale-vert-decr|incr",
+          "label": "Lowerarm thickness 2",
+          "cam": "rightArmFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-lowerarm-fat-decr|incr",
+          "label": "Lowerarm skinny-fat",
+          "cam": "rightArmTopCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-lowerarm-muscle-decr|incr",
+          "label": "Lowerarm muscles",
+          "cam": "rightArmTopCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-upperarm-scale-depth-decr|incr",
+          "label": "Upperarm thickness 1",
+          "cam": "rightArmTopCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-upperarm-scale-horiz-decr|incr",
+          "label": "Upperarm length",
+          "cam": "rightArmFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-upperarm-scale-vert-decr|incr",
+          "label": "Upperarm thickness 2",
+          "cam": "rightArmFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-upperarm-fat-decr|incr",
+          "label": "Upperarm skinny-fat",
+          "cam": "rightArmTopCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-upperarm-muscle-decr|incr",
+          "label": "Upperarm muscles",
+          "cam": "rightArmTopCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "left arm": [
+        {
+          "mod": "armslegs/l-lowerarm-scale-depth-decr|incr",
+          "label": "Lowerarm thickness 1",
+          "cam": "leftArmTopCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-lowerarm-scale-horiz-decr|incr",
+          "label": "Lowerarm length",
+          "cam": "leftArmFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-lowerarm-scale-vert-decr|incr",
+          "label": "Lowerarm thickness 2",
+          "cam": "leftArmFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-lowerarm-fat-decr|incr",
+          "label": "Lowerarm skinny-fat",
+          "cam": "leftArmFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-lowerarm-muscle-decr|incr",
+          "label": "Lowerarm muscles",
+          "cam": "leftArmTopCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-upperarm-scale-depth-decr|incr",
+          "label": "Upperarm thickness 1",
+          "cam": "leftArmTopCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-upperarm-scale-horiz-decr|incr",
+          "label": "Upperarm length",
+          "cam": "leftArmFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-upperarm-scale-vert-decr|incr",
+          "label": "Upperarm thickness 2",
+          "cam": "leftArmFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-upperarm-fat-decr|incr",
+          "label": "Upperarm skinny-fat",
+          "cam": "leftArmTopCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-upperarm-muscle-decr|incr",
+          "label": "Upperarm muscles",
+          "cam": "leftArmTopCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "right leg": [
+        {
+          "mod": "armslegs/r-leg-valgus-decr|incr",
+          "label": "Move knee horizontally",
+          "cam": "rightLegFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-lowerleg-scale-depth-decr|incr",
+          "label": "Lowerleg scale depth",
+          "cam": "rightLegRightCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-lowerleg-scale-horiz-decr|incr",
+          "label": "Lowerleg scale horizontally",
+          "cam": "rightLegFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-lowerleg-fat-decr|incr",
+          "label": "Lowerleg skinny-fat",
+          "cam": "rightLegFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-lowerleg-muscle-decr|incr",
+          "label": "Lowerleg muscle",
+          "cam": "rightLegFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-upperleg-scale-depth-decr|incr",
+          "label": "Upperleg scale depth",
+          "cam": "rightLegRightCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-upperleg-scale-horiz-decr|incr",
+          "label": "Upperleg scale horizontally",
+          "cam": "rightLegFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-upperleg-scale-vert-decr|incr",
+          "label": "Move knee vertically",
+          "cam": "rightLegFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-upperleg-fat-decr|incr",
+          "label": "Upperleg skinny-fat",
+          "cam": "rightLegFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/r-upperleg-muscle-decr|incr",
+          "label": "Upperleg muscle",
+          "cam": "rightLegFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "left leg": [
+        {
+          "mod": "armslegs/l-leg-valgus-decr|incr",
+          "label": "Move knee horizontally",
+          "cam": "leftLegFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-lowerleg-scale-depth-decr|incr",
+          "label": "Lowerleg scale depth",
+          "cam": "leftLegLeftCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-lowerleg-scale-horiz-decr|incr",
+          "label": "Lowerleg scale horizontally",
+          "cam": "leftLegFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-lowerleg-fat-decr|incr",
+          "label": "Lowerleg skinny-fat",
+          "cam": "leftLegFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-lowerleg-muscle-decr|incr",
+          "label": "Lowerleg muscle",
+          "cam": "leftArmFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-upperleg-scale-depth-decr|incr",
+          "label": "Upperleg scale depth",
+          "cam": "leftLegLeftCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-upperleg-scale-horiz-decr|incr",
+          "label": "Upperleg scale horizontally",
+          "cam": "leftLegFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-upperleg-scale-vert-decr|incr",
+          "label": "Move knee vertically",
+          "cam": "leftLegFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-upperleg-fat-decr|incr",
+          "label": "Upperleg skinny-fat",
+          "cam": "leftLegFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/l-upperleg-muscle-decr|incr",
+          "label": "Upperleg muscle",
+          "cam": "leftLegFrontCamera",
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "legs": [
+        {
+          "mod": "armslegs/upperlegs-height-decr|incr",
+          "label": "Upperlegs height",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "armslegs/lowerlegs-height-decr|incr",
+          "label": "Lowerlegs height",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ]
+    }
+  },
+  "Gender": {
+    "file": "modeling_sliders.json",
+    "sortOrder": 0.1,
+    "cameraView": null,
+    "saveName": null,
+    "sections": {
+      "Breast": [
+        {
+          "mod": "breast/BreastSize",
+          "label": "Breast size",
+          "cam": null,
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5
+        },
+        {
+          "mod": "breast/BreastFirmness",
+          "label": "Breast firmness",
+          "cam": null,
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5
+        },
+        {
+          "mod": "breast/breast-trans-down|up",
+          "label": "Vertical position",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "breast/breast-dist-decr|incr",
+          "label": "Horizontal distance",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "breast/breast-point-decr|incr",
+          "label": "Pointiness",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "breast/breast-volume-vert-down|up",
+          "label": "Breast Volume",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "breast/nipple-size-decr|incr",
+          "label": "Nipple size",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "breast/nipple-point-decr|incr",
+          "label": "Nipple point",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "Genitals": [
+        {
+          "mod": "genitals/penis-length-decr|incr",
+          "label": "Penis length",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "genitals/penis-circ-decr|incr",
+          "label": "Penis circumference",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "genitals/penis-testicles-decr|incr",
+          "label": "Testicles size",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ]
+    }
+  },
+  "Macro modelling": {
+    "file": "modeling_sliders.json",
+    "sortOrder": 0,
+    "cameraView": null,
+    "saveName": null,
+    "sections": {
+      "Macro": [
+        {
+          "mod": "macrodetails/Gender",
+          "label": "Gender",
+          "cam": null,
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5
+        },
+        {
+          "mod": "macrodetails/Age",
+          "label": "Age",
+          "cam": null,
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5
+        },
+        {
+          "mod": "macrodetails-universal/Muscle",
+          "label": "Muscle",
+          "cam": null,
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5
+        },
+        {
+          "mod": "macrodetails-universal/Weight",
+          "label": "Weight",
+          "cam": null,
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5
+        },
+        {
+          "mod": "macrodetails-height/Height",
+          "label": "Height",
+          "cam": null,
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5
+        },
+        {
+          "mod": "macrodetails-proportions/BodyProportions",
+          "label": "Proportions",
+          "cam": null,
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.5
+        },
+        {
+          "mod": "macrodetails/African",
+          "label": "African",
+          "cam": null,
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.3333333333333333
+        },
+        {
+          "mod": "macrodetails/Asian",
+          "label": "Asian",
+          "cam": null,
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.3333333333333333
+        },
+        {
+          "mod": "macrodetails/Caucasian",
+          "label": "Caucasian",
+          "cam": null,
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.3333333333333333
+        }
+      ]
+    }
+  },
+  "Body shapes": {
+    "file": "bodyshapes_sliders.json",
+    "sortOrder": 0,
+    "cameraView": null,
+    "saveName": null,
+    "sections": {
+      "Female body shapes": [
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-fem-apple",
+          "label": "Elvs Female Apple",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-fem-diamond",
+          "label": "Elvs Female Diamond",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-fem-full-hourglass",
+          "label": "Elvs Female Full Hourglass",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-fem-neat-hourglass",
+          "label": "Elvs Female Neat Hourglass",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-fem-invert-triangle",
+          "label": "Elvs Female Inverted Triangle",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-fem-lean-column",
+          "label": "Elvs Female Lean Column",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-fem-rectangle",
+          "label": "Elvs Female Rectangle",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-fem-triangle",
+          "label": "Elvs Female Triangle",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "Female hormonal components": [
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-fem-adrenal",
+          "label": "Elvs Female Adrenal",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-fem-liver",
+          "label": "Elvs Female Liver",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-fem-ovary",
+          "label": "Elvs Female Ovary",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-fem-thyroid",
+          "label": "Elvs Female Thyroid",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "Male body shapes": [
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-man-apple",
+          "label": "Elvs Male Apple",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-man-rectangle",
+          "label": "Elvs Male Rectangle",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-man-lean-column",
+          "label": "Elvs Male Lean Column",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-man-triangle",
+          "label": "Elvs Male Triangle",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-man-invert-triangle",
+          "label": "Elvs Male Inverted Triangle",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-man-trapezoid",
+          "label": "Elvs Male Trapezoid",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "Male hormonal components": [
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-man-adrenal",
+          "label": "Elvs Male Adrenal",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-man-liver",
+          "label": "Elvs Male Liver",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-man-gonadal",
+          "label": "Elvs Male Gonadal",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "bodyshapes/bodyshapes-elvs-man-thyroid",
+          "label": "Elvs Male Thyroid",
+          "cam": "frontView",
+          "known": true,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ]
+    }
+  },
+  "Measure": {
+    "file": "measurement_sliders.json",
+    "sortOrder": null,
+    "cameraView": null,
+    "saveName": null,
+    "sections": {
+      "Neck": [
+        {
+          "mod": "measure/measure-neck-circ-decr|incr",
+          "label": "Neck circum",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "measure/measure-neck-height-decr|incr",
+          "label": "Neck height",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "Upper arm": [
+        {
+          "mod": "measure/measure-upperarm-circ-decr|incr",
+          "label": "Upper arm circum",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "measure/measure-upperarm-length-decr|incr",
+          "label": "Upperarm length",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "Lower arm": [
+        {
+          "mod": "measure/measure-lowerarm-length-decr|incr",
+          "label": "Lowerarm length",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "measure/measure-wrist-circ-decr|incr",
+          "label": "Wrist circum",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "Torso": [
+        {
+          "mod": "measure/measure-frontchest-dist-decr|incr",
+          "label": "Front chest dist",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "measure/measure-bust-circ-decr|incr",
+          "label": "Bust circum",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "measure/measure-underbust-circ-decr|incr",
+          "label": "Underbust circum",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "measure/measure-waist-circ-decr|incr",
+          "label": "Waist circum",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "measure/measure-napetowaist-dist-decr|incr",
+          "label": "Nape to waist",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "measure/measure-waisttohip-dist-decr|incr",
+          "label": "Waist to hip",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "measure/measure-shoulder-dist-decr|incr",
+          "label": "Shoulder dist",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "Hips": [
+        {
+          "mod": "measure/measure-hips-circ-decr|incr",
+          "label": "Hips circum",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "Upper leg": [
+        {
+          "mod": "measure/measure-upperleg-height-decr|incr",
+          "label": "Upperleg height",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "measure/measure-thigh-circ-decr|incr",
+          "label": "Thigh circ.",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "Knee": [
+        {
+          "mod": "measure/measure-knee-circ-decr|incr",
+          "label": "Knee circ.",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "Lower leg": [
+        {
+          "mod": "measure/measure-lowerleg-height-decr|incr",
+          "label": "Lowerleg height",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        },
+        {
+          "mod": "measure/measure-calf-circ-decr|incr",
+          "label": "Calf circum",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ],
+      "Ankle": [
+        {
+          "mod": "measure/measure-ankle-circ-decr|incr",
+          "label": "Ankle circum",
+          "cam": null,
+          "known": true,
+          "min": -1.0,
+          "max": 1.0,
+          "default": 0.0
+        }
+      ]
+    }
+  }
+}

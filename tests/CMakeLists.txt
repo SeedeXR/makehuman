@@ -31,6 +31,7 @@ add_executable(mh_tests
     golden/test_unit_correctness.cpp
     golden/test_poseunits_parity.cpp
     golden/test_body_pose.cpp
+    golden/test_slider_layout.cpp
     golden/test_obj_writer_parity.cpp
     golden/test_gltf_writer.cpp
     golden/test_scene_io.cpp
@@ -93,10 +94,11 @@ if(MH_HAVE_RENDER)
     # widget is constructed -- Catch2's main would build the widgets first.
     add_executable(mh_ui_tests ui/test_ui.cpp ui/test_theme.cpp)
     target_link_libraries(mh_ui_tests
-        PRIVATE mh::ui Catch2::Catch2 mh::warnings mh::sanitize)
+        PRIVATE mh::ui mh::core Catch2::Catch2 mh::warnings mh::sanitize)
     target_compile_definitions(mh_ui_tests PRIVATE
         MH_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders"
-        MH_RESOURCE_DIR="${CMAKE_SOURCE_DIR}/resources")
+        MH_RESOURCE_DIR="${CMAKE_SOURCE_DIR}/resources"
+        MH_DATA_DIR="${MH_DATA_DIR}")
     set_target_properties(mh_ui_tests PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
     if(_catch2_inc)
         target_include_directories(mh_ui_tests SYSTEM PRIVATE ${_catch2_inc})

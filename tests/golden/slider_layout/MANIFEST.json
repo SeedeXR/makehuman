@@ -1,0 +1,18 @@
+{
+  "subsystem": "slider_layout",
+  "captured_at": "2026-08-29T15:46:40.782914+00:00",
+  "reference_commit": "bf1924c78e797d62323b5bab98459e50c2bff8d1",
+  "python": "3.14.6",
+  "numpy": "2.5.2",
+  "platform": "darwin",
+  "entries": {
+    "layout": {
+      "file": "layout.json"
+    }
+  },
+  "source": "data/modifiers/*_sliders.json + *_modifiers.json",
+  "task_views": 7,
+  "sections": 50,
+  "sliders": 291,
+  "sliders_with_no_modifier": 0
+}

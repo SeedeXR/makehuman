@@ -454,6 +454,90 @@ def capture_weights() -> None:
     })
 
 
+def capture_slider_layout() -> None:
+    """The slider task-view registry: views, sections, order and every label.
+
+    `modifiers/*_sliders.json` is the reference's task-view definition -- which
+    sliders appear on which tab, in which section, in which order, and under what
+    name. The label is only sometimes in the file; the rest are derived by a rule
+    in `modifierslider.py:46-56`, and that rule is what this captures, applied by
+    the reference itself to all 291 modifiers.
+    """
+    import json as _json
+    from collections import OrderedDict
+
+    import humanmodifier
+
+    print("capturing: slider_layout")
+
+    def guess_label(mod_name, group_name):
+        """modifierslider.py:46-56, verbatim."""
+        tlabel = mod_name.split('-')
+        if "|" in tlabel[len(tlabel) - 1]:
+            tlabel = tlabel[:-1]
+        if len(tlabel) > 1 and tlabel[0] == group_name:
+            label = tlabel[1:]
+        else:
+            label = tlabel
+        return ' '.join([word.capitalize() for word in label])
+
+    # Modifiers keyed by fullName, so the layout can be resolved against them.
+    mods = {}
+    for name in ("modeling_modifiers.json", "bodyshapes_modifiers.json",
+                 "measurement_modifiers.json"):
+        for m in humanmodifier.loadModifiers("data/modifiers/" + name, None):
+            mods[m.fullName] = m
+
+    out_views = OrderedDict()
+    for fname in ("modeling_sliders.json", "bodyshapes_sliders.json",
+                  "measurement_sliders.json"):
+        data = _json.load(open("data/modifiers/" + fname, encoding="utf-8"),
+                          object_pairs_hook=OrderedDict)
+        for task_name, props in data.items():
+            view = OrderedDict()
+            view["file"] = fname
+            view["sortOrder"] = props.get("sortOrder", None)
+            view["cameraView"] = props.get("cameraView", None)
+            view["saveName"] = props.get("saveName", None)
+            sections = OrderedDict()
+            for section_name, defs in props["modifiers"].items():
+                entries = []
+                for d in defs:
+                    full = d["mod"]
+                    m = mods.get(full)
+                    label = d.get("label", None)
+                    if label is None and m is not None:
+                        label = guess_label(m.name, m.groupName)
+                    entries.append(OrderedDict([
+                        ("mod", full),
+                        ("label", label),
+                        ("cam", d.get("cam", None)),
+                        ("known", m is not None),
+                        ("min", float(m.getMin()) if m is not None else None),
+                        ("max", float(m.getMax()) if m is not None else None),
+                        ("default", float(m.getDefaultValue()) if m is not None else None),
+                    ]))
+                sections[section_name] = entries
+            view["sections"] = sections
+            out_views[task_name] = view
+
+    out = GOLDEN / "slider_layout"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "layout.json").write_text(_json.dumps(out_views, indent=2))
+
+    n_sections = sum(len(v["sections"]) for v in out_views.values())
+    n_sliders = sum(len(e) for v in out_views.values() for e in v["sections"].values())
+    n_unknown = sum(1 for v in out_views.values() for e in v["sections"].values()
+                    for d in e if not d["known"])
+    _finish("slider_layout", {"layout": {"file": "layout.json"}}, {
+        "source": "data/modifiers/*_sliders.json + *_modifiers.json",
+        "task_views": len(out_views),
+        "sections": n_sections,
+        "sliders": n_sliders,
+        "sliders_with_no_modifier": n_unknown,
+    })
+
+
 def capture_body_pose() -> None:
     """The shipped T-pose applied to the default rig, through the reference.
 
@@ -1061,6 +1145,7 @@ SUBSYSTEMS = {
     "weights": capture_weights,
     "skinning": capture_skinning,
     "body_pose": capture_body_pose,
+    "slider_layout": capture_slider_layout,
     "transform": capture_transform,
     "bvh": capture_bvh,
     "poseunits": capture_poseunits,

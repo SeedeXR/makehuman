@@ -441,6 +441,20 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 
 - [~] `QMainWindow` + `QDockWidget` — two docks, left/right areas, object names
       set so `saveState` actually restores. Nested and tabbed docking not yet.
+- [x] **Task-view registry + modelling sliders** — `core::loadSliderLayout` ports
+      `modifiers/*_sliders.json`, the reference's own tab definition: **7 task
+      views, 50 sections, 291 sliders**, full parity on order, labels, ranges,
+      defaults and camera hints (`tests/golden/slider_layout/`).
+      Labels follow `modifierslider.py:46-56` where the file gives none.
+      `ui::ModifierPanel` renders them from plain `foundation::TaskViewSpec`, so
+      **`mh_ui` still has zero `mh::core` symbols** while driving 291 modifiers.
+      App: `--set <modifier>=<value>` (repeatable) for scripted render/export.
+      **Order trap:** `applyStack` resets the mesh to its morph base, so posing
+      must come *after* morphing or the pose is discarded on every slider move;
+      the rig is also re-fitted each time, since a morphed body moves its joints.
+      Verified in Blender: default 16.94 dm, Gender=1 17.67 dm, Age=0 6.33 dm
+      (a 1-year-old, ~63 cm), and Gender=1 + T-pose keeps the height while the
+      span goes 11.35 -> 18.43 dm, so morph and pose compose.
 - [ ] Snapping with drop indicators
 - [x] Six-dot panel menu (float/dock/tab/reset/close) — `design.md` §6.3.
       `PanelTitleBar` replaces the whole dock title bar; Qt offers no hook for
