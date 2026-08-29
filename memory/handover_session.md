@@ -4,6 +4,62 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 026 · pose units, and a blend that must stay asymmetric
+
+**Ended:** 2026-08-29 15:26:24 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+Parity on all **60 units × 163 bones (9,780 transforms)** and on a five-unit
+weighted blend, in both orders. CI green.
+
+### The blend is order-dependent, and that is the point
+
+It composes by quaternion multiplication — `quat = q_i * quat`, left-multiplied
+— and quaternion multiplication does not commute, so **the input order changes
+the resulting face**. Replicated, not corrected: expression assets are authored
+against it.
+
+Measured rather than argued: reversing the five-unit blend moves the result by
+**0.034**.
+
+The test asserts **both halves** — that the reversed blend matches the
+reference's own reversed result, *and* that the two orders differ by more than
+0.03. Without the second, an implementation that symmetrised the blend would
+pass the first by accident. Worth reusing: when replicating a quirk, assert the
+quirk is still present, not just that the output matches.
+
+Weights are **not** normalised — the blend is additive.
+
+### Joint sets do not match
+
+The BVH has 212 joints, the rig 163. Mapping walks the **rig's** bones and takes
+each one's identically-named BVH joint, identity where absent. Walking the BVH
+instead would silently reorder every bone, which is why all 9,780 transforms are
+compared rather than a sample.
+
+### Reference edit (allowed, and recorded)
+
+`transformations.py` used `numpy.array(x, copy=False)` in 18 places. **numpy 2.0
+changed `copy=False` to mean "never copy" and to RAISE when a copy is needed**,
+so every quaternion conversion failed on numpy 2.5 and the fixture could not be
+captured at all. Replaced with `numpy.asarray` — the documented replacement,
+behaviour-identical on numpy 1.x.
+
+Hard rule 2 permits editing `legacy/` only to keep the oracle runnable. This is
+that case, and it is now in `project_context.md` §8.0.1 so the diff is never
+mistaken for a port decision.
+
+### Habits from last session, applied
+
+Both process fixes held: gates re-run with `/usr/bin/grep` **after** the last
+experiment, and `git status` read before committing. No strays this time.
+
+279/279 across all four builds.
+
+**Next:** `.mhupb` expression files — the consumer of this blend — and the body
+pose units, which use a different format (bone → quaternion directly).
+
+---
+
 ## 2026-08-29 — Session 025 · BVH import, and two owner directives
 
 **Ended:** 2026-08-29 15:13:49 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
