@@ -374,12 +374,94 @@ def capture_character() -> None:
              "note": "each .bin is the full coord array after applyAllTargets for that case"})
 
 
+
+def capture_proxy() -> None:
+    """Proxy fitting: the barycentric result for each shipped proxy, on two bodies."""
+    import files3d
+    import human as human_mod
+    import humanmodifier
+    import proxy as proxy_mod
+
+    print("capturing: proxy")
+    from core import G
+
+    class _Cam:
+        def getRotation(self):
+            return [0.0, 0.0, 0.0]
+
+        translation = [0.0, 0.0, 0.0]
+        zoomFactor = 1.0
+
+    class _StubApp:
+        modelCamera = _Cam()
+        saveHandlers: list = []
+        loadHandlers: dict = {}
+
+        def progress(self, *args, **kwargs):
+            pass
+
+        def getSetting(self, name):
+            return False
+
+    G.app = _StubApp()
+
+    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+    h = human_mod.Human(mesh)
+    for f in ("modeling_modifiers.json", "measurement_modifiers.json",
+              "bodyshapes_modifiers.json"):
+        humanmodifier.loadModifiers("data/modifiers/" + f, h)
+    G.app.selectedHuman = h
+
+    proxies = ["data/eyes/high-poly/high-poly.mhclo",
+               "data/eyes/low-poly/low-poly.mhclo",
+               "data/3dobjs/base.mhclo"]
+
+    # Two bodies, so the fit is exercised on more than the neutral shape --
+    # the TMatrix rescaling only shows up when proportions change.
+    bodies = [("neutral", {}),
+              ("mixed", {"macrodetails/Gender": 1.0, "macrodetails/Age": 0.8,
+                         "macrodetails-universal/Muscle": 0.9,
+                         "macrodetails-height/Height": 0.75})]
+
+    out = GOLDEN / "proxy"
+    out.mkdir(parents=True, exist_ok=True)
+    entries: dict = {}
+    described = []
+
+    for bodyName, settings in bodies:
+        for m in h.modifiers:
+            m.resetValue()
+        for full, val in settings.items():
+            h.getModifier(full).setValue(val)
+        h.applyAllTargets()
+
+        for rel in proxies:
+            if not os.path.exists(rel):
+                continue
+            pxy = proxy_mod.loadTextProxy(h, rel)
+            coords = pxy.getCoords()
+            stem = os.path.basename(rel).replace(".mhclo", "").replace(".proxy", "")
+            key = f"{stem}_{bodyName}"
+            entries[key] = _write_blob(out / (key + ".bin"), coords, "f4")
+            if bodyName == bodies[0][0]:
+                described.append({"file": rel, "stem": stem,
+                                  "vertices": int(len(coords)),
+                                  "uuid": pxy.uuid or "",
+                                  "z_depth": int(pxy.z_depth)})
+
+    (out / "proxies.json").write_text(json.dumps(described, indent=2))
+    _finish("proxy", entries,
+            {"bodies": [b[0] for b in bodies], "proxies": len(described),
+             "note": "each .bin is getCoords() for that proxy on that body"})
+
+
 SUBSYSTEMS = {
     "mesh": capture_mesh,
     "subdiv": capture_subdiv,
     "targets": capture_targets,
     "skeleton": capture_skeleton,
     "character": capture_character,
+    "proxy": capture_proxy,
 }
 
 

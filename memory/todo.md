@@ -118,8 +118,11 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 
 ## M4 — Proxies, materials, assets (`mh-asset`)
 
-- [ ] `.mhclo`/`.proxy` parser incl. `TMatrix` scale/shear
-- [ ] Barycentric fit `P = Σ w_k·H[v_k] + M·d`
+- [x] `.mhclo`/`.proxy` parser incl. `TMatrix` scale
+- [x] Barycentric fit `P = Σ w_k·H[v_k] + M·d` — **parity on 3 proxies × 2 bodies**,
+      including a reshaped body so the `TMatrix` rescaling is actually exercised
+- [ ] `TMatrix` shear forms (`shear_*`, `l_shear_*`, `r_shear_*`) — no shipped
+      asset uses them; the three eye/converter proxies are all scale-only
 - [ ] Delete-vert mask → face hiding
 - [ ] `.mhmat` parser/writer — all keys, 7 texture channels, shader config
 - [ ] Asset index replacing the pickle `filecache` (pickle is an RCE vector)

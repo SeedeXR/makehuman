@@ -149,10 +149,32 @@ the fixture is not merely consistent with one code path.
 **M3 is closed.** The chain from a saved model file to final geometry is
 complete and parity-tested at every stage.
 
+### Session 010 addendum (2026-08-29 08:41:19) — M4 opens: proxy fitting
+
+`Proxy` / `loadProxy` / `fitProxy`. A proxy vertex is bound to a triangle of
+base-mesh vertices plus an offset:
+
+    P_i = SUM_k w_ik * H[v_ik] + M * d_i
+
+**Parity on 3 shipped proxies x 2 bodies.** The second body matters: the
+`TMatrix` offset rescaling is near-identity on the neutral shape, so a bug in it
+only surfaces once proportions change. Both bodies match within 1e-5.
+
+`loadProxy` 0.59 ms · `fitProxy` under 0.01 ms for 1,064 vertices — proxy
+refitting is free at interactive rates.
+
+One test assumption of mine was wrong again, caught by the test: I asserted
+every proxy declares `basemesh hm08`, but `data/3dobjs/base.mhclo` is the
+alpha-7 converter and declares `alpha_7`. The parser had read it correctly.
+
+**Not implemented:** the `TMatrix` shear forms (`shear_*`, `l_shear_*`,
+`r_shear_*`). No shipped asset uses them — all three are scale-only — so
+implementing them now would be untestable speculation. Recorded in `todo.md`
+for whenever a community asset needs it.
+
 ### Next
-M4 — proxies, materials and assets: the `.mhclo` barycentric fit, `.mhmat`
-parsing, and the asset index. That is what makes clothes, hair and eyes work,
-and it is the last core subsystem before the renderer.
+`.mhmat` material parsing, then the asset index (UUID -> path, since `.mhm`
+references proxies by UUID only).
 
 ---
 

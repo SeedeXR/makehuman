@@ -1,0 +1,76 @@
+{
+  "subsystem": "proxy",
+  "captured_at": "2026-08-29T05:38:54.094204+00:00",
+  "reference_commit": "9d4ddd0ec0bd39172d4d162ee6ab25fa0033b740",
+  "python": "3.14.6",
+  "numpy": "2.5.2",
+  "platform": "darwin",
+  "entries": {
+    "high-poly_neutral": {
+      "file": "high-poly_neutral.bin",
+      "dtype": "f4",
+      "shape": [
+        1064,
+        3
+      ],
+      "count": 3192,
+      "sha256": "6ffe436fc52b3a85e47594e84e73d87aad35421d1397da7f41bde8809018bf28"
+    },
+    "low-poly_neutral": {
+      "file": "low-poly_neutral.bin",
+      "dtype": "f4",
+      "shape": [
+        96,
+        3
+      ],
+      "count": 288,
+      "sha256": "a1668d65ae063b9cf0c50866c211b0017bca9092145af13a74eec71bd09e120b"
+    },
+    "base_neutral": {
+      "file": "base_neutral.bin",
+      "dtype": "f4",
+      "shape": [
+        3188,
+        3
+      ],
+      "count": 9564,
+      "sha256": "2ec79beefd331c1d696e29d8b086cc599be6c11f1e052a3952d989a1219e141d"
+    },
+    "high-poly_mixed": {
+      "file": "high-poly_mixed.bin",
+      "dtype": "f4",
+      "shape": [
+        1064,
+        3
+      ],
+      "count": 3192,
+      "sha256": "b2f5353b8b781167f96e01b84dfbc4727760840a03dfb9bfbae5cd44b836fb9a"
+    },
+    "low-poly_mixed": {
+      "file": "low-poly_mixed.bin",
+      "dtype": "f4",
+      "shape": [
+        96,
+        3
+      ],
+      "count": 288,
+      "sha256": "f3a8360fdd6f75e0fa1d836451ee5c7ec1c73a2d760ac1a0f6a7c790a8f8ed1e"
+    },
+    "base_mixed": {
+      "file": "base_mixed.bin",
+      "dtype": "f4",
+      "shape": [
+        3188,
+        3
+      ],
+      "count": 9564,
+      "sha256": "f65bfb29d24eeeb30fd8630da23ec6964745fa78ddd5b194ed5bc95f80f77dc8"
+    }
+  },
+  "bodies": [
+    "neutral",
+    "mixed"
+  ],
+  "proxies": 3,
+  "note": "each .bin is getCoords() for that proxy on that body"
+}

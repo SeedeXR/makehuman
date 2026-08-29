@@ -1,0 +1,23 @@
+[
+  {
+    "file": "data/eyes/high-poly/high-poly.mhclo",
+    "stem": "high-poly",
+    "vertices": 1064,
+    "uuid": "2c12f43b-1303-432c-b7ce-d78346baf2e6",
+    "z_depth": 50
+  },
+  {
+    "file": "data/eyes/low-poly/low-poly.mhclo",
+    "stem": "low-poly",
+    "vertices": 96,
+    "uuid": "1cc97a30-85a1-42e6-a9f7-b3e753732baa",
+    "z_depth": 50
+  },
+  {
+    "file": "data/3dobjs/base.mhclo",
+    "stem": "base",
+    "vertices": 3188,
+    "uuid": "9776b2e4-ca2e-4db2-9308-2b5de892c9b7",
+    "z_depth": 0
+  }
+]

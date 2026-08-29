@@ -5,6 +5,7 @@
 
 #include "makehuman/core/Modifier.h"
 #include "makehuman/core/ObjReader.h"
+#include "makehuman/core/Proxy.h"
 #include "makehuman/core/RenderMesh.h"
 #include "makehuman/core/Subdivider.h"
 #include "makehuman/core/Target.h"
@@ -187,6 +188,22 @@ int main() {
             results.push_back({"Human::applyStack (character rebuild)",
                                medianMs([&] { human.applyStack(*mesh, lib); }, 100), 0.0});
             mesh->resetToOriginal();
+        }
+    }
+
+    // Proxy fitting: the per-frame cost of keeping clothes/eyes on the body.
+    {
+        const auto pxyPath = std::filesystem::path(MH_DATA_DIR) / "eyes/high-poly/high-poly.mhclo";
+        if (std::filesystem::exists(pxyPath)) {
+            if (auto pxy = mh::core::loadProxy(pxyPath)) {
+                std::vector<mh::core::Vec3> fitted;
+                results.push_back({"loadProxy (1064-vertex eye proxy)",
+                                   medianMs([&] { (void)mh::core::loadProxy(pxyPath); }, 10), 0.0});
+                results.push_back(
+                    {"fitProxy (1064 verts, per frame)",
+                     medianMs([&] { (void)mh::core::fitProxy(*pxy, mesh->coord(), fitted); }, 200),
+                     0.0});
+            }
         }
     }
 
