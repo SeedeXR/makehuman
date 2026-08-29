@@ -1,0 +1,64 @@
+{
+  "subsystem": "weights",
+  "captured_at": "2026-08-29T11:03:24.944907+00:00",
+  "reference_commit": "eb25cd1b4e8aa098a765281e89e8f1a958039c87",
+  "python": "3.14.6",
+  "numpy": "2.5.2",
+  "platform": "darwin",
+  "entries": {
+    "verts": {
+      "file": "verts.bin",
+      "dtype": "u4",
+      "shape": [
+        57107
+      ],
+      "count": 57107,
+      "sha256": "04ecadc4486c5872c70b64b3060236319a479be9d4b32ca88a18b327227d1d87"
+    },
+    "weights": {
+      "file": "weights.bin",
+      "dtype": "f4",
+      "shape": [
+        57107
+      ],
+      "count": 57107,
+      "sha256": "ded99dcf6bcba2445e5c069685c248508d8d9dcfb28db4efe17a7a3ef10abd3d"
+    },
+    "offsets": {
+      "file": "offsets.bin",
+      "dtype": "u4",
+      "shape": [
+        140
+      ],
+      "count": 140,
+      "sha256": "58b7e11353f6560c0321b1dbe6ab9c857c3624fdabfc3f86544028c62a1efd72"
+    },
+    "compiled4_bones": {
+      "file": "compiled4_bones.bin",
+      "dtype": "u4",
+      "shape": [
+        19158,
+        4
+      ],
+      "count": 76632,
+      "sha256": "2a18a5809b00efb275b75a7c2441459308a0ca0b0e0355b14dd05f71c57991ac"
+    },
+    "compiled4_weights": {
+      "file": "compiled4_weights.bin",
+      "dtype": "f4",
+      "shape": [
+        19158,
+        4
+      ],
+      "count": 76632,
+      "sha256": "a02509f6e99e21df3fd2c8bee42fdbbe4c00011fec8508ae18d2e5ad540272a8"
+    }
+  },
+  "source": "data/rigs/default_weights.mhw",
+  "vertex_count": 19158,
+  "bones_with_weights": 139,
+  "max_weights_per_vertex": 12,
+  "weight_threshold": 0.0001,
+  "root_bone": "root",
+  "note": "compiled4 truncates to the 4 strongest influences and re-normalises; vertices with fewer keep bone index 0 and weight 0 in the unused slots."
+}

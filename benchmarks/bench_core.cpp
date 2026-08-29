@@ -11,6 +11,7 @@
 #include "makehuman/core/Target.h"
 #include "makehuman/core/TargetIndex.h"
 #include "makehuman/rig/Skeleton.h"
+#include "makehuman/rig/VertexWeights.h"
 
 #include <algorithm>
 #include <chrono>
@@ -108,6 +109,15 @@ int main() {
         auto sk =
             mh::rig::loadSkeleton(std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel");
         if (sk) {
+            const auto wpath = std::filesystem::path(MH_DATA_DIR) / "rigs" / "default_weights.mhw";
+            results.push_back(
+                {"loadWeights (.mhw, 139 bones / 57k entries)",
+                 medianMs([&] { (void)mh::rig::loadWeights(wpath, mesh->vertexCount()); }, 5),
+                 0.0});
+            if (auto vw = mh::rig::loadWeights(wpath, mesh->vertexCount())) {
+                results.push_back({"VertexWeights::compile (4 influences, 19158 verts)",
+                                   medianMs([&] { (void)vw->compile(*sk, 4); }, 20), 0.0});
+            }
             results.push_back({"Skeleton::buildRestMatrices (163 bones)",
                                medianMs(
                                    [&] {

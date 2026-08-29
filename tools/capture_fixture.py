@@ -375,6 +375,84 @@ def capture_character() -> None:
 
 
 
+def capture_weights() -> None:
+    """Vertex bone weights: normalised per-bone lists, and the compiled 4-influence form.
+
+    Two stages are captured because they fail differently:
+
+      * `data` is the normalised per-bone mapping -- doubles merged, every
+        vertex's weights summing to 1, sub-threshold entries dropped, and
+        unweighted vertices assigned to the root bone.
+      * `compiled(4)` is the per-vertex form an exporter or GPU needs: the four
+        strongest influences, re-normalised after truncation.
+
+    `_compileVertexWeights` only uses the skeleton for a name -> index lookup,
+    so a stub built from the already-captured bone order serves; that order was
+    itself captured from the reference, so this is not circular.
+    """
+    import animation
+
+    print("capturing: weights")
+    order = json.loads((GOLDEN / "skeleton" / "bone_order.json").read_text())
+    names = [b["name"] for b in order]
+
+    class _StubBone:
+        def __init__(self, name):
+            self.name = name
+
+    class _StubSkel:
+        def __init__(self, names):
+            self._bones = [_StubBone(n) for n in names]
+
+        def getBones(self):
+            return self._bones
+
+    vw = animation.VertexBoneWeights.fromFile(
+        "data/rigs/default_weights.mhw", 19158, rootBone="root")
+
+    out = GOLDEN / "weights"
+    out.mkdir(parents=True, exist_ok=True)
+
+    # Stage 1: the normalised per-bone mapping, flattened in bone order so the
+    # C++ side can compare without depending on dict iteration order.
+    bone_names, offsets, verts, wghts = [], [], [], []
+    for bname in names:
+        if bname not in vw.data:
+            continue
+        v, w = vw.data[bname]
+        bone_names.append(bname)
+        offsets.append(len(verts))
+        verts.extend(int(x) for x in v)
+        wghts.extend(float(x) for x in w)
+    offsets.append(len(verts))
+
+    entries = {
+        "verts": _write_blob(out / "verts.bin", np.asarray(verts, dtype=np.uint32), "u4"),
+        "weights": _write_blob(out / "weights.bin", np.asarray(wghts, dtype=np.float32), "f4"),
+        "offsets": _write_blob(out / "offsets.bin", np.asarray(offsets, dtype=np.uint32), "u4"),
+    }
+    (out / "bone_names.json").write_text(json.dumps(bone_names, indent=2))
+
+    # Stage 2: the compiled 4-influence form.
+    compiled = vw._compileVertexWeights(vw.data, _StubSkel(names), 4, 19158)
+    b4 = np.stack([compiled["b_idx%d" % (i + 1)] for i in range(4)], axis=1)
+    w4 = np.stack([compiled["wght%d" % (i + 1)] for i in range(4)], axis=1)
+    entries["compiled4_bones"] = _write_blob(out / "compiled4_bones.bin", b4, "u4")
+    entries["compiled4_weights"] = _write_blob(out / "compiled4_weights.bin", w4, "f4")
+
+    _finish("weights", entries, {
+        "source": "data/rigs/default_weights.mhw",
+        "vertex_count": int(vw.vertexCount),
+        "bones_with_weights": len(bone_names),
+        "max_weights_per_vertex": int(vw.getMaxNumberVertexWeights()),
+        "weight_threshold": 1e-4,
+        "root_bone": "root",
+        "note": "compiled4 truncates to the 4 strongest influences and "
+                "re-normalises; vertices with fewer keep bone index 0 and "
+                "weight 0 in the unused slots.",
+    })
+
+
 def capture_mask() -> None:
     """Face hiding: vertex mask -> face mask -> filtered index buffer.
 
@@ -544,6 +622,7 @@ SUBSYSTEMS = {
     "character": capture_character,
     "proxy": capture_proxy,
     "mask": capture_mask,
+    "weights": capture_weights,
 }
 
 

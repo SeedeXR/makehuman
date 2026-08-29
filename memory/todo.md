@@ -221,7 +221,18 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       construction — verified as its own test, not assumed.
 - [ ] `matPoseVerts = matPoseGlobal · inv(matRestGlobal)` (posing; needs M5 pose data)
 - [ ] Joint positions from vertex clouds (rig follows the mesh)
-- [ ] `.mhw` weights; normalisation; influence clamping
+- [x] `.mhw` weights — **parity across all 139 weighted bones and 57,107
+      entries**, plus the compiled 4-influence form across all 19,158 vertices.
+      15.8 ms to load, 1.0 ms to compile to 4 influences.
+      The file's numbers are **relative**: `wtot[v]` is summed over every bone
+      first and each weight stored as `w / wtot[v]`, so a vertex always ends up
+      summing to 1. An unweighted vertex binds to the **root bone at weight 1**
+      — without that it collapses to the origin the moment the rig is posed.
+      Truncation to 4 re-normalises (5,923 vertices actually take that path;
+      the rig reaches 12 influences), and ties break by **descending bone
+      index**, matching Python's `sorted(reverse=True)` over `(w, idx)` tuples.
+      Arbitrary, but it decides which influence survives on symmetric vertices.
+- [ ] Influence clamping surfaced in the glTF exporter (JOINTS_0/WEIGHTS_0)
 - [ ] Euler conventions — all 24, `[w,x,y,z]` quaternions (Eigen `.coeffs()` is `[x,y,z,w]`)
 - [ ] CPU LBS (reference parity) **and** GPU LBS (production)
 - [ ] Pose units, `.mhpose`, slerp-composition blend (order-dependent — replicate)
