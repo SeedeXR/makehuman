@@ -4,6 +4,57 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 029 · blendshapes, with no oracle to lean on
+
+**Ended:** 2026-08-29 16:17:19 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+The reference's blendshape export is **dead in every format**
+(`project_context.md` §8), so there is nothing to compare against. Blender is the
+**primary** check here, not a cross-check — which is what makes wiring it in last
+session load-bearing rather than merely nice.
+
+### Verified by moved-vertex counts, reconciled to the source
+
+| target | non-zero rows | Blender moved | seam copies |
+|---|---|---|---|
+| head-oval | 2,143 | 2,200 | +57 |
+| head-trans-backward | 5,498 | 5,865 | +367 |
+| nose-base-up | 294 of **305 rows** | 294 | +0 |
+
+**The nose number looked wrong** — fewer moved vertices than the file has rows,
+which UV seams cannot cause since they only ever duplicate. Cause: **11 of its
+305 rows are literally (0,0,0)**, no-ops the reference stores happily. A test
+pins that count, because it is exactly the kind of discrepancy that otherwise
+gets explained away rather than explained.
+
+### Three details that fail quietly
+
+1. **Deltas take the unit scale but NOT the ground offset.** A delta is a
+   displacement, not a point; adding the offset would translate the whole body
+   once per active target.
+2. **Morph POSITION accessors need min/max** like any other. Omitting it is the
+   commonest way a hand-written morph export fails validation while still
+   loading in some engines.
+3. **`extras.targetNames`** is an extras convention, not core glTF — but every
+   DCC reads it. Without it the keys import as "Key 1", "Key 2" and are useless.
+
+### Sparse vs dense
+
+Targets are sparse by nature (~2k of 19,158 touched). glTF *can* express that
+with a sparse accessor but support is patchy, so dense is written. That makes
+the caller choose which targets to export: all 1,280 densely would be **~335 MB**.
+Recorded as a future optimisation rather than left as a surprise.
+
+The validator now reports how many vertices each shape key actually **moves** —
+a key that exists but displaces nothing is the failure a name-only check misses.
+
+288/288 across all four builds. 5/5 agree with Blender. CI 7/7.
+
+**Next:** FBX blendshapes — but check first whether assimp's FBX writer carries
+morphs at all, rather than promising it.
+
+---
+
 ## 2026-08-29 — Session 028 · rigged glTF, checked by Blender
 
 **Ended:** 2026-08-29 16:04:29 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
