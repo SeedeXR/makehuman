@@ -4,6 +4,44 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 030 · FBX rig and blendshapes
+
+**Ended:** 2026-08-29 16:29:16 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+**Checked before promising.** A probe scene with two bones and one `aiAnimMesh`
+round-tripped through assimp's FBX writer, and Blender read back the armature,
+vertex groups and shape key. Only then was this built. A writer that silently
+dropped skins would have been worse than not offering the feature.
+
+Blender confirms the real export: **163 bones, 21,833/21,833 skinned, 3 shape
+keys** — and the moved-vertex counts (2200 / 5865 / 294) match `morphed.glb`
+**exactly**. Two independent formats agreeing is stronger than either matching
+an expectation I wrote.
+
+139 vertex groups rather than 163 is *correct*: only 139 bones carry weight in
+the `.mhw`, and both assimp and Blender drop the empty ones.
+
+### Two non-obvious things, one failed export each
+
+1. **Every `aiBone` needs a NODE of the same name.** The bone array is not a
+   skeleton — the hierarchy lives in the nodes, and `aiBone` references it by
+   name. Without them the writer fails outright:
+   `Failed to find node for bone: root`. That is how it was found.
+2. **`aiAnimMesh` holds ABSOLUTE positions, not deltas.** Sending deltas gives a
+   shape key that collapses the model toward the origin when enabled — reads as
+   corrupt geometry, not a units mistake.
+
+Node transforms and bone offset matrices both derive from the same scaled global
+array (as in the glTF writer), so the rig cannot drift from the mesh when the
+export unit changes.
+
+291/291 across all four builds. 6/6 agree with Blender. CI 7/7.
+
+**Next:** M7's remaining interchange work — USD/USDZ export, or the per-format
+docs. USD is the bigger gap for a modern DCC pipeline.
+
+---
+
 ## 2026-08-29 — Session 029 · blendshapes, with no oracle to lean on
 
 **Ended:** 2026-08-29 16:17:19 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
