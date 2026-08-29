@@ -45,10 +45,32 @@ a command behind it.
 122/122 tests pass in debug, release and ASan+UBSan (113,379 assertions).
 Clean under `-Werror`; clang-format clean.
 
+### Session 006 addendum (2026-08-29 07:00:46) — target index and weighting rule
+
+`TargetIndex` + `targetWeight` complete the parameterisation chain: a filename
+becomes a group key plus macro dependencies, and those become a weight.
+
+**Exact parity with the reference: 653 groups over 1,280 components**, with
+every group name and every group size matching (`breast` 216,
+`macrodetails-height` 144, `macrodetails-proportions` 108,
+`macrodetails-universal` 72, `macrodetails` 24). Verified in both directions —
+no group missing, none invented.
+
+Two properties worth knowing, both now asserted:
+- At defaults, `macrodetails` distributes exactly 1.0 across 6 of its 24
+  targets, and `macrodetails-universal` 1.0 across 2 of 72. The scheme is a
+  partition of unity per group.
+- **But not every group sums to 1.** At height 0.5 both `minheight` and
+  `maxheight` are 0 and the group ships no `averageheight` files, so
+  `macrodetails-height` contributes *nothing*; same for proportions. A port
+  that assumed every group normalises would be wrong here.
+
+`TargetIndex::build` indexes all 1,280 in 18.1 ms.
+
 ### Next
-The target index (filename tokenisation into group key + macro dependencies)
-and the `weight = value x PROD(factors)` rule, which together turn a slider
-into a set of weighted targets.
+The modifier hierarchy (Simple / Universal / Macro / Ethnic) and the
+`Human` state object that owns the target stack — after which a character is
+fully parameterised end to end.
 
 ---
 

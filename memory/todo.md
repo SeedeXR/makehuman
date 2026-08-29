@@ -94,7 +94,11 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [x] Macro value table: **27 values / 9 categories** (an earlier note here said
       26 — wrong; `age` has four values, not three)
 - [ ] Modifier hierarchy: Simple / Universal / Macro / Ethnic
-- [ ] Target index: filename tokenisation on `-`, `_`, `.` into group key + macro deps
+- [x] Target index (`TargetIndex`): filename tokenisation on `-`, `_`, `.` into
+      group key + macro dependencies. **Exact parity: 653 groups / 1,280
+      components**, every group name and size matching the reference.
+- [x] `targetWeight` = `value x groupFactor x PROD(macro factors)`
+      (`humanmodifier.py:644-652`)
 - [ ] `weight = value × Π factors`
 - [ ] `applyStack` — incremental, not full-reset-and-replay
 - [ ] **Parity fixtures**: default stack, extreme macro combinations, every modifier at ±1

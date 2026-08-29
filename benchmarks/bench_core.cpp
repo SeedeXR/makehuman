@@ -7,6 +7,7 @@
 #include "makehuman/core/RenderMesh.h"
 #include "makehuman/core/Subdivider.h"
 #include "makehuman/core/Target.h"
+#include "makehuman/core/TargetIndex.h"
 
 #include <algorithm>
 #include <chrono>
@@ -145,6 +146,11 @@ int main() {
                                2),
                            3225.63});
     }
+
+    // Index all 1,280 targets by filename. The reference walks the tree with
+    // TargetsCrawler; not separately timed there, so no baseline.
+    results.push_back({"TargetIndex::build (index 1280 targets)",
+                       medianMs([&] { (void)mh::core::TargetIndex::build(MH_DATA_DIR); }, 3), 0.0});
 
     auto rm = mh::core::RenderMesh::build(*mesh);
     results.push_back({"RenderMesh::refreshPositions (morph hot path)",

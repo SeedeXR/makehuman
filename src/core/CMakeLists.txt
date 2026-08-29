@@ -10,7 +10,8 @@ add_library(mh_core STATIC
     RenderMesh.cpp
     Subdivider.cpp
     Target.cpp
-    Macro.cpp)
+    Macro.cpp
+    TargetIndex.cpp)
 add_library(mh::core ALIAS mh_core)
 
 target_include_directories(mh_core PUBLIC
