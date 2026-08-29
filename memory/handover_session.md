@@ -4,6 +4,58 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 021 · rest matrices, full element-wise parity
+
+**Ended:** 2026-08-29 14:00:11 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+`matRestGlobal` and `matRestRelative` match the reference **element for element
+across all 163 bones**, against the fixture captured sessions ago and unused
+until now.
+
+Checked that the parity is real, not a comparison of zeros: 1,987 of the 2,608
+fixture floats are non-zero, and bone 0 agrees to five decimals on every
+element.
+
+### Three conventions that all had to be right at once
+
+Each of these fails *quietly* — the rig still looks like a rig:
+
+1. **Row-major storage, axes as COLUMNS**, translation in the last column
+   (numpy `mat[:3,0]` / `mat[:3,3]`). Either half backwards gives plausible
+   matrices that place every bone wrongly.
+2. **`cross(yvec, pvec)`**, in that order, for the plane normal. Swapping the
+   arguments flips every bone's roll 180° and *still* yields a valid orthonormal
+   basis, so nothing downstream complains.
+3. **X is rebuilt as `cross(Y, Z)`**, not the plane normal itself. The normal
+   only seeds the basis; it is generally not perpendicular to the bone. The
+   reference keeps the ideal version commented out directly above for this
+   reason.
+
+### Assumptions verified rather than asserted
+
+`rigidInverse` assumes an orthonormal upper-left 3×3, which makes the parent
+inverse exact instead of accumulating error. A separate test checks all three
+axes are unit and mutually perpendicular on every bone, and that Y is the bone's
+own direction. A third confirms `matRestRelative` composes back to
+`matRestGlobal` through the parent chain — the invariant every skinning path
+will depend on.
+
+`normalize()` returns false on a degenerate vector instead of dividing; the
+reference's `matrix.normalize` divides unguarded, so a collapsed plane yields
+inf/nan that propagates into every child matrix.
+
+### Performance
+
+0.02 ms to rebuild every rest matrix, 0.01 ms to re-place the joints — the rig
+can follow the mesh per frame. No Python comparison for either: the reference's
+skeleton path needs `G.app` and cannot run headless.
+
+243/243 across all four builds. CI green.
+
+**Next:** `.mhw` vertex weights — normalisation, influence clamping, then CPU LBS.
+
+---
+
 ## 2026-08-29 — Session 020 · M5 begins: .mhskel, and a lesson that did not stick
 
 **Ended:** 2026-08-29 13:49:57 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
