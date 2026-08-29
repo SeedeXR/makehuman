@@ -77,9 +77,16 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 
 ## M3 — Targets and modifiers (`mh-core`)
 
-- [ ] `.target` ASCII parser
-- [ ] Compiled target blob (`tools/mhassetc`), uint32 indices, mmapped — target ≤50 ms for all 1,280
-- [ ] `Target::apply` — sparse additive, SIMD/TBB
+- [x] `.target` ASCII parser — **all 1,280 shipped targets parse**, 0 failures,
+      0 malformed lines, 6,147,800 sparse entries, max index 19,157 (= nVerts-1)
+- [x] `applyTarget` — sparse additive `coord[v] += offset * (scale * factor)`,
+      out-of-range indices skipped (the reference reads unguarded)
+- [x] `TargetLibrary` — path-keyed session cache
+- [x] **Byte-level parity**: parsed indices/offsets for 24 sampled targets, and the
+      applied 24-target stack vs. the reference's result across all 19,158 verts
+- [ ] Compiled target blob (`tools/mhassetc`), uint32 indices, mmapped —
+      target ≤50 ms for all 1,280. **Now clearly justified**: ASCII parse of the
+      full set is 465 ms in C++ (vs 3,226 ms in Python), still 9x over budget.
 - [ ] Target index: filename tokenisation on `-`, `_`, `.` against the 9-category table
 - [ ] Modifier hierarchy: Simple / Universal / Macro / Ethnic
 - [ ] All 12 `_set*Vals` macro factor formulas, verbatim

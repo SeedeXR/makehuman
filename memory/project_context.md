@@ -153,7 +153,8 @@ Targets on disk: **1,280** `.target` files (mean 983 affected verts, max 5,480).
 | Load `base.obj` (text parse + `_update_faces`) | **211.8 ms** |
 | `calcNormals` full mesh (face + vertex) | 5.18 ms |
 | `updateIndexBuffer` (unweld + group sort) | 3.43 ms |
-| Load 200 targets (ASCII parse) | 104.4 ms → ~670 ms for all 1,280 |
+| Load 200 targets (ASCII parse) | 104.4 ms |
+| Load **all 1,280** targets (ASCII parse) | **3,225.6 ms** (measured directly, not extrapolated) |
 | Apply 200 targets @0.5 (full stack rebuild) | 4.84 ms |
 | Apply 1 target (slider delta) | 0.04 ms |
 | Catmull-Clark subdivide (build) | **202.3 ms** |
@@ -170,7 +171,7 @@ vertex upload (`legacy-python/lib/glmodule.py:479`, `glVertexPointer` — no VBO
 |---|---|
 | Cold app launch to interactive | ≤ 1.5 s |
 | Base mesh load | ≤ 20 ms (10× faster) |
-| All 1,280 targets loaded | ≤ 50 ms (13× faster) — via mmapped compiled blob |
+| All 1,280 targets loaded | ≤ 50 ms (**64× faster**) — via mmapped compiled blob |
 | Full target-stack rebuild | ≤ 1 ms |
 | Subdivided viewport | ≥ 60 fps sustained |
 | Slider drag latency | ≤ 8 ms end-to-end |

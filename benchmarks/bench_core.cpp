@@ -6,11 +6,13 @@
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/core/RenderMesh.h"
 #include "makehuman/core/Subdivider.h"
+#include "makehuman/core/Target.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -83,6 +85,65 @@ int main() {
     if (sd) {
         results.push_back({"Subdivider::refresh (geometry + normals)",
                            medianMs([&] { sd->refresh(*mesh); }, 10), 7.64 + 20.57});
+    }
+
+    // Targets: the reference measured 106.22 ms to text-parse 200, 4.86 ms to
+    // apply 200 at 0.5, and 0.04 ms for a single application.
+    std::vector<std::filesystem::path> targetPaths;
+    {
+        const auto dir = std::filesystem::path(MH_DATA_DIR) / "targets";
+        if (std::filesystem::exists(dir)) {
+            for (const auto& e : std::filesystem::recursive_directory_iterator(dir)) {
+                if (e.path().extension() == ".target") targetPaths.push_back(e.path());
+            }
+            std::ranges::sort(targetPaths);
+        }
+    }
+
+    std::vector<mh::core::Target> loaded;
+    if (targetPaths.size() >= 200) {
+        const std::span<const std::filesystem::path> first200{targetPaths.data(), 200};
+        results.push_back({"load 200 targets (text parse)",
+                           medianMs(
+                               [&] {
+                                   for (const auto& p : first200)
+                                       (void)mh::core::loadTarget(p);
+                               },
+                               3),
+                           106.22});
+
+        for (const auto& p : first200) {
+            if (auto t = mh::core::loadTarget(p)) loaded.push_back(std::move(*t));
+        }
+
+        results.push_back({"apply 200 targets @0.5 (full stack rebuild)",
+                           medianMs(
+                               [&] {
+                                   mesh->resetToOriginal();
+                                   for (const auto& t : loaded)
+                                       mh::core::applyTarget(t, *mesh, 0.5F);
+                               },
+                               20),
+                           4.86});
+
+        results.push_back({"apply 1 target (slider delta)",
+                           medianMs([&] { mh::core::applyTarget(loaded[0], *mesh, 0.5F); }, 500),
+                           0.04});
+        mesh->resetToOriginal();
+
+        // The whole shipped set. Measured DIRECTLY from the reference at
+        // 3225.63 ms -- not extrapolated from the 200-target figure, which
+        // would give ~680 ms and be badly wrong: the first 200 targets hold
+        // 196,644 sparse entries while all 1,280 hold 6,147,800 (31x the data
+        // for 6.4x the files, because macrodetails alone is 106 MB of 126 MB).
+        results.push_back({"load ALL 1280 targets (text parse)",
+                           medianMs(
+                               [&] {
+                                   for (const auto& p : targetPaths)
+                                       (void)mh::core::loadTarget(p);
+                               },
+                               2),
+                           3225.63});
     }
 
     auto rm = mh::core::RenderMesh::build(*mesh);
