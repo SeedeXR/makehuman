@@ -113,7 +113,7 @@ struct Material {
     [[nodiscard]] std::vector<std::string> effectiveDefines() const;
 };
 
-enum class MaterialErrorKind { NotFound, Unreadable, MalformedLine };
+enum class MaterialErrorKind { NotFound, Unreadable, MalformedLine, Unwritable };
 
 struct MaterialError {
     MaterialErrorKind kind{};
@@ -126,5 +126,31 @@ struct MaterialError {
 
 [[nodiscard]] std::expected<Material, MaterialError> loadMaterial(
     const std::filesystem::path& path);
+
+/// Writes a `.mhmat`, losslessly.
+///
+/// The reference's writer (`material.py:511-620`) is **not** lossless and is
+/// not the model here:
+///
+///  - It never writes `tag`, so every tag is dropped on save. Verified by
+///    round-tripping `brown.mhmat` through the reference: `['makehuman™']`
+///    comes back `[]`.
+///  - It never writes `autoBlendSkin` or the viewport colour.
+///  - It cannot save a skin at all outside a running app: `autoBlendSkin`
+///    routes `diffuseColor` through the skin blender, so `default.mhmat`
+///    raises `AttributeError: 'NoneType' object has no attribute
+///    'selectedHuman'` from `toFile`. In-app it writes the *blended* colour
+///    over the authored one.
+///
+/// Losing user data on save is a defect, not a behaviour to port
+/// (`project_context.md` §8), so everything the reader understands is written.
+/// The output stays readable by the reference's own parser: booleans are
+/// written `True`/`False`, which its `_readbool` accepts (`material.py:357`).
+///
+/// Texture and shader paths are written relative to @p path's directory when
+/// they live under it, and absolute otherwise -- the reference's `_texPath`
+/// intent (`:497-509`) without its dependency on the app's data-path registry.
+[[nodiscard]] std::expected<void, MaterialError> saveMaterial(const std::filesystem::path& path,
+                                                              const Material& material);
 
 }  // namespace mh::core

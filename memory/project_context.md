@@ -211,6 +211,17 @@ C++ implementation is expected to be correct where the reference is wrong.
 | `AnimationTrack.sparsify` | `legacy/python/shared/animation.py:243-261` | Assigns to a read-only property |
 | BVH `NameError` | `legacy/python/shared/bvh.py:358` | Undefined `filepath` in a warning path |
 
+### 8.0 Format traps
+
+**`.mhmat` keys are read case-sensitively by the reference** (`material.py:369-448`
+compares `words[0]` directly) but case-INsensitively by this port. Writing is
+therefore not symmetric with reading: a file saying `diffusetexture` loads here
+and is silently ignored by MakeHuman 1.x — the texture just disappears, with no
+error. The writer must use the canonical camelCase spellings
+(`Material.cpp` `kChannels::writeTexture`). No C++-only test can catch a
+regression here, because our own reader accepts either; the guard is a literal
+string check plus `tools/verify_material_roundtrip.py`.
+
 ### 8.1 Deliberate divergences from the oracle
 
 Not reference *defects* — places where matching the reference exactly would be
@@ -223,3 +234,4 @@ worse. Parity tests must expect the C++ behaviour, not the Python one.
 | **Draw ranges stay indexable when everything is hidden** | `module3d.py:859-860` collapses `grpix` to a zero-row array under a fully-hiding mask, so callers can no longer index by group id. We keep one all-zero entry per group. An all-zero range draws nothing, so the rendered result is identical. |
 | **A truncated `verts` line is an error** | The oracle raises `IndexError`; we used to skip the line, which shifts every later proxy vertex onto the wrong reference triangle — wrong geometry with no diagnostic. |
 | **Duplicate UUID: first wins, collision reported** | The oracle lets the last writer win, making resolution depend on directory iteration order. |
+| **`.mhmat` save is lossless** | `material.py:511-620` never writes `tag`, `autoBlendSkin` or the viewport colour, and cannot save an `autoBlendSkin` skin at all headlessly — `toFile` raises `AttributeError` on `G.app.selectedHuman` because `diffuseColor` routes through the skin blender (`:654`, `:1414`). In-app it writes the *blended* colour over the authored one. Losing user data on save is a defect, not a format rule. |

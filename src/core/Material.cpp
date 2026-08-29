@@ -71,20 +71,34 @@ std::filesystem::path shaderStem(std::string s) {
     return s;
 }
 
+/// Reading is case-insensitive (we lowercase the key first), so the `texture`
+/// and `intensity` names here are lowercase. **Writing is not symmetric**: the
+/// reference's parser compares `words[0]` case-SENSITIVELY
+/// (`material.py:369-448`), so a file saying `diffusetexture` loads in this
+/// port and is silently ignored by MakeHuman 1.x -- the texture just vanishes.
+/// `writeTexture`/`writeIntensity` are therefore the canonical spellings, and
+/// the writer must use those, never the lookup keys.
 struct ChannelKey {
     const char* texture;
     const char* intensity;
+    const char* writeTexture;
+    const char* writeIntensity;
     TextureChannel channel;
 };
 
 constexpr std::array<ChannelKey, kTextureChannelCount> kChannels{{
-    {"diffusetexture", nullptr, TextureChannel::Diffuse},
-    {"bumpmaptexture", "bumpmapintensity", TextureChannel::BumpMap},
-    {"normalmaptexture", "normalmapintensity", TextureChannel::NormalMap},
-    {"displacementmaptexture", "displacementmapintensity", TextureChannel::DisplacementMap},
-    {"specularmaptexture", "specularmapintensity", TextureChannel::SpecularMap},
-    {"transparencymaptexture", "transparencymapintensity", TextureChannel::TransparencyMap},
-    {"aomaptexture", "aomapintensity", TextureChannel::AoMap},
+    {"diffusetexture", nullptr, "diffuseTexture", nullptr, TextureChannel::Diffuse},
+    {"bumpmaptexture", "bumpmapintensity", "bumpmapTexture", "bumpmapIntensity",
+     TextureChannel::BumpMap},
+    {"normalmaptexture", "normalmapintensity", "normalmapTexture", "normalmapIntensity",
+     TextureChannel::NormalMap},
+    {"displacementmaptexture", "displacementmapintensity", "displacementmapTexture",
+     "displacementmapIntensity", TextureChannel::DisplacementMap},
+    {"specularmaptexture", "specularmapintensity", "specularmapTexture", "specularmapIntensity",
+     TextureChannel::SpecularMap},
+    {"transparencymaptexture", "transparencymapintensity", "transparencymapTexture",
+     "transparencymapIntensity", TextureChannel::TransparencyMap},
+    {"aomaptexture", "aomapintensity", "aomapTexture", "aomapIntensity", TextureChannel::AoMap},
 }};
 
 }  // namespace
@@ -129,6 +143,7 @@ std::string MaterialError::message() const {
     switch (kind) {
         case MaterialErrorKind::NotFound: k = "file not found"; break;
         case MaterialErrorKind::Unreadable: k = "file unreadable"; break;
+        case MaterialErrorKind::Unwritable: k = "cannot write"; break;
         case MaterialErrorKind::MalformedLine: k = "malformed line"; break;
     }
     std::string m = file;
@@ -315,6 +330,149 @@ std::expected<Material, MaterialError> loadMaterial(const std::filesystem::path&
 
     if (failure) return std::unexpected(*failure);
     return m;
+}
+
+namespace {
+
+/// Shortest representation that round-trips exactly, locale-independently.
+///
+/// The reference formats with `%s`/`%r`, i.e. Python's shortest round-trip
+/// repr. `to_chars` without a precision is the same idea and, unlike printf,
+/// is defined to ignore the locale -- which matters here for the same reason
+/// it mattered in the OBJ writer: a decimal comma silently turns one number
+/// into two tokens.
+std::string num(float v) {
+    char buf[32];
+    const auto r = std::to_chars(buf, buf + sizeof(buf), v);
+    return (r.ec == std::errc{}) ? std::string(buf, r.ptr) : std::string("0");
+}
+
+/// The reference writes Python's `True`/`False`; its own reader lowercases
+/// before comparing (material.py:357), so this stays readable by both.
+const char* boolStr(bool b) {
+    return b ? "True" : "False";
+}
+
+/// Relative to the material's own directory when the file lives under it,
+/// absolute otherwise. Mirrors _texPath's intent (material.py:497-509) without
+/// its dependency on the app's registered data paths.
+std::string portablePath(const std::filesystem::path& file, const std::filesystem::path& dir) {
+    if (file.empty()) return {};
+
+    // A bare filename has no parent; relative(x, "") is not meaningful.
+    const std::filesystem::path base = dir.empty() ? std::filesystem::path(".") : dir;
+
+    std::error_code ec;
+    const auto rel = std::filesystem::relative(file, base, ec);
+    if (ec || rel.empty()) return file.generic_string();
+
+    // Escaping the material's directory means the path is not portable, so
+    // write it absolute rather than emit a "../.." nobody can resolve.
+    // Compare the first COMPONENT, not the string: a directory legitimately
+    // named "..cache" starts with ".." without escaping anything.
+    const auto first = rel.begin();
+    if (first != rel.end() && *first == "..") return file.generic_string();
+
+    return rel.generic_string();
+}
+
+}  // namespace
+
+std::expected<void, MaterialError> saveMaterial(const std::filesystem::path& path,
+                                                const Material& material) {
+    std::ofstream out(path);
+    if (!out) {
+        return std::unexpected(MaterialError{MaterialErrorKind::Unwritable, path.string(), 0,
+                                             "cannot open for writing"});
+    }
+    const std::filesystem::path dir = path.parent_path();
+
+    out << "# Material definition for " << material.name << "\n\n";
+    out << "name " << material.name << "\n";
+    if (!material.description.empty()) out << "description " << material.description << "\n";
+
+    // The reference drops these entirely; a save that loses the asset's tags is
+    // a defect, not a format rule.
+    for (const auto& t : material.tags)
+        out << "tag " << t << "\n";
+
+    out << "\nambientColor " << num(material.ambient.x) << ' ' << num(material.ambient.y) << ' '
+        << num(material.ambient.z) << "\n";
+    out << "diffuseColor " << num(material.diffuse.x) << ' ' << num(material.diffuse.y) << ' '
+        << num(material.diffuse.z) << "\n";
+    out << "specularColor " << num(material.specular.x) << ' ' << num(material.specular.y) << ' '
+        << num(material.specular.z) << "\n";
+    out << "emissiveColor " << num(material.emissive.x) << ' ' << num(material.emissive.y) << ' '
+        << num(material.emissive.z) << "\n";
+    out << "shininess " << num(material.shininess) << "\n";
+    out << "opacity " << num(material.opacity) << "\n";
+    out << "translucency " << num(material.translucency) << "\n";
+
+    if (material.hasViewPortColor) {
+        out << "viewPortColor " << num(material.viewPortColor.x) << ' '
+            << num(material.viewPortColor.y) << ' ' << num(material.viewPortColor.z) << "\n";
+        out << "viewPortAlpha " << num(material.viewPortAlpha) << "\n";
+    }
+
+    out << "\nshadeless " << boolStr(material.shadeless) << "\n";
+    out << "wireframe " << boolStr(material.wireframe) << "\n";
+    out << "transparent " << boolStr(material.transparent) << "\n";
+    out << "alphaToCoverage " << boolStr(material.alphaToCoverage) << "\n";
+    out << "backfaceCull " << boolStr(material.backfaceCull) << "\n";
+    out << "depthless " << boolStr(material.depthless) << "\n";
+    out << "castShadows " << boolStr(material.castShadows) << "\n";
+    out << "receiveShadows " << boolStr(material.receiveShadows) << "\n";
+    out << "autoBlendSkin " << boolStr(material.autoBlendSkin) << "\n";
+
+    bool wroteTexture = false;
+    for (const ChannelKey& ck : kChannels) {
+        const TextureSlot& slot = material.texture(ck.channel);
+        if (!slot.present()) continue;
+        if (!wroteTexture) out << "\n";
+        wroteTexture = true;
+        out << ck.writeTexture << ' ' << portablePath(slot.path, dir) << "\n";
+        if (ck.writeIntensity != nullptr)
+            out << ck.writeIntensity << ' ' << num(slot.intensity) << "\n";
+    }
+
+    if (material.sssEnabled) {
+        out << "\nsssEnabled True\n";
+        out << "sssRScale " << num(material.sssRScale) << "\n";
+        out << "sssGScale " << num(material.sssGScale) << "\n";
+        out << "sssBScale " << num(material.sssBScale) << "\n";
+    }
+
+    if (material.uvMap) out << "\nuvMap " << portablePath(*material.uvMap, dir) << "\n";
+    if (!material.shader.empty()) out << "\nshader " << portablePath(material.shader, dir) << "\n";
+
+    if (!material.shaderParams.empty()) out << "\n";
+    for (const auto& [name, values] : material.shaderParams) {
+        out << "shaderParam " << name;
+        for (const auto& v : values)
+            out << ' ' << v;
+        out << "\n";
+    }
+
+    if (!material.shaderDefines.empty()) out << "\n";
+    for (const auto& d : material.shaderDefines)
+        out << "shaderDefine " << d << "\n";
+
+    const ShaderConfig& c = material.shaderConfig;
+    out << "\nshaderConfig diffuse " << boolStr(c.diffuse) << "\n";
+    out << "shaderConfig bump " << boolStr(c.bump) << "\n";
+    out << "shaderConfig normal " << boolStr(c.normal) << "\n";
+    out << "shaderConfig displacement " << boolStr(c.displacement) << "\n";
+    out << "shaderConfig spec " << boolStr(c.spec) << "\n";
+    out << "shaderConfig vertexColors " << boolStr(c.vertexColors) << "\n";
+    out << "shaderConfig transparency " << boolStr(c.transparency) << "\n";
+    out << "shaderConfig ambientOcclusion " << boolStr(c.ambientOcclusion) << "\n";
+
+    out.close();
+    if (!out) {
+        return std::unexpected(
+            MaterialError{MaterialErrorKind::Unwritable, path.string(), 0, "write failed"});
+    }
+    return {};
 }
 
 }  // namespace mh::core

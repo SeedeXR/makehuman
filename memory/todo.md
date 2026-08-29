@@ -137,7 +137,13 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [ ] Proxy-on-proxy masking (`transferVertexMaskToProxy`) — clothes hiding
       clothes. Needs the render-order stack; the body mask does not.
 - [x] `.mhmat` **parser** — all keys, 7 texture channels, shader config
-- [ ] `.mhmat` **writer** — round-trip. Next chunk.
+- [x] `.mhmat` **writer** — lossless round-trip on all 3 shipped materials,
+      plus a fixed-point check (a second save must reproduce the first).
+      Verified in **both** directions: `tools/verify_material_roundtrip.py`
+      confirms the Python reference reads our output field for field.
+      That cross-check earned its keep immediately — it caught the writer
+      emitting `diffusetexture`, which our own case-insensitive reader
+      round-trips happily and MakeHuman 1.x silently ignores.
 - [x] Asset index (`AssetIndex`) — replaces the pickle `filecache`, which was an
       RCE vector. Metadata is *peeked*: the scan stops at the `verts` line.
 - [x] UUID→path resolution. `.mhm` references proxies by UUID **only**

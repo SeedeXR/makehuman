@@ -4,6 +4,63 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 017 · the .mhmat writer, and why a one-sided test lies
+
+**Ended:** 2026-08-29 11:21:33 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+### The writer
+
+`.mhmat` save, closing the M4 material item. The reference's own writer is
+explicitly **not** the model, because it loses data — verified, not assumed:
+
+- Round-tripping `brown.mhmat` through `material.py` turns `tag ['makehuman™']`
+  into `[]`. It never writes `tag` at all.
+- It never writes `autoBlendSkin` or the viewport colour.
+- It cannot save `default.mhmat` **at all** headlessly: `autoBlendSkin` routes
+  `diffuseColor` through the skin blender, so `toFile` raises
+  `AttributeError: 'NoneType' object has no attribute 'selectedHuman'`. In-app
+  it writes the *blended* colour over the authored one.
+
+Hard rule 3 says do not port a known-broken behaviour, so ours is lossless.
+
+### The part worth remembering
+
+The C++ round-trip test passed on the first run. It was also **not sufficient**,
+and would have shipped a real bug.
+
+Our reader lowercases the key before matching. The reference's compares
+`words[0]` directly (`material.py:369-448`). The writer had reused the
+lowercase lookup keys, so it emitted `diffusetexture` — which our reader
+round-trips perfectly and MakeHuman 1.x silently ignores. The texture simply
+disappears, with no error anywhere.
+
+No C++-only test could catch that: reader and writer shared the same wrong
+assumption, so they agreed. `tools/verify_material_roundtrip.py` caught it in
+one run by feeding our output back through the reference, which reported
+`diffuseTexture -> None`.
+
+The lesson is general enough to be worth stating: **a round-trip test through a
+single implementation proves self-consistency, not correctness.** Where a file
+format has another reader in the world, that reader is the oracle. The tool now
+lives in `tools/` and the canonical spellings are guarded by a literal string
+check so CI catches a regression without needing Python.
+
+Recorded as `project_context.md` §8.0 (format traps) and §8.1 (the lossless-save
+divergence).
+
+Also hardened `portablePath` while in there: `relative(x, "")` for a bare
+filename, and a first-COMPONENT check for escaping instead of a `starts_with("..")`
+on the string, which would misjudge a directory legitimately named `..cache`.
+
+### Verified
+
+232/232 in debug, release and ASan+UBSan. The reference reads all three written
+materials field for field. clang-format and SPDX clean. `data/` left clean --
+the tests write beside the source material on purpose, so relative paths resolve
+the same way, and remove the files afterwards.
+
+---
+
 ## 2026-08-29 — Session 016 · face hiding, and 14 review findings
 
 **Ended:** 2026-08-29 11:11:51 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
