@@ -1,0 +1,47 @@
+{
+  "subsystem": "body_pose",
+  "captured_at": "2026-08-29T14:53:43.241945+00:00",
+  "reference_commit": "40da4b69d207e985378b91a72e2a3bd8b95310e3",
+  "python": "3.14.6",
+  "numpy": "2.5.2",
+  "platform": "darwin",
+  "entries": {
+    "matPose": {
+      "file": "mat_pose.bin",
+      "dtype": "f4",
+      "shape": [
+        163,
+        4,
+        4
+      ],
+      "count": 2608,
+      "sha256": "f1b290ecbb328ec65b2fc489f4fb4ea26094ee587d6ff7fa06e94385abd11fce"
+    },
+    "skinned": {
+      "file": "skinned.bin",
+      "dtype": "f4",
+      "shape": [
+        19158,
+        3
+      ],
+      "count": 57474,
+      "sha256": "38954e37a00c5befed70ece0eef861733c8f56540d00a1cd5a26595c21b9bd78"
+    }
+  },
+  "source": "data/poses/tpose.bvh + default.mhskel + default_weights.mhw",
+  "bvh_joints": 173,
+  "converted_from_z_up": true,
+  "bone_count": 163,
+  "rest_span_all_verts": [
+    9.946399688720703,
+    16.945499420166016,
+    4.359800338745117
+  ],
+  "posed_span_all_verts": [
+    15.989259719848633,
+    16.945499420166016,
+    3.1715993881225586
+  ],
+  "max_displacement": 6.210541725158691,
+  "vertices_moved": 19158
+}

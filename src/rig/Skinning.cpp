@@ -101,4 +101,36 @@ SkinData buildSkinData(const Skeleton& skeleton, const CompiledWeights& weights,
     return out;
 }
 
+std::vector<Mat4> poseToBoneLocal(const Skeleton& skeleton, std::span<const Mat4> globalPose) {
+    if (globalPose.size() != skeleton.boneCount()) return {};
+
+    std::vector<Mat4> out(globalPose.size());
+    for (size_t i = 0; i < globalPose.size(); ++i) {
+        const Mat4& rest   = skeleton.bones[i].matRestGlobal;
+        const Mat4 invRest = foundation::rigidInverse(rest);
+
+        // Rotation only: the conjugation is defined on the 3x3 block, and
+        // carrying the source translation through it as well would double-count
+        // the offset the rest matrix already holds.
+        Mat4 rot = Mat4::identity();
+        for (size_t r = 0; r < 3; ++r) {
+            for (size_t c = 0; c < 3; ++c)
+                rot.m[r][c] = globalPose[i].m[r][c];
+        }
+
+        Mat4 local = invRest * rot * rest;
+
+        // Translation is expressed in bone-local axis directions -- rotated by
+        // the inverse rest basis, not transformed by it, so no offset is added.
+        const float tx = globalPose[i].m[0][3];
+        const float ty = globalPose[i].m[1][3];
+        const float tz = globalPose[i].m[2][3];
+        local.m[0][3]  = invRest.m[0][0] * tx + invRest.m[0][1] * ty + invRest.m[0][2] * tz;
+        local.m[1][3]  = invRest.m[1][0] * tx + invRest.m[1][1] * ty + invRest.m[1][2] * tz;
+        local.m[2][3]  = invRest.m[2][0] * tx + invRest.m[2][1] * ty + invRest.m[2][2] * tz;
+        out[i]         = local;
+    }
+    return out;
+}
+
 }  // namespace mh::rig

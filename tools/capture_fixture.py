@@ -454,6 +454,83 @@ def capture_weights() -> None:
     })
 
 
+def capture_body_pose() -> None:
+    """The shipped T-pose applied to the default rig, through the reference.
+
+    `capture_skinning` uses a synthetic pose because at the time nothing shipped
+    that posed the rig -- but `data/poses/tpose.bvh` does, and it is the asset
+    a user actually loads. This captures the reference's own answer for it, so
+    "our T-pose looks about right" can be replaced with a number.
+    """
+    import animation
+    import bvh
+    import files3d
+    import skeleton as mhskel
+
+    print("capturing: body_pose")
+    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+
+    from core import G
+
+    class _StubHuman:
+        def __init__(self, m):
+            self.meshData = m
+
+        def getRestposeCoordinates(self):
+            return self.meshData.coord
+
+    class _StubApp:
+        pass
+
+    app = _StubApp()
+    app.selectedHuman = _StubHuman(mesh)
+    G.app = app
+
+    skel = mhskel.load("data/rigs/default.mhskel", mesh)
+    skel.build()
+    bones = skel.getBones()
+
+    # Exactly what plugins/3_libraries_pose.py:177-183 does for a .bvh pose.
+    bvh_file = bvh.load("data/poses/tpose.bvh", convertFromZUp="auto")
+    anim = bvh_file.createAnimationTrack(skel)
+    posedata = anim.getAtFramePos(0, noBake=True)
+
+    skel.setPose(posedata)
+    pose_verts = np.stack([b.matPoseVerts for b in bones]).astype(np.float32)
+    mat_pose = np.stack([b.matPose for b in bones]).astype(np.float32)
+
+    vw = animation.VertexBoneWeights.fromFile(
+        "data/rigs/default_weights.mhw", len(mesh.coord), rootBone="root")
+    compiled = vw._compileVertexWeights(vw.data, skel, 4, len(mesh.coord))
+
+    coords4 = np.concatenate(
+        [mesh.coord, np.ones((len(mesh.coord), 1), dtype=np.float32)], axis=1)
+    skinned = animation.skinMesh(coords4, compiled, pose_verts[:, :3, :4])
+
+    out = GOLDEN / "body_pose"
+    out.mkdir(parents=True, exist_ok=True)
+    entries = {
+        "matPose": _write_blob(out / "mat_pose.bin", mat_pose, "f4"),
+        "skinned": _write_blob(out / "skinned.bin", skinned.astype(np.float32), "f4"),
+    }
+
+    # The measurement the C++ test makes, taken here too, so the two are
+    # comparing the same quantity rather than two plausible ones.
+    rest_span = mesh.coord.max(axis=0) - mesh.coord.min(axis=0)
+    posed_span = skinned[:, :3].max(axis=0) - skinned[:, :3].min(axis=0)
+    moved = np.linalg.norm(skinned[:, :3] - mesh.coord, axis=1)
+    _finish("body_pose", entries, {
+        "source": "data/poses/tpose.bvh + default.mhskel + default_weights.mhw",
+        "bvh_joints": len(bvh_file.joints),
+        "converted_from_z_up": bool(bvh_file.convertFromZUp),
+        "bone_count": len(bones),
+        "rest_span_all_verts": [float(v) for v in rest_span],
+        "posed_span_all_verts": [float(v) for v in posed_span],
+        "max_displacement": float(moved.max()),
+        "vertices_moved": int(np.sum(moved > 1e-6)),
+    })
+
+
 def capture_skinning() -> None:
     """Linear blend skinning: a deterministic pose, its matrices, and the result.
 
@@ -983,6 +1060,7 @@ SUBSYSTEMS = {
     "mask": capture_mask,
     "weights": capture_weights,
     "skinning": capture_skinning,
+    "body_pose": capture_body_pose,
     "transform": capture_transform,
     "bvh": capture_bvh,
     "poseunits": capture_poseunits,

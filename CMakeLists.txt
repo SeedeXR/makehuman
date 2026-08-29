@@ -94,18 +94,22 @@ add_subdirectory(src/core)
 add_subdirectory(src/io)
 add_subdirectory(src/rig)
 
-# Qt is optional: the geometry, rig and io layers build and test without it, and
-# the CI runner has no Qt. Only the renderer and the app need it.
+# Qt is optional: the geometry, rig and io layers build and test without it, so
+# the charconv-fallback job can stay small. The main CI matrix DOES install Qt --
+# without it this whole subtree is skipped and the render/ui/app code is never
+# compiled, which is exactly how it went unbuilt on CI for weeks.
 option(MH_BUILD_RENDER "Build the Qt RHI renderer (requires Qt6)" ON)
 if(MH_BUILD_RENDER)
-    find_package(Qt6 QUIET COMPONENTS Gui GuiPrivate ShaderTools)
+    find_package(Qt6 QUIET COMPONENTS Gui GuiPrivate Widgets ShaderTools)
     if(Qt6_FOUND AND TARGET Qt6::GuiPrivate)
-        message(STATUS "Qt ${Qt6_VERSION}: renderer enabled")
+        message(STATUS "Qt ${Qt6_VERSION}: renderer, UI and app enabled")
         add_subdirectory(src/render)
+        add_subdirectory(src/ui)
+        add_subdirectory(src/app)
         add_subdirectory(tools)
         set(MH_HAVE_RENDER TRUE)
     else()
-        message(STATUS "Qt6 (Gui, GuiPrivate, ShaderTools) not found: renderer disabled")
+        message(STATUS "Qt6 (Gui, GuiPrivate, Widgets, ShaderTools) not found: renderer and UI disabled")
         set(MH_HAVE_RENDER FALSE)
     endif()
 else()

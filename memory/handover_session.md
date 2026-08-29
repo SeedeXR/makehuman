@@ -4,6 +4,97 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 15:12:04 — Session 035 · **a window, and a T-pose that is actually a T-pose**
+
+### What shipped
+- **`mh_ui` (Apache-2.0)** — `ViewportWidget` (QRhiWidget on Metal, 4x MSAA, orbit on
+  left-drag with pitch clamped +/-89, multiplicative wheel dolly clamped 5-300) and
+  `MainWindow` (two dockable panels, workspace save/restore/reset via QSettings).
+- **`makehuman` (AGPL)** — the app. `--pose`, `--export`, `--screenshot`, `--shaders`.
+  The AGPL side loads the mesh; the UI only ever sees a `foundation::RenderView`, which
+  is what keeps `mh_ui` and `mh_render` permissive. Verified: `nm -u libmh_ui.a` finds
+  **0** `mh::core` symbols.
+- **`rig::loadBodyPose`** and **`rig::poseToBoneLocal`** — whole-body poses from a
+  single-frame BVH.
+
+### The bug the oracle caught
+`loadBodyPose` alone produced a pose that loaded cleanly, moved every vertex, and was
+**wrong**: the shipped T-pose came out with the arms only part-way up (body X span
+**10.67 dm** instead of 16.0). It looked like a stylistic difference, not a defect.
+
+Cause: a BVH stores rotations in the file's global axes, and `computeSkinningMatrices`
+wants them in each bone's rest frame. The reference conjugates them in
+`shared/skeleton.py:566-593`:
+
+    matPose = inv(matRestGlobal) * pose * matRestGlobal
+
+We fed the raw matrices straight in. `poseToBoneLocal` now does the conversion, and it
+is documented as the trap it is. Only tests called `computeSkinningMatrices` before, so
+nothing else was affected — the bug existed only because nothing had ever loaded a real
+pose file.
+
+**Three-way agreement after the fix** (all from this session, all run):
+| | A-pose (rest) X span | T-pose X span |
+|---|---|---|
+| C++ (body only) | 9.9254 dm | 15.8967 dm |
+| Python reference (all verts) | 9.9464 dm | 15.9893 dm |
+| Blender, `tpose.obj` | 9.9464 dm | 15.9892 dm |
+
+Vertex-for-vertex parity against the reference's own posed mesh: worst error
+**< 1e-3 dm** against a 6.21 dm maximum displacement.
+
+### CI was green on code it never compiled
+The matrix installed only `ninja assimp`, so `MH_HAVE_RENDER` was **FALSE** on CI and the
+whole `render/ui/app` subtree was silently skipped. Every "CI green" claim since the
+renderer landed covered `core`/`io`/`rig` only. Fixed: `brew install ... qt` plus
+`CMAKE_PREFIX_PATH`. Also added the missing `macos-arm64-release` **test** preset — the
+workflow had been running `mh_tests` directly, which skips the render and ui suites.
+Render tests now `SKIP` loudly on a machine with no Metal device rather than failing.
+
+### Corrections made this session
+- Asserted a T-pose would be **shorter** than an A-pose. Measured: marginally **taller**
+  (16.71 vs 16.66 dm) — standing height is head-to-foot either way. Assertion replaced
+  with the measured relationship.
+- Wrote a test using `benchmark.bvh` as "a multi-frame animation". It is **single-frame**.
+  Now uses the 60-frame face pose-unit BVH.
+- While removing `Camera::view()` I retyped its translation with a `-8.0F` Y offset that
+  was never there. Caught before building; restored to `(0, 0, -distance)`.
+- Guessed at `Mesh`/`FaceGroup` APIs from memory instead of reading them; eight compile
+  errors. `FaceGroup` has only `name` and `idx` — face-to-group mapping is
+  `staticFaceMask()`.
+- Twice read `$?` after a pipe and got `head`'s status, once reporting a failing
+  format gate as clean.
+
+### Review findings fixed
+Code review (11) and ponytail (14). The ones that mattered:
+- `initialize()` tore down and rebuilt every GPU resource on **every resize** — two disk
+  reads, a PNG decode and a pipeline compile per drag event. Now compares the device and
+  render pass it was built against.
+- `--screenshot` computed "nothing drew" and **exited 0**. Now exits 3, and checks the
+  viewport error *before* printing success rather than after.
+- A renderer failure showed a black rectangle and a status bar reading "Ready". The
+  viewport now emits `statusChanged` and the window shows it.
+- `needsUpload` was cleared even when the upload failed, so a transient failure was never
+  retried.
+- The one render test without the device guard was the one that misfires without a device.
+- `resetWorkspace` hand-rebuilt the layout; it now restores a `saveState()` snapshot taken
+  in the constructor, which also covers docks added later.
+
+### Verified this session
+- 309/309 tests in **debug, release and ASan**.
+- All 7 licence gates `rc=0` (run with `/usr/bin/grep`, not ugrep).
+- clang-format clean across every tracked source.
+- Benchmarks 6.6x-56.5x faster than the Python baseline; no regression.
+- 14 exports written (7 formats x 2 poses); Blender re-imported obj/glb/fbx for both.
+
+### Next
+- Dark theme from `design.md` tokens, Lucide icons, 42dot Sans, the six-dot panel menu.
+- `poseToBoneLocal` is not yet reachable from the UI — `--pose` is CLI only.
+- Known and measured, not fixed: `OffscreenRenderer::render` rebuilds the pipeline per
+  call because each call makes its own render target. Costs ~2 ms in a non-hot path.
+
+---
+
 ## 2026-08-29 — Session 034 · **it renders**
 
 **Ended:** 2026-08-29 17:28:50 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master

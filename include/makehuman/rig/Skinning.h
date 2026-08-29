@@ -34,6 +34,28 @@ using foundation::Mat4;
 /// matrix singular; ours cannot be singular, because buildRestMatrices refuses
 /// a zero-length bone and produces an orthonormal basis, so the transpose-based
 /// inverse is both exact and total.
+/// Rewrites a pose from model space into each bone's own rest frame.
+///
+/// A BVH stores rotations in the file's global axes. `computeSkinningMatrices`
+/// wants `matPose`, which is that rotation expressed relative to the bone's rest
+/// orientation, so every pose that comes off disk has to be conjugated first:
+///
+///     matPose = inv(matRestGlobal) * pose * matRestGlobal
+///
+/// and any translation is rotated into the same frame. This mirrors
+/// `skeleton.py:566-593`, which is where the reference does it -- the BVH loader
+/// hands back raw global matrices, and `Skeleton.setPose` converts them.
+///
+/// Skipping this does not fail. It produces a complete, smooth, entirely
+/// plausible pose that is simply not the one in the file: the shipped T-pose
+/// comes out with the arms only part-way raised (arm span 10.7 dm instead of
+/// 16.0 dm), which looks like a stylistic difference rather than a bug.
+///
+/// @param globalPose one matrix per bone, in skeleton bone order.
+/// @return bone-local matrices, or empty if @p globalPose is not one per bone.
+[[nodiscard]] std::vector<Mat4> poseToBoneLocal(const Skeleton& skeleton,
+                                                std::span<const Mat4> globalPose);
+
 [[nodiscard]] std::vector<Mat4> computeSkinningMatrices(const Skeleton& skeleton,
                                                         std::span<const Mat4> localPose);
 

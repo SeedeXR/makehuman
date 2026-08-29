@@ -53,6 +53,12 @@
       "execution": { "noTestsAction": "error" }
     },
     {
+      "name": "macos-arm64-release",
+      "configurePreset": "macos-arm64-release",
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error" }
+    },
+    {
       "name": "macos-arm64-asan",
       "configurePreset": "macos-arm64-asan",
       "output": { "outputOnFailure": true },

@@ -35,6 +35,14 @@ Scene bodyScene() {
     return Scene{std::move(*mesh), std::move(rm)};
 }
 
+/// A build machine may have no Metal device at all. That is not a renderer
+/// defect, so these skip rather than fail -- but they skip loudly, because a
+/// silent pass would hide the renderer never having been exercised.
+void requireDevice() {
+    static const bool ok = render::OffscreenRenderer::create(MH_SHADER_DIR).has_value();
+    if (!ok) SKIP("no Metal device on this machine -- renderer not exercised");
+}
+
 render::RenderSettings settings() {
     render::RenderSettings s;
     s.width     = 256;
@@ -61,6 +69,7 @@ double coverage(const QImage& img, const render::RenderSettings& s) {
 }  // namespace
 
 TEST_CASE("the base mesh renders to a non-blank image", "[render]") {
+    requireDevice();
     auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
     REQUIRE(r.has_value());
     CHECK((*r)->backendName() == "Metal");
@@ -85,6 +94,7 @@ TEST_CASE("the base mesh renders to a non-blank image", "[render]") {
 // draw as a solid skirt and a box over the face -- MORE pixels, not fewer,
 // which is why coverage discriminates.
 TEST_CASE("hiding helper geometry reduces what is drawn", "[render]") {
+    requireDevice();
     auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
     REQUIRE(r.has_value());
 
@@ -111,13 +121,14 @@ TEST_CASE("hiding helper geometry reduces what is drawn", "[render]") {
 // If rotation changed nothing, the uniform buffer would not be reaching the
 // shader and every frame would be identical.
 TEST_CASE("rotation changes the rendered image", "[render]") {
+    requireDevice();
     auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
     REQUIRE(r.has_value());
     const Scene sc = bodyScene();
 
-    auto s0       = settings();
-    auto s1       = settings();
-    s1.yawDegrees = 90.0F;
+    auto s0              = settings();
+    auto s1              = settings();
+    s1.camera.yawDegrees = 90.0F;
 
     const auto a = (*r)->render(sc.rm.view(), s0);
     const auto b = (*r)->render(sc.rm.view(), s1);
@@ -138,12 +149,16 @@ TEST_CASE("rotation changes the rendered image", "[render]") {
 }
 
 TEST_CASE("a missing shader directory is reported", "[render]") {
+    // create() checks the device before it probes for shaders, so without one
+    // this reports NoDevice and the assertion below would fail rather than skip.
+    requireDevice();
     const auto r = render::OffscreenRenderer::create("/nonexistent/shaders");
     REQUIRE_FALSE(r.has_value());
     CHECK(r.error().kind == render::RenderErrorKind::ShaderMissing);
 }
 
 TEST_CASE("a missing litsphere is reported", "[render]") {
+    requireDevice();
     auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
     REQUIRE(r.has_value());
     const Scene sc = bodyScene();

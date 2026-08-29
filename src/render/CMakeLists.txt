@@ -5,7 +5,7 @@
 # runtime are AGPL ports of the reference's GLSL and live in resources/; loading
 # a file is not derivation, so the boundary holds. See LICENSING.md 4.
 
-add_library(mh_render STATIC OffscreenRenderer.cpp)
+add_library(mh_render STATIC SceneResources.cpp OffscreenRenderer.cpp)
 add_library(mh::render ALIAS mh_render)
 
 target_include_directories(mh_render PUBLIC

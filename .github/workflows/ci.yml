@@ -35,11 +35,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Qt is needed or MH_HAVE_RENDER stays FALSE and the whole render/ui/app
+      # tree is silently skipped -- CI was green for weeks without ever
+      # compiling a line of it.
       - name: Install dependencies
-        run: brew install ninja assimp
+        run: brew install ninja assimp qt
 
       - name: Configure
-        run: cmake --preset ${{ matrix.preset }}
+        run: cmake --preset ${{ matrix.preset }} -DCMAKE_PREFIX_PATH="$(brew --prefix qt)"
 
       # -Werror is on for our targets, so any new warning fails here.
       - name: Build
@@ -47,12 +50,6 @@ jobs:
 
       - name: Test
         run: ctest --preset ${{ matrix.preset }} --output-on-failure
-        if: matrix.preset != 'macos-arm64-release'
-
-      # No test preset for release; run the binary directly.
-      - name: Test (release)
-        run: ./build/${{ matrix.preset }}/tests/mh_tests
-        if: matrix.preset == 'macos-arm64-release'
 
   # The macos-15 runner ships Xcode 16.4, whose libc++ has NO floating-point
   # from_chars/to_chars -- the float call resolves to the deleted bool overload

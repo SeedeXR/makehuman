@@ -30,6 +30,7 @@ add_executable(mh_tests
     golden/test_usd_writer.cpp
     golden/test_unit_correctness.cpp
     golden/test_poseunits_parity.cpp
+    golden/test_body_pose.cpp
     golden/test_obj_writer_parity.cpp
     golden/test_gltf_writer.cpp
     golden/test_scene_io.cpp
@@ -77,7 +78,7 @@ set_target_properties(mh_export_fixture PROPERTIES CXX_STANDARD 23 CXX_STANDARD_
 if(MH_HAVE_RENDER)
     add_executable(mh_render_tests render/test_offscreen_render.cpp)
     target_link_libraries(mh_render_tests
-        PRIVATE mh::core mh::render Catch2::Catch2WithMain mh::warnings)
+        PRIVATE mh::core mh::render Catch2::Catch2WithMain mh::warnings mh::sanitize)
     target_compile_definitions(mh_render_tests PRIVATE
         MH_DATA_DIR="${MH_DATA_DIR}"
         MH_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders")
@@ -87,4 +88,17 @@ if(MH_HAVE_RENDER)
     add_test(NAME render COMMAND mh_render_tests)
     # Offscreen platform: these must not try to open a window on a build box.
     set_tests_properties(render PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    # The UI tests provide their own main() so a QApplication exists before any
+    # widget is constructed -- Catch2's main would build the widgets first.
+    add_executable(mh_ui_tests ui/test_ui.cpp)
+    target_link_libraries(mh_ui_tests
+        PRIVATE mh::ui Catch2::Catch2 mh::warnings mh::sanitize)
+    target_compile_definitions(mh_ui_tests PRIVATE MH_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders")
+    set_target_properties(mh_ui_tests PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
+    if(_catch2_inc)
+        target_include_directories(mh_ui_tests SYSTEM PRIVATE ${_catch2_inc})
+    endif()
+    add_test(NAME ui COMMAND mh_ui_tests)
+    set_tests_properties(ui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()

@@ -269,6 +269,20 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       the blend above
 - [ ] Body pose units (`body-poseunits.json`) — a different format: bone ->
       quaternion directly, not BVH frames
+- [x] **Whole-body poses: A-pose and T-pose, render and export** (owner request,
+      2026-08-29). `rig::loadBodyPose` reads a single-frame BVH;
+      `rig::poseToBoneLocal` converts it into each bone's rest frame.
+      The A-pose needs **no file** — the base mesh is authored in one, so the
+      rest mesh IS the A-pose.
+      **The trap:** a BVH holds rotations in the file's global axes;
+      `computeSkinningMatrices` wants them bone-local. Feeding the raw matrices
+      in does not fail — it yields a smooth, plausible, wrong pose (arm span
+      10.67 dm instead of 16.0). The reference conjugates in
+      `shared/skeleton.py:566-593`. Parity fixture: `tests/golden/body_pose/`.
+      Agreement C++ / Python / Blender: 15.897 / 15.989 / 15.989 dm.
+      App: `makehuman --pose rest|tpose|<path.bvh> [--export out.ext]`,
+      7 formats (obj fbx glb usda dae stl 3mf).
+- [ ] Pose library UI — `--pose` is CLI only; nothing in the window selects one.
 - [ ] `mixPoses` for face/foot layering
 - [x] BVH **import** — parity on both shipped files: `tpose.bvh` (222 joints)
       and `face-poseunits.bvh` (212 joints x 60 frames). 12,942 joint-frames
@@ -425,15 +439,20 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 
 ## M8 — Application shell (`mh-app`, `mh-ui`)
 
-- [ ] `QMainWindow` + `QDockWidget`, nested and tabbed docking
+- [~] `QMainWindow` + `QDockWidget` — two docks, left/right areas, object names
+      set so `saveState` actually restores. Nested and tabbed docking not yet.
 - [ ] Snapping with drop indicators
 - [ ] Six-dot panel menu (float/dock/tab/reset/close) — `design.md` §6.3
-- [ ] Workspaces: save / load / reset, 4 shipped presets, versioned schema
+- [~] Workspaces: save / restore / reset done (QSettings **IniFormat** — the macOS
+      native backend ignores `setPath`, so a test could not redirect it away from the
+      developer's real preferences). 4 shipped presets and a versioned schema not yet.
 - [x] **Assets in place**: 57 Lucide icons (ISC, normalised to the 1.5 px
       stroke `design.md` §4 specifies) and 42dot Sans variable (OFL-1.1,
       structurally validated). See `resources/README.md`.
 - [ ] Dark theme from the token table, wired to the token file
-- [ ] `QRhiWidget` viewport with the documented navigation bindings
+- [x] `QRhiWidget` viewport with the documented navigation bindings — Metal, 4x MSAA,
+      orbit clamped +/-89 deg, multiplicative dolly clamped 5-300. Verified by
+      `makehuman --screenshot`, which exits non-zero on a blank frame.
 - [ ] Task registry replacing filename-sort plugin ordering
 - [ ] Symbolic shortcut/mouse persistence (not raw Qt enum ints)
 - [ ] Port the 50 task views (tracked as a sub-checklist — `architecture.md` §I.8)

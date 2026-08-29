@@ -84,4 +84,17 @@ struct PoseUnitsError {
 [[nodiscard]] std::expected<PoseUnits, PoseUnitsError> makePoseUnits(
     const io::BvhFile& bvh, const Skeleton& skeleton, std::vector<std::string> names);
 
+/// Loads a whole-body pose -- a T-pose, an A-pose, a stance -- from a
+/// single-frame BVH, ready to hand to computeSkinningMatrices().
+///
+/// The rest pose needs no file: it is what the mesh already is, so "A-pose" for
+/// the MakeHuman base mesh is an empty span, not a pose to load. Only poses
+/// that differ from the authored rest need one.
+///
+/// The file must hold exactly one frame. A multi-frame BVH is an animation, and
+/// silently taking its first frame would turn a wrong file into a plausible
+/// wrong pose.
+[[nodiscard]] std::expected<std::vector<Mat4>, PoseUnitsError> loadBodyPose(
+    const std::filesystem::path& path, const Skeleton& skeleton);
+
 }  // namespace mh::rig

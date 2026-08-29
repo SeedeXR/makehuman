@@ -135,4 +135,35 @@ std::expected<PoseUnits, PoseUnitsError> makePoseUnits(const io::BvhFile& bvh,
     return out;
 }
 
+std::expected<std::vector<Mat4>, PoseUnitsError> loadBodyPose(const std::filesystem::path& path,
+                                                              const Skeleton& skeleton) {
+    auto bvh = io::readBvh(path);
+    if (!bvh) {
+        // The two error sets line up one for one except for BVH's frame-data
+        // kind, which is a malformed file by any other name.
+        PoseUnitsErrorKind kind = PoseUnitsErrorKind::Malformed;
+        switch (bvh.error().kind) {
+            case io::BvhErrorKind::NotFound: kind = PoseUnitsErrorKind::NotFound; break;
+            case io::BvhErrorKind::Unreadable: kind = PoseUnitsErrorKind::Unreadable; break;
+            case io::BvhErrorKind::Malformed:
+            case io::BvhErrorKind::FrameDataMismatch: break;
+        }
+        return std::unexpected(PoseUnitsError{kind, path.string(), bvh.error().message()});
+    }
+    if (bvh->frameCount != 1) {
+        return std::unexpected(PoseUnitsError{
+            PoseUnitsErrorKind::FrameCountMismatch, path.string(),
+            "a body pose must hold exactly one frame; this file has " +
+                std::to_string(bvh->frameCount) + " and is an animation, not a pose"});
+    }
+
+    // makePoseUnits already does the hard part: walk the rig's bones and take
+    // each one's identically-named BVH joint, identity where there is none.
+    auto units = makePoseUnits(*bvh, skeleton, {std::string(path.stem().string())});
+    if (!units) return std::unexpected(units.error());
+
+    const std::span<const Mat4> frame = units->unit(0);
+    return std::vector<Mat4>(frame.begin(), frame.end());
+}
+
 }  // namespace mh::rig
