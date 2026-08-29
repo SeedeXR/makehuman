@@ -1,0 +1,51 @@
+{
+  "subsystem": "skinning",
+  "captured_at": "2026-08-29T11:19:04.177959+00:00",
+  "reference_commit": "0c862bb4d2454abb9e8914750c6f299d0154d5e7",
+  "python": "3.14.6",
+  "numpy": "2.5.2",
+  "platform": "darwin",
+  "entries": {
+    "matPose": {
+      "file": "mat_pose.bin",
+      "dtype": "f4",
+      "shape": [
+        163,
+        4,
+        4
+      ],
+      "count": 2608,
+      "sha256": "0f195ba7997f53df1564f07a282bd20df807e01a6abec9763c9ff04913435dc5"
+    },
+    "matPoseVerts": {
+      "file": "pose_verts.bin",
+      "dtype": "f4",
+      "shape": [
+        163,
+        4,
+        4
+      ],
+      "count": 2608,
+      "sha256": "d4b56580bf25bed5596bedc914dbfcbc4eced4bb59ae990dc723a8bd625d17e2"
+    },
+    "skinned": {
+      "file": "skinned.bin",
+      "dtype": "f4",
+      "shape": [
+        19158,
+        3
+      ],
+      "count": 57474,
+      "sha256": "261f6f6367143f4ded3fb8d14844858cdac6b8741ff47cf61e650af1b63dad3a"
+    }
+  },
+  "source": "data/rigs/default.mhskel + default_weights.mhw",
+  "vertex_count": 19158,
+  "bone_count": 163,
+  "influences": 4,
+  "posed_bones": 7,
+  "max_displacement": 3.1970443725585938,
+  "mean_displacement": 1.1322473287582397,
+  "vertices_moved": 18069,
+  "note": "matPoseVerts = matPoseGlobal * inv(matRestGlobal); skinning blends the MATRICES then applies once (accumulated matrix skinning), not the transformed positions."
+}

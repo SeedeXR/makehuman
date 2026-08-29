@@ -234,7 +234,18 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       Arbitrary, but it decides which influence survives on symmetric vertices.
 - [ ] Influence clamping surfaced in the glTF exporter (JOINTS_0/WEIGHTS_0)
 - [ ] Euler conventions — all 24, `[w,x,y,z]` quaternions (Eigen `.coeffs()` is `[x,y,z,w]`)
-- [ ] CPU LBS (reference parity) **and** GPU LBS (production)
+- [x] **CPU LBS — parity on all 19,158 vertices** under a real pose (7 bones
+      rotated, 18,069 vertices moved, 3.2 dm max displacement). Worst vertex
+      delta **3.8e-6 dm (0.38 um)**; worst pose-matrix delta 6.7e-6 — float32
+      rounding, not an algorithmic difference. Pose matrices also compared
+      element-wise across all 163 bones.
+      **0.11 ms** for the whole body at 4 influences; skinning matrices under
+      0.01 ms. Both comfortably per-frame.
+      It is *accumulated matrix skinning*: blend the MATRICES, apply once —
+      one matrix-vector multiply per vertex rather than one per influence.
+- [ ] Skin normals/tangents (the w=0 direction path) — needs the renderer to
+      have something to shade; positions are the parity target today.
+- [ ] GPU LBS (matrix palette UBO/SSBO) — M6
 - [ ] Pose units, `.mhpose`, slerp-composition blend (order-dependent — replicate)
 - [ ] `mixPoses` for face/foot layering
 - [ ] BVH import/export

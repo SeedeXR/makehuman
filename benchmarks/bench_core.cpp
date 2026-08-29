@@ -11,6 +11,7 @@
 #include "makehuman/core/Target.h"
 #include "makehuman/core/TargetIndex.h"
 #include "makehuman/rig/Skeleton.h"
+#include "makehuman/rig/Skinning.h"
 #include "makehuman/rig/VertexWeights.h"
 
 #include <algorithm>
@@ -117,6 +118,21 @@ int main() {
             if (auto vw = mh::rig::loadWeights(wpath, mesh->vertexCount())) {
                 results.push_back({"VertexWeights::compile (4 influences, 19158 verts)",
                                    medianMs([&] { (void)vw->compile(*sk, 4); }, 20), 0.0});
+            }
+            if (auto vw2 = mh::rig::loadWeights(wpath, mesh->vertexCount())) {
+                (void)sk->updateJoints(mesh->coord());
+                (void)sk->buildRestMatrices();
+                const auto cw = vw2->compile(*sk, 4);
+                const auto sm = mh::rig::computeSkinningMatrices(*sk, {});
+                std::vector<mh::foundation::Vec3> skinned;
+                results.push_back(
+                    {"computeSkinningMatrices (163 bones)",
+                     medianMs([&] { (void)mh::rig::computeSkinningMatrices(*sk, {}); }, 50), 0.0});
+                results.push_back(
+                    {"skinPositions (LBS, 19158 verts x 4)",
+                     medianMs([&] { (void)mh::rig::skinPositions(mesh->coord(), cw, sm, skinned); },
+                              20),
+                     0.0});
             }
             results.push_back({"Skeleton::buildRestMatrices (163 bones)",
                                medianMs(

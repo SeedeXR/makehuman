@@ -453,6 +453,116 @@ def capture_weights() -> None:
     })
 
 
+def capture_skinning() -> None:
+    """Linear blend skinning: a deterministic pose, its matrices, and the result.
+
+    Three stages are captured because each can be wrong independently:
+
+      * `matPose`   -- the local pose we set, so C++ starts from identical input
+      * `matPoseVerts` -- matPoseGlobal * inv(matRestGlobal), per bone
+      * `skinned`   -- the deformed vertices from the reference's own skinMesh
+
+    The pose is synthetic and fixed: a handful of named bones rotated by set
+    angles about set axes. Nothing shipped poses the rig, so a real pose asset
+    is not available, and a random one would not be reproducible.
+    """
+    import animation
+    import files3d
+    import skeleton as mhskel
+
+    print("capturing: skinning")
+    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+
+    from core import G
+
+    class _StubHuman:
+        def __init__(self, m):
+            self.meshData = m
+
+        def getRestposeCoordinates(self):
+            return self.meshData.coord
+
+    class _StubApp:
+        pass
+
+    app = _StubApp()
+    app.selectedHuman = _StubHuman(mesh)
+    G.app = app
+
+    skel = mhskel.load("data/rigs/default.mhskel", mesh)
+    skel.build()
+    bones = skel.getBones()
+
+    def _rot(axis, degrees):
+        t = np.radians(degrees, dtype=np.float64)
+        c, s = np.cos(t), np.sin(t)
+        m = np.identity(4, dtype=np.float32)
+        if axis == "x":
+            m[1, 1], m[1, 2], m[2, 1], m[2, 2] = c, -s, s, c
+        elif axis == "y":
+            m[0, 0], m[0, 2], m[2, 0], m[2, 2] = c, s, -s, c
+        else:
+            m[0, 0], m[0, 1], m[1, 0], m[1, 1] = c, -s, s, c
+        return m
+
+    # Bones chosen to move large, well-separated parts of the body, so a wrong
+    # parent chain or a transposed matrix shows up as a gross displacement
+    # rather than a rounding difference.
+    pose_spec = [
+        ("upperarm01.L", "z", 35.0),
+        ("upperarm01.R", "z", -35.0),
+        ("lowerarm01.L", "x", 25.0),
+        ("upperleg01.L", "x", -20.0),
+        ("upperleg02.R", "x", 15.0),
+        ("spine01", "y", 10.0),
+        ("head", "y", -12.0),
+    ]
+    by_name = {b.name: b for b in bones}
+    applied = []
+    for bname, axis, deg in pose_spec:
+        if bname not in by_name:
+            continue
+        by_name[bname].matPose = _rot(axis, deg)
+        applied.append({"bone": bname, "index": bones.index(by_name[bname]),
+                        "axis": axis, "degrees": deg})
+    skel.update()
+
+    mat_pose = np.stack([b.matPose for b in bones]).astype(np.float32)
+    pose_verts = np.stack([b.matPoseVerts for b in bones]).astype(np.float32)
+
+    vw = animation.VertexBoneWeights.fromFile(
+        "data/rigs/default_weights.mhw", len(mesh.coord), rootBone="root")
+    compiled = vw._compileVertexWeights(vw.data, skel, 4, len(mesh.coord))
+
+    coords4 = np.concatenate(
+        [mesh.coord, np.ones((len(mesh.coord), 1), dtype=np.float32)], axis=1)
+    skinned = animation.skinMesh(coords4, compiled, pose_verts[:, :3, :4])
+
+    out = GOLDEN / "skinning"
+    out.mkdir(parents=True, exist_ok=True)
+    entries = {
+        "matPose": _write_blob(out / "mat_pose.bin", mat_pose, "f4"),
+        "matPoseVerts": _write_blob(out / "pose_verts.bin", pose_verts, "f4"),
+        "skinned": _write_blob(out / "skinned.bin", skinned.astype(np.float32), "f4"),
+    }
+    (out / "pose.json").write_text(json.dumps(applied, indent=2))
+
+    moved = np.linalg.norm(skinned - mesh.coord, axis=1)
+    _finish("skinning", entries, {
+        "source": "data/rigs/default.mhskel + default_weights.mhw",
+        "vertex_count": int(len(mesh.coord)),
+        "bone_count": len(bones),
+        "influences": 4,
+        "posed_bones": len(applied),
+        "max_displacement": float(moved.max()),
+        "mean_displacement": float(moved.mean()),
+        "vertices_moved": int(np.sum(moved > 1e-6)),
+        "note": "matPoseVerts = matPoseGlobal * inv(matRestGlobal); skinning "
+                "blends the MATRICES then applies once (accumulated matrix "
+                "skinning), not the transformed positions.",
+    })
+
+
 def capture_mask() -> None:
     """Face hiding: vertex mask -> face mask -> filtered index buffer.
 
@@ -623,6 +733,7 @@ SUBSYSTEMS = {
     "proxy": capture_proxy,
     "mask": capture_mask,
     "weights": capture_weights,
+    "skinning": capture_skinning,
 }
 
 

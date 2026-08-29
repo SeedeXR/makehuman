@@ -24,6 +24,7 @@ add_executable(mh_tests
     golden/test_material_roundtrip.cpp
     golden/test_skeleton_parity.cpp
     golden/test_weights_parity.cpp
+    golden/test_skinning_parity.cpp
     golden/test_obj_writer_parity.cpp
     golden/test_gltf_writer.cpp
     golden/test_scene_io.cpp

@@ -1,0 +1,44 @@
+[
+  {
+    "bone": "upperarm01.L",
+    "index": 36,
+    "axis": "z",
+    "degrees": 35.0
+  },
+  {
+    "bone": "upperarm01.R",
+    "index": 37,
+    "axis": "z",
+    "degrees": -35.0
+  },
+  {
+    "bone": "lowerarm01.L",
+    "index": 60,
+    "axis": "x",
+    "degrees": 25.0
+  },
+  {
+    "bone": "upperleg01.L",
+    "index": 5,
+    "axis": "x",
+    "degrees": -20.0
+  },
+  {
+    "bone": "upperleg02.R",
+    "index": 9,
+    "axis": "x",
+    "degrees": 15.0
+  },
+  {
+    "bone": "spine01",
+    "index": 15,
+    "axis": "y",
+    "degrees": 10.0
+  },
+  {
+    "bone": "head",
+    "index": 51,
+    "axis": "y",
+    "degrees": -12.0
+  }
+]
