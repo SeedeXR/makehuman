@@ -45,8 +45,9 @@ bool parseCorner(std::string_view tok, long& vIdx, long& tIdx, bool& hasUv) {
     const std::string_view vPart =
         (firstSlash == std::string_view::npos) ? tok : tok.substr(0, firstSlash);
     if (vPart.empty()) return false;
-    if (std::from_chars(vPart.data(), vPart.data() + vPart.size(), vIdx).ec != std::errc{}) {
-        return false;
+    const auto vres = std::from_chars(vPart.data(), vPart.data() + vPart.size(), vIdx);
+    if (vres.ec != std::errc{} || vres.ptr != vPart.data() + vPart.size()) {
+        return false;   // reject trailing garbage, e.g. "1x"
     }
 
     if (firstSlash == std::string_view::npos) return true;
@@ -55,8 +56,11 @@ bool parseCorner(std::string_view tok, long& vIdx, long& tIdx, bool& hasUv) {
     const size_t secondSlash = rest.find('/');
     const std::string_view tPart =
         (secondSlash == std::string_view::npos) ? rest : rest.substr(0, secondSlash);
-    if (!tPart.empty() &&
-        std::from_chars(tPart.data(), tPart.data() + tPart.size(), tIdx).ec == std::errc{}) {
+    if (!tPart.empty()) {
+        const auto tres = std::from_chars(tPart.data(), tPart.data() + tPart.size(), tIdx);
+        if (tres.ec != std::errc{} || tres.ptr != tPart.data() + tPart.size()) {
+            return false;
+        }
         hasUv = true;
     }
     return true;
@@ -86,8 +90,11 @@ std::string ObjError::message() const {
         case ObjErrorKind::Unreadable:      kindStr = "file could not be read";     break;
         case ObjErrorKind::LooseVertex:     kindStr = "vertex referenced by no face"; break;
         case ObjErrorKind::BadIndex:        kindStr = "face index out of range";    break;
-        case ObjErrorKind::MixedPrimitives: kindStr = "mixed primitive sizes";      break;
+        case ObjErrorKind::MalformedVertex: kindStr = "malformed vertex line";      break;
+        case ObjErrorKind::DegenerateFace:  kindStr = "face with fewer than 3 corners"; break;
+        case ObjErrorKind::MixedPrimitives: kindStr = "unsupported primitive size"; break;
         case ObjErrorKind::EmptyMesh:       kindStr = "mesh contains no faces";     break;
+        case ObjErrorKind::InvalidTopology: kindStr = "invalid face topology";      break;
     }
     std::string msg = file;
     if (line > 0) {
@@ -137,28 +144,43 @@ std::expected<Mesh, ObjError> loadObj(const std::filesystem::path& path) {
 
         const std::string_view key = tok[0];
 
-        if (key == "v" && tok.size() >= 4) {
+        if (key == "v") {
             Vec3 v{};
-            if (parseFloat(tok[1], v.x) && parseFloat(tok[2], v.y) && parseFloat(tok[3], v.z)) {
-                coords.push_back(v);
+            // Dropping a malformed line would shift every subsequent index and
+            // silently yield a different mesh, so it is an error.
+            if (tok.size() < 4 || !parseFloat(tok[1], v.x) || !parseFloat(tok[2], v.y) ||
+                !parseFloat(tok[3], v.z)) {
+                return std::unexpected(ObjError{ObjErrorKind::MalformedVertex, path.string(),
+                                                lineNo, "expected 'v x y z'"});
             }
-        } else if (key == "vt" && tok.size() >= 3) {
+            coords.push_back(v);
+        } else if (key == "vt") {
             Vec2 t{};
-            if (parseFloat(tok[1], t.x) && parseFloat(tok[2], t.y)) {
-                uvs.push_back(t);
+            if (tok.size() < 3 || !parseFloat(tok[1], t.x) || !parseFloat(tok[2], t.y)) {
+                return std::unexpected(ObjError{ObjErrorKind::MalformedVertex, path.string(),
+                                                lineNo, "expected 'vt u v'"});
             }
-        } else if (key == "g" || key == "o") {
+            uvs.push_back(t);
+        } else if (key == "o") {
+            // wavefront.py:128-129 sets the object name and creates NO group.
+            if (tok.size() >= 2) mesh.setName(std::string{tok[1]});
+        } else if (key == "g") {
             std::string gname = (tok.size() >= 2) ? std::string{tok[1]} : std::string{"default"};
             currentGroup = mesh.addFaceGroup(std::move(gname));
             groupOpened  = true;
-        } else if (key == "f" && tok.size() >= 4) {
+        } else if (key == "f") {
             if (!groupOpened) {
                 currentGroup = mesh.addFaceGroup("default");
                 groupOpened  = true;
             }
 
             const size_t corners = tok.size() - 1;
-            if (corners != 3 && corners != 4) {
+            if (corners < 3) {
+                return std::unexpected(ObjError{
+                    ObjErrorKind::DegenerateFace, path.string(), lineNo,
+                    std::to_string(corners) + " corners"});
+            }
+            if (corners > 4) {
                 return std::unexpected(ObjError{
                     ObjErrorKind::MixedPrimitives, path.string(), lineNo,
                     std::to_string(corners) + " corners; only triangles and quads are supported"});
@@ -225,11 +247,14 @@ std::expected<Mesh, ObjError> loadObj(const std::filesystem::path& path) {
     }
 
     mesh.setCoords(std::move(coords));
-    if (sawAnyUv) {
-        mesh.setUVs(std::move(uvs));
-        mesh.setFaces(std::move(faceVerts), std::move(faceUVs), std::move(faceGroup));
-    } else {
-        mesh.setFaces(std::move(faceVerts), {}, std::move(faceGroup));
+    if (sawAnyUv) mesh.setUVs(std::move(uvs));
+
+    const auto applied = sawAnyUv
+        ? mesh.setFaces(std::move(faceVerts), std::move(faceUVs), std::move(faceGroup))
+        : mesh.setFaces(std::move(faceVerts), {}, std::move(faceGroup));
+    if (!applied) {
+        return std::unexpected(ObjError{ObjErrorKind::InvalidTopology, path.string(), 0,
+                                        "face arrays rejected by Mesh::setFaces"});
     }
     mesh.buildAdjacency();
     mesh.calcNormals();

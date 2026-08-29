@@ -2,7 +2,8 @@
 add_executable(mh_tests
     unit/test_mesh.cpp
     unit/test_obj_reader.cpp
-    golden/test_base_mesh_parity.cpp)
+    golden/test_base_mesh_parity.cpp
+    regression/test_review_findings.cpp)
 
 target_link_libraries(mh_tests
     PRIVATE mh::core Catch2::Catch2WithMain mh::warnings mh::sanitize)

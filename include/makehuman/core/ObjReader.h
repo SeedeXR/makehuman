@@ -12,10 +12,13 @@ namespace mh::core {
 enum class ObjErrorKind {
     NotFound,
     Unreadable,
-    LooseVertex,      ///< a vertex referenced by no face
-    BadIndex,         ///< face index out of range
-    MixedPrimitives,  ///< faces with differing corner counts
+    LooseVertex,       ///< a vertex referenced by no face
+    BadIndex,          ///< face index out of range or unparseable
+    MalformedVertex,   ///< a v/vt line with missing or non-numeric components
+    DegenerateFace,    ///< an f statement with fewer than 3 corners
+    MixedPrimitives,   ///< faces with more than 4 corners
     EmptyMesh,
+    InvalidTopology,   ///< face arrays rejected by Mesh::setFaces
 };
 
 struct ObjError {
@@ -33,7 +36,10 @@ struct ObjError {
 /// (legacy-python/shared/wavefront.py:47-151), because the base mesh and every
 /// proxy mesh are authored against it:
 ///
-///  * `v`, `vt`, `f`, `g`, `o` are handled.
+///  * `v`, `vt`, `f`, `g` are handled. `o` sets the mesh **name** and creates
+///    no face group, matching wavefront.py:128-129.
+///  * A malformed `v`/`vt` line is an error, not a skipped line: dropping it
+///    would shift every subsequent index and silently produce a different mesh.
 ///  * `vn` is **ignored** — the reference does not read normals and assumes
 ///    smooth shading (wavefront.py:50-52). Normals are always recomputed.
 ///  * `usemtl` is ignored (wavefront.py:125-126); materials come from `.mhmat`.

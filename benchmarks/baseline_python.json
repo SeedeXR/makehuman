@@ -6,79 +6,79 @@
   "results": [
     {
       "label": "load base.obj (text parse + _update_faces)",
-      "median_ms": 228.315,
-      "min_ms": 221.948,
-      "max_ms": 229.967,
+      "median_ms": 212.437,
+      "min_ms": 212.126,
+      "max_ms": 216.103,
       "runs": 3
     },
     {
       "label": "calcNormals full mesh (face+vertex)",
-      "median_ms": 5.334,
-      "min_ms": 4.987,
-      "max_ms": 5.36,
+      "median_ms": 5.278,
+      "min_ms": 5.083,
+      "max_ms": 5.328,
       "runs": 10
     },
     {
       "label": "calcFaceNormals only",
-      "median_ms": 0.658,
-      "min_ms": 0.646,
-      "max_ms": 0.692,
+      "median_ms": 0.688,
+      "min_ms": 0.68,
+      "max_ms": 0.698,
       "runs": 10
     },
     {
       "label": "calcVertexNormals only",
-      "median_ms": 1.657,
-      "min_ms": 1.639,
-      "max_ms": 1.71,
+      "median_ms": 1.73,
+      "min_ms": 1.722,
+      "max_ms": 1.754,
       "runs": 10
     },
     {
       "label": "updateIndexBuffer (unweld + group sort)",
-      "median_ms": 3.44,
-      "min_ms": 3.389,
-      "max_ms": 3.521,
+      "median_ms": 3.564,
+      "min_ms": 3.492,
+      "max_ms": 3.592,
       "runs": 10
     },
     {
       "label": "load 200 targets (text parse)",
-      "median_ms": 106.624,
-      "min_ms": 102.456,
-      "max_ms": 108.82,
+      "median_ms": 106.221,
+      "min_ms": 105.549,
+      "max_ms": 106.575,
       "runs": 3
     },
     {
       "label": "apply 200 targets @0.5 (full stack rebuild)",
-      "median_ms": 4.818,
-      "min_ms": 4.786,
-      "max_ms": 4.876,
+      "median_ms": 4.864,
+      "min_ms": 4.54,
+      "max_ms": 4.897,
       "runs": 10
     },
     {
       "label": "apply 1 target (slider delta)",
-      "median_ms": 0.037,
+      "median_ms": 0.036,
       "min_ms": 0.033,
-      "max_ms": 0.048,
+      "max_ms": 0.042,
       "runs": 200
     },
     {
       "label": "Catmull-Clark subdivide (build)",
-      "median_ms": 199.201,
-      "min_ms": 196.562,
-      "max_ms": 205.241,
+      "median_ms": 201.416,
+      "min_ms": 199.148,
+      "max_ms": 202.077,
       "runs": 3
     },
     {
       "label": "subdiv update_coords",
-      "median_ms": 7.806,
-      "min_ms": 7.735,
-      "max_ms": 7.834,
+      "median_ms": 7.931,
+      "min_ms": 7.907,
+      "max_ms": 7.964,
       "runs": 10
     },
     {
       "label": "subdiv calcNormals",
-      "median_ms": 20.999,
-      "min_ms": 20.252,
-      "max_ms": 21.339,
+      "median_ms": 21.356,
+      "min_ms": 20.76,
+      "max_ms": 22.005,
       "runs": 10
     }
   ],

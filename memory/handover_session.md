@@ -81,11 +81,44 @@ were **not** created. Scaffolding targets with no sources is exactly the
 speculative structure `philosophy.md` §2 rejects; each is added with its first
 real source file.
 
+### Code review — 11 findings, all fixed (2026-08-29 04:19:39)
+
+`/code-review --effort high` on `61f48893`. Every finding was reproduced by the
+reviewer with a probe binary and ASan, and each is now covered by a regression
+test in `tests/regression/test_review_findings.cpp` that fails on the old code.
+
+| # | Sev | Defect | Fix |
+|---|---|---|---|
+| 1 | HIGH | `maxValence_` was `uint8_t`; ≥256 incident faces wrapped it to 0, zeroing the adjacency stride so **every** vertex normal silently became the `{0,1,0}` fallback | widened to `uint32_t` (reference raises `RuntimeError` here, module3d.py:713-715) |
+| 2 | HIGH | `setFaces` left stale `vface_`; the staleness guard still held because `coord_` was unchanged, so `fnorm_` was indexed through dead face indices — ASan container-overflow | `setFaces` clears `vface_`/`nfaces_` |
+| 3 | HIGH | `calcFaceNormals` indexed `coord_[fvert_[...]]` unguarded while `setFaces` validated nothing — ASan heap-buffer-overflow | `setFaces` now validates every index and returns `std::expected<void, MeshError>` |
+| 4 | MED-HIGH | a malformed `v`/`vt` line was silently dropped, **shifting every later index** and loading a different mesh | returns `MalformedVertex` |
+| 5 | MED | `o` was treated as `g`, creating a spurious empty group and never setting the name; reproduced on the shipped `data/3dobjs/axis.obj` | `o` sets the name only (wavefront.py:128-129) |
+| 6 | MED | `f` with <3 corners silently ignored while >4 was a hard error | returns `DegenerateFace` |
+| 7 | LOW | `parseCorner` accepted trailing garbage, so `f 1x 2 3` parsed | end-of-token check, as `parseFloat` already had |
+| 8 | LOW | `maxValence()` documented as the reference's `MAX_FACES`, but the reference uses `max(maxFaces, maxpole, 4)` | doc corrected; caveat recorded in `todo.md` under Catmull-Clark |
+| 9 | LOW | `hasUV_` was order-dependent between `setUVs`/`setFaces` | `hasUV()` is now derived, not stored |
+| 10 | LOW | `setFaces` checked `faceGroup` size but not `faceUVs` | symmetric size check |
+| 11 | LOW | benchmark harness raised on empty `data/targets`, killing the run **before** writing its JSON | section guarded like sections 5-6 |
+
+Findings 1-3 and 4 are the ones that mattered: three were memory-safety defects
+and one silently produced a wrong mesh from a valid-looking file.
+
+One correction of my own during this work: my first regression test for finding 1
+used a *planar* fan, whose true normals legitimately are `{0,1,0}` — the same as
+the zero-guard fallback, so the test could not distinguish them. Rebuilt as a
+cone. A second iteration asserted `+Y` on the apex when the winding gives `-Y`;
+the sign is an artefact of my test geometry, not a property under test.
+
+**After fixes: 42/42 tests pass**, debug and release, and under ASan+UBSan.
+Release benchmark: load base.obj 5.2-10.6 ms (file-cache dependent) vs 211.8 ms.
+
 ### Next session starts here
 1. Run `memory/session_start.md` in full.
 2. `.clang-format` / `.clang-tidy`, then the CI workflow.
 3. `tools/capture_fixture.py` — golden fixtures gate every subsequent port step.
-4. Then M2 remainder: correct tangents, unweld/index buffer, Catmull-Clark.
+4. Then M2 remainder: correct tangents, unweld/index buffer, Catmull-Clark
+   (compute `maxpole` first — see the caveat in `todo.md`).
 
 ---
 

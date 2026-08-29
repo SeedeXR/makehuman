@@ -106,33 +106,41 @@ def main():
 
     sample = target_files[:200]
 
-    def load_targets():
-        algos3d._targetBuffer.clear()
-        for t in sample:
-            algos3d.getTarget(mesh, t)
+    # Guarded like sections 5 and 6: with data/targets missing or empty this
+    # section used to raise and kill the run before baseline_python.json was
+    # written, discarding the sections that had already succeeded.
+    if not sample:
+        results["targets_error"] = "no .target files found under data/targets"
+    else:
+        def load_targets():
+            algos3d._targetBuffer.clear()
+            for t in sample:
+                algos3d.getTarget(mesh, t)
 
-    results["results"].append(bench(f"load {len(sample)} targets (text parse)", load_targets, repeat=3))
+        results["results"].append(
+            bench(f"load {len(sample)} targets (text parse)", load_targets, repeat=3)
+        )
 
-    loaded = [algos3d.getTarget(mesh, t) for t in sample]
-    results["target_stats"] = {
-        "sampled": len(loaded),
-        "mean_affected_verts": round(statistics.mean(len(t.verts) for t in loaded), 1),
-        "max_affected_verts": max(len(t.verts) for t in loaded),
-    }
+        loaded = [algos3d.getTarget(mesh, t) for t in sample]
+        results["target_stats"] = {
+            "sampled": len(loaded),
+            "mean_affected_verts": round(statistics.mean(len(t.verts) for t in loaded), 1),
+            "max_affected_verts": max(len(t.verts) for t in loaded),
+        }
 
-    def apply_targets():
-        mesh.coord[...] = mesh.orig_coord
-        for t in loaded:
-            t.apply(mesh, 0.5, update=False, calcNormals=False)
+        def apply_targets():
+            mesh.coord[...] = mesh.orig_coord
+            for t in loaded:
+                t.apply(mesh, 0.5, update=False, calcNormals=False)
 
-    results["results"].append(
-        bench(f"apply {len(loaded)} targets @0.5 (full stack rebuild)", apply_targets, repeat=10)
-    )
+        results["results"].append(
+            bench(f"apply {len(loaded)} targets @0.5 (full stack rebuild)", apply_targets, repeat=10)
+        )
 
-    def apply_one():
-        loaded[0].apply(mesh, 0.5, update=False, calcNormals=False)
+        def apply_one():
+            loaded[0].apply(mesh, 0.5, update=False, calcNormals=False)
 
-    results["results"].append(bench("apply 1 target (slider delta)", apply_one, repeat=200))
+        results["results"].append(bench("apply 1 target (slider delta)", apply_one, repeat=200))
 
     # --- 5. subdivision ---------------------------------------------------
     try:

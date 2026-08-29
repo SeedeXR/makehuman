@@ -20,12 +20,34 @@ void Mesh::setCoords(std::vector<Vec3> coords) {
 
 void Mesh::setUVs(std::vector<Vec2> uvs) {
     texco_ = std::move(uvs);
-    hasUV_ = !texco_.empty();
 }
 
-void Mesh::setFaces(std::vector<uint32_t> faceVerts,
-                    std::vector<uint32_t> faceUVs,
-                    std::vector<uint16_t> faceGroup) {
+std::expected<void, MeshError>
+Mesh::setFaces(std::vector<uint32_t> faceVerts,
+               std::vector<uint32_t> faceUVs,
+               std::vector<uint16_t> faceGroup) {
+    const size_t vpp = vertsPerPrimitive_;
+    if (vpp == 0 || faceVerts.size() % vpp != 0) {
+        return std::unexpected(MeshError::FaceArraySizeMismatch);
+    }
+    if (!faceUVs.empty() && faceUVs.size() != faceVerts.size()) {
+        return std::unexpected(MeshError::UvArraySizeMismatch);
+    }
+
+    // Validate BEFORE mutating: calcFaceNormals and calcVertexNormals index
+    // coord_/texco_ through these arrays without bounds checks, so an invalid
+    // index here becomes an out-of-bounds read later.
+    const auto nVerts = static_cast<uint32_t>(coord_.size());
+    for (const uint32_t v : faceVerts) {
+        if (v >= nVerts) return std::unexpected(MeshError::VertexIndexOutOfRange);
+    }
+    if (!faceUVs.empty()) {
+        const auto nUVs = static_cast<uint32_t>(texco_.size());
+        for (const uint32_t t : faceUVs) {
+            if (t >= nUVs) return std::unexpected(MeshError::UvIndexOutOfRange);
+        }
+    }
+
     fvert_ = std::move(faceVerts);
     fuvs_  = std::move(faceUVs);
 
@@ -35,7 +57,12 @@ void Mesh::setFaces(std::vector<uint32_t> faceVerts,
         group_.assign(nFaces, 0);
     }
     fnorm_.assign(nFaces, Vec3{});
-    hasUV_ = hasUV_ && !fuvs_.empty();
+
+    // The face set just changed, so any adjacency built from the previous one
+    // is stale and its indices may point past the new fnorm_. Clearing forces
+    // calcVertexNormals to rebuild instead of reading through dead indices.
+    vface_.clear();
+    nfaces_.clear();
 
     // A triangle mesh is stored as quads with corner 0 repeated. The reference
     // decides this from the FIRST face only (module3d.py:634-639); a mixed
@@ -46,13 +73,13 @@ void Mesh::setFaces(std::vector<uint32_t> faceVerts,
     if (vertsPerPrimitive_ == 4 && nFaces > 0) {
         bool allDegenerate = true;
         for (size_t f = 0; f < nFaces; ++f) {
-            const size_t base = f * 4;
-            if (fvert_[base] != fvert_[base + 3]) { allDegenerate = false; break; }
+            if (fvert_[f * 4] != fvert_[f * 4 + 3]) { allDegenerate = false; break; }
         }
         if (allDegenerate) {
             vertsPerFaceForExport_ = 3;
         }
     }
+    return {};
 }
 
 uint16_t Mesh::addFaceGroup(std::string name) {
@@ -98,7 +125,10 @@ void Mesh::buildAdjacency() {
     }
 
     const uint32_t maxCount = counts.empty() ? 0U : *std::ranges::max_element(counts);
-    maxValence_ = static_cast<uint8_t>(std::max<uint32_t>(4U, maxCount));
+    // Floored at 4 (module3d.py:764-765). Kept 32-bit: a uint8_t silently wraps
+    // at 256 incident faces, which would zero the adjacency stride and turn
+    // every vertex normal into the zero-guard fallback with no diagnostic.
+    maxValence_ = std::max<uint32_t>(4U, maxCount);
 
     // Pass 2: fill. Flat array, stride = maxValence_.
     vface_.assign(nVerts * maxValence_, 0);
@@ -112,7 +142,7 @@ void Mesh::buildAdjacency() {
                 if (fvert_[f * vpp + p] == v) { seenInThisFace = true; break; }
             }
             if (seenInThisFace) continue;
-            uint8_t& n = nfaces_[v];
+            uint32_t& n = nfaces_[v];
             if (n < maxValence_) {
                 vface_[v * maxValence_ + n] = static_cast<uint32_t>(f);
                 ++n;
@@ -141,14 +171,14 @@ void Mesh::calcFaceNormals() {
 void Mesh::calcVertexNormals() {
     const size_t nVerts = coord_.size();
     vnorm_.assign(nVerts, Vec3{});
-    if (vface_.size() != nVerts * maxValence_) {
+    if (vface_.size() != nVerts * static_cast<size_t>(maxValence_)) {
         buildAdjacency();
     }
 
     for (size_t v = 0; v < nVerts; ++v) {
         Vec3 sum{};
-        const uint8_t n = nfaces_[v];
-        for (uint8_t k = 0; k < n; ++k) {
+        const uint32_t n = nfaces_[v];
+        for (uint32_t k = 0; k < n; ++k) {
             sum += fnorm_[vface_[v * maxValence_ + k]];
         }
         const float len = std::sqrt(dot(sum, sum));

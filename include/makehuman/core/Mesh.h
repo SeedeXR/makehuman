@@ -4,6 +4,7 @@
 #include "makehuman/core/Types.h"
 
 #include <cstdint>
+#include <expected>
 #include <optional>
 #include <span>
 #include <string>
@@ -11,6 +12,13 @@
 #include <vector>
 
 namespace mh::core {
+
+enum class MeshError {
+    VertexIndexOutOfRange,
+    UvIndexOutOfRange,
+    FaceArraySizeMismatch,   ///< faceVerts not a whole number of primitives
+    UvArraySizeMismatch,     ///< faceUVs present but not parallel to faceVerts
+};
 
 /// Indexed mesh with a uniform primitive size.
 ///
@@ -45,8 +53,12 @@ public:
         return vertsPerPrimitive_ ? fvert_.size() / vertsPerPrimitive_ : 0;
     }
     [[nodiscard]] size_t uvCount()     const noexcept { return texco_.size(); }
-    [[nodiscard]] bool   hasUV()       const noexcept { return hasUV_; }
-    [[nodiscard]] uint8_t maxValence() const noexcept { return maxValence_; }
+    /// True only when UVs exist AND faces carry UV indices. Derived rather than
+    /// stored, so it cannot go stale if setUVs/setFaces are called out of order.
+    [[nodiscard]] bool   hasUV()       const noexcept {
+        return !texco_.empty() && !fuvs_.empty();
+    }
+    [[nodiscard]] uint32_t maxValence() const noexcept { return maxValence_; }
 
     // -- data (read) --------------------------------------------------------
     [[nodiscard]] std::span<const Vec3> coord()     const noexcept { return coord_; }
@@ -67,12 +79,25 @@ public:
     void setCoords(std::vector<Vec3> coords);
     void setUVs(std::vector<Vec2> uvs);
 
+    /// Sets the face arrays, validating every index against the current vertex
+    /// and UV counts. Call setCoords() (and setUVs(), if any) first.
+    ///
+    /// On error the mesh is left unchanged. Validation happens here because
+    /// this is a public trust boundary: the reference's downstream code indexes
+    /// `coord[fvert[...]]` unguarded, so an out-of-range index read out of
+    /// bounds rather than reporting anything.
+    ///
     /// @param faceVerts  vertex index per corner, size = nFaces * vertsPerPrimitive
     /// @param faceUVs    UV index per corner, same size, or empty for no UVs
     /// @param faceGroup  group index per face, size = nFaces (empty -> all zero)
-    void setFaces(std::vector<uint32_t> faceVerts,
-                  std::vector<uint32_t> faceUVs,
-                  std::vector<uint16_t> faceGroup);
+    [[nodiscard]] std::expected<void, MeshError>
+    setFaces(std::vector<uint32_t> faceVerts,
+             std::vector<uint32_t> faceUVs,
+             std::vector<uint16_t> faceGroup);
+
+    /// Sets the mesh name. OBJ `o` statements route here, matching
+    /// wavefront.py:128-129 (which sets the name and creates no face group).
+    void setName(std::string name) { name_ = std::move(name); }
 
     uint16_t addFaceGroup(std::string name);
     [[nodiscard]] std::optional<uint16_t> findFaceGroup(std::string_view name) const;
@@ -84,7 +109,14 @@ public:
     // -- derived data -------------------------------------------------------
 
     /// Builds per-vertex face adjacency (`vface`/`nfaces` in the reference) and
-    /// sets `maxValence` to the true maximum, floored at 4.
+    /// sets `maxValence` to the maximum number of incident FACES, floored at 4.
+    ///
+    /// @warning This is **not** the reference's `MAX_FACES`. The reference takes
+    /// `max(maxIncidentFaces, maxpole, 4)` where `maxpole` counts distinct
+    /// neighbouring *vertices* (module3d.py:752-770), explicitly because
+    /// "catmull-clark expects maxpoles and not maxfaces". Both happen to be 5
+    /// for the shipped base mesh. A Catmull-Clark port must compute maxpole
+    /// separately rather than reusing this value.
     ///
     /// The reference does this in nested Python loops
     /// (module3d.py:697-770) and it is the single slowest operation in the
@@ -110,15 +142,14 @@ private:
     std::string name_;
     uint8_t     vertsPerPrimitive_{4};
     uint8_t     vertsPerFaceForExport_{4};
-    uint8_t     maxValence_{4};
-    bool        hasUV_{false};
+    uint32_t    maxValence_{4};
 
     // per-vertex
     std::vector<Vec3>     coord_;
     std::vector<Vec3>     origCoord_;
     std::vector<Vec3>     vnorm_;
     std::vector<uint32_t> vface_;   // flat, stride = maxValence_
-    std::vector<uint8_t>  nfaces_;
+    std::vector<uint32_t> nfaces_;
 
     // per-UV (independent index space)
     std::vector<Vec2> texco_;

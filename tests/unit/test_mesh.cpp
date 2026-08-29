@@ -15,7 +15,7 @@ Mesh makeUnitQuad() {
     m.setCoords({{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}});
     m.setUVs({{0, 0}, {1, 0}, {1, 1}, {0, 1}});
     m.addFaceGroup("g");
-    m.setFaces({0, 1, 2, 3}, {0, 1, 2, 3}, {0});
+    REQUIRE(m.setFaces({0, 1, 2, 3}, {0, 1, 2, 3}, {0}).has_value());
     m.buildAdjacency();
     return m;
 }
@@ -38,7 +38,7 @@ TEST_CASE("triangles stored as degenerate quads are tagged for export as tris",
     Mesh m("tri", 4);
     m.setCoords({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}});
     m.addFaceGroup("g");
-    m.setFaces({0, 1, 2, 0}, {}, {0});
+    REQUIRE(m.setFaces({0, 1, 2, 0}, {}, {0}).has_value());
     REQUIRE(m.vertsPerFaceForExport() == 3);
 }
 
@@ -76,7 +76,7 @@ TEST_CASE("adjacency counts a vertex once per face in a degenerate quad",
     Mesh m("tri", 4);
     m.setCoords({{0, 0, 0}, {1, 0, 0}, {0, 0, 1}});
     m.addFaceGroup("g");
-    m.setFaces({0, 1, 2, 0}, {}, {0});
+    REQUIRE(m.setFaces({0, 1, 2, 0}, {}, {0}).has_value());
     m.buildAdjacency();
     m.calcNormals();
     // Vertex 0 appears twice in the quad but belongs to one face; its normal
@@ -102,7 +102,7 @@ TEST_CASE("height is the Y extent in decimetres scaled to centimetres",
     Mesh m("bar", 4);
     m.setCoords({{0, 0, 0}, {1, 17.5F, 0}, {1, 17.5F, 1}, {0, 0, 1}});
     m.addFaceGroup("g");
-    m.setFaces({0, 1, 2, 3}, {}, {0});
+    REQUIRE(m.setFaces({0, 1, 2, 3}, {}, {0}).has_value());
     REQUIRE_THAT(m.heightCm(), WithinAbs(175.0, 1e-4));
 }
 

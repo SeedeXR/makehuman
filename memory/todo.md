@@ -48,6 +48,12 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [ ] Unweld / index-buffer build (`vmap`/`tmap`/`grpix`)
 - [ ] Dirty-range tracking replacing `ucoor`/`unorm`/…
 - [ ] Catmull-Clark subdivision — parity on 75,008 verts
+      **Caveat:** `Mesh::maxValence()` is max incident *faces*, NOT the reference's
+      `MAX_FACES`, which is `max(maxIncidentFaces, maxpole, 4)` where `maxpole`
+      counts distinct neighbouring *vertices* (`module3d.py:752-770`) — the
+      reference does this explicitly because "catmull-clark expects maxpoles and
+      not maxfaces". Both are 5 on the base mesh, so the golden test passes
+      coincidentally. Compute maxpole separately before porting subdivision.
 - [ ] Heterogeneous lookup in `findFaceGroup` (currently allocates a `std::string`)
 
 ## M3 — Targets and modifiers (`mh-core`)
