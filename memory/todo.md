@@ -93,7 +93,11 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [x] Ethnic renormalisation incl. all three degenerate branches
 - [x] Macro value table: **27 values / 9 categories** (an earlier note here said
       26 — wrong; `age` has four values, not three)
-- [ ] Modifier hierarchy: Simple / Universal / Macro / Ethnic
+- [x] Modifier hierarchy (Universal / Macro / Ethnic) + `*_modifiers.json` loader.
+      **Exact parity on all 291 shipped modifiers**: full name, range, kind and
+      per-side target groups.
+- [x] `Human` — macro scalars, slider values, and the weighted target stack
+      (zero weights never stored, as `human.py:918-921` requires)
 - [x] Target index (`TargetIndex`): filename tokenisation on `-`, `_`, `.` into
       group key + macro dependencies. **Exact parity: 653 groups / 1,280
       components**, every group name and size matching the reference.
@@ -101,6 +105,8 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
       (`humanmodifier.py:644-652`)
 - [ ] `weight = value × Π factors`
 - [ ] `applyStack` — incremental, not full-reset-and-replay
+- [ ] End-to-end `.mhm` round trip: load a real model file and compare final
+      vertex positions against the reference
 - [ ] **Parity fixtures**: default stack, extreme macro combinations, every modifier at ±1
 - [ ] `data/modifiers/*.json` loader
 

@@ -1,0 +1,291 @@
+armslegs/l-foot-scale-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-foot-scale-decr	armslegs-l-foot-scale-incr	
+armslegs/l-foot-trans-backward|forward	-1.0	1.0	UniversalModifier	armslegs-l-foot-trans-backward	armslegs-l-foot-trans-forward	
+armslegs/l-foot-trans-in|out	-1.0	1.0	UniversalModifier	armslegs-l-foot-trans-in	armslegs-l-foot-trans-out	
+armslegs/l-hand-fingers-diameter-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-hand-fingers-diameter-decr	armslegs-l-hand-fingers-diameter-incr	
+armslegs/l-hand-fingers-distance-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-hand-fingers-distance-decr	armslegs-l-hand-fingers-distance-incr	
+armslegs/l-hand-fingers-length-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-hand-fingers-length-decr	armslegs-l-hand-fingers-length-incr	
+armslegs/l-hand-scale-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-hand-scale-decr	armslegs-l-hand-scale-incr	
+armslegs/l-hand-trans-in|out	-1.0	1.0	UniversalModifier	armslegs-l-hand-trans-in	armslegs-l-hand-trans-out	
+armslegs/l-leg-valgus-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-leg-valgus-decr	armslegs-l-leg-valgus-incr	
+armslegs/l-lowerarm-fat-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-lowerarm-fat-decr	armslegs-l-lowerarm-fat-incr	
+armslegs/l-lowerarm-muscle-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-lowerarm-muscle-decr	armslegs-l-lowerarm-muscle-incr	
+armslegs/l-lowerarm-scale-depth-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-lowerarm-scale-depth-decr	armslegs-l-lowerarm-scale-depth-incr	
+armslegs/l-lowerarm-scale-horiz-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-lowerarm-scale-horiz-decr	armslegs-l-lowerarm-scale-horiz-incr	
+armslegs/l-lowerarm-scale-vert-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-lowerarm-scale-vert-decr	armslegs-l-lowerarm-scale-vert-incr	
+armslegs/l-lowerleg-fat-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-lowerleg-fat-decr	armslegs-l-lowerleg-fat-incr	
+armslegs/l-lowerleg-muscle-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-lowerleg-muscle-decr	armslegs-l-lowerleg-muscle-incr	
+armslegs/l-lowerleg-scale-depth-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-lowerleg-scale-depth-decr	armslegs-l-lowerleg-scale-depth-incr	
+armslegs/l-lowerleg-scale-horiz-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-lowerleg-scale-horiz-decr	armslegs-l-lowerleg-scale-horiz-incr	
+armslegs/l-upperarm-fat-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-upperarm-fat-decr	armslegs-l-upperarm-fat-incr	
+armslegs/l-upperarm-muscle-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-upperarm-muscle-decr	armslegs-l-upperarm-muscle-incr	
+armslegs/l-upperarm-scale-depth-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-upperarm-scale-depth-decr	armslegs-l-upperarm-scale-depth-incr	
+armslegs/l-upperarm-scale-horiz-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-upperarm-scale-horiz-decr	armslegs-l-upperarm-scale-horiz-incr	
+armslegs/l-upperarm-scale-vert-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-upperarm-scale-vert-decr	armslegs-l-upperarm-scale-vert-incr	
+armslegs/l-upperarm-shoulder-muscle-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-upperarm-shoulder-muscle-decr	armslegs-l-upperarm-shoulder-muscle-incr	
+armslegs/l-upperleg-fat-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-upperleg-fat-decr	armslegs-l-upperleg-fat-incr	
+armslegs/l-upperleg-muscle-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-upperleg-muscle-decr	armslegs-l-upperleg-muscle-incr	
+armslegs/l-upperleg-scale-depth-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-upperleg-scale-depth-decr	armslegs-l-upperleg-scale-depth-incr	
+armslegs/l-upperleg-scale-horiz-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-upperleg-scale-horiz-decr	armslegs-l-upperleg-scale-horiz-incr	
+armslegs/l-upperleg-scale-vert-decr|incr	-1.0	1.0	UniversalModifier	armslegs-l-upperleg-scale-vert-decr	armslegs-l-upperleg-scale-vert-incr	
+armslegs/lowerlegs-height-decr|incr	-1.0	1.0	UniversalModifier	armslegs-lowerlegs-height-decr	armslegs-lowerlegs-height-incr	
+armslegs/r-foot-scale-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-foot-scale-decr	armslegs-r-foot-scale-incr	
+armslegs/r-foot-trans-backward|forward	-1.0	1.0	UniversalModifier	armslegs-r-foot-trans-backward	armslegs-r-foot-trans-forward	
+armslegs/r-foot-trans-in|out	-1.0	1.0	UniversalModifier	armslegs-r-foot-trans-in	armslegs-r-foot-trans-out	
+armslegs/r-hand-fingers-diameter-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-hand-fingers-diameter-decr	armslegs-r-hand-fingers-diameter-incr	
+armslegs/r-hand-fingers-distance-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-hand-fingers-distance-decr	armslegs-r-hand-fingers-distance-incr	
+armslegs/r-hand-fingers-length-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-hand-fingers-length-decr	armslegs-r-hand-fingers-length-incr	
+armslegs/r-hand-scale-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-hand-scale-decr	armslegs-r-hand-scale-incr	
+armslegs/r-hand-trans-in|out	-1.0	1.0	UniversalModifier	armslegs-r-hand-trans-in	armslegs-r-hand-trans-out	
+armslegs/r-leg-valgus-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-leg-valgus-decr	armslegs-r-leg-valgus-incr	
+armslegs/r-lowerarm-fat-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-lowerarm-fat-decr	armslegs-r-lowerarm-fat-incr	
+armslegs/r-lowerarm-muscle-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-lowerarm-muscle-decr	armslegs-r-lowerarm-muscle-incr	
+armslegs/r-lowerarm-scale-depth-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-lowerarm-scale-depth-decr	armslegs-r-lowerarm-scale-depth-incr	
+armslegs/r-lowerarm-scale-horiz-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-lowerarm-scale-horiz-decr	armslegs-r-lowerarm-scale-horiz-incr	
+armslegs/r-lowerarm-scale-vert-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-lowerarm-scale-vert-decr	armslegs-r-lowerarm-scale-vert-incr	
+armslegs/r-lowerleg-fat-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-lowerleg-fat-decr	armslegs-r-lowerleg-fat-incr	
+armslegs/r-lowerleg-muscle-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-lowerleg-muscle-decr	armslegs-r-lowerleg-muscle-incr	
+armslegs/r-lowerleg-scale-depth-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-lowerleg-scale-depth-decr	armslegs-r-lowerleg-scale-depth-incr	
+armslegs/r-lowerleg-scale-horiz-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-lowerleg-scale-horiz-decr	armslegs-r-lowerleg-scale-horiz-incr	
+armslegs/r-upperarm-fat-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-upperarm-fat-decr	armslegs-r-upperarm-fat-incr	
+armslegs/r-upperarm-muscle-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-upperarm-muscle-decr	armslegs-r-upperarm-muscle-incr	
+armslegs/r-upperarm-scale-depth-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-upperarm-scale-depth-decr	armslegs-r-upperarm-scale-depth-incr	
+armslegs/r-upperarm-scale-horiz-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-upperarm-scale-horiz-decr	armslegs-r-upperarm-scale-horiz-incr	
+armslegs/r-upperarm-scale-vert-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-upperarm-scale-vert-decr	armslegs-r-upperarm-scale-vert-incr	
+armslegs/r-upperarm-shoulder-muscle-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-upperarm-shoulder-muscle-decr	armslegs-r-upperarm-shoulder-muscle-incr	
+armslegs/r-upperleg-fat-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-upperleg-fat-decr	armslegs-r-upperleg-fat-incr	
+armslegs/r-upperleg-muscle-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-upperleg-muscle-decr	armslegs-r-upperleg-muscle-incr	
+armslegs/r-upperleg-scale-depth-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-upperleg-scale-depth-decr	armslegs-r-upperleg-scale-depth-incr	
+armslegs/r-upperleg-scale-horiz-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-upperleg-scale-horiz-decr	armslegs-r-upperleg-scale-horiz-incr	
+armslegs/r-upperleg-scale-vert-decr|incr	-1.0	1.0	UniversalModifier	armslegs-r-upperleg-scale-vert-decr	armslegs-r-upperleg-scale-vert-incr	
+armslegs/upperlegs-height-decr|incr	-1.0	1.0	UniversalModifier	armslegs-upperlegs-height-decr	armslegs-upperlegs-height-incr	
+bodyshapes/bodyshapes-elvs-fem-adrenal	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-fem-adrenal	
+bodyshapes/bodyshapes-elvs-fem-apple	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-fem-apple	
+bodyshapes/bodyshapes-elvs-fem-diamond	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-fem-diamond	
+bodyshapes/bodyshapes-elvs-fem-full-hourglass	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-fem-full-hourglass	
+bodyshapes/bodyshapes-elvs-fem-invert-triangle	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-fem-invert-triangle	
+bodyshapes/bodyshapes-elvs-fem-lean-column	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-fem-lean-column	
+bodyshapes/bodyshapes-elvs-fem-liver	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-fem-liver	
+bodyshapes/bodyshapes-elvs-fem-neat-hourglass	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-fem-neat-hourglass	
+bodyshapes/bodyshapes-elvs-fem-ovary	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-fem-ovary	
+bodyshapes/bodyshapes-elvs-fem-rectangle	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-fem-rectangle	
+bodyshapes/bodyshapes-elvs-fem-thyroid	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-fem-thyroid	
+bodyshapes/bodyshapes-elvs-fem-triangle	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-fem-triangle	
+bodyshapes/bodyshapes-elvs-man-adrenal	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-man-adrenal	
+bodyshapes/bodyshapes-elvs-man-apple	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-man-apple	
+bodyshapes/bodyshapes-elvs-man-gonadal	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-man-gonadal	
+bodyshapes/bodyshapes-elvs-man-invert-triangle	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-man-invert-triangle	
+bodyshapes/bodyshapes-elvs-man-lean-column	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-man-lean-column	
+bodyshapes/bodyshapes-elvs-man-liver	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-man-liver	
+bodyshapes/bodyshapes-elvs-man-rectangle	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-man-rectangle	
+bodyshapes/bodyshapes-elvs-man-thyroid	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-man-thyroid	
+bodyshapes/bodyshapes-elvs-man-trapezoid	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-man-trapezoid	
+bodyshapes/bodyshapes-elvs-man-triangle	0.0	1.0	UniversalModifier		bodyshapes-bodyshapes-elvs-man-triangle	
+breast/BreastFirmness	0.0	1.0	MacroModifier			
+breast/BreastSize	0.0	1.0	MacroModifier			
+breast/breast-dist-decr|incr	-1.0	1.0	UniversalModifier	breast-breast-dist-decr	breast-breast-dist-incr	
+breast/breast-point-decr|incr	-1.0	1.0	UniversalModifier	breast-breast-point-decr	breast-breast-point-incr	
+breast/breast-trans-down|up	-1.0	1.0	UniversalModifier	breast-breast-trans-down	breast-breast-trans-up	
+breast/breast-volume-vert-down|up	-1.0	1.0	UniversalModifier	breast-breast-volume-vert-down	breast-breast-volume-vert-up	
+breast/nipple-point-decr|incr	-1.0	1.0	UniversalModifier	breast-nipple-point-decr	breast-nipple-point-incr	
+breast/nipple-size-decr|incr	-1.0	1.0	UniversalModifier	breast-nipple-size-decr	breast-nipple-size-incr	
+buttocks/buttocks-volume-decr|incr	-1.0	1.0	UniversalModifier	buttocks-buttocks-volume-decr	buttocks-buttocks-volume-incr	
+cheek/l-cheek-bones-decr|incr	-1.0	1.0	UniversalModifier	cheek-l-cheek-bones-decr	cheek-l-cheek-bones-incr	
+cheek/l-cheek-inner-decr|incr	-1.0	1.0	UniversalModifier	cheek-l-cheek-inner-decr	cheek-l-cheek-inner-incr	
+cheek/l-cheek-trans-down|up	-1.0	1.0	UniversalModifier	cheek-l-cheek-trans-down	cheek-l-cheek-trans-up	
+cheek/l-cheek-volume-decr|incr	-1.0	1.0	UniversalModifier	cheek-l-cheek-volume-decr	cheek-l-cheek-volume-incr	
+cheek/r-cheek-bones-decr|incr	-1.0	1.0	UniversalModifier	cheek-r-cheek-bones-decr	cheek-r-cheek-bones-incr	
+cheek/r-cheek-inner-decr|incr	-1.0	1.0	UniversalModifier	cheek-r-cheek-inner-decr	cheek-r-cheek-inner-incr	
+cheek/r-cheek-trans-down|up	-1.0	1.0	UniversalModifier	cheek-r-cheek-trans-down	cheek-r-cheek-trans-up	
+cheek/r-cheek-volume-decr|incr	-1.0	1.0	UniversalModifier	cheek-r-cheek-volume-decr	cheek-r-cheek-volume-incr	
+chin/chin-bones-decr|incr	-1.0	1.0	UniversalModifier	chin-chin-bones-decr	chin-chin-bones-incr	
+chin/chin-cleft-decr|incr	-1.0	1.0	UniversalModifier	chin-chin-cleft-decr	chin-chin-cleft-incr	
+chin/chin-height-decr|incr	-1.0	1.0	UniversalModifier	chin-chin-height-decr	chin-chin-height-incr	
+chin/chin-jaw-drop-decr|incr	-1.0	1.0	UniversalModifier	chin-chin-jaw-drop-decr	chin-chin-jaw-drop-incr	
+chin/chin-prognathism-decr|incr	-1.0	1.0	UniversalModifier	chin-chin-prognathism-decr	chin-chin-prognathism-incr	
+chin/chin-prominent-decr|incr	-1.0	1.0	UniversalModifier	chin-chin-prominent-decr	chin-chin-prominent-incr	
+chin/chin-width-decr|incr	-1.0	1.0	UniversalModifier	chin-chin-width-decr	chin-chin-width-incr	
+ears/l-ear-flap-decr|incr	-1.0	1.0	UniversalModifier	ears-l-ear-flap-decr	ears-l-ear-flap-incr	
+ears/l-ear-lobe-decr|incr	-1.0	1.0	UniversalModifier	ears-l-ear-lobe-decr	ears-l-ear-lobe-incr	
+ears/l-ear-rot-backward|forward	-1.0	1.0	UniversalModifier	ears-l-ear-rot-backward	ears-l-ear-rot-forward	
+ears/l-ear-scale-decr|incr	-1.0	1.0	UniversalModifier	ears-l-ear-scale-decr	ears-l-ear-scale-incr	
+ears/l-ear-scale-depth-decr|incr	-1.0	1.0	UniversalModifier	ears-l-ear-scale-depth-decr	ears-l-ear-scale-depth-incr	
+ears/l-ear-scale-vert-decr|incr	-1.0	1.0	UniversalModifier	ears-l-ear-scale-vert-decr	ears-l-ear-scale-vert-incr	
+ears/l-ear-shape-pointed|triangle	-1.0	1.0	UniversalModifier	ears-l-ear-shape-pointed	ears-l-ear-shape-triangle	
+ears/l-ear-shape-square|round	-1.0	1.0	UniversalModifier	ears-l-ear-shape-square	ears-l-ear-shape-round	
+ears/l-ear-trans-backward|forward	-1.0	1.0	UniversalModifier	ears-l-ear-trans-backward	ears-l-ear-trans-forward	
+ears/l-ear-trans-down|up	-1.0	1.0	UniversalModifier	ears-l-ear-trans-down	ears-l-ear-trans-up	
+ears/l-ear-wing-decr|incr	-1.0	1.0	UniversalModifier	ears-l-ear-wing-decr	ears-l-ear-wing-incr	
+ears/r-ear-flap-decr|incr	-1.0	1.0	UniversalModifier	ears-r-ear-flap-decr	ears-r-ear-flap-incr	
+ears/r-ear-lobe-decr|incr	-1.0	1.0	UniversalModifier	ears-r-ear-lobe-decr	ears-r-ear-lobe-incr	
+ears/r-ear-rot-backward|forward	-1.0	1.0	UniversalModifier	ears-r-ear-rot-backward	ears-r-ear-rot-forward	
+ears/r-ear-scale-decr|incr	-1.0	1.0	UniversalModifier	ears-r-ear-scale-decr	ears-r-ear-scale-incr	
+ears/r-ear-scale-depth-decr|incr	-1.0	1.0	UniversalModifier	ears-r-ear-scale-depth-decr	ears-r-ear-scale-depth-incr	
+ears/r-ear-scale-vert-decr|incr	-1.0	1.0	UniversalModifier	ears-r-ear-scale-vert-decr	ears-r-ear-scale-vert-incr	
+ears/r-ear-shape-pointed|triangle	-1.0	1.0	UniversalModifier	ears-r-ear-shape-pointed	ears-r-ear-shape-triangle	
+ears/r-ear-shape-square|round	-1.0	1.0	UniversalModifier	ears-r-ear-shape-square	ears-r-ear-shape-round	
+ears/r-ear-trans-backward|forward	-1.0	1.0	UniversalModifier	ears-r-ear-trans-backward	ears-r-ear-trans-forward	
+ears/r-ear-trans-down|up	-1.0	1.0	UniversalModifier	ears-r-ear-trans-down	ears-r-ear-trans-up	
+ears/r-ear-wing-decr|incr	-1.0	1.0	UniversalModifier	ears-r-ear-wing-decr	ears-r-ear-wing-incr	
+eyebrows/eyebrows-angle-down|up	-1.0	1.0	UniversalModifier	eyebrows-eyebrows-angle-down	eyebrows-eyebrows-angle-up	
+eyebrows/eyebrows-trans-backward|forward	-1.0	1.0	UniversalModifier	eyebrows-eyebrows-trans-backward	eyebrows-eyebrows-trans-forward	
+eyebrows/eyebrows-trans-down|up	-1.0	1.0	UniversalModifier	eyebrows-eyebrows-trans-down	eyebrows-eyebrows-trans-up	
+eyes/l-eye-bag-decr|incr	-1.0	1.0	UniversalModifier	eyes-l-eye-bag-decr	eyes-l-eye-bag-incr	
+eyes/l-eye-bag-height-decr|incr	-1.0	1.0	UniversalModifier	eyes-l-eye-bag-height-decr	eyes-l-eye-bag-height-incr	
+eyes/l-eye-bag-in|out	-1.0	1.0	UniversalModifier	eyes-l-eye-bag-in	eyes-l-eye-bag-out	
+eyes/l-eye-corner1-down|up	-1.0	1.0	UniversalModifier	eyes-l-eye-corner1-down	eyes-l-eye-corner1-up	
+eyes/l-eye-corner2-down|up	-1.0	1.0	UniversalModifier	eyes-l-eye-corner2-down	eyes-l-eye-corner2-up	
+eyes/l-eye-epicanthus-in|out	-1.0	1.0	UniversalModifier	eyes-l-eye-epicanthus-in	eyes-l-eye-epicanthus-out	
+eyes/l-eye-eyefold-angle-down|up	-1.0	1.0	UniversalModifier	eyes-l-eye-eyefold-angle-down	eyes-l-eye-eyefold-angle-up	
+eyes/l-eye-eyefold-concave|convex	-1.0	1.0	UniversalModifier	eyes-l-eye-eyefold-concave	eyes-l-eye-eyefold-convex	
+eyes/l-eye-eyefold-down|up	-1.0	1.0	UniversalModifier	eyes-l-eye-eyefold-down	eyes-l-eye-eyefold-up	
+eyes/l-eye-height1-decr|incr	-1.0	1.0	UniversalModifier	eyes-l-eye-height1-decr	eyes-l-eye-height1-incr	
+eyes/l-eye-height2-decr|incr	-1.0	1.0	UniversalModifier	eyes-l-eye-height2-decr	eyes-l-eye-height2-incr	
+eyes/l-eye-height3-decr|incr	-1.0	1.0	UniversalModifier	eyes-l-eye-height3-decr	eyes-l-eye-height3-incr	
+eyes/l-eye-push1-in|out	-1.0	1.0	UniversalModifier	eyes-l-eye-push1-in	eyes-l-eye-push1-out	
+eyes/l-eye-push2-in|out	-1.0	1.0	UniversalModifier	eyes-l-eye-push2-in	eyes-l-eye-push2-out	
+eyes/l-eye-scale-decr|incr	-1.0	1.0	UniversalModifier	eyes-l-eye-scale-decr	eyes-l-eye-scale-incr	
+eyes/l-eye-trans-down|up	-1.0	1.0	UniversalModifier	eyes-l-eye-trans-down	eyes-l-eye-trans-up	
+eyes/l-eye-trans-in|out	-1.0	1.0	UniversalModifier	eyes-l-eye-trans-in	eyes-l-eye-trans-out	
+eyes/r-eye-bag-decr|incr	-1.0	1.0	UniversalModifier	eyes-r-eye-bag-decr	eyes-r-eye-bag-incr	
+eyes/r-eye-bag-height-decr|incr	-1.0	1.0	UniversalModifier	eyes-r-eye-bag-height-decr	eyes-r-eye-bag-height-incr	
+eyes/r-eye-bag-in|out	-1.0	1.0	UniversalModifier	eyes-r-eye-bag-in	eyes-r-eye-bag-out	
+eyes/r-eye-corner1-down|up	-1.0	1.0	UniversalModifier	eyes-r-eye-corner1-down	eyes-r-eye-corner1-up	
+eyes/r-eye-corner2-down|up	-1.0	1.0	UniversalModifier	eyes-r-eye-corner2-down	eyes-r-eye-corner2-up	
+eyes/r-eye-epicanthus-in|out	-1.0	1.0	UniversalModifier	eyes-r-eye-epicanthus-in	eyes-r-eye-epicanthus-out	
+eyes/r-eye-eyefold-angle-down|up	-1.0	1.0	UniversalModifier	eyes-r-eye-eyefold-angle-down	eyes-r-eye-eyefold-angle-up	
+eyes/r-eye-eyefold-concave|convex	-1.0	1.0	UniversalModifier	eyes-r-eye-eyefold-concave	eyes-r-eye-eyefold-convex	
+eyes/r-eye-eyefold-down|up	-1.0	1.0	UniversalModifier	eyes-r-eye-eyefold-down	eyes-r-eye-eyefold-up	
+eyes/r-eye-height1-decr|incr	-1.0	1.0	UniversalModifier	eyes-r-eye-height1-decr	eyes-r-eye-height1-incr	
+eyes/r-eye-height2-decr|incr	-1.0	1.0	UniversalModifier	eyes-r-eye-height2-decr	eyes-r-eye-height2-incr	
+eyes/r-eye-height3-decr|incr	-1.0	1.0	UniversalModifier	eyes-r-eye-height3-decr	eyes-r-eye-height3-incr	
+eyes/r-eye-push1-in|out	-1.0	1.0	UniversalModifier	eyes-r-eye-push1-in	eyes-r-eye-push1-out	
+eyes/r-eye-push2-in|out	-1.0	1.0	UniversalModifier	eyes-r-eye-push2-in	eyes-r-eye-push2-out	
+eyes/r-eye-scale-decr|incr	-1.0	1.0	UniversalModifier	eyes-r-eye-scale-decr	eyes-r-eye-scale-incr	
+eyes/r-eye-trans-down|up	-1.0	1.0	UniversalModifier	eyes-r-eye-trans-down	eyes-r-eye-trans-up	
+eyes/r-eye-trans-in|out	-1.0	1.0	UniversalModifier	eyes-r-eye-trans-in	eyes-r-eye-trans-out	
+forehead/forehead-nubian-decr|incr	-1.0	1.0	UniversalModifier	forehead-forehead-nubian-decr	forehead-forehead-nubian-incr	
+forehead/forehead-scale-vert-decr|incr	-1.0	1.0	UniversalModifier	forehead-forehead-scale-vert-decr	forehead-forehead-scale-vert-incr	
+forehead/forehead-temple-decr|incr	-1.0	1.0	UniversalModifier	forehead-forehead-temple-decr	forehead-forehead-temple-incr	
+forehead/forehead-trans-backward|forward	-1.0	1.0	UniversalModifier	forehead-forehead-trans-backward	forehead-forehead-trans-forward	
+genitals/penis-circ-decr|incr	-1.0	1.0	UniversalModifier	genitals-penis-circ-decr	genitals-penis-circ-incr	
+genitals/penis-length-decr|incr	-1.0	1.0	UniversalModifier	genitals-penis-length-decr	genitals-penis-length-incr	
+genitals/penis-testicles-decr|incr	-1.0	1.0	UniversalModifier	genitals-penis-testicles-decr	genitals-penis-testicles-incr	
+head/head-age-decr|incr	-1.0	1.0	UniversalModifier	head-head-age-decr	head-head-age-incr	
+head/head-angle-in|out	-1.0	1.0	UniversalModifier	head-head-angle-in	head-head-angle-out	
+head/head-back-scale-depth-decr|incr	-1.0	1.0	UniversalModifier	head-head-back-scale-depth-decr	head-head-back-scale-depth-incr	
+head/head-diamond	0.0	1.0	UniversalModifier		head-head-diamond	
+head/head-fat-decr|incr	-1.0	1.0	UniversalModifier	head-head-fat-decr	head-head-fat-incr	
+head/head-invertedtriangular	0.0	1.0	UniversalModifier		head-head-invertedtriangular	
+head/head-oval	0.0	1.0	UniversalModifier		head-head-oval	
+head/head-rectangular	0.0	1.0	UniversalModifier		head-head-rectangular	
+head/head-round	0.0	1.0	UniversalModifier		head-head-round	
+head/head-scale-depth-decr|incr	-1.0	1.0	UniversalModifier	head-head-scale-depth-decr	head-head-scale-depth-incr	
+head/head-scale-horiz-decr|incr	-1.0	1.0	UniversalModifier	head-head-scale-horiz-decr	head-head-scale-horiz-incr	
+head/head-scale-vert-decr|incr	-1.0	1.0	UniversalModifier	head-head-scale-vert-decr	head-head-scale-vert-incr	
+head/head-square	0.0	1.0	UniversalModifier		head-head-square	
+head/head-trans-backward|forward	-1.0	1.0	UniversalModifier	head-head-trans-backward	head-head-trans-forward	
+head/head-trans-down|up	-1.0	1.0	UniversalModifier	head-head-trans-down	head-head-trans-up	
+head/head-trans-in|out	-1.0	1.0	UniversalModifier	head-head-trans-in	head-head-trans-out	
+head/head-triangular	0.0	1.0	UniversalModifier		head-head-triangular	
+hip/hip-scale-depth-decr|incr	-1.0	1.0	UniversalModifier	hip-hip-scale-depth-decr	hip-hip-scale-depth-incr	
+hip/hip-scale-horiz-decr|incr	-1.0	1.0	UniversalModifier	hip-hip-scale-horiz-decr	hip-hip-scale-horiz-incr	
+hip/hip-scale-vert-decr|incr	-1.0	1.0	UniversalModifier	hip-hip-scale-vert-decr	hip-hip-scale-vert-incr	
+hip/hip-trans-backward|forward	-1.0	1.0	UniversalModifier	hip-hip-trans-backward	hip-hip-trans-forward	
+hip/hip-trans-down|up	-1.0	1.0	UniversalModifier	hip-hip-trans-down	hip-hip-trans-up	
+hip/hip-trans-in|out	-1.0	1.0	UniversalModifier	hip-hip-trans-in	hip-hip-trans-out	
+hip/hip-waist-down|up	-1.0	1.0	UniversalModifier	hip-hip-waist-down	hip-hip-waist-up	
+macrodetails-height/Height	0.0	1.0	MacroModifier			
+macrodetails-proportions/BodyProportions	0.0	1.0	MacroModifier			
+macrodetails-universal/Muscle	0.0	1.0	MacroModifier			
+macrodetails-universal/Weight	0.0	1.0	MacroModifier			
+macrodetails/African	0.0	1.0	EthnicModifier			
+macrodetails/Age	0.0	1.0	MacroModifier			
+macrodetails/Asian	0.0	1.0	EthnicModifier			
+macrodetails/Caucasian	0.0	1.0	EthnicModifier			
+macrodetails/Gender	0.0	1.0	MacroModifier			
+measure/measure-ankle-circ-decr|incr	-1.0	1.0	UniversalModifier	measure-measure-ankle-circ-decr	measure-measure-ankle-circ-incr	
+measure/measure-bust-circ-decr|incr	-1.0	1.0	UniversalModifier	measure-measure-bust-circ-decr	measure-measure-bust-circ-incr	
+measure/measure-calf-circ-decr|incr	-1.0	1.0	UniversalModifier	measure-measure-calf-circ-decr	measure-measure-calf-circ-incr	
+measure/measure-frontchest-dist-decr|incr	-1.0	1.0	UniversalModifier	measure-measure-frontchest-dist-decr	measure-measure-frontchest-dist-incr	
+measure/measure-hips-circ-decr|incr	-1.0	1.0	UniversalModifier	measure-measure-hips-circ-decr	measure-measure-hips-circ-incr	
+measure/measure-knee-circ-decr|incr	-1.0	1.0	UniversalModifier	measure-measure-knee-circ-decr	measure-measure-knee-circ-incr	
+measure/measure-lowerarm-length-decr|incr	-1.0	1.0	UniversalModifier	measure-measure-lowerarm-length-decr	measure-measure-lowerarm-length-incr	
+measure/measure-lowerleg-height-decr|incr	-1.0	1.0	UniversalModifier	measure-measure-lowerleg-height-decr	measure-measure-lowerleg-height-incr	
+measure/measure-napetowaist-dist-decr|incr	-1.0	1.0	UniversalModifier	measure-measure-napetowaist-dist-decr	measure-measure-napetowaist-dist-incr	
+measure/measure-neck-circ-decr|incr	-1.0	1.0	UniversalModifier	measure-measure-neck-circ-decr	measure-measure-neck-circ-incr	
+measure/measure-neck-height-decr|incr	-1.0	1.0	UniversalModifier	measure-measure-neck-height-decr	measure-measure-neck-height-incr	
+measure/measure-shoulder-dist-decr|incr	-1.0	1.0	UniversalModifier	measure-measure-shoulder-dist-decr	measure-measure-shoulder-dist-incr	
+measure/measure-thigh-circ-decr|incr	-1.0	1.0	UniversalModifier	measure-measure-thigh-circ-decr	measure-measure-thigh-circ-incr	
+measure/measure-underbust-circ-decr|incr	-1.0	1.0	UniversalModifier	measure-measure-underbust-circ-decr	measure-measure-underbust-circ-incr	
+measure/measure-upperarm-circ-decr|incr	-1.0	1.0	UniversalModifier	measure-measure-upperarm-circ-decr	measure-measure-upperarm-circ-incr	
+measure/measure-upperarm-length-decr|incr	-1.0	1.0	UniversalModifier	measure-measure-upperarm-length-decr	measure-measure-upperarm-length-incr	
+measure/measure-upperleg-height-decr|incr	-1.0	1.0	UniversalModifier	measure-measure-upperleg-height-decr	measure-measure-upperleg-height-incr	
+measure/measure-waist-circ-decr|incr	-1.0	1.0	UniversalModifier	measure-measure-waist-circ-decr	measure-measure-waist-circ-incr	
+measure/measure-waisttohip-dist-decr|incr	-1.0	1.0	UniversalModifier	measure-measure-waisttohip-dist-decr	measure-measure-waisttohip-dist-incr	
+measure/measure-wrist-circ-decr|incr	-1.0	1.0	UniversalModifier	measure-measure-wrist-circ-decr	measure-measure-wrist-circ-incr	
+mouth/mouth-angles-down|up	-1.0	1.0	UniversalModifier	mouth-mouth-angles-down	mouth-mouth-angles-up	
+mouth/mouth-cupidsbow-decr|incr	-1.0	1.0	UniversalModifier	mouth-mouth-cupidsbow-decr	mouth-mouth-cupidsbow-incr	
+mouth/mouth-cupidsbow-width-decr|incr	-1.0	1.0	UniversalModifier	mouth-mouth-cupidsbow-width-decr	mouth-mouth-cupidsbow-width-incr	
+mouth/mouth-dimples-in|out	-1.0	1.0	UniversalModifier	mouth-mouth-dimples-in	mouth-mouth-dimples-out	
+mouth/mouth-laugh-lines-in|out	-1.0	1.0	UniversalModifier	mouth-mouth-laugh-lines-in	mouth-mouth-laugh-lines-out	
+mouth/mouth-lowerlip-ext-down|up	-1.0	1.0	UniversalModifier	mouth-mouth-lowerlip-ext-down	mouth-mouth-lowerlip-ext-up	
+mouth/mouth-lowerlip-height-decr|incr	-1.0	1.0	UniversalModifier	mouth-mouth-lowerlip-height-decr	mouth-mouth-lowerlip-height-incr	
+mouth/mouth-lowerlip-middle-down|up	-1.0	1.0	UniversalModifier	mouth-mouth-lowerlip-middle-down	mouth-mouth-lowerlip-middle-up	
+mouth/mouth-lowerlip-volume-decr|incr	-1.0	1.0	UniversalModifier	mouth-mouth-lowerlip-volume-decr	mouth-mouth-lowerlip-volume-incr	
+mouth/mouth-lowerlip-width-decr|incr	-1.0	1.0	UniversalModifier	mouth-mouth-lowerlip-width-decr	mouth-mouth-lowerlip-width-incr	
+mouth/mouth-philtrum-volume-decr|incr	-1.0	1.0	UniversalModifier	mouth-mouth-philtrum-volume-decr	mouth-mouth-philtrum-volume-incr	
+mouth/mouth-scale-depth-decr|incr	-1.0	1.0	UniversalModifier	mouth-mouth-scale-depth-decr	mouth-mouth-scale-depth-incr	
+mouth/mouth-scale-horiz-decr|incr	-1.0	1.0	UniversalModifier	mouth-mouth-scale-horiz-decr	mouth-mouth-scale-horiz-incr	
+mouth/mouth-scale-vert-decr|incr	-1.0	1.0	UniversalModifier	mouth-mouth-scale-vert-decr	mouth-mouth-scale-vert-incr	
+mouth/mouth-trans-backward|forward	-1.0	1.0	UniversalModifier	mouth-mouth-trans-backward	mouth-mouth-trans-forward	
+mouth/mouth-trans-down|up	-1.0	1.0	UniversalModifier	mouth-mouth-trans-down	mouth-mouth-trans-up	
+mouth/mouth-trans-in|out	-1.0	1.0	UniversalModifier	mouth-mouth-trans-in	mouth-mouth-trans-out	
+mouth/mouth-upperlip-ext-down|up	-1.0	1.0	UniversalModifier	mouth-mouth-upperlip-ext-down	mouth-mouth-upperlip-ext-up	
+mouth/mouth-upperlip-height-decr|incr	-1.0	1.0	UniversalModifier	mouth-mouth-upperlip-height-decr	mouth-mouth-upperlip-height-incr	
+mouth/mouth-upperlip-middle-down|up	-1.0	1.0	UniversalModifier	mouth-mouth-upperlip-middle-down	mouth-mouth-upperlip-middle-up	
+mouth/mouth-upperlip-volume-decr|incr	-1.0	1.0	UniversalModifier	mouth-mouth-upperlip-volume-decr	mouth-mouth-upperlip-volume-incr	
+mouth/mouth-upperlip-width-decr|incr	-1.0	1.0	UniversalModifier	mouth-mouth-upperlip-width-decr	mouth-mouth-upperlip-width-incr	
+neck/neck-back-scale-depth-decr|incr	-1.0	1.0	UniversalModifier	neck-neck-back-scale-depth-decr	neck-neck-back-scale-depth-incr	
+neck/neck-double-decr|incr	-1.0	1.0	UniversalModifier	neck-neck-double-decr	neck-neck-double-incr	
+neck/neck-scale-depth-decr|incr	-1.0	1.0	UniversalModifier	neck-neck-scale-depth-decr	neck-neck-scale-depth-incr	
+neck/neck-scale-horiz-decr|incr	-1.0	1.0	UniversalModifier	neck-neck-scale-horiz-decr	neck-neck-scale-horiz-incr	
+neck/neck-scale-vert-decr|incr	-1.0	1.0	UniversalModifier	neck-neck-scale-vert-decr	neck-neck-scale-vert-incr	
+neck/neck-trans-backward|forward	-1.0	1.0	UniversalModifier	neck-neck-trans-backward	neck-neck-trans-forward	
+neck/neck-trans-down|up	-1.0	1.0	UniversalModifier	neck-neck-trans-down	neck-neck-trans-up	
+neck/neck-trans-in|out	-1.0	1.0	UniversalModifier	neck-neck-trans-in	neck-neck-trans-out	
+nose/nose-base-down|up	-1.0	1.0	UniversalModifier	nose-nose-base-down	nose-nose-base-up	
+nose/nose-compression-compress|uncompress	-1.0	1.0	UniversalModifier	nose-nose-compression-compress	nose-nose-compression-uncompress	
+nose/nose-curve-concave|convex	-1.0	1.0	UniversalModifier	nose-nose-curve-concave	nose-nose-curve-convex	
+nose/nose-flaring-decr|incr	-1.0	1.0	UniversalModifier	nose-nose-flaring-decr	nose-nose-flaring-incr	
+nose/nose-greek-decr|incr	-1.0	1.0	UniversalModifier	nose-nose-greek-decr	nose-nose-greek-incr	
+nose/nose-hump-decr|incr	-1.0	1.0	UniversalModifier	nose-nose-hump-decr	nose-nose-hump-incr	
+nose/nose-nostrils-angle-down|up	-1.0	1.0	UniversalModifier	nose-nose-nostrils-angle-down	nose-nose-nostrils-angle-up	
+nose/nose-nostrils-width-decr|incr	-1.0	1.0	UniversalModifier	nose-nose-nostrils-width-decr	nose-nose-nostrils-width-incr	
+nose/nose-point-down|up	-1.0	1.0	UniversalModifier	nose-nose-point-down	nose-nose-point-up	
+nose/nose-point-width-decr|incr	-1.0	1.0	UniversalModifier	nose-nose-point-width-decr	nose-nose-point-width-incr	
+nose/nose-scale-depth-decr|incr	-1.0	1.0	UniversalModifier	nose-nose-scale-depth-decr	nose-nose-scale-depth-incr	
+nose/nose-scale-horiz-decr|incr	-1.0	1.0	UniversalModifier	nose-nose-scale-horiz-decr	nose-nose-scale-horiz-incr	
+nose/nose-scale-vert-decr|incr	-1.0	1.0	UniversalModifier	nose-nose-scale-vert-decr	nose-nose-scale-vert-incr	
+nose/nose-septumangle-decr|incr	-1.0	1.0	UniversalModifier	nose-nose-septumangle-decr	nose-nose-septumangle-incr	
+nose/nose-trans-backward|forward	-1.0	1.0	UniversalModifier	nose-nose-trans-backward	nose-nose-trans-forward	
+nose/nose-trans-down|up	-1.0	1.0	UniversalModifier	nose-nose-trans-down	nose-nose-trans-up	
+nose/nose-trans-in|out	-1.0	1.0	UniversalModifier	nose-nose-trans-in	nose-nose-trans-out	
+nose/nose-volume-decr|incr	-1.0	1.0	UniversalModifier	nose-nose-volume-decr	nose-nose-volume-incr	
+nose/nose-width1-decr|incr	-1.0	1.0	UniversalModifier	nose-nose-width1-decr	nose-nose-width1-incr	
+nose/nose-width2-decr|incr	-1.0	1.0	UniversalModifier	nose-nose-width2-decr	nose-nose-width2-incr	
+nose/nose-width3-decr|incr	-1.0	1.0	UniversalModifier	nose-nose-width3-decr	nose-nose-width3-incr	
+pelvis/bulge-decr|incr	-1.0	1.0	UniversalModifier	pelvis-bulge-decr	pelvis-bulge-incr	
+pelvis/pelvis-tone-decr|incr	-1.0	1.0	UniversalModifier	pelvis-pelvis-tone-decr	pelvis-pelvis-tone-incr	
+stomach/stomach-navel-down|up	-1.0	1.0	UniversalModifier	stomach-stomach-navel-down	stomach-stomach-navel-up	
+stomach/stomach-navel-in|out	-1.0	1.0	UniversalModifier	stomach-stomach-navel-in	stomach-stomach-navel-out	
+stomach/stomach-pregnant-decr|incr	-1.0	1.0	UniversalModifier	stomach-stomach-pregnant-decr	stomach-stomach-pregnant-incr	
+stomach/stomach-tone-decr|incr	-1.0	1.0	UniversalModifier	stomach-stomach-tone-decr	stomach-stomach-tone-incr	
+torso/torso-muscle-dorsi-decr|incr	-1.0	1.0	UniversalModifier	torso-torso-muscle-dorsi-decr	torso-torso-muscle-dorsi-incr	
+torso/torso-muscle-pectoral-decr|incr	-1.0	1.0	UniversalModifier	torso-torso-muscle-pectoral-decr	torso-torso-muscle-pectoral-incr	
+torso/torso-scale-depth-decr|incr	-1.0	1.0	UniversalModifier	torso-torso-scale-depth-decr	torso-torso-scale-depth-incr	
+torso/torso-scale-horiz-decr|incr	-1.0	1.0	UniversalModifier	torso-torso-scale-horiz-decr	torso-torso-scale-horiz-incr	
+torso/torso-scale-vert-decr|incr	-1.0	1.0	UniversalModifier	torso-torso-scale-vert-decr	torso-torso-scale-vert-incr	
+torso/torso-trans-backward|forward	-1.0	1.0	UniversalModifier	torso-torso-trans-backward	torso-torso-trans-forward	
+torso/torso-trans-down|up	-1.0	1.0	UniversalModifier	torso-torso-trans-down	torso-torso-trans-up	
+torso/torso-trans-in|out	-1.0	1.0	UniversalModifier	torso-torso-trans-in	torso-torso-trans-out	
+torso/torso-vshape-decr|incr	-1.0	1.0	UniversalModifier	torso-torso-vshape-decr	torso-torso-vshape-incr	

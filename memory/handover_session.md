@@ -67,10 +67,42 @@ Two properties worth knowing, both now asserted:
 
 `TargetIndex::build` indexes all 1,280 in 18.1 ms.
 
+### Session 007 addendum (2026-08-29 07:26:49) — modifier hierarchy and Human
+
+`Modifier` + `Human` complete M3's parameterisation. **Exact parity on all 291
+shipped modifiers** — full name, range, kind and per-side target group names,
+compared against objects constructed by the reference's own classes.
+
+Two real bugs the parity test caught, both semantic rather than mechanical:
+
+1. **The target stack ASSIGNS, it does not accumulate.** `setDetail` writes
+   `targetsDetailStack[name] = value` (`human.py:918-921`). Five macro modifiers
+   — Gender, Age and the three ethnic ones — all resolve to the group
+   `macrodetails`, so all five write the same 24 targets. With `+=` the default
+   character's stack totalled **5.0**; with assignment it totals **1.0** per
+   contributing group, because the five compute identical weights and the last
+   write simply wins. This would have made every macro-driven character wrong by
+   a constant factor.
+2. **A macro modifier has no left/right/center.** The reference leaves them
+   unset and resolves targets from the group name (`humanmodifier.py:566`); I
+   had overloaded `right`, which broke the side comparison for all 11
+   macro/ethnic modifiers.
+
+The default character's stack is **8 targets totalling 2.0** — 6 from
+`macrodetails` and 2 from `macrodetails-universal`, each group summing to 1.0.
+Height, proportions and breast contribute nothing at neutral, for the reasons
+pinned in `test_target_index_parity.cpp`.
+
+**Process note:** a scripted edit silently failed to apply for the fourth time
+(clang-format reformatting the anchor). This time the per-anchor `assert` I had
+added caught it immediately instead of a test failure doing so three steps
+later. Asserting each anchor individually, not just the final state, is what
+made the difference.
+
 ### Next
-The modifier hierarchy (Simple / Universal / Macro / Ethnic) and the
-`Human` state object that owns the target stack — after which a character is
-fully parameterised end to end.
+`applyStack` (incremental rather than full reset-and-replay), then an
+end-to-end `.mhm` round trip: load a real model file and compare final vertex
+positions against the reference.
 
 ---
 
