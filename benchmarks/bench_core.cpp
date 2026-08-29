@@ -5,6 +5,7 @@
 
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/core/RenderMesh.h"
+#include "makehuman/core/Subdivider.h"
 
 #include <algorithm>
 #include <chrono>
@@ -73,10 +74,25 @@ int main() {
     results.push_back({"RenderMesh::build (unweld + triangulate + sort)",
                        medianMs([&] { (void)mh::core::RenderMesh::build(*mesh); }, 10), 3.43});
 
+    // Catmull-Clark: reference build 202.30 ms, update_coords 7.64 ms,
+    // calcNormals on the subdivided mesh 20.57 ms.
+    results.push_back({"Subdivider::build (Catmull-Clark topology+geometry)",
+                       medianMs([&] { (void)mh::core::Subdivider::build(*mesh); }, 5), 202.30});
+
+    auto sd = mh::core::Subdivider::build(*mesh);
+    if (sd) {
+        results.push_back({"Subdivider::refresh (geometry + normals)",
+                           medianMs([&] { sd->refresh(*mesh); }, 10), 7.64 + 20.57});
+    }
+
     auto rm = mh::core::RenderMesh::build(*mesh);
     results.push_back({"RenderMesh::refreshPositions (morph hot path)",
                        medianMs([&] { rm.refreshPositions(*mesh); }, 50), 0.0});
 
+    if (sd) {
+        std::printf("subdiv: %zu verts, %zu faces, %zu edges\n", sd->mesh().vertexCount(),
+                    sd->mesh().faceCount(), sd->edgeCount());
+    }
     std::printf("render: %zu verts (unwelded), %zu indices, %zu groups\n", rm.vertexCount(),
                 rm.indexCount(), rm.groupRanges().size());
     std::printf("mesh: %zu verts, %zu faces, %zu uvs, maxValence %u\n\n", mesh->vertexCount(),

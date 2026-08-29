@@ -61,13 +61,15 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [ ] `RenderMesh::build` is 2.11 ms — dominated by an indirect-comparator sort.
       Sorting packed (key,corner) pairs directly would help. Load-once path, low priority.
 - [ ] Dirty-range tracking replacing `ucoor`/`unorm`/…
-- [ ] Catmull-Clark subdivision — parity on 75,008 verts
-      **Caveat:** `Mesh::maxValence()` is max incident *faces*, NOT the reference's
-      `MAX_FACES`, which is `max(maxIncidentFaces, maxpole, 4)` where `maxpole`
-      counts distinct neighbouring *vertices* (`module3d.py:752-770`) — the
-      reference does this explicitly because "catmull-clark expects maxpoles and
-      not maxfaces". Both are 5 on the base mesh, so the golden test passes
-      coincidentally. Compute maxpole separately before porting subdivision.
+- [x] Catmull-Clark subdivision (`Subdivider`) — **exact parity: 75,008 verts /
+      73,944 faces / 37,364 edges**, matching the reference. Split into a topology
+      pass and a geometry pass so a morph costs only the geometry.
+      **Resolved the `maxpole` caveat by not needing it:** the reference sizes one
+      `vface` array to `max(maxFaces, maxpole, 4)` because it reuses that array for
+      both faces and edges. We keep separate `vface`/`nfaces` (faces) and
+      `vedge_`/`nedges_` (edges) arrays, each sized from its own measured maximum,
+      so there is no shared bound to over-allocate.
+- [ ] Subdivision with a face mask (hidden geometry never generated) — with M4
 - [ ] Heterogeneous lookup in `findFaceGroup` (currently allocates a `std::string`)
 
 ## M3 — Targets and modifiers (`mh-core`)

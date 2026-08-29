@@ -63,6 +63,16 @@ public:
 
     [[nodiscard]] uint32_t maxValence() const noexcept { return maxValence_; }
 
+    /// Number of faces incident to vertex @p v. Requires buildAdjacency().
+    [[nodiscard]] uint32_t nfacesAt(size_t v) const noexcept {
+        return v < nfaces_.size() ? nfaces_[v] : 0U;
+    }
+
+    /// The @p k-th face incident to vertex @p v, k < nfacesAt(v).
+    [[nodiscard]] uint32_t faceAt(size_t v, uint32_t k) const noexcept {
+        return vface_[v * maxValence_ + k];
+    }
+
     // -- data (read) --------------------------------------------------------
     [[nodiscard]] std::span<const Vec3> coord() const noexcept { return coord_; }
 

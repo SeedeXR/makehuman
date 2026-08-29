@@ -7,7 +7,8 @@
 add_library(mh_core STATIC
     Mesh.cpp
     ObjReader.cpp
-    RenderMesh.cpp)
+    RenderMesh.cpp
+    Subdivider.cpp)
 add_library(mh::core ALIAS mh_core)
 
 target_include_directories(mh_core PUBLIC

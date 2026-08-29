@@ -4,6 +4,7 @@ add_executable(mh_tests
     unit/test_obj_reader.cpp
     unit/test_tangents.cpp
     unit/test_render_mesh.cpp
+    unit/test_subdivider.cpp
     golden/test_base_mesh_parity.cpp
     golden/test_mesh_fixture_parity.cpp
     regression/test_review_findings.cpp)
