@@ -110,3 +110,9 @@ benchmarks/results/
 # macOS
 .DS_Store
 *.dSYM/
+
+# references/ holds third-party input used only as a naming reference and as
+# import test data (see LICENSING.md 5.4). Build outputs from it never belong
+# in the repository.
+references/**/*.blend
+references/**/*.abc

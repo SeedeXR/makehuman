@@ -54,6 +54,34 @@ jobs:
         run: ./build/${{ matrix.preset }}/tests/mh_tests
         if: matrix.preset == 'macos-arm64-release'
 
+  # The macos-15 runner ships Xcode 16.4, whose libc++ has NO floating-point
+  # from_chars/to_chars -- the float call resolves to the deleted bool overload
+  # and every build here failed while local builds on Apple clang 21 passed.
+  # foundation/Chars.h falls back to a C-locale path when the library lacks
+  # them. Newer runner images will make the fallback the UNUSED branch, so this
+  # job pins it open: without it the fallback rots silently until the next
+  # machine that needs it.
+  charconv-fallback:
+    name: build + test (forced charconv fallback)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install ninja assimp
+
+      - name: Configure with the fallback forced on
+        run: >
+          cmake -S . -B build/fallback -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DMH_HAVE_FP_CHARCONV=OFF
+
+      - name: Build
+        run: cmake --build build/fallback -j
+
+      - name: Test
+        run: ctest --test-dir build/fallback --output-on-failure
+
   benchmark:
     name: benchmark vs python baseline
     runs-on: macos-15

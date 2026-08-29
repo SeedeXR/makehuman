@@ -155,6 +155,13 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 
 ## M5 — Rig and skinning (`mh-rig`)
 
+- [ ] **Bone naming/order: Mixamo standard** (owner decision, 2026-08-29).
+      Measured and documented in `docs/rig/mixamo_bone_order.md` — 65 bones,
+      `mixamorig:` prefix, identical across all 7 reference clips.
+      Watch the `$AssimpFbx$` decomposition trap documented there: a naive
+      assimp node walk gives ~190 nodes and wrong parents.
+- [ ] MakeHuman(163) -> Mixamo(65) retarget map. Lossy by construction; needs
+      an explicit table, not a name-matching heuristic.
 - [ ] `.mhskel` parser — 163 bones, breadth-first ordering, deadlock-guarded
 - [ ] Bone rest matrices; `matPoseVerts = matPoseGlobal · inv(matRestGlobal)`
 - [ ] Joint positions from vertex clouds (rig follows the mesh)

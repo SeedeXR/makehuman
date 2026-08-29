@@ -19,7 +19,7 @@ target_include_directories(mh_io PUBLIC
 # with both AGPL and Apache-2.0, unlike the Autodesk FBX SDK -- see the note at
 # the top of include/makehuman/io/SceneIO.h and LICENSING.md section 5.
 target_link_libraries(mh_io
-    PUBLIC  mh::core
+    PUBLIC  mh::core mh::foundation
     PRIVATE mh::warnings mh::sanitize assimp::assimp)
 
 set_target_properties(mh_io PROPERTIES

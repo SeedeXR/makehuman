@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "makehuman/core/Proxy.h"
+#include "makehuman/foundation/Chars.h"
 
 #include <algorithm>
 #include <cctype>
@@ -36,9 +37,11 @@ std::vector<std::string> splitWs(const std::string& line) {
     return out;
 }
 
+/// Delegates to the shared shim: floating-point std::from_chars does not exist
+/// in every libc++ we build on (the macos-15 runner's Xcode 16.4 lacks it), and
+/// strtof would honour LC_NUMERIC. See foundation/Chars.h.
 bool parseFloat(const std::string& s, float& out) {
-    const auto r = std::from_chars(s.data(), s.data() + s.size(), out);
-    return r.ec == std::errc{} && r.ptr == s.data() + s.size();
+    return foundation::parseFloat(s, out);
 }
 
 bool parseUint(const std::string& s, uint32_t& out) {

@@ -184,6 +184,36 @@ face indices whenever the mesh has UVs; reimporting segfaults, and assimp's own
 validator rejects the file. Minimal repro and reasoning are recorded at the top
 of `include/makehuman/io/SceneIO.h`.
 
+### 5.4 Mixamo reference rigs (`references/human_based_fbx_mixamo_animations/`)
+
+Seven FBX animation clips from Adobe Mixamo, 2.3 MB, added by the project owner
+**at their explicit direction** on 2026-08-29 to serve as the reference for
+bone naming and ordering (see `memory/todo.md` M5) and as import test input.
+
+**Basis:** Mixamo's terms grant a royalty-free licence to use its characters and
+animations in commercial and non-commercial projects, with no attribution
+required. The project owner has stated this covers our use and instructed that
+they be committed.
+
+**Recorded caveat, not a blocker:** Mixamo's terms are aimed at *using* the
+animations in a project. Redistributing the raw `.fbx` files as standalone
+downloadable assets is a different act from shipping a work that incorporates
+them, and Adobe's terms are not explicit about a public source repository. These
+files are therefore:
+
+- kept in `references/`, **outside** `data/`, so they are never confused with
+  the CC0 asset set and are not packaged into a release build;
+- used as **test input and naming reference only** — no Mixamo geometry, skin
+  weights or animation data is copied into `data/` or into any shipped artefact;
+- excluded from the CC0 claim in `LICENSE.ASSETS.md`.
+
+Anyone redistributing this repository commercially should satisfy themselves
+about Mixamo's terms for the `references/` directory specifically, or delete it —
+nothing in the build depends on it.
+
+**This is not a code dependency.** No target links or reads these files; the
+`references/` tree is not referenced by any `CMakeLists.txt`.
+
 ## 6. Obligations we must meet when distributing
 
 - [ ] Ship the complete corresponding source, or a written offer (AGPL-3.0 §6).

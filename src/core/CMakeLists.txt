@@ -27,6 +27,7 @@ target_include_directories(mh_core PUBLIC
 # wants a trivially-copyable Vec3, not an expression-template type. Eigen gets
 # linked when mh_rig needs quaternions, slerp, and matrix decomposition.
 target_link_libraries(mh_core
+    PUBLIC  mh::foundation
     PRIVATE mh::warnings mh::sanitize)
 
 set_target_properties(mh_core PROPERTIES

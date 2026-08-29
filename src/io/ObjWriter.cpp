@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "makehuman/io/ObjWriter.h"
-
-#include <charconv>
+#include "makehuman/foundation/Chars.h"
 
 #include <algorithm>
 #include <cmath>
@@ -12,18 +11,15 @@
 namespace mh::io {
 namespace {
 
-/// Fixed-point formatting, locale-independently. OBJ is an ASCII format read by
-/// other tools; a comma decimal separator corrupts it outright.
+/// Fixed-point formatting, locale-independently. OBJ is an ASCII format read
+/// by other tools; a comma decimal separator corrupts it outright.
 ///
 /// This used snprintf and claimed that avoided the problem. It does not:
-/// snprintf honours LC_NUMERIC exactly as iostreams do, and
-/// `std::locale::global(std::locale("de_DE.UTF-8"))` sets the C locale too, so
-/// a vertex came out as `v 0,5000 0,0000 0,0000`. std::to_chars is defined to
-/// be locale-independent.
+/// snprintf honours LC_NUMERIC exactly as iostreams do. The shim in
+/// foundation/Chars.h handles both that and the toolchains whose libc++ has no
+/// floating-point std::to_chars.
 void appendFixed(std::string& out, float v, int decimals) {
-    char buf[64];
-    const auto r = std::to_chars(buf, buf + sizeof(buf), v, std::chars_format::fixed, decimals);
-    if (r.ec == std::errc{}) out.append(buf, r.ptr);
+    out += foundation::formatFixed(v, decimals);
 }
 
 /// The .mtl block wrote floats with `operator<<`, which has the same locale

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "makehuman/io/GltfWriter.h"
+#include "makehuman/foundation/Chars.h"
 
 #include "makehuman/core/RenderMesh.h"
 
 #include <algorithm>
-#include <charconv>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -55,15 +55,12 @@ void padTo4(std::vector<uint8_t>& b, uint8_t fill = 0) {
 /// snprintf was used here and honours LC_NUMERIC just as iostreams do: under
 /// de_DE.UTF-8 it writes "0,5", which turns `"max":[0.2,0.3]` into
 /// `"max":[0,2,0,3]` -- still *valid* JSON, but a three-element array becomes
-/// five and the accessor bounds are silently garbage. std::to_chars is defined
-/// to be locale-independent.
+/// five and the accessor bounds are silently garbage.
 ///
 /// Non-finite values are rejected before they reach here (writeGlb validates),
 /// because "nan"/"inf" are not JSON at all and would make the file unparseable.
 std::string fmtFloat(float v) {
-    char buf[32];
-    const auto r = std::to_chars(buf, buf + sizeof(buf), v, std::chars_format::general, 7);
-    return (r.ec == std::errc{}) ? std::string(buf, r.ptr) : std::string("0");
+    return foundation::formatGeneral(v, 7);
 }
 
 /// Minimal JSON string escaping -- enough for names, which is all we emit.

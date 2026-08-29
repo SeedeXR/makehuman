@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "makehuman/core/ObjReader.h"
+#include "makehuman/foundation/Chars.h"
 
 #include <charconv>
 #include <cstdio>
@@ -29,9 +30,11 @@ size_t tokenize(std::string_view line, std::vector<std::string_view>& out) {
 }
 
 /// OBJ floats include forms like ".001" and "-.5"; from_chars handles both.
+/// Delegates to the shared shim: floating-point std::from_chars does not exist
+/// in every libc++ we build on (the macos-15 runner's Xcode 16.4 lacks it), and
+/// strtof would honour LC_NUMERIC. See foundation/Chars.h.
 bool parseFloat(std::string_view s, float& out) {
-    const auto res = std::from_chars(s.data(), s.data() + s.size(), out);
-    return res.ec == std::errc{} && res.ptr == s.data() + s.size();
+    return foundation::parseFloat(s, out);
 }
 
 /// Parses one corner of an `f` statement: "v", "v/vt", "v//vn", or "v/vt/vn".

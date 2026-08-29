@@ -70,6 +70,7 @@ if(MH_BUILD_TESTS)
 endif()
 
 # ---------------------------------------------------------------- modules ----
+add_subdirectory(src/foundation)
 add_subdirectory(src/core)
 add_subdirectory(src/io)
 

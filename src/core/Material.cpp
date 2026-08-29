@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "makehuman/core/Material.h"
+#include "makehuman/foundation/Chars.h"
 
 #include <algorithm>
 #include <cctype>
@@ -33,15 +34,11 @@ bool readBool(const std::string& s) {
     return v == "yes" || v == "enabled" || v == "true";
 }
 
+/// The shim accepts a leading '+' (which std::from_chars rejects but the
+/// oracle's float() accepts, and shipped assets use) and rejects nan/inf, which
+/// would otherwise reach the exporter and produce unparseable JSON.
 bool parseFloat(const std::string& s, float& out) {
-    // from_chars rejects a leading '+' where the oracle's float() accepts it,
-    // so `opacity +0.5` was a hard load failure on a legal asset. It also
-    // accepts "nan"/"inf", which float() accepts too but which then leak into
-    // export as unparseable JSON -- refuse them here, at the boundary.
-    std::string_view v{s};
-    if (v.starts_with('+')) v.remove_prefix(1);
-    const auto r = std::from_chars(v.data(), v.data() + v.size(), out);
-    return r.ec == std::errc{} && r.ptr == v.data() + v.size() && std::isfinite(out);
+    return foundation::parseFloat(s, out);
 }
 
 float clamp01(float v) {
@@ -337,14 +334,10 @@ namespace {
 /// Shortest representation that round-trips exactly, locale-independently.
 ///
 /// The reference formats with `%s`/`%r`, i.e. Python's shortest round-trip
-/// repr. `to_chars` without a precision is the same idea and, unlike printf,
-/// is defined to ignore the locale -- which matters here for the same reason
-/// it mattered in the OBJ writer: a decimal comma silently turns one number
-/// into two tokens.
+/// repr; formatShortest is the same idea. It lives in foundation because
+/// floating-point std::to_chars is missing from some libc++ we build on.
 std::string num(float v) {
-    char buf[32];
-    const auto r = std::to_chars(buf, buf + sizeof(buf), v);
-    return (r.ec == std::errc{}) ? std::string(buf, r.ptr) : std::string("0");
+    return foundation::formatShortest(v);
 }
 
 /// The reference writes Python's `True`/`False`; its own reader lowercases
