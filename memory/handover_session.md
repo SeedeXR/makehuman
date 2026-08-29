@@ -4,6 +4,50 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 022 · vertex weights
+
+**Ended:** 2026-08-29 14:11:59 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+`.mhw` loading with parity across **139 weighted bones / 57,107 entries**, plus
+the compiled 4-influence form across all **19,158 vertices**. Fixture captured
+from the reference for this commit.
+
+### Four behaviours that are all load-bearing
+
+1. **The file's numbers are relative, not absolute.** `wtot[v]` is summed over
+   every bone *first*, then each weight stored as `w / wtot[v]`. Storing the raw
+   numbers scales every vertex by an arbitrary factor.
+2. A vertex listed twice under one bone is **merged**, not overwritten.
+3. Sub-threshold weights are dropped **after** normalising, not before.
+4. **An unweighted vertex binds to the root bone at weight 1.** Without it, the
+   vertex collapses to the origin the moment the rig is posed — a failure that
+   looks like a modelling bug rather than a loader bug.
+
+### Truncation
+
+Clamping to 4 influences re-normalises, or every heavily-weighted vertex loses
+mass and drifts. That path is genuinely exercised, and I checked rather than
+assumed: the rig reaches **12** influences and **5,923 vertices** actually hit
+truncation. A test asserts `maxInfluences() == 12` precisely so the truncation
+test cannot silently stop testing truncation if the data ever changes.
+
+Ties break by **descending bone index** — Python's `sorted(reverse=True)` over
+`(weight, bone_index)`. Arbitrary, and replicated because on a mirrored body two
+bones can carry identical weights, so it decides which influence survives.
+
+### Performance
+
+15.8 ms to load 57k entries, 1.0 ms to compile to 4 influences. No Python
+comparison: the weight path is reachable headlessly but the skeleton it needs is
+not, so a like-for-like number does not exist.
+
+252/252 across all four builds; all gates pass locally.
+
+**Next:** CPU linear blend skinning — `matPoseVerts = matPoseGlobal · inv(matRestGlobal)`,
+which is where the rest matrices and the weights finally meet.
+
+---
+
 ## 2026-08-29 — Session 021 · rest matrices, full element-wise parity
 
 **Ended:** 2026-08-29 14:00:11 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
