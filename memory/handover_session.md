@@ -4,6 +4,72 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 020 · M5 begins: .mhskel, and a lesson that did not stick
+
+**Ended:** 2026-08-29 13:49:57 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+### The skeleton parser
+
+New AGPL module `mh_rig`. **Exact bone-order parity on all 163 bones.**
+
+The thing worth carrying forward: **there are two orderings in the reference
+and they are not the same one.**
+
+1. `fromFile` (`skeleton.py:111-124`) relaxes over the bone map *in file order*.
+   The reference calls this breadth-first; it is not. It fixes the order
+   children attach to each parent.
+2. `getBones()` (`__cacheGetBones`) then does a **real** BFS from the roots with
+   a deque. That is the canonical index order — rest-matrix rows, and what every
+   exporter writes.
+
+I implemented (1) alone first. It put **153 of 163 bones in the wrong slot**
+while still producing a perfectly valid parents-first list that passed every
+structural check I had. Only the captured reference order caught it. Structural
+invariants would never have found this; a fixture did.
+
+Because (1) depends on file order, the JSON parser must preserve key order —
+hence `nlohmann::ordered_json` specifically, pinned by SHA256. The CI dependency
+gate caught that I had not recorded it in `LICENSING.md`, which is that gate
+earning its keep.
+
+Performance: 1.21 ms to parse; `updateJoints` under 0.01 ms, so re-fitting the
+rig every frame is free. **No Python comparison** for either — `mhskeleton.load`
+reaches `G.app.selectedHuman` and cannot run headlessly. An absent number, not
+an invented one.
+
+### The lesson that did not stick
+
+CI failed on this commit. The legacy-tree gate matched a **comment** in
+`src/rig/CMakeLists.txt` recording which `legacy/` file `mh_rig` ports.
+
+That is the **third** gate to match the prose explaining its own rule:
+
+| Gate | Matched | Should have matched |
+|---|---|---|
+| Forbidden deps | prose about the Autodesk SDK | `#include <fbxsdk`, a link flag |
+| Licence boundary | `src/io/CMakeLists.txt` saying "must never depend on one" | a real `mh::core` link |
+| Legacy tree | `src/rig/CMakeLists.txt` naming the file it ports | a real `include_directories(legacy/...)` |
+
+**The third happened in the same session I wrote up the second.** Recording the
+pattern was not enough to avoid repeating it.
+
+Fixed structurally, not case by case: comment-stripping and syntax anchoring
+across the gates, and the rule written into `memory/instruction.md` so the next
+gate starts from it. Both gates were then proved **in both directions** — a real
+violation introduced and observed to fire, then reverted and observed to go
+quiet. All three of these shipped because a gate that has only ever been seen
+passing is not known to work.
+
+### Verified
+
+240/240 in debug, release, ASan+UBSan and the forced-fallback build. CI green,
+7/7 jobs, read rather than assumed.
+
+**Next:** rest matrices (`matRestGlobal` / `matRestRelative`) — the fixture is
+already captured and unused so far.
+
+---
+
 ## 2026-08-29 — Session 019 · the licence boundary is now real
 
 **Ended:** 2026-08-29 13:29:07 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
