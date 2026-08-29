@@ -4,6 +4,64 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 024 · all 24 Euler conventions, and a third licence
+
+**Ended:** 2026-08-29 14:49:38 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+120 captured cases — 24 conventions × 5 angle sets — plus the quaternion
+algebra. CI green.
+
+### A test that was covering nothing
+
+The gimbal-lock angle sets originally used `1.5707963`. Against `_EPS` of
+8.9e-16 the guard value is ~1e-8, so **the singular branch was reached zero
+times out of 120** while the test's own comment claimed it was covered.
+
+Switched to `math.pi/2` exactly: 24 of 120 now take that path, and the test
+**asserts that count** so the coverage cannot silently lapse again.
+
+I only found it because I checked what the branch coverage actually was instead
+of trusting the comment I had just written. Worth repeating on any test whose
+value depends on hitting a specific branch.
+
+### Quaternion sign
+
+`quaternionFromMatrix` uses the trace method, not the reference's eigenvector
+path. Verified across all 120: magnitudes agree to 4.4e-16, **sign differs on
+18**. `q` and `−q` are the same rotation, so the test compares up to sign *and*
+checks the quaternion rebuilds the same matrix — pinning the rotation exactly
+rather than weakening the assertion.
+
+### A real licensing finding
+
+`legacy/python/core/transformations.py` carries **two conflicting licences**:
+Christoph Gohlke's **BSD-3-Clause** notice in actual comments at the top, and
+MakeHuman's **AGPL** boilerplate inside the module docstring — on a file whose
+stated author is Gohlke. Stamping an AGPL header onto someone else's BSD code
+does not relicense it.
+
+So the port is SPDX **BSD-3-Clause**, reproduces the upstream notice, and is the
+only file in the tree under a third licence. That is *better* for us: BSD is
+permissive, so these conversions sit legitimately in the Apache-2.0 foundation
+module instead of being trapped on the AGPL side. Recorded as `LICENSING.md` §4.1.
+
+**The new BSD-notice gate found a real gap on its first run** — `Transform.cpp`
+had deferred the notice to the header, and BSD requires *source
+redistributions* to retain it.
+
+### Convention
+
+`[w, x, y, z]`, scalar FIRST, throughout. Eigen's `.coeffs()` is `[x, y, z, w]`.
+A test pins the layout directly, because a swap still yields a unit quaternion
+that still rotates — just not as intended.
+
+265/265 across all four builds.
+
+**Next:** wire these into pose loading — `.mhpose`, pose units, and the
+order-dependent slerp composition blend.
+
+---
+
 ## 2026-08-29 — Session 023 · CPU skinning: the rig deforms the mesh
 
 **Ended:** 2026-08-29 14:29:31 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
