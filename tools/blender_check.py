@@ -23,6 +23,20 @@ EXPECT = {
     # NON-ZERO rows plus their UV-seam duplicates -- nose-base-up has 305 rows
     # of which 11 are literally (0,0,0), so only 294 move. A shape key that
     # exists but displaces nothing is the failure a name-only check misses.
+    # The same rig and morphs through FBX. The moved-vertex counts must match
+    # morphed.glb EXACTLY -- two independent formats agreeing is a stronger
+    # statement than either one matching an expectation.
+    # vertex_groups is 139, not 163: only 139 bones carry any weight in
+    # default_weights.mhw, and both assimp and Blender drop the empty ones.
+    "rigged.fbx": {
+        "vertices": 21833, "triangles": 36972, "tallest": 1.69455, "uv_layers": 1,
+        "bones": 163, "armatures": 1, "skinned": 21833, "vertex_groups": 139,
+        "shape_keys": {
+            "head-oval": 2200,
+            "head-trans-backward": 5865,
+            "nose-base-up": 294,
+        },
+    },
     "morphed.glb": {
         "vertices": 21833, "triangles": 36972, "tallest": 1.69455, "uv_layers": 1,
         "shape_keys": {
@@ -67,6 +81,9 @@ for line in sys.stdin:
         problems.append(f"bones {d.get('bones')} != {want['bones']}")
     if "armatures" in want and d.get("armatures") != want["armatures"]:
         problems.append(f"armatures {d.get('armatures')} != {want['armatures']}")
+    if "vertex_groups" in want and d.get("vertex_groups") != want["vertex_groups"]:
+        problems.append(
+            f"vertex groups {d.get('vertex_groups')} != {want['vertex_groups']}")
     if "skinned" in want and d.get("skinned_vertices") != want["skinned"]:
         problems.append(f"skinned vertices {d.get('skinned_vertices')} != {want['skinned']}")
     if "shape_keys" in want:

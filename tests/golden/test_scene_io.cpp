@@ -6,7 +6,11 @@
 // and round-trips.
 
 #include "makehuman/core/RenderMesh.h"
+#include "makehuman/core/Target.h"
 #include "makehuman/io/SceneIO.h"
+#include "makehuman/rig/Skeleton.h"
+#include "makehuman/rig/Skinning.h"
+#include "makehuman/rig/VertexWeights.h"
 
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/io/GltfWriter.h"
@@ -263,4 +267,106 @@ TEST_CASE("importing a non-mesh file fails cleanly", "[io][scene]") {
 
     std::error_code ec;
     std::filesystem::remove(junk, ec);
+}
+
+// ------------------------------------------------------ rigged FBX export
+
+namespace {
+
+struct FbxRigFixture {
+    core::Mesh mesh;
+    rig::Skeleton skel;
+    rig::SkinData skin;
+    std::vector<std::vector<foundation::Vec3>> deltaStore;
+    std::vector<foundation::MorphTarget> morphs;
+};
+
+FbxRigFixture buildFbxRig() {
+    FbxRigFixture f;
+    auto mesh = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+    f.mesh = std::move(*mesh);
+
+    auto skel = rig::loadSkeleton(std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel");
+    REQUIRE(skel.has_value());
+    REQUIRE(skel->updateJoints(f.mesh.coord()));
+    REQUIRE(skel->buildRestMatrices());
+    f.skel = std::move(*skel);
+
+    auto vw = rig::loadWeights(std::filesystem::path(MH_DATA_DIR) / "rigs" / "default_weights.mhw",
+                               f.mesh.vertexCount());
+    REQUIRE(vw.has_value());
+
+    const auto rm = core::RenderMesh::build(f.mesh);
+    f.skin        = rig::buildSkinData(f.skel, vw->compile(f.skel, 4), rm.vmap());
+    REQUIRE_FALSE(f.skin.jointNames.empty());
+
+    auto t = core::loadTarget(std::filesystem::path(MH_DATA_DIR) / "targets" / "head" /
+                              "head-oval.target");
+    REQUIRE(t.has_value());
+    std::vector<foundation::Vec3> deltas;
+    REQUIRE(core::expandTargetToRenderVertices(*t, rm.vmap(), f.mesh.vertexCount(), deltas));
+    f.deltaStore.push_back(std::move(deltas));
+    f.morphs.push_back(foundation::MorphTarget{"head-oval", f.deltaStore.back()});
+    return f;
+}
+
+}  // namespace
+
+// assimp's FBX writer needs a NODE per bone in the scene graph. The aiBone
+// array alone is not a skeleton -- the hierarchy lives in the nodes and aiBone
+// references it by name. Without them the export fails outright with
+// "Failed to find node for bone: root", which is how this was found.
+TEST_CASE("a rigged FBX exports and re-imports", "[io][scene][skin]") {
+    auto f              = buildFbxRig();
+    const auto rm       = core::RenderMesh::build(f.mesh);
+    const auto skinView = f.skin.view();
+
+    const auto out = tempFile("rigged", ".fbx");
+    const auto r   = io::exportScene(out, rm.view(), io::SceneFormat::FbxBinary, {}, nullptr,
+                                     &skinView, f.morphs);
+    REQUIRE(r.has_value());
+    CHECK(r->vertices == rm.vertexCount());
+
+    const auto back = io::importMesh(out);
+    REQUIRE(back.has_value());
+    CHECK(back->mesh.vertexCount() > 0);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("a skin that does not describe the mesh is refused by FBX export", "[io][scene][skin]") {
+    auto f        = buildFbxRig();
+    const auto rm = core::RenderMesh::build(f.mesh);
+
+    auto bad        = f.skin;
+    bad.joints[0]   = 9999;  // past the end of the skeleton
+    const auto view = bad.view();
+
+    const auto out = tempFile("badrig", ".fbx");
+    const auto r =
+        io::exportScene(out, rm.view(), io::SceneFormat::FbxBinary, {}, nullptr, &view, {});
+    REQUIRE_FALSE(r.has_value());
+    CHECK(r.error().kind == io::SceneIoErrorKind::InvalidSkinOrMorph);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("a morph target of the wrong length is refused by FBX export", "[io][scene][morph]") {
+    auto f        = buildFbxRig();
+    const auto rm = core::RenderMesh::build(f.mesh);
+
+    const std::vector<foundation::Vec3> tooShort(3, foundation::Vec3{});
+    const std::vector<foundation::MorphTarget> bad{{"short", tooShort}};
+
+    const auto out = tempFile("badmorph", ".fbx");
+    const auto r =
+        io::exportScene(out, rm.view(), io::SceneFormat::FbxBinary, {}, nullptr, nullptr, bad);
+    REQUIRE_FALSE(r.has_value());
+    CHECK(r.error().kind == io::SceneIoErrorKind::InvalidSkinOrMorph);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
 }

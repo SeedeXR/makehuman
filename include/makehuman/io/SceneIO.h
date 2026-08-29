@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -74,7 +75,15 @@ struct SceneExportOptions {
     std::string materialName{"Skin"};
 };
 
-enum class SceneIoErrorKind { EmptyMesh, UnsupportedFormat, ExportFailed, ImportFailed, NotFound };
+enum class SceneIoErrorKind {
+    EmptyMesh,
+    UnsupportedFormat,
+    ExportFailed,
+    ImportFailed,
+    NotFound,
+    /// A skin or morph target does not describe this mesh.
+    InvalidSkinOrMorph,
+};
 
 struct SceneIoError {
     SceneIoErrorKind kind{};
@@ -96,7 +105,9 @@ struct SceneExportResult {
 /// one attribute per index and none of them has a quad primitive we rely on.
 [[nodiscard]] std::expected<SceneExportResult, SceneIoError> exportScene(
     const std::filesystem::path& path, const foundation::RenderView& mesh, SceneFormat format,
-    const SceneExportOptions& options = {}, const foundation::MaterialDesc* material = nullptr);
+    const SceneExportOptions& options = {}, const foundation::MaterialDesc* material = nullptr,
+    const foundation::SkinView* skin                      = nullptr,
+    std::span<const foundation::MorphTarget> morphTargets = {});
 
 struct ImportedMesh {
     foundation::MeshData mesh;

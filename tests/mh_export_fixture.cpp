@@ -115,7 +115,20 @@ int main(int argc, char** argv) {
     }
     std::printf("morphed.glb: %zu morph targets\n", morphs.size());
 
-    std::printf("wrote base.obj / base.glb / base.fbx / rigged.glb / morphed.glb to %s\n",
-                out.c_str());
+    // The same rig and morphs through FBX. assimp's FBX writer was verified to
+    // carry both, and Blender to read them back, before this was written.
+    if (const auto r =
+            mh::io::exportScene(out / "rigged.fbx", rm.view(), mh::io::SceneFormat::FbxBinary, {},
+                                nullptr, &skinView, morphs);
+        !r) {
+        std::fprintf(stderr, "rigged fbx: %s\n", r.error().message().c_str());
+        return 1;
+    }
+    std::printf("rigged.fbx: %zu joints, %zu morph targets\n", skin.globalRest.size(),
+                morphs.size());
+
+    std::printf(
+        "wrote base.obj / base.glb / base.fbx / rigged.glb / morphed.glb / rigged.fbx to %s\n",
+        out.c_str());
     return 0;
 }

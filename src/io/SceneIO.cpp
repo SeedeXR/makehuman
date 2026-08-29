@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <limits>
 #include <memory>
+#include <vector>
 
 namespace mh::io {
 
@@ -61,6 +62,9 @@ std::string SceneIoError::message() const {
         case SceneIoErrorKind::ExportFailed: k = "export failed"; break;
         case SceneIoErrorKind::ImportFailed: k = "import failed"; break;
         case SceneIoErrorKind::NotFound: k = "file not found"; break;
+        case SceneIoErrorKind::InvalidSkinOrMorph:
+            k = "skin or morph target does not describe this mesh";
+            break;
     }
     std::string m = file + ": " + k;
     if (!detail.empty()) m += " (" + detail + ")";
@@ -69,13 +73,34 @@ std::string SceneIoError::message() const {
 
 std::expected<SceneExportResult, SceneIoError> exportScene(
     const std::filesystem::path& path, const foundation::RenderView& mesh, SceneFormat format,
-    const SceneExportOptions& options, const foundation::MaterialDesc* material) {
+    const SceneExportOptions& options, const foundation::MaterialDesc* material,
+    const foundation::SkinView* skin, std::span<const foundation::MorphTarget> morphTargets) {
     // The caller supplies render-ready geometry: the unweld is a port of
     // module3d.py and lives in the AGPL core, so running it here would drag
     // this Apache-2.0 module back across the licence boundary.
     const foundation::RenderView& rm = mesh;
     if (rm.vertexCount() == 0 || rm.indexCount() == 0) {
         return std::unexpected(SceneIoError{SceneIoErrorKind::EmptyMesh, path.string(), {}});
+    }
+
+    if (skin != nullptr &&
+        (!skin->valid() || skin->vertexCount() != rm.vertexCount() || skin->influences == 0)) {
+        return std::unexpected(SceneIoError{SceneIoErrorKind::InvalidSkinOrMorph, path.string(),
+                                            "skin does not describe this mesh"});
+    }
+    if (skin != nullptr) {
+        for (const uint32_t jIdx : skin->joints) {
+            if (jIdx >= skin->jointCount()) {
+                return std::unexpected(SceneIoError{SceneIoErrorKind::InvalidSkinOrMorph,
+                                                    path.string(), "joint index out of range"});
+            }
+        }
+    }
+    for (const auto& t : morphTargets) {
+        if (t.deltas.size() != rm.vertexCount()) {
+            return std::unexpected(SceneIoError{SceneIoErrorKind::InvalidSkinOrMorph, path.string(),
+                                                t.name + ": wrong delta count"});
+        }
     }
 
     const float scale = unitScale(options.unit) * options.scale;
@@ -164,9 +189,165 @@ std::expected<SceneExportResult, SceneIoError> exportScene(
         face.mIndices[2] = rm.index[f * 3 + 2];
     }
 
+    // ---- skin ------------------------------------------------------------
+    // assimp stores weights per BONE (a list of affected vertices), while we
+    // hold them per VERTEX. Verified empirically that assimp's FBX writer
+    // carries both bones and morph targets and that Blender reads them back --
+    // a writer that silently dropped them would be worse than not offering it.
+    if (skin != nullptr) {
+        const size_t infl = skin->influences;
+
+        // Invert per-vertex -> per-bone, counting first so each list is
+        // allocated exactly once.
+        std::vector<unsigned> perBoneCount(skin->jointCount(), 0);
+        for (size_t v = 0; v < rm.vertexCount(); ++v) {
+            for (size_t i = 0; i < infl; ++i) {
+                if (skin->weights[v * infl + i] > 0.0F) {
+                    ++perBoneCount[skin->joints[v * infl + i]];
+                }
+            }
+        }
+
+        am->mNumBones = static_cast<unsigned>(skin->jointCount());
+        am->mBones    = allocArray<aiBone*>(skin->jointCount());
+
+        std::vector<unsigned> filled(skin->jointCount(), 0);
+        for (size_t b = 0; b < skin->jointCount(); ++b) {
+            auto* bone = new aiBone();
+            bone->mName.Set(skin->jointNames[b]);
+            bone->mNumWeights = perBoneCount[b];
+            bone->mWeights =
+                perBoneCount[b] != 0 ? allocArray<aiVertexWeight>(perBoneCount[b]) : nullptr;
+
+            // The offset matrix is the inverse bind: it takes a vertex from
+            // model space into the bone's space. Scaled with the mesh, then
+            // transposed -- aiMatrix4x4 is row-major with translation in the
+            // last COLUMN, same as ours, but assimp indexes it a[row][col] via
+            // named members, so this is written out explicitly rather than
+            // memcpy'd.
+            foundation::Mat4 g = skin->globalRest[b];
+            g.m[0][3] *= scale;
+            g.m[1][3] = g.m[1][3] * scale + groundOffset;
+            g.m[2][3] *= scale;
+            const foundation::Mat4 inv = foundation::rigidInverse(g);
+
+            bone->mOffsetMatrix = aiMatrix4x4(inv.m[0][0], inv.m[0][1], inv.m[0][2], inv.m[0][3],
+                                              inv.m[1][0], inv.m[1][1], inv.m[1][2], inv.m[1][3],
+                                              inv.m[2][0], inv.m[2][1], inv.m[2][2], inv.m[2][3],
+                                              inv.m[3][0], inv.m[3][1], inv.m[3][2], inv.m[3][3]);
+            am->mBones[b]       = bone;
+        }
+
+        for (size_t v = 0; v < rm.vertexCount(); ++v) {
+            for (size_t i = 0; i < infl; ++i) {
+                const float w = skin->weights[v * infl + i];
+                if (w <= 0.0F) continue;
+                const uint32_t b   = skin->joints[v * infl + i];
+                aiVertexWeight& vw = am->mBones[b]->mWeights[filled[b]];
+                vw.mVertexId       = static_cast<unsigned>(v);
+                vw.mWeight         = w;
+                ++filled[b];
+            }
+        }
+    }
+
+    // ---- morph targets -----------------------------------------------------
+    // aiAnimMesh holds ABSOLUTE positions, not deltas, so the base is added
+    // back. Sending deltas produces a shape key that collapses the model to
+    // near the origin when enabled.
+    if (!morphTargets.empty()) {
+        am->mNumAnimMeshes = static_cast<unsigned>(morphTargets.size());
+        am->mAnimMeshes    = allocArray<aiAnimMesh*>(morphTargets.size());
+        am->mMethod        = aiMorphingMethod_MORPH_NORMALIZED;
+
+        for (size_t t = 0; t < morphTargets.size(); ++t) {
+            auto* anim = new aiAnimMesh();
+            anim->mName.Set(morphTargets[t].name);
+            anim->mWeight      = 0.0F;
+            anim->mNumVertices = static_cast<unsigned>(rm.vertexCount());
+            anim->mVertices    = allocArray<aiVector3D>(rm.vertexCount());
+            for (size_t v = 0; v < rm.vertexCount(); ++v) {
+                const Vec3& base = rm.coord[v];
+                const Vec3& d    = morphTargets[t].deltas[v];
+                // The delta takes the unit scale but not the ground offset --
+                // that is already in the base position.
+                anim->mVertices[v] =
+                    aiVector3D((base.x + d.x) * scale, (base.y + d.y) * scale + groundOffset,
+                               (base.z + d.z) * scale);
+            }
+            am->mAnimMeshes[t] = anim;
+        }
+    }
+
     scene->mRootNode->mNumMeshes = 1;
     scene->mRootNode->mMeshes    = allocArray<unsigned>(1);
     scene->mRootNode->mMeshes[0] = 0;
+
+    // Every aiBone needs a NODE of the same name in the scene graph, or the FBX
+    // writer fails outright: "Failed to find node for bone: root". The bone
+    // array alone is not a skeleton -- the hierarchy lives in the nodes, and
+    // aiBone only references it by name.
+    if (skin != nullptr) {
+        std::vector<aiNode*> jointNodes(skin->jointCount(), nullptr);
+        std::vector<unsigned> childCount(skin->jointCount(), 0);
+        unsigned rootJoints = 0;
+        for (size_t b = 0; b < skin->jointCount(); ++b) {
+            const int32_t parent = skin->jointParents[b];
+            if (parent < 0) {
+                ++rootJoints;
+            } else {
+                ++childCount[static_cast<size_t>(parent)];
+            }
+        }
+
+        for (size_t b = 0; b < skin->jointCount(); ++b) {
+            auto* node = new aiNode();
+            node->mName.Set(skin->jointNames[b]);
+
+            // Node transforms are LOCAL to the parent, and scaled with the mesh
+            // so the rig cannot drift from the body.
+            foundation::Mat4 g = skin->globalRest[b];
+            g.m[0][3] *= scale;
+            g.m[1][3] = g.m[1][3] * scale + groundOffset;
+            g.m[2][3] *= scale;
+
+            foundation::Mat4 local = g;
+            if (skin->jointParents[b] >= 0) {
+                foundation::Mat4 pg = skin->globalRest[static_cast<size_t>(skin->jointParents[b])];
+                pg.m[0][3] *= scale;
+                pg.m[1][3] = pg.m[1][3] * scale + groundOffset;
+                pg.m[2][3] *= scale;
+                local = foundation::rigidInverse(pg) * g;
+            }
+            node->mTransformation =
+                aiMatrix4x4(local.m[0][0], local.m[0][1], local.m[0][2], local.m[0][3],
+                            local.m[1][0], local.m[1][1], local.m[1][2], local.m[1][3],
+                            local.m[2][0], local.m[2][1], local.m[2][2], local.m[2][3],
+                            local.m[3][0], local.m[3][1], local.m[3][2], local.m[3][3]);
+
+            if (childCount[b] != 0) {
+                node->mChildren = allocArray<aiNode*>(childCount[b]);
+            }
+            jointNodes[b] = node;
+        }
+
+        // Link children. Parents precede children (validated above), so every
+        // parent node already exists.
+        for (size_t b = 0; b < skin->jointCount(); ++b) {
+            const int32_t parent = skin->jointParents[b];
+            if (parent < 0) continue;
+            aiNode* pn                        = jointNodes[static_cast<size_t>(parent)];
+            pn->mChildren[pn->mNumChildren++] = jointNodes[b];
+            jointNodes[b]->mParent            = pn;
+        }
+
+        scene->mRootNode->mChildren = allocArray<aiNode*>(rootJoints);
+        for (size_t b = 0; b < skin->jointCount(); ++b) {
+            if (skin->jointParents[b] >= 0) continue;
+            jointNodes[b]->mParent                                        = scene->mRootNode;
+            scene->mRootNode->mChildren[scene->mRootNode->mNumChildren++] = jointNodes[b];
+        }
+    }
 
     Assimp::Exporter exporter;
     const aiReturn rc = exporter.Export(scene.get(), std::string(formatId(format)), path.string());

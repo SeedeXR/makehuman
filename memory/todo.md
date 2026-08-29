@@ -351,8 +351,19 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       per active target.
       `extras.targetNames` is written: without it a DCC labels the keys
       "Key 1", "Key 2" and they are unusable.
-- [ ] Blendshape export for **FBX** (assimp's writer may not carry morphs —
-      check before promising it)
+- [x] **FBX rig + blendshape export.** Checked before promising: a probe scene
+      with bones and an `aiAnimMesh` round-tripped through assimp's FBX writer,
+      and Blender read both back. Only then was it built.
+      Blender confirms the real export: **163 bones, 21,833/21,833 skinned,
+      3 shape keys**, and the moved-vertex counts (2200 / 5865 / 294) match
+      `morphed.glb` **exactly** — two independent formats agreeing.
+      139 vertex groups, not 163: only 139 bones carry weight in the `.mhw`, and
+      both assimp and Blender drop the empty ones.
+      **Every `aiBone` needs a NODE of the same name**, or the writer fails with
+      `Failed to find node for bone: root`. The bone array is not a skeleton;
+      the hierarchy lives in the nodes.
+      `aiAnimMesh` holds **absolute positions**, not deltas — sending deltas
+      collapses the model toward the origin when a key is enabled.
 - [ ] Sparse morph accessors — a target touches ~2k of 19,158 vertices, so dense
       costs ~262 KB each. Fine for a handful, 335 MB for all 1,280.
 - [ ] Texture packing (ORM), GLB embedding, KTX2/Basis, optional Draco
