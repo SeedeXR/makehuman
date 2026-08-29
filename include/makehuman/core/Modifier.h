@@ -108,6 +108,14 @@ public:
     /// Sets a slider and recomputes the affected part of the stack.
     bool setModifierValue(std::string_view fullName, float value);
 
+    /// Every modifier back to its default, and the macro scalars with them.
+    ///
+    /// The reference calls this before applying a loaded `.mhm`
+    /// (`human.py:1486` -> `resetMeshValues`, `:1293-1305`). Without it a second
+    /// load blends into the first: a modifier the new file does not mention
+    /// keeps the old file's value.
+    void resetToDefaults();
+
     /// Recomputes the entire stack from the current scalars and slider values.
     void rebuildStack();
 

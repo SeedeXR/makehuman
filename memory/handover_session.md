@@ -4,6 +4,80 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-30 11:18:07 — Session 039 · **.mhm save, and a Save that threw the character away**
+
+### What shipped
+- **`core::saveMhm` / `mhmFromHuman`** — the `.mhm` writer. There was only a reader.
+- **File menu** with Open / Save / Save As on the platform shortcuts, plus `--load` and
+  `--save` for scripted use.
+- **`Human::resetToDefaults()`** — what the reference does before applying a load.
+- **`foundation::parseFloat` / `formatShortest` at double precision.**
+
+### Byte parity, this time with a fixture I can vouch for
+`tests/golden/mhm/reference_save.mhm` is the reference's own `Human.save()` output,
+captured by `capture_fixture.py mhm_save`, carrying a uuid, mixed-case duplicate tags, a
+camera and two plugin lines — none of which the older fixtures had.
+
+**The two older fixtures were committed without a generator**, so the claim in the test
+that they came from the reference was unsupported. Corrected: they stay as round-trip
+corpus, and the new one is the evidence.
+
+### The bug that mattered
+`writeTo` and `--save` built the document with `mhmFromHuman`, which carries only
+version, name and modifiers. **uuid, tags, camera, subdivide and every plugin line the
+loader had carefully preserved were dropped on every save.** Open a rigged, clothed
+character, press Cmd+S, reopen: naked, unrigged, unnamed. Now `documentFor` refreshes the
+modifiers on the loaded file instead, and `--load X --save Y` reproduces X byte for byte.
+
+And `applyMhm` never reset, so loading a second character blended it with the first: a
+modifier the new file does not mention kept the old value, in the mesh *and* in the
+slider. The reference resets at `human.py:1486`. Fixed, and the panel now syncs from
+`human` rather than from the file's own lines, which is what makes the omitted sliders
+come back.
+
+### A review finding that was wrong, and how I knew
+The review reported that the reference writes `subdivide` with **no** trailing newline
+(`human.py:1640`), making my writer wrong and my fixtures impossible. Running the
+reference's save proved the opposite: the file **does** end with `0x0a`, because
+`f = SaveWriter(f)` at `:1633` wraps the handle and `SaveWriter.write` appends a newline
+when the text lacks one (`:1619-1623`). My writer was right. Worth recording because the
+finding was specific, cited a real line, and was still wrong — running it was the only
+way to tell.
+
+### Other review findings fixed
+- **tags**: the reference lower-cases, truncates to 25 and de-duplicates on load
+  (`human.py:131`, reached at `:1524-1526`). `Zulu;alpha;MIKE;alpha` must come back as
+  `alpha;mike;zulu`; ours kept case and order.
+- **camera was float**: the reference writes Python doubles with `'%s'`, up to 17
+  significant digits, so `-13.399999999999999` came back as `-13.4`. Now double, with
+  `parseFloat`/`formatShortest` overloads in foundation.
+- `--load` never seeded the panel, so the sliders lied — the exact failure the comment
+  20 lines above it warns about.
+- `documentPath` and the File-menu lambdas were declared **after** `window` while their
+  connections are owned by it. Hoisted, same as `rebuildInto` last session.
+- Ponytail: `--save` now always exits as its help says; one version constant instead of
+  two literals; the status-bar echo of the path dropped (the title already shows it); the
+  duplicate window-level `addAction` dropped (Qt routes menu-bar shortcuts).
+
+### Corrections made this session
+- Four scripted edits aborted on their own assertions after clang-format reflowed the
+  target text; twice I reported an edit as applied when the script had died before
+  writing. Caught by grepping for the change rather than trusting the exit line.
+
+### Verified this session
+- 323/323 in debug, release and ASan; the app ASan-clean loading and saving.
+- `--load reference_save.mhm --save out.mhm` → **byte-identical**.
+- All 7 licence gates; clang-format clean; `mh_ui` → 0 `mh::core` symbols.
+- Benchmarks unchanged.
+
+### Next
+- A new character writes no `camera` line: the viewport camera is not plumbed into the
+  document. The reference always writes one.
+- Snapping with drop indicators, nested/tabbed docking (M8 remainder).
+- Proxies (clothes, hair, eyes) have a loader and 4 shipped assets but no picker.
+
+---
+
 ## 2026-08-30 09:41:22 — Session 038 · **skin and pose pickers, and a 33 cm pose bug**
 
 ### What shipped

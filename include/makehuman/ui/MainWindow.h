@@ -35,11 +35,22 @@ public:
 
     [[nodiscard]] ViewportWidget* viewport() const;
 
+    /// Shown in the title bar after a load or save.
+    void setDocumentPath(const QString& path);
+
     /// Restores docks and geometry from QSettings, or lays out the defaults.
     void restoreWorkspace();
     void saveWorkspace() const;
     /// Back to the shipped layout, discarding the saved one.
     void resetWorkspace();
+
+signals:
+    /// The File menu, as intent rather than action: this module must not decide
+    /// what a `.mhm` is, so it says what the user asked for and the app -- which
+    /// owns the character -- does it.
+    void openRequested();
+    void saveRequested();
+    void saveAsRequested();
 
 private:
     struct Impl;

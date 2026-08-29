@@ -115,7 +115,34 @@ bool parseFloat(std::string_view text, float& out) {
     return std::isfinite(out);
 }
 
+bool parseFloat(std::string_view text, double& out) {
+    if (text.empty()) return false;
+    std::string_view v = text;
+    if (v.front() == '+') v.remove_prefix(1);
+    if (v.empty()) return false;
+
 #if MH_HAVE_FP_CHARCONV
+    const auto r = std::from_chars(v.data(), v.data() + v.size(), out);
+    if (r.ec != std::errc{} || r.ptr != v.data() + v.size()) return false;
+#else
+    const std::string buf(v);
+    char* end = nullptr;
+    {
+        const ScopedCLocale cloc;
+        out = std::strtod(buf.c_str(), &end);
+    }
+    if (end != buf.c_str() + buf.size()) return false;
+#endif
+    return std::isfinite(out);
+}
+
+#if MH_HAVE_FP_CHARCONV
+
+std::string formatShortest(double value) {
+    char buf[64];
+    const auto r = std::to_chars(buf, buf + sizeof(buf), value);
+    return (r.ec == std::errc{}) ? std::string(buf, r.ptr) : std::string("0");
+}
 
 std::string formatFixed(float value, int decimals) {
     char buf[64];
@@ -169,6 +196,20 @@ std::string formatFixed(float value, int decimals) {
 
 std::string formatGeneral(float value, int significant) {
     return generalImpl(value, significant);
+}
+
+std::string formatShortest(double value) {
+    // 17 significant digits always round-trips binary64, so this terminates.
+    for (int p = 1; p <= 17; ++p) {
+        char buf[64];
+        const int n           = std::snprintf(buf, sizeof buf, "%.*g", p, value);
+        std::string candidate = clip(buf, n);
+        double back           = 0.0;
+        if (parseFloat(candidate, back) && back == value) return candidate;
+    }
+    char buf[64];
+    const int n = std::snprintf(buf, sizeof buf, "%.17g", value);
+    return clip(buf, n);
 }
 
 std::string formatShortest(float value) {

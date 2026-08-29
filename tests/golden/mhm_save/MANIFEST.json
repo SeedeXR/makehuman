@@ -1,0 +1,18 @@
+{
+  "subsystem": "mhm_save",
+  "captured_at": "2026-08-29T22:35:05.523455+00:00",
+  "reference_commit": "d0515c4754b105ebda2943142ed7e2b11ea9d95e",
+  "python": "3.14.6",
+  "numpy": "2.5.2",
+  "platform": "darwin",
+  "entries": {
+    "saved": {
+      "file": "reference_save.mhm"
+    }
+  },
+  "source": "the reference's Human.save()",
+  "bytes": 695,
+  "ends_with_newline": true,
+  "line_count": 22,
+  "tags_line": "tags alpha;mike;zulu"
+}

@@ -2,10 +2,16 @@
 #include "makehuman/ui/MainWindow.h"
 
 #include "makehuman/ui/PanelTitleBar.h"
+#include "makehuman/ui/Theme.h"
 #include "makehuman/ui/ViewportWidget.h"
 
+#include <QAction>
 #include <QDockWidget>
+#include <QFileInfo>
+#include <QKeySequence>
 #include <QLabel>
+#include <QMenu>
+#include <QMenuBar>
 #include <QSettings>
 #include <QStatusBar>
 
@@ -74,6 +80,23 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, QWidget* parent)
         statusBar()->showMessage(error.isEmpty() ? QStringLiteral("Ready") : error);
     });
 
+    QMenu* file              = menuBar()->addMenu(tr("&File"));
+    const auto addFileAction = [&](const QString& objectName, const QString& text,
+                                   QKeySequence::StandardKey key, const char* iconName,
+                                   void (MainWindow::*signal)()) {
+        QAction* a = file->addAction(text);
+        a->setObjectName(objectName);
+        a->setShortcut(key);
+        a->setIcon(theme::icon(iconName, theme::palette().textSecondary, 16));
+        connect(a, &QAction::triggered, this, signal);
+    };
+    addFileAction(QStringLiteral("file.open"), tr("Open…"), QKeySequence::Open, "folder-open",
+                  &MainWindow::openRequested);
+    addFileAction(QStringLiteral("file.save"), tr("Save"), QKeySequence::Save, "save",
+                  &MainWindow::saveRequested);
+    addFileAction(QStringLiteral("file.saveAs"), tr("Save As…"), QKeySequence::SaveAs, "upload",
+                  &MainWindow::saveAsRequested);
+
     statusBar()->showMessage(QStringLiteral("Ready"));
     resize(1280, 800);
     d_->defaultState = saveState();
@@ -122,6 +145,14 @@ void MainWindow::setModellingWidget(QWidget* widget) {
 
 void MainWindow::setMaterialsWidget(QWidget* widget) {
     installInDock(findChild<QDockWidget*>(QStringLiteral("dock.materials")), widget);
+}
+
+void MainWindow::setDocumentPath(const QString& path) {
+    // The file name, not the path: a title bar full of directories tells the
+    // user nothing they were looking for.
+    setWindowTitle(path.isEmpty()
+                       ? QStringLiteral("MakeHuman")
+                       : QStringLiteral("MakeHuman — %1").arg(QFileInfo(path).fileName()));
 }
 
 void MainWindow::saveWorkspace() const {

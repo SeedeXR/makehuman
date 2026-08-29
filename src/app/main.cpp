@@ -4,6 +4,7 @@
 // and hands the UI a plain view, which is what lets mh_ui and mh_render stay
 // Apache-2.0.
 #include "makehuman/core/Mesh.h"
+#include "makehuman/core/Mhm.h"
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/core/RenderMesh.h"
 #include "makehuman/core/SliderLayout.h"
@@ -24,7 +25,9 @@
 
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QFileDialog>
 #include <QFont>
+#include <QMessageBox>
 #include <QPixmap>
 #include <QTimer>
 #include "makehuman/ui/ViewportWidget.h"
@@ -257,6 +260,25 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(const std::string& curr
     return groups;
 }
 
+/// The document to write: @p base with its modifiers refreshed from @p human.
+///
+/// Starting from a fresh MhmFile instead loses uuid, tags, camera and every
+/// plugin line the loader kept -- open a rigged, clothed character, press Save,
+/// and it reopens naked and unrigged.
+mh::core::MhmFile documentFor(const mh::core::Human& human, const mh::core::MhmFile& base,
+                              const std::filesystem::path& path) {
+    mh::core::MhmFile out = mh::core::mhmFromHuman(human, path.stem().string());
+    out.writtenBy         = base.writtenBy;
+    out.uuid              = base.uuid;
+    out.tags              = base.tags;
+    out.camera            = base.camera;
+    out.hasCamera         = base.hasCamera;
+    out.subdivide         = base.subdivide;
+    out.unhandled         = base.unhandled;
+    if (!base.name.empty()) out.name = base.name;
+    return out;
+}
+
 /// Writes the mesh in whichever format @p path's extension names.
 bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
                 const mh::core::RenderMesh& rm) {
@@ -356,6 +378,14 @@ int main(int argc, char** argv) {
         QStringLiteral("skin"),
         QStringLiteral("Litsphere to shade with: african, asian or caucasian (default)."),
         QStringLiteral("name"), QStringLiteral("caucasian"));
+    const QCommandLineOption loadOpt(QStringLiteral("load"),
+                                     QStringLiteral("Load a .mhm character before anything else."),
+                                     QStringLiteral("path"));
+    const QCommandLineOption saveOpt(QStringLiteral("save"),
+                                     QStringLiteral("Write the character as .mhm and exit."),
+                                     QStringLiteral("path"));
+    parser.addOption(loadOpt);
+    parser.addOption(saveOpt);
     parser.addOption(skinOpt);
     parser.addOption(setOpt);
     parser.addOption(poseOpt);
@@ -388,6 +418,32 @@ int main(int argc, char** argv) {
     // start-up does not pay for all 1,280.
     mh::core::TargetLibrary targets(std::filesystem::path(MH_DATA_DIR) / "targets");
 
+    // The character as a file: modifiers are refreshed from `human` on save, but
+    // everything else -- uuid, tags, camera, and the skeleton/proxy/material
+    // lines this build cannot yet interpret -- survives only by being carried.
+    mh::core::MhmFile document;
+
+    if (parser.isSet(loadOpt)) {
+        const std::filesystem::path file = parser.value(loadOpt).toStdString();
+        const auto loaded                = mh::core::loadMhm(file);
+        if (!loaded) {
+            std::fprintf(stderr, "cannot load %s: %s\n", file.string().c_str(),
+                         loaded.error().message().c_str());
+            return 1;
+        }
+        // Reset first, as the reference does (human.py:1486): a modifier the file
+        // does not mention must go back to its default, not keep what was there.
+        human.resetToDefaults();
+        uint32_t unknown       = 0;
+        const uint32_t applied = mh::core::applyMhm(*loaded, human, &unknown);
+        document               = *loaded;
+        std::printf("loaded %s: %u modifiers applied", file.string().c_str(), applied);
+        if (unknown > 0) std::printf(", %u unknown", unknown);
+        std::printf("\n");
+    }
+
+    // --set runs after --load deliberately, so an explicit value on the command
+    // line wins over the file.
     // Collected so the panel can be moved to match: a mesh that is morphed
     // while the sliders show their defaults is a UI that lies, and the first
     // nudge of such a slider snaps the model back.
@@ -434,6 +490,18 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    if (parser.isSet(saveOpt)) {
+        const std::filesystem::path file = parser.value(saveOpt).toStdString();
+        const mh::core::MhmFile doc      = documentFor(human, document, file);
+        if (const auto ok = mh::core::saveMhm(file, doc); !ok) {
+            std::fprintf(stderr, "cannot save %s: %s\n", file.string().c_str(),
+                         ok.error().message().c_str());
+            return 1;
+        }
+        std::printf("wrote %s (%zu modifiers)\n", file.string().c_str(), doc.modifiers.size());
+        return 0;  // --save means save and exit, as its help says
+    }
+
     if (parser.isSet(exportOpt)) {
         return exportMesh(parser.value(exportOpt).toStdString(), *mesh, rm) ? 0 : 1;
     }
@@ -458,6 +526,11 @@ int main(int argc, char** argv) {
         rm.refreshPositions(*mesh);
         w.setMesh(rm.view());
     };
+
+    // Above `window` for the same reason rebuildInto is: the File-menu
+    // connections are owned by the window and reference this, so it has to
+    // outlive it.
+    QString documentPath = parser.value(loadOpt);
 
     mh::ui::MainWindow window(parser.value(shaderOpt).toStdString());
 
@@ -513,6 +586,66 @@ int main(int argc, char** argv) {
                          rig = std::move(next);
                          rebuildInto(window);
                      });
+
+    window.setDocumentPath(documentPath);
+
+    const auto applyLoaded = [&](const QString& file) {
+        const auto loaded = mh::core::loadMhm(file.toStdString());
+        if (!loaded) {
+            QMessageBox::warning(&window, QObject::tr("Cannot open"),
+                                 QString::fromStdString(loaded.error().message()));
+            return;
+        }
+        // Reset first (human.py:1486). Without it a modifier the new file does
+        // not mention keeps the previous character's value, and what loads is a
+        // blend of the two.
+        human.resetToDefaults();
+        mh::core::applyMhm(*loaded, human, nullptr);
+        document = *loaded;
+
+        // Sync the panel from `human`, not from the file: a slider the file
+        // omits has just been reset, and walking only the file's own lines
+        // would leave it showing the previous character's value.
+        for (const mh::core::Modifier& m : human.modifiers()) {
+            panel->setValue(QString::fromStdString(m.fullName), human.modifierValue(m.fullName));
+        }
+        documentPath = file;
+        window.setDocumentPath(file);
+        rebuildInto(window);
+    };
+
+    const auto writeTo = [&](const QString& file) {
+        const mh::core::MhmFile doc =
+            documentFor(human, document, std::filesystem::path(file.toStdString()));
+        if (const auto ok = mh::core::saveMhm(file.toStdString(), doc); !ok) {
+            QMessageBox::warning(&window, QObject::tr("Cannot save"),
+                                 QString::fromStdString(ok.error().message()));
+            return;
+        }
+        documentPath = file;
+        window.setDocumentPath(file);
+    };
+
+    const QString filter = QObject::tr("MakeHuman character (*.mhm)");
+    QObject::connect(&window, &mh::ui::MainWindow::openRequested, [&] {
+        const QString file =
+            QFileDialog::getOpenFileName(&window, QObject::tr("Open character"), {}, filter);
+        if (!file.isEmpty()) applyLoaded(file);
+    });
+    QObject::connect(&window, &mh::ui::MainWindow::saveAsRequested, [&] {
+        const QString file =
+            QFileDialog::getSaveFileName(&window, QObject::tr("Save character"), {}, filter);
+        if (!file.isEmpty()) writeTo(file);
+    });
+    QObject::connect(&window, &mh::ui::MainWindow::saveRequested, [&] {
+        // Save with no path yet is Save As -- silently writing somewhere the
+        // user did not choose is worse than asking.
+        if (documentPath.isEmpty()) {
+            emit window.saveAsRequested();
+            return;
+        }
+        writeTo(documentPath);
+    });
 
     window.restoreWorkspace();
     window.show();

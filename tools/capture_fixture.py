@@ -454,6 +454,91 @@ def capture_weights() -> None:
     })
 
 
+def capture_mhm_save() -> None:
+    """The reference's own Human.save() output, byte for byte.
+
+    The two .mhm fixtures already in tests/golden/mhm were added without a
+    generator, so nothing supported the claim that the reference wrote them --
+    and both end with a newline, which `human.py:1640` does not emit. This
+    drives the real thing so the writer can be checked against it, and includes
+    a uuid, tags and plugin-contributed lines, none of which the old fixtures
+    had.
+    """
+    import humanmodifier
+    import files3d
+    from core import G
+
+    print("capturing: mhm_save")
+    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+
+    class _StubCamera:
+        def getRotation(self):
+            return [12.0, 34.0, 0.0]
+
+        translation = [1.0, 2.0, 3.0]
+        zoomFactor = 1.5
+
+    class _StubApp:
+        modelCamera = _StubCamera()
+        saveHandlers = []
+
+        def progress(self, *args, **kwargs):
+            pass
+
+        def callAsync(self, fn, *args):
+            fn(*args)
+
+        def callEvent(self, *args, **kwargs):
+            pass
+
+        def addSetting(self, *args, **kwargs):
+            pass
+
+        def getSetting(self, name):
+            return {}.get(name, False)
+
+    G.app = _StubApp()
+
+    import human as human_mod
+
+    h = human_mod.Human(mesh)
+    for f in ("modeling_modifiers.json", "measurement_modifiers.json",
+              "bodyshapes_modifiers.json"):
+        humanmodifier.loadModifiers("data/modifiers/" + f, h)
+
+    h.setName("hero")
+    h.setUuid("1234-abcd")
+    # Deliberately mixed case, out of order, with a duplicate: the reference
+    # lower-cases, truncates to 25 and stores in a set.
+    for t in ("Zulu", "alpha", "MIKE", "alpha"):
+        h.addTag(t)
+
+    for name, value in (("head/head-oval", 0.4), ("macrodetails/Gender", 1.0)):
+        h.getModifier(name).setValue(value)
+
+    # A plugin-contributed line, so the unhandled write-back path is covered.
+    def _handler(_human, f):
+        f.write("skeleton default.mhskel")
+        f.write("material Braid01 mhmat")
+
+    G.app.saveHandlers = [_handler]
+
+    out = GOLDEN / "mhm"
+    out.mkdir(parents=True, exist_ok=True)
+    target = out / "reference_save.mhm"
+    h.save(str(target))
+
+    raw = target.read_bytes()
+    _finish("mhm_save", {"saved": {"file": "reference_save.mhm"}}, {
+        "source": "the reference's Human.save()",
+        "bytes": len(raw),
+        "ends_with_newline": raw.endswith(b"\n"),
+        "line_count": len(raw.decode("utf-8").split("\n")),
+        "tags_line": next((l for l in raw.decode("utf-8").split("\n")
+                           if l.startswith("tags ")), None),
+    })
+
+
 def capture_slider_layout() -> None:
     """The slider task-view registry: views, sections, order and every label.
 
@@ -1146,6 +1231,7 @@ SUBSYSTEMS = {
     "skinning": capture_skinning,
     "body_pose": capture_body_pose,
     "slider_layout": capture_slider_layout,
+    "mhm_save": capture_mhm_save,
     "transform": capture_transform,
     "bvh": capture_bvh,
     "poseunits": capture_poseunits,

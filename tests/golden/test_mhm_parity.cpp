@@ -10,6 +10,7 @@
 
 #include "makehuman/core/Modifier.h"
 #include "makehuman/core/ObjReader.h"
+#include "makehuman/core/TargetIndex.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -165,4 +166,189 @@ TEST_CASE("loading a .mhm reproduces the reference's geometry", "[golden][parity
         INFO("worst delta " << worst);
         CHECK(bad == 0);
     }
+}
+
+// --- the writer -------------------------------------------------------------
+
+TEST_CASE("a .mhm written by us is byte-identical to the reference's", "[mhm][golden][parity]") {
+    // reference_save.mhm IS the reference's own Human.save() output -- captured
+    // by `capture_fixture.py mhm_save`, with a uuid, mixed-case duplicate tags,
+    // a camera and two plugin-contributed lines, none of which the other two
+    // fixtures carry. (neutral/mixed were committed without a generator, so
+    // their provenance is NOT verifiable; they stay as round-trip corpus, not
+    // as evidence about the reference.)
+    //
+    // Byte equality here is parity with the format itself: field order, the
+    // six-decimal modifier values, the sorted lower-cased tags, plugin lines
+    // before `subdivide`, and the trailing newline SaveWriter adds
+    // (human.py:1619-1623).
+    for (const char* name : {"reference_save.mhm", "neutral.mhm", "mixed.mhm"}) {
+        INFO(name);
+        const std::filesystem::path source = std::filesystem::path(MH_GOLDEN_DIR) / "mhm" / name;
+
+        const auto loaded = loadMhm(source);
+        REQUIRE(loaded.has_value());
+
+        const std::filesystem::path out =
+            std::filesystem::temp_directory_path() / (std::string("mh-roundtrip-") + name);
+        REQUIRE(saveMhm(out, *loaded).has_value());
+
+        const auto read = [](const std::filesystem::path& p) {
+            std::ifstream in(p, std::ios::binary);
+            REQUIRE(in);
+            return std::string(std::istreambuf_iterator<char>(in),
+                               std::istreambuf_iterator<char>());
+        };
+        CHECK(read(out) == read(source));
+        std::filesystem::remove(out);
+    }
+}
+
+TEST_CASE("a saved file loads back with the same values", "[mhm]") {
+    const auto loaded = loadMhm(std::filesystem::path(MH_GOLDEN_DIR) / "mhm" / "mixed.mhm");
+    REQUIRE(loaded.has_value());
+
+    const std::filesystem::path out = std::filesystem::temp_directory_path() / "mh-reload.mhm";
+    REQUIRE(saveMhm(out, *loaded).has_value());
+
+    const auto again = loadMhm(out);
+    REQUIRE(again.has_value());
+    std::filesystem::remove(out);
+
+    CHECK(again->version == loaded->version);
+    CHECK(again->name == loaded->name);
+    CHECK(again->writtenBy == loaded->writtenBy);
+    CHECK(again->subdivide == loaded->subdivide);
+    CHECK(again->hasCamera == loaded->hasCamera);
+    REQUIRE(again->modifiers.size() == loaded->modifiers.size());
+    for (size_t i = 0; i < again->modifiers.size(); ++i) {
+        INFO("modifier " << i << " " << loaded->modifiers[i].first);
+        // Order is part of the format, so this compares positionally.
+        CHECK(again->modifiers[i].first == loaded->modifiers[i].first);
+        CHECK_THAT(static_cast<double>(again->modifiers[i].second),
+                   WithinAbs(static_cast<double>(loaded->modifiers[i].second), 1e-6));
+    }
+}
+
+TEST_CASE("saving to an unwritable path is reported, not silently lost", "[mhm]") {
+    MhmFile m;
+    m.version    = "v1.3.0";
+    const auto r = saveMhm("/definitely/not/a/directory/x.mhm", m);
+    REQUIRE_FALSE(r.has_value());
+    CHECK(r.error().kind == MhmErrorKind::Unreadable);
+}
+
+TEST_CASE("mhmFromHuman writes every macro but only non-zero shape sliders", "[mhm]") {
+    const TargetIndex idx = TargetIndex::build(std::filesystem::path(MH_DATA_DIR) / "targets");
+    auto mods =
+        loadModifiers(std::filesystem::path(MH_DATA_DIR) / "modifiers" / "modeling_modifiers.json");
+    REQUIRE(mods.has_value());
+    const size_t macroCount =
+        static_cast<size_t>(std::count_if(mods->begin(), mods->end(), [](const Modifier& m) {
+            return m.kind == ModifierKind::Macro || m.kind == ModifierKind::Ethnic;
+        }));
+    REQUIRE(macroCount > 0);
+
+    Human h(&idx, *mods);
+    const MhmFile fresh = mhmFromHuman(h, "fresh");
+    // Untouched: only the macros, because a macro's default is 0.5 and leaving
+    // it out would load back as 0.
+    CHECK(fresh.modifiers.size() == macroCount);
+    CHECK(fresh.name == "fresh");
+
+    REQUIRE(h.setModifierValue("head/head-oval", 0.4F));
+    const MhmFile withShape = mhmFromHuman(h, "shaped");
+    CHECK(withShape.modifiers.size() == macroCount + 1);
+
+    // Back to zero and it drops out again.
+    REQUIRE(h.setModifierValue("head/head-oval", 0.0F));
+    CHECK(mhmFromHuman(h, "x").modifiers.size() == macroCount);
+}
+
+TEST_CASE("tags are lower-cased, truncated and de-duplicated on load", "[mhm]") {
+    // human.py:131, reached from the loader at :1524-1526. The reference stores
+    // them in a set and sorts on write, so "Zulu;alpha;MIKE;alpha" comes back
+    // as "alpha;mike;zulu" -- not the raw strings in file order.
+    const auto loaded =
+        loadMhm(std::filesystem::path(MH_GOLDEN_DIR) / "mhm" / "reference_save.mhm");
+    REQUIRE(loaded.has_value());
+
+    std::vector<std::string> tags = loaded->tags;
+    std::sort(tags.begin(), tags.end());
+    CHECK(tags == std::vector<std::string>{"alpha", "mike", "zulu"});
+
+    // The rest of the reference's own header survived the parse.
+    CHECK(loaded->uuid == "1234-abcd");
+    CHECK(loaded->name == "hero");
+    CHECK(loaded->hasCamera);
+    // Plugin lines this build has no handler for are kept verbatim.
+    CHECK(loaded->unhandled ==
+          std::vector<std::string>{"skeleton default.mhskel", "material Braid01 mhmat"});
+}
+
+TEST_CASE("camera keeps the precision the format carries", "[mhm]") {
+    // Python writes camera values with '%s', up to 17 significant digits. Held
+    // as float they came back as -13.4 and 1.1 -- a different file.
+    const std::filesystem::path out = std::filesystem::temp_directory_path() / "mh-camera.mhm";
+    {
+        std::ofstream f(out, std::ios::binary);
+        REQUIRE(f);
+        f << "version v1.3.0\n"
+          << "camera -13.399999999999999 27.200000000000003 0.0 0.0 0.0 1.0999999999999999\n"
+          << "subdivide False\n";
+    }
+    const auto loaded = loadMhm(out);
+    REQUIRE(loaded.has_value());
+    REQUIRE(loaded->hasCamera);
+
+    const std::filesystem::path back =
+        std::filesystem::temp_directory_path() / "mh-camera-back.mhm";
+    REQUIRE(saveMhm(back, *loaded).has_value());
+
+    std::ifstream in(back);
+    REQUIRE(in);
+    std::string line;
+    bool found = false;
+    while (std::getline(in, line)) {
+        if (!line.starts_with("camera ")) continue;
+        found = true;
+        CHECK(line ==
+              "camera -13.399999999999999 27.200000000000003 0.0 0.0 0.0 1.0999999999999999");
+    }
+    CHECK(found);
+    std::filesystem::remove(out);
+    std::filesystem::remove(back);
+}
+
+TEST_CASE("loading a second character must reset first, or the two blend", "[mhm]") {
+    // The reference resets before applying (human.py:1486 -> resetMeshValues,
+    // :1293-1305). applyMhm deliberately does NOT -- it is the apply step, and
+    // its name says so -- which makes the reset the caller's job and this the
+    // test that says why.
+    const TargetIndex idx = TargetIndex::build(std::filesystem::path(MH_DATA_DIR) / "targets");
+    auto mods =
+        loadModifiers(std::filesystem::path(MH_DATA_DIR) / "modifiers" / "modeling_modifiers.json");
+    REQUIRE(mods.has_value());
+
+    const auto neutral = loadMhm(std::filesystem::path(MH_GOLDEN_DIR) / "mhm" / "neutral.mhm");
+    REQUIRE(neutral.has_value());
+    // The file must not mention this modifier, or the test proves nothing.
+    REQUIRE(std::none_of(neutral->modifiers.begin(), neutral->modifiers.end(),
+                         [](const auto& kv) { return kv.first == "head/head-oval"; }));
+
+    Human blended(&idx, *mods);
+    REQUIRE(blended.setModifierValue("head/head-oval", 0.4F));
+    applyMhm(*neutral, blended, nullptr);
+    // Without a reset the previous character's head survives the load.
+    CHECK_THAT(static_cast<double>(blended.modifierValue("head/head-oval")), WithinAbs(0.4, 1e-6));
+
+    Human clean(&idx, *mods);
+    REQUIRE(clean.setModifierValue("head/head-oval", 0.4F));
+    clean.resetToDefaults();
+    applyMhm(*neutral, clean, nullptr);
+    CHECK_THAT(static_cast<double>(clean.modifierValue("head/head-oval")), WithinAbs(0.0, 1e-6));
+
+    // And the reset does not throw away what the file DOES set.
+    CHECK_THAT(static_cast<double>(clean.modifierValue("macrodetails/Gender")),
+               WithinAbs(0.5, 1e-6));
 }

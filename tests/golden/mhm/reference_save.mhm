@@ -1,0 +1,21 @@
+# Written by MakeHuman UNKNOWN:UNKNOWN
+version v1.3.0
+uuid 1234-abcd
+name hero
+tags alpha;mike;zulu
+camera 12.0 34.0 1.0 2.0 3.0 1.5
+modifier head/head-oval 0.400000
+modifier breast/BreastSize 0.500000
+modifier breast/BreastFirmness 0.500000
+modifier macrodetails/Gender 1.000000
+modifier macrodetails/Age 0.500000
+modifier macrodetails/African 0.333333
+modifier macrodetails/Asian 0.333333
+modifier macrodetails/Caucasian 0.333333
+modifier macrodetails-universal/Muscle 0.500000
+modifier macrodetails-universal/Weight 0.500000
+modifier macrodetails-height/Height 0.500000
+modifier macrodetails-proportions/BodyProportions 0.500000
+skeleton default.mhskel
+material Braid01 mhmat
+subdivide False

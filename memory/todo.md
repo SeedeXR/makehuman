@@ -466,6 +466,21 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       pose conjugated into the previous pose's rest frame. Measured **33 cm max
       / 8 cm mean** error over all 19,158 vertices. Always reset to the morph
       base first; pinned by `tests/golden/test_body_pose.cpp`.
+- [x] **`.mhm` save, and load/save in the UI** — `core::saveMhm` +
+      `mhmFromHuman`, File menu with the platform Open/Save/Save As shortcuts,
+      and `--load` / `--save` for scripted use.
+      **Byte-parity against the reference's own `Human.save()`**
+      (`tests/golden/mhm/reference_save.mhm`, captured by
+      `capture_fixture.py mhm_save`), covering uuid, tags, camera, plugin lines
+      and `subdivide`.
+      **Two traps:** saving from a fresh `MhmFile` silently drops uuid, tags,
+      camera and every plugin line the loader kept — open a rigged, clothed
+      character, press Save, get back a naked unrigged body. And `applyMhm` does
+      not reset, so a second load blends with the first (`human.py:1486`).
+      Both fixed and pinned.
+- [ ] `.mhm` camera is preserved on round trip but a NEW character writes no
+      camera line, because the viewport camera is not plumbed into the document.
+      The reference always writes one.
 - [ ] Snapping with drop indicators
 - [x] Six-dot panel menu (float/dock/tab/reset/close) — `design.md` §6.3.
       `PanelTitleBar` replaces the whole dock title bar; Qt offers no hook for

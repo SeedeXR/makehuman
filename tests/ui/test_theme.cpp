@@ -15,9 +15,11 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <QAction>
 #include <QComboBox>
 #include <QDockWidget>
 #include <QImage>
+#include <QKeySequence>
 #include <QLabel>
 #include <QMenu>
 #include <QPushButton>
@@ -609,4 +611,64 @@ TEST_CASE("a group with no explicit default shows its first choice", "[assets]")
     // panel does not override it -- which it does not, and that is honest:
     // "no explicit default" and "the first one" are the same thing to a combo.
     CHECK(panel.choice(QStringLiteral("Hair")) == QStringLiteral("a"));
+}
+
+// --- the File menu ----------------------------------------------------------
+
+TEST_CASE("the File menu offers open and save with the platform shortcuts", "[file]") {
+    useShippedIcons();
+    mh::ui::MainWindow w(MH_SHADER_DIR);
+
+    struct Expected {
+        const char* name;
+        QKeySequence::StandardKey key;
+    };
+
+    for (const Expected& e :
+         {Expected{"file.open", QKeySequence::Open}, Expected{"file.save", QKeySequence::Save},
+          Expected{"file.saveAs", QKeySequence::SaveAs}}) {
+        INFO(e.name);
+        auto* a = w.findChild<QAction*>(QString::fromLatin1(e.name));
+        REQUIRE(a != nullptr);
+        // QKeySequence::Save is Cmd+S on macOS and Ctrl+S elsewhere; asking for
+        // the standard key rather than a literal keeps that right per platform.
+        CHECK(a->shortcut() == QKeySequence(e.key));
+        CHECK_FALSE(a->icon().isNull());
+    }
+}
+
+TEST_CASE("triggering a File action reports intent rather than acting", "[file]") {
+    useShippedIcons();
+    mh::ui::MainWindow w(MH_SHADER_DIR);
+
+    int opened  = 0;
+    int saved   = 0;
+    int savedAs = 0;
+    QObject::connect(&w, &mh::ui::MainWindow::openRequested, [&] { ++opened; });
+    QObject::connect(&w, &mh::ui::MainWindow::saveRequested, [&] { ++saved; });
+    QObject::connect(&w, &mh::ui::MainWindow::saveAsRequested, [&] { ++savedAs; });
+
+    w.findChild<QAction*>(QStringLiteral("file.open"))->trigger();
+    w.findChild<QAction*>(QStringLiteral("file.save"))->trigger();
+    w.findChild<QAction*>(QStringLiteral("file.saveAs"))->trigger();
+
+    // The UI must not know what a .mhm is; the app owns the character.
+    CHECK(opened == 1);
+    CHECK(saved == 1);
+    CHECK(savedAs == 1);
+}
+
+TEST_CASE("the document path shows in the title, and clearing it restores the name", "[file]") {
+    useShippedIcons();
+    mh::ui::MainWindow w(MH_SHADER_DIR);
+    CHECK(w.windowTitle() == QStringLiteral("MakeHuman"));
+
+    w.setDocumentPath(QStringLiteral("/tmp/some/where/hero.mhm"));
+    // The file name, not the whole path -- a title bar full of directories tells
+    // the user nothing they were looking for.
+    CHECK(w.windowTitle().contains(QStringLiteral("hero.mhm")));
+    CHECK_FALSE(w.windowTitle().contains(QStringLiteral("/tmp")));
+
+    w.setDocumentPath(QString{});
+    CHECK(w.windowTitle() == QStringLiteral("MakeHuman"));
 }

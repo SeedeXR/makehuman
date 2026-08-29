@@ -27,6 +27,8 @@ target_include_directories(mh_core PUBLIC
 # No Eigen yet: the mesh is plain-old-data in struct-of-arrays form, which
 # wants a trivially-copyable Vec3, not an expression-template type. Eigen gets
 # linked when mh_rig needs quaternions, slerp, and matrix decomposition.
+target_compile_definitions(mh_core PRIVATE MH_VERSION_STRING="${PROJECT_VERSION}")
+
 target_link_libraries(mh_core
     PUBLIC  mh::foundation
     PRIVATE mh::warnings mh::sanitize mh_json)

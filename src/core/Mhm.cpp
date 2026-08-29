@@ -4,11 +4,17 @@
 
 #include "makehuman/core/Modifier.h"
 
+#include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <sstream>
 
 namespace mh::core {
 namespace {
+
+/// The format version this writer emits. Major and minor only -- the reference
+/// compares with `v(\d)\.(\d)` and ignores the patch.
+constexpr std::string_view kFormatVersion = "v1.3.0";
 
 std::vector<std::string> splitWs(const std::string& line) {
     std::vector<std::string> out;
@@ -50,6 +56,10 @@ std::vector<std::string> splitSemicolons(const std::string& s) {
 }
 
 bool parseFloat(const std::string& s, float& out) {
+    return foundation::parseFloat(s, out);
+}
+
+bool parseFloat(const std::string& s, double& out) {
     return foundation::parseFloat(s, out);
 }
 
@@ -115,7 +125,15 @@ std::expected<MhmFile, MhmError> loadMhm(const std::filesystem::path& path) {
     while (std::getline(in, line)) {
         ++lineNo;
         if (!line.empty() && line.back() == '\r') line.pop_back();
-        if (line.empty() || line[0] == '#') continue;
+        if (line.empty() || line[0] == '#') {
+            // The one comment worth keeping: without it a round trip would
+            // rewrite the header and no longer match byte for byte.
+            constexpr std::string_view kHeader = "# Written by MakeHuman ";
+            if (line.starts_with(kHeader) && out.writtenBy.empty()) {
+                out.writtenBy = line.substr(kHeader.size());
+            }
+            continue;
+        }
 
         const auto tok = splitWs(line);
         if (tok.empty()) continue;
@@ -128,7 +146,18 @@ std::expected<MhmFile, MhmError> loadMhm(const std::filesystem::path& path) {
         } else if (key == "name") {
             out.name = restOfLine(line, "name");
         } else if (key == "tags") {
-            out.tags = splitSemicolons(restOfLine(line, "tags"));
+            // addTag lower-cases, truncates to 25 and stores in a set
+            // (human.py:131, reached from the loader at :1524-1526). Skipping
+            // that made "Zulu;alpha;MIKE" round-trip as "MIKE;Zulu;alpha"
+            // where the reference writes "alpha;mike;zulu".
+            for (std::string tag : splitSemicolons(restOfLine(line, "tags"))) {
+                std::transform(tag.begin(), tag.end(), tag.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                if (tag.size() > 25) tag.resize(25);
+                if (std::find(out.tags.begin(), out.tags.end(), tag) == out.tags.end()) {
+                    out.tags.push_back(std::move(tag));
+                }
+            }
         } else if (key == "camera" && tok.size() >= 7) {
             bool ok = true;
             for (size_t i = 0; i < 6; ++i)
@@ -164,6 +193,76 @@ uint32_t applyMhm(const MhmFile& mhm, Human& human, uint32_t* unknown) {
     }
     if (unknown != nullptr) *unknown = notKnown;
     return applied;
+}
+
+std::expected<void, MhmError> saveMhm(const std::filesystem::path& path, const MhmFile& mhm) {
+    std::ofstream out(path, std::ios::binary);
+    if (!out) {
+        return std::unexpected(
+            MhmError{MhmErrorKind::Unreadable, path.string(), 0, "cannot open for writing"});
+    }
+    // Binary mode plus explicit "\n": text mode on some platforms would turn
+    // these into CRLF, and the reference writes LF.
+    out << "# Written by MakeHuman "
+        << (mhm.writtenBy.empty() ? std::string(MH_VERSION_STRING) : mhm.writtenBy) << "\n";
+    out << "version " << (mhm.version.empty() ? std::string(kFormatVersion) : mhm.version) << "\n";
+
+    // uuid, name and tags are omitted entirely when empty, not written blank.
+    if (!mhm.uuid.empty()) out << "uuid " << mhm.uuid << "\n";
+    if (!mhm.name.empty()) out << "name " << mhm.name << "\n";
+    if (!mhm.tags.empty()) {
+        std::vector<std::string> tags = mhm.tags;
+        std::sort(tags.begin(), tags.end());  // the reference sorts before joining
+        out << "tags";
+        for (size_t i = 0; i < tags.size(); ++i)
+            out << (i == 0 ? " " : ";") << tags[i];
+        out << "\n";
+    }
+
+    if (mhm.hasCamera) {
+        out << "camera";
+        for (const double v : mhm.camera) {
+            std::string text = foundation::formatShortest(v);
+            // Python's `'%s' % 12.0` is "12.0"; formatShortest gives "12".
+            if (text.find_first_of(".eE") == std::string::npos) text += ".0";
+            out << ' ' << text;
+        }
+        out << "\n";
+    }
+
+    for (const auto& [name, value] : mhm.modifiers) {
+        out << "modifier " << name << ' ' << foundation::formatFixed(value, 6) << "\n";
+    }
+
+    // Plugin lines go after the modifiers, which is where the reference's save
+    // handlers run.
+    for (const std::string& line : mhm.unhandled)
+        out << line << "\n";
+
+    out << "subdivide " << (mhm.subdivide ? "True" : "False") << "\n";
+
+    out.flush();
+    if (!out) {
+        return std::unexpected(
+            MhmError{MhmErrorKind::Unreadable, path.string(), 0, "write failed"});
+    }
+    return {};
+}
+
+MhmFile mhmFromHuman(const Human& human, std::string name) {
+    MhmFile out;
+    out.version = kFormatVersion;
+    out.name    = std::move(name);
+
+    for (const Modifier& m : human.modifiers()) {
+        const float value = human.modifierValue(m.fullName);
+        // `if modifier.getValue() or modifier.isMacro()` (human.py:1612). A
+        // macro at its default still has to be written: the default is 0.5, and
+        // omitting it would load back as 0.
+        const bool macro = m.kind == ModifierKind::Macro || m.kind == ModifierKind::Ethnic;
+        if (value != 0.0F || macro) out.modifiers.emplace_back(m.fullName, value);
+    }
+    return out;
 }
 
 }  // namespace mh::core

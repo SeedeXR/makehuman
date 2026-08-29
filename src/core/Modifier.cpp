@@ -221,6 +221,14 @@ Human::Human(const TargetIndex* index, std::vector<Modifier> modifiers)
     rebuildStack();
 }
 
+void Human::resetToDefaults() {
+    values_.clear();
+    for (const Modifier& m : modifiers_)
+        values_[m.fullName] = m.defaultValue;
+    factors_ = MacroFactors{};
+    rebuildStack();
+}
+
 const Modifier* Human::findModifier(std::string_view fullName) const {
     const auto it =
         std::ranges::find_if(modifiers_, [&](const Modifier& m) { return m.fullName == fullName; });

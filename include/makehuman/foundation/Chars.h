@@ -39,6 +39,12 @@ namespace mh::foundation {
 /// reference's `float()` accepts) and rejects non-finite results.
 [[nodiscard]] bool parseFloat(std::string_view text, float& out);
 
+/// The same, at double precision.
+///
+/// `.mhm` camera values come from Python floats, which are binary64; narrowing
+/// them to float loses digits the format actually carries.
+[[nodiscard]] bool parseFloat(std::string_view text, double& out);
+
 /// Integer parsing, for the same reason of containment rather than necessity:
 /// the INTEGRAL from_chars overloads exist everywhere. Routing them here too
 /// means `<charconv>` appears in exactly one translation unit, which CI can
@@ -64,5 +70,6 @@ namespace mh::foundation {
 /// This is what Python's `repr` gives, and what the `.mhmat` writer wants: the
 /// file stays readable instead of turning `0.1` into `0.100000001`.
 [[nodiscard]] std::string formatShortest(float value);
+[[nodiscard]] std::string formatShortest(double value);
 
 }  // namespace mh::foundation
