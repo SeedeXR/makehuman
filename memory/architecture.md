@@ -98,7 +98,8 @@ weight(target) = sliderValue × Π factors[f]  for f in target.factorDependencie
 
 Factor names come from the target's *filename tokens*. `lib/targets.py:203-215`
 splits every path/filename on `-`, `_`, and `.`; a token in the reserved value
-table (`_cat_data`, `targets.py:50-61` — 9 categories, 26 values) becomes a macro
+table (`_cat_data`, `targets.py:50-61` — 9 categories, **27** values;
+an earlier note here said 26, which was wrong — `age` has four values) becomes a macro
 dependency, anything else becomes part of the group key.
 
 Macro scalars → per-value factors, e.g. `_setAgeVals` (`apps/human.py:574-600`):

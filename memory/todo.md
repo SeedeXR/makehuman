@@ -88,9 +88,13 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
       target ≤50 ms for all 1,280. **Now clearly justified**: ASCII parse of the
       full set is 465 ms in C++ (vs 3,226 ms in Python), still 9x over budget.
 - [ ] Target index: filename tokenisation on `-`, `_`, `.` against the 9-category table
+- [x] All macro factor formulas (`MacroFactors`), verbatim from the reference,
+      **920 assertions of parity** across 34 parameter combinations x 27 values
+- [x] Ethnic renormalisation incl. all three degenerate branches
+- [x] Macro value table: **27 values / 9 categories** (an earlier note here said
+      26 — wrong; `age` has four values, not three)
 - [ ] Modifier hierarchy: Simple / Universal / Macro / Ethnic
-- [ ] All 12 `_set*Vals` macro factor formulas, verbatim
-- [ ] Ethnic renormalisation incl. the three degenerate branches
+- [ ] Target index: filename tokenisation on `-`, `_`, `.` into group key + macro deps
 - [ ] `weight = value × Π factors`
 - [ ] `applyStack` — incremental, not full-reset-and-replay
 - [ ] **Parity fixtures**: default stack, extreme macro combinations, every modifier at ±1

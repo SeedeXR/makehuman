@@ -4,6 +4,54 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-29 — Session 005 · M3 targets and macro factors
+
+**Ended:** 2026-08-29 06:36:36 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master
+
+### Delivered
+- **Target system**: `.target` parser, `applyTarget`, `TargetLibrary`. All 1,280
+  shipped targets parse — 0 failures, 0 malformed lines, 6,147,800 sparse
+  entries, max index 19,157 (= nVerts-1). Byte-level parity on 24 sampled
+  targets and on the applied stack across all 19,158 vertices.
+- **`MacroFactors`**: all macro derivations, verbatim, including ethnic
+  renormalisation with its three degenerate branches. **920 assertions of
+  parity** over 34 parameter combinations x 27 values.
+
+### Benchmarks (release)
+| Operation | C++ | Python | |
+|---|---|---|---|
+| load 200 targets | 14.2 ms | 106.2 ms | 7.5x |
+| apply 200 targets | 0.11 ms | 4.86 ms | 44.6x |
+| load all 1,280 | 465 ms | 3,226 ms | 6.9x |
+
+### Two numbers of my own I had to correct
+1. **`project_context.md` claimed "~670 ms for all 1,280 targets"** — I had
+   extrapolated that linearly from the 200-target figure in session 001. Wrong
+   by 4.8x: the first 200 targets hold 196,644 sparse entries while all 1,280
+   hold 6,147,800 (31x the data for 6.4x the files, because `macrodetails` alone
+   is 106 MB of the 126 MB). Measured the reference directly at **3,225.63 ms**.
+   Against the fabricated baseline this work would have reported as a 0.9x
+   *slowdown* rather than a 6.9x speedup.
+2. **"26 macro values"** — repeated in `architecture.md` and taken from an early
+   subagent report. The reference has **27** (`len(targets._value_cat)`); `age`
+   has four values, not three. My implementation was right and the test
+   assertion was wrong, which is how it surfaced.
+
+Both are the same failure: a number I *derived* rather than *observed*, then
+treated as fact. The pattern to watch is any figure that entered memory without
+a command behind it.
+
+### Verified
+122/122 tests pass in debug, release and ASan+UBSan (113,379 assertions).
+Clean under `-Werror`; clang-format clean.
+
+### Next
+The target index (filename tokenisation into group key + macro dependencies)
+and the `weight = value x PROD(factors)` rule, which together turn a slider
+into a set of weighted targets.
+
+---
+
 ## 2026-08-29 — Session 004 · Catmull-Clark + review round 3
 
 **Ended:** 2026-08-29 05:45:32 · **Agent:** Claude Opus 5 (1M context) · **Branch:** master

@@ -6,10 +6,12 @@ add_executable(mh_tests
     unit/test_render_mesh.cpp
     unit/test_subdivider.cpp
     unit/test_target.cpp
+    unit/test_macro.cpp
     golden/test_base_mesh_parity.cpp
     golden/test_mesh_fixture_parity.cpp
     golden/test_subdiv_fixture_parity.cpp
     golden/test_target_fixture_parity.cpp
+    golden/test_macro_fixture_parity.cpp
     regression/test_review_findings.cpp)
 
 target_link_libraries(mh_tests
