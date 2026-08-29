@@ -329,7 +329,24 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       everything past the first UV seam weighted to the wrong bone.
 - [ ] glTF: blendshapes (morph targets), embedded textures, Draco
 - [ ] **Export** FBX 7.4/7.5 — from spec, **not** by translating the GPL Blender code
-- [ ] **Export** USD / USDZ
+- [x] **Export USD (`.usda`)** — written from the published format, **not** by
+      linking OpenUSD. Checked first: assimp has **no USD support at all**,
+      neither import nor export (verified against the linked build's format
+      list), and OpenUSD is a very large build carrying Pixar's modified
+      Apache-2.0 with a trademark clause. `.usda` is documented text, so
+      writing it keeps this permissive with no new dependency.
+      Blender confirms: 21,833 verts / 36,972 tris / 1 UV layer / 169.5 cm —
+      identical to glTF and FBX. **7/7 exports now agree.**
+      Two conventions that differ from glTF and are easy to carry over wrongly:
+      USD's UV origin is **bottom-left** (so V is *not* flipped, unlike glTF),
+      and USD **records** its up axis rather than leaving it to be guessed.
+      `subdivisionScheme = "none"` is written explicitly: without it a consumer
+      may treat the mesh as a subdivision cage and render a smoothed, shrunken
+      body.
+- [ ] **USDZ** — a zip of the `.usda` plus textures. Packaging, not geometry;
+      needs a zip writer.
+- [ ] **UsdSkel** — skeleton and skinning in USD. A bigger schema than the mesh;
+      glTF and FBX already carry the rig.
 - [x] **Export OBJ** (`mh::io`, Apache-2.0) — face lines byte-identical to the
       reference across all 18,486 faces; unit conversion; feet-on-ground computed
       from the mesh minimum rather than the reference's Y-only joint offset;

@@ -23,6 +23,8 @@ EXPECT = {
     # NON-ZERO rows plus their UV-seam duplicates -- nose-base-up has 305 rows
     # of which 11 are literally (0,0,0), so only 294 move. A shape key that
     # exists but displaces nothing is the failure a name-only check misses.
+    # USD ASCII, written from the spec rather than by linking OpenUSD.
+    "base.usda": {"vertices": 21833, "triangles": 36972, "tallest": 1.69455, "uv_layers": 1},
     # The same rig and morphs through FBX. The moved-vertex counts must match
     # morphed.glb EXACTLY -- two independent formats agreeing is a stronger
     # statement than either one matching an expectation.

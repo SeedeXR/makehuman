@@ -9,6 +9,7 @@
 #include "makehuman/io/GltfWriter.h"
 #include "makehuman/io/ObjWriter.h"
 #include "makehuman/io/SceneIO.h"
+#include "makehuman/io/UsdWriter.h"
 #include "makehuman/rig/Skeleton.h"
 #include "makehuman/rig/Skinning.h"
 #include "makehuman/rig/VertexWeights.h"
@@ -127,8 +128,15 @@ int main(int argc, char** argv) {
     std::printf("rigged.fbx: %zu joints, %zu morph targets\n", skin.globalRest.size(),
                 morphs.size());
 
+    if (const auto r = mh::io::writeUsda(out / "base.usda", rm.view()); !r) {
+        std::fprintf(stderr, "usda: %s\n", r.error().message().c_str());
+        return 1;
+    }
+    std::printf("base.usda: written\n");
+
     std::printf(
-        "wrote base.obj / base.glb / base.fbx / rigged.glb / morphed.glb / rigged.fbx to %s\n",
+        "wrote base.obj / base.glb / base.fbx / rigged.glb / morphed.glb / rigged.fbx / base.usda "
+        "to %s\n",
         out.c_str());
     return 0;
 }

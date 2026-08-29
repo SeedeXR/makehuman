@@ -48,6 +48,8 @@ def _import(path: str) -> None:
         bpy.ops.wm.collada_import(filepath=path)
     elif lower.endswith(".stl"):
         bpy.ops.wm.stl_import(filepath=path)
+    elif lower.endswith(".usda") or lower.endswith(".usdc") or lower.endswith(".usdz"):
+        bpy.ops.wm.usd_import(filepath=path)
     else:
         raise RuntimeError("unsupported extension: " + path)
 

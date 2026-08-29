@@ -27,6 +27,7 @@ add_executable(mh_tests
     golden/test_skinning_parity.cpp
     golden/test_transform_parity.cpp
     golden/test_bvh_parity.cpp
+    golden/test_usd_writer.cpp
     golden/test_poseunits_parity.cpp
     golden/test_obj_writer_parity.cpp
     golden/test_gltf_writer.cpp
