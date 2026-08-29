@@ -184,7 +184,35 @@ face indices whenever the mesh has UVs; reimporting segfaults, and assimp's own
 validator rejects the file. Minimal repro and reasoning are recorded at the top
 of `include/makehuman/io/SceneIO.h`.
 
-### 5.4 Mixamo reference rigs (`references/human_based_fbx_mixamo_animations/`)
+### 5.4 Bundled runtime assets (`resources/`)
+
+Not code dependencies — files shipped with the application. All permissive and
+all compatible with both the AGPL and Apache-2.0 halves of this project.
+
+| Asset | Version | Licence | Text |
+|---|---|---|---|
+| **Lucide** icons (57 SVG) | 1.37.0 | ISC | `resources/icons/lucide/LICENSE` |
+| **42dot Sans** (variable) | google/fonts `ofl/42dotsans` | OFL-1.1 | `resources/fonts/OFL.txt` |
+
+**ISC** is a permissive BSD-style licence: use, copy, modify and distribute with
+the copyright notice retained. Compatible with AGPL-3.0 and Apache-2.0 alike.
+The notice is kept verbatim, and each SVG retains its `@license lucide-static`
+comment.
+
+**OFL-1.1** permits bundling and redistribution, including commercially. Its two
+real obligations, both met: the font is not sold on its own, and a **Reserved
+Font Name** must not be reused — so a modified build of this font may not be
+called "42dot Sans". We ship it unmodified, so this does not bite; anyone
+subsetting or re-hinting it must rename.
+
+The `stroke-width` normalisation applied to the Lucide SVGs (2 -> 1.5, per
+`design.md` §4) is a modification, which ISC expressly permits.
+
+**`resources/shaders/` is different and is NOT permissive.** Those files are
+ports of the reference's GLSL, so they are **AGPL-3.0 derivative works** and may
+never be moved into a permissive module. See §4.
+
+### 5.5 Mixamo reference rigs (`references/human_based_fbx_mixamo_animations/`)
 
 Seven FBX animation clips from Adobe Mixamo, 2.3 MB, added by the project owner
 **at their explicit direction** on 2026-08-29 to serve as the reference for

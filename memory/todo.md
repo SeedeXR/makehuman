@@ -178,7 +178,14 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [ ] Qt RHI device + swapchain, Metal backend, MSAA **on**
 - [ ] Persistent vertex/index buffers; partial updates from dirty ranges
 - [ ] Quad→triangle conversion at buffer-build time
-- [ ] Shader port to `.qsb`: litsphere, phong, normalmap, skin, toon, xray
+- [~] Shader port to `.qsb`: **litsphere done** (`resources/shaders/rhi/`),
+      compiles to SPIR-V + GLSL 450 + MSL 12 via `tools/compile_shaders.sh`;
+      the `0.495` constant verified present in the generated Metal.
+      Remaining: phong, normalmap, skin, toon, xray (sources stay in
+      `data/shaders/glsl/`; copying them into resources/ would just drift).
+- [ ] Wire `qt6_add_shaders()` into CMake — deferred until Qt is a real build
+      dependency, so CI does not pay a 5-minute Qt install for shaders nothing
+      renders yet.
 - [ ] Litsphere/matcap **pixel-faithful** (incl. `0.495` scale, `2.0 − mean` term)
 - [ ] Eye-space-fixed light (model rotates, camera does not)
 - [ ] Depth range `[0,1]` — rework `perspective`/`ortho`, do not transliterate
@@ -219,7 +226,10 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [ ] Snapping with drop indicators
 - [ ] Six-dot panel menu (float/dock/tab/reset/close) — `design.md` §6.3
 - [ ] Workspaces: save / load / reset, 4 shipped presets, versioned schema
-- [ ] Dark theme from the token table; Lucide icons; 42dot Sans
+- [x] **Assets in place**: 57 Lucide icons (ISC, normalised to the 1.5 px
+      stroke `design.md` §4 specifies) and 42dot Sans variable (OFL-1.1,
+      structurally validated). See `resources/README.md`.
+- [ ] Dark theme from the token table, wired to the token file
 - [ ] `QRhiWidget` viewport with the documented navigation bindings
 - [ ] Task registry replacing filename-sort plugin ordering
 - [ ] Symbolic shortcut/mouse persistence (not raw Qt enum ints)
