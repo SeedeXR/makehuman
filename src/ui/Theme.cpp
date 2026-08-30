@@ -158,6 +158,26 @@ QLineEdit, QSpinBox, QDoubleSpinBox {
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
     border: 2px solid %10;
 }
+/* design.md 9: a visible focus ring at all times, on everything that can take
+   focus -- not just text fields. The accent clears 3:1 against every surface
+   token, which tests/ui/test_theme.cpp checks. */
+QPushButton:focus, QToolButton:focus, QComboBox:focus {
+    border: 2px solid %10;
+}
+/* `QSlider:focus::handle:horizontal` looks right and is not: Qt drops the
+   :focus when it precedes a sub-element, so the border painted on every handle
+   at rest and focus changed nothing. Measured by rendering the widget with and
+   without State_HasFocus -- the two images were identical, and the unfocused
+   one had the ring. Only this form responds to focus. */
+QSlider:focus {
+    border: 2px solid %10;
+}
+/* QDockWidget is deliberately absent: every dock here is Qt::NoFocus, so the
+   rule could never fire. QTabBar too -- selection follows focus, so
+   `::tab:selected` below already paints the focused tab. */
+QAbstractScrollArea:focus {
+    border: 1px solid %10;
+}
 QToolButton {
     background: transparent;
     border: none;

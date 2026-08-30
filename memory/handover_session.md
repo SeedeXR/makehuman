@@ -4,6 +4,67 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-30 17:48:55 — Session 043 · **accessibility, and a focus ring that ringed everything**
+
+### What shipped
+- Accessible names on every control, set explicitly as `design.md` §9 requires, with a
+  **sweep test** that fails when a control added later arrives without one (14 controls
+  covered out of 95 descendant widgets).
+- **Arrow-key orbiting in the viewport.** I had given it `StrongFocus` with no
+  `keyPressEvent`, so a keyboard user could tab into a control that did nothing — worse
+  than not focusing it. Arrows orbit, `+`/`-` dolly, `Home` resets, Shift coarsens, and
+  the same clamps the mouse obeys are reapplied.
+- Focus rings for buttons, combos, sliders and scroll areas.
+
+### The finding that mattered
+`QSlider:focus::handle:horizontal` looks right and is not. **Qt drops the `:focus` when it
+precedes a sub-element**, so the border painted on every handle *at rest* and focus changed
+nothing. That is a missing accessibility feature and a visual regression at once — all 291
+handles permanently ringed, and a keyboard user tabbing onto a slider with no idea which
+one they are on while arrow keys silently edit a morph.
+
+The reviewer found it by **rendering the widget twice**, with and without
+`State_HasFocus`, and comparing pixels — not by trusting that Qt logged no parse error.
+Qt logs nothing for a selector that parses and does nothing. Measured table: as written,
+focused == unfocused *and* the unfocused one had the ring; `QSlider::handle:horizontal:focus`
+is entirely dead; only `QSlider:focus` responds.
+
+### My test certified the bug
+`CHECK(css.contains("QSlider:focus"))` passes for the broken rule, because it is a
+**substring** of it. It would also have passed for `QSlider:focus-nonsense`. Replaced with
+the paint-and-compare assertion, and **mutation-tested both ways**: it fails with the old
+selector, passes with the fix.
+
+### Two claims of mine that were simply false
+- `readout->setAccessibleName(QString{})` does not hide the label. Qt falls back to
+  `QLabel::text()`, so the value is still announced twice — the exact thing the comment
+  said it prevented. Both lines were also no-ops on a default-constructed QLabel. Deleted,
+  and the double-announcement recorded as a known gap needing a custom
+  `QAccessibleInterface`.
+- The test justified `dock->setAccessibleName` by saying the custom title bar shadowed
+  Qt's own name lookup. It does not — Qt reads `windowTitle` either way. The line is kept
+  as pinning; the false rationale is gone.
+
+### Also fixed
+- `setAccessibleDescription` repeated the name, so a reader said "Oval … Oval, in head
+  shape". The section is folded into the name now.
+- `QDockWidget:focus` could never fire (every dock is `Qt::NoFocus`), and
+  `QTabBar::tab:focus` painted exactly what `::tab:selected` already paints, since
+  selection follows focus. Both dropped.
+- Three exclusion clauses in the sweep collapsed to one: everything this project creates
+  has an object name, and nothing Qt creates for us does.
+
+### Verified this session
+- 329/329 in debug, release and ASan.
+- The focus assertion mutation-tested in both directions.
+- All 7 licence gates; clang-format clean; `mh_ui` → 0 `mh::core` symbols.
+
+### Next
+- 200% text scaling, reduce-motion, and VoiceOver on a real device are still open.
+- Undo covers modifiers only; pose, skin and workspace changes are not undoable.
+
+---
+
 ## 2026-08-30 16:12:33 — Session 042 · **undo/redo, and an edit that deleted working code while the suite stayed green**
 
 ### What shipped

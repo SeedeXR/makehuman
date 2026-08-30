@@ -50,6 +50,9 @@ ModifierPanel::ModifierPanel(std::span<const foundation::TaskViewSpec> views, QW
     auto* search = new QLineEdit(this);
     search->setObjectName(QStringLiteral("modifiers.search"));
     search->setPlaceholderText(tr("Search sliders…"));
+    // design.md 9: set explicitly rather than left to inference. A QLineEdit
+    // with only a placeholder reads as "text field" with no name at all.
+    search->setAccessibleName(tr("Search sliders"));
     search->setClearButtonEnabled(true);
     connect(search, &QLineEdit::textChanged, this, &ModifierPanel::filter);
 
@@ -110,6 +113,13 @@ ModifierPanel::ModifierPanel(std::span<const foundation::TaskViewSpec> views, QW
                 slider->setRange(0, kSteps);
                 slider->setValue(toTick(spec, spec.defaultValue));
                 slider->setToolTip(QString::fromStdString(spec.id));
+                // Named by what it does and where it lives, so a screen reader
+                // announces "Age, head shape" rather than "horizontal slider".
+                // Section folded into the NAME rather than a separate
+                // description that repeats it: a reader would otherwise say
+                // "Oval ... Oval, in head shape".
+                slider->setAccessibleName(tr("%1, %2").arg(QString::fromStdString(spec.label),
+                                                           QString::fromStdString(section.name)));
                 rowColumn->addWidget(slider);
 
                 Row row;

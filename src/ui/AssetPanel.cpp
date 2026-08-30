@@ -34,6 +34,9 @@ AssetPanel::AssetPanel(std::span<const foundation::AssetGroup> groups, QWidget* 
 
         auto* picker = new QComboBox(this);
         picker->setObjectName(pickerName(name));
+        // The heading above it is a separate widget, so without this the combo
+        // announces only its current value with no indication of what it sets.
+        picker->setAccessibleName(name);
         for (const foundation::AssetChoice& c : group.choices) {
             // The id rides along as user data so the visible label stays free to
             // change -- and to be translated -- without breaking selection.

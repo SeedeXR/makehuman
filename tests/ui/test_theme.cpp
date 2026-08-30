@@ -12,26 +12,34 @@
 #include "makehuman/ui/PanelTitleBar.h"
 #include "makehuman/ui/Theme.h"
 #include "makehuman/ui/UndoCommands.h"
+#include "makehuman/ui/ViewportWidget.h"
 #include "makehuman/ui/Workspace.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <QAbstractButton>
 #include <QAbstractSlider>
 #include <QAction>
+#include <QApplication>
 #include <QComboBox>
 #include <QDockWidget>
 #include <QFile>
 #include <QImage>
 #include <QJsonObject>
+#include <QKeyEvent>
 #include <QKeySequence>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
+#include <QPainter>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSet>
 #include <QSlider>
 #include <QStandardPaths>
+#include <QStyle>
+#include <QStyleOptionSlider>
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QToolButton>
@@ -1033,4 +1041,182 @@ TEST_CASE("Reset is bracketed so it can be one undo step", "[undo]") {
     CHECK(brackets[0] == true);
     CHECK(brackets[1] == false);
     CHECK(changes > 0);
+}
+
+// --- accessibility (design.md 9) ---------------------------------------------
+
+namespace {
+
+/// Every widget in @p root that a screen reader treats as a control.
+///
+/// Deliberately a type sweep rather than a hand-written list: the point is to
+/// fail when a control added *later* arrives without a name.
+QList<QWidget*> interactiveWidgets(QWidget* root) {
+    QList<QWidget*> out;
+    for (QWidget* w : root->findChildren<QWidget*>()) {
+        // Everything this project creates carries an explicit object name, and
+        // nothing Qt creates for us does -- its scroll bars, the clear button
+        // inside a QLineEdit, the dock title buttons that survive a replaced
+        // title bar. Their accessibility is Qt's business, not ours.
+        if (w->objectName().isEmpty() || w->objectName().startsWith(QLatin1String("qt_"))) {
+            continue;
+        }
+        if (qobject_cast<QAbstractSlider*>(w) || qobject_cast<QComboBox*>(w) ||
+            qobject_cast<QAbstractButton*>(w) || qobject_cast<QLineEdit*>(w)) {
+            out << w;
+        }
+    }
+    return out;
+}
+
+}  // namespace
+
+TEST_CASE("every control has an accessible name", "[a11y]") {
+    useShippedIcons();
+    mh::ui::MainWindow w(MH_SHADER_DIR);
+    const auto layout = toyLayout();
+    w.setModellingWidget(new mh::ui::ModifierPanel(layout));
+    const auto assets = toyAssets();
+    w.setMaterialsWidget(new mh::ui::AssetPanel(assets));
+
+    const QList<QWidget*> controls = interactiveWidgets(&w);
+    REQUIRE(controls.size() > 8);  // sliders, pickers, title-bar buttons, search, reset
+
+    for (QWidget* c : controls) {
+        INFO(c->metaObject()->className() << " objectName=" << c->objectName().toStdString());
+        // Qt infers a name from the text of a labelled button, but an icon-only
+        // button or a bare slider gets nothing, and design.md 9 requires the
+        // property be set rather than inferred.
+        const bool named = !c->accessibleName().isEmpty() ||
+                           (qobject_cast<QAbstractButton*>(c) != nullptr &&
+                            !qobject_cast<QAbstractButton*>(c)->text().isEmpty());
+        CHECK(named);
+    }
+}
+
+TEST_CASE("a slider announces what it changes and where it lives", "[a11y]") {
+    const auto layout = toyLayout();
+    mh::ui::ModifierPanel panel(layout);
+
+    auto* slider = panel.findChild<QSlider*>(QStringLiteral("slider:head/head-oval"));
+    REQUIRE(slider != nullptr);
+    // "Oval" alone is ambiguous across sections, so the name carries both.
+    CHECK(slider->accessibleName() == QStringLiteral("Oval, head shape"));
+
+    // KNOWN GAP: the readout label beside the slider repeats the same number,
+    // and VoiceOver announces it a second time. An empty accessibleName does
+    // NOT suppress it -- Qt falls back to QLabel::text() -- so silencing it
+    // needs a custom QAccessibleInterface. Recorded rather than papered over.
+}
+
+TEST_CASE("every control is reachable by keyboard", "[a11y]") {
+    useShippedIcons();
+    mh::ui::MainWindow w(MH_SHADER_DIR);
+    const auto layout = toyLayout();
+    w.setModellingWidget(new mh::ui::ModifierPanel(layout));
+
+    for (QWidget* c : interactiveWidgets(&w)) {
+        INFO(c->metaObject()->className() << " objectName=" << c->objectName().toStdString());
+        // NoFocus means a mouse-only control -- a keyboard trap in reverse:
+        // the user can never get to it at all.
+        CHECK(c->focusPolicy() != Qt::NoFocus);
+    }
+
+    // The viewport is the central control and must be reachable too, or
+    // orbiting is mouse-only.
+    REQUIRE(w.viewport() != nullptr);
+    CHECK(w.viewport()->focusPolicy() != Qt::NoFocus);
+    CHECK_FALSE(w.viewport()->accessibleName().isEmpty());
+}
+
+TEST_CASE("the focus ring actually responds to focus", "[a11y]") {
+    // Asserting the stylesheet CONTAINS "QSlider:focus" was vacuous: it is a
+    // substring of `QSlider:focus::handle:horizontal`, which Qt silently treats
+    // as unconditional -- every handle was ringed at rest and focus changed
+    // nothing. Paint the widget twice instead and require the pixels to differ.
+    QSlider slider(Qt::Horizontal);
+    slider.setStyleSheet(mh::ui::theme::styleSheet());
+    slider.resize(120, 24);
+
+    const auto paint = [&](bool focused) {
+        QImage image(slider.size(), QImage::Format_ARGB32);
+        image.fill(Qt::transparent);
+        QStyleOptionSlider option;
+        option.initFrom(&slider);
+        option.rect           = slider.rect();
+        option.minimum        = slider.minimum();
+        option.maximum        = slider.maximum();
+        option.sliderPosition = slider.value();
+        option.sliderValue    = slider.value();
+        option.orientation    = Qt::Horizontal;
+        option.subControls    = QStyle::SC_All;
+        option.state.setFlag(QStyle::State_HasFocus, focused);
+        QPainter painter(&image);
+        slider.style()->drawComplexControl(QStyle::CC_Slider, &option, &painter, &slider);
+        return image;
+    };
+
+    const QImage unfocused = paint(false);
+    const QImage focused   = paint(true);
+    CHECK(unfocused != focused);
+}
+
+TEST_CASE("the dock panels are named for a screen reader", "[a11y]") {
+    useShippedIcons();
+    mh::ui::MainWindow w(MH_SHADER_DIR);
+    for (const char* name : {"dock.modelling", "dock.materials"}) {
+        auto* dock = w.findChild<QDockWidget*>(QLatin1String(name));
+        REQUIRE(dock != nullptr);
+        INFO(name);
+        // Qt would infer this from windowTitle anyway; setting it explicitly
+        // pins it against a future title change, which is what design.md §9
+        // asks for ("set, not left to inference").
+        CHECK_FALSE(dock->accessibleName().isEmpty());
+    }
+}
+
+TEST_CASE("the viewport orbits from the keyboard", "[a11y]") {
+    // design.md 9: every action reachable without a mouse. Giving the viewport
+    // focus without handling keys would be worse than not focusing it -- a
+    // keyboard user would tab into a control that does nothing.
+    mh::ui::ViewportWidget v(MH_SHADER_DIR);
+    const auto press = [&](int key, Qt::KeyboardModifiers mods = Qt::NoModifier) {
+        QKeyEvent e(QEvent::KeyPress, key, mods);
+        QApplication::sendEvent(&v, &e);
+    };
+
+    const auto start = v.camera();
+    press(Qt::Key_Right);
+    CHECK_THAT(d(v.camera().yawDegrees), WithinAbs(d(start.yawDegrees) + 3.0, 1e-4));
+    press(Qt::Key_Left);
+    CHECK_THAT(d(v.camera().yawDegrees), WithinAbs(d(start.yawDegrees), 1e-4));
+
+    // Shift is the coarse step every DCC uses.
+    press(Qt::Key_Right, Qt::ShiftModifier);
+    CHECK_THAT(d(v.camera().yawDegrees), WithinAbs(d(start.yawDegrees) + 15.0, 1e-4));
+
+    press(Qt::Key_Home);
+    CHECK_THAT(d(v.camera().yawDegrees), WithinAbs(d(mh::render::Camera{}.yawDegrees), 1e-4));
+
+    // Dolly, and the same clamps the mouse obeys.
+    const float before = v.camera().distance;
+    press(Qt::Key_Plus);
+    CHECK(v.camera().distance < before);
+    for (int i = 0; i < 200; ++i)
+        press(Qt::Key_Plus);
+    CHECK_THAT(d(v.camera().distance), WithinAbs(d(mh::ui::ViewportWidget::kMinDistance), 1e-4));
+    for (int i = 0; i < 400; ++i)
+        press(Qt::Key_Minus);
+    CHECK_THAT(d(v.camera().distance), WithinAbs(d(mh::ui::ViewportWidget::kMaxDistance), 1e-4));
+
+    // Pitch stops at the poles, as it does with the mouse.
+    for (int i = 0; i < 200; ++i)
+        press(Qt::Key_Down);
+    CHECK_THAT(d(v.camera().pitchDegrees),
+               WithinAbs(d(mh::ui::ViewportWidget::kMaxPitchDegrees), 1e-4));
+
+    // A key the viewport does not use is left for the rest of the window.
+    const auto held = v.camera();
+    press(Qt::Key_A);
+    CHECK_THAT(d(v.camera().yawDegrees), WithinAbs(d(held.yawDegrees), 1e-9));
 }

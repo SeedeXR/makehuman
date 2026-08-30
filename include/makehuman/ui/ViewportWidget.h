@@ -64,6 +64,10 @@ protected:
     void mousePressEvent(QMouseEvent* e) override;
     void mouseMoveEvent(QMouseEvent* e) override;
     void wheelEvent(QWheelEvent* e) override;
+    /// Arrows orbit, +/- dolly, Home resets. Without this the viewport takes
+    /// focus and does nothing with it, and orbiting is mouse-only -- which
+    /// `design.md` §9 ("every action reachable without a mouse") forbids.
+    void keyPressEvent(QKeyEvent* e) override;
 
 private:
     struct Impl;

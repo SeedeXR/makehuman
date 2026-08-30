@@ -546,7 +546,21 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       character's values into the newly loaded one.
 - [ ] Undo for pose, skin and workspace changes — only modifiers are undoable.
 - [ ] Live language switching; **working** RTL
-- [ ] Accessibility pass: VoiceOver, keyboard-only, contrast, 200% text
+- [~] **Accessibility pass** (`design.md` §9) — accessible names on every control
+      (a sweep test fails if a new one arrives unnamed; 14 controls covered),
+      keyboard operability including **arrow-key orbiting in the viewport**
+      (it had focus and no key handler, so orbiting was mouse-only), and focus
+      rings that are verified by **rendering the widget with and without
+      `State_HasFocus` and requiring the pixels to differ** — not by checking the
+      stylesheet contains a string.
+      **`QSlider:focus::handle:horizontal` is a trap:** Qt drops the `:focus`
+      when it precedes a sub-element, so the ring painted on all 291 handles at
+      rest and focus changed nothing. Only `QSlider:focus` works.
+      Still open: 200% text scaling, reduce-motion, VoiceOver on a real device.
+- [ ] **Known gap:** the readout label beside each slider repeats the slider's
+      value, so VoiceOver announces it twice. An empty `accessibleName` does NOT
+      suppress it — Qt falls back to `QLabel::text()` — so this needs a custom
+      `QAccessibleInterface`.
 
 ## Third-party validation (Blender) — wired in 2026-08-29
 

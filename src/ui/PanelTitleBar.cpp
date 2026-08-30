@@ -31,6 +31,8 @@ QToolButton* makeButton(const char* iconName, const QString& objectName, const Q
     b->setIcon(theme::icon(iconName, theme::palette().textSecondary, 16));
     b->setAutoRaise(true);
     b->setToolTip(tip);
+    // An icon-only button has no text for a screen reader to fall back on.
+    b->setAccessibleName(tip);
     b->setFocusPolicy(Qt::TabFocus);  // reachable by keyboard; design.md §9
     return b;
 }

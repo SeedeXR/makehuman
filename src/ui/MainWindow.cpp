@@ -41,6 +41,8 @@ QDockWidget* makeDock(const QString& title, const QString& objectName, Qt::DockW
     // buttons, so the whole bar is replaced.
     dock->setTitleBarWidget(new PanelTitleBar(dock, home));
 
+    dock->setAccessibleName(title);
+
     auto* body = new QLabel(QStringLiteral("%1\n\n(not yet implemented)").arg(title), dock);
     body->setAlignment(Qt::AlignCenter);
     body->setWordWrap(true);
@@ -78,6 +80,11 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, QWidget* parent)
     setWindowTitle(QStringLiteral("MakeHuman"));
 
     d_->viewport = new ViewportWidget(std::move(shaderDir), this);
+    // The 3D view is the central control and takes keyboard focus for orbiting,
+    // so it needs a name and a description of what the keys do.
+    d_->viewport->setAccessibleName(tr("3D viewport"));
+    d_->viewport->setAccessibleDescription(tr("The character. Drag to orbit, scroll to zoom."));
+    d_->viewport->setFocusPolicy(Qt::StrongFocus);
     setCentralWidget(d_->viewport);
 
     addDockWidget(Qt::LeftDockWidgetArea,

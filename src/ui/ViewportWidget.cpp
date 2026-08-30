@@ -4,6 +4,7 @@
 #include "makehuman/ui/Theme.h"
 
 #include <rhi/qrhi.h>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QWheelEvent>
 
@@ -158,6 +159,33 @@ void ViewportWidget::wheelEvent(QWheelEvent* e) {
     d_->camera.distance *= std::pow(0.9F, steps);
     d_->camera.distance = std::clamp(d_->camera.distance, kMinDistance, kMaxDistance);
     update();
+}
+
+void ViewportWidget::keyPressEvent(QKeyEvent* e) {
+    // One arrow press is worth a few degrees -- enough to make progress, small
+    // enough to aim. Shift multiplies for coarse movement, matching the
+    // convention every DCC uses.
+    const float step = (e->modifiers() & Qt::ShiftModifier) != 0 ? 15.0F : 3.0F;
+    render::Camera c = d_->camera;
+
+    switch (e->key()) {
+        case Qt::Key_Left: c.yawDegrees -= step; break;
+        case Qt::Key_Right: c.yawDegrees += step; break;
+        case Qt::Key_Up: c.pitchDegrees -= step; break;
+        case Qt::Key_Down: c.pitchDegrees += step; break;
+        case Qt::Key_Plus:
+        case Qt::Key_Equal: c.distance *= 0.9F; break;
+        case Qt::Key_Minus: c.distance /= 0.9F; break;
+        case Qt::Key_Home: c = render::Camera{}; break;
+        default: QRhiWidget::keyPressEvent(e); return;
+    }
+
+    // The same clamps the mouse obeys, in one place.
+    c.pitchDegrees = std::clamp(c.pitchDegrees, -kMaxPitchDegrees, kMaxPitchDegrees);
+    c.distance     = std::clamp(c.distance, kMinDistance, kMaxDistance);
+    d_->camera     = c;
+    update();
+    e->accept();
 }
 
 }  // namespace mh::ui
