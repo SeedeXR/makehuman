@@ -528,7 +528,17 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 - [x] `QRhiWidget` viewport with the documented navigation bindings — Metal, 4x MSAA,
       orbit clamped +/-89 deg, multiplicative dolly clamped 5-300. Verified by
       `makehuman --screenshot`, which exits non-zero on a blank frame.
-- [ ] Task registry replacing filename-sort plugin ordering
+- [x] **Task registry replacing filename-sort plugin ordering** — `ui::TaskRegistry`.
+      The reference derives a plugin's category *and* its position from its file
+      name (`core/mhmain.py:562` sorts on it); the registry declares both.
+      `MainWindow` builds one dock per registered category instead of hardcoding
+      two.
+      **Deliberately minimal**: a first draft carried a per-task rank, an icon
+      name and a `tasks(category)` accessor, none of which had a single
+      production reader. They come back with the first view that needs them.
+      `setPanel` returns `[[nodiscard]] bool` and does **not** take ownership on
+      failure: a mistyped category used to delete the panel while the caller
+      went on connecting signals to it.
 - [ ] Symbolic shortcut/mouse persistence (not raw Qt enum ints)
 - [ ] Port the 50 task views (tracked as a sub-checklist — `architecture.md` §I.8)
 - [x] **Undo/redo** — `ui::ValueChangeCommand` on a `QUndoStack`, Edit menu with the
@@ -553,6 +563,10 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       A pose that fails to load is now probed *before* the command is pushed, so
       it never becomes an undo entry that does nothing.
 - [ ] Undo for workspace changes — presets and Save As bypass the stack.
+- [ ] **`workspacePresets()` is still a hardcoded list** while docks are now
+      data-driven. Registering a third category without updating it gives a dock
+      every preset hides, which then survives a quit. A test now fails if that
+      happens, but the presets should be derived instead.
 - [ ] Live language switching; **working** RTL
 - [~] **Accessibility pass** (`design.md` §9) — accessible names on every control
       (a sweep test fails if a new one arrives unnamed; 14 controls covered),

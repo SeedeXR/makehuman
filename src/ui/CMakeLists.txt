@@ -19,6 +19,7 @@ add_library(mh_ui STATIC
     AssetPanel.cpp
     Workspace.cpp
     UndoCommands.cpp
+    TaskRegistry.cpp
     Motion.mm
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/ViewportWidget.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/MainWindow.h
@@ -27,7 +28,8 @@ add_library(mh_ui STATIC
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/ModifierPanel.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/AssetPanel.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/Workspace.h
-    ${CMAKE_SOURCE_DIR}/include/makehuman/ui/UndoCommands.h)
+    ${CMAKE_SOURCE_DIR}/include/makehuman/ui/UndoCommands.h
+    ${CMAKE_SOURCE_DIR}/include/makehuman/ui/TaskRegistry.h)
 add_library(mh::ui ALIAS mh_ui)
 
 target_include_directories(mh_ui PUBLIC

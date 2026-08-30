@@ -4,6 +4,70 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-30 22:41:07 — Session 046 · **the task registry, and a slug I added for a problem that did not exist**
+
+### What shipped
+`ui::TaskRegistry` closes the M8 item. The reference derives a plugin's category *and* its
+position from its file name — `loadPlugins` does
+`sorted(pluginsToLoad, key=lambda plugin: plugin[0])` (`core/mhmain.py:562`) — so inserting
+a view between two others means renaming files. The registry declares both, and
+`MainWindow` builds one dock per registered category instead of hardcoding two.
+
+### I did it again
+Before the reviews returned I "pre-emptively" replaced the dock name with a slug that folds
+punctuation to `-`, on the reasoning that spaces break a QSS ID selector. The review
+measured it:
+
+    escaped   #dock\.arms\ and\ legs  -> matches
+    unescaped #dock.modelling          -> no match
+
+The mandatory `dock.` prefix's own period already forces escaping, and once escaping, a
+space works fine. **No QSS in the repo selects these names at all** — `grep -rn "#dock"`
+returns zero. The slug bought nothing and introduced a real hazard: two categories folding
+to one object name, which `saveState` keys on. Reverted.
+
+My design.md citation was wrong too: it says "Arms **&** Legs", and that is a *task* inside
+Modelling, not a category — `dockObjectName` is only ever called on categories.
+
+That is the second session running where I added complexity for an unverified problem
+(last time: word wrap at 200% text). The rule I keep relearning: **measure before fixing,
+not after.**
+
+### The use-after-free the refactor introduced
+`setPanel(category, widget)` is stringly typed where the old `setModellingWidget` /
+`setMaterialsWidget` were compile-checked names. `installInDock` deletes the widget when
+the dock lookup fails, so `setPanel("Modeling", panel)` — one L, **the reference's own
+spelling, cited in the comment three lines above the call** — freed the panel while
+`main.cpp` went on connecting signals to it and calling `setValue` on every slider drag.
+Proven by probe. Now `[[nodiscard]] bool`, and ownership does **not** pass on failure: a
+leak is a far better failure than a use-after-free.
+
+### The regression the review proved
+Docks became data-driven; `workspacePresets()` is still a hardcoded list of two dock names.
+Register a third category and **every** preset hides it — and once the layout is saved on
+quit it never returns except via Reset Workspace. Measured across all four presets. A test
+now fails if a registered category is not shown by at least one preset; deriving the
+presets is recorded as the real fix.
+
+### Cut before shipping
+A first draft of `TaskDescriptor` carried `order` and `icon`, plus `tasks(category)` and
+`taskCount()`. Grep: **zero production readers** — the app *writes* icon names and ranks
+that nothing consumes, and the sort existed only to satisfy its own test. Same mistake as
+the JSON workspace layer in session 041, caught earlier this time. The registry is now a
+category list with a case-insensitive duplicate guard, which is the part the filename
+scheme genuinely could not do.
+
+### Verified this session
+- 329/329 in debug, release and ASan; UI binary 444 assertions / 67 cases.
+- The app and all four workspace presets re-checked by screenshot after the refactor.
+- All 7 licence gates; clang-format clean; `mh_ui` → 0 `mh::core` symbols.
+
+### Next
+- Derive the workspace presets from the registry.
+- Port the 50 task views (`architecture.md` §I.8) — the registry is the prerequisite.
+
+---
+
 ## 2026-08-30 21:03:18 — Session 045 · **undo for pose and skin, and a merge policy chosen rather than assumed**
 
 ### What shipped

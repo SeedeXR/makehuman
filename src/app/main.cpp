@@ -22,6 +22,7 @@
 #include "makehuman/ui/AssetPanel.h"
 #include "makehuman/ui/MainWindow.h"
 #include "makehuman/ui/ModifierPanel.h"
+#include "makehuman/ui/TaskRegistry.h"
 #include "makehuman/ui/Theme.h"
 #include "makehuman/ui/UndoCommands.h"
 
@@ -664,7 +665,22 @@ int main(int argc, char** argv) {
     // Seeded after the panel exists; see below.
     QHash<QString, QString> currentChoice;
 
-    mh::ui::MainWindow window(parser.value(shaderOpt).toStdString());
+    // The task registry: which panels exist, in what order. Declared here rather
+    // than falling out of a filename, which is how the reference decided it
+    // (core/mhmain.py:562).
+    // Named once, used for both registration and lookup: setPanel takes a
+    // free-form string, so a typo in one place could not otherwise disagree
+    // with the other.
+    const QString kModelling = QStringLiteral("Modelling");
+    const QString kMaterials = QStringLiteral("Materials");
+
+    mh::ui::TaskRegistry tasks;
+    if (!tasks.add(kModelling) || !tasks.add(kMaterials)) {
+        std::fprintf(stderr, "duplicate task category\n");
+        return 1;
+    }
+
+    mh::ui::MainWindow window(parser.value(shaderOpt).toStdString(), tasks);
 
     // rm outlives the window, so the non-owning view stays valid.
     window.setMesh(rm.view());
@@ -673,7 +689,10 @@ int main(int argc, char** argv) {
     panel = new mh::ui::ModifierPanel(views);
     for (const auto& [id, v] : presets)
         panel->setValue(id, v);
-    window.setModellingWidget(panel);
+    if (!window.setPanel(kModelling, panel)) {
+        std::fprintf(stderr, "no dock for %s\n", kModelling.toStdString().c_str());
+        return 1;
+    }
 
     // Closes the merge group, so a drag is one undo step but two deliberate
     // nudges of the same slider are two.
@@ -700,7 +719,10 @@ int main(int argc, char** argv) {
     // The Materials dock: skin and pose. Both re-run the same rebuild the
     // sliders do, so the three controls cannot disagree about what is shown.
     assets = new mh::ui::AssetPanel(assetGroups);
-    window.setMaterialsWidget(assets);
+    if (!window.setPanel(kMaterials, assets)) {
+        std::fprintf(stderr, "no dock for %s\n", kMaterials.toStdString().c_str());
+        return 1;
+    }
     for (const auto& group : assetGroups) {
         const QString name = QString::fromStdString(group.name);
         currentChoice.insert(name, assets->choice(name));

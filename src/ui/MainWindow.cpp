@@ -74,7 +74,17 @@ struct MainWindow::Impl {
     QByteArray defaultState;
 };
 
-MainWindow::MainWindow(std::filesystem::path shaderDir, QWidget* parent)
+QString MainWindow::dockObjectName(const QString& category) {
+    // Plain lower-cased concatenation. An earlier version folded punctuation
+    // to '-' "so the name stays usable in a QSS ID selector" -- measured, that
+    // is false: the `dock.` prefix's own period already forces `#dock\.name`,
+    // and once escaping, `#dock\.arms\ and\ legs` matches fine. No QSS in the
+    // repo selects these at all. The folding bought nothing and let two
+    // categories collide on one object name, which saveState keys on.
+    return QStringLiteral("dock.") + category.toLower();
+}
+
+MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWidget* parent)
     : QMainWindow(parent), d_(std::make_unique<Impl>()) {
     setObjectName(QStringLiteral("MainWindow"));
     setWindowTitle(QStringLiteral("MakeHuman"));
@@ -87,12 +97,16 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, QWidget* parent)
     d_->viewport->setFocusPolicy(Qt::StrongFocus);
     setCentralWidget(d_->viewport);
 
-    addDockWidget(Qt::LeftDockWidgetArea,
-                  makeDock(QStringLiteral("Modelling"), QStringLiteral("dock.modelling"),
-                           Qt::LeftDockWidgetArea, this));
-    addDockWidget(Qt::RightDockWidgetArea,
-                  makeDock(QStringLiteral("Materials"), QStringLiteral("dock.materials"),
-                           Qt::RightDockWidgetArea, this));
+    // One dock per registered category, in registration order -- not from a
+    // hardcoded pair, and not from what a file happens to be called.
+    // The first goes left and the rest right, which is the shipped layout the
+    // presets restore.
+    bool first = true;
+    for (const QString& category : tasks.categories()) {
+        const Qt::DockWidgetArea area = first ? Qt::LeftDockWidgetArea : Qt::RightDockWidgetArea;
+        addDockWidget(area, makeDock(category, dockObjectName(category), area, this));
+        first = false;
+    }
 
     // A renderer failure is otherwise a black rectangle and a status bar saying
     // "Ready" -- the message exists, it just never reached anyone.
@@ -222,12 +236,18 @@ void installInDock(QDockWidget* dock, QWidget* widget) {
 
 }  // namespace
 
-void MainWindow::setModellingWidget(QWidget* widget) {
-    installInDock(findChild<QDockWidget*>(QStringLiteral("dock.modelling")), widget);
-}
-
-void MainWindow::setMaterialsWidget(QWidget* widget) {
-    installInDock(findChild<QDockWidget*>(QStringLiteral("dock.materials")), widget);
+bool MainWindow::setPanel(const QString& category, QWidget* widget) {
+    auto* dock = findChild<QDockWidget*>(dockObjectName(category));
+    if (dock == nullptr) {
+        // Deliberately does NOT take ownership here. The previous version
+        // deleted the widget, so a mistyped category -- "Modeling", the
+        // reference's own spelling -- silently freed the panel while the caller
+        // went on connecting signals to it. A leak is a far better failure than
+        // a use-after-free, and [[nodiscard]] means the caller cannot ignore it.
+        return false;
+    }
+    installInDock(dock, widget);
+    return true;
 }
 
 QMainWindow::DockOptions MainWindow::dockOptionsFor(bool reduceMotion) {

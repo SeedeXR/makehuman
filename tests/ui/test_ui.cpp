@@ -6,6 +6,7 @@
 // draws is checked by the render tests and by `makehuman --screenshot`, which
 // needs a real device and so cannot run on a build box.
 #include "makehuman/ui/MainWindow.h"
+#include "makehuman/ui/TaskRegistry.h"
 #include "makehuman/ui/ViewportWidget.h"
 
 #include <catch2/catch_session.hpp>
@@ -22,6 +23,14 @@
 using Catch::Matchers::WithinAbs;
 
 namespace {
+
+/// The two panels the app registers.
+mh::ui::TaskRegistry shippedTasks() {
+    mh::ui::TaskRegistry tasks;
+    (void)tasks.add(QStringLiteral("Modelling"));
+    (void)tasks.add(QStringLiteral("Materials"));
+    return tasks;
+}
 
 /// The camera is float; Catch2's float matchers take double. Widening at the
 /// call site keeps -Wdouble-promotion quiet without weakening it project-wide.
@@ -117,7 +126,7 @@ TEST_CASE("a workspace survives a save and restore", "[ui]") {
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, dir.path());
 
     {
-        mh::ui::MainWindow w(MH_SHADER_DIR);
+        mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
         auto* dock = w.findChild<QDockWidget*>(QStringLiteral("dock.modelling"));
         REQUIRE(dock != nullptr);
         REQUIRE(w.dockWidgetArea(dock) == Qt::LeftDockWidgetArea);
@@ -126,7 +135,7 @@ TEST_CASE("a workspace survives a save and restore", "[ui]") {
         w.saveWorkspace();
     }
 
-    mh::ui::MainWindow fresh(MH_SHADER_DIR);
+    mh::ui::MainWindow fresh(MH_SHADER_DIR, shippedTasks());
     fresh.restoreWorkspace();
     auto* dock = fresh.findChild<QDockWidget*>(QStringLiteral("dock.modelling"));
     REQUIRE(dock != nullptr);
@@ -141,7 +150,7 @@ TEST_CASE("resetting the workspace discards the saved one", "[ui]") {
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, dir.path());
 
     {
-        mh::ui::MainWindow w(MH_SHADER_DIR);
+        mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
         auto* dock = w.findChild<QDockWidget*>(QStringLiteral("dock.modelling"));
         REQUIRE(dock != nullptr);
         w.addDockWidget(Qt::RightDockWidgetArea, dock);
@@ -149,7 +158,7 @@ TEST_CASE("resetting the workspace discards the saved one", "[ui]") {
         w.resetWorkspace();
     }
 
-    mh::ui::MainWindow fresh(MH_SHADER_DIR);
+    mh::ui::MainWindow fresh(MH_SHADER_DIR, shippedTasks());
     fresh.restoreWorkspace();
     auto* dock = fresh.findChild<QDockWidget*>(QStringLiteral("dock.modelling"));
     REQUIRE(dock != nullptr);

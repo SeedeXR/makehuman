@@ -2,6 +2,7 @@
 #pragma once
 
 #include "makehuman/foundation/Geometry.h"
+#include "makehuman/ui/TaskRegistry.h"
 
 #include <QMainWindow>
 #include <QStringList>
@@ -23,18 +24,27 @@ class MainWindow : public QMainWindow {
     Q_OBJECT
 
 public:
-    explicit MainWindow(std::filesystem::path shaderDir, QWidget* parent = nullptr);
+    /// @param tasks which docks to create, in registration order. Passing an
+    ///        empty registry gives a window with a viewport and no panels;
+    ///        required rather than defaulted, so a dockless window is always a
+    ///        choice someone typed.
+    explicit MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks,
+                        QWidget* parent = nullptr);
     ~MainWindow() override;
 
     void setMesh(const foundation::RenderView& mesh);
     void setLitsphere(std::filesystem::path path);
 
-    /// Puts @p widget in the Modelling dock, replacing the placeholder.
-    /// Ownership passes to this window in every case, including failure.
-    void setModellingWidget(QWidget* widget);
+    /// Puts @p widget in the dock for @p category, replacing the placeholder.
+    ///
+    /// @return false if no dock has that category, in which case ownership does
+    ///         **not** pass and @p widget is untouched. Checked rather than
+    ///         void because the category is a free-form string: a typo used to
+    ///         delete the panel and leave the caller holding a dangling pointer.
+    [[nodiscard]] bool setPanel(const QString& category, QWidget* widget);
 
-    /// The same, for the Materials dock.
-    void setMaterialsWidget(QWidget* widget);
+    /// Object name of the dock for @p category, e.g. "dock.modelling".
+    [[nodiscard]] static QString dockObjectName(const QString& category);
 
     [[nodiscard]] ViewportWidget* viewport() const;
 

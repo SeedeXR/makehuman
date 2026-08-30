@@ -10,6 +10,7 @@
 #include "makehuman/ui/MainWindow.h"
 #include "makehuman/ui/ModifierPanel.h"
 #include "makehuman/ui/PanelTitleBar.h"
+#include "makehuman/ui/TaskRegistry.h"
 #include "makehuman/ui/Theme.h"
 #include "makehuman/ui/UndoCommands.h"
 #include "makehuman/ui/ViewportWidget.h"
@@ -79,10 +80,19 @@ struct TestModePaths {
     TestModePaths& operator=(const TestModePaths&) = delete;
 };
 
+/// The two panels the app registers, so a window built in a test has the same
+/// docks the program does.
+mh::ui::TaskRegistry shippedTasks() {
+    mh::ui::TaskRegistry tasks;
+    (void)tasks.add(QStringLiteral("Modelling"));
+    (void)tasks.add(QStringLiteral("Materials"));
+    return tasks;
+}
+
 /// A window, its Modelling dock and that dock's title bar -- the preamble all
 /// four panel tests need.
 struct Panel {
-    mh::ui::MainWindow window{MH_SHADER_DIR};
+    mh::ui::MainWindow window{MH_SHADER_DIR, shippedTasks()};
     QDockWidget* dock{};
     mh::ui::PanelTitleBar* bar{};
 
@@ -307,7 +317,7 @@ TEST_CASE("the menu that buildMenu returns is owned by the caller", "[panel]") {
     // The menu must have no QObject parent. When it had one, the window and the
     // unique_ptr both owned it and only declaration order decided whether the
     // suite double-freed -- ASan caught exactly that.
-    auto window = std::make_unique<mh::ui::MainWindow>(MH_SHADER_DIR);
+    auto window = std::make_unique<mh::ui::MainWindow>(MH_SHADER_DIR, shippedTasks());
     auto* dock  = window->findChild<QDockWidget*>(QStringLiteral("dock.modelling"));
     REQUIRE(dock != nullptr);
     auto* bar = qobject_cast<mh::ui::PanelTitleBar*>(dock->titleBarWidget());
@@ -645,7 +655,7 @@ TEST_CASE("a group with no explicit default shows its first choice", "[assets]")
 
 TEST_CASE("the File menu offers open and save with the platform shortcuts", "[file]") {
     useShippedIcons();
-    mh::ui::MainWindow w(MH_SHADER_DIR);
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
 
     struct Expected {
         const char* name;
@@ -667,7 +677,7 @@ TEST_CASE("the File menu offers open and save with the platform shortcuts", "[fi
 
 TEST_CASE("triggering a File action reports intent rather than acting", "[file]") {
     useShippedIcons();
-    mh::ui::MainWindow w(MH_SHADER_DIR);
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
 
     int opened  = 0;
     int saved   = 0;
@@ -688,7 +698,7 @@ TEST_CASE("triggering a File action reports intent rather than acting", "[file]"
 
 TEST_CASE("the document path shows in the title, and clearing it restores the name", "[file]") {
     useShippedIcons();
-    mh::ui::MainWindow w(MH_SHADER_DIR);
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
     CHECK(w.windowTitle() == QStringLiteral("MakeHuman"));
 
     w.setDocumentPath(QStringLiteral("/tmp/some/where/hero.mhm"));
@@ -761,7 +771,7 @@ TEST_CASE("a corrupt state blob is refused rather than silently ignored", "[work
 
 TEST_CASE("the four shipped presets are on the menu with the documented shortcuts", "[workspace]") {
     useShippedIcons();
-    mh::ui::MainWindow w(MH_SHADER_DIR);
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
 
     const auto& presets = mh::ui::workspacePresets();
     REQUIRE(presets.size() == 4);
@@ -781,7 +791,7 @@ TEST_CASE("the four shipped presets are on the menu with the documented shortcut
 
 TEST_CASE("a preset shows exactly the docks it names", "[workspace]") {
     useShippedIcons();
-    mh::ui::MainWindow w(MH_SHADER_DIR);
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
     auto* modelling = w.findChild<QDockWidget*>(QStringLiteral("dock.modelling"));
     auto* materials = w.findChild<QDockWidget*>(QStringLiteral("dock.materials"));
     REQUIRE(modelling != nullptr);
@@ -819,7 +829,7 @@ TEST_CASE("a named workspace round-trips through the user directory", "[workspac
 
     const QString name = QStringLiteral("mh-test-workspace");
     {
-        mh::ui::MainWindow w(MH_SHADER_DIR);
+        mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
         auto* dock = w.findChild<QDockWidget*>(QStringLiteral("dock.modelling"));
         REQUIRE(dock != nullptr);
         w.addDockWidget(Qt::RightDockWidgetArea, dock);
@@ -827,7 +837,7 @@ TEST_CASE("a named workspace round-trips through the user directory", "[workspac
         CHECK(w.namedWorkspaces().contains(name));
     }
 
-    mh::ui::MainWindow fresh(MH_SHADER_DIR);
+    mh::ui::MainWindow fresh(MH_SHADER_DIR, shippedTasks());
     REQUIRE(fresh.loadNamedWorkspace(name));
     auto* dock = fresh.findChild<QDockWidget*>(QStringLiteral("dock.modelling"));
     REQUIRE(dock != nullptr);
@@ -843,7 +853,7 @@ TEST_CASE("a named workspace round-trips through the user directory", "[workspac
 
 TEST_CASE("docks can nest and tab, so a drag has somewhere to snap", "[workspace]") {
     useShippedIcons();
-    mh::ui::MainWindow w(MH_SHADER_DIR);
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
     CHECK(w.isDockNestingEnabled());
     CHECK((w.dockOptions() & QMainWindow::AllowTabbedDocks) != 0);
     CHECK((w.dockOptions() & QMainWindow::AllowNestedDocks) != 0);
@@ -863,7 +873,7 @@ TEST_CASE("a workspace name cannot escape the workspaces directory", "[workspace
     }
 
     const TestModePaths redirected;
-    mh::ui::MainWindow w(MH_SHADER_DIR);
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
     CHECK_FALSE(w.saveWorkspaceAs(QStringLiteral("../escaped")));
     CHECK_FALSE(w.loadNamedWorkspace(QStringLiteral("../escaped")));
     // Nothing was created outside the directory.
@@ -955,7 +965,7 @@ TEST_CASE("different keys never merge, even in the same group", "[undo]") {
 
 TEST_CASE("the Edit menu has undo and redo on the platform shortcuts", "[undo]") {
     useShippedIcons();
-    mh::ui::MainWindow w(MH_SHADER_DIR);
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
     REQUIRE(w.undoStack() != nullptr);
 
     auto* undo = w.findChild<QAction*>(QStringLiteral("edit.undo"));
@@ -1075,11 +1085,11 @@ QList<QWidget*> interactiveWidgets(QWidget* root) {
 
 TEST_CASE("every control has an accessible name", "[a11y]") {
     useShippedIcons();
-    mh::ui::MainWindow w(MH_SHADER_DIR);
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
     const auto layout = toyLayout();
-    w.setModellingWidget(new mh::ui::ModifierPanel(layout));
+    REQUIRE(w.setPanel(QStringLiteral("Modelling"), new mh::ui::ModifierPanel(layout)));
     const auto assets = toyAssets();
-    w.setMaterialsWidget(new mh::ui::AssetPanel(assets));
+    REQUIRE(w.setPanel(QStringLiteral("Materials"), new mh::ui::AssetPanel(assets)));
 
     const QList<QWidget*> controls = interactiveWidgets(&w);
     REQUIRE(controls.size() > 8);  // sliders, pickers, title-bar buttons, search, reset
@@ -1113,9 +1123,9 @@ TEST_CASE("a slider announces what it changes and where it lives", "[a11y]") {
 
 TEST_CASE("every control is reachable by keyboard", "[a11y]") {
     useShippedIcons();
-    mh::ui::MainWindow w(MH_SHADER_DIR);
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
     const auto layout = toyLayout();
-    w.setModellingWidget(new mh::ui::ModifierPanel(layout));
+    REQUIRE(w.setPanel(QStringLiteral("Modelling"), new mh::ui::ModifierPanel(layout)));
 
     for (QWidget* c : interactiveWidgets(&w)) {
         INFO(c->metaObject()->className() << " objectName=" << c->objectName().toStdString());
@@ -1165,7 +1175,7 @@ TEST_CASE("the focus ring actually responds to focus", "[a11y]") {
 
 TEST_CASE("the dock panels are named for a screen reader", "[a11y]") {
     useShippedIcons();
-    mh::ui::MainWindow w(MH_SHADER_DIR);
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
     for (const char* name : {"dock.modelling", "dock.materials"}) {
         auto* dock = w.findChild<QDockWidget*>(QLatin1String(name));
         REQUIRE(dock != nullptr);
@@ -1284,7 +1294,7 @@ TEST_CASE("captions can shrink at 200% text instead of pinning the dock open", "
 
 TEST_CASE("reduce motion is read from the system and drops the dock animation", "[a11y]") {
     useShippedIcons();
-    mh::ui::MainWindow w(MH_SHADER_DIR);
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
     // Both branches, because the system setting cannot be changed from a test
     // and asserting the window agrees with reduceMotion() is vacuous when both
     // sides call the same function -- on a machine with the setting off it
@@ -1364,4 +1374,91 @@ TEST_CASE("setChoice selects without emitting", "[assets]") {
     CHECK(panel.choice(QStringLiteral("Skin")) == QStringLiteral("/l/african.png"));
     panel.setChoice(QStringLiteral("Nope"), QStringLiteral("x"));
     CHECK(emissions == 0);
+}
+
+// --- the task registry -------------------------------------------------------
+
+TEST_CASE("categories keep registration order, not alphabetical", "[tasks]") {
+    // The point of replacing the filename scheme. Sorted alphabetically these
+    // three would come out Geometries, Materials, Modelling -- all three
+    // positions differ, so an alphabetical implementation fails this.
+    mh::ui::TaskRegistry tasks;
+    REQUIRE(tasks.add(QStringLiteral("Modelling")));
+    REQUIRE(tasks.add(QStringLiteral("Materials")));
+    REQUIRE(tasks.add(QStringLiteral("Geometries")));
+
+    CHECK(tasks.categories() == QStringList{QStringLiteral("Modelling"),
+                                            QStringLiteral("Materials"),
+                                            QStringLiteral("Geometries")});
+}
+
+TEST_CASE("a duplicate category is refused, ignoring case", "[tasks]") {
+    mh::ui::TaskRegistry tasks;
+    REQUIRE(tasks.add(QStringLiteral("Modelling")));
+    CHECK_FALSE(tasks.add(QStringLiteral("Modelling")));
+    // Case matters because the dock object name is the lower-cased category and
+    // saveState keys on it -- "modelling" would silently share one dock.
+    CHECK_FALSE(tasks.add(QStringLiteral("modelling")));
+    CHECK_FALSE(tasks.add(QString{}));
+    CHECK(tasks.categories().size() == 1);
+}
+
+TEST_CASE("the window builds one dock per registered category", "[tasks]") {
+    useShippedIcons();
+    mh::ui::TaskRegistry tasks;
+    REQUIRE(tasks.add(QStringLiteral("Modelling")));
+    REQUIRE(tasks.add(QStringLiteral("Materials")));
+    REQUIRE(tasks.add(QStringLiteral("Geometries")));
+
+    mh::ui::MainWindow w(MH_SHADER_DIR, tasks);
+    for (const QString& category : tasks.categories()) {
+        INFO(category.toStdString());
+        auto* dock = w.findChild<QDockWidget*>(mh::ui::MainWindow::dockObjectName(category));
+        REQUIRE(dock != nullptr);
+        CHECK(dock->windowTitle() == category);
+    }
+    // The names the workspace presets restore by must not drift.
+    CHECK(mh::ui::MainWindow::dockObjectName(QStringLiteral("Modelling")) ==
+          QStringLiteral("dock.modelling"));
+
+    // An empty registry gives a viewport and no panels.
+    mh::ui::MainWindow bare(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+    CHECK(bare.findChildren<QDockWidget*>().isEmpty());
+    CHECK(bare.viewport() != nullptr);
+}
+
+TEST_CASE("a mistyped category is refused without taking the widget", "[tasks]") {
+    useShippedIcons();
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
+
+    // "Modeling" with one L is the reference's own spelling, and setPanel takes
+    // a free-form string. The previous version DELETED the widget here, so the
+    // caller went on connecting signals to freed memory.
+    auto* orphan = new QWidget;
+    CHECK_FALSE(w.setPanel(QStringLiteral("Modeling"), orphan));
+    // Still ours, still alive -- a leak is a far better failure than a
+    // use-after-free, and the [[nodiscard]] makes the caller notice.
+    CHECK(orphan->objectName().isEmpty());
+    delete orphan;
+
+    auto* real = new QWidget;
+    CHECK(w.setPanel(QStringLiteral("Modelling"), real));
+}
+
+TEST_CASE("every registered category is shown by at least one preset", "[tasks]") {
+    // The docks are data-driven now but workspacePresets() is a hardcoded list.
+    // Registering a third category without touching it gives a dock that EVERY
+    // preset hides -- and once the layout is saved on quit, it never comes back
+    // except via Reset Workspace. This is the guardrail: add a category, update
+    // the presets.
+    mh::ui::TaskRegistry tasks = shippedTasks();
+
+    QStringList covered;
+    for (const auto& preset : mh::ui::workspacePresets())
+        covered << preset.visibleDocks;
+
+    for (const QString& category : tasks.categories()) {
+        INFO(category.toStdString());
+        CHECK(covered.contains(mh::ui::MainWindow::dockObjectName(category)));
+    }
 }
