@@ -583,11 +583,20 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       19,158 / 1 for `--eyes none`, and assimp reads back 2 meshes.
       **Note:** an undressed `--export foo.obj` now writes `g body` where it
       wrote `g mesh`.
-- [ ] Multi-mesh export for `.glb`, `.usda`, `.fbx` (and the assimp `.dae`
-      /`.stl`/`.3mf` paths). Each is still single-mesh and now *says* what it
-      omits rather than dropping it silently, but a dressed character still
-      exports naked to everything but OBJ. `exportScene` takes one
-      `RenderView`; glTF needs one primitive or node per mesh.
+- [x] **Multi-mesh glTF** — `io::writeGlbScene`, one mesh + node per entry with
+      its own accessor block; `writeGlb` is a wrapper over it and was verified
+      **byte-identical** (same SHA-256 for a plain and a rigged T-pose export).
+      At most one entry may carry a skin; joint nodes follow the mesh nodes at
+      `entries.size() + jointIndex`. Verified with assimp: a skinned body beside
+      an unskinned proxy gives bones on mesh 0 only, all resolving to real nodes.
+- [ ] Multi-mesh for `.usda`, `.fbx` and the assimp `.dae`/`.stl`/`.3mf` paths.
+      Still single-mesh, and they say on stderr what they omit. `exportScene`
+      takes one `RenderView`.
+- [ ] **Proxy materials.** Both multi-mesh writers take a material per entry,
+      but the app passes `nullptr` for every one, so body and proxies share the
+      default. `WornProxy` carries no `MaterialDesc` — the `.mhmat` beside each
+      proxy needs loading and wiring before the per-entry material path does
+      anything for a real export.
 - [ ] Per-mesh diffuse texture + alpha blending — hair and eyelash proxies need
       it. Today the shader's alpha comes from a shared 1x1 white stand-in, so
       it is always 1.0; it also needs a second pipeline (blend state) and

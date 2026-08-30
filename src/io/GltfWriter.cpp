@@ -73,6 +73,27 @@ std::string fmtFloat(float v) {
     return foundation::formatGeneral(v, 7);
 }
 
+/// An accessor bound, which must contain the data it bounds.
+///
+/// The spec requires min/max to be the true minimum and maximum. Two ways to
+/// get this wrong, and this code has now had both:
+///
+///  * `fmtFloat`'s 7 significant digits cannot round-trip a binary32
+///    (FLT_DECIMAL_DIG is 9), so the printed bound lands INSIDE the real range
+///    and the Khronos validator reports ACCESSOR_ELEMENT_OUT_OF_MAX_BOUND.
+///  * The shortest string that round-trips as a *float* is still not enough,
+///    because a validator parses JSON numbers as doubles and compares against
+///    the data widened to double. `0.84894335` round-trips to the right float
+///    yet is strictly less than that float's double value
+///    0.8489433526992798, so the bound is still too small.
+///
+/// Widening first and formatting as a double gives the shortest decimal that
+/// parses back to exactly the same value the comparison uses. Only the bounds
+/// need this: vertex data is binary, and everything else here is cosmetic.
+std::string fmtBound(float v) {
+    return foundation::formatShortest(static_cast<double>(v));
+}
+
 /// Minimal JSON string escaping -- enough for names, which is all we emit.
 std::string jsonEscape(std::string_view s) {
     std::string out;
@@ -114,15 +135,32 @@ std::string GltfWriteError::message() const {
     return m;
 }
 
-std::expected<GltfWriteResult, GltfWriteError> writeGlb(
-    const std::filesystem::path& path, const foundation::RenderView& mesh,
-    const GltfWriteOptions& options, const foundation::MaterialDesc* material,
-    const foundation::SkinView* skin, std::span<const foundation::MorphTarget> morphTargets) {
-    // glTF wants one attribute per index and has no quad primitive. The caller
-    // supplies geometry already in that shape: the unweld is a port of
-    // module3d.py and lives in the AGPL core, so running it here would drag
-    // this Apache-2.0 module back across the licence boundary.
-    const foundation::RenderView& rm = mesh;
+namespace {
+
+/// Where one entry's data landed in the shared binary buffer, and which
+/// accessors describe it. Filled in two passes: packing, then index assignment.
+struct Packed {
+    bool withNormals{}, withUVs{};
+    size_t posOffset{}, posBytes{};
+    size_t normOffset{}, normBytes{};
+    size_t uvOffset{}, uvBytes{};
+    size_t jointOffset{}, jointBytes{}, weightOffset{}, weightBytes{}, ibmOffset{}, ibmBytes{};
+    size_t idxOffset{}, idxBytes{};
+    std::vector<size_t> morphOffsets, morphByteCounts;
+    std::vector<Vec3> morphLo, morphHi;
+    Vec3 lo{}, hi{};
+    std::vector<foundation::Mat4> localRest;
+
+    int posAcc{-1}, normAcc{-1}, uvAcc{-1}, jointAcc{-1}, weightAcc{-1}, ibmAcc{-1}, idxAcc{-1};
+    std::vector<int> morphAcc;
+    int materialIndex{};
+};
+
+/// Everything writeGlbScene rejects, in one place so a bad entry cannot be
+/// half-written. Mirrors the single-mesh checks exactly.
+std::expected<void, GltfWriteError> validateEntry(const std::filesystem::path& path,
+                                                  const GltfSceneEntry& entry) {
+    const foundation::RenderView& rm = entry.mesh;
     if (rm.vertexCount() == 0 || rm.indexCount() == 0) {
         return std::unexpected(GltfWriteError{GltfWriteErrorKind::EmptyMesh, path.string(), {}});
     }
@@ -133,7 +171,7 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(
 
     // NaN and infinity have no JSON representation, so fmtFloat would emit a
     // bare `nan`/`inf` token and the whole file would fail to parse -- while
-    // writeGlb still reported success. Reject at the boundary instead. Note
+    // the writer still reported success. Reject at the boundary instead. Note
     // std::clamp does not filter NaN (both `nan < lo` and `hi < nan` are
     // false), so clamping the material later is not a substitute.
     for (const auto& c : rm.coord) {
@@ -142,9 +180,10 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(
                                                   "vertex position"});
         }
     }
-    if (material != nullptr) {
-        const float mv[] = {material->diffuse.x, material->diffuse.y, material->diffuse.z,
-                            material->opacity, material->shininess};
+    if (entry.material != nullptr) {
+        const float mv[] = {entry.material->diffuse.x, entry.material->diffuse.y,
+                            entry.material->diffuse.z, entry.material->opacity,
+                            entry.material->shininess};
         for (const float v : mv) {
             if (!std::isfinite(v)) {
                 return std::unexpected(GltfWriteError{GltfWriteErrorKind::NonFiniteValue,
@@ -153,7 +192,8 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(
         }
     }
 
-    if (skin != nullptr) {
+    if (entry.skin != nullptr) {
+        const foundation::SkinView* skin = entry.skin;
         if (!skin->valid() || skin->vertexCount() != rm.vertexCount() ||
             skin->influences != kGltfInfluences) {
             return std::unexpected(GltfWriteError{GltfWriteErrorKind::InvalidSkin, path.string(),
@@ -176,7 +216,7 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(
         }
     }
 
-    for (const auto& t : morphTargets) {
+    for (const auto& t : entry.morphTargets) {
         if (t.deltas.size() != rm.vertexCount()) {
             return std::unexpected(
                 GltfWriteError{GltfWriteErrorKind::InvalidMorphTarget, path.string(),
@@ -190,29 +230,22 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(
             }
         }
     }
+    return {};
+}
 
-    const float scale = unitScale(options.unit) * options.scale;
+/// Appends one entry's attributes to @p bin, recording where each block landed.
+Packed packEntry(std::vector<uint8_t>& bin, const GltfSceneEntry& entry,
+                 const GltfWriteOptions& options, float scale, float groundOffset) {
+    const foundation::RenderView& rm = entry.mesh;
+    Packed pk;
+    pk.withNormals = options.writeNormals && rm.vnorm.size() == rm.vertexCount();
+    pk.withUVs     = options.writeUVs && rm.texco.size() == rm.vertexCount();
 
-    float groundOffset = 0.0F;
-    if (options.feetOnGround) {
-        float lowest = std::numeric_limits<float>::infinity();
-        for (const Vec3& v : rm.coord)
-            lowest = std::min(lowest, v.y * scale);
-        if (std::isfinite(lowest)) groundOffset = -lowest;
-    }
+    pk.lo = Vec3{std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(),
+                 std::numeric_limits<float>::infinity()};
+    pk.hi = Vec3{-pk.lo.x, -pk.lo.y, -pk.lo.z};
 
-    const bool withNormals = options.writeNormals && rm.vnorm.size() == rm.vertexCount();
-    const bool withUVs     = options.writeUVs && rm.texco.size() == rm.vertexCount();
-
-    // ---- binary buffer ----------------------------------------------------
-    std::vector<uint8_t> bin;
-    bin.reserve(rm.vertexCount() * 32 + rm.indexCount() * 4);
-
-    Vec3 lo{std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(),
-            std::numeric_limits<float>::infinity()};
-    Vec3 hi{-lo.x, -lo.y, -lo.z};
-
-    const size_t posOffset = bin.size();
+    pk.posOffset = bin.size();
     for (const Vec3& v : rm.coord) {
         const float x = v.x * scale;
         const float y = v.y * scale + groundOffset;
@@ -220,51 +253,46 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(
         appendFloat(bin, x);
         appendFloat(bin, y);
         appendFloat(bin, z);
-        lo.x = std::min(lo.x, x);
-        lo.y = std::min(lo.y, y);
-        lo.z = std::min(lo.z, z);
-        hi.x = std::max(hi.x, x);
-        hi.y = std::max(hi.y, y);
-        hi.z = std::max(hi.z, z);
+        pk.lo.x = std::min(pk.lo.x, x);
+        pk.lo.y = std::min(pk.lo.y, y);
+        pk.lo.z = std::min(pk.lo.z, z);
+        pk.hi.x = std::max(pk.hi.x, x);
+        pk.hi.y = std::max(pk.hi.y, y);
+        pk.hi.z = std::max(pk.hi.z, z);
     }
-    const size_t posBytes = bin.size() - posOffset;
+    pk.posBytes = bin.size() - pk.posOffset;
 
-    size_t normOffset = 0, normBytes = 0;
-    if (withNormals) {
+    if (pk.withNormals) {
         padTo4(bin);
-        normOffset = bin.size();
+        pk.normOffset = bin.size();
         for (const Vec3& n : rm.vnorm) {
             appendFloat(bin, n.x);
             appendFloat(bin, n.y);
             appendFloat(bin, n.z);
         }
-        normBytes = bin.size() - normOffset;
+        pk.normBytes = bin.size() - pk.normOffset;
     }
 
-    size_t uvOffset = 0, uvBytes = 0;
-    if (withUVs) {
+    if (pk.withUVs) {
         padTo4(bin);
-        uvOffset = bin.size();
+        pk.uvOffset = bin.size();
         for (const Vec2& t : rm.texco) {
             // glTF's UV origin is top-left; OBJ/MakeHuman's is bottom-left, so V
             // is flipped. Getting this wrong mirrors every texture vertically.
             appendFloat(bin, t.x);
             appendFloat(bin, 1.0F - t.y);
         }
-        uvBytes = bin.size() - uvOffset;
+        pk.uvBytes = bin.size() - pk.uvOffset;
     }
 
-    size_t jointOffset = 0, jointBytes = 0, weightOffset = 0, weightBytes = 0;
-    size_t ibmOffset = 0, ibmBytes = 0;
-    std::vector<foundation::Mat4> scaledGlobal;
-    std::vector<foundation::Mat4> localRest;
-
-    if (skin != nullptr) {
+    if (entry.skin != nullptr) {
+        const foundation::SkinView* skin = entry.skin;
         // Scale the joints exactly as the mesh was scaled: rotation unchanged,
         // translation through the same scale and ground offset. Doing this here
         // rather than trusting the caller is what keeps the rig and the mesh in
         // the same space.
-        scaledGlobal.assign(skin->globalRest.begin(), skin->globalRest.end());
+        std::vector<foundation::Mat4> scaledGlobal(skin->globalRest.begin(),
+                                                   skin->globalRest.end());
         for (auto& m : scaledGlobal) {
             m.m[0][3] *= scale;
             m.m[1][3] = m.m[1][3] * scale + groundOffset;
@@ -274,29 +302,29 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(
         // Node transforms are LOCAL to the parent; inverse-bind matrices are
         // global. Deriving both from one scaled global array means they cannot
         // disagree.
-        localRest.resize(scaledGlobal.size());
+        pk.localRest.resize(scaledGlobal.size());
         for (size_t i = 0; i < scaledGlobal.size(); ++i) {
-            const int32_t p = skin->jointParents[i];
-            localRest[i]    = (p < 0)
-                                  ? scaledGlobal[i]
-                                  : foundation::rigidInverse(scaledGlobal[static_cast<size_t>(p)]) *
-                                     scaledGlobal[i];
+            const int32_t par = skin->jointParents[i];
+            pk.localRest[i] =
+                (par < 0) ? scaledGlobal[i]
+                          : foundation::rigidInverse(scaledGlobal[static_cast<size_t>(par)]) *
+                                scaledGlobal[i];
         }
 
         padTo4(bin);
-        jointOffset = bin.size();
+        pk.jointOffset = bin.size();
         for (const uint32_t jIdx : skin->joints)
             appendU16(bin, static_cast<uint16_t>(jIdx));
-        jointBytes = bin.size() - jointOffset;
+        pk.jointBytes = bin.size() - pk.jointOffset;
 
         padTo4(bin);
-        weightOffset = bin.size();
+        pk.weightOffset = bin.size();
         for (const float w : skin->weights)
             appendFloat(bin, w);
-        weightBytes = bin.size() - weightOffset;
+        pk.weightBytes = bin.size() - pk.weightOffset;
 
         padTo4(bin);
-        ibmOffset = bin.size();
+        pk.ibmOffset = bin.size();
         for (const auto& g : scaledGlobal) {
             const foundation::Mat4 inv = foundation::rigidInverse(g);
             // glTF stores matrices COLUMN-major. Ours are row-major, so this
@@ -308,18 +336,13 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(
                     appendFloat(bin, inv.m[r][c]);
             }
         }
-        ibmBytes = bin.size() - ibmOffset;
+        pk.ibmBytes = bin.size() - pk.ibmOffset;
     }
 
     // Morph targets: dense deltas, one block per target. Scaled like positions,
     // but WITHOUT the ground offset -- a delta is a displacement, not a point,
     // so adding the offset would shift the body once per active target.
-    std::vector<size_t> morphOffsets;
-    std::vector<size_t> morphByteCounts;
-    std::vector<Vec3> morphLo;
-    std::vector<Vec3> morphHi;
-
-    for (const auto& t : morphTargets) {
+    for (const auto& t : entry.morphTargets) {
         padTo4(bin);
         const size_t off = bin.size();
         Vec3 tlo{std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(),
@@ -339,220 +362,335 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(
             thi.y = std::max(thi.y, y);
             thi.z = std::max(thi.z, z);
         }
-        morphOffsets.push_back(off);
-        morphByteCounts.push_back(bin.size() - off);
-        morphLo.push_back(tlo);
-        morphHi.push_back(thi);
+        pk.morphOffsets.push_back(off);
+        pk.morphByteCounts.push_back(bin.size() - off);
+        pk.morphLo.push_back(tlo);
+        pk.morphHi.push_back(thi);
     }
 
     padTo4(bin);
-    const size_t idxOffset = bin.size();
+    pk.idxOffset = bin.size();
     for (const uint32_t i : rm.index)
         appendU32(bin, i);
-    const size_t idxBytes = bin.size() - idxOffset;
+    pk.idxBytes = bin.size() - pk.idxOffset;
 
     padTo4(bin);
+    return pk;
+}
+
+}  // namespace
+
+std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
+    const std::filesystem::path& path, std::span<const GltfSceneEntry> entries,
+    const GltfWriteOptions& options) {
+    if (entries.empty()) {
+        return std::unexpected(GltfWriteError{GltfWriteErrorKind::EmptyMesh, path.string(), {}});
+    }
+    for (const GltfSceneEntry& e : entries) {
+        if (const auto ok = validateEntry(path, e); !ok) return std::unexpected(ok.error());
+    }
+
+    // Joint nodes follow the mesh nodes, so one skeleton's node block is easy
+    // to address and two would collide. Refused rather than silently dropped.
+    const size_t skinned = static_cast<size_t>(std::count_if(
+        entries.begin(), entries.end(), [](const GltfSceneEntry& e) { return e.skin != nullptr; }));
+    if (skinned > 1) {
+        return std::unexpected(GltfWriteError{GltfWriteErrorKind::InvalidSkin, path.string(),
+                                              "only one entry may carry a skin"});
+    }
+
+    // The same two material hazards the OBJ writer refuses (ObjWriter.cpp), and
+    // for the same reasons -- the two writers must not disagree about what is
+    // legal. Merging on name alone would drop the second material's colour and
+    // its alphaMode, so a transparent item exports opaque.
+    const bool anyMaterial =
+        std::any_of(entries.begin(), entries.end(),
+                    [](const GltfSceneEntry& e) { return e.material != nullptr; });
+    const bool allMaterials =
+        std::all_of(entries.begin(), entries.end(),
+                    [](const GltfSceneEntry& e) { return e.material != nullptr; });
+    if (anyMaterial && !allMaterials) {
+        return std::unexpected(GltfWriteError{
+            GltfWriteErrorKind::NonFiniteValue, path.string(),
+            "some entries carry a material and some do not; the material-less ones would take "
+            "the default and could collide with a real one"});
+    }
+
+    const float scale = unitScale(options.unit) * options.scale;
+
+    // One ground offset for the whole scene: levelling each mesh on its own
+    // would drop the clothes to the floor beside the body.
+    float groundOffset = 0.0F;
+    if (options.feetOnGround) {
+        float lowest = std::numeric_limits<float>::infinity();
+        for (const GltfSceneEntry& e : entries) {
+            for (const Vec3& v : e.mesh.coord)
+                lowest = std::min(lowest, v.y * scale);
+        }
+        if (std::isfinite(lowest)) groundOffset = -lowest;
+    }
+
+    // ---- binary buffer ----------------------------------------------------
+    std::vector<uint8_t> bin;
+    std::vector<Packed> packs;
+    packs.reserve(entries.size());
+    for (const GltfSceneEntry& e : entries)
+        packs.push_back(packEntry(bin, e, options, scale, groundOffset));
+
+    // ---- materials, deduped by name in first-use order ---------------------
+    struct MatSlot {
+        std::string name;
+        const foundation::MaterialDesc* desc;
+    };
+
+    std::vector<MatSlot> mats;
+    for (size_t i = 0; i < entries.size(); ++i) {
+        std::string name = options.materialName;
+        if (entries[i].material != nullptr && !entries[i].material->name.empty()) {
+            name = entries[i].material->name;
+        }
+        const auto seen = std::find_if(mats.begin(), mats.end(),
+                                       [&](const MatSlot& m) { return m.name == name; });
+        if (seen == mats.end()) {
+            mats.push_back({name, entries[i].material});
+            packs[i].materialIndex = static_cast<int>(mats.size()) - 1;
+        } else if (seen->desc != entries[i].material) {
+            return std::unexpected(
+                GltfWriteError{GltfWriteErrorKind::NonFiniteValue, path.string(),
+                               "two different materials are both named \"" + name + "\""});
+        } else {
+            packs[i].materialIndex = static_cast<int>(seen - mats.begin());
+        }
+    }
 
     // ---- JSON -------------------------------------------------------------
-    const auto n = rm.vertexCount();
     std::string j;
     j.reserve(2048);
-
     j += R"({"asset":{"version":"2.0","generator":"MakeHuman C++ glTF writer"},)";
-    // Node 0 is the mesh. Joints follow as nodes 1..N, so a joint's node index
-    // is its skin index + 1 -- the offset the skin's "joints" array encodes.
-    if (skin != nullptr) {
-        // The scene lists the mesh and the skeleton roots. glTF requires every
-        // joint to be a node reachable in the scene graph, not a loose array.
-        j += R"("scene":0,"scenes":[{"nodes":[0)";
-        for (size_t i = 0; i < skin->jointCount(); ++i) {
-            if (skin->jointParents[i] < 0) j += "," + std::to_string(i + 1);
-        }
-        j += R"(]}],)";
 
-        j += R"("nodes":[{"mesh":0,"skin":0,"name":")" + jsonEscape(options.meshName) + R"("})";
-        for (size_t i = 0; i < skin->jointCount(); ++i) {
-            j += R"(,{"name":")" + jsonEscape(skin->jointNames[i]) + R"(","matrix":[)";
+    // Mesh nodes come first, so joints occupy nodes[entries.size() ..] and a
+    // joint's node index is its skin index plus that base.
+    const size_t jointBase                = entries.size();
+    const foundation::SkinView* sceneSkin = nullptr;
+    size_t skinnedEntry                   = 0;
+    for (size_t i = 0; i < entries.size(); ++i) {
+        if (entries[i].skin != nullptr) {
+            sceneSkin    = entries[i].skin;
+            skinnedEntry = i;
+        }
+    }
+
+    j += R"("scene":0,"scenes":[{"nodes":[)";
+    for (size_t i = 0; i < entries.size(); ++i) {
+        if (i != 0) j += ",";
+        j += std::to_string(i);
+    }
+    if (sceneSkin != nullptr) {
+        // glTF requires every joint to be a node reachable in the scene graph,
+        // not a loose array.
+        for (size_t i = 0; i < sceneSkin->jointCount(); ++i) {
+            if (sceneSkin->jointParents[i] < 0) j += "," + std::to_string(jointBase + i);
+        }
+    }
+    j += R"(]}],)";
+
+    j += R"("nodes":[)";
+    for (size_t i = 0; i < entries.size(); ++i) {
+        if (i != 0) j += ",";
+        j += R"({"mesh":)" + std::to_string(i);
+        if (entries[i].skin != nullptr) j += R"(,"skin":0)";
+        j += R"(,"name":")" + jsonEscape(entries[i].name) + R"("})";
+    }
+    if (sceneSkin != nullptr) {
+        for (size_t i = 0; i < sceneSkin->jointCount(); ++i) {
+            j += R"(,{"name":")" + jsonEscape(sceneSkin->jointNames[i]) + R"(","matrix":[)";
             // Column-major, as glTF requires. Ours are row-major.
             for (size_t c = 0; c < 4; ++c) {
                 for (size_t r = 0; r < 4; ++r) {
                     if (c != 0 || r != 0) j += ",";
-                    j += fmtFloat(localRest[i].m[r][c]);
+                    j += fmtFloat(packs[skinnedEntry].localRest[i].m[r][c]);
                 }
             }
             j += "]";
 
             bool firstChild = true;
-            for (size_t k = 0; k < skin->jointCount(); ++k) {
-                if (skin->jointParents[k] != static_cast<int32_t>(i)) continue;
+            for (size_t k = 0; k < sceneSkin->jointCount(); ++k) {
+                if (sceneSkin->jointParents[k] != static_cast<int32_t>(i)) continue;
                 j += firstChild ? R"(,"children":[)" : ",";
-                j += std::to_string(k + 1);
+                j += std::to_string(jointBase + k);
                 firstChild = false;
             }
             if (!firstChild) j += "]";
             j += "}";
         }
-        j += "],";
-    } else {
-        j += R"("scene":0,"scenes":[{"nodes":[0]}],)";
-        j += R"("nodes":[{"mesh":0,"name":")" + jsonEscape(options.meshName) + R"("}],)";
     }
+    j += "],";
 
     // buffers / bufferViews
     j += R"("buffers":[{"byteLength":)" + std::to_string(bin.size()) + "}],";
+
     j += R"("bufferViews":[)";
-    j += R"({"buffer":0,"byteOffset":)" + std::to_string(posOffset) + R"(,"byteLength":)" +
-         std::to_string(posBytes) + R"(,"target":)" + std::to_string(kTargetArrayBuffer) + "}";
-    if (withNormals) {
-        j += R"(,{"buffer":0,"byteOffset":)" + std::to_string(normOffset) + R"(,"byteLength":)" +
-             std::to_string(normBytes) + R"(,"target":)" + std::to_string(kTargetArrayBuffer) + "}";
+    bool firstView  = true;
+    const auto view = [&](size_t offset, size_t bytes, int target) {
+        if (!firstView) j += ",";
+        firstView = false;
+        j += R"({"buffer":0,"byteOffset":)" + std::to_string(offset) + R"(,"byteLength":)" +
+             std::to_string(bytes);
+        if (target >= 0) j += R"(,"target":)" + std::to_string(target);
+        j += "}";
+    };
+    for (size_t i = 0; i < entries.size(); ++i) {
+        const Packed& pk = packs[i];
+        view(pk.posOffset, pk.posBytes, kTargetArrayBuffer);
+        if (pk.withNormals) view(pk.normOffset, pk.normBytes, kTargetArrayBuffer);
+        if (pk.withUVs) view(pk.uvOffset, pk.uvBytes, kTargetArrayBuffer);
+        if (entries[i].skin != nullptr) {
+            view(pk.jointOffset, pk.jointBytes, kTargetArrayBuffer);
+            view(pk.weightOffset, pk.weightBytes, kTargetArrayBuffer);
+            // No "target" on the inverse-bind view: it is not vertex data, and a
+            // validator flags an ARRAY_BUFFER target on a MAT4 accessor.
+            view(pk.ibmOffset, pk.ibmBytes, -1);
+        }
+        for (size_t t = 0; t < pk.morphOffsets.size(); ++t)
+            view(pk.morphOffsets[t], pk.morphByteCounts[t], kTargetArrayBuffer);
+        view(pk.idxOffset, pk.idxBytes, kTargetElementArray);
     }
-    if (withUVs) {
-        j += R"(,{"buffer":0,"byteOffset":)" + std::to_string(uvOffset) + R"(,"byteLength":)" +
-             std::to_string(uvBytes) + R"(,"target":)" + std::to_string(kTargetArrayBuffer) + "}";
-    }
-    if (skin != nullptr) {
-        j += R"(,{"buffer":0,"byteOffset":)" + std::to_string(jointOffset) + R"(,"byteLength":)" +
-             std::to_string(jointBytes) + R"(,"target":)" + std::to_string(kTargetArrayBuffer) +
-             "}";
-        j += R"(,{"buffer":0,"byteOffset":)" + std::to_string(weightOffset) + R"(,"byteLength":)" +
-             std::to_string(weightBytes) + R"(,"target":)" + std::to_string(kTargetArrayBuffer) +
-             "}";
-        // No "target" on the inverse-bind view: it is not vertex data, and a
-        // validator flags an ARRAY_BUFFER target on a MAT4 accessor.
-        j += R"(,{"buffer":0,"byteOffset":)" + std::to_string(ibmOffset) + R"(,"byteLength":)" +
-             std::to_string(ibmBytes) + "}";
-    }
-    for (size_t t = 0; t < morphTargets.size(); ++t) {
-        j += R"(,{"buffer":0,"byteOffset":)" + std::to_string(morphOffsets[t]) +
-             R"(,"byteLength":)" + std::to_string(morphByteCounts[t]) + R"(,"target":)" +
-             std::to_string(kTargetArrayBuffer) + "}";
-    }
-    j += R"(,{"buffer":0,"byteOffset":)" + std::to_string(idxOffset) + R"(,"byteLength":)" +
-         std::to_string(idxBytes) + R"(,"target":)" + std::to_string(kTargetElementArray) + "}";
     j += "],";
 
     // accessors -- POSITION is required to carry min and max.
-    int view = 0;
     j += R"("accessors":[)";
-    j += R"({"bufferView":)" + std::to_string(view++) + R"(,"componentType":)" +
-         std::to_string(kComponentFloat) + R"(,"count":)" + std::to_string(n) +
-         R"(,"type":"VEC3","min":[)" + fmtFloat(lo.x) + "," + fmtFloat(lo.y) + "," +
-         fmtFloat(lo.z) + R"(],"max":[)" + fmtFloat(hi.x) + "," + fmtFloat(hi.y) + "," +
-         fmtFloat(hi.z) + "]}";
-    int normAccessor = -1;
-    if (withNormals) {
-        normAccessor = view;
-        j += R"(,{"bufferView":)" + std::to_string(view++) + R"(,"componentType":)" +
-             std::to_string(kComponentFloat) + R"(,"count":)" + std::to_string(n) +
-             R"(,"type":"VEC3"})";
+    int nextView   = 0;
+    int nextAcc    = 0;
+    bool firstAcc  = true;
+    const auto acc = [&](int componentType, size_t count, const char* type) {
+        if (!firstAcc) j += ",";
+        firstAcc = false;
+        j += R"({"bufferView":)" + std::to_string(nextView++) + R"(,"componentType":)" +
+             std::to_string(componentType) + R"(,"count":)" + std::to_string(count) +
+             R"(,"type":")" + type + "\"";
+    };
+    for (size_t i = 0; i < entries.size(); ++i) {
+        Packed& pk   = packs[i];
+        const auto n = entries[i].mesh.vertexCount();
+        pk.posAcc    = nextAcc++;
+        acc(kComponentFloat, n, "VEC3");
+        j += R"(,"min":[)" + fmtBound(pk.lo.x) + "," + fmtBound(pk.lo.y) + "," + fmtBound(pk.lo.z) +
+             R"(],"max":[)" + fmtBound(pk.hi.x) + "," + fmtBound(pk.hi.y) + "," +
+             fmtBound(pk.hi.z) + "]}";
+        if (pk.withNormals) {
+            pk.normAcc = nextAcc++;
+            acc(kComponentFloat, n, "VEC3");
+            j += "}";
+        }
+        if (pk.withUVs) {
+            pk.uvAcc = nextAcc++;
+            acc(kComponentFloat, n, "VEC2");
+            j += "}";
+        }
+        if (entries[i].skin != nullptr) {
+            pk.jointAcc = nextAcc++;
+            acc(kComponentUnsignedShort, n, "VEC4");
+            j += "}";
+            pk.weightAcc = nextAcc++;
+            acc(kComponentFloat, n, "VEC4");
+            j += "}";
+            pk.ibmAcc = nextAcc++;
+            acc(kComponentFloat, entries[i].skin->jointCount(), "MAT4");
+            j += "}";
+        }
+        for (size_t t = 0; t < pk.morphOffsets.size(); ++t) {
+            pk.morphAcc.push_back(nextAcc++);
+            // min/max is required on every POSITION accessor, and a morph
+            // target's deltas are one. Omitting it is the most common way a
+            // hand-written morph export fails validation while still loading in
+            // some engines.
+            acc(kComponentFloat, n, "VEC3");
+            j += R"(,"min":[)" + fmtBound(pk.morphLo[t].x) + "," + fmtBound(pk.morphLo[t].y) + "," +
+                 fmtBound(pk.morphLo[t].z) + R"(],"max":[)" + fmtBound(pk.morphHi[t].x) + "," +
+                 fmtBound(pk.morphHi[t].y) + "," + fmtBound(pk.morphHi[t].z) + "]}";
+        }
+        pk.idxAcc = nextAcc++;
+        acc(kComponentUnsignedInt, entries[i].mesh.indexCount(), "SCALAR");
+        j += "}";
     }
-    int uvAccessor = -1;
-    if (withUVs) {
-        uvAccessor = view;
-        j += R"(,{"bufferView":)" + std::to_string(view++) + R"(,"componentType":)" +
-             std::to_string(kComponentFloat) + R"(,"count":)" + std::to_string(n) +
-             R"(,"type":"VEC2"})";
-    }
-    int jointAccessor = -1, weightAccessor = -1, ibmAccessor = -1;
-    if (skin != nullptr) {
-        jointAccessor = view;
-        j += R"(,{"bufferView":)" + std::to_string(view++) + R"(,"componentType":)" +
-             std::to_string(kComponentUnsignedShort) + R"(,"count":)" + std::to_string(n) +
-             R"(,"type":"VEC4"})";
-        weightAccessor = view;
-        j += R"(,{"bufferView":)" + std::to_string(view++) + R"(,"componentType":)" +
-             std::to_string(kComponentFloat) + R"(,"count":)" + std::to_string(n) +
-             R"(,"type":"VEC4"})";
-        ibmAccessor = view;
-        j += R"(,{"bufferView":)" + std::to_string(view++) + R"(,"componentType":)" +
-             std::to_string(kComponentFloat) + R"(,"count":)" + std::to_string(skin->jointCount()) +
-             R"(,"type":"MAT4"})";
-    }
-    std::vector<int> morphAccessors;
-    morphAccessors.reserve(morphTargets.size());
-    for (size_t t = 0; t < morphTargets.size(); ++t) {
-        morphAccessors.push_back(view);
-        // min/max is required on every POSITION accessor, and a morph target's
-        // deltas are one. Omitting it is the most common way a hand-written
-        // morph export fails validation while still loading in some engines.
-        j += R"(,{"bufferView":)" + std::to_string(view++) + R"(,"componentType":)" +
-             std::to_string(kComponentFloat) + R"(,"count":)" + std::to_string(n) +
-             R"(,"type":"VEC3","min":[)" + fmtFloat(morphLo[t].x) + "," + fmtFloat(morphLo[t].y) +
-             "," + fmtFloat(morphLo[t].z) + R"(],"max":[)" + fmtFloat(morphHi[t].x) + "," +
-             fmtFloat(morphHi[t].y) + "," + fmtFloat(morphHi[t].z) + "]}";
-    }
-    const int idxAccessor = view;
-    j += R"(,{"bufferView":)" + std::to_string(view) + R"(,"componentType":)" +
-         std::to_string(kComponentUnsignedInt) + R"(,"count":)" + std::to_string(rm.indexCount()) +
-         R"(,"type":"SCALAR"})";
     j += "],";
 
-    // mesh
-    j += R"("meshes":[{"name":")" + jsonEscape(options.meshName) +
-         R"(","primitives":[{"attributes":{"POSITION":0)";
-    if (normAccessor >= 0) j += R"(,"NORMAL":)" + std::to_string(normAccessor);
-    if (uvAccessor >= 0) j += R"(,"TEXCOORD_0":)" + std::to_string(uvAccessor);
-    if (jointAccessor >= 0) j += R"(,"JOINTS_0":)" + std::to_string(jointAccessor);
-    if (weightAccessor >= 0) j += R"(,"WEIGHTS_0":)" + std::to_string(weightAccessor);
-    j += R"(},"indices":)" + std::to_string(idxAccessor) + R"(,"material":0,"mode":)" +
-         std::to_string(kModeTriangles);
-    if (!morphTargets.empty()) {
-        j += R"(,"targets":[)";
-        for (size_t t = 0; t < morphTargets.size(); ++t) {
-            if (t != 0) j += ",";
-            j += R"({"POSITION":)" + std::to_string(morphAccessors[t]) + "}";
+    // meshes -- one per entry.
+    j += R"("meshes":[)";
+    for (size_t i = 0; i < entries.size(); ++i) {
+        const Packed& pk = packs[i];
+        if (i != 0) j += ",";
+        j += R"({"name":")" + jsonEscape(entries[i].name) +
+             R"(","primitives":[{"attributes":{"POSITION":)" + std::to_string(pk.posAcc);
+        if (pk.normAcc >= 0) j += R"(,"NORMAL":)" + std::to_string(pk.normAcc);
+        if (pk.uvAcc >= 0) j += R"(,"TEXCOORD_0":)" + std::to_string(pk.uvAcc);
+        if (pk.jointAcc >= 0) j += R"(,"JOINTS_0":)" + std::to_string(pk.jointAcc);
+        if (pk.weightAcc >= 0) j += R"(,"WEIGHTS_0":)" + std::to_string(pk.weightAcc);
+        j += R"(},"indices":)" + std::to_string(pk.idxAcc) + R"(,"material":)" +
+             std::to_string(pk.materialIndex) + R"(,"mode":)" + std::to_string(kModeTriangles);
+        if (!pk.morphAcc.empty()) {
+            j += R"(,"targets":[)";
+            for (size_t t = 0; t < pk.morphAcc.size(); ++t) {
+                if (t != 0) j += ",";
+                j += R"({"POSITION":)" + std::to_string(pk.morphAcc[t]) + "}";
+            }
+            j += "]";
         }
-        j += "]";
-    }
-    j += "}]";
-    if (!morphTargets.empty()) {
-        // Default weights: all zero, i.e. the base mesh. A viewer that ignores
-        // them still shows the unmorphed body rather than every target at once.
-        j += R"(,"weights":[)";
-        for (size_t t = 0; t < morphTargets.size(); ++t)
-            j += (t != 0 ? ",0" : "0");
-        j += "]";
+        j += "}]";
+        if (!pk.morphAcc.empty()) {
+            // Default weights: all zero, i.e. the base mesh. A viewer that
+            // ignores them still shows the unmorphed body rather than every
+            // target at once.
+            j += R"(,"weights":[)";
+            for (size_t t = 0; t < pk.morphAcc.size(); ++t)
+                j += (t != 0 ? ",0" : "0");
+            j += "]";
 
-        // targetNames is an extras convention rather than core glTF, but it is
-        // what Blender and every DCC read to label the shape keys. Without it
-        // the targets import as "Key 1", "Key 2", ... and become unusable.
-        j += R"(,"extras":{"targetNames":[)";
-        for (size_t t = 0; t < morphTargets.size(); ++t) {
-            if (t != 0) j += ",";
-            j += "\"" + jsonEscape(morphTargets[t].name) + "\"";
+            // targetNames is an extras convention rather than core glTF, but it
+            // is what Blender and every DCC read to label the shape keys.
+            // Without it the targets import as "Key 1", "Key 2", ... and become
+            // unusable.
+            j += R"(,"extras":{"targetNames":[)";
+            for (size_t t = 0; t < pk.morphAcc.size(); ++t) {
+                if (t != 0) j += ",";
+                j += "\"" + jsonEscape(entries[i].morphTargets[t].name) + "\"";
+            }
+            j += "]}";
         }
-        j += "]}";
+        j += "}";
     }
-    j += "}],";
+    j += "],";
 
-    // material -- Blinn-Phong converted to metallic-roughness, which is the
+    // materials -- Blinn-Phong converted to metallic-roughness, which is the
     // only PBR model core glTF defines. The reference has no PBR data at all,
     // so roughness is derived from shininess and metallic is 0 (skin, cloth and
     // hair are all dielectric).
-    float baseR = 0.8F, baseG = 0.8F, baseB = 0.8F, alpha = 1.0F, roughness = 0.7F;
-    std::string matName = options.materialName;
-    if (material != nullptr) {
-        baseR     = material->diffuse.x;
-        baseG     = material->diffuse.y;
-        baseB     = material->diffuse.z;
-        alpha     = material->opacity;
-        roughness = std::clamp(1.0F - material->shininess, 0.0F, 1.0F);
-        if (!material->name.empty()) matName = material->name;
+    j += R"("materials":[)";
+    for (size_t i = 0; i < mats.size(); ++i) {
+        float baseR = 0.8F, baseG = 0.8F, baseB = 0.8F, alpha = 1.0F, roughness = 0.7F;
+        if (mats[i].desc != nullptr) {
+            baseR     = mats[i].desc->diffuse.x;
+            baseG     = mats[i].desc->diffuse.y;
+            baseB     = mats[i].desc->diffuse.z;
+            alpha     = mats[i].desc->opacity;
+            roughness = std::clamp(1.0F - mats[i].desc->shininess, 0.0F, 1.0F);
+        }
+        if (i != 0) j += ",";
+        j += R"({"name":")" + jsonEscape(mats[i].name) +
+             R"(","pbrMetallicRoughness":{"baseColorFactor":[)" + fmtFloat(baseR) + "," +
+             fmtFloat(baseG) + "," + fmtFloat(baseB) + "," + fmtFloat(alpha) +
+             R"(],"metallicFactor":0,"roughnessFactor":)" + fmtFloat(roughness) + "}";
+        if (alpha < 1.0F) j += R"(,"alphaMode":"BLEND")";
+        j += "}";
     }
-    j += R"("materials":[{"name":")" + jsonEscape(matName) +
-         R"(","pbrMetallicRoughness":{"baseColorFactor":[)" + fmtFloat(baseR) + "," +
-         fmtFloat(baseG) + "," + fmtFloat(baseB) + "," + fmtFloat(alpha) +
-         R"(],"metallicFactor":0,"roughnessFactor":)" + fmtFloat(roughness) + "}";
-    if (alpha < 1.0F) j += R"(,"alphaMode":"BLEND")";
-    j += "}]";
+    j += "]";
 
-    if (skin != nullptr) {
-        j +=
-            R"(,"skins":[{"inverseBindMatrices":)" + std::to_string(ibmAccessor) + R"(,"joints":[)";
-        for (size_t i = 0; i < skin->jointCount(); ++i) {
+    if (sceneSkin != nullptr) {
+        j += R"(,"skins":[{"inverseBindMatrices":)" + std::to_string(packs[skinnedEntry].ibmAcc) +
+             R"(,"joints":[)";
+        for (size_t i = 0; i < sceneSkin->jointCount(); ++i) {
             if (i != 0) j += ",";
-            j += std::to_string(i + 1);  // node index = joint index + 1
+            j += std::to_string(jointBase + i);
         }
         j += "]}]";
     }
@@ -600,7 +738,20 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlb(
             GltfWriteError{GltfWriteErrorKind::CannotOpen, path.string(), "write failed"});
     }
 
-    return GltfWriteResult{rm.vertexCount(), rm.indexCount() / 3, glb.size()};
+    size_t verts = 0, tris = 0;
+    for (const GltfSceneEntry& e : entries) {
+        verts += e.mesh.vertexCount();
+        tris += e.mesh.indexCount() / 3;
+    }
+    return GltfWriteResult{verts, tris, glb.size()};
+}
+
+std::expected<GltfWriteResult, GltfWriteError> writeGlb(
+    const std::filesystem::path& path, const foundation::RenderView& mesh,
+    const GltfWriteOptions& options, const foundation::MaterialDesc* material,
+    const foundation::SkinView* skin, std::span<const foundation::MorphTarget> morphTargets) {
+    const GltfSceneEntry entry{mesh, options.meshName, material, skin, morphTargets};
+    return writeGlbScene(path, {&entry, 1}, options);
 }
 
 }  // namespace mh::io

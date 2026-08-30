@@ -4,6 +4,90 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-30 12:35:38 — Session 052 · **multi-mesh glTF, and a spec bug nothing had caught**
+
+### What shipped
+`io::writeGlbScene` — several meshes in one GLB, each its own mesh and node with
+its own accessor block. glTF addresses buffer views, accessors, meshes, nodes
+and materials by index, so every entry's block is offset by everything written
+before it. `writeGlb` is now a wrapper over it.
+
+**The safety net that made this refactor sane:** I captured the SHA-256 of a
+plain and a rigged T-pose export *before* touching the writer, then required
+them to match after. They do, and the 22 existing glTF cases still pass. The BIN
+chunk is byte-identical; the only JSON change for the app is the deliberate
+rename of the body node from `MakeHuman` to `body`, matching OBJ's `g body`.
+
+At most one entry may carry a skin — a second is refused rather than silently
+dropped. Joint nodes follow the mesh nodes, so a joint's node index is
+`entries.size() + jointIndex` in all three places it appears (scene roots, node
+children, `skins.joints`).
+
+### The bug worth remembering: an accessor bound that bounds nothing
+`/code-review` ran the **Khronos glTF validator** and found 14 errors — all
+`ACCESSOR_ELEMENT_OUT_OF_MAX_BOUND`, and all **pre-existing**, present in the
+byte-identical single-mesh path too. `fmtFloat` prints 7 significant digits;
+`FLT_DECIMAL_DIG` is 9. So a declared max of `1.263996` sat *inside* data whose
+real maximum was `1.2639964818954468`. A file that loads everywhere and is
+formally invalid — which is why nothing caught it for a long time.
+
+**The suggested fix was not enough, and re-validating is what caught that.**
+`formatShortest(float)` gives the shortest string that round-trips as a
+*binary32*, but a validator parses JSON numbers as doubles and compares against
+the data widened to double. `0.84894335` round-trips to the right float and is
+still strictly less than that float's double value `0.8489433526992798`, so the
+bound was still too small. Widening first — `formatShortest(static_cast<double>(v))`
+— is what actually holds. I only found this because I re-ran my own bounds check
+after applying the fix instead of trusting that it worked.
+
+Both failures are mutation-tested: reverting to 7 digits fails the new test, and
+so does the near-miss float overload.
+
+### Also applied from review
+- **The material contract now matches the OBJ writer.** It deduped on the name
+  string alone and kept the first descriptor, so two materials named the same
+  silently merged — a transparent item losing its `alphaMode` and exporting
+  opaque — and a material-less entry could collide with a real material called
+  "Skin". Both are refused now, exactly as `ObjWriter` refuses them. The two
+  writers must not disagree about what is legal.
+
+### Verification
+- ctest **343/343 in debug and release**; format clean; **0** undefined
+  `mh::core` symbols across the four Apache-2.0 modules.
+- Independent checks: Khronos validator (via review) reported 0 errors and 0
+  warnings on the multi-mesh output apart from the bounds issue now fixed; my
+  own decoder re-checks every POSITION accessor's declared bounds against the
+  decoded float data as doubles — 0 violations.
+- assimp reads a skinned-body + unskinned-proxy scene back with bones on mesh 0
+  only, `mNumBones` matching, and every bone resolving to a node.
+- Mutation-tested: hardcoding the joint base to 1 (right for one mesh, wrong for
+  two) fails only the new test — 22 of 23 cases still passed, which is precisely
+  why that test had to exist.
+
+### A measurement lesson, and a corrected diagnosis
+`load ALL 1280 targets` read 689, 791, 1140 and 778 ms at various points this
+session against a ~500 ms baseline. I first blamed CPU contention from
+concurrent builds. That is not quite right: measuring again on an **idle**
+machine still gave 778 ms on the FIRST run and 502 / 497 ms immediately after.
+
+So the pattern is the first run after heavy build activity, not concurrent load.
+The benchmark parses 1,280 target files; a build evicts them from the page
+cache, and run one pays the disk. Inferred from the timing shape rather than
+proven — I did not purge the cache to confirm — but it predicts the observations
+better than contention does, and it means **the first number after a build is
+always wrong**. Discard it and take the steady state, which has been 486-511 ms
+in every quiet measurement all session.
+
+### Notes for next session
+- `.usda`, `.fbx`, `.dae`, `.stl`, `.3mf` are still single-mesh and say so.
+- **Proxy materials are the real remaining gap**: both multi-mesh writers accept
+  a material per entry, but the app passes `nullptr` for every entry, so body
+  and proxies share one default. The per-entry material path is therefore
+  exercised only by tests. `WornProxy` needs to load the `.mhmat` beside its
+  proxy.
+
+---
+
 ## 2026-08-30 11:01:59 — Session 051 · **a dressed character exports dressed (OBJ)**
 
 ### What shipped

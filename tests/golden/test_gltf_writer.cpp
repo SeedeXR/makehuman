@@ -61,6 +61,18 @@ std::filesystem::path tempGlb(const char* stem) {
     return std::filesystem::temp_directory_path() / (std::string("mh_glb_") + stem + ".glb");
 }
 
+/// A quad translated along X, so two of them are distinguishable in one file.
+core::Mesh quadAt(float x, const char* name) {
+    core::Mesh m(name, 4);
+    REQUIRE(m.setCoords({{x, 0, 0}, {x + 2, 0, 0}, {x + 2, 0, 3}, {x, 0, 3}}).has_value());
+    REQUIRE(m.setUVs({{0, 0}, {1, 0}, {1, 1}, {0, 1}}).has_value());
+    m.addFaceGroup("g");
+    REQUIRE(m.setFaces({0, 1, 2, 3}, {0, 1, 2, 3}, {0}).has_value());
+    m.buildAdjacency();
+    m.calcNormals();
+    return m;
+}
+
 core::Mesh quad() {
     core::Mesh m("quad", 4);
     REQUIRE(m.setCoords({{0, 0, 0}, {2, 0, 0}, {2, 0, 3}, {0, 0, 3}}).has_value());
@@ -579,4 +591,263 @@ TEST_CASE("zero-offset rows in a target are no-ops", "[gltf][morph]") {
         if (o.x == 0.0F && o.y == 0.0F && o.z == 0.0F) ++zero;
     }
     CHECK(zero == 11);  // 305 - 11 = 294, which is what Blender reports moving
+}
+
+// A dressed character is several meshes with their own materials. Until this
+// worked, exporting to glTF wrote the body alone -- the format that matters
+// most for DCC round-tripping.
+TEST_CASE("several meshes are written into one GLB", "[io][gltf][multimesh]") {
+    const core::Mesh a = quadAt(0.0F, "body");
+    const core::Mesh b = quadAt(8.0F, "eyes");
+    const auto rmA     = core::RenderMesh::build(a);
+    const auto rmB     = core::RenderMesh::build(b);
+    const auto out     = tempGlb("scene");
+
+    const std::vector<io::GltfSceneEntry> scene{{rmA.view(), "body"}, {rmB.view(), "eyes"}};
+    const auto r = io::writeGlbScene(out, scene);
+    REQUIRE(r.has_value());
+    CHECK(r->vertices == rmA.view().vertexCount() + rmB.view().vertexCount());
+    CHECK(r->triangles == rmA.view().triangleCount() + rmB.view().triangleCount());
+
+#if defined(MH_HAVE_ASSIMP)
+    Assimp::Importer importer;
+    const aiScene* sc = importer.ReadFile(out.string(), 0);
+    INFO("assimp: " << importer.GetErrorString());
+    REQUIRE(sc != nullptr);
+    REQUIRE(sc->mNumMeshes == 2);
+
+    // Each mesh must carry its OWN geometry. Sharing one accessor block -- the
+    // classic multi-mesh glTF bug -- gives two meshes at the same place.
+    float minXa = 1e9F;
+    float minXb = 1e9F;
+    for (unsigned i = 0; i < sc->mMeshes[0]->mNumVertices; ++i)
+        minXa = std::min(minXa, sc->mMeshes[0]->mVertices[i].x);
+    for (unsigned i = 0; i < sc->mMeshes[1]->mNumVertices; ++i)
+        minXb = std::min(minXb, sc->mMeshes[1]->mVertices[i].x);
+    INFO("min x: mesh0 " << minXa << " mesh1 " << minXb);
+    // Default unit is metres, so the decimetre coordinates are scaled by 0.1.
+    CHECK_THAT(minXa, WithinAbs(0.0, 1e-4));
+    CHECK_THAT(minXb, WithinAbs(0.8, 1e-4));
+
+    // One node per mesh, so a DCC tool can select the clothes separately.
+    CHECK(sc->mRootNode != nullptr);
+    size_t meshRefs = 0;
+    for (unsigned i = 0; i < sc->mRootNode->mNumChildren; ++i)
+        meshRefs += sc->mRootNode->mChildren[i]->mNumMeshes;
+    meshRefs += sc->mRootNode->mNumMeshes;
+    CHECK(meshRefs == 2);
+#endif
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("each mesh keeps its own material", "[io][gltf][multimesh]") {
+    const core::Mesh a = quadAt(0.0F, "body");
+    const core::Mesh b = quadAt(8.0F, "eyes");
+    const auto rmA     = core::RenderMesh::build(a);
+    const auto rmB     = core::RenderMesh::build(b);
+
+    foundation::MaterialDesc skin;
+    skin.name    = "Skin";
+    skin.diffuse = {0.9F, 0.7F, 0.6F};
+    foundation::MaterialDesc glass;
+    glass.name    = "Eye";
+    glass.diffuse = {0.1F, 0.1F, 0.2F};
+
+    const auto out = tempGlb("scenemat");
+    const std::vector<io::GltfSceneEntry> scene{{rmA.view(), "body", &skin},
+                                                {rmB.view(), "eyes", &glass}};
+    REQUIRE(io::writeGlbScene(out, scene).has_value());
+
+#if defined(MH_HAVE_ASSIMP)
+    Assimp::Importer importer;
+    const aiScene* sc = importer.ReadFile(out.string(), 0);
+    REQUIRE(sc != nullptr);
+    REQUIRE(sc->mNumMeshes == 2);
+    // Two distinct materials, and the meshes must not share one index.
+    CHECK(sc->mNumMaterials >= 2);
+    CHECK(sc->mMeshes[0]->mMaterialIndex != sc->mMeshes[1]->mMaterialIndex);
+#endif
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+// The single-mesh writer is now a wrapper. If it stopped producing what it used
+// to, every consumer of the existing export would change under them.
+TEST_CASE("a one-entry scene matches the single-mesh writer", "[io][gltf][multimesh]") {
+    const core::Mesh m = quad();
+    const auto rm      = core::RenderMesh::build(m);
+    const auto viaOld  = tempGlb("one_old");
+    const auto viaNew  = tempGlb("one_new");
+
+    REQUIRE(io::writeGlb(viaOld, rm.view()).has_value());
+    REQUIRE(io::writeGlbScene(viaNew, {{{rm.view(), "MakeHuman"}}}).has_value());
+
+    const auto readAll = [](const std::filesystem::path& p) {
+        std::ifstream in(p, std::ios::binary);
+        return std::vector<char>((std::istreambuf_iterator<char>(in)),
+                                 std::istreambuf_iterator<char>());
+    };
+    CHECK(readAll(viaOld) == readAll(viaNew));
+
+    std::error_code ec;
+    std::filesystem::remove(viaOld, ec);
+    std::filesystem::remove(viaNew, ec);
+}
+
+// The combination most likely to be subtly wrong: a SKINNED body beside an
+// UNSKINNED proxy. Joint nodes follow the mesh nodes, so every joint index --
+// in scene roots, node children and skins.joints -- shifts by the entry count.
+// Off-by-one here produces a file that loads and animates the wrong nodes.
+TEST_CASE("a skinned body and an unskinned proxy coexist", "[gltf][skin][multimesh]") {
+    auto f              = buildRigged();
+    const auto rmBody   = core::RenderMesh::build(f.mesh);
+    const auto skinView = f.skin.view();
+
+    const core::Mesh proxyMesh = quadAt(8.0F, "eyes");
+    const auto rmProxy         = core::RenderMesh::build(proxyMesh);
+
+    const auto out = tempGlb("skinned_scene");
+    const std::vector<io::GltfSceneEntry> scene{
+        {rmBody.view(), "body", nullptr, &skinView},
+        {rmProxy.view(), "eyes"},
+    };
+    REQUIRE(io::writeGlbScene(out, scene).has_value());
+
+    const std::string j = glbJson(out);
+    // The body is skinned; the proxy must NOT be. Exactly one "skin": reference.
+    CHECK(j.find(R"("skin":0)") != std::string::npos);
+    size_t skinRefs = 0;
+    for (size_t at = j.find(R"("skin":0)"); at != std::string::npos;
+         at        = j.find(R"("skin":0)", at + 1)) {
+        ++skinRefs;
+    }
+    CHECK(skinRefs == 1);
+
+#if defined(MH_HAVE_ASSIMP)
+    Assimp::Importer importer;
+    const aiScene* sc = importer.ReadFile(out.string(), 0);
+    INFO("assimp: " << importer.GetErrorString());
+    REQUIRE(sc != nullptr);
+    REQUIRE(sc->mNumMeshes == 2);
+
+    // Mesh 0 is the rigged body, mesh 1 the proxy. Bones on the wrong one, or
+    // joint indices pointing past the node array, show up here.
+    CHECK(sc->mMeshes[0]->HasBones());
+    CHECK(sc->mMeshes[0]->mNumBones == skinView.jointCount());
+    CHECK_FALSE(sc->mMeshes[1]->HasBones());
+
+    // Every bone must resolve to a real node in the graph.
+    size_t unresolved = 0;
+    for (unsigned b = 0; b < sc->mMeshes[0]->mNumBones; ++b) {
+        if (sc->mRootNode->FindNode(sc->mMeshes[0]->mBones[b]->mName) == nullptr) ++unresolved;
+    }
+    CHECK(unresolved == 0);
+#endif
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+// glTF requires an accessor's min/max to be the true bounds of its data, and a
+// validator compares them as doubles against the float data widened to double.
+// Printing the bound with too few digits puts it INSIDE the range, which the
+// Khronos validator reports as ACCESSOR_ELEMENT_OUT_OF_MAX_BOUND -- a real
+// error in a file that still loads in most viewers, so nothing here caught it
+// for a long time.
+TEST_CASE("accessor bounds actually contain the data", "[io][gltf]") {
+    // A coordinate whose float value needs more than 7 significant digits to
+    // round-trip: 8.489434 would print as "8.489434" and bound nothing.
+    core::Mesh m("awkward", 4);
+    REQUIRE(m.setCoords(
+                 {{0, 0, 0}, {8.4894335F, 0, 0}, {8.4894335F, 0, 1.2639965F}, {0, 0, 1.2639965F}})
+                .has_value());
+    REQUIRE(m.setUVs({{0, 0}, {1, 0}, {1, 1}, {0, 1}}).has_value());
+    m.addFaceGroup("g");
+    REQUIRE(m.setFaces({0, 1, 2, 3}, {0, 1, 2, 3}, {0}).has_value());
+    m.buildAdjacency();
+    m.calcNormals();
+
+    const auto rm  = core::RenderMesh::build(m);
+    const auto out = tempGlb("bounds");
+    io::GltfWriteOptions opts;
+    opts.unit = io::Unit::Decimeter;  // no scaling, so the values survive intact
+    REQUIRE(io::writeGlb(out, rm.view(), opts).has_value());
+
+    const std::string j = glbJson(out);
+    const auto maxAt    = j.find("\"max\":[");
+    REQUIRE(maxAt != std::string::npos);
+    const auto close = j.find(']', maxAt);
+    REQUIRE(close != std::string::npos);
+    const std::string maxList = j.substr(maxAt + 7, close - (maxAt + 7));
+    INFO("declared max: " << maxList);
+
+    // Parse the three components and compare in DOUBLE, the way a validator
+    // does -- the float data is widened, so a bound that only round-trips as a
+    // float is still too small.
+    std::vector<double> got;
+    for (size_t at = 0; at < maxList.size();) {
+        size_t used = 0;
+        got.push_back(std::stod(maxList.substr(at), &used));
+        at += used + 1;
+    }
+    REQUIRE(got.size() == 3);
+    CHECK(got[0] >= static_cast<double>(8.4894335F));
+    CHECK(got[2] >= static_cast<double>(1.2639965F));
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+// The same two material hazards the OBJ writer refuses. The writers must agree
+// about what is legal, or the same scene exports cleanly to one format and
+// wrongly to the other.
+TEST_CASE("the material contract matches the OBJ writer", "[io][gltf][multimesh]") {
+    const core::Mesh a = quadAt(0.0F, "body");
+    const core::Mesh b = quadAt(8.0F, "eyes");
+    const auto rmA     = core::RenderMesh::build(a);
+    const auto rmB     = core::RenderMesh::build(b);
+
+    foundation::MaterialDesc skin;
+    skin.name = "Skin";
+
+    SECTION("mixing materialled and material-less entries is refused") {
+        // The material-less entry would take the default name, which could be
+        // the same as a real material's -- silently sharing its appearance.
+        const auto out = tempGlb("mat_mixed");
+        const auto r =
+            io::writeGlbScene(out, {{{rmA.view(), "body", &skin}, {rmB.view(), "eyes"}}});
+        REQUIRE_FALSE(r.has_value());
+        CHECK(r.error().detail.find("some entries carry a material") != std::string::npos);
+    }
+
+    SECTION("two different materials with one name are refused") {
+        foundation::MaterialDesc clash;
+        clash.name     = "Skin";
+        clash.opacity  = 0.5F;  // would export opaque if silently merged
+        const auto out = tempGlb("mat_clash");
+        const auto r =
+            io::writeGlbScene(out, {{{rmA.view(), "body", &skin}, {rmB.view(), "eyes", &clash}}});
+        REQUIRE_FALSE(r.has_value());
+        CHECK(r.error().detail.find("both named") != std::string::npos);
+    }
+
+    SECTION("entries sharing one material collapse to a single slot") {
+        const auto out = tempGlb("mat_shared");
+        REQUIRE(io::writeGlbScene(out, {{{rmA.view(), "body", &skin}, {rmB.view(), "eyes", &skin}}})
+                    .has_value());
+        const std::string j = glbJson(out);
+        // One material, referenced by both primitives.
+        CHECK(j.find(R"("materials":[{"name":"Skin")") != std::string::npos);
+        size_t mats = 0;
+        for (size_t at = j.find(R"("name":"Skin")"); at != std::string::npos;
+             at        = j.find(R"("name":"Skin")", at + 1)) {
+            ++mats;
+        }
+        CHECK(mats == 1);
+        std::error_code ec;
+        std::filesystem::remove(out, ec);
+    }
 }

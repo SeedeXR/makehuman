@@ -68,6 +68,36 @@ struct GltfWriteResult {
     size_t fileBytes{};
 };
 
+/// One mesh in a multi-mesh GLB: a dressed character is the body plus each worn
+/// proxy, each with its own name and material.
+struct GltfSceneEntry {
+    foundation::RenderView mesh;
+    std::string name{"MakeHuman"};
+    const foundation::MaterialDesc* material{nullptr};
+    /// Only ONE entry in a scene may carry a skin -- see writeGlbScene.
+    const foundation::SkinView* skin{nullptr};
+    std::span<const foundation::MorphTarget> morphTargets{};
+};
+
+/// Writes every entry into one GLB, each as its own mesh and node.
+///
+/// glTF addresses buffer views, accessors, meshes, nodes and materials by
+/// index, so each entry's block is offset by everything written before it.
+/// Sharing one accessor block -- the classic multi-mesh glTF bug -- yields
+/// several meshes drawn on top of each other.
+///
+/// **At most one entry may carry a skin.** Joint nodes follow the mesh nodes,
+/// so a second skeleton would need its own node block; nothing needs that yet
+/// (only the body is rigged) and guessing at it would be untested code. A
+/// second skin is refused rather than silently dropped.
+///
+/// `feetOnGround` levels the whole scene by the lowest point of any entry:
+/// levelling each mesh independently would drop the clothes to the floor beside
+/// the body.
+[[nodiscard]] std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
+    const std::filesystem::path& path, std::span<const GltfSceneEntry> entries,
+    const GltfWriteOptions& options = {});
+
 /// Writes @p mesh as a binary glTF (`.glb`).
 ///
 /// The mesh is unwelded and triangulated first: glTF requires one attribute per

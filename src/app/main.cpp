@@ -457,12 +457,11 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     // Silently dropping what the character is wearing is the failure this whole
     // change exists to fix; announcing it for an extension we then reject would
     // just be noise before an error.
-    static constexpr std::array kSingleMeshFormats{".glb", ".usda", ".usd", ".fbx",
-                                                   ".dae", ".stl",  ".3mf"};
+    static constexpr std::array kSingleMeshFormats{".usda", ".usd", ".fbx", ".dae", ".stl", ".3mf"};
     if (!worn.empty() && std::ranges::find(kSingleMeshFormats, ext) != kSingleMeshFormats.end()) {
         std::fprintf(stderr,
                      "note: %s exports the body only; %zu worn item(s) omitted "
-                     "(multi-mesh is implemented for .obj so far)\n",
+                     "(multi-mesh is implemented for .obj and .glb so far)\n",
                      ext.c_str(), worn.size());
     }
     if (ext == ".usda" || ext == ".usd") {
@@ -470,7 +469,12 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
         return report(r ? std::string{} : r.error().message());
     }
     if (ext == ".glb") {
-        const auto r = mh::io::writeGlb(path, rm.view());
+        std::vector<mh::io::GltfSceneEntry> scene;
+        scene.push_back({rm.view(), "body"});
+        for (const auto& [group, proxy] : worn) {
+            scene.push_back({proxy.rm.view(), group.toLower().toStdString()});
+        }
+        const auto r = mh::io::writeGlbScene(path, scene);
         return report(r ? std::string{} : r.error().message());
     }
 
