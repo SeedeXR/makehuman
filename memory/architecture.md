@@ -215,7 +215,10 @@ dm 1.0, m 0.1, inch 1/0.254, cm 10.0.
 ### I.8 UI shell
 
 Two levels of Qt tabs: Category = `QTabWidget` tab, Task = `QTabBar` tab inside it
-(`lib/qtgui.py:155-196`). **50 `TaskView` subclasses.** Each `TaskView.__init__`
+(`lib/qtgui.py:155-196`). **51 task views** — 44 standalone + 7 built at run
+time; the "50" this file used to carry was wrong. Inventory, per-view plan and
+the arithmetic in `memory/taskviews.md`, re-derived by
+`tools/audit_taskviews.py` in CI. Each `TaskView.__init__`
 allocates its own left/right scroll-area panel (`core/gui3d.py:259`); switching
 tasks is a `QStackedLayout` page swap (`lib/qtui.py:552-554`).
 

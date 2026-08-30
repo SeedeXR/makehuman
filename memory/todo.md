@@ -540,7 +540,14 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       failure: a mistyped category used to delete the panel while the caller
       went on connecting signals to it.
 - [ ] Symbolic shortcut/mouse persistence (not raw Qt enum ints)
-- [ ] Port the 50 task views (tracked as a sub-checklist — `architecture.md` §I.8)
+- [~] **Task views inventoried and classified** — `memory/taskviews.md`,
+      re-derived by `tools/audit_taskviews.py` in CI. **51, not 50**: an AST
+      audit found six views a regex could not see, five of them real tabs
+      (Load, Skin/Material, Pose, Skeleton, Expressions).
+      7 done · 2 covered by the File menu · 17 to port · 9 blocked on engine
+      capability · 16 declined as Python-runtime or dev-only tooling.
+- [ ] Multi-mesh rendering — the single largest unblocker: 8 of the 9 blocked
+      views are proxy choosers, all waiting on this one change.
 - [x] **Undo/redo** — `ui::ValueChangeCommand` on a `QUndoStack`, Edit menu with the
       platform ⌘Z/⇧⌘Z. Generic by design: it holds a key, two floats and a
       callback, so undo lives in Apache-2.0 `mh_ui` while the AGPL side says

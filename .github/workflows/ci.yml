@@ -247,3 +247,14 @@ jobs:
             echo "::error::a forbidden dependency is actually linked"; exit 1
           fi
           exit 0
+
+  taskviews:
+    name: task-view inventory
+    # One stdlib-only Python script -- no need for a macOS runner.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # memory/taskviews.md carries counts taken from the reference. A stale
+      # number there misdirects the roadmap, so it is re-derived, not trusted.
+      - name: Task-view inventory matches the reference
+        run: python3 tools/audit_taskviews.py

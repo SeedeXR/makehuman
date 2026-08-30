@@ -4,6 +4,109 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-30 07:31:51 — Session 048 · **the task-view count was wrong three times; now it is derived, not asserted**
+
+### What shipped
+`tools/audit_taskviews.py` and `memory/taskviews.md`: a per-view inventory of the
+reference's task views, re-derived from `legacy/python` on every CI run.
+
+**51 task views — 44 standalone + 7 built at run time.** `architecture.md` had
+carried **50**, uncited, since session 001.
+
+### How the number moved 50 → 48 → 51
+This is the part worth reading; the number itself is the least of it.
+
+1. I first audited with a regex, `^class X\(...TaskView\)`, got 43 classes + 7
+   dynamic = 50, and took the match with `architecture.md` as confirmation. It
+   was not confirmation — two of the 43 (`MeasureTaskView`, `ModifierTaskView`)
+   are never standalone views, so the regex was wrong *and* the folklore was
+   wrong, in opposite directions, by the same margin. **Two independent wrong
+   answers agreeing is not evidence.** Corrected to 48.
+2. `/code-review` then found the real defect: that regex requires the base list
+   to be a single name, so `class LoadTaskView(gui3d.TaskView, filecache.MetadataCacher)`
+   is invisible to it. **Six views were missing, five of them real user tabs** —
+   Load, Skin/Material, Pose, Skeleton, Expressions. The entire Pose/Animate
+   category was absent from the roadmap and I had not noticed, even though the
+   script's own category map declared a `Pose/Animate` bucket that never printed.
+3. Rewrote on `ast` with transitive base resolution. 44 standalone + 7 = 51.
+
+The review also corrected two classification calls I had backwards:
+`OpenGLTaskView` *is* the Render tab (its label is literally `'Render'`,
+`plugins/4_rendering_opengl/__init__.py:53`) and was filed as blocked; and
+`ViewerTaskView` is where render output lands
+(`plugins/4_rendering_opengl/mh2opengl.py:122-123`), so declining it would have
+broken the render feature I was keeping. Both are now `todo`.
+
+### A second review round, which found three more real errors
+Re-reviewed adversarially after the rewrite. The 44 was confirmed by an
+*independent* method — resolving every `.addTask()` call site to the class it
+registers, ignoring inheritance entirely — with zero symmetric difference. But
+three of my judgements were still wrong:
+
+1. **`ExportTaskView` was bucketed "covered" against a File menu action that
+   does not exist.** `grep 'file.export' src/` finds nothing; only Open, Save
+   and Save As are wired (`src/ui/MainWindow.cpp:138-143`). The writers exist,
+   the UI entry point does not. A roadmap that labels missing work as done is
+   worse than one that omits it. Moved to `todo`.
+2. **`AnimationLibrary` was blocked on multi-mesh; it is not.** Its only gates
+   are a skeleton and an active animation
+   (`plugins/3_libraries_animation.py:150,157`) and all of `rig/Skeleton.h`,
+   `rig/Skinning.h`, `io/BvhReader.h` exist. Moved to `todo`.
+3. **`SceneLibraryTaskView` is blocked on a lighting model, not mesh count** — a
+   `Scene` is `lights = []` plus an `Environment` (`shared/scene.py:190-192`).
+   Still blocked, but no longer miscredited to multi-mesh.
+
+Two structural holes in the tool itself, both fixed:
+
+- `dynamic_view_names()` hardcoded three slider filenames. A fourth
+  `loadModifierTaskViews` call site adds views but **no `addTask` line** — the
+  loop is shared — so every check would have passed on a wrong answer. The
+  filenames are now derived from the call sites.
+- The bucket-sum check could never fire: the sum is
+  `len(standalone) + len(dynamic)` by construction. It read like a guard and
+  guarded nothing. Deleted.
+
+Also corrected: my `except SyntaxError: # a few py2 files remain` was a false
+claim — all 196 reference files parse. Removed, so a genuine parse failure now
+raises instead of silently skipping a file that `registered_tabs()` still reads.
+
+### The lesson, which is not about task views
+Three wrong numbers in one session, all from **pattern-matching text instead of
+parsing structure**. A regex over source is a guess that looks like a
+measurement. `ast` is in the standard library and was always the cheaper rung.
+Where a count must be defensible, derive it — and give it a second, independent
+derivation that must agree: the auditor now cross-checks the AST result against
+the uncommented `addTask(` call sites, and that cross-check is what fires first
+when a view goes missing (verified by making the AST deliberately miss one).
+
+### Verification
+- `python3 tools/audit_taskviews.py` → rc=0, `51 (44 standalone + 7 built at run time)`.
+- Failure gates exercised and confirmed to fail closed: count drift,
+  unclassified view, and the addTask cross-check (which fires first when a view
+  goes missing — verified by making the AST deliberately miss one).
+- Proved the AST auditor sees a mixin-based view that the old regex returns
+  `[]` for (scratchpad fixture, no repo edit).
+- ctest **329/329 green in debug, release and ASan**. No C++ changed this
+  chunk, so the benchmark is unmoved by construction (`git diff --name-only`
+  lists no `.cpp/.h/.mm`).
+- Licence boundary re-checked: `nm -u` on foundation/io/render/ui → **0**
+  undefined `mh::core` symbols. No forbidden deps.
+
+### Roadmap effect
+Buckets are now 7 done · 2 covered by the File menu · **17 todo** · 9 blocked ·
+16 declined. Eight of the nine blocked views are proxy choosers waiting on the
+same thing: **the viewport draws exactly one mesh.** Multi-mesh rendering clears
+eight of nine in one change — it is unambiguously the next thing to build.
+
+### Notes for next session
+- The CI gate lives in its own `taskviews` job now, not in `licence` — an
+  inventory check has nothing to do with licensing and confused the reviewer.
+- I did not add a ctest for it: CI already gates it, and a ctest entry would
+  make `ctest` depend on a system `python3`.
+- Next: **multi-mesh rendering** (M4), the unblocker above.
+
+---
+
 ## 2026-08-31 00:18:44 — Session 047 · **presets derived from the registry, and two tests that could not fail**
 
 ### What shipped
