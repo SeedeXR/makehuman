@@ -10,7 +10,9 @@
 #include <expected>
 #include <filesystem>
 #include <memory>
+#include <span>
 #include <string>
+#include <vector>
 
 class QRhi;
 class QRhiCommandBuffer;
@@ -44,7 +46,16 @@ struct RenderError {
     [[nodiscard]] std::string message() const;
 };
 
-/// The buffers, textures and pipeline for drawing one mesh with the litsphere
+/// One mesh to draw, with the litsphere it is shaded by.
+///
+/// A dressed character is the body plus every worn proxy, and each carries its
+/// own material -- so the litsphere belongs to the mesh, not to the frame.
+struct MeshInstance {
+    foundation::RenderView mesh;
+    std::filesystem::path litsphere;
+};
+
+/// The buffers, textures and pipeline for drawing meshes with the litsphere
 /// shader.
 ///
 /// Split out of the offscreen renderer so the interactive widget can use the
@@ -66,15 +77,20 @@ public:
     SceneResources(const SceneResources&)            = delete;
     SceneResources& operator=(const SceneResources&) = delete;
 
-    /// Queues the mesh and litsphere onto @p batch. Call once per mesh change.
+    /// Queues every mesh and its litsphere onto @p batch. Call once per change
+    /// to the set of meshes, not per frame.
+    ///
+    /// Each mesh gets its own vertex/index buffers, its own litsphere texture
+    /// and its own resource bindings; the pipeline, sampler and camera uniform
+    /// are shared, since they are the same for the whole frame.
     [[nodiscard]] std::expected<void, RenderError> upload(QRhiResourceUpdateBatch* batch,
-                                                          const foundation::RenderView& mesh,
-                                                          const std::filesystem::path& litsphere);
+                                                          std::span<const MeshInstance> meshes);
 
     /// Queues the per-frame matrices. Cheap; call every frame.
     void updateCamera(QRhiResourceUpdateBatch* batch, const Camera& camera, float aspect);
 
-    /// Records the draw. `upload` must have run in an earlier or the same batch.
+    /// Records one draw per uploaded mesh. `upload` must have run in an earlier
+    /// or the same batch.
     void draw(QRhiCommandBuffer* cb, const QSize& pixelSize);
 
 private:

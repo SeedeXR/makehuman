@@ -11,7 +11,9 @@
 
 #include <catch2/catch_session.hpp>
 #include <catch2/catch_test_macros.hpp>
+
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <vector>
 
 #include <QApplication>
 #include <QDockWidget>
@@ -54,6 +56,31 @@ void wheel(mh::ui::ViewportWidget& w, int notches) {
 }
 
 }  // namespace
+
+// The header promises the geometry setters are safe before the RHI exists --
+// the upload is deferred to the first frame. A widget that is never shown never
+// initialises RHI, so this also pins that setMeshes touches no device state.
+TEST_CASE("the geometry setters are safe before RHI initialisation", "[ui]") {
+    mh::ui::ViewportWidget w(MH_SHADER_DIR);
+
+    const std::vector<mh::foundation::Vec3> coord{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+    const std::vector<uint32_t> index{0, 1, 2};
+    const mh::foundation::RenderView view{coord, {}, {}, {}, index};
+
+    // Either order must work: setLitsphere before setMesh stores the default
+    // that setMesh then picks up, and after it updates the single entry.
+    w.setLitsphere("first.png");
+    w.setMesh(view);
+    w.setLitsphere("second.png");
+    w.setMeshes({{view, "a.png"}, {view, "b.png"}});
+    // A multi-mesh list carries its own litspheres, so this must not flatten
+    // them; against a one-mesh list it does apply, whatever set that list.
+    w.setLitsphere("third.png");
+    w.setMeshes({{view, "only.png"}});
+    w.setLitsphere("fourth.png");
+
+    CHECK(w.lastError().isEmpty());
+}
 
 TEST_CASE("dragging orbits by half a degree per pixel", "[ui]") {
     mh::ui::ViewportWidget w(MH_SHADER_DIR);

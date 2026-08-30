@@ -9,6 +9,7 @@
 #include <expected>
 #include <filesystem>
 #include <memory>
+#include <span>
 
 namespace mh::render {
 
@@ -40,7 +41,12 @@ public:
     OffscreenRenderer(const OffscreenRenderer&)            = delete;
     OffscreenRenderer& operator=(const OffscreenRenderer&) = delete;
 
-    /// Draws @p mesh and returns the result, RGBA8, top-down.
+    /// Draws every mesh into one image, RGBA8, top-down. This is what a dressed
+    /// character is: the body plus each worn proxy, each with its own material.
+    [[nodiscard]] std::expected<QImage, RenderError> render(std::span<const MeshInstance> meshes,
+                                                            const RenderSettings& settings);
+
+    /// One mesh shaded by `settings.litsphere`.
     [[nodiscard]] std::expected<QImage, RenderError> render(const foundation::RenderView& mesh,
                                                             const RenderSettings& settings);
 

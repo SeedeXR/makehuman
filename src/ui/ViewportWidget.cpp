@@ -15,8 +15,8 @@ namespace mh::ui {
 
 struct ViewportWidget::Impl {
     std::filesystem::path shaderDir;
-    std::filesystem::path litsphere;
-    foundation::RenderView mesh;
+    std::filesystem::path litsphere;  ///< the default, used by setMesh
+    std::vector<render::MeshInstance> meshes;
 
     std::unique_ptr<render::SceneResources> scene;
     render::Camera camera;
@@ -45,14 +45,23 @@ ViewportWidget::ViewportWidget(std::filesystem::path shaderDir, QWidget* parent)
 
 ViewportWidget::~ViewportWidget() = default;
 
+void ViewportWidget::setMeshes(std::vector<render::MeshInstance> meshes) {
+    d_->meshes      = std::move(meshes);
+    d_->needsUpload = true;
+    update();
+}
+
 void ViewportWidget::setMesh(const foundation::RenderView& mesh) {
-    d_->mesh        = mesh;
+    d_->meshes      = {render::MeshInstance{mesh, d_->litsphere}};
     d_->needsUpload = true;
     update();
 }
 
 void ViewportWidget::setLitsphere(std::filesystem::path path) {
-    d_->litsphere   = std::move(path);
+    d_->litsphere = std::move(path);
+    // Only the single-mesh case follows this; a list set by setMeshes carries
+    // a litsphere per entry and must not be overwritten wholesale.
+    if (d_->meshes.size() == 1) d_->meshes[0].litsphere = d_->litsphere;
     d_->needsUpload = true;
     update();
 }
@@ -101,8 +110,8 @@ void ViewportWidget::render(QRhiCommandBuffer* cb) {
 
     QRhiResourceUpdateBatch* u = rhi()->nextResourceUpdateBatch();
 
-    if (d_->needsUpload && d_->mesh.vertexCount() > 0) {
-        if (const auto ok = d_->scene->upload(u, d_->mesh, d_->litsphere); !ok) {
+    if (d_->needsUpload && !d_->meshes.empty()) {
+        if (const auto ok = d_->scene->upload(u, d_->meshes); !ok) {
             // Left set, so a transient failure is retried on the next frame
             // rather than leaving the viewport empty for the whole session.
             d_->error = QString::fromStdString(ok.error().message());

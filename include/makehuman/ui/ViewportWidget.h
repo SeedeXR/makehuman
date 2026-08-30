@@ -8,6 +8,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <vector>
 
 namespace mh::ui {
 
@@ -42,9 +43,25 @@ public:
     explicit ViewportWidget(std::filesystem::path shaderDir, QWidget* parent = nullptr);
     ~ViewportWidget() override;
 
-    /// Replaces the geometry. Safe before or after the RHI is initialised;
-    /// the upload is deferred to the next frame either way.
+    /// Replaces the geometry with a single mesh shaded by the current
+    /// litsphere. Safe before or after the RHI is initialised; the upload is
+    /// deferred to the next frame either way.
     void setMesh(const foundation::RenderView& mesh);
+
+    /// Replaces the geometry with several meshes, each with its own litsphere.
+    /// This is what a dressed character needs: body plus every worn proxy.
+    ///
+    /// Taken by value, but each `MeshInstance` holds a non-owning `RenderView`:
+    /// the caller still owns the geometry and must keep it alive for as long as
+    /// the widget is drawing, not merely for the duration of this call.
+    void setMeshes(std::vector<render::MeshInstance> meshes);
+
+    /// The litsphere for `setMesh`, and the default a later `setMesh` adopts.
+    ///
+    /// It rewrites the entry of a **one-mesh** list, whether that list came from
+    /// `setMesh` or from `setMeshes`; against a longer list it does nothing but
+    /// change the default, because there is no way to know which mesh it meant.
+    /// A multi-mesh caller sets materials through `setMeshes`.
     void setLitsphere(std::filesystem::path path);
 
     [[nodiscard]] render::Camera camera() const;

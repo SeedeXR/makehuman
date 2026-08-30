@@ -4,6 +4,8 @@
 #include <rhi/qrhi.h>
 #include <QFile>
 
+#include <array>
+
 namespace mh::render {
 
 struct OffscreenRenderer::Impl {
@@ -42,9 +44,12 @@ std::expected<std::unique_ptr<OffscreenRenderer>, RenderError> OffscreenRenderer
 
 std::expected<QImage, RenderError> OffscreenRenderer::render(const foundation::RenderView& mesh,
                                                              const RenderSettings& s) {
-    if (mesh.vertexCount() == 0 || mesh.indexCount() == 0) {
-        return std::unexpected(RenderError{RenderErrorKind::EmptyMesh, {}});
-    }
+    const std::array<MeshInstance, 1> one{MeshInstance{mesh, s.litsphere}};
+    return render(one, s);
+}
+
+std::expected<QImage, RenderError> OffscreenRenderer::render(std::span<const MeshInstance> meshes,
+                                                             const RenderSettings& s) {
     QRhi* rhi = d_->rhi.get();
     const QSize size(s.width, s.height);
 
@@ -78,7 +83,10 @@ std::expected<QImage, RenderError> OffscreenRenderer::render(const foundation::R
     }
 
     QRhiResourceUpdateBatch* u = rhi->nextResourceUpdateBatch();
-    if (const auto ok = (*scene)->upload(u, mesh, s.litsphere); !ok) {
+    if (const auto ok = (*scene)->upload(u, meshes); !ok) {
+        // An unsubmitted batch stays checked out of a pool of 64; leaking them
+        // eventually makes nextResourceUpdateBatch() return null.
+        u->release();
         rhi->endOffscreenFrame();
         return std::unexpected(ok.error());
     }

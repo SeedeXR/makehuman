@@ -4,6 +4,82 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-30 08:18:55 — Session 049 · **the renderer draws N meshes, and the bug that found**
+
+### What shipped
+`SceneResources` now holds a `Drawable` per mesh — vertex and index buffers, a
+litsphere texture and its own `QRhiShaderResourceBindings` — while the pipeline,
+sampler, white diffuse stand-in and camera uniform stay shared, because those
+belong to the frame rather than to a mesh. `OffscreenRenderer::render` and the
+new `ViewportWidget::setMeshes` take a `std::span<const MeshInstance>`; the
+single-mesh overload delegates, so all five existing render tests were untouched.
+
+This is the unblocker: eight of the nine blocked task views are proxy choosers
+waiting on the viewport drawing more than one mesh.
+
+### The use-after-free this introduced, and how it was caught
+Worth recording in full, because the tests I wrote first did **not** catch it.
+
+`upload()` queued each mesh onto the caller's `QRhiResourceUpdateBatch` inside
+the per-mesh loop, but could still fail on a later mesh — a missing litsphere,
+say. The `return` unwound the vector of already-built `Drawable`s, destroying
+buffers and textures the batch still held raw pointers to. A batch never learns
+that a resource died. And `ViewportWidget::render` reports an upload failure
+**without returning**, then submits that batch — so a two-mesh list whose second
+litsphere was missing crashed in `QRhiMetal::enqueueSubresUpload`.
+
+Neither the multi-mesh tests nor 329 ctest cases saw it, because
+`OffscreenRenderer` abandons its batch on failure and so cannot reproduce it.
+`/code-review` found it by reading the ownership, and proved it with an ASan
+repro.
+
+Fixed at the root — build every `Drawable` first, queue nothing until the whole
+loop has succeeded — rather than by returning early in `ViewportWidget`, which
+would have left the crash live for every other caller.
+
+The regression test drives `QRhi` directly the way the widget does: upload a
+good mesh plus one with a missing litsphere, then submit the batch anyway. With
+the fix reverted it reproduces the exact SEGV under ASan; with the fix it passes.
+
+### Verification
+- ctest **329/329 in debug, release and ASan**; `mh_render_tests` 9 cases.
+- **Mutation-tested every new test** rather than trusting a green run: sharing
+  one SRB across meshes fails 1 case; drawing only the first mesh fails 2;
+  re-queueing inside the loop reproduces the SEGV. A test that has never been
+  seen to fail is not evidence.
+- `clang-format` clean; licence boundary holds — **0** undefined `mh::core`
+  symbols in `foundation`, `io`, `render`, `ui`. This chunk touched two
+  Apache-2.0 modules, so that gate mattered here.
+- Benchmarks unchanged (6.3x-55.7x over Python); the change touches no core path.
+
+### Also fixed from review
+- `OffscreenRenderer`'s failure path abandoned an unreleased batch. The pool is
+  64; exhausting it makes `nextResourceUpdateBatch()` return null, which
+  `upload` dereferences. One `u->release()`.
+- My first draft gave the pipeline its layout SRB via a 1x1 texture created on
+  the stack in `create()` and destroyed while the retained SRB still pointed at
+  it. I replaced it with the long-lived `diffuseTex` before review came back.
+  The review then established it would in fact have been safe — Qt serialises
+  only binding/stage/type/arraySize for layout comparison and the Metal backend
+  never dereferences the resource — but a dangling pointer that happens to be
+  safe today is not a thing to ship, and the replacement was also shorter.
+- Corrected a header comment that was simply wrong: `setLitsphere` guards on
+  list **size**, not on which setter built the list, so it does rewrite a
+  one-element list set by `setMeshes`. Test extended to pin both cases.
+
+### Notes for next session
+- Multi-mesh is done in the **renderer**; the app still calls `setMesh` with the
+  body alone. Wiring `setMeshes` is the remaining half of the chooser unblock.
+- **The Skin picker will appear broken the day that lands**: `applyChoice`
+  handles `"Skin"` with `setLitsphere` and returns without rebuilding
+  (`src/app/main.cpp:636-639`), which no-ops on a multi-mesh list. Recorded in
+  `todo.md` so it is fixed in the same change, not diagnosed as a render bug.
+- Hair and eyelashes will need per-mesh diffuse textures and alpha blending:
+  a second pipeline and back-to-front ordering, which moves
+  `setGraphicsPipeline` into the per-mesh loop.
+
+---
+
 ## 2026-08-30 07:31:51 — Session 048 · **the task-view count was wrong three times; now it is derived, not asserted**
 
 ### What shipped

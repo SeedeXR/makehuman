@@ -9,12 +9,16 @@
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/core/RenderMesh.h"
 #include "makehuman/render/OffscreenRenderer.h"
+#include "makehuman/render/SceneResources.h"
+
+#include <rhi/qrhi.h>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <vector>
 
 using namespace mh;
 
@@ -51,11 +55,14 @@ render::RenderSettings settings() {
     return s;
 }
 
-double coverage(const QImage& img, const render::RenderSettings& s) {
+/// Fraction of pixels in [x0, x1) that differ from the background. The column
+/// range matters for multi-mesh: whole-image coverage cannot tell "both meshes
+/// drew" apart from "one mesh drew twice as much".
+double coverage(const QImage& img, const render::RenderSettings& s, int x0, int x1) {
     const QColor bg = QColor::fromRgbF(s.background.x, s.background.y, s.background.z);
     size_t hit      = 0;
     for (int y = 0; y < img.height(); ++y) {
-        for (int x = 0; x < img.width(); ++x) {
+        for (int x = x0; x < x1; ++x) {
             const QColor c = img.pixelColor(x, y);
             if (std::abs(c.red() - bg.red()) > 6 || std::abs(c.green() - bg.green()) > 6 ||
                 std::abs(c.blue() - bg.blue()) > 6) {
@@ -63,10 +70,183 @@ double coverage(const QImage& img, const render::RenderSettings& s) {
             }
         }
     }
-    return static_cast<double>(hit) / static_cast<double>(img.width() * img.height());
+    return static_cast<double>(hit) / static_cast<double>((x1 - x0) * img.height());
+}
+
+double coverage(const QImage& img, const render::RenderSettings& s) {
+    return coverage(img, s, 0, img.width());
+}
+
+/// The same geometry shifted along X, so two of them can be drawn side by side.
+/// Owns only the coordinates; everything else is shared with @p src, which must
+/// outlive the result.
+struct Shifted {
+    std::vector<foundation::Vec3> coord;
+    foundation::RenderView view;
+};
+
+Shifted shiftedBy(const foundation::RenderView& src, float dx) {
+    Shifted out;
+    out.coord.assign(src.coord.begin(), src.coord.end());
+    for (auto& c : out.coord)
+        c.x += dx;
+    out.view = foundation::RenderView{out.coord, src.texco, src.vnorm, src.vtang, src.index};
+    return out;
 }
 
 }  // namespace
+
+// Multi-mesh is what unblocks the eight proxy choosers: a dressed character is
+// the body plus every worn proxy, drawn together. Until this works the viewport
+// can only ever show a naked body.
+TEST_CASE("two meshes both draw", "[render][multimesh]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc  = bodyScene();
+    const auto lit  = settings().litsphere;
+    const Shifted a = shiftedBy(sc.rm.view(), -6.0F);
+    const Shifted b = shiftedBy(sc.rm.view(), 6.0F);
+
+    const auto s = settings();
+    const std::vector<render::MeshInstance> both{{a.view, lit}, {b.view, lit}};
+    const auto img = (*r)->render(both, s);
+    REQUIRE(img.has_value());
+
+    // Each half must carry a body. Drawing only the first mesh, or drawing the
+    // second over the first, leaves one half empty -- which a whole-image
+    // coverage check would not notice.
+    const double left  = coverage(*img, s, 0, img->width() / 2);
+    const double right = coverage(*img, s, img->width() / 2, img->width());
+    INFO("left " << left << " right " << right);
+    CHECK(left > 0.02);
+    CHECK(right > 0.02);
+
+    // And together they must exceed either one alone.
+    const std::vector<render::MeshInstance> justOne{{a.view, lit}};
+    const auto one = (*r)->render(justOne, s);
+    REQUIRE(one.has_value());
+    CHECK(coverage(*img, s) > coverage(*one, s) * 1.5);
+}
+
+// The failure this guards against is subtle and likely: per-mesh textures
+// collapsing into one shared binding, so every mesh renders with whichever
+// litsphere was uploaded last. Coverage cannot see that -- only colour can.
+TEST_CASE("each mesh keeps its own litsphere", "[render][multimesh]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const auto litDir = std::filesystem::path(MH_DATA_DIR) / "litspheres";
+    const auto skin   = litDir / "skinmat_caucasian.png";
+    const auto other  = litDir / "skinmat_african.png";
+    REQUIRE(std::filesystem::exists(other));
+
+    const Scene sc  = bodyScene();
+    const Shifted a = shiftedBy(sc.rm.view(), -6.0F);
+    const Shifted b = shiftedBy(sc.rm.view(), 6.0F);
+    const auto s    = settings();
+
+    const std::vector<render::MeshInstance> mixed{{a.view, skin}, {b.view, other}};
+    const std::vector<render::MeshInstance> same{{a.view, skin}, {b.view, skin}};
+    const auto mixedImg = (*r)->render(mixed, s);
+    const auto sameImg  = (*r)->render(same, s);
+    REQUIRE(mixedImg.has_value());
+    REQUIRE(sameImg.has_value());
+
+    // The LEFT body uses the same litsphere in both renders, so it must match;
+    // the RIGHT one differs. If the binding were shared, both halves would
+    // change together.
+    size_t leftDiff  = 0;
+    size_t rightDiff = 0;
+    for (int y = 0; y < mixedImg->height(); ++y) {
+        for (int x = 0; x < mixedImg->width(); ++x) {
+            if (mixedImg->pixelColor(x, y) != sameImg->pixelColor(x, y)) {
+                (x < mixedImg->width() / 2 ? leftDiff : rightDiff)++;
+            }
+        }
+    }
+    INFO("left differing " << leftDiff << " right differing " << rightDiff);
+    CHECK(leftDiff == 0);
+    CHECK(rightDiff > 500);
+}
+
+TEST_CASE("an empty mesh among several is reported", "[render][multimesh]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    const std::vector<render::MeshInstance> withEmpty{
+        {sc.rm.view(), settings().litsphere},
+        {foundation::RenderView{}, settings().litsphere},
+    };
+    const auto img = (*r)->render(withEmpty, settings());
+    REQUIRE_FALSE(img.has_value());
+    CHECK(img.error().kind == render::RenderErrorKind::EmptyMesh);
+}
+
+// A batch holds raw pointers and never learns that a resource died. Queueing
+// uploads inside the per-mesh loop and then failing on a later mesh therefore
+// handed the caller a batch referencing freed buffers -- and ViewportWidget
+// submits its batch even when upload fails (ViewportWidget.cpp: the error is
+// reported but not returned on), so this crashed in the Metal backend.
+//
+// The offscreen renderer cannot reproduce it: it abandons the batch on failure.
+// So this drives QRhi directly, the way the widget does.
+TEST_CASE("a batch submitted after a failed upload does not use freed resources",
+          "[render][multimesh]") {
+    requireDevice();
+
+    QRhiMetalInitParams params;
+    std::unique_ptr<QRhi> rhi(QRhi::create(QRhi::Metal, &params));
+    REQUIRE(rhi);
+
+    const QSize size(64, 64);
+    std::unique_ptr<QRhiTexture> colour(
+        rhi->newTexture(QRhiTexture::RGBA8, size, 1, QRhiTexture::RenderTarget));
+    REQUIRE(colour->create());
+    std::unique_ptr<QRhiRenderBuffer> depth(
+        rhi->newRenderBuffer(QRhiRenderBuffer::DepthStencil, size, 1));
+    REQUIRE(depth->create());
+
+    QRhiTextureRenderTargetDescription rtDesc;
+    rtDesc.setColorAttachments({QRhiColorAttachment(colour.get())});
+    rtDesc.setDepthStencilBuffer(depth.get());
+    std::unique_ptr<QRhiTextureRenderTarget> rt(rhi->newTextureRenderTarget(rtDesc));
+    std::unique_ptr<QRhiRenderPassDescriptor> rp(rt->newCompatibleRenderPassDescriptor());
+    rt->setRenderPassDescriptor(rp.get());
+    REQUIRE(rt->create());
+
+    auto scene = render::SceneResources::create(rhi.get(), rp.get(), MH_SHADER_DIR, 1);
+    REQUIRE(scene.has_value());
+
+    const Scene sc = bodyScene();
+    // Mesh 0 is fine and would have been queued; mesh 1 fails. Order matters:
+    // the bug needs a success BEFORE the failure.
+    const std::vector<render::MeshInstance> meshes{
+        {sc.rm.view(), settings().litsphere},
+        {sc.rm.view(), "/definitely/not/a/file.png"},
+    };
+
+    QRhiCommandBuffer* cb = nullptr;
+    REQUIRE(rhi->beginOffscreenFrame(&cb) == QRhi::FrameOpSuccess);
+
+    QRhiResourceUpdateBatch* u = rhi->nextResourceUpdateBatch();
+    const auto ok              = (*scene)->upload(u, meshes);
+    CHECK_FALSE(ok.has_value());
+    CHECK(ok.error().kind == render::RenderErrorKind::TextureMissing);
+
+    // Submit it anyway. Before the fix this dereferenced freed buffers inside
+    // QRhiMetal::enqueueResourceUpdates and crashed under ASan.
+    cb->beginPass(rt.get(), Qt::black, {1.0F, 0}, u);
+    (*scene)->draw(cb, size);
+    cb->endPass();
+    rhi->endOffscreenFrame();
+
+    SUCCEED("submitted a batch after a failed upload without touching freed resources");
+}
 
 TEST_CASE("the base mesh renders to a non-blank image", "[render]") {
     requireDevice();

@@ -546,8 +546,24 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       (Load, Skin/Material, Pose, Skeleton, Expressions).
       7 done · 2 covered by the File menu · 17 to port · 9 blocked on engine
       capability · 16 declined as Python-runtime or dev-only tooling.
-- [ ] Multi-mesh rendering — the single largest unblocker: 8 of the 9 blocked
-      views are proxy choosers, all waiting on this one change.
+- [x] **Multi-mesh rendering** — `SceneResources` holds a `Drawable` per mesh
+      (vertex/index buffers, litsphere texture, own `QRhiShaderResourceBindings`);
+      pipeline, sampler, white diffuse stand-in and camera UBO stay shared.
+      `OffscreenRenderer::render` and `ViewportWidget::setMeshes` take a
+      `std::span<const MeshInstance>`; the single-mesh overload delegates.
+      **Not yet wired into the app** — `main.cpp` still calls `setMesh` with the
+      body alone. The proxy choosers need that wiring plus per-mesh diffuse
+      textures; see below.
+- [ ] Wire the app to `setMeshes` (body + worn proxies) — the remaining half of
+      the proxy-chooser unblock. **Re-route the Skin picker when doing it**:
+      `applyChoice` handles `"Skin"` via `setLitsphere` and returns without
+      rebuilding (`src/app/main.cpp:636-639`), which silently does nothing once
+      the list has more than one mesh.
+- [ ] Per-mesh diffuse texture + alpha blending — hair and eyelash proxies need
+      it. Today the shader's alpha comes from a shared 1x1 white stand-in, so
+      it is always 1.0; it also needs a second pipeline (blend state) and
+      back-to-front ordering, which means `setGraphicsPipeline` moves into the
+      per-mesh loop.
 - [x] **Undo/redo** — `ui::ValueChangeCommand` on a `QUndoStack`, Edit menu with the
       platform ⌘Z/⇧⌘Z. Generic by design: it holds a key, two floats and a
       callback, so undo lives in Apache-2.0 `mh_ui` while the AGPL side says

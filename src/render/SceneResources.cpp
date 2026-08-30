@@ -59,17 +59,25 @@ std::string RenderError::message() const {
     return m;
 }
 
-struct SceneResources::Impl {
-    QRhi* rhi{};
+/// Everything that belongs to one mesh rather than to the frame.
+struct Drawable {
     std::unique_ptr<QRhiBuffer> vbuf;
     std::unique_ptr<QRhiBuffer> ibuf;
-    std::unique_ptr<QRhiBuffer> ubuf;
     std::unique_ptr<QRhiTexture> litTex;
+    std::unique_ptr<QRhiShaderResourceBindings> srb;
+    quint32 indexCount{};
+};
+
+struct SceneResources::Impl {
+    QRhi* rhi{};
+    // Shared: one camera for the frame, one sampler, one white diffuse
+    // stand-in, one pipeline. Only the bindings and geometry vary per mesh.
+    std::unique_ptr<QRhiBuffer> ubuf;
     std::unique_ptr<QRhiTexture> diffuseTex;
     std::unique_ptr<QRhiSampler> sampler;
-    std::unique_ptr<QRhiShaderResourceBindings> srb;
+    std::unique_ptr<QRhiShaderResourceBindings> layoutSrb;
     std::unique_ptr<QRhiGraphicsPipeline> pipeline;
-    quint32 indexCount{};
+    std::vector<Drawable> drawables;
 };
 
 SceneResources::SceneResources() : d_(std::make_unique<Impl>()) {}
@@ -97,9 +105,8 @@ std::expected<std::unique_ptr<SceneResources>, RenderError> SceneResources::crea
     }
 
     // Sized at upload time; created here so the bindings can reference them.
-    r->d_->litTex.reset(rhi->newTexture(QRhiTexture::RGBA8, QSize(1, 1)));
     r->d_->diffuseTex.reset(rhi->newTexture(QRhiTexture::RGBA8, QSize(1, 1)));
-    if (!r->d_->litTex->create() || !r->d_->diffuseTex->create()) {
+    if (!r->d_->diffuseTex->create()) {
         return std::unexpected(RenderError{RenderErrorKind::Failed, "textures"});
     }
 
@@ -112,10 +119,16 @@ std::expected<std::unique_ptr<SceneResources>, RenderError> SceneResources::crea
         return std::unexpected(RenderError{RenderErrorKind::Failed, "sampler"});
     }
 
-    r->d_->srb.reset(rhi->newShaderResourceBindings());
-    bindAll(r->d_->srb.get(), r->d_->ubuf.get(), r->d_->litTex.get(), r->d_->diffuseTex.get(),
-            r->d_->sampler.get());
-    if (!r->d_->srb->create()) {
+    // A pipeline needs an SRB only for its LAYOUT; the one bound at draw time
+    // may be a different object as long as the layout matches. This one is
+    // never drawn with -- each mesh builds its own with its own litsphere.
+    // It binds diffuseTex in the litsphere slot purely because the layout only
+    // cares that the slot is a sampled texture; a throwaway texture created
+    // here would be destroyed while the SRB still pointed at it.
+    r->d_->layoutSrb.reset(rhi->newShaderResourceBindings());
+    bindAll(r->d_->layoutSrb.get(), r->d_->ubuf.get(), r->d_->diffuseTex.get(),
+            r->d_->diffuseTex.get(), r->d_->sampler.get());
+    if (!r->d_->layoutSrb->create()) {
         return std::unexpected(RenderError{RenderErrorKind::Failed, "shader resource bindings"});
     }
 
@@ -131,7 +144,7 @@ std::expected<std::unique_ptr<SceneResources>, RenderError> SceneResources::crea
         {0, 2, QRhiVertexInputAttribute::Float2, 6 * sizeof(float)},
     });
     r->d_->pipeline->setVertexInputLayout(layout);
-    r->d_->pipeline->setShaderResourceBindings(r->d_->srb.get());
+    r->d_->pipeline->setShaderResourceBindings(r->d_->layoutSrb.get());
     r->d_->pipeline->setRenderPassDescriptor(rp);
     r->d_->pipeline->setDepthTest(true);
     r->d_->pipeline->setDepthWrite(true);
@@ -148,68 +161,110 @@ std::expected<std::unique_ptr<SceneResources>, RenderError> SceneResources::crea
 }
 
 std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch* batch,
-                                                        const foundation::RenderView& mesh,
-                                                        const std::filesystem::path& litsphere) {
-    if (mesh.vertexCount() == 0 || mesh.indexCount() == 0) {
-        return std::unexpected(RenderError{RenderErrorKind::EmptyMesh, {}});
-    }
-
-    QImage lit(QString::fromStdString(litsphere.string()));
-    if (lit.isNull()) {
-        return std::unexpected(RenderError{RenderErrorKind::TextureMissing, litsphere.string()});
-    }
-    lit = lit.convertToFormat(QImage::Format_RGBA8888);
-
-    // Interleaved, because that is what the vertex layout declares and one
-    // buffer is one binding instead of three.
-    std::vector<float> verts;
-    verts.reserve(mesh.vertexCount() * 8);
-    const bool hasN = mesh.vnorm.size() == mesh.vertexCount();
-    const bool hasT = mesh.texco.size() == mesh.vertexCount();
-    for (size_t i = 0; i < mesh.vertexCount(); ++i) {
-        verts.push_back(mesh.coord[i].x);
-        verts.push_back(mesh.coord[i].y);
-        verts.push_back(mesh.coord[i].z);
-        verts.push_back(hasN ? mesh.vnorm[i].x : 0.0F);
-        verts.push_back(hasN ? mesh.vnorm[i].y : 0.0F);
-        verts.push_back(hasN ? mesh.vnorm[i].z : 1.0F);
-        verts.push_back(hasT ? mesh.texco[i].x : 0.0F);
-        verts.push_back(hasT ? mesh.texco[i].y : 0.0F);
+                                                        std::span<const MeshInstance> meshes) {
+    if (meshes.empty()) {
+        return std::unexpected(RenderError{RenderErrorKind::EmptyMesh, "no meshes"});
     }
 
     QRhi* rhi = d_->rhi;
-    d_->vbuf.reset(rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer,
-                                  static_cast<quint32>(verts.size() * sizeof(float))));
-    d_->ibuf.reset(rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::IndexBuffer,
-                                  static_cast<quint32>(mesh.indexCount() * sizeof(uint32_t))));
-    if (!d_->vbuf->create() || !d_->ibuf->create()) {
-        return std::unexpected(RenderError{RenderErrorKind::Failed, "geometry buffers"});
+
+    // NOTHING is queued onto `batch` until every mesh has been built. A batch
+    // holds raw pointers and does not learn that a resource died, so queueing
+    // inside the loop and then failing on a later mesh would leave the caller
+    // holding a batch that references freed buffers -- and ViewportWidget
+    // submits its batch even when upload fails, which crashed in the Metal
+    // backend. Build first, queue second.
+    struct Pending {
+        Drawable drawable;
+        std::vector<float> verts;
+        QImage lit;
+    };
+
+    std::vector<Pending> pending;
+    pending.reserve(meshes.size());
+
+    for (const MeshInstance& instance : meshes) {
+        const foundation::RenderView& mesh = instance.mesh;
+        if (mesh.vertexCount() == 0 || mesh.indexCount() == 0) {
+            return std::unexpected(RenderError{RenderErrorKind::EmptyMesh, {}});
+        }
+
+        QImage lit(QString::fromStdString(instance.litsphere.string()));
+        if (lit.isNull()) {
+            return std::unexpected(
+                RenderError{RenderErrorKind::TextureMissing, instance.litsphere.string()});
+        }
+        lit = lit.convertToFormat(QImage::Format_RGBA8888);
+
+        // Interleaved, because that is what the vertex layout declares and one
+        // buffer is one binding instead of three.
+        std::vector<float> verts;
+        verts.reserve(mesh.vertexCount() * 8);
+        const bool hasN = mesh.vnorm.size() == mesh.vertexCount();
+        const bool hasT = mesh.texco.size() == mesh.vertexCount();
+        for (size_t i = 0; i < mesh.vertexCount(); ++i) {
+            verts.push_back(mesh.coord[i].x);
+            verts.push_back(mesh.coord[i].y);
+            verts.push_back(mesh.coord[i].z);
+            verts.push_back(hasN ? mesh.vnorm[i].x : 0.0F);
+            verts.push_back(hasN ? mesh.vnorm[i].y : 0.0F);
+            verts.push_back(hasN ? mesh.vnorm[i].z : 1.0F);
+            verts.push_back(hasT ? mesh.texco[i].x : 0.0F);
+            verts.push_back(hasT ? mesh.texco[i].y : 0.0F);
+        }
+
+        Drawable dr;
+        dr.vbuf.reset(rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer,
+                                     static_cast<quint32>(verts.size() * sizeof(float))));
+        dr.ibuf.reset(rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::IndexBuffer,
+                                     static_cast<quint32>(mesh.indexCount() * sizeof(uint32_t))));
+        if (!dr.vbuf->create() || !dr.ibuf->create()) {
+            return std::unexpected(RenderError{RenderErrorKind::Failed, "geometry buffers"});
+        }
+
+        dr.litTex.reset(rhi->newTexture(QRhiTexture::RGBA8, lit.size()));
+        if (!dr.litTex->create()) {
+            return std::unexpected(RenderError{RenderErrorKind::Failed, "litsphere texture"});
+        }
+
+        // Its own bindings, so each mesh samples its own litsphere. Sharing one
+        // SRB would shade every mesh with whichever texture uploaded last.
+        dr.srb.reset(rhi->newShaderResourceBindings());
+        bindAll(dr.srb.get(), d_->ubuf.get(), dr.litTex.get(), d_->diffuseTex.get(),
+                d_->sampler.get());
+        if (!dr.srb->create()) {
+            return std::unexpected(
+                RenderError{RenderErrorKind::Failed, "shader resource bindings"});
+        }
+
+        dr.indexCount = static_cast<quint32>(mesh.indexCount());
+        pending.push_back(Pending{std::move(dr), std::move(verts), std::move(lit)});
     }
 
-    // Recreate the litsphere texture at the image's size.
-    d_->litTex.reset(rhi->newTexture(QRhiTexture::RGBA8, lit.size()));
-    if (!d_->litTex->create()) {
-        return std::unexpected(RenderError{RenderErrorKind::Failed, "litsphere texture"});
-    }
-    // Rebinding is required because the texture object changed identity.
-    bindAll(d_->srb.get(), d_->ubuf.get(), d_->litTex.get(), d_->diffuseTex.get(),
-            d_->sampler.get());
-    if (!d_->srb->create()) {
-        return std::unexpected(RenderError{RenderErrorKind::Failed, "rebinding"});
-    }
-
+    // Every mesh built, so it is now safe to queue: no early return remains.
+    //
     // A 1x1 white stand-in for the diffuse map, so `shading * diffuse` is a
     // no-op. Binding the litsphere here instead makes "diffuse" the matcap
     // sampled by the MESH's UVs, which paints arbitrary dark patches.
     QImage white(1, 1, QImage::Format_RGBA8888);
     white.fill(Qt::white);
-
-    batch->uploadStaticBuffer(d_->vbuf.get(), verts.data());
-    batch->uploadStaticBuffer(d_->ibuf.get(), mesh.index.data());
-    batch->uploadTexture(d_->litTex.get(), lit);
     batch->uploadTexture(d_->diffuseTex.get(), white);
 
-    d_->indexCount = static_cast<quint32>(mesh.indexCount());
+    std::vector<Drawable> built;
+    built.reserve(pending.size());
+    for (Pending& p : pending) {
+        batch->uploadStaticBuffer(p.drawable.vbuf.get(), p.verts.data());
+        batch->uploadTexture(p.drawable.litTex.get(), p.lit);
+        built.push_back(std::move(p.drawable));
+    }
+    // Index data comes from the caller's mesh, which outlives this call.
+    for (size_t i = 0; i < meshes.size(); ++i) {
+        batch->uploadStaticBuffer(built[i].ibuf.get(), meshes[i].mesh.index.data());
+    }
+
+    // Swapped in only once every mesh succeeded, so a failure part-way leaves
+    // the previous frame's meshes intact rather than half-replaced.
+    d_->drawables = std::move(built);
     return {};
 }
 
@@ -240,15 +295,19 @@ void SceneResources::updateCamera(QRhiResourceUpdateBatch* batch, const Camera& 
 }
 
 void SceneResources::draw(QRhiCommandBuffer* cb, const QSize& pixelSize) {
-    if (d_->indexCount == 0) return;
+    if (d_->drawables.empty()) return;
 
+    // Pipeline and viewport are the same for every mesh, so they are set once.
     cb->setGraphicsPipeline(d_->pipeline.get());
     cb->setViewport(
         {0, 0, static_cast<float>(pixelSize.width()), static_cast<float>(pixelSize.height())});
-    cb->setShaderResources();
-    const QRhiCommandBuffer::VertexInput vin(d_->vbuf.get(), 0);
-    cb->setVertexInput(0, 1, &vin, d_->ibuf.get(), 0, QRhiCommandBuffer::IndexUInt32);
-    cb->drawIndexed(d_->indexCount);
+
+    for (const Drawable& dr : d_->drawables) {
+        cb->setShaderResources(dr.srb.get());
+        const QRhiCommandBuffer::VertexInput vin(dr.vbuf.get(), 0);
+        cb->setVertexInput(0, 1, &vin, dr.ibuf.get(), 0, QRhiCommandBuffer::IndexUInt32);
+        cb->drawIndexed(dr.indexCount);
+    }
 }
 
 }  // namespace mh::render
