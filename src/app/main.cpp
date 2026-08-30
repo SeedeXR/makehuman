@@ -6,6 +6,7 @@
 #include "makehuman/core/Mesh.h"
 #include "makehuman/core/Mhm.h"
 #include "makehuman/core/ObjReader.h"
+#include "makehuman/core/Proxy.h"
 #include "makehuman/core/RenderMesh.h"
 #include "makehuman/core/SliderLayout.h"
 #include "makehuman/core/Subdivider.h"
@@ -44,6 +45,7 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -182,7 +184,10 @@ std::vector<std::filesystem::path> filesWithExtension(const std::filesystem::pat
                                                       std::string_view extension) {
     std::error_code ec;
     std::vector<std::filesystem::path> found;
-    for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+    // Recursive because proxies are shipped one directory per asset
+    // (data/eyes/high-poly/high-poly.mhclo). litspheres/ and poses/ are flat,
+    // so this changes nothing for them.
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(dir, ec)) {
         if (entry.path().extension() == extension) found.push_back(entry.path());
     }
     if (ec) {
@@ -221,6 +226,81 @@ bool namesPose(const std::filesystem::path& file, const std::string& spelling) {
 }
 
 constexpr const char* kDefaultSkin = "caucasian";
+/// The "not wearing any" entry of a proxy chooser. A sentinel rather than an
+/// empty string so it is visible in a save file and cannot be confused with
+/// "unset".
+constexpr const char* kNoProxy     = "none";
+constexpr const char* kDefaultEyes = "high-poly";
+
+/// Eyes get their own matcap; shading them with the body's skin makes them read
+/// as flesh-coloured beads.
+std::filesystem::path eyeLitsphere() {
+    return std::filesystem::path(MH_DATA_DIR) / "litspheres" / "skinmat_eye.png";
+}
+
+/// A proxy the character is wearing: the fitting data, its own geometry, and
+/// the render buffers for it.
+///
+/// The mesh is kept per proxy because fitProxy writes positions for the proxy's
+/// own vertices -- it is a second mesh in the scene, not a deformation of the
+/// body.
+struct WornProxy {
+    mh::core::Proxy proxy;
+    mh::core::Mesh mesh;
+    mh::core::RenderMesh rm;
+    std::filesystem::path litsphere;
+};
+
+/// Loads @p path and fits it to @p body once, so the caller gets something
+/// renderable or nothing.
+std::optional<WornProxy> wearProxy(const std::filesystem::path& path, const mh::core::Mesh& body,
+                                   std::filesystem::path litsphere) {
+    auto proxy = mh::core::loadProxy(path);
+    if (!proxy) {
+        std::fprintf(stderr, "cannot load proxy %s: %s\n", path.string().c_str(),
+                     proxy.error().message().c_str());
+        return std::nullopt;
+    }
+    if (proxy->maxRefIndex() >= body.vertexCount()) {
+        // A proxy cut for a different base mesh would otherwise read past the
+        // end of the body's vertices inside fitProxy.
+        std::fprintf(stderr, "proxy %s references body vertex %u of %zu\n", path.string().c_str(),
+                     proxy->maxRefIndex(), body.vertexCount());
+        return std::nullopt;
+    }
+    auto mesh = mh::core::loadObj(proxy->objFile);
+    if (!mesh) {
+        std::fprintf(stderr, "cannot load proxy geometry %s\n", proxy->objFile.string().c_str());
+        return std::nullopt;
+    }
+    WornProxy worn{std::move(*proxy), std::move(*mesh), {}, std::move(litsphere)};
+    worn.mesh.buildAdjacency();
+    worn.rm = mh::core::RenderMesh::build(worn.mesh);
+    // Said out loud, in the same spirit as "applied N targets": it is the only
+    // evidence from outside the process that a proxy reached the scene, and
+    // app_screenshot asserts on it.
+    std::fprintf(stderr, "wearing %s (%zu verts)\n", worn.proxy.name.c_str(),
+                 worn.proxy.vertexCount());
+    return worn;
+}
+
+/// Re-fits @p worn to the body's CURRENT positions and refreshes its buffers.
+///
+/// Called on every rebuild, so a proxy follows both morphs and the pose. It
+/// fits against the unsubdivided base mesh whatever the display mesh is: a
+/// proxy's reference vertices are base-mesh indices.
+/// Both early returns are unreachable by construction and leave the proxy at
+/// its previous positions if that ever changes: `wearProxy` rejects a proxy
+/// whose maxRefIndex exceeds the body, morphs never change the body's vertex
+/// count, and a proxy's own vertex count is fixed at load. They are guards
+/// against a future change, not an expected path.
+void refitProxy(WornProxy& worn, const mh::core::Mesh& body) {
+    std::vector<mh::foundation::Vec3> fitted;
+    if (!mh::core::fitProxy(worn.proxy, body.coord(), fitted)) return;
+    if (!worn.mesh.setCoords(std::move(fitted))) return;
+    worn.mesh.calcNormals();
+    worn.rm.refreshPositions(worn.mesh);
+}
 
 /// Skins and poses, from whatever is actually on disk.
 ///
@@ -228,7 +308,8 @@ constexpr const char* kDefaultSkin = "caucasian";
 /// directory appears without a code change -- and so this does not claim assets
 /// that are not there.
 std::vector<mh::foundation::AssetGroup> buildAssetGroups(const std::string& currentPose,
-                                                         const std::string& currentSkin) {
+                                                         const std::string& currentSkin,
+                                                         const std::string& currentEyes) {
     namespace fs = std::filesystem;
     std::vector<mh::foundation::AssetGroup> groups;
 
@@ -263,6 +344,25 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(const std::string& curr
         }
     }
     groups.push_back(std::move(poses));
+
+    // Eyes: the first proxy chooser. Only the two shipped eye proxies exist in
+    // data/, so this is a real chooser over a small set rather than a stub.
+    mh::foundation::AssetGroup eyes;
+    eyes.name = "Eyes";
+    eyes.choices.push_back({kNoProxy, "None"});
+    eyes.selected = 0;
+    for (const fs::path& p : filesWithExtension(fs::path(MH_DATA_DIR) / "eyes", ".mhclo")) {
+        eyes.choices.push_back({p.string(), prettyName(p, "")});
+        if (p.stem().string() == currentEyes) {
+            eyes.selected = static_cast<int>(eyes.choices.size()) - 1;
+        }
+    }
+    if (eyes.selected == 0 && currentEyes != kNoProxy) {
+        // Say so rather than silently rendering no eyes for a typo, the same
+        // way an unknown --skin is reported.
+        std::fprintf(stderr, "unknown --eyes \"%s\"; wearing none\n", currentEyes.c_str());
+    }
+    groups.push_back(std::move(eyes));
     return groups;
 }
 
@@ -421,11 +521,18 @@ int main(int argc, char** argv) {
         QStringLiteral("workspace"),
         QStringLiteral("Start in a workspace preset: Modelling, Rigging, Materials or Export."),
         QStringLiteral("name"));
+    const QCommandLineOption eyesOpt(
+        QStringLiteral("eyes"),
+        QStringLiteral("Eye proxy to wear: none, or the stem of a .mhclo under data/eyes "
+                       "(default high-poly)"),
+        QStringLiteral("name"), QString::fromLatin1(kDefaultEyes));
+
     parser.addOption(workspaceOpt);
     parser.addOption(subdivOpt);
     parser.addOption(loadOpt);
     parser.addOption(saveOpt);
     parser.addOption(skinOpt);
+    parser.addOption(eyesOpt);
     parser.addOption(setOpt);
     parser.addOption(poseOpt);
     parser.addOption(exportOpt);
@@ -574,7 +681,8 @@ int main(int argc, char** argv) {
     // Built before the window so the initial litsphere is the one the picker
     // shows -- otherwise the panel and the viewport start out disagreeing.
     const auto assetGroups =
-        buildAssetGroups(parser.value(poseOpt).toStdString(), parser.value(skinOpt).toStdString());
+        buildAssetGroups(parser.value(poseOpt).toStdString(), parser.value(skinOpt).toStdString(),
+                         parser.value(eyesOpt).toStdString());
 
     // The one rebuild path: sliders, pose and skin all go through it, so the
     // three controls cannot disagree about what is on screen.
@@ -584,6 +692,12 @@ int main(int argc, char** argv) {
     // reference this lambda, so this must outlive the window -- capturing the
     // window would force the opposite order and leave those connections holding
     // a dangling reference through teardown.
+    // The body's material and everything worn, read by every rebuild. Skin is
+    // a path rather than a call to setLitsphere because the viewport now takes
+    // one material per mesh: the body's has to travel with the body.
+    std::filesystem::path skin;
+    std::map<QString, WornProxy> wornProxies;
+
     const auto rebuildInto = [&](mh::ui::MainWindow& w) {
         human.applyStack(*mesh, targets);
         if (!poseInPlace(*mesh, rig)) return;
@@ -603,7 +717,15 @@ int main(int argc, char** argv) {
                 std::fprintf(stderr, "cannot apply the static face mask after a topology change\n");
             }
         }
-        w.setMesh(rm.view());
+        // Worn proxies follow the body: re-fitted against the posed, morphed
+        // base mesh every rebuild, not just when they are put on.
+        std::vector<mh::render::MeshInstance> scene;
+        scene.push_back({rm.view(), skin});
+        for (auto& [group, worn] : wornProxies) {
+            refitProxy(worn, *mesh);
+            scene.push_back({worn.rm.view(), worn.litsphere});
+        }
+        w.setMeshes(std::move(scene));
     };
 
     // Above `window` for the same reason rebuildInto is: the File-menu
@@ -635,7 +757,30 @@ int main(int argc, char** argv) {
     const auto applyChoice = [&](const QString& group, const QString& id) {
         assets->setChoice(group, id);  // does not emit; see AssetPanel::setChoice
         if (group == QLatin1String("Skin")) {
-            shell->setLitsphere(id.toStdString());
+            // Rebuild rather than setLitsphere: the body's material is carried
+            // by its MeshInstance now, so changing it without rebuilding would
+            // re-upload the old one and render an unchanged picture.
+            skin = id.toStdString();
+            rebuildInto(*shell);
+            return;
+        }
+        if (group == QLatin1String("Eyes")) {
+            // Erasing or replacing frees geometry the viewport still holds
+            // non-owning spans into. That is safe only because this runs to
+            // completion inside one slot: setMeshes below replaces the list
+            // before the event loop can repaint, and update() schedules rather
+            // than paints. Anything that lets the event loop run between the
+            // erase and the rebuild reintroduces a use-after-free.
+            if (id == QLatin1String(kNoProxy)) {
+                wornProxies.erase(group);
+            } else if (auto worn = wearProxy(id.toStdString(), *mesh, eyeLitsphere())) {
+                wornProxies.insert_or_assign(group, std::move(*worn));
+            } else {
+                // Loading failed and said why. Take the proxy off rather than
+                // leaving the picker naming something that is not on screen.
+                wornProxies.erase(group);
+            }
+            rebuildInto(*shell);
             return;
         }
         if (group != QLatin1String("Pose")) return;
@@ -729,15 +874,25 @@ int main(int argc, char** argv) {
     }
     // Taken from the picker, so the viewport and the panel cannot start out
     // disagreeing about which skin is shown.
-    const QString skin = assets->choice(QStringLiteral("Skin"));
-    if (skin.isEmpty()) {
+    const QString chosenSkin = assets->choice(QStringLiteral("Skin"));
+    if (chosenSkin.isEmpty()) {
         std::fprintf(stderr,
                      "no litspheres found in %s -- the viewport cannot shade anything "
                      "without one\n",
                      (std::filesystem::path(MH_DATA_DIR) / "litspheres").string().c_str());
         return 1;
     }
-    window.setLitsphere(skin.toStdString());
+    skin = chosenSkin.toStdString();
+
+    // Whatever the Eyes picker starts on, put it on before the first frame so
+    // the viewport and the picker agree from the outset.
+    if (const QString eyes = assets->choice(QStringLiteral("Eyes"));
+        !eyes.isEmpty() && eyes != QLatin1String(kNoProxy)) {
+        if (auto worn = wearProxy(eyes.toStdString(), *mesh, eyeLitsphere())) {
+            wornProxies.insert_or_assign(QStringLiteral("Eyes"), std::move(*worn));
+        }
+    }
+    rebuildInto(window);
 
     QObject::connect(
         assets, &mh::ui::AssetPanel::chosen, [&](const QString& group, const QString& id) {

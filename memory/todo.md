@@ -554,11 +554,28 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       **Not yet wired into the app** — `main.cpp` still calls `setMesh` with the
       body alone. The proxy choosers need that wiring plus per-mesh diffuse
       textures; see below.
-- [ ] Wire the app to `setMeshes` (body + worn proxies) — the remaining half of
-      the proxy-chooser unblock. **Re-route the Skin picker when doing it**:
-      `applyChoice` handles `"Skin"` via `setLitsphere` and returns without
-      rebuilding (`src/app/main.cpp:636-639`), which silently does nothing once
-      the list has more than one mesh.
+- [x] **The app wears proxies** — `WornProxy` (fitting data + its own mesh +
+      render buffers); `rebuildInto` re-fits every worn proxy against the posed,
+      morphed base mesh and hands the viewport `body + proxies` via `setMeshes`.
+      **Eyes is the first working chooser**, with `--eyes` beside `--skin`
+      /`--pose`. Skin now rebuilds instead of calling `setLitsphere`, because
+      the body's material travels with its `MeshInstance`.
+      Verified by running the app: `--eyes high-poly` vs `none` differs in 1,329
+      pixels; coverage is identical because the eyes sit inside the face
+      silhouette, so the check is luminance range (29..212 -> 21..227).
+      Pinned by the new `app_screenshot` ctest — `app_smoke` returns at
+      `--export` before the asset groups exist and never reaches this wiring.
+- [ ] The remaining seven proxy choosers (clothes, hair, teeth, tongue,
+      eyebrows, eyelashes, generic proxy). The machinery is in place; each needs
+      its asset group and a litsphere/material choice.
+- [ ] **Proxy `delete_verts` are not applied to the body.** `visibleVertexMask`
+      and `Mesh::faceMaskForVisibleVertices` exist and are tested, but nothing
+      calls them yet. A no-op today — all four shipped `.mhclo`/`.proxy` files
+      declare zero `delete_verts` (verified) — and a real bug the first time a
+      clothing asset expects the body hidden underneath it.
+- [ ] **Export ignores worn proxies.** `--export` returns before the asset
+      groups are built, so a dressed character exports naked. Needs the writers
+      to take more than one mesh.
 - [ ] Per-mesh diffuse texture + alpha blending — hair and eyelash proxies need
       it. Today the shader's alpha comes from a shared 1x1 white stand-in, so
       it is always 1.0; it also needs a second pipeline (blend state) and

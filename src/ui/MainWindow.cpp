@@ -214,6 +214,10 @@ void MainWindow::setMesh(const foundation::RenderView& mesh) {
     d_->viewport->setMesh(mesh);
 }
 
+void MainWindow::setMeshes(std::vector<render::MeshInstance> meshes) {
+    d_->viewport->setMeshes(std::move(meshes));
+}
+
 void MainWindow::setLitsphere(std::filesystem::path path) {
     d_->viewport->setLitsphere(std::move(path));
 }

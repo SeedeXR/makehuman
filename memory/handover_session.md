@@ -4,6 +4,102 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-30 10:33:36 — Session 050 · **the app wears proxies; the first blocked chooser is unblocked**
+
+### What shipped
+`WornProxy` in `src/app/main.cpp` — a proxy's fitting data, its own mesh and its
+render buffers. `rebuildInto` re-fits every worn proxy against the **posed,
+morphed base mesh** on every rebuild and hands the viewport `body + proxies`
+through `setMeshes`, so a proxy follows morphs and pose without special-casing.
+
+**Eyes is the first working proxy chooser** — one of the eight that were blocked
+— with `--eyes` beside the existing `--skin` and `--pose`.
+
+Skin now rebuilds rather than calling `setLitsphere`. That was the dead end
+recorded last session: the body's material travels with its `MeshInstance`, so
+changing it without rebuilding re-uploaded the old one and rendered an unchanged
+picture.
+
+### Verified by running the program
+The tests alone would not have convinced me, because the interesting failure is
+"the picker changed and nothing happened".
+
+| run | result |
+|---|---|
+| `--eyes high-poly` vs `--eyes none` | 1,329 px differ; luminance 29..212 -> 21..227 |
+| `--skin african` vs `caucasian` | 196,787 px differ (4.8%) |
+| `--eyes nonsense` | reports the typo, falls back to none, matches "none" exactly |
+| `--subdivide --eyes high-poly` | eyes still render; proxies fit base indices, unaffected |
+
+**Coverage is identical with and without eyes** — they sit inside the face
+silhouette — which is why the check is luminance range and a pixel diff, not
+coverage. Worth remembering for every small proxy that follows.
+
+### Two measurement mistakes, corrected before they became assertions
+1. I framed a "head shot" at distance 12 and got zero difference. The camera
+   looks at the model origin and the base mesh straddles it (y -8.45..8.50), so
+   closing in frames the navel and loses the head. There is no pan yet.
+2. My first background test used exact `QColor` equality where the renderer
+   needs a tolerance, and reported the eye proxy as covering all 262,144 pixels
+   of the frame. The real number is 64.
+
+Both are the same lesson: measure, then assert. An assertion written from an
+expectation would have been wrong twice.
+
+### New test: `app_screenshot`
+`app_smoke` returns at `--export` **before the asset groups are built**, so it
+never reaches the proxy wiring — the same blind spot that let a scripted edit
+delete the whole Materials dock in session 042 with 328 tests still green.
+
+`app_screenshot` runs the real window. Its teeth come from
+`PASS_REGULAR_EXPRESSION` on the app's own "wearing HighPolyEyes (1064 verts)"
+line: without that it would only catch a proxy that fails to *load*, while one
+silently dropped from the scene still renders a valid picture and would pass.
+Mutation-tested — dropping the proxy fails the test. It skips (not fails) on a
+machine with no Metal device, via `SKIP_REGULAR_EXPRESSION` on the app's own
+"viewport error".
+
+It genuinely runs under **ASan** (1.73 s, passed), which is the best evidence
+the proxy lifetimes are sound.
+
+### Review findings, self-reviewed
+The review agent stalled without reporting, so I worked the risk list myself:
+
+- **Lifetime (the one that worried me).** Erasing or replacing a `WornProxy`
+  frees geometry the viewport still holds non-owning spans into. Safe *only*
+  because erase and rebuild run to completion inside one slot — `update()`
+  schedules a repaint rather than performing one, so `setMeshes` replaces the
+  list before the event loop can paint. Non-obvious and easy to break, so it is
+  now a comment at the erase site.
+- **`refitProxy`'s silent early returns are unreachable**: `wearProxy` rejects a
+  proxy whose `maxRefIndex` exceeds the body, morphs never change the body's
+  vertex count, and a proxy's vertex count is fixed at load. Documented as
+  guards rather than expected paths.
+- **Not masking proxies with `staticFaceMask` is correct** — the eye `.obj` has
+  zero group lines, so there is no helper geometry to hide.
+- **Ponytail:** I had duplicated `filesWithExtension` with a `views` pipeline
+  because proxies live one directory per asset. Both existing asset directories
+  are flat, so making the shared helper recursive is a no-op for them; the
+  duplicate and the `<ranges>` include are gone. I kept the `map` keyed by group
+  rather than a single `optional` — seven more choosers follow immediately, so
+  that is demonstrated need, not speculation.
+
+### Verification
+- ctest **330/330 in debug, release and ASan**; format clean; **0** undefined
+  `mh::core` symbols in `foundation`, `io`, `render`, `ui`.
+- `fitProxy` benchmarks at **0.00 ms**, so re-fitting on every rebuild costs
+  nothing measurable — which is what justifies doing it unconditionally.
+
+### Notes for next session — two real gaps, both recorded in todo.md
+- **Proxy `delete_verts` are not applied to the body.** `visibleVertexMask` and
+  `faceMaskForVisibleVertices` exist and are tested but nothing calls them. A
+  no-op today (all four shipped proxies declare zero, verified) and a real bug
+  the first time a clothing asset expects the body hidden underneath.
+- **Export ignores worn proxies** — a dressed character exports naked. Needs the
+  writers to take more than one mesh.
+
+---
+
 ## 2026-08-30 08:18:55 — Session 049 · **the renderer draws N meshes, and the bug that found**
 
 ### What shipped

@@ -2,6 +2,7 @@
 #pragma once
 
 #include "makehuman/foundation/Geometry.h"
+#include "makehuman/render/SceneResources.h"
 #include "makehuman/ui/TaskRegistry.h"
 
 #include <QMainWindow>
@@ -9,6 +10,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <vector>
 
 class QUndoStack;
 
@@ -33,6 +35,11 @@ public:
     ~MainWindow() override;
 
     void setMesh(const foundation::RenderView& mesh);
+
+    /// The body plus everything worn, each with its own material. See
+    /// ViewportWidget::setMeshes for the lifetime rule: the views are
+    /// non-owning and the caller keeps the geometry alive.
+    void setMeshes(std::vector<render::MeshInstance> meshes);
     void setLitsphere(std::filesystem::path path);
 
     /// Puts @p widget in the dock for @p category, replacing the placeholder.

@@ -77,7 +77,8 @@ set_target_properties(mh_export_fixture PROPERTIES CXX_STANDARD 23 CXX_STANDARD_
 # The renderer tests need Qt and a Metal device, so they are only built when the
 # renderer is. They run offscreen -- no window is created.
 if(MH_HAVE_RENDER)
-    add_executable(mh_render_tests render/test_offscreen_render.cpp)
+    add_executable(mh_render_tests render/test_offscreen_render.cpp
+                                   render/test_proxy_render.cpp)
     target_link_libraries(mh_render_tests
         PRIVATE mh::core mh::render Catch2::Catch2WithMain mh::warnings mh::sanitize)
     target_compile_definitions(mh_render_tests PRIVATE
@@ -118,5 +119,26 @@ if(MH_HAVE_RENDER)
              --set macrodetails/Gender=1.0
              --pose tpose
              --export ${CMAKE_CURRENT_BINARY_DIR}/app_smoke.obj)
+    # The window path, and the only thing that covers main.cpp's PROXY wiring:
+    # --export returns before the asset groups are built, so app_smoke never
+    # reaches it.
+    #
+    # PASS_REGULAR_EXPRESSION is what gives this teeth. Without it the test only
+    # catches a proxy that fails to LOAD; a proxy silently dropped from the
+    # scene still renders a valid picture and would pass. Asserting the app
+    # announced what it is wearing pins that the chooser reached the viewport.
+    #
+    # Needs a real Metal device. SKIP_REGULAR_EXPRESSION on the app's own
+    # "viewport error" makes a device-less machine skip rather than fail --
+    # the same trade the render tests make with requireDevice(), and with the
+    # same caveat: a genuine viewport failure skips too.
+    add_test(NAME app_screenshot COMMAND makehuman
+             --eyes high-poly
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/app_screenshot.png)
+    set_tests_properties(app_screenshot PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing HighPolyEyes \\(1064 verts\\)"
+        SKIP_REGULAR_EXPRESSION "viewport error"
+        FAIL_REGULAR_EXPRESSION "cannot load proxy;unknown --eyes;references body vertex")
+
     set_tests_properties(ui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
