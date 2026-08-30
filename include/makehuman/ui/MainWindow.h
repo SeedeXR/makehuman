@@ -38,6 +38,14 @@ public:
 
     [[nodiscard]] ViewportWidget* viewport() const;
 
+    /// The docking flags this window uses, given the reduce-motion setting.
+    ///
+    /// A free choice rather than a member so both branches are testable: the
+    /// system setting cannot be changed from a test, and asserting the window
+    /// agrees with `theme::reduceMotion()` is vacuous when both sides call the
+    /// same function.
+    [[nodiscard]] static QMainWindow::DockOptions dockOptionsFor(bool reduceMotion);
+
     /// The window's undo stack, already wired to Edit > Undo/Redo.
     ///
     /// A command's apply callback must not push further commands: it runs

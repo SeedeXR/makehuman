@@ -25,6 +25,7 @@
 #include <QComboBox>
 #include <QDockWidget>
 #include <QFile>
+#include <QFontMetrics>
 #include <QImage>
 #include <QJsonObject>
 #include <QKeyEvent>
@@ -35,6 +36,7 @@
 #include <QPainter>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QScrollArea>
 #include <QSet>
 #include <QSlider>
 #include <QStandardPaths>
@@ -1219,4 +1221,83 @@ TEST_CASE("the viewport orbits from the keyboard", "[a11y]") {
     const auto held = v.camera();
     press(Qt::Key_A);
     CHECK_THAT(d(v.camera().yawDegrees), WithinAbs(d(held.yawDegrees), 1e-9));
+}
+
+TEST_CASE("captions can shrink at 200% text instead of pinning the dock open", "[a11y]") {
+    // Measured, after a first attempt that asserted the wrong thing: at 200%
+    // the longest shipped caption ("Scale depth of parietal side") wants 263 px
+    // and the dock is 380, so nothing clips and the panel's own minimum is 153
+    // either way. Word wrap is NOT fixing a clipping bug.
+    //
+    // What it does buy is real: it drops that label's MINIMUM from 263 px to
+    // 72, so a user who drags the dock narrower still gets a usable panel
+    // instead of one label holding it open. That is the property asserted here,
+    // and it is the one that changes when setWordWrap goes.
+    const QFont original = QApplication::font();
+    QFont doubled        = original;
+    doubled.setPointSizeF(original.pointSizeF() * 2.0);
+    QApplication::setFont(doubled);
+
+    std::vector<mh::foundation::TaskViewSpec> views;
+    mh::foundation::TaskViewSpec view;
+    view.name = "Face";
+    mh::foundation::SliderSection section{"head shape", {}};
+    // The longest real caption, plus a single word wrapping cannot help.
+    for (const char* label : {"Scale depth of parietal side", "Invertedtriangular"}) {
+        section.sliders.push_back({std::string("head/") + label, label, "", -1.0F, 1.0F, 0.0F});
+    }
+    view.sections = {section};
+    views.push_back(view);
+
+    mh::ui::ModifierPanel panel(views);
+    // The app always applies the stylesheet, and QLabel's wrapped sizeHint
+    // differs with it -- a bare panel measures a regime the program never runs
+    // in.
+    panel.setStyleSheet(mh::ui::theme::styleSheet());
+    const int dockWidth = 380;  // what applyWorkspacePreset gives the focused dock
+    panel.resize(dockWidth, 900);
+
+    for (QLabel* caption : panel.findChildren<QLabel*>(QStringLiteral("modifiers.caption"))) {
+        INFO(caption->text().toStdString());
+        // Nothing clips at the dock's own width.
+        CHECK(caption->sizeHint().width() <= dockWidth);
+        if (caption->text().contains(QLatin1Char(' '))) {
+            // A wrappable label must be able to give width back.
+            CHECK(caption->minimumSizeHint().width() < caption->sizeHint().width());
+        } else {
+            // A single word cannot wrap, and pretending otherwise would be a
+            // test that passes for the wrong reason.
+            CHECK(caption->minimumSizeHint().width() == caption->sizeHint().width());
+        }
+    }
+    // NOT panel.minimumSizeHint(): each tab page sits in a QScrollArea with
+    // setWidgetResizable, whose minimum ignores its widget's, so that number is
+    // a constant 151 in every configuration -- wrap on or off, 100% or 200% --
+    // and cannot fail. The page inside the scroll area is what actually moves.
+    auto* scroll = panel.findChild<QScrollArea*>();
+    REQUIRE(scroll != nullptr);
+    REQUIRE(scroll->widget() != nullptr);
+    CHECK(scroll->widget()->minimumSizeHint().width() <= dockWidth);
+
+    QApplication::setFont(original);
+}
+
+TEST_CASE("reduce motion is read from the system and drops the dock animation", "[a11y]") {
+    useShippedIcons();
+    mh::ui::MainWindow w(MH_SHADER_DIR);
+    // Both branches, because the system setting cannot be changed from a test
+    // and asserting the window agrees with reduceMotion() is vacuous when both
+    // sides call the same function -- on a machine with the setting off it
+    // passes even if the window ignores it entirely.
+    const auto moving  = mh::ui::MainWindow::dockOptionsFor(false);
+    const auto reduced = mh::ui::MainWindow::dockOptionsFor(true);
+    CHECK((moving & QMainWindow::AnimatedDocks) != 0);
+    CHECK((reduced & QMainWindow::AnimatedDocks) == 0);
+
+    // And the window really uses the helper rather than a copy of the logic.
+    CHECK(w.dockOptions() == mh::ui::MainWindow::dockOptionsFor(mh::ui::theme::reduceMotion()));
+
+    // The accessor must be callable without a running NSApplication -- these
+    // tests run under the offscreen platform.
+    (void)mh::ui::theme::reduceMotion();
 }

@@ -19,6 +19,7 @@ add_library(mh_ui STATIC
     AssetPanel.cpp
     Workspace.cpp
     UndoCommands.cpp
+    Motion.mm
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/ViewportWidget.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/MainWindow.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/Theme.h
@@ -33,8 +34,14 @@ target_include_directories(mh_ui PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
 
+# Motion.mm needs AppKit. The project is a macOS port, so an Objective-C++ file
+# is a platform detail rather than a portability problem -- but it is the only
+# one, and it stays that way.
+enable_language(OBJCXX)
+
 target_link_libraries(mh_ui
     PUBLIC  mh::render Qt6::Widgets Qt6::Svg
+    PRIVATE "-framework AppKit"
     PRIVATE mh::warnings mh::sanitize)
 
 target_compile_definitions(mh_ui PRIVATE MH_RESOURCE_DIR="${CMAKE_SOURCE_DIR}/resources")

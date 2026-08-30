@@ -4,6 +4,71 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-30 19:26:40 — Session 044 · **200% text and reduce motion, and a fix for a problem I never demonstrated**
+
+### What shipped
+- **`theme::reduceMotion()`** in `src/ui/Motion.mm`, the project's only Objective-C++ file,
+  reading AppKit's `accessibilityDisplayShouldReduceMotion`. `AnimatedDocks` is dropped
+  when it is set.
+- Word wrap on slider captions, kept for a **measured** reason (below).
+- AppKit recorded in `LICENSING.md`.
+
+### There is no Qt API for reduce motion
+Checked before writing Objective-C++: `QStyleHints` has no motion hint;
+`QAccessibilityHints` (Qt 6.10) carries exactly one property, `contrastPreference`;
+`QPlatformTheme::ThemeHint` has only the Windows `Animate*UiEffect` family.
+And **`QSettings` cannot read another application's preference domain** — measured:
+`com.apple.dock` reports **0 keys** through QSettings while `defaults read` lists dozens.
+My first plan was to read the plist through QSettings; it would have silently always
+returned false.
+
+### I fixed a problem I never demonstrated
+I added word wrap "because at 200% the caption is wider than the dock and forces the
+viewport off screen". Then I measured: the longest shipped caption wants **263 px** in a
+**380 px** dock. Nothing clipped. The panel's own minimum is a constant **151 px** in all
+four configurations, because the `QScrollArea` ignores its widget's minimum.
+
+Worse, I had claimed a mutation test proved the fix. Re-reading my own output: all four
+failures were `CHECK(caption->wordWrap())` — a restatement of the line I had just written.
+The layout assertions passed with and without the change.
+
+Word wrap **is** worth keeping, for a different measured reason: it drops the caption's
+minimum from 263 px to 72, so a user dragging the dock narrower keeps a usable panel
+instead of one label holding it open. Benefit band ~253-380 px, confirmed by a scrollbar
+probe. The test now asserts *that* property and flips when the change is removed.
+
+### Two more tests of mine that could not fail
+- `CHECK(animated == !reduced)` reduces to `CHECK(animated == true)` on any machine with
+  the setting off — i.e. every CI runner — so it passed even against the previous
+  unconditional code. `dockOptionsFor(bool)` is now a pure function and both branches are
+  tested machine-independently.
+- `CHECK(panel.minimumSizeHint().width() <= 380)` is a constant 151 in every
+  configuration. Replaced with the scroll area's page, which actually moves.
+
+### Also
+The 200% test built a bare panel while the app always applies the stylesheet, and
+QLabel's wrapped `sizeHint` differs between the two. It applies the stylesheet now, so it
+measures the regime the program runs in.
+
+### Deliberate, with the reason recorded in the code
+`reduceMotion()` is read **once** at construction. Honouring it live needs an
+`NSNotificationCenter` observer, a callback across the language boundary and observer
+lifetime management — for one flag on one widget, for a setting essentially never changed
+mid-session. `Motion.mm` says so, so the next reader does not "fix" it.
+
+### Verified this session
+- 329/329 in debug, release and ASan.
+- Both surviving assertions mutation-tested: each fails when its change is removed.
+- All 7 licence gates; clang-format clean; `mh_ui` → 0 `mh::core` symbols.
+
+### Next
+- **`reduceMotion()` returning true has never been exercised** — off on this machine and
+  CI. Needs one manual toggle in System Settings before shipping.
+- VoiceOver on a real device; the readout double-announcement still needs a custom
+  `QAccessibleInterface`.
+
+---
+
 ## 2026-08-30 17:48:55 — Session 043 · **accessibility, and a focus ring that ringed everything**
 
 ### What shipped

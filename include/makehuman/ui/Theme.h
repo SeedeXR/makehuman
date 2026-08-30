@@ -54,6 +54,12 @@ struct Palette {
 /// The application stylesheet, built from the tokens above.
 [[nodiscard]] QString styleSheet();
 
+/// Whether the user has asked for reduced motion (`design.md` §9).
+///
+/// Implemented in `Motion.mm`, the project's only Objective-C++ file; the
+/// rationale lives there.
+[[nodiscard]] bool reduceMotion();
+
 /// Registers the bundled typefaces.
 ///
 /// @return the family name Qt actually installed, or empty if the font could

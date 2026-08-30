@@ -94,7 +94,14 @@ ModifierPanel::ModifierPanel(std::span<const foundation::TaskViewSpec> views, QW
                 rowColumn->setSpacing(1);
 
                 auto* caption = new QLabel(rowWidget);
+                caption->setObjectName(QStringLiteral("modifiers.caption"));
                 caption->setText(QString::fromStdString(spec.label));
+                // Measured at 200% text: the longest shipped caption wants
+                // 263 px and the dock is 380, so this is not fixing a clipping
+                // bug. It drops that label's MINIMUM from 263 px to 72, so a
+                // user who drags the dock narrower keeps a usable panel instead
+                // of one caption holding it open.
+                caption->setWordWrap(true);
 
                 auto* readout = new QLabel(rowWidget);
                 readout->setObjectName(QStringLiteral("modifiers.readout"));

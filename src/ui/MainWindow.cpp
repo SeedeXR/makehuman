@@ -104,8 +104,7 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, QWidget* parent)
     // Without AllowNestedDocks a dock can only sit in one of the four areas, so
     // "snapping" has nothing to snap into.
     setDockNestingEnabled(true);
-    setDockOptions(QMainWindow::AnimatedDocks | QMainWindow::AllowNestedDocks |
-                   QMainWindow::AllowTabbedDocks | QMainWindow::GroupedDragging);
+    setDockOptions(dockOptionsFor(theme::reduceMotion()));
 
     QMenu* file              = menuBar()->addMenu(tr("&File"));
     const auto addFileAction = [&](const QString& objectName, const QString& text,
@@ -229,6 +228,16 @@ void MainWindow::setModellingWidget(QWidget* widget) {
 
 void MainWindow::setMaterialsWidget(QWidget* widget) {
     installInDock(findChild<QDockWidget*>(QStringLiteral("dock.materials")), widget);
+}
+
+QMainWindow::DockOptions MainWindow::dockOptionsFor(bool reduceMotion) {
+    // AnimatedDocks is the only animation in the window, so honouring reduce
+    // motion (design.md 9) means dropping exactly that flag. The docking
+    // behaviour is unchanged; it simply stops sliding.
+    QMainWindow::DockOptions options = QMainWindow::AllowNestedDocks |
+                                       QMainWindow::AllowTabbedDocks | QMainWindow::GroupedDragging;
+    if (!reduceMotion) options |= QMainWindow::AnimatedDocks;
+    return options;
 }
 
 QUndoStack* MainWindow::undoStack() const {

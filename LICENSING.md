@@ -159,6 +159,7 @@ because dropping the notice is the single way to actually breach BSD.
 | oneTBB | 2023.1.0 | Apache-2.0 | `Apache-2.0` | Job system |
 | assimp | 6.0.4_1 | BSD-3-Clause | `BSD-3-Clause` | **Multi-format import/export** (FBX 7500 binary, Collada, STL, 3MF) and an independent reader validating the formats we write ourselves. Linked into `mh_io`. See §5.3. |
 | Catch2 | v3.7.1 (pinned) | BSL-1.0 | `BSL-1.0` | Tests |
+| **AppKit** (macOS system framework) | ships with macOS | Apple SDK licence | — | One call: `accessibilityDisplayShouldReduceMotion` in `src/ui/Motion.mm`. There is no Qt API for the reduce-motion setting and `QSettings` cannot read another application's preference domain (measured: `com.apple.dock` reports 0 keys through QSettings while `defaults read` lists dozens). A system framework on the target OS, dynamically linked, imposing no obligation on this project's licensing — recorded because the rule is to record every dependency, not only the redistributable ones. |
 | nlohmann/json (`nlohmann_json`) | v3.11.3 (pinned, SHA256-verified) | MIT | `MIT` | `.mhskel` parsing in `mh_rig`. **`ordered_json` specifically**: the reference loads with `OrderedDict` and its bone ordering pass iterates in file order (`skeleton.py:112-121`), so a parser that sorts or hashes keys silently produces a different bone order. |
 | Lucide | 1.37.0 (bundled) | ISC | `ISC` | Icons — see §5.4 |
 | 42dot Sans | bundled, OFL text included | SIL OFL 1.1 | `OFL-1.1` | Typeface — see §5.4 |

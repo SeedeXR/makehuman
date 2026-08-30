@@ -556,7 +556,22 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       **`QSlider:focus::handle:horizontal` is a trap:** Qt drops the `:focus`
       when it precedes a sub-element, so the ring painted on all 291 handles at
       rest and focus changed nothing. Only `QSlider:focus` works.
-      Still open: 200% text scaling, reduce-motion, VoiceOver on a real device.
+      **200% text**: measured, not assumed — the longest shipped caption wants
+      263 px in a 380 px dock, so nothing clips. Word wrap is kept for a
+      different, measured reason: it drops that caption's *minimum* from 263 to
+      72 px, so a user narrowing the dock keeps a usable panel. Benefit band
+      ~253-380 px.
+      **Reduce motion**: `theme::reduceMotion()` reads AppKit's
+      `accessibilityDisplayShouldReduceMotion` in `src/ui/Motion.mm`, the one
+      Objective-C++ file. There is **no Qt API** — `QStyleHints`,
+      `QAccessibilityHints` (one property, contrast) and `QPlatformTheme` all
+      lack it, and `QSettings` cannot read another app's preference domain.
+      Read once at construction, deliberately.
+      Still open: VoiceOver on a real device.
+- [ ] **Unverified:** `reduceMotion()` returning **true** has never been
+      exercised — the setting is off on this machine and on CI, so only the
+      false branch runs. `dockOptionsFor(true)` is tested, but the AppKit read
+      itself is not. Needs one manual toggle in System Settings before shipping.
 - [ ] **Known gap:** the readout label beside each slider repeats the slider's
       value, so VoiceOver announces it twice. An empty `accessibleName` does NOT
       suppress it — Qt falls back to `QLabel::text()` — so this needs a custom
