@@ -4,6 +4,65 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-30 21:03:18 — Session 045 · **undo for pose and skin, and a merge policy chosen rather than assumed**
+
+### What shipped
+- **`ui::ChoiceChangeCommand`** — skin and pose changes go through the undo stack, so ⌘Z
+  means the same thing whichever panel was last touched.
+- **`AssetPanel::setChoice` restored.** It was cut in session 041 for having no production
+  caller; undo is that caller. A good illustration that "no caller" is a reason to remove
+  something, not a permanent verdict.
+
+### A behaviour choice, made with a measurement
+My first version documented that choices "deliberately do **not** merge — picking two
+skins in a row is two decisions, not a drag." The review showed that is true for mouse
+clicks and false for the keyboard: arrow-keying a **closed** combo emits one change per
+keystroke, so Down/Up/Down leaves the picker where it started while costing three undo
+steps and **three full skeleton-and-weights reloads**.
+
+I checked whether `QComboBox::activated` (user-initiated only) would separate the cases.
+Measured: three Down presses give `currentIndexChanged=2 activated=2` — identical, so
+switching signals fixes nothing.
+
+So consecutive choices in a group now merge, and the header says plainly that this is a
+choice with a trade-off rather than a forced consequence: trying several skins to compare
+them is one decision, and the caller ends the run when a different kind of edit happens.
+
+### The failure path I flagged, confirmed and fixed
+If `loadPoseRig` failed, three things had already happened — the picker had moved,
+`applyStack` had reset the mesh to its morph base leaving it unposed while `rig` still
+held the old pose, and the map had the new id — and then it returned before rebuilding.
+Picker, viewport and undo history all disagreed, and the stack held an entry whose `redo()`
+did nothing.
+
+It cannot be fixed by reordering: `applyStack` **must** precede `loadPoseRig`, because
+fitting the skeleton to an already-posed mesh is the 33 cm bug from session 038. So the
+pose is now probed *before* the command is pushed; on failure the picker goes back and
+nothing is recorded. The in-command path also rebuilds on failure, so the surfaces agree
+even if a file disappears between the probe and the redo.
+
+### Also
+- `apply_` was guarded in one command and not the other. Made consistent — both unguarded,
+  because a null callback is a programming error and an undo that silently does nothing is
+  harder to diagnose than one that throws.
+- Two dead lines: an `if (before == id)` guard that cannot be true (QComboBox only emits on
+  a real change) and a map write that `push()`'s synchronous `redo()` already does. The
+  second mattered: two writers, and the redundant one is the one that goes stale.
+- All the new undo state is declared **above** `window`, matching the invariant this file
+  states — verified by the reviewer against the full capture list.
+
+### Verified this session
+- 329/329 in debug, release and ASan.
+- Merge semantics tested in all four combinations: same group same run, same group new run,
+  different group same run, and the undo target after a merge.
+- All 7 licence gates; clang-format clean; `mh_ui` → 0 `mh::core` symbols.
+
+### Next
+- Workspace presets and Save As still bypass the undo stack.
+- `reduceMotion()` returning true is still unexercised; VoiceOver on a real device.
+
+---
+
 ## 2026-08-30 19:26:40 — Session 044 · **200% text and reduce motion, and a fix for a problem I never demonstrated**
 
 ### What shipped

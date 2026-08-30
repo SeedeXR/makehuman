@@ -54,6 +54,15 @@ AssetPanel::AssetPanel(std::span<const foundation::AssetGroup> groups, QWidget* 
     column->addStretch(1);
 }
 
+void AssetPanel::setChoice(const QString& group, const QString& id) {
+    auto* picker = findChild<QComboBox*>(pickerName(group));
+    if (picker == nullptr) return;
+    const int index = picker->findData(id);
+    if (index < 0) return;
+    const QSignalBlocker block(picker);
+    picker->setCurrentIndex(index);
+}
+
 QString AssetPanel::choice(const QString& group) const {
     const auto* picker = findChild<const QComboBox*>(pickerName(group));
     if (picker == nullptr || picker->currentIndex() < 0) return {};

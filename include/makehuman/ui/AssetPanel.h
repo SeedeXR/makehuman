@@ -20,6 +20,13 @@ class AssetPanel : public QWidget {
 public:
     explicit AssetPanel(std::span<const foundation::AssetGroup> groups, QWidget* parent = nullptr);
 
+    /// Selects @p id in @p group **without emitting**, so undo can restore a
+    /// choice without the panel reporting it as a fresh one.
+    ///
+    /// An unknown id leaves the selection alone: a picker showing nothing is
+    /// worse than one showing the previous value.
+    void setChoice(const QString& group, const QString& id);
+
     /// The selected id, or empty when the group is unknown or has no selection.
     [[nodiscard]] QString choice(const QString& group) const;
 

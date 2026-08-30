@@ -29,6 +29,7 @@
 #include <QCommandLineParser>
 #include <QFileDialog>
 #include <QFont>
+#include <QHash>
 #include <QMessageBox>
 #include <QPixmap>
 #include <QTimer>
@@ -614,6 +615,7 @@ int main(int argc, char** argv) {
     // applyModifier, so these must outlive it. `panel` and `shell` are filled
     // in once the window exists.
     int mergeGroup               = 0;
+    mh::ui::AssetPanel* assets   = nullptr;
     mh::ui::ModifierPanel* panel = nullptr;
     mh::ui::MainWindow* shell    = nullptr;
     const auto applyModifier     = [&](const QString& id, float value) {
@@ -626,6 +628,41 @@ int main(int argc, char** argv) {
         // has to come after it or the pose is thrown away on every change.
         rebuildInto(*shell);
     };
+
+    // Skin and pose go through the undo stack too, so Cmd+Z means the same
+    // thing whichever panel the user last touched.
+    const auto applyChoice = [&](const QString& group, const QString& id) {
+        assets->setChoice(group, id);  // does not emit; see AssetPanel::setChoice
+        if (group == QLatin1String("Skin")) {
+            shell->setLitsphere(id.toStdString());
+            return;
+        }
+        if (group != QLatin1String("Pose")) return;
+        // Back to the morph base FIRST. loadPoseRig fits the skeleton to
+        // whatever the mesh currently holds, and the mesh is left posed after
+        // every rebuild -- so switching pose to pose was conjugating into the
+        // previous pose's rest frame. Measured error: 33 cm maximum.
+        human.applyStack(*mesh, targets);
+        PoseRig next;
+        if (!loadPoseRig(*mesh, id.toStdString(), next)) {
+            // applyStack has already reset the mesh to its morph base, so
+            // returning here would leave the viewport showing the old pose over
+            // an unposed mesh -- three surfaces disagreeing. Rebuild with the
+            // rig we still have so at least they agree.
+            //
+            // The order cannot be swapped: applyStack must precede loadPoseRig,
+            // because fitting the skeleton to an already-posed mesh is the 33 cm
+            // bug from session 038.
+            rebuildInto(*shell);
+            return;
+        }
+        rig = std::move(next);
+        rebuildInto(*shell);
+    };
+
+    // What each picker last settled on, so a command knows where to go back to.
+    // Seeded after the panel exists; see below.
+    QHash<QString, QString> currentChoice;
 
     mh::ui::MainWindow window(parser.value(shaderOpt).toStdString());
 
@@ -662,8 +699,12 @@ int main(int argc, char** argv) {
 
     // The Materials dock: skin and pose. Both re-run the same rebuild the
     // sliders do, so the three controls cannot disagree about what is shown.
-    auto* assets = new mh::ui::AssetPanel(assetGroups);
+    assets = new mh::ui::AssetPanel(assetGroups);
     window.setMaterialsWidget(assets);
+    for (const auto& group : assetGroups) {
+        const QString name = QString::fromStdString(group.name);
+        currentChoice.insert(name, assets->choice(name));
+    }
     // Taken from the picker, so the viewport and the panel cannot start out
     // disagreeing about which skin is shown.
     const QString skin = assets->choice(QStringLiteral("Skin"));
@@ -676,24 +717,32 @@ int main(int argc, char** argv) {
     }
     window.setLitsphere(skin.toStdString());
 
-    QObject::connect(assets, &mh::ui::AssetPanel::chosen,
-                     [&](const QString& group, const QString& id) {
-                         if (group == QLatin1String("Skin")) {
-                             window.setLitsphere(id.toStdString());
-                             return;
-                         }
-                         if (group != QLatin1String("Pose")) return;
-                         // Back to the morph base FIRST. loadPoseRig fits the
-                         // skeleton to whatever the mesh currently holds, and the
-                         // mesh is left posed after every rebuild -- so switching
-                         // pose to pose was conjugating into the previous pose's
-                         // rest frame. Measured error: 33 cm maximum.
-                         human.applyStack(*mesh, targets);
-                         PoseRig next;
-                         if (!loadPoseRig(*mesh, id.toStdString(), next)) return;
-                         rig = std::move(next);
-                         rebuildInto(window);
-                     });
+    QObject::connect(
+        assets, &mh::ui::AssetPanel::chosen, [&](const QString& group, const QString& id) {
+            // No `before == id` guard: QComboBox only emits on an
+            // actual index change and currentChoice mirrors it, so
+            // they cannot be equal. And no insert here -- push()
+            // runs redo() synchronously, and the callback below
+            // writes the map. Two writers would let one go stale.
+            const QString before = currentChoice.value(group);
+
+            // A pose that will not load must not become an undo
+            // entry that does nothing. Try it first; on failure put
+            // the picker back and record nothing.
+            if (group == QLatin1String("Pose") && id != QLatin1String("rest")) {
+                PoseRig probe;
+                if (!loadPoseRig(*mesh, id.toStdString(), probe)) {
+                    assets->setChoice(group, before);
+                    return;
+                }
+            }
+
+            window.undoStack()->push(new mh::ui::ChoiceChangeCommand(
+                group, before, id, mergeGroup, [&](const QString& g, const QString& value) {
+                    currentChoice.insert(g, value);
+                    applyChoice(g, value);
+                }));
+        });
 
     window.setDocumentPath(documentPath);
 

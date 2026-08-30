@@ -46,4 +46,42 @@ private:
     std::function<void(const QString&, float)> apply_;
 };
 
+/// One named choice, undoable -- a skin, a pose, later a garment.
+///
+/// Separate from ValueChangeCommand rather than a template over it: the payload
+/// is a string, and the shared surface is three short methods. A template would
+/// force the merge logic into the header and need `if constexpr` for the one
+/// real difference.
+///
+/// **Consecutive choices in the same group merge**, like a drag. This is a
+/// deliberate behaviour choice, not an accident: arrow-keying a closed combo
+/// emits one change *per keystroke* (measured: three Down presses give three
+/// changes), so without merging a traversal that ends where it started costs
+/// three undo steps and three full skeleton reloads. Trying several skins to
+/// compare them is one decision -- "I changed the skin" -- and the caller ends
+/// the group when a different kind of edit happens.
+class ChoiceChangeCommand : public QUndoCommand {
+public:
+    /// @param mergeId consecutive commands sharing a key AND a mergeId collapse.
+    /// @param apply   called with (key, id) for both undo and redo. Must be
+    ///                callable -- a null one is a programming error and throws
+    ///                rather than silently doing nothing. It must not push
+    ///                further commands.
+    ChoiceChangeCommand(QString key, QString from, QString to, int mergeId,
+                        std::function<void(const QString&, const QString&)> apply);
+
+    void undo() override;
+    void redo() override;
+
+    [[nodiscard]] int id() const override;
+    bool mergeWith(const QUndoCommand* other) override;
+
+private:
+    QString key_;
+    QString from_;
+    QString to_;
+    int mergeId_{};
+    std::function<void(const QString&, const QString&)> apply_;
+};
+
 }  // namespace mh::ui

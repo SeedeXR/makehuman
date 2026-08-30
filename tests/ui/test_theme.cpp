@@ -1301,3 +1301,67 @@ TEST_CASE("reduce motion is read from the system and drops the dock animation", 
     // tests run under the offscreen platform.
     (void)mh::ui::theme::reduceMotion();
 }
+
+TEST_CASE("a choice undoes and redoes, and choices never merge", "[undo]") {
+    QStringList applied;
+    const auto apply = [&](const QString& key, const QString& id) {
+        applied << (key + QLatin1Char('=') + id);
+    };
+
+    QUndoStack stack;
+    stack.push(new mh::ui::ChoiceChangeCommand(QStringLiteral("Skin"), QStringLiteral("caucasian"),
+                                               QStringLiteral("african"), 0, apply));
+    CHECK(applied == QStringList{QStringLiteral("Skin=african")});
+
+    stack.undo();
+    CHECK(applied.last() == QStringLiteral("Skin=caucasian"));
+    stack.redo();
+    CHECK(applied.last() == QStringLiteral("Skin=african"));
+
+    // Same group, same run: merges. Arrow-keying a closed combo emits one
+    // change per keystroke (measured: three Down presses, three changes), so
+    // without this a traversal ending where it started costs three undo steps
+    // and three full skeleton reloads.
+    stack.push(new mh::ui::ChoiceChangeCommand(QStringLiteral("Skin"), QStringLiteral("african"),
+                                               QStringLiteral("asian"), 0, apply));
+    CHECK(stack.count() == 1);
+    // One undo goes back to where the run began, not to the middle of it.
+    stack.undo();
+    CHECK(applied.last() == QStringLiteral("Skin=caucasian"));
+    stack.redo();
+    CHECK(applied.last() == QStringLiteral("Skin=asian"));
+
+    // A different group never merges, even in the same run -- undoing a pose
+    // must not move the skin.
+    stack.push(new mh::ui::ChoiceChangeCommand(QStringLiteral("Pose"), QStringLiteral("rest"),
+                                               QStringLiteral("tpose"), 0, apply));
+    CHECK(stack.count() == 2);
+    stack.undo();
+    CHECK(applied.last() == QStringLiteral("Pose=rest"));
+
+    // A new run does not merge with the previous one.
+    stack.push(new mh::ui::ChoiceChangeCommand(QStringLiteral("Skin"), QStringLiteral("asian"),
+                                               QStringLiteral("caucasian"), 1, apply));
+    CHECK(stack.count() == 2);  // the redo tail was dropped, then one pushed
+}
+
+TEST_CASE("setChoice selects without emitting", "[assets]") {
+    // Restored API: it was cut for having no production caller, and undo is
+    // that caller -- restoring a choice must not report it as a fresh one.
+    const auto groups = toyAssets();
+    mh::ui::AssetPanel panel(groups);
+
+    int emissions = 0;
+    QObject::connect(&panel, &mh::ui::AssetPanel::chosen,
+                     [&](const QString&, const QString&) { ++emissions; });
+
+    panel.setChoice(QStringLiteral("Skin"), QStringLiteral("/l/african.png"));
+    CHECK(panel.choice(QStringLiteral("Skin")) == QStringLiteral("/l/african.png"));
+    CHECK(emissions == 0);
+
+    // An unknown id leaves the selection alone rather than clearing it.
+    panel.setChoice(QStringLiteral("Skin"), QStringLiteral("/l/nope.png"));
+    CHECK(panel.choice(QStringLiteral("Skin")) == QStringLiteral("/l/african.png"));
+    panel.setChoice(QStringLiteral("Nope"), QStringLiteral("x"));
+    CHECK(emissions == 0);
+}

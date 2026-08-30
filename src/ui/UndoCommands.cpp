@@ -10,11 +10,13 @@ ValueChangeCommand::ValueChangeCommand(QString key, float from, float to, int me
 }
 
 void ValueChangeCommand::undo() {
-    if (apply_) apply_(key_, from_);
+    // Unguarded on purpose: a null callback is a programming error, and an undo
+    // that silently does nothing is harder to diagnose than one that throws.
+    apply_(key_, from_);
 }
 
 void ValueChangeCommand::redo() {
-    if (apply_) apply_(key_, to_);
+    apply_(key_, to_);
 }
 
 int ValueChangeCommand::id() const {
@@ -33,6 +35,37 @@ bool ValueChangeCommand::mergeWith(const QUndoCommand* other) {
     // newer `to`. Undo then goes all the way back in one step.
     to_ = value->to_;
     return true;
+}
+
+ChoiceChangeCommand::ChoiceChangeCommand(QString key, QString from, QString to, int mergeId,
+                                         std::function<void(const QString&, const QString&)> apply)
+    : key_(std::move(key)),
+      from_(std::move(from)),
+      to_(std::move(to)),
+      mergeId_(mergeId),
+      apply_(std::move(apply)) {
+    setText(QObject::tr("Change %1").arg(key_));
+}
+
+int ChoiceChangeCommand::id() const {
+    return mergeId_;
+}
+
+bool ChoiceChangeCommand::mergeWith(const QUndoCommand* other) {
+    const auto* choice = dynamic_cast<const ChoiceChangeCommand*>(other);
+    if (choice == nullptr || choice->key_ != key_ || choice->mergeId_ != mergeId_) return false;
+    // Keep where the run started and take the newest destination, so one undo
+    // returns to the skin the user had before they started comparing.
+    to_ = choice->to_;
+    return true;
+}
+
+void ChoiceChangeCommand::undo() {
+    apply_(key_, from_);
+}
+
+void ChoiceChangeCommand::redo() {
+    apply_(key_, to_);
 }
 
 }  // namespace mh::ui

@@ -544,7 +544,15 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       to 291 presses of ⌘Z.
       Opening a document clears the stack: kept, ⌘Z wrote the *previous*
       character's values into the newly loaded one.
-- [ ] Undo for pose, skin and workspace changes — only modifiers are undoable.
+- [x] **Undo for pose and skin** — `ui::ChoiceChangeCommand`. Consecutive choices
+      in the same group **merge**, deliberately: arrow-keying a closed combo
+      emits one change *per keystroke* (measured: three Down presses give three
+      `currentIndexChanged` — and `activated` behaves identically, so switching
+      signals does not help), so without merging a traversal that ends where it
+      started costs three undo steps and three full skeleton reloads.
+      A pose that fails to load is now probed *before* the command is pushed, so
+      it never becomes an undo entry that does nothing.
+- [ ] Undo for workspace changes — presets and Save As bypass the stack.
 - [ ] Live language switching; **working** RTL
 - [~] **Accessibility pass** (`design.md` §9) — accessible names on every control
       (a sweep test fails if a new one arrives unnamed; 14 controls covered),
