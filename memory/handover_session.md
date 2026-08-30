@@ -4,6 +4,66 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-30 16:12:33 — Session 042 · **undo/redo, and an edit that deleted working code while the suite stayed green**
+
+### What shipped
+- **`ui::ValueChangeCommand` + `QUndoStack`**, Edit menu on the platform ⌘Z/⇧⌘Z. The
+  command holds a key, two floats and a callback and knows nothing about modifiers, which
+  is what lets undo live in Apache-2.0 `mh_ui`.
+- Drag merging via `mergeId`, `ModifierPanel::editingFinished` to close the group, and
+  `resetInProgress` to bracket a Reset into one macro.
+- **`app_smoke` ctest** — see below.
+
+### The mistake worth the whole entry
+A scripted edit silently deleted ~35 lines: the entire Materials-dock wiring, including
+`setLitsphere`. **All 328 tests still passed.** Only running the binary caught it —
+`--screenshot` reported `viewport error: texture missing`, and `git stash` confirmed the
+same command worked before my change.
+
+That is the third session running where a `str.replace` did something other than what I
+believed, and the first where it destroyed working code rather than failing to apply.
+The suite could not help because **nothing tested `main.cpp`'s wiring at all**. Added
+`app_smoke`: a ctest that runs the real binary through `--load --set --pose --export`.
+It is deterministic on a build box because `--export` needs no window — and it explicitly
+does *not* cover the window path, which is what actually broke. Recorded as a known gap.
+
+### Review findings fixed
+- **The undo stack survived File > Open.** Drag Gender to 1.0, open another character,
+  press ⌘Z, and the *previous* document's 0.5 was written into the new one and saved.
+  The stack is cleared on load now.
+- **`editingFinished` fired before the `valueChanged` it was meant to close.**
+  `QAbstractSlider::actionTriggered` is emitted *before* the value lands, measured as
+  `finished,changed`. So a keyboard nudge followed by a drag became one undo step — the
+  mechanism failed on the one path it was added for, since `sliderReleased` already
+  covered drags. `actionTriggered` now only records intent; the emit happens after
+  `valueChanged`.
+- **Reset pushed one command per slider and never closed the group** — up to 291 presses
+  of ⌘Z to undo one click, and the next drag merged into the last reset command.
+- **The test could not catch either**: it emitted the signals by hand, so it only proved
+  the `connect`s existed. It drives `triggerAction` now and asserts the *order*.
+- Ponytail proved the `applying` re-entrancy guard was dead code — `ModifierPanel::setValue`
+  wraps the slider in a `QSignalBlocker`, so the callback cannot come back round. Deleted
+  rather than made RAII; the existing "setValue moves the slider without emitting" test
+  pins the invariant.
+- Undo state moved above `window`, matching the invariant this file states twice.
+
+### Known and accepted
+A drag out and back leaves a `from_ == to_` command, so Edit > Undo can be enabled and do
+nothing visible. Qt cannot un-push a command, so removing it needs care; recorded rather
+than papered over.
+
+### Verified this session
+- 329/329 in debug, release and ASan.
+- The app re-verified by hand after the restore: plain, `--load`, both skins
+  (mean luminance 152.3 / 125.6) and `--workspace Export`.
+- All 7 licence gates; clang-format clean; `mh_ui` → 0 `mh::core` symbols.
+
+### Next
+- Undo covers modifiers only; pose, skin and workspace changes are not undoable.
+- M8 remainder: task registry, accessibility pass, symbolic shortcut persistence.
+
+---
+
 ## 2026-08-30 14:36:12 — Session 041 · **workspaces, and a path traversal I nearly shipped**
 
 ### What shipped

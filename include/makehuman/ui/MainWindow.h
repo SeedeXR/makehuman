@@ -9,6 +9,8 @@
 #include <filesystem>
 #include <memory>
 
+class QUndoStack;
+
 namespace mh::ui {
 
 class ViewportWidget;
@@ -35,6 +37,12 @@ public:
     void setMaterialsWidget(QWidget* widget);
 
     [[nodiscard]] ViewportWidget* viewport() const;
+
+    /// The window's undo stack, already wired to Edit > Undo/Redo.
+    ///
+    /// A command's apply callback must not push further commands: it runs
+    /// during undo(), and pushing from there would record the undo itself.
+    [[nodiscard]] QUndoStack* undoStack() const;
 
     /// Shown in the title bar after a load or save.
     void setDocumentPath(const QString& path);

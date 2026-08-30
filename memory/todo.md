@@ -531,7 +531,20 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 - [ ] Task registry replacing filename-sort plugin ordering
 - [ ] Symbolic shortcut/mouse persistence (not raw Qt enum ints)
 - [ ] Port the 50 task views (tracked as a sub-checklist — `architecture.md` §I.8)
-- [ ] Undo/redo
+- [x] **Undo/redo** — `ui::ValueChangeCommand` on a `QUndoStack`, Edit menu with the
+      platform ⌘Z/⇧⌘Z. Generic by design: it holds a key, two floats and a
+      callback, so undo lives in Apache-2.0 `mh_ui` while the AGPL side says
+      what the key means.
+      A drag merges into one step via `mergeId`; `editingFinished` closes the
+      group. **`QAbstractSlider::actionTriggered` fires BEFORE the value lands**,
+      so closing the group there closed it one edit early and the next drag
+      merged into the keyboard step — the signal is emitted after
+      `valueChanged` now.
+      Reset is bracketed by `resetInProgress` into one macro; it used to cost up
+      to 291 presses of ⌘Z.
+      Opening a document clears the stack: kept, ⌘Z wrote the *previous*
+      character's values into the newly loaded one.
+- [ ] Undo for pose, skin and workspace changes — only modifiers are undoable.
 - [ ] Live language switching; **working** RTL
 - [ ] Accessibility pass: VoiceOver, keyboard-only, contrast, 200% text
 

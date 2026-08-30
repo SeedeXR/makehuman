@@ -21,6 +21,7 @@
 #include <QSaveFile>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QUndoStack>
 
 #include <QStatusBar>
 #include <algorithm>
@@ -64,6 +65,7 @@ QSettings workspaceSettings() {
 struct MainWindow::Impl {
     ViewportWidget* viewport{};
     QMenu* savedMenu{};
+    QUndoStack* undo{};
     /// The shipped layout, captured before any saved one is restored. Resetting
     /// is then just restoring it, which also covers docks added later -- the
     /// manual re-dock it replaces did not.
@@ -114,6 +116,19 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, QWidget* parent)
                   &MainWindow::saveRequested);
     addFileAction(QStringLiteral("file.saveAs"), tr("Save As…"), QKeySequence::SaveAs, "upload",
                   &MainWindow::saveAsRequested);
+
+    // Qt builds the actions, so the text follows the command ("Undo Change
+    // head/head-oval") and they enable and disable themselves with the stack.
+    d_->undo            = new QUndoStack(this);
+    QMenu* edit         = menuBar()->addMenu(tr("&Edit"));
+    QAction* undoAction = d_->undo->createUndoAction(this, tr("Undo"));
+    undoAction->setObjectName(QStringLiteral("edit.undo"));
+    undoAction->setShortcut(QKeySequence::Undo);
+    QAction* redoAction = d_->undo->createRedoAction(this, tr("Redo"));
+    redoAction->setObjectName(QStringLiteral("edit.redo"));
+    redoAction->setShortcut(QKeySequence::Redo);
+    edit->addAction(undoAction);
+    edit->addAction(redoAction);
 
     QMenu* workspace = menuBar()->addMenu(tr("&Workspace"));
     int index        = 0;
@@ -207,6 +222,10 @@ void MainWindow::setModellingWidget(QWidget* widget) {
 
 void MainWindow::setMaterialsWidget(QWidget* widget) {
     installInDock(findChild<QDockWidget*>(QStringLiteral("dock.materials")), widget);
+}
+
+QUndoStack* MainWindow::undoStack() const {
+    return d_->undo;
 }
 
 QString MainWindow::workspaceDirectory() {

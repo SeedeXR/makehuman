@@ -11,11 +11,13 @@
 #include "makehuman/ui/ModifierPanel.h"
 #include "makehuman/ui/PanelTitleBar.h"
 #include "makehuman/ui/Theme.h"
+#include "makehuman/ui/UndoCommands.h"
 #include "makehuman/ui/Workspace.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <QAbstractSlider>
 #include <QAction>
 #include <QComboBox>
 #include <QDockWidget>
@@ -33,6 +35,7 @@
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QToolButton>
+#include <QUndoStack>
 
 #include <memory>
 
@@ -868,4 +871,166 @@ TEST_CASE("a workspace that restores nothing is a failure, not a success", "[wor
 
     object.remove(QStringLiteral("state"));
     CHECK_FALSE(mh::ui::workspaceFromJson(object).has_value());
+}
+
+// --- undo/redo ---------------------------------------------------------------
+
+TEST_CASE("a value change undoes and redoes through its callback", "[undo]") {
+    QString gotKey;
+    float gotValue   = -1.0F;
+    int calls        = 0;
+    const auto apply = [&](const QString& key, float v) {
+        gotKey   = key;
+        gotValue = v;
+        ++calls;
+    };
+
+    QUndoStack stack;
+    stack.push(new mh::ui::ValueChangeCommand(QStringLiteral("head/oval"), 0.0F, 0.8F, 0, apply));
+
+    // QUndoStack calls redo() on push, so the value is applied immediately.
+    CHECK(calls == 1);
+    CHECK(gotKey == QStringLiteral("head/oval"));
+    CHECK_THAT(d(gotValue), WithinAbs(0.8, 1e-6));
+
+    stack.undo();
+    CHECK_THAT(d(gotValue), WithinAbs(0.0, 1e-6));
+    stack.redo();
+    CHECK_THAT(d(gotValue), WithinAbs(0.8, 1e-6));
+    CHECK(stack.count() == 1);
+}
+
+TEST_CASE("a drag collapses to one undo step, separate edits do not", "[undo]") {
+    float value      = 0.0F;
+    const auto apply = [&](const QString&, float v) { value = v; };
+
+    QUndoStack stack;
+    const QString key = QStringLiteral("head/oval");
+    // One drag: many valueChanged, same merge group.
+    stack.push(new mh::ui::ValueChangeCommand(key, 0.0F, 0.2F, 0, apply));
+    stack.push(new mh::ui::ValueChangeCommand(key, 0.2F, 0.5F, 0, apply));
+    stack.push(new mh::ui::ValueChangeCommand(key, 0.5F, 0.9F, 0, apply));
+    CHECK(stack.count() == 1);
+
+    // Undo goes all the way back to where the drag started, not to 0.5.
+    stack.undo();
+    CHECK_THAT(d(value), WithinAbs(0.0, 1e-6));
+    stack.redo();
+    CHECK_THAT(d(value), WithinAbs(0.9, 1e-6));
+
+    // A new merge group is a new step, so two deliberate nudges stay separate.
+    stack.push(new mh::ui::ValueChangeCommand(key, 0.9F, 1.0F, 1, apply));
+    CHECK(stack.count() == 2);
+    stack.undo();
+    CHECK_THAT(d(value), WithinAbs(0.9, 1e-6));
+}
+
+TEST_CASE("different keys never merge, even in the same group", "[undo]") {
+    float oval       = 0.0F;
+    float age        = 0.0F;
+    const auto apply = [&](const QString& key, float v) {
+        (key == QStringLiteral("head/oval") ? oval : age) = v;
+    };
+
+    QUndoStack stack;
+    stack.push(new mh::ui::ValueChangeCommand(QStringLiteral("head/oval"), 0.0F, 0.4F, 0, apply));
+    stack.push(new mh::ui::ValueChangeCommand(QStringLiteral("head/age"), 0.0F, 0.6F, 0, apply));
+    // Merging these would make undoing the second slider move the first.
+    CHECK(stack.count() == 2);
+
+    stack.undo();
+    CHECK_THAT(d(age), WithinAbs(0.0, 1e-6));
+    CHECK_THAT(d(oval), WithinAbs(0.4, 1e-6));
+}
+
+TEST_CASE("the Edit menu has undo and redo on the platform shortcuts", "[undo]") {
+    useShippedIcons();
+    mh::ui::MainWindow w(MH_SHADER_DIR);
+    REQUIRE(w.undoStack() != nullptr);
+
+    auto* undo = w.findChild<QAction*>(QStringLiteral("edit.undo"));
+    auto* redo = w.findChild<QAction*>(QStringLiteral("edit.redo"));
+    REQUIRE(undo != nullptr);
+    REQUIRE(redo != nullptr);
+    CHECK(undo->shortcut() == QKeySequence(QKeySequence::Undo));
+    CHECK(redo->shortcut() == QKeySequence(QKeySequence::Redo));
+
+    // Qt disables them on an empty stack and enables them as it fills, which is
+    // the behaviour createUndoAction exists to provide.
+    CHECK_FALSE(undo->isEnabled());
+    CHECK_FALSE(redo->isEnabled());
+
+    float ignored = 0.0F;
+    w.undoStack()->push(new mh::ui::ValueChangeCommand(
+        QStringLiteral("k"), 0.0F, 1.0F, 0, [&](const QString&, float v) { ignored = v; }));
+    CHECK(undo->isEnabled());
+    CHECK_FALSE(redo->isEnabled());
+    w.undoStack()->undo();
+    CHECK(redo->isEnabled());
+    CHECK_THAT(d(ignored), WithinAbs(0.0, 1e-6));
+}
+
+TEST_CASE("editingFinished lands AFTER the value it closes", "[undo]") {
+    const auto layout = toyLayout();
+    mh::ui::ModifierPanel panel(layout);
+
+    // Order matters and emitting the signals by hand cannot show it:
+    // QAbstractSlider::actionTriggered fires BEFORE the value lands, so closing
+    // the merge group there closed it one edit too early and the next drag
+    // merged into the keyboard step.
+    QStringList order;
+    QObject::connect(&panel, &mh::ui::ModifierPanel::valueChanged,
+                     [&](const QString&, float) { order << QStringLiteral("changed"); });
+    QObject::connect(&panel, &mh::ui::ModifierPanel::editingFinished,
+                     [&] { order << QStringLiteral("finished"); });
+
+    auto* slider = panel.findChild<QSlider*>(QStringLiteral("slider:head/head-oval"));
+    REQUIRE(slider != nullptr);
+
+    // triggerAction drives the real path a keyboard step takes.
+    slider->triggerAction(QAbstractSlider::SliderSingleStepAdd);
+    REQUIRE(order.size() == 2);
+    CHECK(order[0] == QStringLiteral("changed"));
+    CHECK(order[1] == QStringLiteral("finished"));
+
+    // A drag in progress must not close the group.
+    order.clear();
+    slider->triggerAction(QAbstractSlider::SliderMove);
+    CHECK_FALSE(order.contains(QStringLiteral("finished")));
+
+    // A programmatic setValue is not a user edit at all.
+    order.clear();
+    panel.setValue(QStringLiteral("head/head-oval"), 0.5F);
+    CHECK(order.isEmpty());
+
+    // Releasing after a drag closes it.
+    order.clear();
+    emit slider->sliderReleased();
+    CHECK(order == QStringList{QStringLiteral("finished")});
+}
+
+TEST_CASE("Reset is bracketed so it can be one undo step", "[undo]") {
+    const auto layout = toyLayout();
+    mh::ui::ModifierPanel panel(layout);
+
+    QList<bool> brackets;
+    int changes = 0;
+    QObject::connect(&panel, &mh::ui::ModifierPanel::resetInProgress,
+                     [&](bool active) { brackets << active; });
+    QObject::connect(&panel, &mh::ui::ModifierPanel::valueChanged,
+                     [&](const QString&, float) { ++changes; });
+
+    panel.setValue(QStringLiteral("head/head-oval"), 0.9F);
+    panel.setValue(QStringLiteral("head/head-age-decr|incr"), -0.7F);
+
+    auto* reset = panel.findChild<QPushButton*>(QStringLiteral("modifiers.reset"));
+    REQUIRE(reset != nullptr);
+    reset->click();
+
+    // Open before the first change and close after the last, so the app can
+    // wrap the lot in one macro rather than leaving 291 undo steps.
+    REQUIRE(brackets.size() == 2);
+    CHECK(brackets[0] == true);
+    CHECK(brackets[1] == false);
+    CHECK(changes > 0);
 }

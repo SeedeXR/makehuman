@@ -23,6 +23,7 @@
 #include "makehuman/ui/MainWindow.h"
 #include "makehuman/ui/ModifierPanel.h"
 #include "makehuman/ui/Theme.h"
+#include "makehuman/ui/UndoCommands.h"
 
 #include <QApplication>
 #include <QCommandLineParser>
@@ -31,6 +32,7 @@
 #include <QMessageBox>
 #include <QPixmap>
 #include <QTimer>
+#include <QUndoStack>
 #include "makehuman/ui/ViewportWidget.h"
 
 #include <QImage>
@@ -607,27 +609,59 @@ int main(int argc, char** argv) {
     // outlive it.
     QString documentPath = parser.value(loadOpt);
 
+    // Undo state, declared ABOVE `window` for the reason stated there: the
+    // QUndoStack is the window's child and every command holds a copy of
+    // applyModifier, so these must outlive it. `panel` and `shell` are filled
+    // in once the window exists.
+    int mergeGroup               = 0;
+    mh::ui::ModifierPanel* panel = nullptr;
+    mh::ui::MainWindow* shell    = nullptr;
+    const auto applyModifier     = [&](const QString& id, float value) {
+        // No re-entrancy guard: ModifierPanel::setValue blocks the slider's
+        // signals, so this cannot come back round through valueChanged. The
+        // "setValue moves the slider without emitting" test pins that.
+        panel->setValue(id, value);
+        human.setModifierValue(id.toStdString(), value);
+        // Order matters: the stack resets the mesh to its morph base, so posing
+        // has to come after it or the pose is thrown away on every change.
+        rebuildInto(*shell);
+    };
+
     mh::ui::MainWindow window(parser.value(shaderOpt).toStdString());
 
     // rm outlives the window, so the non-owning view stays valid.
     window.setMesh(rm.view());
 
-    auto* panel = new mh::ui::ModifierPanel(views);
+    shell = &window;
+    panel = new mh::ui::ModifierPanel(views);
     for (const auto& [id, v] : presets)
         panel->setValue(id, v);
     window.setModellingWidget(panel);
-    QObject::connect(panel, &mh::ui::ModifierPanel::valueChanged,
-                     [&](const QString& id, float value) {
-                         human.setModifierValue(id.toStdString(), value);
-                         // Order matters: the stack resets the mesh to its
-                         // morph base, so posing has to come after it or the
-                         // pose is silently thrown away every time a slider
-                         // moves.
-                         rebuildInto(window);
-                     });
 
-    // Skin and pose. Both re-run the same rebuild the sliders do, so the three
-    // controls cannot disagree about what is on screen.
+    // Closes the merge group, so a drag is one undo step but two deliberate
+    // nudges of the same slider are two.
+    QObject::connect(panel, &mh::ui::ModifierPanel::editingFinished, [&] { ++mergeGroup; });
+
+    // Reset touches every slider; a macro makes that one Ctrl+Z instead of 291.
+    QObject::connect(panel, &mh::ui::ModifierPanel::resetInProgress, [&](bool active) {
+        if (active) {
+            window.undoStack()->beginMacro(QObject::tr("Reset all sliders"));
+        } else {
+            window.undoStack()->endMacro();
+            ++mergeGroup;
+        }
+    });
+
+    QObject::connect(
+        panel, &mh::ui::ModifierPanel::valueChanged, [&](const QString& id, float value) {
+            const float before = human.modifierValue(id.toStdString());
+            if (before == value) return;  // nothing to record
+            window.undoStack()->push(
+                new mh::ui::ValueChangeCommand(id, before, value, mergeGroup, applyModifier));
+        });
+
+    // The Materials dock: skin and pose. Both re-run the same rebuild the
+    // sliders do, so the three controls cannot disagree about what is shown.
     auto* assets = new mh::ui::AssetPanel(assetGroups);
     window.setMaterialsWidget(assets);
     // Taken from the picker, so the viewport and the panel cannot start out
@@ -635,8 +669,8 @@ int main(int argc, char** argv) {
     const QString skin = assets->choice(QStringLiteral("Skin"));
     if (skin.isEmpty()) {
         std::fprintf(stderr,
-                     "no litspheres found in %s -- the viewport cannot shade "
-                     "anything without one\n",
+                     "no litspheres found in %s -- the viewport cannot shade anything "
+                     "without one\n",
                      (std::filesystem::path(MH_DATA_DIR) / "litspheres").string().c_str());
         return 1;
     }
@@ -650,11 +684,10 @@ int main(int argc, char** argv) {
                          }
                          if (group != QLatin1String("Pose")) return;
                          // Back to the morph base FIRST. loadPoseRig fits the
-                         // skeleton to whatever the mesh currently holds, and
-                         // the mesh is left posed after every rebuild -- so
-                         // switching pose to pose was conjugating into the
-                         // previous pose's rest frame. Measured error: 33 cm
-                         // maximum, 8 cm mean, across all 19,158 vertices.
+                         // skeleton to whatever the mesh currently holds, and the
+                         // mesh is left posed after every rebuild -- so switching
+                         // pose to pose was conjugating into the previous pose's
+                         // rest frame. Measured error: 33 cm maximum.
                          human.applyStack(*mesh, targets);
                          PoseRig next;
                          if (!loadPoseRig(*mesh, id.toStdString(), next)) return;
@@ -699,6 +732,11 @@ int main(int argc, char** argv) {
             window.viewport()->setCamera(c);
         }
         subdivided = loaded->subdivide;
+
+        // The history belongs to the document that produced it. Kept, Ctrl+Z
+        // would write the previous character's values into this one.
+        window.undoStack()->clear();
+        mergeGroup = 0;
 
         documentPath = file;
         window.setDocumentPath(file);

@@ -51,6 +51,21 @@ public:
 signals:
     void valueChanged(const QString& id, float value);
 
+    /// A drag finished, or a keyboard/wheel/page step settled. Undo uses this
+    /// to close the merge group: without it two deliberate nudges of the same
+    /// slider would collapse into one undo step.
+    ///
+    /// **Emitted after the corresponding valueChanged**, not before.
+    /// `QAbstractSlider::actionTriggered` fires *before* the value lands, so
+    /// closing the group there closed it one edit too early and the next drag
+    /// merged into the keyboard step.
+    void editingFinished();
+
+    /// Brackets resetAll(): true before the first change, false after the last.
+    /// The app turns that into one undo step instead of one per slider -- a
+    /// Reset used to cost up to 291 presses of Ctrl+Z to undo.
+    void resetInProgress(bool active);
+
 private:
     /// One labelled slider. Held by value in a list that is filled during
     /// construction and never touched again, which is what makes the plain
@@ -69,6 +84,9 @@ private:
     QList<QWidget*> sections_;
     /// Which tab each section belongs to, for hiding an emptied tab.
     QList<int> sectionTab_;
+    /// Set by actionTriggered, consumed by the valueChanged handler. A drag in
+    /// progress (SliderMove) does not close the group; anything else does.
+    bool endsEdit_{false};
 };
 
 }  // namespace mh::ui

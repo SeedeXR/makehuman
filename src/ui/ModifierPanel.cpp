@@ -3,6 +3,7 @@
 
 #include "makehuman/ui/Theme.h"
 
+#include <QAbstractSlider>
 #include <QHBoxLayout>
 #include <QHash>
 #include <QLabel>
@@ -121,11 +122,23 @@ ModifierPanel::ModifierPanel(std::span<const foundation::TaskViewSpec> views, QW
                 byId_.insert(QString::fromStdString(spec.id), index);
 
                 readout->setText(QString::number(static_cast<double>(spec.defaultValue), 'f', 2));
+                connect(slider, &QSlider::sliderReleased, this, &ModifierPanel::editingFinished);
+                // Keyboard and wheel changes never emit sliderReleased, so they
+                // would merge with whatever came next without this.
+                connect(slider, &QSlider::actionTriggered, this, [this](int action) {
+                    // actionTriggered fires BEFORE the value lands, so this only
+                    // records the intent; the handler below emits afterwards.
+                    endsEdit_ = action != QAbstractSlider::SliderMove;
+                });
                 connect(slider, &QSlider::valueChanged, this, [this, index](int tick) {
                     Row& r        = rows_[index];
                     const float v = fromTick(r.spec, tick);
                     r.readout->setText(QString::number(static_cast<double>(v), 'f', 2));
                     emit valueChanged(QString::fromStdString(r.spec.id), v);
+                    if (endsEdit_) {
+                        endsEdit_ = false;
+                        emit editingFinished();
+                    }
                 });
 
                 boxColumn->addWidget(rowWidget);
@@ -183,8 +196,13 @@ void ModifierPanel::setValue(const QString& id, float value) {
 }
 
 void ModifierPanel::resetAll() {
+    // Bracketed so the app can make this one undo step. Without it every
+    // non-default slider pushed its own command -- up to 291 of them -- and
+    // the next drag merged into the last one.
+    emit resetInProgress(true);
     for (Row& r : rows_)
         r.slider->setValue(toTick(r.spec, r.spec.defaultValue));
+    emit resetInProgress(false);
 }
 
 void ModifierPanel::filter(const QString& text) {

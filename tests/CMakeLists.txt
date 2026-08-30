@@ -104,5 +104,19 @@ if(MH_HAVE_RENDER)
         target_include_directories(mh_ui_tests SYSTEM PRIVATE ${_catch2_inc})
     endif()
     add_test(NAME ui COMMAND mh_ui_tests)
+
+    # The application binary itself. Nothing else covers main.cpp's wiring: a
+    # scripted edit once deleted the entire Materials-dock setup -- including
+    # setLitsphere -- and every one of the 328 tests still passed. Only running
+    # the program caught it.
+    #
+    # --export needs no window, so this is deterministic on a build box. It does
+    # NOT cover the window path; `makehuman --screenshot` does, and needs a real
+    # Metal device.
+    add_test(NAME app_smoke COMMAND makehuman
+             --load ${CMAKE_CURRENT_SOURCE_DIR}/golden/mhm/reference_save.mhm
+             --set macrodetails/Gender=1.0
+             --pose tpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_smoke.obj)
     set_tests_properties(ui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
