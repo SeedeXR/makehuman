@@ -4,6 +4,74 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-30 12:58:01 — Session 053 · **materials reach the exported file, and a test that passed before it should have**
+
+### What shipped
+A dressed export now carries a material per mesh. `WornProxy` loads the
+`.mhmat` its proxy names; the body loads `data/skins/default.mhmat`, which is
+exactly what the reference does (`legacy/python/apps/human.py:89`). OBJ gets two
+`newmtl` blocks and two `usemtl` directives; glTF gets two materials indexed per
+primitive, roughness derived from shininess (0.96 -> 0.04). `.fbx`, `.dae`,
+`.stl` and `.3mf` now pass the body material to `exportScene`, which had always
+taken one and never been given it.
+
+### Two mistakes of my own, both caught by checking rather than assuming
+**A test that passed before the feature existed.** I wrote "a referenced texture
+is copied next to the OBJ" and it went green immediately — because I had put the
+source texture in the same directory as the output, so "does it exist beside the
+.mtl" found the *source*. A test that passes before the implementation is not a
+test. Moved the source into its own directory; it then failed correctly, and
+passes for the right reason now.
+
+**A review finding I reported as applied had never landed.** The dead `= {}`
+default on `exportMesh` was still there: my scripted replacement had not matched
+because clang-format joined the lines, and the edit silently did nothing. This
+is the session-042 lesson verbatim — *verify a scripted edit by reading the file
+back, never by the command's exit line* — and I repeated it while explicitly
+knowing it. Applied and verified by reading back.
+
+### Review findings applied
+- **The all-or-nothing fallback was silent.** If a proxy's `.mhmat` fails, the
+  body loses the material it had — because both writers refuse a partly-
+  materialled scene, and rightly so: OBJ's `usemtl` is sticky, so a
+  material-less entry inherits the previous one's appearance. The trade is
+  correct; the silence was not. It now prints why.
+- **The `.mtl` named a texture nobody copied.** `map_Kd brown_eye.png` with no
+  file beside it — a dangling reference *this change introduced*, since before
+  it no `.mtl` existed at all. The writer copies now, as the reference does
+  (`shared/wavefront.py:278`), and fails loudly if the copy fails rather than
+  writing a broken file.
+- **Materials were deduped by POINTER.** Two proxies loading the same `.mhmat`
+  yield equal descriptions at different addresses, so an ordinary scene would
+  have been *refused*. Compared by value now. Not reachable with one proxy
+  group; the first pair of clothes sharing a material would have hit it.
+- Gave the material refusal its own `InconsistentMaterials` error kind instead
+  of borrowing `EmptyMesh`.
+
+### Confirmed correct, not changed
+`--skin` not affecting the exported material is **right**: it selects a
+litsphere, a viewport matcap with no PBR data. The reference has no such flag —
+it blends `skinmat_*.png` from the ethnicity modifiers
+(`apps/autoskinblender.py:52-60`). `data/skins/` ships only `default.mhmat`, so
+there is nothing else to pick. The confusion is in the flag's name, and renaming
+it is user-facing, so it is a todo to ask about rather than a silent change.
+
+### Verification
+- ctest **344/344 in debug and release**; format clean; **0** undefined
+  `mh::core` symbols across the four Apache-2.0 modules.
+- Ran the failure path deliberately (`chmod 000` on the eye `.mhmat`, restored):
+  it now reports the drop instead of printing "wrote" and exiting 0.
+- Verified the texture is really copied — 610 KB `brown_eye.png` beside the
+  output — not merely named.
+
+### Notes for next session
+- **glTF carries no textures at all**: no `images`, no `textures`, no
+  `baseColorTexture`. The eyes export **white**. Pre-existing, now visible, and
+  the most valuable remaining export gap.
+- `--skin` may deserve renaming to `--litsphere`; user-facing, so ask.
+
+---
+
 ## 2026-08-30 12:35:38 — Session 052 · **multi-mesh glTF, and a spec bug nothing had caught**
 
 ### What shipped

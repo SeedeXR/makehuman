@@ -81,7 +81,7 @@ if(MH_HAVE_RENDER)
     add_executable(mh_render_tests render/test_offscreen_render.cpp
                                    render/test_proxy_render.cpp)
     target_link_libraries(mh_render_tests
-        PRIVATE mh::core mh::render Catch2::Catch2WithMain mh::warnings mh::sanitize)
+        PRIVATE mh::core mh::render mh::io Catch2::Catch2WithMain mh::warnings mh::sanitize)
     target_compile_definitions(mh_render_tests PRIVATE
         MH_DATA_DIR="${MH_DATA_DIR}"
         MH_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders")

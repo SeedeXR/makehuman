@@ -3,6 +3,7 @@
 // The application. This is the AGPL side: it loads the mesh through mh::core
 // and hands the UI a plain view, which is what lets mh_ui and mh_render stay
 // Apache-2.0.
+#include "makehuman/core/Material.h"
 #include "makehuman/core/Mesh.h"
 #include "makehuman/core/Mhm.h"
 #include "makehuman/core/ObjReader.h"
@@ -252,6 +253,9 @@ struct WornProxy {
     mh::core::Mesh mesh;
     mh::core::RenderMesh rm;
     std::filesystem::path litsphere;
+    /// From the proxy's own `.mhmat`. Absent if it names none or it failed to
+    /// load; exporters then fall back to the scene default.
+    std::optional<mh::foundation::MaterialDesc> material;
 };
 
 /// Loads @p path and fits it to @p body once, so the caller gets something
@@ -276,7 +280,18 @@ std::optional<WornProxy> wearProxy(const std::filesystem::path& path, const mh::
         std::fprintf(stderr, "cannot load proxy geometry %s\n", proxy->objFile.string().c_str());
         return std::nullopt;
     }
-    WornProxy worn{std::move(*proxy), std::move(*mesh), {}, std::move(litsphere)};
+    WornProxy worn{std::move(*proxy), std::move(*mesh), {}, std::move(litsphere), std::nullopt};
+    if (!worn.proxy.materialFile.empty()) {
+        // A proxy exported with the body's skin looks like flesh-coloured
+        // clothing in every DCC tool, so this is worth reporting rather than
+        // silently defaulting.
+        if (auto mat = mh::core::loadMaterial(worn.proxy.materialFile)) {
+            worn.material = mat->desc();
+        } else {
+            std::fprintf(stderr, "cannot load proxy material %s: %s\n",
+                         worn.proxy.materialFile.string().c_str(), mat.error().message().c_str());
+        }
+    }
     worn.mesh.buildAdjacency();
     worn.rm = mh::core::RenderMesh::build(worn.mesh);
     // Said out loud, in the same spirit as "applied N targets": it is the only
@@ -425,11 +440,21 @@ mh::core::MhmFile documentFor(const mh::core::Human& human, const mh::core::MhmF
 }
 
 /// Writes the mesh in whichever format @p path's extension names.
+/// The body's own material, for export. The viewport shades with a litsphere,
+/// which carries no PBR data at all, so a `.mhmat` is what a DCC tool gets.
+std::optional<mh::foundation::MaterialDesc> bodyMaterial() {
+    const auto path = std::filesystem::path(MH_DATA_DIR) / "skins" / "default.mhmat";
+    if (auto mat = mh::core::loadMaterial(path)) return mat->desc();
+    std::fprintf(stderr, "cannot load %s; exporting without a body material\n",
+                 path.string().c_str());
+    return std::nullopt;
+}
+
 /// @param worn proxies to include. OBJ writes them as extra groups; the other
 ///        formats are still single-mesh, so they say what they are leaving out
 ///        rather than quietly exporting a dressed character naked.
 bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
-                const mh::core::RenderMesh& rm, const std::map<QString, WornProxy>& worn = {}) {
+                const mh::core::RenderMesh& rm, const std::map<QString, WornProxy>& worn) {
     std::string ext = path.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -443,11 +468,30 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
         return false;
     };
 
+    // Both writers refuse a scene where only some entries carry a material --
+    // OBJ's `usemtl` is sticky, so a material-less entry would silently inherit
+    // the previous one. So it is all or nothing, and if it is nothing the user
+    // hears about it: the body had a perfectly good material and lost it
+    // because something it was wearing did not.
+    const auto skin       = bodyMaterial();
+    const bool allDressed = skin.has_value() && std::ranges::all_of(worn, [](const auto& kv) {
+                                return kv.second.material.has_value();
+                            });
+    if (!allDressed && (skin.has_value() || !worn.empty())) {
+        std::fprintf(stderr, "exporting without materials: %s\n",
+                     skin.has_value() ? "something worn has none, and a partly-materialled scene "
+                                        "cannot be written"
+                                      : "the body skin could not be loaded");
+    }
+
     if (ext == ".obj") {
         std::vector<mh::io::ObjSceneEntry> scene;
-        scene.push_back({mesh.view(), "body", nullptr, {}});
+        scene.push_back({mesh.view(), "body", allDressed ? &*skin : nullptr, {}});
         for (const auto& [group, proxy] : worn) {
-            scene.push_back({proxy.mesh.view(), group.toLower().toStdString(), nullptr, {}});
+            scene.push_back({proxy.mesh.view(),
+                             group.toLower().toStdString(),
+                             allDressed ? &*proxy.material : nullptr,
+                             {}});
         }
         const auto r = mh::io::writeObjScene(path, scene);
         return report(r ? std::string{} : r.error().message());
@@ -470,9 +514,10 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     }
     if (ext == ".glb") {
         std::vector<mh::io::GltfSceneEntry> scene;
-        scene.push_back({rm.view(), "body"});
+        scene.push_back({rm.view(), "body", allDressed ? &*skin : nullptr});
         for (const auto& [group, proxy] : worn) {
-            scene.push_back({proxy.rm.view(), group.toLower().toStdString()});
+            scene.push_back({proxy.rm.view(), group.toLower().toStdString(),
+                             allDressed ? &*proxy.material : nullptr});
         }
         const auto r = mh::io::writeGlbScene(path, scene);
         return report(r ? std::string{} : r.error().message());
@@ -481,19 +526,23 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     // PLY is deliberately absent -- assimp 6.0.4 writes corrupt faces for any
     // mesh with UVs, and every mesh here has them (SceneIO.h).
     if (ext == ".fbx") {
-        const auto r = mh::io::exportScene(path, rm.view(), mh::io::SceneFormat::FbxBinary);
+        const auto r = mh::io::exportScene(path, rm.view(), mh::io::SceneFormat::FbxBinary, {},
+                                           skin ? &*skin : nullptr);
         return report(r ? std::string{} : r.error().message());
     }
     if (ext == ".dae") {
-        const auto r = mh::io::exportScene(path, rm.view(), mh::io::SceneFormat::Collada);
+        const auto r = mh::io::exportScene(path, rm.view(), mh::io::SceneFormat::Collada, {},
+                                           skin ? &*skin : nullptr);
         return report(r ? std::string{} : r.error().message());
     }
     if (ext == ".stl") {
-        const auto r = mh::io::exportScene(path, rm.view(), mh::io::SceneFormat::StlBinary);
+        const auto r = mh::io::exportScene(path, rm.view(), mh::io::SceneFormat::StlBinary, {},
+                                           skin ? &*skin : nullptr);
         return report(r ? std::string{} : r.error().message());
     }
     if (ext == ".3mf") {
-        const auto r = mh::io::exportScene(path, rm.view(), mh::io::SceneFormat::ThreeMf);
+        const auto r = mh::io::exportScene(path, rm.view(), mh::io::SceneFormat::ThreeMf, {},
+                                           skin ? &*skin : nullptr);
         return report(r ? std::string{} : r.error().message());
     }
     std::fprintf(stderr, "unknown export extension \"%s\"\n", ext.c_str());

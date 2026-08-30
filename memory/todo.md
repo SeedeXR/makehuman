@@ -592,11 +592,25 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 - [ ] Multi-mesh for `.usda`, `.fbx` and the assimp `.dae`/`.stl`/`.3mf` paths.
       Still single-mesh, and they say on stderr what they omit. `exportScene`
       takes one `RenderView`.
-- [ ] **Proxy materials.** Both multi-mesh writers take a material per entry,
-      but the app passes `nullptr` for every one, so body and proxies share the
-      default. `WornProxy` carries no `MaterialDesc` — the `.mhmat` beside each
-      proxy needs loading and wiring before the per-entry material path does
-      anything for a real export.
+- [x] **Proxy materials.** `WornProxy` loads the `.mhmat` its proxy names; the
+      body loads `data/skins/default.mhmat` (which is what the reference does,
+      `apps/human.py:89`). A dressed export carries `DefaultSkin` on the body
+      and `Eye_brown` on the eyes, in OBJ *and* glTF, and the `.mtl`'s texture
+      is now **copied** beside the output — the writer used to name a file it
+      never wrote. `.fbx`/`.dae`/`.stl`/`.3mf` get the body material too.
+      All-or-nothing, because both writers refuse a partly-materialled scene;
+      when it falls back it now says so instead of reporting plain success.
+- [ ] **glTF carries no textures.** `writeGlbScene` emits no `images`,
+      `textures` or `baseColorTexture`, so the eyes export **white** rather than
+      brown. Pre-existing, but visible now that materials reach the file. Needs
+      image embedding in the GLB (or `.gltf` + sidecar). The single most
+      valuable remaining export gap.
+- [ ] Consider renaming `--skin` to `--litsphere` (keeping `--skin` as an
+      alias). It selects a viewport matcap, not a material: `--skin african`
+      still exports `DefaultSkin`, which is correct but reads as a bug. The
+      reference does not have the flag at all — it derives the litsphere from
+      the ethnicity modifiers (`apps/autoskinblender.py:52-60`). **User-facing
+      rename, so worth asking first.**
 - [ ] Per-mesh diffuse texture + alpha blending — hair and eyelash proxies need
       it. Today the shader's alpha comes from a shared 1x1 white stand-in, so
       it is always 1.0; it also needs a second pipeline (blend state) and

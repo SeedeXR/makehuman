@@ -57,7 +57,7 @@ struct ObjWriteOptions {
     std::string objectName{"mesh"};
 };
 
-enum class ObjWriteErrorKind { CannotOpen, EmptyMesh, MaskSizeMismatch };
+enum class ObjWriteErrorKind { CannotOpen, EmptyMesh, MaskSizeMismatch, InconsistentMaterials };
 
 struct ObjWriteError {
     ObjWriteErrorKind kind{};

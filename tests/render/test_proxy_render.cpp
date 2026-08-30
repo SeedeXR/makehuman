@@ -4,16 +4,20 @@
 // blocked proxy choosers need: load a proxy, fit it to the body, and draw both
 // meshes in one frame with their own materials.
 
+#include "makehuman/core/Material.h"
 #include "makehuman/core/Mesh.h"
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/core/Proxy.h"
 #include "makehuman/core/RenderMesh.h"
+#include "makehuman/io/ObjWriter.h"
 #include "makehuman/render/OffscreenRenderer.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <vector>
 
 using namespace mh;
@@ -156,4 +160,76 @@ TEST_CASE("the body and a worn proxy render together", "[render][proxy]") {
     INFO("eye proxy alone: " << eyePixels << " px; worn, it changes " << changed << " px");
     CHECK(eyePixels > 20);
     CHECK(changed > 4);
+}
+
+// A dressed export must carry the material of each thing worn, not one default
+// shared by all of them. The eye proxy names its own `.mhmat`, so the writers
+// have something real to distinguish.
+TEST_CASE("a worn proxy names its own material", "[render][proxy]") {
+    const auto proxy =
+        core::loadProxy(fs::path(MH_DATA_DIR) / "eyes" / "high-poly" / "high-poly.mhclo");
+    REQUIRE(proxy.has_value());
+
+    // `material ../materials/brown.mhmat` is relative to the .mhclo, so this
+    // also pins that the loader resolved it rather than storing it verbatim.
+    INFO("materialFile: " << proxy->materialFile.string());
+    REQUIRE_FALSE(proxy->materialFile.empty());
+    REQUIRE(fs::exists(proxy->materialFile));
+
+    const auto mat = core::loadMaterial(proxy->materialFile);
+    REQUIRE(mat.has_value());
+    CHECK(mat->desc().name == "Eye_brown");
+
+    // And the body's own material is a different one, so an export carrying
+    // both can be told apart.
+    const auto skin = core::loadMaterial(fs::path(MH_DATA_DIR) / "skins" / "default.mhmat");
+    REQUIRE(skin.has_value());
+    CHECK(skin->desc().name == "DefaultSkin");
+    CHECK(skin->desc().name != mat->desc().name);
+}
+
+// The whole point of per-entry materials: a dressed export must distinguish the
+// body from what it wears. Before this the writers accepted a material per
+// entry but the app passed none, so everything shared one default -- the path
+// was exercised only by synthetic tests.
+TEST_CASE("a dressed export carries a material per mesh", "[render][proxy]") {
+    core::Mesh mesh = body();
+    const auto proxy =
+        core::loadProxy(fs::path(MH_DATA_DIR) / "eyes" / "high-poly" / "high-poly.mhclo");
+    REQUIRE(proxy.has_value());
+
+    auto eyeMesh = core::loadObj(proxy->objFile);
+    REQUIRE(eyeMesh.has_value());
+    std::vector<foundation::Vec3> fitted;
+    REQUIRE(core::fitProxy(*proxy, mesh.coord(), fitted));
+    REQUIRE(eyeMesh->setCoords(std::move(fitted)).has_value());
+
+    const auto skin   = core::loadMaterial(fs::path(MH_DATA_DIR) / "skins" / "default.mhmat");
+    const auto eyeMat = core::loadMaterial(proxy->materialFile);
+    REQUIRE(skin.has_value());
+    REQUIRE(eyeMat.has_value());
+    const auto skinDesc = skin->desc();
+    const auto eyeDesc  = eyeMat->desc();
+
+    const auto out = fs::temp_directory_path() / "mh_dressed_materials.obj";
+    const auto mtl = fs::temp_directory_path() / "mh_dressed_materials.mtl";
+    fs::remove(out);
+    fs::remove(mtl);
+    REQUIRE(io::writeObjScene(out, {{{mesh.view(), "body", &skinDesc, {}},
+                                     {eyeMesh->view(), "eyes", &eyeDesc, {}}}})
+                .has_value());
+
+    std::ifstream in(mtl);
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    const std::string text = ss.str();
+    INFO(text);
+    // Two distinct materials, named from the shipped .mhmat files rather than
+    // from a default the exporter invented.
+    CHECK(text.find("newmtl DefaultSkin") != std::string::npos);
+    CHECK(text.find("newmtl Eye_brown") != std::string::npos);
+
+    std::error_code ec;
+    fs::remove(out, ec);
+    fs::remove(mtl, ec);
 }

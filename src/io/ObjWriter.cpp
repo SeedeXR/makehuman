@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <fstream>
 #include <limits>
+#include <tuple>
 
 namespace mh::io {
 
@@ -64,11 +65,28 @@ std::string ObjWriteError::message() const {
         case ObjWriteErrorKind::CannotOpen: k = "cannot open for writing"; break;
         case ObjWriteErrorKind::EmptyMesh: k = "mesh has no faces"; break;
         case ObjWriteErrorKind::MaskSizeMismatch: k = "face mask size mismatch"; break;
+        case ObjWriteErrorKind::InconsistentMaterials: k = "materials are inconsistent"; break;
     }
     std::string m = file + ": " + k;
     if (!detail.empty()) m += " (" + detail + ")";
     return m;
 }
+
+namespace {
+
+/// Two descriptions of the same material. Compared by value because two proxies
+/// loading the same `.mhmat` produce equal descriptions at different addresses;
+/// comparing pointers would refuse a perfectly ordinary scene.
+bool sameMaterial(const foundation::MaterialDesc& a, const foundation::MaterialDesc& b) {
+    const auto scalars = [](const foundation::MaterialDesc& m) {
+        return std::tie(m.name, m.diffuseTexture, m.normalTexture, m.opacity, m.shininess);
+    };
+    const auto rgb = [](const foundation::Vec3& v) { return std::tie(v.x, v.y, v.z); };
+    return scalars(a) == scalars(b) && rgb(a.diffuse) == rgb(b.diffuse) &&
+           rgb(a.ambient) == rgb(b.ambient) && rgb(a.specular) == rgb(b.specular);
+}
+
+}  // namespace
 
 std::expected<ObjWriteResult, ObjWriteError> writeObjScene(const std::filesystem::path& path,
                                                            std::span<const ObjSceneEntry> entries,
@@ -87,7 +105,8 @@ std::expected<ObjWriteResult, ObjWriteError> writeObjScene(const std::filesystem
         std::all_of(entries.begin(), entries.end(),
                     [](const ObjSceneEntry& e) { return e.material != nullptr; });
     if (options.writeMaterial && anyMaterial && !allMaterials) {
-        return std::unexpected(ObjWriteError{ObjWriteErrorKind::EmptyMesh, path.string(),
+        return std::unexpected(ObjWriteError{ObjWriteErrorKind::InconsistentMaterials,
+                                             path.string(),
                                              "some entries carry a material and some do not; "
                                              "OBJ cannot express \"no material\""});
     }
@@ -144,7 +163,7 @@ std::expected<ObjWriteResult, ObjWriteError> writeObjScene(const std::filesystem
                 [&](const foundation::MaterialDesc* m) { return m->name == e.material->name; });
             if (seen == materials.end()) {
                 materials.push_back(e.material);
-            } else if (*seen != e.material) {
+            } else if (!sameMaterial(**seen, *e.material)) {
                 return std::unexpected(ObjWriteError{
                     ObjWriteErrorKind::EmptyMesh, path.string(),
                     "two different materials are both named \"" + e.material->name + "\""});
@@ -265,6 +284,24 @@ std::expected<ObjWriteResult, ObjWriteError> writeObjScene(const std::filesystem
             return std::unexpected(ObjWriteError{ObjWriteErrorKind::CannotOpen, mtlPath.string(),
                                                  "material library requested but not writable"});
         }
+        // A texture named in the .mtl must be beside it, or the file we just
+        // reported as written references something that is not there. The
+        // reference copies too (legacy/python/shared/wavefront.py:278).
+        const auto copyTexture =
+            [&](const std::filesystem::path& src) -> std::expected<std::string, ObjWriteError> {
+            const std::filesystem::path dst = mtlPath.parent_path() / src.filename();
+            std::error_code ec;
+            if (std::filesystem::equivalent(src, dst, ec)) return src.filename().string();
+            std::filesystem::copy_file(src, dst, std::filesystem::copy_options::overwrite_existing,
+                                       ec);
+            if (ec) {
+                return std::unexpected(
+                    ObjWriteError{ObjWriteErrorKind::CannotOpen, src.string(),
+                                  "texture named by the material: " + ec.message()});
+            }
+            return src.filename().string();
+        };
+
         mtl << "# MTL written by MakeHuman\n";
         for (const foundation::MaterialDesc* material : materials) {
             mtl << "newmtl " << material->name << '\n';
@@ -281,14 +318,18 @@ std::expected<ObjWriteResult, ObjWriteError> writeObjScene(const std::filesystem
 
             const auto& diffuseTex = material->diffuseTexture;
             if (!diffuseTex.empty()) {
-                mtl << "map_Kd " << diffuseTex.filename().string() << '\n';
+                const auto name = copyTexture(diffuseTex);
+                if (!name) return std::unexpected(name.error());
+                mtl << "map_Kd " << *name << '\n';
             }
             // The reference copies a normal map into textures/ and then never
             // references it (wavefront.py:277-280, map_Disp commented out).
             // Emitting map_Bump is strictly more useful and costs nothing.
             const auto& normalTex = material->normalTexture;
             if (!normalTex.empty()) {
-                mtl << "map_Bump " << normalTex.filename().string() << '\n';
+                const auto name = copyTexture(normalTex);
+                if (!name) return std::unexpected(name.error());
+                mtl << "map_Bump " << *name << '\n';
             }
         }
         mtl.close();

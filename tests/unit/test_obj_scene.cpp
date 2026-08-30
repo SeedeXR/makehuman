@@ -238,3 +238,51 @@ TEST_CASE("a one-mesh scene matches the single-mesh writer", "[io][objscene]") {
 
     CHECK(readAll(viaOne) == readAll(viaOld));
 }
+
+// A .mtl that names a texture nobody copied is a broken file. The writer emits
+// `map_Kd <name>`, so the file has to be there -- the reference copies it
+// (legacy/python/shared/wavefront.py:278). Before materials reached the OBJ
+// path no .mtl existed at all, so this became reachable only once a dressed
+// export carried real materials.
+TEST_CASE("a referenced texture is copied next to the OBJ", "[io][objscene]") {
+    const Quad q = quadAt(0.0F);
+
+    // The source must live in a DIFFERENT directory from the output, or
+    // "does the texture exist beside the .mtl" finds the source and passes
+    // whether or not anything was copied. (It did, before this was fixed.)
+    const auto texDir = fs::temp_directory_path() / "mh_scene_tex_src";
+    fs::create_directories(texDir);
+    const auto texSrc = texDir / "mh_scene_tex_src.png";
+    {
+        std::ofstream out(texSrc, std::ios::binary);
+        out << "not really a png, but a real file";
+    }
+
+    foundation::MaterialDesc mat;
+    mat.name           = "Textured";
+    mat.diffuseTexture = texSrc;
+
+    const auto out = tmp("mh_scene_tex.obj");
+    const auto mtl = tmp("mh_scene_tex.mtl");
+    fs::remove(out);
+    fs::remove(mtl);
+
+    REQUIRE(io::writeObjScene(out, {{{q.view(), "q", &mat, {}}}}).has_value());
+
+    const std::string text = readAll(mtl);
+    INFO(text);
+    REQUIRE(text.find("map_Kd ") != std::string::npos);
+
+    // Whatever name the .mtl gives must resolve beside the .mtl itself.
+    const auto at           = text.find("map_Kd ") + 7;
+    const auto end          = text.find('\n', at);
+    const std::string named = text.substr(at, end - at);
+    INFO("map_Kd names: " << named);
+    CHECK(fs::exists(mtl.parent_path() / named));
+
+    std::error_code ec;
+    fs::remove(out, ec);
+    fs::remove(mtl, ec);
+    fs::remove_all(texDir, ec);
+    fs::remove(mtl.parent_path() / texSrc.filename(), ec);
+}
