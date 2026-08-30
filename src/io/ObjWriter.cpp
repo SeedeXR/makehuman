@@ -70,34 +70,53 @@ std::string ObjWriteError::message() const {
     return m;
 }
 
-std::expected<ObjWriteResult, ObjWriteError> writeObj(const std::filesystem::path& path,
-                                                      const foundation::MeshView& mesh,
-                                                      const ObjWriteOptions& options,
-                                                      const foundation::MaterialDesc* material) {
-    const size_t nFaces = mesh.faceCount();
-    if (nFaces == 0 || mesh.vertexCount() == 0) {
+std::expected<ObjWriteResult, ObjWriteError> writeObjScene(const std::filesystem::path& path,
+                                                           std::span<const ObjSceneEntry> entries,
+                                                           const ObjWriteOptions& options) {
+    if (entries.empty()) {
         return std::unexpected(ObjWriteError{ObjWriteErrorKind::EmptyMesh, path.string(), {}});
     }
-    if (!options.faceMask.empty() && options.faceMask.size() != nFaces) {
-        return std::unexpected(ObjWriteError{
-            ObjWriteErrorKind::MaskSizeMismatch, path.string(),
-            std::to_string(options.faceMask.size()) + " vs " + std::to_string(nFaces)});
+    // OBJ has no "no material" state: once `usemtl` is emitted it stays in
+    // effect, so an entry without a material would silently inherit the
+    // previous entry's. Refusing the mix beats inventing a placeholder material
+    // or writing a file whose clothes are textured as skin.
+    const bool anyMaterial =
+        std::any_of(entries.begin(), entries.end(),
+                    [](const ObjSceneEntry& e) { return e.material != nullptr; });
+    const bool allMaterials =
+        std::all_of(entries.begin(), entries.end(),
+                    [](const ObjSceneEntry& e) { return e.material != nullptr; });
+    if (options.writeMaterial && anyMaterial && !allMaterials) {
+        return std::unexpected(ObjWriteError{ObjWriteErrorKind::EmptyMesh, path.string(),
+                                             "some entries carry a material and some do not; "
+                                             "OBJ cannot express \"no material\""});
+    }
+
+    for (const ObjSceneEntry& e : entries) {
+        if (e.mesh.faceCount() == 0 || e.mesh.vertexCount() == 0) {
+            return std::unexpected(ObjWriteError{ObjWriteErrorKind::EmptyMesh, path.string(), {}});
+        }
+        if (!e.faceMask.empty() && e.faceMask.size() != e.mesh.faceCount()) {
+            return std::unexpected(ObjWriteError{
+                ObjWriteErrorKind::MaskSizeMismatch, path.string(),
+                std::to_string(e.faceMask.size()) + " vs " + std::to_string(e.mesh.faceCount())});
+        }
     }
 
     const float scale = unitScale(options.unit) * options.scale;
 
-    // Offset is computed AFTER scaling, from the mesh's own minimum, so it is
-    // correct whatever the orientation.
+    // One ground offset for the whole scene, taken from the lowest point of any
+    // entry: levelling each mesh independently would drop the clothes to the
+    // floor beside the body.
     float groundOffset = 0.0F;
     if (options.feetOnGround) {
         float lowest = std::numeric_limits<float>::infinity();
-        for (const Vec3& v : mesh.coord)
-            lowest = std::min(lowest, v.y * scale);
+        for (const ObjSceneEntry& e : entries) {
+            for (const Vec3& v : e.mesh.coord)
+                lowest = std::min(lowest, v.y * scale);
+        }
         if (std::isfinite(lowest)) groundOffset = -lowest;
     }
-
-    const bool withUVs     = options.writeUVs && mesh.hasUV();
-    const bool withNormals = options.writeNormals && mesh.vnorm.size() == mesh.vertexCount();
 
     std::ofstream out(path);
     if (!out) {
@@ -113,9 +132,27 @@ std::expected<ObjWriteResult, ObjWriteError> writeObj(const std::filesystem::pat
     buf += unitName(options.unit);
     buf += '\n';
 
-    const bool wantMtl = options.writeMaterial && material != nullptr;
+    // Deduped by name: two entries sharing a material must not write the same
+    // `newmtl` block twice, and two DIFFERENT materials sharing a name would
+    // silently lose one -- consumers keep the last block they read.
+    std::vector<const foundation::MaterialDesc*> materials;
+    if (options.writeMaterial) {
+        for (const ObjSceneEntry& e : entries) {
+            if (e.material == nullptr) continue;
+            const auto seen = std::find_if(
+                materials.begin(), materials.end(),
+                [&](const foundation::MaterialDesc* m) { return m->name == e.material->name; });
+            if (seen == materials.end()) {
+                materials.push_back(e.material);
+            } else if (*seen != e.material) {
+                return std::unexpected(ObjWriteError{
+                    ObjWriteErrorKind::EmptyMesh, path.string(),
+                    "two different materials are both named \"" + e.material->name + "\""});
+            }
+        }
+    }
     std::filesystem::path mtlPath;
-    if (wantMtl) {
+    if (!materials.empty()) {
         mtlPath = path;
         mtlPath.replace_extension(".mtl");
         buf += "mtllib ";
@@ -123,77 +160,94 @@ std::expected<ObjWriteResult, ObjWriteError> writeObj(const std::filesystem::pat
         buf += '\n';
     }
 
-    for (const Vec3& v : mesh.coord) {
-        buf += "v ";
-        appendFixed(buf, v.x * scale, 4);
-        buf += ' ';
-        appendFixed(buf, v.y * scale + groundOffset, 4);
-        buf += ' ';
-        appendFixed(buf, v.z * scale, 4);
-        buf += '\n';
-        ++result.vertices;
-    }
+    // Running totals of what has already been written, because OBJ indices
+    // address the file rather than the mesh. Normals and UVs are counted
+    // separately: an entry may carry one and not the other.
+    size_t vBase = 0;
+    size_t tBase = 0;
+    size_t nBase = 0;
 
-    if (withNormals) {
-        for (const Vec3& n : mesh.vnorm) {
-            buf += "vn ";
-            appendFixed(buf, n.x, 4);
+    for (const ObjSceneEntry& entry : entries) {
+        const foundation::MeshView& mesh = entry.mesh;
+        const bool withUVs               = options.writeUVs && mesh.hasUV();
+        const bool withNormals = options.writeNormals && mesh.vnorm.size() == mesh.vertexCount();
+
+        for (const Vec3& v : mesh.coord) {
+            buf += "v ";
+            appendFixed(buf, v.x * scale, 4);
             buf += ' ';
-            appendFixed(buf, n.y, 4);
+            appendFixed(buf, v.y * scale + groundOffset, 4);
             buf += ' ';
-            appendFixed(buf, n.z, 4);
+            appendFixed(buf, v.z * scale, 4);
             buf += '\n';
+            ++result.vertices;
         }
-    }
 
-    if (withUVs) {
-        for (const Vec2& t : mesh.texco) {
-            buf += "vt ";
-            appendFixed(buf, t.x, 6);
-            buf += ' ';
-            appendFixed(buf, t.y, 6);
-            buf += '\n';
-            ++result.uvs;
-        }
-    }
-
-    if (wantMtl) {
-        buf += "usemtl ";
-        buf += material->name;
-        buf += '\n';
-    }
-    buf += "g ";
-    buf += options.objectName;
-    buf += '\n';
-
-    // Indices are 1-based in OBJ.
-    const size_t vpp     = mesh.vertsPerPrimitive;
-    const size_t corners = mesh.vertsPerFaceForExport;
-
-    for (size_t f = 0; f < nFaces; ++f) {
-        if (!options.faceMask.empty() && options.faceMask[f] == 0) {
-            ++result.skipped;
-            continue;
-        }
-        buf += 'f';
-        for (size_t c = 0; c < corners; ++c) {
-            const uint32_t v = mesh.fvert[f * vpp + c] + 1;
-            buf += ' ';
-            buf += std::to_string(v);
-            if (withUVs) {
-                buf += '/';
-                buf += std::to_string(mesh.fuvs[f * vpp + c] + 1);
-                if (withNormals) {
-                    buf += '/';
-                    buf += std::to_string(v);
-                }
-            } else if (withNormals) {
-                buf += "//";
-                buf += std::to_string(v);
+        if (withNormals) {
+            for (const Vec3& n : mesh.vnorm) {
+                buf += "vn ";
+                appendFixed(buf, n.x, 4);
+                buf += ' ';
+                appendFixed(buf, n.y, 4);
+                buf += ' ';
+                appendFixed(buf, n.z, 4);
+                buf += '\n';
             }
         }
+
+        if (withUVs) {
+            for (const Vec2& t : mesh.texco) {
+                buf += "vt ";
+                appendFixed(buf, t.x, 6);
+                buf += ' ';
+                appendFixed(buf, t.y, 6);
+                buf += '\n';
+                ++result.uvs;
+            }
+        }
+
+        if (entry.material != nullptr && options.writeMaterial) {
+            buf += "usemtl ";
+            buf += entry.material->name;
+            buf += '\n';
+        }
+        buf += "g ";
+        buf += entry.name;
         buf += '\n';
-        ++result.faces;
+
+        const size_t vpp     = mesh.vertsPerPrimitive;
+        const size_t corners = mesh.vertsPerFaceForExport;
+        const size_t nFaces  = mesh.faceCount();
+
+        for (size_t f = 0; f < nFaces; ++f) {
+            if (!entry.faceMask.empty() && entry.faceMask[f] == 0) {
+                ++result.skipped;
+                continue;
+            }
+            buf += 'f';
+            for (size_t c = 0; c < corners; ++c) {
+                const size_t local = mesh.fvert[f * vpp + c];
+                buf += ' ';
+                buf += std::to_string(vBase + local + 1);
+                if (withUVs) {
+                    buf += '/';
+                    buf += std::to_string(tBase + mesh.fuvs[f * vpp + c] + 1);
+                    if (withNormals) {
+                        buf += '/';
+                        buf += std::to_string(nBase + local + 1);
+                    }
+                } else if (withNormals) {
+                    buf += "//";
+                    buf += std::to_string(nBase + local + 1);
+                }
+            }
+            buf += '\n';
+            ++result.faces;
+        }
+
+        vBase += mesh.vertexCount();
+        if (withUVs) tBase += mesh.texco.size();
+        if (withNormals) nBase += mesh.vnorm.size();
     }
 
     out << buf;
@@ -203,7 +257,7 @@ std::expected<ObjWriteResult, ObjWriteError> writeObj(const std::filesystem::pat
             ObjWriteError{ObjWriteErrorKind::CannotOpen, path.string(), "write failed"});
     }
 
-    if (wantMtl) {
+    if (!materials.empty()) {
         // The OBJ already emitted `mtllib`, so a silently skipped .mtl leaves a
         // dangling reference in a file we reported as written successfully.
         std::ofstream mtl(mtlPath);
@@ -211,8 +265,8 @@ std::expected<ObjWriteResult, ObjWriteError> writeObj(const std::filesystem::pat
             return std::unexpected(ObjWriteError{ObjWriteErrorKind::CannotOpen, mtlPath.string(),
                                                  "material library requested but not writable"});
         }
-        {
-            mtl << "# MTL written by MakeHuman\n";
+        mtl << "# MTL written by MakeHuman\n";
+        for (const foundation::MaterialDesc* material : materials) {
             mtl << "newmtl " << material->name << '\n';
             mtl << "Ka " << fixed(material->ambient.x, 6) << ' ' << fixed(material->ambient.y, 6)
                 << ' ' << fixed(material->ambient.z, 6) << '\n';
@@ -236,16 +290,24 @@ std::expected<ObjWriteResult, ObjWriteError> writeObj(const std::filesystem::pat
             if (!normalTex.empty()) {
                 mtl << "map_Bump " << normalTex.filename().string() << '\n';
             }
-            mtl.close();
-            if (!mtl) {
-                return std::unexpected(
-                    ObjWriteError{ObjWriteErrorKind::CannotOpen, mtlPath.string(), "write failed"});
-            }
-            result.wroteMtl = true;
         }
+        mtl.close();
+        if (!mtl) {
+            return std::unexpected(
+                ObjWriteError{ObjWriteErrorKind::CannotOpen, mtlPath.string(), "write failed"});
+        }
+        result.wroteMtl = true;
     }
 
     return result;
+}
+
+std::expected<ObjWriteResult, ObjWriteError> writeObj(const std::filesystem::path& path,
+                                                      const foundation::MeshView& mesh,
+                                                      const ObjWriteOptions& options,
+                                                      const foundation::MaterialDesc* material) {
+    const ObjSceneEntry entry{mesh, options.objectName, material, options.faceMask};
+    return writeObjScene(path, {&entry, 1}, options);
 }
 
 }  // namespace mh::io

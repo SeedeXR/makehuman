@@ -41,12 +41,15 @@
 #include <QImage>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <map>
 #include <optional>
+#include <ranges>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -302,6 +305,18 @@ void refitProxy(WornProxy& worn, const mh::core::Mesh& body) {
     worn.rm.refreshPositions(worn.mesh);
 }
 
+/// What @p groups has selected in @p name, or empty if there is no such group
+/// or nothing is selected.
+std::string selectedChoice(std::span<const mh::foundation::AssetGroup> groups,
+                           std::string_view name) {
+    for (const auto& g : groups) {
+        if (g.name == name && g.selected >= 0) {
+            return g.choices[static_cast<size_t>(g.selected)].id;
+        }
+    }
+    return {};
+}
+
 /// Skins and poses, from whatever is actually on disk.
 ///
 /// Scanned rather than hard-coded so a litsphere or pose dropped into the data
@@ -410,8 +425,11 @@ mh::core::MhmFile documentFor(const mh::core::Human& human, const mh::core::MhmF
 }
 
 /// Writes the mesh in whichever format @p path's extension names.
+/// @param worn proxies to include. OBJ writes them as extra groups; the other
+///        formats are still single-mesh, so they say what they are leaving out
+///        rather than quietly exporting a dressed character naked.
 bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
-                const mh::core::RenderMesh& rm) {
+                const mh::core::RenderMesh& rm, const std::map<QString, WornProxy>& worn = {}) {
     std::string ext = path.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -426,8 +444,26 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     };
 
     if (ext == ".obj") {
-        const auto r = mh::io::writeObj(path, mesh.view());
+        std::vector<mh::io::ObjSceneEntry> scene;
+        scene.push_back({mesh.view(), "body", nullptr, {}});
+        for (const auto& [group, proxy] : worn) {
+            scene.push_back({proxy.mesh.view(), group.toLower().toStdString(), nullptr, {}});
+        }
+        const auto r = mh::io::writeObjScene(path, scene);
         return report(r ? std::string{} : r.error().message());
+    }
+
+    // Said plainly, and only for a format we are actually going to write.
+    // Silently dropping what the character is wearing is the failure this whole
+    // change exists to fix; announcing it for an extension we then reject would
+    // just be noise before an error.
+    static constexpr std::array kSingleMeshFormats{".glb", ".usda", ".usd", ".fbx",
+                                                   ".dae", ".stl",  ".3mf"};
+    if (!worn.empty() && std::ranges::find(kSingleMeshFormats, ext) != kSingleMeshFormats.end()) {
+        std::fprintf(stderr,
+                     "note: %s exports the body only; %zu worn item(s) omitted "
+                     "(multi-mesh is implemented for .obj so far)\n",
+                     ext.c_str(), worn.size());
     }
     if (ext == ".usda" || ext == ".usd") {
         const auto r = mh::io::writeUsda(path, rm.view());
@@ -674,15 +710,36 @@ int main(int argc, char** argv) {
         return 0;  // --save means save and exit, as its help says
     }
 
-    if (parser.isSet(exportOpt)) {
-        return exportMesh(parser.value(exportOpt).toStdString(), displayMesh(), rm) ? 0 : 1;
-    }
-
     // Built before the window so the initial litsphere is the one the picker
-    // shows -- otherwise the panel and the viewport start out disagreeing.
+    // shows -- otherwise the panel and the viewport start out disagreeing --
+    // and before --export, which has to know what the character is wearing.
     const auto assetGroups =
         buildAssetGroups(parser.value(poseOpt).toStdString(), parser.value(skinOpt).toStdString(),
                          parser.value(eyesOpt).toStdString());
+
+    // The body's material and everything worn, read by every rebuild. Skin is
+    // a path rather than a call to setLitsphere because the viewport now takes
+    // one material per mesh: the body's has to travel with the body.
+    std::filesystem::path skin;
+    std::map<QString, WornProxy> wornProxies;
+
+    // Put on whatever the choosers start with. Done here, before both --export
+    // and the window, so a headless export dresses the character exactly as the
+    // window would: exporting a dressed character naked was the bug.
+    if (const std::string eyes = selectedChoice(assetGroups, "Eyes");
+        !eyes.empty() && eyes != kNoProxy) {
+        if (auto worn = wearProxy(eyes, *mesh, eyeLitsphere())) {
+            wornProxies.insert_or_assign(QStringLiteral("Eyes"), std::move(*worn));
+        }
+    }
+
+    if (parser.isSet(exportOpt)) {
+        for (auto& [group, worn] : wornProxies)
+            refitProxy(worn, *mesh);
+        return exportMesh(parser.value(exportOpt).toStdString(), displayMesh(), rm, wornProxies)
+                   ? 0
+                   : 1;
+    }
 
     // The one rebuild path: sliders, pose and skin all go through it, so the
     // three controls cannot disagree about what is on screen.
@@ -692,12 +749,6 @@ int main(int argc, char** argv) {
     // reference this lambda, so this must outlive the window -- capturing the
     // window would force the opposite order and leave those connections holding
     // a dangling reference through teardown.
-    // The body's material and everything worn, read by every rebuild. Skin is
-    // a path rather than a call to setLitsphere because the viewport now takes
-    // one material per mesh: the body's has to travel with the body.
-    std::filesystem::path skin;
-    std::map<QString, WornProxy> wornProxies;
-
     const auto rebuildInto = [&](mh::ui::MainWindow& w) {
         human.applyStack(*mesh, targets);
         if (!poseInPlace(*mesh, rig)) return;
@@ -884,14 +935,6 @@ int main(int argc, char** argv) {
     }
     skin = chosenSkin.toStdString();
 
-    // Whatever the Eyes picker starts on, put it on before the first frame so
-    // the viewport and the picker agree from the outset.
-    if (const QString eyes = assets->choice(QStringLiteral("Eyes"));
-        !eyes.isEmpty() && eyes != QLatin1String(kNoProxy)) {
-        if (auto worn = wearProxy(eyes.toStdString(), *mesh, eyeLitsphere())) {
-            wornProxies.insert_or_assign(QStringLiteral("Eyes"), std::move(*worn));
-        }
-    }
     rebuildInto(window);
 
     QObject::connect(

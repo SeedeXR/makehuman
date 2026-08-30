@@ -573,9 +573,21 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       calls them yet. A no-op today — all four shipped `.mhclo`/`.proxy` files
       declare zero `delete_verts` (verified) — and a real bug the first time a
       clothing asset expects the body hidden underneath it.
-- [ ] **Export ignores worn proxies.** `--export` returns before the asset
-      groups are built, so a dressed character exports naked. Needs the writers
-      to take more than one mesh.
+- [~] **Export includes worn proxies — `.obj` only so far.**
+      `io::writeObjScene` writes several meshes into one OBJ, each its own named
+      `g` group, with file-global indices offset per entry; `writeObj` is now a
+      wrapper over it, byte-identical for one entry. The app builds its asset
+      groups **before** the `--export` branch, which is what let export see what
+      the character wears at all.
+      Verified: `--eyes high-poly` exports 20,222 verts / 2 groups against
+      19,158 / 1 for `--eyes none`, and assimp reads back 2 meshes.
+      **Note:** an undressed `--export foo.obj` now writes `g body` where it
+      wrote `g mesh`.
+- [ ] Multi-mesh export for `.glb`, `.usda`, `.fbx` (and the assimp `.dae`
+      /`.stl`/`.3mf` paths). Each is still single-mesh and now *says* what it
+      omits rather than dropping it silently, but a dressed character still
+      exports naked to everything but OBJ. `exportScene` takes one
+      `RenderView`; glTF needs one primitive or node per mesh.
 - [ ] Per-mesh diffuse texture + alpha blending — hair and eyelash proxies need
       it. Today the shader's alpha comes from a shared 1x1 white stand-in, so
       it is always 1.0; it also needs a second pipeline (blend state) and

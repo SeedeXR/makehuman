@@ -10,6 +10,7 @@ add_executable(mh_tests
     unit/test_target_index.cpp
     unit/test_material.cpp
     unit/test_asset_index.cpp
+    unit/test_obj_scene.cpp
     golden/test_base_mesh_parity.cpp
     golden/test_mesh_fixture_parity.cpp
     golden/test_subdiv_fixture_parity.cpp
@@ -111,17 +112,18 @@ if(MH_HAVE_RENDER)
     # setLitsphere -- and every one of the 328 tests still passed. Only running
     # the program caught it.
     #
-    # --export needs no window, so this is deterministic on a build box. It does
-    # NOT cover the window path; `makehuman --screenshot` does, and needs a real
-    # Metal device.
+    # --export needs no window, so this is deterministic on a build box. Since
+    # the app learned to wear proxies it DOES reach the proxy wiring -- the
+    # default character wears eyes, so this exports two groups -- but it still
+    # does not cover the window path; `makehuman --screenshot` does, and needs a
+    # real Metal device.
     add_test(NAME app_smoke COMMAND makehuman
              --load ${CMAKE_CURRENT_SOURCE_DIR}/golden/mhm/reference_save.mhm
              --set macrodetails/Gender=1.0
              --pose tpose
              --export ${CMAKE_CURRENT_BINARY_DIR}/app_smoke.obj)
-    # The window path, and the only thing that covers main.cpp's PROXY wiring:
-    # --export returns before the asset groups are built, so app_smoke never
-    # reaches it.
+    # The window path. app_smoke now also exercises the proxy wiring through
+    # --export, but only this reaches setMeshes and the viewport.
     #
     # PASS_REGULAR_EXPRESSION is what gives this teeth. Without it the test only
     # catches a proxy that fails to LOAD; a proxy silently dropped from the

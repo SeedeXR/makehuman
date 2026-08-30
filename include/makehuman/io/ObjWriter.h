@@ -48,6 +48,10 @@ struct ObjWriteOptions {
     bool writeMaterial{true};
 
     /// Faces whose mask byte is 0 are skipped. Empty means "write everything".
+    ///
+    /// Applies to `writeObj` only: a scene carries a mask and a name per entry,
+    /// since one setting cannot describe several meshes. `writeObjScene`
+    /// ignores both fields.
     std::span<const uint8_t> faceMask;
 
     std::string objectName{"mesh"};
@@ -70,6 +74,30 @@ struct ObjWriteResult {
     size_t skipped{};  ///< faces omitted by the mask
     bool wroteMtl{false};
 };
+
+/// One mesh in a multi-mesh OBJ: a dressed character is the body plus each worn
+/// proxy, and each keeps its own name, material and face mask.
+struct ObjSceneEntry {
+    foundation::MeshView mesh;
+    std::string name{"mesh"};
+    const foundation::MaterialDesc* material{nullptr};
+    /// Faces whose mask byte is 0 are skipped. Empty means "write everything".
+    std::span<const uint8_t> faceMask;
+};
+
+/// Writes every entry into one OBJ, each as its own `g` group.
+///
+/// OBJ indices are file-global and 1-based, so each entry's faces are offset by
+/// the vertices, UVs and normals already written. Getting that wrong is the
+/// classic multi-mesh OBJ bug -- every mesh after the first draws the first
+/// one's geometry.
+///
+/// Attributes are emitted per entry rather than all-positions-then-all-UVs.
+/// Both are valid OBJ, and per-entry keeps the offset arithmetic local; for a
+/// single entry the output is byte-identical to writeObj, which a test pins.
+[[nodiscard]] std::expected<ObjWriteResult, ObjWriteError> writeObjScene(
+    const std::filesystem::path& path, std::span<const ObjSceneEntry> entries,
+    const ObjWriteOptions& options = {});
 
 /// Writes @p mesh as Wavefront OBJ.
 ///

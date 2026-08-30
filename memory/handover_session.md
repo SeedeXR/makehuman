@@ -4,6 +4,90 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-30 11:01:59 — Session 051 · **a dressed character exports dressed (OBJ)**
+
+### What shipped
+`io::writeObjScene` — several meshes in one Wavefront OBJ, each as its own named
+`g` group. OBJ indices are file-global and 1-based, so each entry's faces are
+offset by the vertices, UVs and normals already written. `writeObj` is now a
+six-line wrapper over it, so there is one implementation rather than two.
+
+The app's `--export` branch was moved **below** `buildAssetGroups` and the
+worn-proxy setup. That is the whole reason export could not see clothes: it
+returned before anything knew what the character was wearing.
+
+| | verts | groups |
+|---|---|---|
+| `--eyes high-poly` | 20,222 | `body`, `eyes` |
+| `--eyes none` | 19,158 | `body` |
+
+19,158 + 1,064 is exactly the body plus the eye proxy.
+
+**Behaviour change worth knowing:** an undressed `--export foo.obj` now writes
+`g body` where it wrote `g mesh`. One line of a 306k-line file, but it is a
+format change for anyone scripting export.
+
+### What I got right for the wrong reason, and what I checked
+I flagged the mixed-attribute index arithmetic as the weakest part of the change
+and tested it rather than reasoning about it: an entry with UVs but no normals
+followed by one with both must write `f 1/1 2/2 3/3 4/4` then
+`f 5/5/1 6/6/2 7/7/3 8/8/4` — positions and UVs offset to 5..8, normals starting
+at 1 because nothing wrote a normal before. It does. `/code-review` independently
+built every mixed combination and walked all meshes with assimp: also correct.
+So the part I most distrusted was fine, and the defects were elsewhere.
+
+**A mutation test that lied.** Dropping the vertex offset made the build fail
+under `-Werror` (unused variable), so the test binary was stale and reported a
+pass. I only noticed because a mutation *should* fail. Redone as `(vBase * 0)`
+so it compiles — then it failed correctly. **A mutation that does not build is
+not a mutation test**, and the green result it prints is from the previous
+binary.
+
+**A benchmark scare that was not one.** `load ALL 1280 targets` read 689 ms
+against a 506 ms history — 36% slower, in code this change does not touch. Three
+quiet re-runs: 486, 487, 511 ms. It was contention from my own concurrent
+builds. Re-measure before believing a regression.
+
+### Review findings applied
+- **The omission note fired for unknown extensions**, printing "exports the body
+  only" before "unknown export extension" for a file never written. Now gated on
+  the formats actually written.
+- **A material-less entry silently inherited the previous entry's `usemtl`** —
+  OBJ has no "no material" state. Mixing materialled and material-less entries
+  is now refused, rather than writing a file whose clothes are textured as skin.
+  Refusing beats inventing a placeholder material.
+- **Materials were not deduplicated**: two entries sharing one wrote the block
+  twice, and two *different* materials sharing a name silently lost one, since
+  consumers keep the last block. Deduped by name, and a genuine name clash is an
+  error.
+- **Two comments in `tests/CMakeLists.txt` had become false** — they still said
+  `--export` returns before the asset groups exist. It does not, since this
+  change. Corrected in the same commit: a stale comment lies with authority.
+- Deleted a dead default argument; replaced a loop shaped like generality it did
+  not have with a named `selectedChoice` helper.
+
+### Verification
+- ctest **337/337 in debug, release and ASan**; format clean; **0** undefined
+  `mh::core` symbols across the four Apache-2.0 modules.
+- Mutation-tested every new guarantee: dropping the vertex offset, emitting one
+  group for the file, and advancing the normal counter for a mesh with no
+  normals each fail the suite.
+- assimp reads our output back and reports 2 meshes — independent confirmation
+  from a library that knows nothing about the writer.
+- A one-entry scene is asserted **byte-identical** to `writeObj`; the reviewer
+  also A/B'd 82 option combinations against a binary built from HEAD: zero
+  mismatches.
+
+### Notes for next session
+- **Only OBJ is multi-mesh.** `.glb`, `.usda`, `.fbx`, `.dae`, `.stl`, `.3mf`
+  still export the body alone and now say so on stderr. glTF is the one that
+  matters most for DCC round-tripping — `exportScene` takes a single
+  `RenderView` and needs one primitive or node per mesh.
+- Proxy `delete_verts` are still not applied to the body (a no-op today, all
+  shipped proxies declare zero).
+
+---
+
 ## 2026-08-30 10:33:36 — Session 050 · **the app wears proxies; the first blocked chooser is unblocked**
 
 ### What shipped
