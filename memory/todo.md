@@ -563,10 +563,14 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       A pose that fails to load is now probed *before* the command is pushed, so
       it never becomes an undo entry that does nothing.
 - [ ] Undo for workspace changes — presets and Save As bypass the stack.
-- [ ] **`workspacePresets()` is still a hardcoded list** while docks are now
-      data-driven. Registering a third category without updating it gives a dock
-      every preset hides, which then survives a quit. A test now fails if that
-      happens, but the presets should be derived instead.
+- [x] **Workspace presets derived from the registry.** A preset names
+      *categories*, not dock object names, and `std::nullopt` means "every
+      registered category" — so the first preset (Modelling) shows a category
+      added later **by construction**, not because a test noticed.
+      A preset that names categories but resolves to no live dock now returns
+      false instead of hiding everything and reporting success: renaming a
+      registered category used to give a blank window, a "Workspace: Materials"
+      status message, and that empty layout saved on quit.
 - [ ] Live language switching; **working** RTL
 - [~] **Accessibility pass** (`design.md` §9) — accessible names on every control
       (a sweep test fails if a new one arrives unnamed; 14 controls covered),

@@ -1445,20 +1445,63 @@ TEST_CASE("a mistyped category is refused without taking the widget", "[tasks]")
     CHECK(w.setPanel(QStringLiteral("Modelling"), real));
 }
 
-TEST_CASE("every registered category is shown by at least one preset", "[tasks]") {
-    // The docks are data-driven now but workspacePresets() is a hardcoded list.
-    // Registering a third category without touching it gives a dock that EVERY
-    // preset hides -- and once the layout is saved on quit, it never comes back
-    // except via Reset Workspace. This is the guardrail: add a category, update
-    // the presets.
-    mh::ui::TaskRegistry tasks = shippedTasks();
+TEST_CASE("a category registered later is still reachable from a preset", "[tasks]") {
+    useShippedIcons();
+    // The regression this replaces: presets named dock objects literally, so a
+    // third category was hidden by EVERY preset -- and once the layout was saved
+    // on quit it never came back except through Reset Workspace. Measured across
+    // all four presets before the fix.
+    //
+    // "Geometries" is deliberately not mentioned anywhere in workspacePresets().
+    mh::ui::TaskRegistry tasks;
+    REQUIRE(tasks.add(QStringLiteral("Modelling")));
+    REQUIRE(tasks.add(QStringLiteral("Materials")));
+    REQUIRE(tasks.add(QStringLiteral("Geometries")));
 
-    QStringList covered;
-    for (const auto& preset : mh::ui::workspacePresets())
-        covered << preset.visibleDocks;
+    mh::ui::MainWindow w(MH_SHADER_DIR, tasks);
+    auto* newcomer =
+        w.findChild<QDockWidget*>(mh::ui::MainWindow::dockObjectName(QStringLiteral("Geometries")));
+    REQUIRE(newcomer != nullptr);
 
-    for (const QString& category : tasks.categories()) {
-        INFO(category.toStdString());
-        CHECK(covered.contains(mh::ui::MainWindow::dockObjectName(category)));
-    }
+    // Hide it FIRST. On a window that was never shown every dock already
+    // reports isHidden() == false, so checking visibility straight away would
+    // pass even if applyWorkspacePreset did no work at all -- proven by
+    // stubbing out its setVisible loop and watching this stay green.
+    REQUIRE(w.applyWorkspacePreset(QStringLiteral("Materials")));
+    CHECK(newcomer->isHidden());
+
+    // The full layout brings it back without the preset table naming it.
+    REQUIRE(w.applyWorkspacePreset(QStringLiteral("Modelling")));
+    CHECK_FALSE(newcomer->isHidden());
+
+    // And it comes back, which is what used to be impossible.
+    REQUIRE(w.applyWorkspacePreset(QStringLiteral("Modelling")));
+    CHECK_FALSE(newcomer->isHidden());
+}
+
+TEST_CASE("the full preset is the first one, and refuses to resolve to nothing", "[tasks]") {
+    useShippedIcons();
+    const auto& presets = mh::ui::workspacePresets();
+    REQUIRE_FALSE(presets.empty());
+    // Nothing means "every registered category". That is what makes a category
+    // added later reachable by construction rather than by a test noticing.
+    CHECK_FALSE(presets.front().categories.has_value());
+    CHECK(presets.front().name == QStringLiteral("Modelling"));
+
+    // A preset naming only categories nobody registered used to hide every
+    // dock, return true, and print "Workspace: Materials" -- then the empty
+    // layout was saved on quit, with no way back except Reset Workspace.
+    mh::ui::TaskRegistry only;
+    REQUIRE(only.add(QStringLiteral("Modelling")));
+    mh::ui::MainWindow w(MH_SHADER_DIR, only);
+    CHECK_FALSE(w.applyWorkspacePreset(QStringLiteral("Materials")));
+
+    // The dock it does have is untouched by the refusal.
+    auto* dock = w.findChild<QDockWidget*>(QStringLiteral("dock.modelling"));
+    REQUIRE(dock != nullptr);
+    CHECK_FALSE(dock->isHidden());
+
+    // Export names nothing on purpose, so hiding everything IS the outcome.
+    CHECK(w.applyWorkspacePreset(QStringLiteral("Export")));
+    CHECK(dock->isHidden());
 }

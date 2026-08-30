@@ -66,6 +66,10 @@ QSettings workspaceSettings() {
 
 struct MainWindow::Impl {
     ViewportWidget* viewport{};
+    /// Categories, so a preset can resolve "everything" at apply time rather
+    /// than naming docks literally. Only categories() was ever read from the
+    /// registry, so the list is what is kept.
+    QStringList categories;
     QMenu* savedMenu{};
     QUndoStack* undo{};
     /// The shipped layout, captured before any saved one is restored. Resetting
@@ -86,6 +90,7 @@ QString MainWindow::dockObjectName(const QString& category) {
 
 MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWidget* parent)
     : QMainWindow(parent), d_(std::make_unique<Impl>()) {
+    d_->categories = tasks.categories();
     setObjectName(QStringLiteral("MainWindow"));
     setWindowTitle(QStringLiteral("MakeHuman"));
 
@@ -279,15 +284,29 @@ bool MainWindow::applyWorkspacePreset(const QString& name) {
         std::find_if(presets.begin(), presets.end(), [&](const auto& p) { return p.name == name; });
     if (found == presets.end()) return false;
 
+    const QStringList shown = found->categories.value_or(d_->categories);
+    QStringList visible;
+    for (const QString& category : shown) {
+        if (findChild<QDockWidget*>(dockObjectName(category)) != nullptr) {
+            visible << dockObjectName(category);
+        }
+    }
+    // A preset that names categories but resolves to no live dock would hide
+    // everything and report success -- indistinguishable from Export, and the
+    // layout is then saved on quit. Rename a registered category and Cmd+3
+    // used to give a blank window with "Workspace: Materials" in the status
+    // bar and no way back except Reset Workspace.
+    if (!shown.isEmpty() && visible.isEmpty()) return false;
+
     // From the shipped layout each time, so switching preset to preset does not
     // accumulate whatever the previous one moved.
     restoreState(d_->defaultState);
     for (QDockWidget* dock : findChildren<QDockWidget*>()) {
-        dock->setVisible(found->visibleDocks.contains(dock->objectName()));
+        dock->setVisible(visible.contains(dock->objectName()));
     }
-    // The first dock named is the one the preset is about, so it gets the room.
-    if (!found->visibleDocks.isEmpty()) {
-        if (auto* dock = findChild<QDockWidget*>(found->visibleDocks.front())) {
+    // The first category named is the one the preset is about, so it gets room.
+    if (!visible.isEmpty()) {
+        if (auto* dock = findChild<QDockWidget*>(visible.front())) {
             resizeDocks({dock}, {380}, Qt::Horizontal);
         }
     }

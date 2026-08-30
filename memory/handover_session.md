@@ -4,6 +4,62 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 00:18:44 — Session 047 · **presets derived from the registry, and two tests that could not fail**
+
+### What shipped
+`WorkspacePreset` now names **categories**, not dock object names, and its `categories`
+field is a `std::optional<QStringList>`: `nullopt` means every registered category, an
+empty list means none. So the first preset shows a category registered later **by
+construction** — last session that was only guarded by a test noticing afterwards.
+
+`std::optional` rather than the `bool showsEveryCategory` + list I first wrote: that pair
+had an invalid combination (true plus a non-empty list) and needed six lines of doc to
+explain. The optional has no invalid state and reads as one line at the call site.
+
+### The failure class was relocated, not removed — until the review said so
+Presets stopped naming dock objects and started naming categories, but `workspacePresets()`
+still hardcodes category strings that `main.cpp` independently hardcodes. Nothing tied the
+two. Probed: with only "Modelling" registered, `applyWorkspacePreset("Materials")`
+**returned true**, hid every dock, and put "Workspace: Materials" in the status bar — then
+`saveWorkspace()` persisted the empty layout on quit, with Reset Workspace the only way
+back. Exactly the failure this change set out to eliminate, moved from dock names to
+category names.
+
+It returns false now when a preset names categories and none resolve to a live dock, and
+`--workspace` in a script fails instead of silently producing a blank window.
+
+### Two tests of mine that could not fail
+1. **The full-preset test.** On a window that was never `show()`n, every dock already
+   reports `isHidden() == false`, so `CHECK_FALSE(dock->isHidden())` was satisfied by the
+   default state rather than by the preset. Proven: stubbing out the `setVisible` loop
+   left it green. It now hides first and checks the dock comes back — and with the loop
+   stubbed, **two** cases fail where one did before.
+2. My own mutation earlier in the session (reverting Modelling to a literal preset) did
+   catch the intended bug, but a weaker mutation slipped through it. Both are covered now.
+
+### memory/todo.md was false as of the diff
+The entry read "a test now fails if that happens, but the presets should be derived
+instead" — while this diff *deleted* that test and implemented the derivation. `CLAUDE.md`
+requires memory updated in the same commit; a stale line there would have sent the next
+session hunting a guardrail that no longer exists. Corrected.
+
+### Also
+`MainWindow::Impl` stored a whole `TaskRegistry` when `categories()` was the only thing
+ever read from it. Now a `QStringList`.
+
+### Verified this session
+- 329/329 in debug, release and ASan.
+- Both preset assertions mutation-tested: stubbing `setVisible` fails two cases, and
+  reverting Modelling to a literal preset fails five assertions.
+- All four presets re-checked in the running app by viewport area.
+- All 7 licence gates; clang-format clean; `mh_ui` → 0 `mh::core` symbols.
+
+### Next
+- Port the 50 task views (`architecture.md` §I.8) — the registry was the prerequisite.
+- `reduceMotion()` returning true is still unexercised; VoiceOver on a real device.
+
+---
+
 ## 2026-08-30 22:41:07 — Session 046 · **the task registry, and a slug I added for a problem that did not exist**
 
 ### What shipped

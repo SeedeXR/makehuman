@@ -67,17 +67,15 @@ bool isValidWorkspaceName(const QString& name) {
 }
 
 const std::vector<WorkspacePreset>& workspacePresets() {
-    // design.md 6.4. Rigging and Export are defined here but have nothing of
-    // their own to show yet -- the panels do not exist -- so they differ from
-    // Modelling only in what they hide. They are shipped now so the switcher,
-    // the shortcuts and the file format are exercised by four real entries
-    // rather than one.
+    // design.md 6.4. Rigging and Export have no panel of their own yet, so they
+    // differ from Modelling only in what they hide. Shipped now so the
+    // switcher, the shortcuts and the file format are exercised by four real
+    // entries rather than one.
     static const std::vector<WorkspacePreset> presets{
-        {QStringLiteral("Modelling"),
-         {QStringLiteral("dock.modelling"), QStringLiteral("dock.materials")}},
-        {QStringLiteral("Rigging"), {QStringLiteral("dock.modelling")}},
-        {QStringLiteral("Materials"), {QStringLiteral("dock.materials")}},
-        {QStringLiteral("Export"), {}},
+        {QStringLiteral("Modelling"), std::nullopt},  // everything
+        {QStringLiteral("Rigging"), QStringList{QStringLiteral("Modelling")}},
+        {QStringLiteral("Materials"), QStringList{QStringLiteral("Materials")}},
+        {QStringLiteral("Export"), QStringList{}},  // nothing
     };
     return presets;
 }

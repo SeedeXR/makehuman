@@ -41,11 +41,16 @@ inline constexpr int kWorkspaceSchemaVersion = 1;
 [[nodiscard]] std::optional<WorkspaceFile> workspaceFromJson(const QJsonObject& object);
 
 /// The shipped layouts, in `⌘1`-`⌘4` order (`design.md` §6.4).
+///
+/// The first shows everything, so a category registered later is reachable by
+/// construction rather than by a test noticing afterwards.
 struct WorkspacePreset {
     QString name;
-    /// Object names of the docks this preset shows; every other dock is hidden.
-    /// The first is the one given the wider column.
-    QStringList visibleDocks;
+
+    /// The **categories** this preset shows -- not dock object names. Nothing
+    /// means every registered category; an empty list means none. The first is
+    /// the one the preset is about and gets the wider column.
+    std::optional<QStringList> categories;
 };
 
 [[nodiscard]] const std::vector<WorkspacePreset>& workspacePresets();
