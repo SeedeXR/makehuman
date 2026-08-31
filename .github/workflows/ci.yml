@@ -258,3 +258,9 @@ jobs:
       # number there misdirects the roadmap, so it is re-derived, not trusted.
       - name: Task-view inventory matches the reference
         run: python3 tools/audit_taskviews.py
+
+      # The Mixamo mapping claims every Mixamo parent relationship survives onto
+      # the MakeHuman skeleton. Checked, not trusted: a wrong-but-plausible
+      # pairing is exactly the mistake a hand-written bone table makes.
+      - name: Mixamo bone mapping is consistent
+        run: python3 tools/mixamo_mapping.py

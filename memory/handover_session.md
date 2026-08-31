@@ -4,6 +4,97 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 17:44:29 — Session 055 · **Mixamo: a 179-bone superset, and a review that caught me twice**
+
+### The question
+Can the rig carry Mixamo's 65 bones *and* MakeHuman's 163, so the model is easy
+to animate from Mixamo without the rig getting worse?
+
+### The answer
+Yes, and it grows the rig: **163 + 16 = 179**. Adopting Mixamo's skeleton
+instead would lose 59 facial bones, 28 toe bones, 8 metacarpals and every twist
+bone. Mixamo leads in exactly one place — a 4th joint per finger — and that
+joint is a tip locator, not a deforming bone.
+
+`tools/mixamo_mapping.py` holds the mapping and proves it; CI runs it.
+
+### Measured, not assumed
+Blender reports which bones carry animation channels. Across **all seven**
+reference clips, identically:
+
+```
+bones carrying animation channels: 52 of 65
+leaf bones that ARE animated     : 0 of 13
+```
+
+52 = the 49 Mixamo bones MakeHuman already has, plus `Hips` and the two
+`ToeBase`. **Every bone Mixamo actually drives is either one we already have or
+one of the three real bones the superset adds.** That turns "the 13 markers cost
+nothing" from a claim into a measurement.
+
+The Mixamo hierarchy itself was re-verified FBX -> Blender -> doc -> tool, with
+a *different* importer than the assimp one that produced the table: 65 bones,
+zero differing parents.
+
+### Two things the review caught that I had wrong
+**1. `Hips -> root` was geometrically wrong by 0.92 dm.** Structurally `root` is
+forced — it is the only bone parenting both legs and the spine — and the
+ancestry check was satisfied. But the legs and spine meet at root's **tail**:
+
+```
+root     head = (0, 0.5639, -0.7609)   tail = (0, 0.7268, 0.1445)
+spine05  head = (0, 0.7268,  0.1445)   <- root's tail
+pelvis.L head = (0, 0.7268,  0.1445)   <- the same point
+```
+
+Binding Hips there pivots the character ~9 cm behind the sacrum on every
+rotation and every root-motion translation. The superset adds a `hips` bone at
+the junction — the 16th addition, and why this is 179 not 178.
+
+**2. I told the owner the check rejects left-to-right mappings. It did not.**
+Ancestry is transitive, so a *whole-side mirror* preserves every parent
+relationship and passed. A single swapped bone is caught by its children; a
+mirror is not — and a mirror is the version of that bug that happens. The
+reviewer passed 6 of 9 deliberately-wrong mappings, including the index finger
+driving the pinky (which also silently duplicated targets while coverage still
+read 50).
+
+Both now caught, by an injectivity assert and a laterality assert, each
+verified against the exact wrong mapping that used to pass.
+
+### And one of my own claims that was false
+The doc said "nothing here is hand-counted" directly above a hand-counted region
+table with two wrong rows (metacarpals 12, really 8; face 55, really 59) that
+summed to 159 rather than 163. Corrected, and the doc now says plainly which six
+numbers the tool checks and that the rest is a sketch.
+
+### The lesson
+A structural check can be *necessary* and nowhere near *sufficient*, and it is
+easy to mistake "my check passes" for "my mapping is right". Ancestry pinned
+exactly one bone (`Spine2`); everything else it merely failed to reject. What
+actually picks `spine03` over `spine04` is 0.1 cm of distance that nothing
+measured. **The next check to add is geometric**, and it would have caught the
+`Hips` error without a reviewer.
+
+### Verification
+- `tools/mixamo_mapping.py` green; mutation-tested — whole-side mirror,
+  finger collision, wrong-ancestor and wrong-side single bones all rejected.
+- ctest **352/352**; no C++ touched this chunk.
+- CI gained a `Mixamo bone mapping is consistent` step.
+
+### Blocked, needs the owner
+- **SonarQube**: scanner installed, no credentials. Needs `SONAR_TOKEN` +
+  `sonar.organization`, or a self-hosted `SONAR_HOST_URL`.
+- Whether Mixamo's **online auto-rigger** preserves an uploaded skeleton is
+  still unverified — web search unavailable, Adobe pages timed out. Does not
+  affect the superset, which targets retargeting downloaded clips.
+
+### Parked
+`git stash@{0}` holds WIP multi-mesh FBX/Collada export tests (`SceneEntry`
+API not yet written), set aside to answer the rig question.
+
+---
+
 ## 2026-08-31 16:51:40 — Session 054 · **textures reach the GLB, and the alpha that was being thrown away**
 
 ### What shipped

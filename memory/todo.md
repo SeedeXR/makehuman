@@ -186,6 +186,40 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 
 ## M5 — Rig and skinning (`mh-rig`)
 
+- [x] **Mixamo compatibility answered: a 179-bone superset, not a swap.**
+      `tools/mixamo_mapping.py` + `docs/rig/mixamo_mapping.md`. Adopting
+      Mixamo's 65 would lose 59 facial bones, 28 toe bones, 8 metacarpals and
+      every twist bone. Instead: keep all 163, add 16, and every Mixamo name
+      resolves. **49 of 65 already exist** under other names.
+      Measured, not assumed — across all seven reference clips Mixamo drives
+      **52 of 65** bones, and those 52 are exactly the 49 we have plus `Hips`
+      and the two `ToeBase`. The other 13 are never keyed.
+- [ ] **Build the superset skeleton** (the implementation step). Add the 16
+      bones to a derived `.mhskel`, weight `ball.L/R`, and reparent
+      `pelvis.L/R` + `spine05` under the new `hips`.
+      **`hips` is not `root`**: the legs and spine meet at root's *tail*, 0.92 dm
+      from its head, so binding Mixamo's Hips to `root` would pivot the whole
+      character ~9 cm off on every rotation and every root-motion translation.
+      `root`'s rest direction also points forward where Mixamo's Hips points up,
+      so the hip basis needs an explicit rest offset.
+- [ ] **Decide `LeftArm`: `upperarm01.L` or `shoulder01.L`?** Currently the
+      former (conventional humerus, carries the skin weight), but geometrically
+      Mixamo's `Arm` sits at 12.6% along the arm arc against `shoulder01.L`'s
+      12.4% and `upperarm01.L`'s 20.8%. The current choice leaves `shoulder01`
+      rigid while the arm swings beneath it — deltoid collapse. Revisit once the
+      skeleton exists and can be looked at.
+- [ ] **A geometric oracle for the mapping.** Ancestry + injectivity +
+      laterality reject every mistake made so far, but they are necessary rather
+      than sufficient: `Spine -> spine03` is picked by being 0.1 cm away, which
+      nothing checks. Asserting each target is the nearest candidate in a
+      normalised frame would subsume all three — and would have caught the
+      `Hips` error without review. Needs Mixamo rest positions committed as
+      measured data.
+- [ ] **SonarQube is blocked on credentials.** `sonar-scanner` 8.1.0 is
+      installed but fails with `You must define ... sonar.organization` and
+      needs `SONAR_TOKEN`. Ask the owner for a SonarCloud token + organisation,
+      or a self-hosted `SONAR_HOST_URL`.
+
 - [ ] **Bone naming/order: Mixamo standard** (owner decision, 2026-08-29).
       Measured and documented in `docs/rig/mixamo_bone_order.md` — 65 bones,
       `mixamorig:` prefix, identical across all 7 reference clips.
