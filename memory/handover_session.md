@@ -4,6 +4,58 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 18:48:24 — Session 062 · **a 30% faster unweld, and the test that should have existed**
+
+### What shipped
+`RenderMesh::build` **2.23 -> 1.56 ms**, 1.5x -> 2.2x against the Python
+baseline. It was the weakest ratio in the whole benchmark suite.
+
+Three approaches were **measured**, not reasoned about:
+
+```
+indirect comparator over a separate keys array   2.23 ms
+std::ranges::sort on (key, index) pairs          2.04 ms
+LSD radix sort, 8 bits per pass                  1.56 ms
+```
+
+Keeping the key and index adjacent bought 8%; the radix sort another 25%. The
+gain is memory behaviour rather than instruction count — six sequential passes
+beat ~1.26M cache-missing comparisons. Those figures are in the code so nobody
+has to rediscover them to justify the twenty lines.
+
+### The find that mattered more than the speed
+Mutation-testing the radix sort — making it skip its top byte — **passed every
+existing test**.
+
+The suite checked that render vertices were *valid* (each maps back to a real
+vertex and UV, seams split correctly). Nothing checked they were in the *right
+order*, even though the code claims to match the reference's `np.unique` and
+every downstream buffer — positions, normals, UVs, weights — is indexed by that
+order.
+
+Now pinned by `[rendermesh][order]`. The broken sort leaves **4,469 of 21,833**
+render vertices out of order; the correct one leaves zero.
+
+**I nearly dismissed the mutation as broken.** That has happened repeatedly this
+session, so this time I confirmed the mutated source reached the binary before
+drawing a conclusion — and the mutation was fine; the *tests* were inadequate.
+"My mutation must be wrong" is a comfortable explanation and was the wrong one
+here.
+
+### Verification
+- ctest **364/364** in debug, release and ASan; format clean.
+- Byte-identical output: 291,388 parity assertions unchanged.
+- Previous push (USD materials) green on all 8 CI jobs.
+
+### Still open in M2
+Dirty-range tracking, subdivision with a face mask, heterogeneous lookup in
+`findFaceGroup`.
+
+### Still blocked on the owner
+**SonarQube credentials**; the ball-of-foot crease remains visually unjudged.
+
+---
+
 ## 2026-08-31 18:38:11 — Session 061 · **USD materials, and a fix that made the file unopenable**
 
 ### What shipped

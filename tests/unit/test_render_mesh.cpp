@@ -162,3 +162,41 @@ TEST_CASE("the base mesh unwelds to the expected size", "[core][render][golden]"
         total += g.count;
     CHECK(total == rm.indexCount());
 }
+
+// The unweld's render-vertex ORDER is load-bearing: it must match the
+// reference's `np.unique` on the packed (vertex, uv) key, because every
+// downstream buffer -- positions, normals, UVs, weights -- is indexed by it.
+//
+// Nothing pinned this before. A deliberately broken radix sort that skipped its
+// top byte still passed every existing test, because they check that render
+// vertices are *valid*, never that they are in the right order.
+TEST_CASE("render vertices are ordered by the packed (vertex, uv) key", "[rendermesh][order]") {
+    const auto src = std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj";
+    if (!std::filesystem::exists(src)) SKIP("base.obj not present");
+    const auto mesh = mh::core::loadObj(src);
+    REQUIRE(mesh.has_value());
+
+    const auto rm   = mh::core::RenderMesh::build(*mesh);
+    const auto vmap = rm.vmap();
+    const auto tmap = rm.tmap();
+    REQUIRE(vmap.size() == tmap.size());
+    REQUIRE(vmap.size() > 1000);
+
+    // Strictly ascending: np.unique yields sorted, deduplicated keys.
+    size_t outOfOrder = 0;
+    size_t duplicates = 0;
+    uint64_t previous = 0;
+    for (size_t i = 0; i < vmap.size(); ++i) {
+        const uint64_t key =
+            (static_cast<uint64_t>(vmap[i]) << 32) | static_cast<uint64_t>(tmap[i]);
+        if (i != 0) {
+            if (key < previous) ++outOfOrder;
+            if (key == previous) ++duplicates;
+        }
+        previous = key;
+    }
+    INFO("render vertices " << vmap.size() << ", out of order " << outOfOrder << ", duplicated "
+                            << duplicates);
+    CHECK(outOfOrder == 0);
+    CHECK(duplicates == 0);
+}

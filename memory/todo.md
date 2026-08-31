@@ -62,7 +62,16 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
       2.19 ms** for a full build, and 8.7x the reference's 1.85 ms. Draw ranges
       match the reference's `grpix` exactly, group by group, for all four
       captured masks.
-- [ ] `RenderMesh::build` is 2.11 ms — dominated by an indirect-comparator sort.
+- [x] **`RenderMesh::build` 2.23 -> 1.56 ms** (1.5x -> 2.2x vs Python). Three
+      approaches measured, not guessed: indirect comparator 2.23, sorting
+      (key, index) pairs 2.04, LSD radix sort **1.56**. The win is memory
+      behaviour — six sequential passes beat 1.26M cache-missing comparisons.
+      Numbers recorded in the code.
+      **Mutation testing found a hole in the suite**: a radix sort skipping its
+      top byte passed *every* existing test. They checked render vertices were
+      valid, never that they were in `np.unique` order — which every downstream
+      buffer is indexed by. Now pinned (`[rendermesh][order]`): the broken sort
+      leaves 4,469 vertices out of order.
       Sorting packed (key,corner) pairs directly would help. Load-once path, low priority.
 - [x] Exact staleness detection: `Mesh::topologyVersion()`, recorded by
       `RenderMesh` and `Subdivider`. Replaces count-comparison, which missed a
