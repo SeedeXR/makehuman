@@ -233,3 +233,65 @@ TEST_CASE("a dressed export carries a material per mesh", "[render][proxy]") {
     fs::remove(out, ec);
     fs::remove(mtl, ec);
 }
+
+// --- Depth ordering ---------------------------------------------------------
+//
+// The renderer never hand-rolls a projection: it takes Qt RHI's own
+// `clipSpaceCorrMatrix()` (`SceneResources.cpp:273`), which supplies the depth
+// convention for whichever backend is live -- [0,1] on Metal, not OpenGL's
+// [-1,1]. Nothing tested that, and an inverted or ignored depth range is the
+// classic way it breaks: everything still renders, so a "does it draw" test
+// passes while the picture is wrong.
+//
+// The eye proxy is the ideal probe because it sits ENTIRELY INSIDE the skull.
+// Viewed from behind, not one of its pixels may reach the image. If depth were
+// inverted the eyes would punch straight through the back of the head.
+TEST_CASE("geometry inside the head is hidden from behind", "[render][proxy][depth]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    core::Mesh mesh = body();
+    auto bodyRm     = core::RenderMesh::build(mesh);
+    REQUIRE(bodyRm.setFaceMask(mesh, mesh.staticFaceMask()));
+
+    const auto proxy =
+        core::loadProxy(fs::path(MH_DATA_DIR) / "eyes" / "high-poly" / "high-poly.mhclo");
+    REQUIRE(proxy.has_value());
+    auto eyeMesh = core::loadObj(proxy->objFile);
+    REQUIRE(eyeMesh.has_value());
+    std::vector<foundation::Vec3> fitted;
+    REQUIRE(core::fitProxy(*proxy, mesh.coord(), fitted));
+    REQUIRE(eyeMesh->setCoords(std::move(fitted)).has_value());
+    eyeMesh->buildAdjacency();
+    eyeMesh->calcNormals();
+    const auto eyeRm = core::RenderMesh::build(*eyeMesh);
+
+    const auto eyeLit = fs::path(MH_DATA_DIR) / "litspheres" / "skinmat_eye.png";
+    const std::vector<render::MeshInstance> bodyOnly{{bodyRm.view(), fullFigure().litsphere}};
+    const std::vector<render::MeshInstance> dressed{{bodyRm.view(), fullFigure().litsphere},
+                                                    {eyeRm.view(), eyeLit}};
+
+    auto behind              = fullFigure();
+    behind.camera.yawDegrees = 180.0F;
+
+    const auto plain    = (*r)->render(bodyOnly, behind);
+    const auto withEyes = (*r)->render(dressed, behind);
+    REQUIRE(plain.has_value());
+    REQUIRE(withEyes.has_value());
+
+    const size_t changed = differingPixels(*plain, *withEyes);
+    INFO("from behind, adding the eyes changes " << changed << " pixels");
+    CHECK(changed == 0);
+
+    // The same comparison from the FRONT must differ, or the test above would
+    // also pass with a renderer that had simply stopped drawing the proxy.
+    const auto front      = fullFigure();
+    const auto frontPlain = (*r)->render(bodyOnly, front);
+    const auto frontEyes  = (*r)->render(dressed, front);
+    REQUIRE(frontPlain.has_value());
+    REQUIRE(frontEyes.has_value());
+    const size_t frontChanged = differingPixels(*frontPlain, *frontEyes);
+    INFO("from the front, adding the eyes changes " << frontChanged << " pixels");
+    CHECK(frontChanged > 0);
+}

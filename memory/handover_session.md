@@ -59,6 +59,51 @@ CI green on `44540d6d`.
 
 ---
 
+## 2026-09-01 00:31:02 — Session 077 · **M5 exhausted; a depth test with real teeth**
+
+### M5 is done as far as I can take it
+Two more entries were stale and are now closed against live code:
+- **Pose library UI**: the window *does* select a pose.
+  `src/app/main.cpp:443` builds the `Pose` AssetGroup, the Materials
+  `AssetPanel` presents it, and the `chosen` callback **probes the pose before
+  committing** — one that fails to load restores the picker rather than becoming
+  an undo entry that does nothing.
+- **Depth range `[0,1]`**: never a problem. The renderer takes Qt RHI's
+  `clipSpaceCorrMatrix()` (`SceneResources.cpp:273`), so the live backend
+  supplies its own convention. The item assumed we would transliterate the
+  reference's GL projection; we never did.
+
+**What is genuinely left in M5** needs someone else or another milestone:
+SonarQube (owner credentials), `.mhpose` and `.mhupb` (no asset ships to verify
+against), skin normals/tangents and GPU LBS (M6), and the bone-naming decision
+below.
+
+### The depth test, because "correct by construction" is not "tested"
+An ignored depth range still renders — every "does it draw" test passes while
+the picture is wrong. That is exactly the kind of gap that stays open for months.
+
+The eye proxy is the right probe: it sits **entirely inside the skull**. So from
+**behind**, adding the eyes must change **0 pixels**. And from the **front** it
+must change more than 0, or the test would also pass with a renderer that had
+simply stopped drawing the proxy.
+
+**Mutation-verified**, with the match asserted this time: disabling depth
+testing puts **16 eye pixels through the back of the head** and fails the test.
+
+### Open question for the owner
+`memory/todo.md` still carries "Bone naming/order: Mixamo standard (owner
+decision)". What shipped is a **179-bone superset keeping MakeHuman names** plus
+a **total 65-bone retarget table**. Whether exported rigs should additionally be
+**renamed** to `mixamorig:*` is a product decision, not a technical one — it
+changes what other tools see. Raised, not assumed.
+
+### Verification
+ctest **395/395** in debug, release, ASan; TSan run separately (the combined
+sweep exceeds the 10-minute command timeout). Format clean.
+CI green on `29c90f62`.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

@@ -575,7 +575,12 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       Agreement C++ / Python / Blender: 15.897 / 15.989 / 15.989 dm.
       App: `makehuman --pose rest|tpose|<path.bvh> [--export out.ext]`,
       7 formats (obj fbx glb usda dae stl 3mf).
-- [ ] Pose library UI — `--pose` is CLI only; nothing in the window selects one.
+- [x] Pose library UI — **stale entry, the window does select one.**
+      `src/app/main.cpp:443` builds a `Pose` AssetGroup ("A-pose (rest)" plus
+      every `.bvh` under `data/poses`), it is presented by the Materials
+      `AssetPanel`, and the `chosen` callback **probes the pose first** — a pose
+      that will not load restores the picker instead of becoming an undo entry
+      that does nothing. Undo/redo included.
 - [x] **`mixPoses`** — `rig::mixPoses(base, overlay, bones)` copies `base` and
       takes `overlay`'s transforms for the listed bones, which is what puts a
       facial expression on a posed body (`shared/animation.py:449-467`).
@@ -663,7 +668,20 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       renders yet.
 - [ ] Litsphere/matcap **pixel-faithful** (incl. `0.495` scale, `2.0 − mean` term)
 - [ ] Eye-space-fixed light (model rotates, camera does not)
-- [ ] Depth range `[0,1]` — rework `perspective`/`ortho`, do not transliterate
+- [x] **Depth range `[0,1]` — already correct by construction, now tested.**
+      The renderer never hand-rolls a projection: `SceneResources.cpp:273` takes
+      Qt RHI's own `clipSpaceCorrMatrix()`, which supplies the live backend's
+      depth convention ([0,1] on Metal, not OpenGL's [-1,1]). The item's premise
+      — that we would transliterate the reference's GL projection — never
+      applied.
+      It was **untested**, which matters because an ignored depth range still
+      renders: a "does it draw" test passes while the picture is wrong. Now
+      `[render][proxy][depth]` uses the eye proxy as the probe, since it sits
+      entirely inside the skull: from **behind**, adding the eyes must change
+      **0 pixels**; from the front it must change more than 0, so the test
+      cannot pass by the proxy simply not drawing.
+      Mutation-verified: disabling depth testing puts **16 eye pixels through
+      the back of the head** and fails the test.
 - [ ] PBR metallic-roughness path + Blinn-Phong→PBR conversion
 - [ ] GPU skinning (matrix palette UBO/SSBO)
 - [ ] ID-buffer picking with async readback (replaces the full-window sync readback)
