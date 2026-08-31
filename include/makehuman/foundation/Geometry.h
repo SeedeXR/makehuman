@@ -162,6 +162,13 @@ struct MaterialDesc {
     Vec3 specular{1, 1, 1};
     float shininess{0.2F};
     float opacity{1.0F};
+    /// The material declares itself transparent, independently of `opacity`.
+    ///
+    /// A texture's alpha channel is worthless without this: glTF's default
+    /// alphaMode is OPAQUE and the spec then says alpha is *ignored*, so a
+    /// cut-out cornea over `opacity 1.0` renders solid. `.mhmat` carries the
+    /// flag (`transparent True`) and it must survive into the description.
+    bool transparent{false};
     std::filesystem::path diffuseTexture;
     std::filesystem::path normalTexture;
 };

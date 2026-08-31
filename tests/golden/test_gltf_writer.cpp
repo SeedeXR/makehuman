@@ -272,16 +272,25 @@ namespace {
 
 /// Parses the GLB's JSON chunk, so the structure can be asserted without a
 /// glTF library. The chunk layout is checked by the tests above.
+/// The JSON chunk, read by its declared length.
+///
+/// This used to scan for the first `{` and the LAST `}` in the whole file. That
+/// happened to work only while the BIN chunk held nothing but floats: once an
+/// embedded PNG put a `}` byte (0x7D) in the binary, `rfind` landed inside the
+/// image and returned megabytes of binary, which Catch2 then tried to print.
 std::string glbJson(const std::filesystem::path& p) {
     std::ifstream in(p, std::ios::binary);
     REQUIRE(in);
     const std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    const auto start = bytes.find('{');
-    REQUIRE(start != std::string::npos);
-    // The JSON chunk is padded with spaces to a 4-byte boundary; trim them.
-    auto end = bytes.rfind('}');
-    REQUIRE(end != std::string::npos);
-    return bytes.substr(start, end - start + 1);
+    REQUIRE(bytes.size() > 20);
+    uint32_t length = 0;
+    std::memcpy(&length, bytes.data() + 12, 4);
+    REQUIRE(20 + length <= bytes.size());
+    std::string json = bytes.substr(20, length);
+    // The chunk is padded with spaces to a 4-byte boundary.
+    while (!json.empty() && json.back() == ' ')
+        json.pop_back();
+    return json;
 }
 
 /// The first float of the array that follows @p marker.
@@ -850,4 +859,283 @@ TEST_CASE("the material contract matches the OBJ writer", "[io][gltf][multimesh]
         std::error_code ec;
         std::filesystem::remove(out, ec);
     }
+}
+
+namespace {
+
+/// The BIN chunk of a GLB, so embedded image bytes can be compared with the
+/// file they came from.
+std::vector<uint8_t> glbBin(const std::filesystem::path& p) {
+    std::ifstream in(p, std::ios::binary);
+    const std::vector<uint8_t> d((std::istreambuf_iterator<char>(in)),
+                                 std::istreambuf_iterator<char>());
+    size_t off = 12;
+    while (off + 8 <= d.size()) {
+        uint32_t len  = 0;
+        uint32_t type = 0;
+        std::memcpy(&len, d.data() + off, 4);
+        std::memcpy(&type, d.data() + off + 4, 4);
+        if (type == 0x004E4942) {  // "BIN\0"
+            return {d.begin() + static_cast<long>(off + 8),
+                    d.begin() + static_cast<long>(off + 8 + len)};
+        }
+        off += 8 + len;
+    }
+    return {};
+}
+
+}  // namespace
+
+// Until this worked, a material reached the GLB as colour factors only: the
+// eyes exported white rather than brown, because glTF had no images at all.
+// GLB embeds image bytes in the BIN chunk and points at them with a bufferView,
+// which is what makes the file self-contained.
+TEST_CASE("a textured material embeds its image", "[io][gltf][texture]") {
+    const auto tex = std::filesystem::path(MH_DATA_DIR) / "textures" / "texture_notfound.png";
+    REQUIRE(std::filesystem::exists(tex));
+
+    const core::Mesh m = quad();
+    const auto rm      = core::RenderMesh::build(m);
+    foundation::MaterialDesc mat;
+    mat.name           = "Painted";
+    mat.diffuseTexture = tex;
+
+    const auto out = tempGlb("texture");
+    REQUIRE(io::writeGlb(out, rm.view(), {}, &mat).has_value());
+
+    const std::string j = glbJson(out);
+    INFO(j);
+    CHECK(j.find(R"("images":[)") != std::string::npos);
+    CHECK(j.find(R"("mimeType":"image/png")") != std::string::npos);
+    CHECK(j.find(R"("textures":[)") != std::string::npos);
+    CHECK(j.find(R"("baseColorTexture")") != std::string::npos);
+
+    // The bytes must actually be in the file, not merely referenced.
+    const auto bin = glbBin(out);
+    const auto src = readFile(tex);
+    REQUIRE_FALSE(src.empty());
+    const auto at = std::search(bin.begin(), bin.end(), src.begin(), src.end());
+    INFO("bin " << bin.size() << " bytes, source " << src.size());
+    CHECK(at != bin.end());
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+// A scene where one mesh is textured and the other is not: the untextured
+// material must NOT pick up the other's image.
+TEST_CASE("only the textured material references an image", "[io][gltf][texture]") {
+    const auto tex     = std::filesystem::path(MH_DATA_DIR) / "textures" / "texture_notfound.png";
+    const core::Mesh a = quadAt(0.0F, "body");
+    const core::Mesh b = quadAt(8.0F, "eyes");
+    const auto rmA     = core::RenderMesh::build(a);
+    const auto rmB     = core::RenderMesh::build(b);
+
+    foundation::MaterialDesc plain;
+    plain.name = "Skin";
+    foundation::MaterialDesc painted;
+    painted.name           = "Eye";
+    painted.diffuseTexture = tex;
+
+    const auto out = tempGlb("texture_mixed");
+    REQUIRE(io::writeGlbScene(out, {{{rmA.view(), "body", &plain}, {rmB.view(), "eyes", &painted}}})
+                .has_value());
+
+    const std::string j = glbJson(out);
+    INFO(j);
+    const auto count = [&j](const std::string& needle) {
+        size_t n = 0;
+        for (size_t at = j.find(needle); at != std::string::npos; at = j.find(needle, at + 1)) {
+            ++n;
+        }
+        return n;
+    };
+    // Exactly one image, one texture, and one reference to it.
+    CHECK(count(R"("baseColorTexture")") == 1);
+    CHECK(count(R"("mimeType")") == 1);
+    CHECK(count(R"("source":)") == 1);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+// glTF 2.0 permits image/jpeg and image/png only. Anything else has to be
+// refused: silently dropping it would export the model untextured while
+// reporting success.
+TEST_CASE("an unsupported texture format is refused", "[io][gltf][texture]") {
+    const auto tga = std::filesystem::temp_directory_path() / "mh_fake_texture.tga";
+    {
+        std::ofstream out(tga, std::ios::binary);
+        out << "not a png";
+    }
+
+    const core::Mesh m = quad();
+    const auto rm      = core::RenderMesh::build(m);
+    foundation::MaterialDesc mat;
+    mat.name           = "Tga";
+    mat.diffuseTexture = tga;
+
+    const auto out = tempGlb("texture_tga");
+    const auto r   = io::writeGlb(out, rm.view(), {}, &mat);
+    REQUIRE_FALSE(r.has_value());
+    CHECK(r.error().detail.find(".tga") != std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(tga, ec);
+    std::filesystem::remove(out, ec);
+}
+
+// A texture's alpha is only honoured when the material says so: glTF's default
+// alphaMode is OPAQUE, and the spec then says the alpha channel is *ignored*.
+// The shipped eye material is `transparent True` over an RGBA png, so without
+// this the cornea's cut-out edge renders solid in every conformant viewer --
+// the alpha gets embedded and then thrown away.
+TEST_CASE("a transparent material declares an alpha mode", "[io][gltf][texture]") {
+    const auto tex     = std::filesystem::path(MH_DATA_DIR) / "textures" / "texture_notfound.png";
+    const core::Mesh m = quad();
+    const auto rm      = core::RenderMesh::build(m);
+
+    foundation::MaterialDesc mat;
+    mat.name           = "Glass";
+    mat.diffuseTexture = tex;
+    mat.transparent    = true;
+    mat.opacity        = 1.0F;  // fully opaque scalar; the ALPHA is in the map
+
+    const auto out = tempGlb("alpha");
+    REQUIRE(io::writeGlb(out, rm.view(), {}, &mat).has_value());
+    const std::string j = glbJson(out);
+    INFO(j);
+    CHECK(j.find(R"("alphaMode":"BLEND")") != std::string::npos);
+
+    // And an opaque material must not claim blending, which would cost sorting
+    // in every renderer for nothing.
+    foundation::MaterialDesc solid;
+    solid.name           = "Solid";
+    solid.diffuseTexture = tex;
+    const auto out2      = tempGlb("alpha_solid");
+    REQUIRE(io::writeGlb(out2, rm.view(), {}, &solid).has_value());
+    CHECK(glbJson(out2).find(R"("alphaMode")") == std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+    std::filesystem::remove(out2, ec);
+}
+
+// A material with a texture on a mesh with no UVs is a hard validator error
+// (MESH_PRIMITIVE_TOO_FEW_TEXCOORDS): the primitive has nothing to sample with.
+TEST_CASE("a texture without UVs to sample it is refused", "[io][gltf][texture]") {
+    const auto tex     = std::filesystem::path(MH_DATA_DIR) / "textures" / "texture_notfound.png";
+    const core::Mesh m = quad();
+    const auto rm      = core::RenderMesh::build(m);
+
+    foundation::MaterialDesc mat;
+    mat.name           = "Painted";
+    mat.diffuseTexture = tex;
+
+    io::GltfWriteOptions noUvs;
+    noUvs.writeUVs = false;
+
+    const auto out = tempGlb("texture_nouv");
+    const auto r   = io::writeGlb(out, rm.view(), noUvs, &mat);
+    REQUIRE_FALSE(r.has_value());
+    CHECK(r.error().detail.find("UV") != std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+// An empty file yields bufferView.byteLength = 0, which glTF forbids, and the
+// writer used to report success on it.
+TEST_CASE("an empty or unreadable texture is refused", "[io][gltf][texture]") {
+    const auto empty = std::filesystem::temp_directory_path() / "mh_empty_texture.png";
+    {
+        std::ofstream out(empty, std::ios::binary);
+    }
+
+    const core::Mesh m = quad();
+    const auto rm      = core::RenderMesh::build(m);
+    foundation::MaterialDesc mat;
+    mat.name           = "Empty";
+    mat.diffuseTexture = empty;
+
+    const auto out = tempGlb("texture_empty");
+    const auto r   = io::writeGlb(out, rm.view(), {}, &mat);
+    REQUIRE_FALSE(r.has_value());
+    CHECK(r.error().detail.find("empty") != std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(empty, ec);
+    std::filesystem::remove(out, ec);
+}
+
+// The declared mimeType must match the actual bytes. An extension is a claim,
+// not evidence: a PNG named .jpg produces IMAGE_MIME_TYPE_INVALID.
+TEST_CASE("the image format is taken from the bytes, not the name", "[io][gltf][texture]") {
+    const auto src  = std::filesystem::path(MH_DATA_DIR) / "textures" / "texture_notfound.png";
+    const auto liar = std::filesystem::temp_directory_path() / "mh_png_named_jpg.jpg";
+    std::filesystem::copy_file(src, liar, std::filesystem::copy_options::overwrite_existing);
+
+    const core::Mesh m = quad();
+    const auto rm      = core::RenderMesh::build(m);
+    foundation::MaterialDesc mat;
+    mat.name           = "Liar";
+    mat.diffuseTexture = liar;
+
+    const auto out = tempGlb("texture_liar");
+    REQUIRE(io::writeGlb(out, rm.view(), {}, &mat).has_value());
+    // PNG bytes, whatever the name says.
+    CHECK(glbJson(out).find(R"("mimeType":"image/png")") != std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(liar, ec);
+    std::filesystem::remove(out, ec);
+}
+
+// Two materials naming the same file must embed it once. Without the dedup a
+// body and a proxy sharing one map would carry two copies of it.
+TEST_CASE("a shared texture is embedded once", "[io][gltf][texture]") {
+    const auto tex     = std::filesystem::path(MH_DATA_DIR) / "textures" / "texture_notfound.png";
+    const core::Mesh a = quadAt(0.0F, "one");
+    const core::Mesh b = quadAt(8.0F, "two");
+    const auto rmA     = core::RenderMesh::build(a);
+    const auto rmB     = core::RenderMesh::build(b);
+
+    // Different material names -- otherwise the same-name check rejects first
+    // and the dedup path is never reached.
+    foundation::MaterialDesc first;
+    first.name           = "First";
+    first.diffuseTexture = tex;
+    foundation::MaterialDesc second;
+    second.name           = "Second";
+    second.diffuseTexture = tex;
+
+    const auto out = tempGlb("texture_shared");
+    REQUIRE(io::writeGlbScene(out, {{{rmA.view(), "one", &first}, {rmB.view(), "two", &second}}})
+                .has_value());
+
+    const std::string j = glbJson(out);
+    size_t images       = 0;
+    for (size_t at = j.find(R"("mimeType")"); at != std::string::npos;
+         at        = j.find(R"("mimeType")", at + 1)) {
+        ++images;
+    }
+    INFO(j);
+    CHECK(images == 1);
+    // Both materials point at that single image.
+    CHECK(j.find(R"("baseColorTexture":{"index":0})") != std::string::npos);
+
+    // And the file carries one copy of the bytes, not two.
+    const auto bin = glbBin(out);
+    std::ifstream src(tex, std::ios::binary);
+    const std::vector<uint8_t> want((std::istreambuf_iterator<char>(src)),
+                                    std::istreambuf_iterator<char>());
+    size_t copies = 0;
+    for (auto at = std::search(bin.begin(), bin.end(), want.begin(), want.end()); at != bin.end();
+         at      = std::search(at + 1, bin.end(), want.begin(), want.end())) {
+        ++copies;
+    }
+    CHECK(copies == 1);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
 }

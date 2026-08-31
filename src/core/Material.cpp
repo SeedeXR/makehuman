@@ -474,6 +474,7 @@ foundation::MaterialDesc Material::desc() const {
                                     specular,
                                     shininess,
                                     opacity,
+                                    transparent,
                                     texture(TextureChannel::Diffuse).path,
                                     texture(TextureChannel::NormalMap).path};
 }

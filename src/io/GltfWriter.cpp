@@ -3,6 +3,7 @@
 #include "makehuman/foundation/Chars.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -128,6 +129,7 @@ std::string GltfWriteError::message() const {
         case GltfWriteErrorKind::TooManyVertices: k = "too many vertices"; break;
         case GltfWriteErrorKind::NonFiniteValue: k = "non-finite value"; break;
         case GltfWriteErrorKind::InvalidSkin: k = "invalid skin"; break;
+        case GltfWriteErrorKind::TextureUnsupported: k = "texture cannot be embedded"; break;
         case GltfWriteErrorKind::InvalidMorphTarget: k = "invalid morph target"; break;
     }
     std::string m = file + ": " + k;
@@ -378,6 +380,38 @@ Packed packEntry(std::vector<uint8_t>& bin, const GltfSceneEntry& entry,
     return pk;
 }
 
+/// glTF 2.0 permits exactly two image formats, and the declared mimeType must
+/// match the actual bytes -- a PNG named `.jpg` is IMAGE_MIME_TYPE_INVALID to a
+/// validator. So this reads the magic bytes rather than trusting the extension,
+/// which is a claim and not evidence. Anything else is refused: dropping it
+/// would export an untextured model while reporting success, and there is no
+/// converter here to fall back on.
+std::string_view mimeTypeOf(std::span<const char> bytes) {
+    static constexpr std::array<unsigned char, 8> kPng{0x89, 0x50, 0x4E, 0x47,
+                                                       0x0D, 0x0A, 0x1A, 0x0A};
+    static constexpr std::array<unsigned char, 3> kJpeg{0xFF, 0xD8, 0xFF};
+    const auto matches = [&](const auto& magic) {
+        return bytes.size() >= magic.size() &&
+               std::equal(magic.begin(), magic.end(), bytes.begin(), [](unsigned char a, char b) {
+                   return a == static_cast<unsigned char>(b);
+               });
+    };
+    if (matches(kPng)) return "image/png";
+    if (matches(kJpeg)) return "image/jpeg";
+    return {};
+}
+
+/// One image embedded in the BIN chunk. GLB carries its textures inside the
+/// file, which is what makes a single .glb self-contained -- the alternative is
+/// a URI and a sidecar the user has to keep next to it.
+struct EmbeddedImage {
+    std::filesystem::path source;
+    std::string mimeType;
+    size_t offset{};
+    size_t bytes{};
+    int view{-1};
+};
+
 }  // namespace
 
 std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
@@ -463,6 +497,73 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
         }
     }
 
+    // ---- textures ---------------------------------------------------------
+    // Deduped by path: a body and a proxy sharing one map must embed it once.
+    std::vector<EmbeddedImage> images;
+    std::vector<int> baseColorImage(mats.size(), -1);
+    std::vector<int> normalImage(mats.size(), -1);
+    for (size_t i = 0; i < mats.size(); ++i) {
+        if (mats[i].desc == nullptr) continue;
+        const std::pair<const std::filesystem::path&, std::vector<int>&> slots[] = {
+            {mats[i].desc->diffuseTexture, baseColorImage},
+            {mats[i].desc->normalTexture, normalImage},
+        };
+        for (const auto& [texture, into] : slots) {
+            if (texture.empty()) continue;
+
+            // A texture needs UVs to sample it. Without them the primitive is
+            // MESH_PRIMITIVE_TOO_FEW_TEXCOORDS -- a hard validator error, not a
+            // cosmetic one.
+            for (size_t e = 0; e < entries.size(); ++e) {
+                if (packs[e].materialIndex == static_cast<int>(i) && !packs[e].withUVs) {
+                    return std::unexpected(GltfWriteError{
+                        GltfWriteErrorKind::TextureUnsupported, path.string(),
+                        entries[e].name + " has a textured material but no UVs to sample it"});
+                }
+            }
+
+            const auto seen =
+                std::find_if(images.begin(), images.end(),
+                             [&](const EmbeddedImage& e) { return e.source == texture; });
+            if (seen != images.end()) {
+                into[i] = static_cast<int>(seen - images.begin());
+                continue;
+            }
+            std::ifstream file(texture, std::ios::binary);
+            if (!file) {
+                return std::unexpected(GltfWriteError{GltfWriteErrorKind::TextureUnsupported,
+                                                      path.string(),
+                                                      "cannot read " + texture.string()});
+            }
+            const std::vector<char> bytes((std::istreambuf_iterator<char>(file)),
+                                          std::istreambuf_iterator<char>());
+            if (bytes.empty()) {
+                // glTF requires bufferView.byteLength >= 1, so a zero-byte file
+                // (or a directory, which reads as empty) makes an invalid GLB.
+                return std::unexpected(GltfWriteError{GltfWriteErrorKind::TextureUnsupported,
+                                                      path.string(),
+                                                      "empty texture " + texture.string()});
+            }
+            const std::string_view mime = mimeTypeOf(bytes);
+            if (mime.empty()) {
+                return std::unexpected(
+                    GltfWriteError{GltfWriteErrorKind::TextureUnsupported, path.string(),
+                                   "glTF allows only PNG and JPEG; " + texture.string() +
+                                       " is neither, whatever its extension (" +
+                                       texture.extension().string() + ") says"});
+            }
+            padTo4(bin);
+            EmbeddedImage img;
+            img.source   = texture;
+            img.mimeType = std::string(mime);
+            img.offset   = bin.size();
+            img.bytes    = bytes.size();
+            bin.insert(bin.end(), bytes.begin(), bytes.end());
+            into[i] = static_cast<int>(images.size());
+            images.push_back(std::move(img));
+        }
+    }
+
     // ---- JSON -------------------------------------------------------------
     std::string j;
     j.reserve(2048);
@@ -530,8 +631,13 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
     j += R"("buffers":[{"byteLength":)" + std::to_string(bin.size()) + "}],";
 
     j += R"("bufferViews":[)";
-    bool firstView  = true;
+    bool firstView = true;
+    // Counted as they are emitted, not re-derived from the entry shape: a
+    // second formula for "how many views did that entry write" is one that can
+    // disagree with the loop, and the images would then point at mesh data.
+    int viewCount   = 0;
     const auto view = [&](size_t offset, size_t bytes, int target) {
+        ++viewCount;
         if (!firstView) j += ",";
         firstView = false;
         j += R"({"buffer":0,"byteOffset":)" + std::to_string(offset) + R"(,"byteLength":)" +
@@ -554,6 +660,12 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
         for (size_t t = 0; t < pk.morphOffsets.size(); ++t)
             view(pk.morphOffsets[t], pk.morphByteCounts[t], kTargetArrayBuffer);
         view(pk.idxOffset, pk.idxBytes, kTargetElementArray);
+    }
+    // Image views come last so the accessor indices assigned above stay valid.
+    // No "target": image bytes are neither vertex nor index data.
+    for (EmbeddedImage& img : images) {
+        img.view = viewCount;
+        view(img.offset, img.bytes, -1);
     }
     j += "],";
 
@@ -661,6 +773,24 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
     }
     j += "],";
 
+    if (!images.empty()) {
+        j += R"("images":[)";
+        for (size_t i = 0; i < images.size(); ++i) {
+            if (i != 0) j += ",";
+            j += R"({"bufferView":)" + std::to_string(images[i].view) + R"(,"mimeType":")" +
+                 images[i].mimeType + R"("})";
+        }
+        j += "],";
+        // One texture per image, with the default sampler. Omitting "sampler"
+        // is legal and means repeat/auto, which is what these maps want.
+        j += R"("textures":[)";
+        for (size_t i = 0; i < images.size(); ++i) {
+            if (i != 0) j += ",";
+            j += R"({"source":)" + std::to_string(i) + "}";
+        }
+        j += "],";
+    }
+
     // materials -- Blinn-Phong converted to metallic-roughness, which is the
     // only PBR model core glTF defines. The reference has no PBR data at all,
     // so roughness is derived from shininess and metallic is 0 (skin, cloth and
@@ -679,8 +809,20 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
         j += R"({"name":")" + jsonEscape(mats[i].name) +
              R"(","pbrMetallicRoughness":{"baseColorFactor":[)" + fmtFloat(baseR) + "," +
              fmtFloat(baseG) + "," + fmtFloat(baseB) + "," + fmtFloat(alpha) +
-             R"(],"metallicFactor":0,"roughnessFactor":)" + fmtFloat(roughness) + "}";
-        if (alpha < 1.0F) j += R"(,"alphaMode":"BLEND")";
+             R"(],"metallicFactor":0,"roughnessFactor":)" + fmtFloat(roughness);
+        if (baseColorImage[i] >= 0) {
+            j += R"(,"baseColorTexture":{"index":)" + std::to_string(baseColorImage[i]) + "}";
+        }
+        j += "}";
+        if (normalImage[i] >= 0) {
+            j += R"(,"normalTexture":{"index":)" + std::to_string(normalImage[i]) + "}";
+        }
+        // Without this the alpha channel of a baseColorTexture is ignored:
+        // glTF's default alphaMode is OPAQUE and the spec says so explicitly.
+        // The scalar opacity is not enough -- the shipped eye material is
+        // `opacity 1.0` with `transparent True` over an RGBA map.
+        const bool blended = alpha < 1.0F || (mats[i].desc != nullptr && mats[i].desc->transparent);
+        if (blended) j += R"(,"alphaMode":"BLEND")";
         j += "}";
     }
     j += "]";
@@ -708,8 +850,10 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
     const size_t totalBytes =
         kGlbHeader + kChunkHeader + jsonChunk.size() + kChunkHeader + bin.size();
     if (totalBytes > std::numeric_limits<uint32_t>::max()) {
-        return std::unexpected(GltfWriteError{GltfWriteErrorKind::TooManyVertices, path.string(),
-                                              "GLB exceeds the 4 GiB container limit"});
+        return std::unexpected(
+            GltfWriteError{images.empty() ? GltfWriteErrorKind::TooManyVertices
+                                          : GltfWriteErrorKind::TextureUnsupported,
+                           path.string(), "GLB exceeds the 4 GiB container limit"});
     }
 
     const uint32_t total =

@@ -4,6 +4,83 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 16:51:40 — Session 054 · **textures reach the GLB, and the alpha that was being thrown away**
+
+### What shipped
+`writeGlbScene` embeds images in the BIN chunk: an `images` entry (bufferView +
+mimeType), a `textures` entry, and a `baseColorTexture`/`normalTexture`
+reference on the material. A GLB is now self-contained — the eyes export brown
+instead of white.
+
+Verified on the real export: the 610 KB PNG is embedded **byte-identical** to
+the source, its bufferView carries no `target`, no accessor reaches it, and the
+file grew 1.02 -> 1.69 MB, which is the image.
+
+### The finding that mattered: alpha embedded, then discarded
+`/code-review` decoded `brown_eye.png` and found **13,282 non-opaque pixels,
+minimum alpha 0**. The material is `opacity 1.0` but `transparent True`, and
+`foundation::MaterialDesc` had no field for that — so `Material::desc()` dropped
+it. glTF's default `alphaMode` is `OPAQUE`, and the spec then says the alpha
+channel is *ignored*. Every conformant viewer would have rendered the cut-out
+cornea solid.
+
+Before this session there was no texture, so nothing to lose. Embedding the
+image is exactly what made the omission bite. `MaterialDesc` now carries
+`transparent`, and the shipped eyes export `alphaMode: BLEND`.
+
+### Also fixed from review
+- **A textured material on a UV-less mesh** is `MESH_PRIMITIVE_TOO_FEW_TEXCOORDS`
+  — a hard validator error, reachable with any proxy `.obj` lacking `vt` lines.
+  Refused now.
+- **Empty or unreadable textures** produced `byteLength: 0`, which glTF forbids,
+  while the writer reported success. A directory reads as empty too. Refused.
+- **The mimeType came from the extension.** A PNG named `.jpg` is
+  IMAGE_MIME_TYPE_INVALID. Read from the magic bytes now, which also deleted the
+  extension sniffing rather than adding to it.
+- The 4 GiB container failure reported `TooManyVertices` even when a texture
+  caused it.
+
+### Two problems I found by verifying, not by being told
+1. **A latent test-helper bug my feature exposed.** `glbJson` scanned for the
+   first `{` and the LAST `}` in the whole file. That worked only while the BIN
+   chunk held nothing but floats; the moment an embedded PNG put a `0x7D` byte
+   in there, `rfind` landed inside the image and returned megabytes of binary,
+   which Catch2 then tried to print — a mutation run aborted with SIGABRT
+   instead of failing. It reads the chunk by its declared length now. It had
+   been quietly weakening every `find(...) == npos` assertion in that file.
+2. **The image bufferView index was computed by a second formula.** I re-derived
+   each entry's view count (2 + normals + UVs + 3·skin + morphs) instead of
+   counting emissions. Correct in all 11 combinations the reviewer tried, but it
+   is two statements of one fact, and drift would point images at mesh data.
+   Counted as emitted now — nine lines out, two in.
+
+### A recurring failure of mine, third occurrence this session
+A scripted `sed`/`replace` silently did not match, and I nearly recorded a
+mutation as "not caught" when the mutation had simply never been applied. The
+fix is mechanical: **assert the match count before writing** (`assert
+s.count(old) == 1`). Used consistently now. This is the same class as the
+session-042 lesson and it has now cost time three times.
+
+### Verification
+- ctest **352/352 in debug and release**; format clean; **0** undefined
+  `mh::core` symbols across the four Apache-2.0 modules.
+- Khronos validator (via review) on the real textured export: **0 errors, 0
+  warnings**.
+- Mutation-tested every new guarantee: dropping the transparency flag, skipping
+  the dedup, referencing the image from every material, and declaring an image
+  whose bytes are never written — each fails the suite.
+
+### Notes for next session
+- **Normal maps will warn** `MESH_PRIMITIVE_GENERATED_TANGENT_SPACE` — no
+  `TANGENT` attribute is written though `RenderView::vtang` exists. No shipped
+  `.mhmat` sets a normal map, so the path is live but unreached.
+- Texture dedup compares paths exactly; `weakly_canonical` when a second
+  textured proxy lands.
+- **The build tree vanished mid-session** and was rebuilt from scratch. Not
+  caused by anything here — git was clean and the disk had 71 GiB free.
+
+---
+
 ## 2026-08-30 12:58:01 — Session 053 · **materials reach the exported file, and a test that passed before it should have**
 
 ### What shipped

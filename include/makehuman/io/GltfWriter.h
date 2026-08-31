@@ -52,6 +52,7 @@ enum class GltfWriteErrorKind {
     InvalidSkin,
     /// A morph target's delta array is not parallel to the mesh's vertices.
     InvalidMorphTarget,
+    TextureUnsupported,
 };
 
 struct GltfWriteError {

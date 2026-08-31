@@ -600,11 +600,25 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       never wrote. `.fbx`/`.dae`/`.stl`/`.3mf` get the body material too.
       All-or-nothing, because both writers refuse a partly-materialled scene;
       when it falls back it now says so instead of reporting plain success.
-- [ ] **glTF carries no textures.** `writeGlbScene` emits no `images`,
-      `textures` or `baseColorTexture`, so the eyes export **white** rather than
-      brown. Pre-existing, but visible now that materials reach the file. Needs
-      image embedding in the GLB (or `.gltf` + sidecar). The single most
-      valuable remaining export gap.
+- [x] **glTF embeds textures.** Image bytes go into the BIN chunk with an
+      `images`/`textures` pair and a `baseColorTexture` (or `normalTexture`)
+      reference. Format is read from the **magic bytes**, not the extension, so
+      a PNG named `.jpg` cannot produce IMAGE_MIME_TYPE_INVALID. Refused: a
+      texture with no UVs to sample it (a hard validator error), an empty or
+      unreadable file (`byteLength` 0 is invalid), and anything that is not PNG
+      or JPEG. Shared textures embed once.
+      **`MaterialDesc` gained `transparent`** — without it a texture's alpha was
+      embedded and then ignored, since glTF defaults to `alphaMode: OPAQUE`. The
+      shipped eyes are `opacity 1.0` + `transparent True` over an RGBA map, so
+      the cornea rendered solid. They now export `alphaMode: BLEND`.
+- [ ] **Normal maps need TANGENT.** A `normalTexture` without a `TANGENT`
+      attribute makes validators warn `MESH_PRIMITIVE_GENERATED_TANGENT_SPACE`.
+      `RenderView::vtang` exists but is never written. Not reachable from
+      shipped data — no `.mhmat` sets a normal map — but the path is live.
+- [ ] **Canonicalise the texture dedup key.** Dedup compares
+      `std::filesystem::path` exactly, so the same file reached by two spellings
+      (`a/../b.png` vs `b.png`) embeds twice. Unreachable today (one textured
+      proxy); `weakly_canonical` on the key when a second one lands.
 - [ ] Consider renaming `--skin` to `--litsphere` (keeping `--skin` as an
       alias). It selects a viewport matcap, not a material: `--skin african`
       still exports `DefaultSkin`, which is correct but reads as a bug. The
