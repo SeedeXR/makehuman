@@ -259,6 +259,62 @@ CI green on `52c44896`.
 
 ---
 
+## 2026-09-01 02:30:14 — Session 081 · **skin tone reaches the screen, and a wrong-but-plausible blend**
+
+### The chunk
+Finished what session 080 left explicitly undone: `autoBlendSkin` now drives the
+viewport, so moving the ethnic sliders changes skin tone live. This is the
+owner's "variety of human colours" working end to end from one asset set.
+
+`MeshInstance` gained `litsphereRgba`/`Width`/`Height`. A blended tone has no
+file behind it, and writing a temp PNG on every slider drag would put image
+encode/decode on the interactive path. The three ethnic litspheres are decoded
+**once**; the blend itself is a pass over bytes.
+
+### The bug, and why it would have shipped
+I first fed the blender `modifierValue("macrodetails/Caucasian")` — the **raw
+slider**. Those are not renormalised: setting Caucasian to 1.0 leaves the other
+two at 1/3 each, so the weights summed to **1.667** and a "pure" caucasian skin
+blended as 1.0/0.33/0.33 of all three litspheres.
+
+It looked completely fine. A rendered human with slightly-off skin is still a
+rendered human.
+
+What exposed it was insisting on a check that could **only** pass if the maths
+were exact: with Caucasian at 1.0 the blend must reproduce the caucasian
+litsphere *byte for byte*. It differed by 4.87% of the frame. `Human::factors()`
+returns the renormalised values — what the reference reads
+(`human.getCaucasian()`) — and with that:
+
+| character | blend ON vs OFF |
+|---|---|
+| `Caucasian=1.0` | **0 pixels** of 4,096,000 |
+| `African=1.0` | **214,693 (5.24%)**, worst 82/255 |
+
+Pinned by `[core][macro][ethnic]`, which asserts the raw sliders sum past 1.5
+while `factors()` sums to exactly 1.
+
+### Two more traps hit on the way
+- A mutation to isolate tone from geometry **failed to compile**, so the stale
+  binary ran and produced a number identical to the unmutated one. Caught by
+  counting build errors rather than reading the test line. Redone properly.
+- My CI status filter, `select(.conclusion != "success")`, counts an
+  **in-progress** job as a failure. It reported "failed: 1" on a run that was
+  simply still going. Now filtering on `== "failure"`.
+
+### A simplification
+Adding fields to `MeshInstance` twice forced empty-brace padding through ~20
+aggregate initialisations. Default member initialisers stop clang warning about
+omitted fields, so all that padding is gone and the struct can grow again
+without rippling. One blanket replacement over-reached into a different struct —
+the build caught it.
+
+### Verification
+ctest **401/401** in debug, release, ASan and TSan. Format clean.
+CI green on `a4d478fe` (0 genuine failures).
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

@@ -756,9 +756,27 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       arithmetic: running `image_operations.mixData` in Python gives the same
       75, 40, 60 and the same mid tone `[0.59033, 0.44, 0.338]`.
       Operates on raw RGBA bytes so `core` needs no image library and the
-      licence boundary holds. **Not yet wired to the viewport** — the renderer
-      takes a litsphere *path*, so feeding it a blended image needs an
-      in-memory-texture path on `MeshInstance`. That is the next step.
+      licence boundary holds.
+- [x] **`autoBlendSkin` wired to the viewport — skin tone follows the sliders.**
+      `MeshInstance` gained `litsphereRgba`/`Width`/`Height`: a blended tone has
+      no file behind it, and writing a temp PNG per drag would put disk I/O on
+      the interactive path. The three ethnic litspheres are decoded **once**;
+      the blend is a pass over bytes.
+      Verified end to end, both directions:
+      - `Caucasian=1.0` renders **byte-identical** (0 differing pixels of
+        4,096,000) to using the caucasian litsphere directly — the blend is
+        exact, not merely plausible;
+      - `African=1.0` differs by **214,693 pixels (5.24%)**, worst 82/255.
+      **A real bug found doing it**: I first fed the blender
+      `modifierValue("macrodetails/Caucasian")` — the **raw slider**. Those are
+      not renormalised: setting Caucasian to 1.0 leaves the other two at 1/3, so
+      the weights summed to **1.667** and a "pure" caucasian skin blended as
+      1.0/0.33/0.33 of all three. It looked like a perfectly good skin tone.
+      `Human::factors()` returns the renormalised values, which is what the
+      reference reads (`human.getCaucasian()`). Pinned by
+      `[core][macro][ethnic]`.
+      A size-mismatched in-memory litsphere is refused rather than trusted —
+      reading past the buffer would be a heap overflow.
 - [ ] PBR metallic-roughness path + Blinn-Phong→PBR conversion
 - [ ] GPU skinning (matrix palette UBO/SSBO)
 - [ ] ID-buffer picking with async readback (replaces the full-window sync readback)

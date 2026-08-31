@@ -120,7 +120,7 @@ TEST_CASE("two meshes both draw", "[render][multimesh]") {
     const Shifted b = shiftedBy(sc.rm.view(), 6.0F);
 
     const auto s = settings();
-    const std::vector<render::MeshInstance> both{{a.view, lit, {}}, {b.view, lit, {}}};
+    const std::vector<render::MeshInstance> both{{a.view, lit}, {b.view, lit}};
     const auto img = (*r)->render(both, s);
     REQUIRE(img.has_value());
 
@@ -134,7 +134,7 @@ TEST_CASE("two meshes both draw", "[render][multimesh]") {
     CHECK(right > 0.02);
 
     // And together they must exceed either one alone.
-    const std::vector<render::MeshInstance> justOne{{a.view, lit, {}}};
+    const std::vector<render::MeshInstance> justOne{{a.view, lit}};
     const auto one = (*r)->render(justOne, s);
     REQUIRE(one.has_value());
     CHECK(coverage(*img, s) > coverage(*one, s) * 1.5);
@@ -158,8 +158,8 @@ TEST_CASE("each mesh keeps its own litsphere", "[render][multimesh]") {
     const Shifted b = shiftedBy(sc.rm.view(), 6.0F);
     const auto s    = settings();
 
-    const std::vector<render::MeshInstance> mixed{{a.view, skin, {}}, {b.view, other, {}}};
-    const std::vector<render::MeshInstance> same{{a.view, skin, {}}, {b.view, skin, {}}};
+    const std::vector<render::MeshInstance> mixed{{a.view, skin}, {b.view, other}};
+    const std::vector<render::MeshInstance> same{{a.view, skin}, {b.view, skin}};
     const auto mixedImg = (*r)->render(mixed, s);
     const auto sameImg  = (*r)->render(same, s);
     REQUIRE(mixedImg.has_value());
@@ -189,8 +189,8 @@ TEST_CASE("an empty mesh among several is reported", "[render][multimesh]") {
 
     const Scene sc = bodyScene();
     const std::vector<render::MeshInstance> withEmpty{
-        {sc.rm.view(), settings().litsphere, {}},
-        {foundation::RenderView{}, settings().litsphere, {}},
+        {sc.rm.view(), settings().litsphere},
+        {foundation::RenderView{}, settings().litsphere},
     };
     const auto img = (*r)->render(withEmpty, settings());
     REQUIRE_FALSE(img.has_value());
@@ -236,8 +236,8 @@ TEST_CASE("a batch submitted after a failed upload does not use freed resources"
     // Mesh 0 is fine and would have been queued; mesh 1 fails. Order matters:
     // the bug needs a success BEFORE the failure.
     const std::vector<render::MeshInstance> meshes{
-        {sc.rm.view(), settings().litsphere, {}},
-        {sc.rm.view(), "/definitely/not/a/file.png", {}},
+        {sc.rm.view(), settings().litsphere},
+        {sc.rm.view(), "/definitely/not/a/file.png"},
     };
 
     QRhiCommandBuffer* cb = nullptr;
@@ -382,7 +382,7 @@ TEST_CASE("a per-mesh diffuse map changes the render", "[render][diffuse]") {
     tex.fill(QColor(40, 200, 90));  // nothing like a litsphere, so it cannot be confused
     REQUIRE(tex.save(QString::fromStdString(texPath.string())));
 
-    const std::vector<render::MeshInstance> plain{{sc.rm.view(), s.litsphere, {}}};
+    const std::vector<render::MeshInstance> plain{{sc.rm.view(), s.litsphere}};
     const std::vector<render::MeshInstance> textured{{sc.rm.view(), s.litsphere, texPath}};
 
     const auto a = (*r)->render(plain, s);
@@ -438,6 +438,74 @@ TEST_CASE("a diffuse map that will not load is reported", "[render][diffuse]") {
     const std::vector<render::MeshInstance> bad{
         {sc.rm.view(), settings().litsphere, "/definitely/not/a/skin.png"}};
     const auto img = (*r)->render(bad, settings());
+    REQUIRE_FALSE(img.has_value());
+    CHECK(img.error().kind == render::RenderErrorKind::TextureMissing);
+}
+
+// --- In-memory litsphere: the autoBlendSkin path ----------------------------
+//
+// A blended skin tone (`core::blendEthnicLitsphere`) has no file behind it: it
+// is computed per character from the three ethnic litspheres. Writing it to a
+// temp file just to hand back a path would put disk I/O on the slider-drag
+// path, so `MeshInstance` takes decoded RGBA directly.
+TEST_CASE("an in-memory litsphere renders and overrides the path", "[render][blendtone]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    const auto s   = settings();
+
+    // A flat tone, nothing like the real litsphere, so "the path was used
+    // anyway" cannot pass.
+    constexpr int kW = 32;
+    constexpr int kH = 32;
+    std::vector<uint8_t> tone(static_cast<size_t>(kW) * kH * 4);
+    for (size_t i = 0; i < tone.size(); i += 4) {
+        tone[i]     = 30;
+        tone[i + 1] = 220;
+        tone[i + 2] = 120;
+        tone[i + 3] = 255;
+    }
+
+    render::MeshInstance inMemory;
+    inMemory.mesh            = sc.rm.view();
+    inMemory.litsphere       = s.litsphere;  // present, and must be IGNORED
+    inMemory.litsphereRgba   = tone;
+    inMemory.litsphereWidth  = kW;
+    inMemory.litsphereHeight = kH;
+
+    const std::vector<render::MeshInstance> fromPath{{sc.rm.view(), s.litsphere}};
+    const std::vector<render::MeshInstance> fromMemory{inMemory};
+
+    const auto a = (*r)->render(fromPath, s);
+    const auto b = (*r)->render(fromMemory, s);
+    REQUIRE(a.has_value());
+    REQUIRE(b.has_value());
+
+    const size_t changed = differingPixels(*a, *b);
+    INFO("in-memory litsphere changes " << changed << " pixels");
+    CHECK(changed > 1000);
+}
+
+TEST_CASE("an in-memory litsphere must match its declared size", "[render][blendtone]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    // Reading past the buffer would be a heap overflow, so this is refused
+    // rather than trusted. ASan would catch it in the suite; a user would not.
+    const Scene sc = bodyScene();
+    std::vector<uint8_t> tooSmall(16, 200);
+
+    render::MeshInstance bad;
+    bad.mesh            = sc.rm.view();
+    bad.litsphereRgba   = tooSmall;
+    bad.litsphereWidth  = 64;
+    bad.litsphereHeight = 64;
+
+    const std::vector<render::MeshInstance> one{bad};
+    const auto img = (*r)->render(one, settings());
     REQUIRE_FALSE(img.has_value());
     CHECK(img.error().kind == render::RenderErrorKind::TextureMissing);
 }

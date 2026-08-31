@@ -4,6 +4,7 @@
 #include <rhi/qrhi.h>
 #include <QFile>
 
+#include <cstring>
 #include <vector>
 
 namespace mh::render {
@@ -193,12 +194,31 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
             return std::unexpected(RenderError{RenderErrorKind::EmptyMesh, {}});
         }
 
-        QImage lit(QString::fromStdString(instance.litsphere.string()));
-        if (lit.isNull()) {
-            return std::unexpected(
-                RenderError{RenderErrorKind::TextureMissing, instance.litsphere.string()});
+        // An in-memory litsphere wins over a path: a blended skin tone has no
+        // file behind it. Copied into the QImage rather than wrapped, because
+        // the upload happens after this loop and a view over caller memory
+        // would have to stay valid until then for no gain.
+        QImage lit;
+        if (!instance.litsphereRgba.empty()) {
+            const size_t need = static_cast<size_t>(instance.litsphereWidth) *
+                                static_cast<size_t>(instance.litsphereHeight) * 4U;
+            if (instance.litsphereWidth <= 0 || instance.litsphereHeight <= 0 ||
+                instance.litsphereRgba.size() != need) {
+                return std::unexpected(
+                    RenderError{RenderErrorKind::TextureMissing,
+                                "in-memory litsphere does not match its declared size"});
+            }
+            lit =
+                QImage(instance.litsphereWidth, instance.litsphereHeight, QImage::Format_RGBA8888);
+            std::memcpy(lit.bits(), instance.litsphereRgba.data(), need);
+        } else {
+            lit = QImage(QString::fromStdString(instance.litsphere.string()));
+            if (lit.isNull()) {
+                return std::unexpected(
+                    RenderError{RenderErrorKind::TextureMissing, instance.litsphere.string()});
+            }
+            lit = lit.convertToFormat(QImage::Format_RGBA8888);
         }
-        lit = lit.convertToFormat(QImage::Format_RGBA8888);
 
         // A named-but-unloadable diffuse is an ERROR, not a silent fall back to
         // white: a skin whose texture path is wrong would otherwise render as a

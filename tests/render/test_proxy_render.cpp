@@ -137,9 +137,9 @@ TEST_CASE("the body and a worn proxy render together", "[render][proxy]") {
 
     const auto s      = fullFigure();
     const auto eyeLit = fs::path(MH_DATA_DIR) / "litspheres" / "skinmat_eye.png";
-    const std::vector<render::MeshInstance> bodyOnly{{bodyRm.view(), s.litsphere, {}}};
-    const std::vector<render::MeshInstance> dressed{{bodyRm.view(), s.litsphere, {}},
-                                                    {eyeRm.view(), eyeLit, {}}};
+    const std::vector<render::MeshInstance> bodyOnly{{bodyRm.view(), s.litsphere}};
+    const std::vector<render::MeshInstance> dressed{{bodyRm.view(), s.litsphere},
+                                                    {eyeRm.view(), eyeLit}};
 
     const auto plain    = (*r)->render(bodyOnly, s);
     const auto withEyes = (*r)->render(dressed, s);
@@ -148,7 +148,7 @@ TEST_CASE("the body and a worn proxy render together", "[render][proxy]") {
 
     // The proxy alone, to separate "the proxy does not render" from "the proxy
     // renders but the face occludes most of it".
-    const std::vector<render::MeshInstance> eyesOnly{{eyeRm.view(), eyeLit, {}}};
+    const std::vector<render::MeshInstance> eyesOnly{{eyeRm.view(), eyeLit}};
     const auto bare = (*r)->render(eyesOnly, s);
     REQUIRE(bare.has_value());
     const size_t eyePixels = drawnPixels(*bare, s);
@@ -268,9 +268,9 @@ TEST_CASE("geometry inside the head is hidden from behind", "[render][proxy][dep
     const auto eyeRm = core::RenderMesh::build(*eyeMesh);
 
     const auto eyeLit = fs::path(MH_DATA_DIR) / "litspheres" / "skinmat_eye.png";
-    const std::vector<render::MeshInstance> bodyOnly{{bodyRm.view(), fullFigure().litsphere, {}}};
-    const std::vector<render::MeshInstance> dressed{{bodyRm.view(), fullFigure().litsphere, {}},
-                                                    {eyeRm.view(), eyeLit, {}}};
+    const std::vector<render::MeshInstance> bodyOnly{{bodyRm.view(), fullFigure().litsphere}};
+    const std::vector<render::MeshInstance> dressed{{bodyRm.view(), fullFigure().litsphere},
+                                                    {eyeRm.view(), eyeLit}};
 
     auto behind              = fullFigure();
     behind.camera.yawDegrees = 180.0F;

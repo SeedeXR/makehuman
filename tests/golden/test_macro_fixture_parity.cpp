@@ -7,6 +7,9 @@
 // (legacy/python/apps/human.py:517-888).
 
 #include "makehuman/core/Macro.h"
+#include "makehuman/core/Modifier.h"
+#include "makehuman/core/SliderLayout.h"
+#include "makehuman/core/TargetIndex.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -107,4 +110,45 @@ TEST_CASE("macro factor derivations match the Python reference",
     // 34 cases x 27 values, minus the three ethnic ones which the sweep holds
     // fixed and which are covered by the dedicated renormalisation tests.
     CHECK(compared >= 800);
+}
+
+// --- The renormalisation trap -----------------------------------------------
+//
+// `modifierValue()` returns the SLIDER, `factors()` returns the RENORMALISED
+// value, and for the three ethnic macros they disagree. Setting Caucasian to
+// 1.0 leaves the other two sliders at 1/3 each, so the raw three sum to 1.667.
+//
+// This is not academic. Wiring `autoBlendSkin` to the raw sliders blended a
+// "pure" caucasian skin as 1.0/0.33/0.33 of all three litspheres -- a plausible
+// skin tone that was simply wrong. Reading `factors()` instead makes a pure
+// caucasian character render byte-identically to the caucasian litsphere
+// (verified: 0 differing pixels in a full-window render).
+//
+// The reference reads the renormalised values too (`human.getCaucasian()`).
+TEST_CASE("ethnic sliders are not the renormalised weights", "[core][macro][ethnic]") {
+    const auto idx = TargetIndex::build(std::filesystem::path(MH_DATA_DIR) / "targets");
+    auto standard  = loadStandardLayout(std::filesystem::path(MH_DATA_DIR) / "modifiers");
+    REQUIRE(standard.has_value());
+    Human human(&idx, standard->modifiers);
+
+    // Default: everything already sums to 1, so the two agree.
+    CHECK(std::abs(human.factors().caucasian() - 1.0F / 3.0F) < 1e-5F);
+    CHECK(std::abs(human.modifierValue("macrodetails/Caucasian") - 1.0F / 3.0F) < 1e-5F);
+
+    REQUIRE(human.setModifierValue("macrodetails/Caucasian", 1.0F));
+
+    // The raw sliders now sum to more than 1 -- this is the trap.
+    const float rawSum = human.modifierValue("macrodetails/Caucasian") +
+                         human.modifierValue("macrodetails/African") +
+                         human.modifierValue("macrodetails/Asian");
+    INFO("raw slider sum " << rawSum);
+    CHECK(rawSum > 1.5F);
+
+    // The renormalised weights are what a blend must use: 1, 0, 0.
+    CHECK(std::abs(human.factors().caucasian() - 1.0F) < 1e-5F);
+    CHECK(std::abs(human.factors().african()) < 1e-5F);
+    CHECK(std::abs(human.factors().asian()) < 1e-5F);
+    const float normSum =
+        human.factors().caucasian() + human.factors().african() + human.factors().asian();
+    CHECK(std::abs(normSum - 1.0F) < 1e-5F);
 }

@@ -7,6 +7,7 @@
 #include <QMatrix4x4>
 #include <QSize>
 
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <memory>
@@ -52,7 +53,7 @@ struct RenderError {
 /// own material -- so the litsphere belongs to the mesh, not to the frame.
 struct MeshInstance {
     foundation::RenderView mesh;
-    std::filesystem::path litsphere;
+    std::filesystem::path litsphere{};
 
     /// The material's diffuse/albedo map, sampled by the MESH's UVs.
     ///
@@ -63,7 +64,20 @@ struct MeshInstance {
     /// This is per MESH, not shared: a dressed character is a body skin plus a
     /// separate eye material, and one shared diffuse would paint the eyes with
     /// the body's skin.
-    std::filesystem::path diffuse;
+    std::filesystem::path diffuse{};
+
+    /// An already-decoded RGBA8 litsphere, used INSTEAD of `litsphere` when
+    /// non-empty.
+    ///
+    /// This exists for `autoBlendSkin`: the skin tone is a blend of the three
+    /// ethnic litspheres computed per character (`core::blendEthnicLitsphere`),
+    /// so it has no file to name. Writing it to a temp file just to hand back a
+    /// path would put disk I/O on the slider-drag path.
+    ///
+    /// Not owning: the span must outlive the `render()` call, like `mesh`.
+    std::span<const uint8_t> litsphereRgba{};
+    int litsphereWidth{};
+    int litsphereHeight{};
 };
 
 /// The buffers, textures and pipeline for drawing meshes with the litsphere

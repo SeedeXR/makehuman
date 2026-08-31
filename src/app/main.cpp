@@ -9,6 +9,7 @@
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/core/Proxy.h"
 #include "makehuman/core/RenderMesh.h"
+#include "makehuman/core/SkinTone.h"
 #include "makehuman/core/SliderLayout.h"
 #include "makehuman/core/Subdivider.h"
 #include "makehuman/core/Target.h"
@@ -520,6 +521,80 @@ mh::core::MhmFile documentFor(const mh::core::Human& human, const mh::core::MhmF
 }
 
 /// Writes the mesh in whichever format @p path's extension names.
+/// True when the body skin asks for ethnic tone blending (`autoBlendSkin`).
+/// `MaterialDesc` carries no such flag -- it describes what an exporter writes,
+/// and this is a viewport shading decision -- so the `.mhmat` is read for it.
+bool bodyAutoBlendSkin() {
+    const auto path = dataDir() / "skins" / "default.mhmat";
+    if (auto mat = mh::core::loadMaterial(path)) return mat->autoBlendSkin;
+    return false;
+}
+
+/// The three ethnic litspheres as RGBA8, decoded once.
+///
+/// Decoding three PNGs on every slider drag would put image decode on the
+/// interactive path; the blend itself is a pass over bytes and is cheap.
+struct EthnicLitspheres {
+    std::vector<uint8_t> caucasian;
+    std::vector<uint8_t> african;
+    std::vector<uint8_t> asian;
+    int width{};
+    int height{};
+    bool ok{false};
+};
+
+const EthnicLitspheres& ethnicLitspheres() {
+    static const EthnicLitspheres cached = [] {
+        EthnicLitspheres e;
+        const auto read = [&e](const char* stem, std::vector<uint8_t>& into) {
+            QImage img(QString::fromStdString((dataDir() / "litspheres" / stem).string()));
+            if (img.isNull()) return false;
+            img = img.convertToFormat(QImage::Format_RGBA8888);
+            if (e.width == 0) {
+                e.width  = img.width();
+                e.height = img.height();
+            } else if (img.width() != e.width || img.height() != e.height) {
+                return false;  // the blend is per byte; differing sizes cannot mix
+            }
+            const size_t n = static_cast<size_t>(img.sizeInBytes());
+            into.assign(img.constBits(), img.constBits() + n);
+            return true;
+        };
+        e.ok = read("skinmat_caucasian.png", e.caucasian) &&
+               read("skinmat_african.png", e.african) && read("skinmat_asian.png", e.asian);
+        if (!e.ok) {
+            std::fprintf(stderr,
+                         "cannot decode the three ethnic litspheres; skin tone will not blend\n");
+        }
+        return e;
+    }();
+    return cached;
+}
+
+/// Blends the ethnic litspheres for @p human into @p out.
+///
+/// @return the image size, or nothing when blending is unavailable -- the
+///         caller then keeps the plain litsphere path, which is what happened
+///         before this existed.
+std::optional<std::pair<int, int>> blendedSkinTone(const mh::core::Human& human,
+                                                   std::vector<uint8_t>& out) {
+    const EthnicLitspheres& e = ethnicLitspheres();
+    if (!e.ok) return std::nullopt;
+
+    // From `factors()`, NOT modifierValue(): the raw sliders are not
+    // renormalised. Setting Caucasian to 1.0 leaves the other two at 1/3 each,
+    // so reading them directly gives weights summing to 1.667 and blends a
+    // "pure" caucasian skin as 1.0/0.33/0.33 of all three. The reference reads
+    // the renormalised values (`human.getCaucasian()`), and so does this.
+    const mh::core::EthnicWeights w{human.factors().caucasian(), human.factors().african(),
+                                    human.factors().asian()};
+    const std::array<std::span<const uint8_t>, 3> images{e.caucasian, e.african, e.asian};
+    auto blended = mh::core::blendEthnicLitsphere(images, w);
+    if (!blended) return std::nullopt;
+    out = std::move(*blended);
+    return std::pair{e.width, e.height};
+}
+
 /// The body's own material, for export. The viewport shades with a litsphere,
 /// which carries no PBR data at all, so a `.mhmat` is what a DCC tool gets.
 std::optional<mh::foundation::MaterialDesc> bodyMaterial() {
@@ -909,6 +984,10 @@ int main(int argc, char** argv) {
     // reference this lambda, so this must outlive the window -- capturing the
     // window would force the opposite order and leave those connections holding
     // a dangling reference through teardown.
+    // Owns the blended skin tone: MeshInstance holds a non-owning span, so the
+    // bytes must outlive every render, not just the rebuild that made them.
+    std::vector<uint8_t> toneBuf;
+
     const auto rebuildInto = [&](mh::ui::MainWindow& w) {
         human.applyStack(*mesh, targets);
         if (!poseInPlace(*mesh, rig)) return;
@@ -937,8 +1016,23 @@ int main(int argc, char** argv) {
         // until a skin with a real albedo map is installed.
         std::vector<mh::render::MeshInstance> scene;
         const auto bodyMat = bodyMaterial();
-        scene.push_back(
-            {rm.view(), skin, bodyMat ? bodyMat->diffuseTexture : std::filesystem::path{}});
+        mh::render::MeshInstance body;
+        body.mesh      = rm.view();
+        body.litsphere = skin;
+        body.diffuse   = bodyMat ? bodyMat->diffuseTexture : std::filesystem::path{};
+
+        // autoBlendSkin: the tone follows the ethnic sliders, so it is a blend
+        // of the three ethnic litspheres and has no file behind it. `toneBuf`
+        // owns the bytes because MeshInstance's span does not, and the render
+        // outlives this scope.
+        if (bodyAutoBlendSkin()) {
+            if (const auto size = blendedSkinTone(human, toneBuf)) {
+                body.litsphereRgba   = toneBuf;
+                body.litsphereWidth  = size->first;
+                body.litsphereHeight = size->second;
+            }
+        }
+        scene.push_back(std::move(body));
         for (auto& [group, worn] : wornProxies) {
             refitProxy(worn, *mesh);
             scene.push_back(
