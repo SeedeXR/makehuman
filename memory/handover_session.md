@@ -4,6 +4,58 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 21:03:04 — Session 069 · **proxy parity at six body shapes, and a fixture that could not fail**
+
+### The chunk
+M4's last testable item: eye-proxy fit parity at "several body shapes". There
+were two (neutral, mixed). There are now **six**, and **18 comparisons**
+(3 proxies x 6 bodies) match the Python oracle within 1e-5.
+
+### Choosing the shapes by what the code reads, not by what looks different
+`fitProxy`'s only body-dependent term is the TMatrix scale, and for the eye
+proxies that scale is read off **head** vertices:
+`x_scale 5399 11998` / `y_scale 791 881` / `z_scale 962 5320`.
+So the shapes that matter are the ones that move head proportions:
+- `extreme_min` — Age 0.0, an infant: the largest head-to-body ratio the model
+  produces;
+- `extreme_max` — every macro at 1.0;
+- `head_small` / `head_large` — `head-scale-depth|horiz|vert` driven to +/-1,
+  straight at the three axes the matrix divides by.
+
+**They earn their place, measured**: neutral + mixed spanned a y-scale of only
+0.851..1.034. The six now span **0.417..1.168**. The per-body diagonals are
+captured in `tests/golden/proxy/tmatrix_scales.json` precisely so that a body
+which exercises nothing new is *visible* rather than silently reassuring.
+
+### The finding: six of the eighteen fixtures cannot fail on scale
+Mutation-testing the new fixtures (swap the y and z scale terms in `fitProxy`)
+showed the low-poly eye proxy did not notice. The reason is structural: all 96
+of its vertices use the **single-index form** — weights (1,0,0) and a **zero
+offset** — so `M·d` is zero whatever the TMatrix says.
+
+| comparisons | mutation caught? | worst delta |
+|---|---|---|
+| 12 high-poly + base | yes, all | 0.00046 .. 0.646 dm |
+| 6 low-poly | **none** | 0 |
+
+They are not worthless — they pin the exact-copy path — but that is a different
+property from the one they appeared to cover. It is now asserted outright
+(`[proxy][exact]`: fitted vertex is **bit-exact** equal to the body vertex, and
+the offsets are zero), so the coverage is stated rather than assumed.
+
+Catch2's `INFO` printing only on failure is what surfaced this: the low-poly
+rows were simply *absent* from the mutation output.
+
+### Verification
+ctest **378/378** in debug, release, ASan and TSan. Fixtures regenerated from
+the Python reference (`tools/capture_fixture.py proxy`, 18 entries).
+
+### Still blocked on the owner
+**SonarQube credentials** — still the one requested gate that has never run.
+Ball-of-foot crease still visually unjudged.
+
+---
+
 ## 2026-08-31 20:37:47 — Session 068 · **the ≤50 ms target goal, without the compiled blob**
 
 ### The premise was wrong, and checking it changed the work

@@ -162,13 +162,43 @@ TEST_CASE("proxy fitting matches the reference on two bodies", "[golden][parity]
     REQUIRE(mesh.has_value());
     TargetLibrary targets(MH_DATA_DIR);
 
+    // The fit's only body-dependent term is the TMatrix scale, and for the eye
+    // proxies it is read off HEAD vertices (x_scale 5399 11998, y_scale 791 881,
+    // z_scale 962 5320). neutral and mixed alone span a y-scale of just
+    // 0.851..1.034; the four below take it to 0.417..1.168, so the extremes are
+    // genuinely exercised rather than merely enumerated. Measured diagonals are
+    // captured in tests/golden/proxy/tmatrix_scales.json.
     const std::map<std::string, std::map<std::string, float>> bodies{
         {"neutral", {}},
         {"mixed",
          {{"macrodetails/Gender", 1.0F},
           {"macrodetails/Age", 0.8F},
           {"macrodetails-universal/Muscle", 0.9F},
-          {"macrodetails-height/Height", 0.75F}}}};
+          {"macrodetails-height/Height", 0.75F}}},
+        // Age 0.0 is an infant -- the largest head-to-body ratio the model makes.
+        {"extreme_min",
+         {{"macrodetails/Gender", 0.0F},
+          {"macrodetails/Age", 0.0F},
+          {"macrodetails-universal/Muscle", 0.0F},
+          {"macrodetails-universal/Weight", 0.0F},
+          {"macrodetails-height/Height", 0.0F},
+          {"macrodetails-proportions/BodyProportions", 0.0F}}},
+        {"extreme_max",
+         {{"macrodetails/Gender", 1.0F},
+          {"macrodetails/Age", 1.0F},
+          {"macrodetails-universal/Muscle", 1.0F},
+          {"macrodetails-universal/Weight", 1.0F},
+          {"macrodetails-height/Height", 1.0F},
+          {"macrodetails-proportions/BodyProportions", 1.0F}}},
+        // Straight at the three axes the matrix divides by.
+        {"head_small",
+         {{"head/head-scale-depth-decr|incr", -1.0F},
+          {"head/head-scale-horiz-decr|incr", -1.0F},
+          {"head/head-scale-vert-decr|incr", -1.0F}}},
+        {"head_large",
+         {{"head/head-scale-depth-decr|incr", 1.0F},
+          {"head/head-scale-horiz-decr|incr", 1.0F},
+          {"head/head-scale-vert-decr|incr", 1.0F}}}};
 
     size_t compared = 0;
     for (const auto& [bodyName, settings] : bodies) {
@@ -206,7 +236,7 @@ TEST_CASE("proxy fitting matches the reference on two bodies", "[golden][parity]
             ++compared;
         }
     }
-    CHECK(compared == 6);  // 3 proxies x 2 bodies
+    CHECK(compared == 18);  // 3 proxies x 6 bodies
 }
 
 // The reference parses nine shear keys (`shared/proxy.py:476-492`) and builds
@@ -254,5 +284,46 @@ TEST_CASE("every shear spelling is refused", "[proxy][shear]") {
         CHECK_FALSE(proxy.has_value());
         std::error_code ec;
         std::filesystem::remove(path, ec);
+    }
+}
+
+// A fixture that cannot fail is not coverage. All 96 vertices of the low-poly
+// eye proxy use the single-index form -- weights (1,0,0) and a zero offset --
+// so the TMatrix term M*d is zero whatever the matrix says. Its six parity
+// comparisons are therefore structurally incapable of catching a scale error.
+//
+// Verified by mutation, not assumed: swapping the y and z scale terms in
+// fitProxy is caught by all 12 high-poly and base comparisons (worst delta
+// 0.00046 to 0.646 dm) and by NONE of the six low-poly ones.
+//
+// That does not make them worthless -- they pin a different property, which
+// this test states outright so it is not mistaken for scale coverage again.
+TEST_CASE("the low-poly eye proxy fits exactly onto body vertices", "[core][proxy][exact]") {
+    const auto path = std::filesystem::path(MH_DATA_DIR) / "eyes/low-poly/low-poly.mhclo";
+    if (!std::filesystem::exists(path)) return;
+
+    const auto p = loadProxy(path);
+    REQUIRE(p.has_value());
+    REQUIRE(p->exactFitOnly);
+    REQUIRE(p->vertexCount() == 96);
+
+    auto mesh = loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+
+    std::vector<Vec3> fitted;
+    REQUIRE(fitProxy(*p, mesh->coord(), fitted));
+    REQUIRE(fitted.size() == 96);
+
+    for (size_t i = 0; i < fitted.size(); ++i) {
+        INFO("vertex " << i);
+        // Weight (1,0,0) and a zero offset means the fitted point IS the body
+        // vertex -- bit-exact, not approximately.
+        const Vec3& body = mesh->coord()[p->refVerts[i][0]];
+        CHECK(fitted[i].x == body.x);
+        CHECK(fitted[i].y == body.y);
+        CHECK(fitted[i].z == body.z);
+        CHECK(p->offsets[i].x == 0.0F);
+        CHECK(p->offsets[i].y == 0.0F);
+        CHECK(p->offsets[i].z == 0.0F);
     }
 }

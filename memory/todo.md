@@ -291,7 +291,30 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       (`3dobjs/base.obj` present); an override pointing nowhere is ignored, not
       obeyed, so the failure surfaces at startup rather than later and vaguer.
       Verified: a relocated binary loaded a 140 MB tree from a bundle path.
-- [ ] **Parity fixtures**: eye proxy fit at several body shapes
+- [x] **Parity fixtures: eye proxy fit at six body shapes** (was two).
+      The fit's only body-dependent term is the TMatrix scale, and for the eye
+      proxies it is read off HEAD vertices (`x_scale 5399 11998`,
+      `y_scale 791 881`, `z_scale 962 5320`) — so the shapes worth capturing are
+      the ones that move head proportions, not the ones that merely look
+      different. Added `extreme_min` (Age 0.0 — the largest head-to-body ratio
+      the model makes), `extreme_max`, and `head_small`/`head_large` driving
+      `head-scale-depth|horiz|vert` straight at the three axes the matrix
+      divides by.
+      **They genuinely widen the range**: neutral + mixed spanned a y-scale of
+      0.851..1.034; the six now span **0.417..1.168**. Per-body diagonals are
+      captured in `tests/golden/proxy/tmatrix_scales.json` so a body that
+      exercises nothing new is visible rather than silently reassuring.
+      **18 comparisons** (3 proxies x 6 bodies) against the Python oracle, all
+      matching within 1e-5.
+- [x] **Found while doing it: 6 of the 18 fixtures cannot fail on scale.**
+      All 96 vertices of the low-poly eye proxy use the single-index form —
+      weights (1,0,0) and a **zero offset** — so `M·d` is zero whatever the
+      TMatrix says. Established by mutation, not inspection: swapping the y and
+      z scale terms in `fitProxy` is caught by all 12 high-poly/base comparisons
+      (worst delta 0.00046..0.646 dm) and by **none** of the six low-poly ones.
+      They are not worthless — they pin the exact-copy path — so that property
+      is now asserted outright (`[proxy][exact]`, bit-exact against the body
+      vertex) rather than left to look like scale coverage.
 
 ## M5 — Rig and skinning (`mh-rig`)
 

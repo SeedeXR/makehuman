@@ -1237,17 +1237,44 @@ def capture_proxy() -> None:
                "data/eyes/low-poly/low-poly.mhclo",
                "data/3dobjs/base.mhclo"]
 
-    # Two bodies, so the fit is exercised on more than the neutral shape --
-    # the TMatrix rescaling only shows up when proportions change.
+    # The fit's only body-dependent term is the TMatrix scale, and for the eye
+    # proxies that scale is read off HEAD vertices:
+    #     x_scale 5399 11998 / y_scale 791 881 / z_scale 962 5320
+    # So the shapes worth capturing are the ones that move head proportions,
+    # not merely the ones that look different. The macro extremes bracket the
+    # range, and head-scale-* drives exactly the three axes the matrix measures.
     bodies = [("neutral", {}),
               ("mixed", {"macrodetails/Gender": 1.0, "macrodetails/Age": 0.8,
                          "macrodetails-universal/Muscle": 0.9,
-                         "macrodetails-height/Height": 0.75})]
+                         "macrodetails-height/Height": 0.75}),
+              # Age 0.0 is an infant: the largest head-to-body ratio the model
+              # produces, and the far end of the scale numerator.
+              ("extreme_min", {"macrodetails/Gender": 0.0, "macrodetails/Age": 0.0,
+                               "macrodetails-universal/Muscle": 0.0,
+                               "macrodetails-universal/Weight": 0.0,
+                               "macrodetails-height/Height": 0.0,
+                               "macrodetails-proportions/BodyProportions": 0.0}),
+              ("extreme_max", {"macrodetails/Gender": 1.0, "macrodetails/Age": 1.0,
+                               "macrodetails-universal/Muscle": 1.0,
+                               "macrodetails-universal/Weight": 1.0,
+                               "macrodetails-height/Height": 1.0,
+                               "macrodetails-proportions/BodyProportions": 1.0}),
+              # Straight at the three axes the TMatrix divides by.
+              ("head_small", {"head/head-scale-depth-decr|incr": -1.0,
+                              "head/head-scale-horiz-decr|incr": -1.0,
+                              "head/head-scale-vert-decr|incr": -1.0}),
+              ("head_large", {"head/head-scale-depth-decr|incr": 1.0,
+                              "head/head-scale-horiz-decr|incr": 1.0,
+                              "head/head-scale-vert-decr|incr": 1.0})]
 
     out = GOLDEN / "proxy"
     out.mkdir(parents=True, exist_ok=True)
     entries: dict = {}
     described = []
+    scales: dict = {}
+
+    def stem_of(rel):
+        return os.path.basename(rel).replace(".mhclo", "").replace(".proxy", "")
 
     for bodyName, settings in bodies:
         for m in h.modifiers:
@@ -1261,6 +1288,9 @@ def capture_proxy() -> None:
                 continue
             pxy = proxy_mod.loadTextProxy(h, rel)
             coords = pxy.getCoords()
+            mtx = pxy.tmatrix.getMatrix(h.getRestposeCoordinates())
+            scales.setdefault(bodyName, {})[stem_of(rel)] = \
+                [float(mtx[0][0]), float(mtx[1][1]), float(mtx[2][2])]
             stem = os.path.basename(rel).replace(".mhclo", "").replace(".proxy", "")
             key = f"{stem}_{bodyName}"
             entries[key] = _write_blob(out / (key + ".bin"), coords, "f4")
@@ -1271,9 +1301,12 @@ def capture_proxy() -> None:
                                   "z_depth": int(pxy.z_depth)})
 
     (out / "proxies.json").write_text(json.dumps(described, indent=2))
+    (out / "tmatrix_scales.json").write_text(json.dumps(scales, indent=2, sort_keys=True))
     _finish("proxy", entries,
             {"bodies": [b[0] for b in bodies], "proxies": len(described),
-             "note": "each .bin is getCoords() for that proxy on that body"})
+             "note": "each .bin is getCoords() for that proxy on that body",
+             "tmatrix_scales": "tmatrix_scales.json -- the per-body scale diagonal, "
+                               "so a body that exercises nothing new is visible"})
 
 
 SUBSYSTEMS = {

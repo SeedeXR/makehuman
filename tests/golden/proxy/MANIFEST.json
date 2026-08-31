@@ -1,7 +1,7 @@
 {
   "subsystem": "proxy",
-  "captured_at": "2026-08-29T05:38:54.094204+00:00",
-  "reference_commit": "9d4ddd0ec0bd39172d4d162ee6ab25fa0033b740",
+  "captured_at": "2026-08-31T17:51:20.525839+00:00",
+  "reference_commit": "aceb61fed4acb7b14cf8f9cc6663b8f6585eb73d",
   "python": "3.14.6",
   "numpy": "2.5.2",
   "platform": "darwin",
@@ -65,12 +65,137 @@
       ],
       "count": 9564,
       "sha256": "f65bfb29d24eeeb30fd8630da23ec6964745fa78ddd5b194ed5bc95f80f77dc8"
+    },
+    "high-poly_extreme_min": {
+      "file": "high-poly_extreme_min.bin",
+      "dtype": "f4",
+      "shape": [
+        1064,
+        3
+      ],
+      "count": 3192,
+      "sha256": "6b90e04a687c4b277738c23c61bc1e6c4590dae84811839dfe19fa8773f7429f"
+    },
+    "low-poly_extreme_min": {
+      "file": "low-poly_extreme_min.bin",
+      "dtype": "f4",
+      "shape": [
+        96,
+        3
+      ],
+      "count": 288,
+      "sha256": "112eb5fec5498b8c0e37986bd90a6320e93b963dad1c44deecfdac9e180cc21e"
+    },
+    "base_extreme_min": {
+      "file": "base_extreme_min.bin",
+      "dtype": "f4",
+      "shape": [
+        3188,
+        3
+      ],
+      "count": 9564,
+      "sha256": "57217e6fe9ce9096c63f3346ab1f352ed7e11326964bf3d3d286ac5cc1b6fb8a"
+    },
+    "high-poly_extreme_max": {
+      "file": "high-poly_extreme_max.bin",
+      "dtype": "f4",
+      "shape": [
+        1064,
+        3
+      ],
+      "count": 3192,
+      "sha256": "05cae5cf4d41f94bafe21042af306efa3b52e483b6266af8c4c4a29ade7ca975"
+    },
+    "low-poly_extreme_max": {
+      "file": "low-poly_extreme_max.bin",
+      "dtype": "f4",
+      "shape": [
+        96,
+        3
+      ],
+      "count": 288,
+      "sha256": "888a9641da7ca972e5b5007697c8dbf7396fa7ac6021adbcaedee014cc295bdb"
+    },
+    "base_extreme_max": {
+      "file": "base_extreme_max.bin",
+      "dtype": "f4",
+      "shape": [
+        3188,
+        3
+      ],
+      "count": 9564,
+      "sha256": "8676f00f371e69e59fac7deea915b20ca43046014732de411d00e93739bdbbfa"
+    },
+    "high-poly_head_small": {
+      "file": "high-poly_head_small.bin",
+      "dtype": "f4",
+      "shape": [
+        1064,
+        3
+      ],
+      "count": 3192,
+      "sha256": "20eaf4b22ed9ce753924eff40d21758b2b0959e0f8fa7fe0cc7bb499a55b113f"
+    },
+    "low-poly_head_small": {
+      "file": "low-poly_head_small.bin",
+      "dtype": "f4",
+      "shape": [
+        96,
+        3
+      ],
+      "count": 288,
+      "sha256": "28deb8d6521cc38634c27fabb5ae671b0dd10d1e4b4a2ae2f956b83e407ed3bf"
+    },
+    "base_head_small": {
+      "file": "base_head_small.bin",
+      "dtype": "f4",
+      "shape": [
+        3188,
+        3
+      ],
+      "count": 9564,
+      "sha256": "9338e8ef81b626317e16ebdab68e113d81b01caf423f02d7ed6d23dbc068c717"
+    },
+    "high-poly_head_large": {
+      "file": "high-poly_head_large.bin",
+      "dtype": "f4",
+      "shape": [
+        1064,
+        3
+      ],
+      "count": 3192,
+      "sha256": "207e354c4f307b3c000689af2a5c7217949e30646723181a30b65f9346dd5c98"
+    },
+    "low-poly_head_large": {
+      "file": "low-poly_head_large.bin",
+      "dtype": "f4",
+      "shape": [
+        96,
+        3
+      ],
+      "count": 288,
+      "sha256": "352cee0a0179b559c3f8ce83babc129388ebfadf7dc60fc3ab860e0afc8aa8bc"
+    },
+    "base_head_large": {
+      "file": "base_head_large.bin",
+      "dtype": "f4",
+      "shape": [
+        3188,
+        3
+      ],
+      "count": 9564,
+      "sha256": "f106c1ac87b31ee9be8c97dffa2d1da0480f3d7e65fddd6f247afd6b02668615"
     }
   },
   "bodies": [
     "neutral",
-    "mixed"
+    "mixed",
+    "extreme_min",
+    "extreme_max",
+    "head_small",
+    "head_large"
   ],
   "proxies": 3,
-  "note": "each .bin is getCoords() for that proxy on that body"
+  "note": "each .bin is getCoords() for that proxy on that body",
+  "tmatrix_scales": "tmatrix_scales.json -- the per-body scale diagonal, so a body that exercises nothing new is visible"
 }
