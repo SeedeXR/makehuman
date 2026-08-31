@@ -734,9 +734,31 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       I also cannot fetch binaries (the fetch tool returns text), so the image
       files have to come from the owner.
       **Next, in order**: (1) normal/roughness/AO channels through the same
-      per-mesh path the diffuse now takes; (2) `autoBlendSkin` — the reference
-      tints by ethnicity, which is how one albedo becomes many tones;
-      (3) a real PBR metallic-roughness pipeline; (4) the skin `.mhmat` set.
+      per-mesh path the diffuse now takes; (2) ~~`autoBlendSkin`~~ **done, see
+      below**; (3) a real PBR metallic-roughness pipeline; (4) the skin `.mhmat`
+      set.
+- [x] **`autoBlendSkin` ported — continuous skin tone from the ethnic sliders.**
+      `mh::core::SkinTone` (**AGPL**: a translation of `apps/autoskinblender.py`,
+      so it belongs in `core`, never in a permissive module).
+      This is how ONE asset set becomes a *range* of skin tones instead of three
+      presets — the mechanism behind varied human colouring.
+      `ethnicDiffuseColor` is `asian*asianColor + african*africanColor +
+      caucasian*caucasianColor` (`:116-118`) with the constants at `:46-48`.
+      `blendEthnicLitsphere` reproduces three things that are easy to get wrong
+      and still look plausible:
+      - only weights **> 0** contribute, gathered caucasian, african, asian;
+      - **one** contributor returns the image **unmixed** (no rounding pass);
+      - two are `w0*a + w1*b` — **both weights given, not a lerp**;
+      - a third folds in at **weight 1.0 on the accumulator**, not a running
+        average.
+      Rounding is the reference's `int(w1*d1 + w2*d2 + 0.5)`.
+      **Cross-checked against the reference itself**, not just my own
+      arithmetic: running `image_operations.mixData` in Python gives the same
+      75, 40, 60 and the same mid tone `[0.59033, 0.44, 0.338]`.
+      Operates on raw RGBA bytes so `core` needs no image library and the
+      licence boundary holds. **Not yet wired to the viewport** — the renderer
+      takes a litsphere *path*, so feeding it a blended image needs an
+      in-memory-texture path on `MeshInstance`. That is the next step.
 - [ ] PBR metallic-roughness path + Blinn-Phong→PBR conversion
 - [ ] GPU skinning (matrix palette UBO/SSBO)
 - [ ] ID-buffer picking with async readback (replaces the full-window sync readback)

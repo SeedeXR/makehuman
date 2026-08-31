@@ -26,6 +26,7 @@ add_executable(mh_tests
     golden/test_face_mask_parity.cpp
     golden/test_material_roundtrip.cpp
     golden/test_skeleton_parity.cpp
+    golden/test_skintone_parity.cpp
     golden/test_weights_parity.cpp
     golden/test_skinning_parity.cpp
     golden/test_transform_parity.cpp

@@ -15,6 +15,7 @@ add_library(mh_core STATIC
     Modifier.cpp
     Mhm.cpp
     Proxy.cpp
+    SkinTone.cpp
     Material.cpp
     AssetIndex.cpp
     SliderLayout.cpp)

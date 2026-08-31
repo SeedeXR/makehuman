@@ -217,6 +217,48 @@ CI green on `72828a87`.
 
 ---
 
+## 2026-09-01 01:45:22 — Session 080 · **autoBlendSkin: one asset set, a range of tones**
+
+### The chunk
+Continuing the owner's skin-variety request. Last session built the per-mesh
+diffuse path; this one ports the mechanism that actually produces *variety*
+without needing a texture per tone.
+
+`mh::core::SkinTone` — a translation of `legacy/python/apps/autoskinblender.py`.
+**Licence**: that file is AGPL, so the translation belongs in `core` and must
+never land in `render`/`io`/`foundation` (Apache). Placed accordingly, and it
+takes raw RGBA bytes so `core` needs no image library.
+
+### What the reference actually does, and what is easy to get wrong
+`ethnicDiffuseColor` is straightforward (`:116-118`, constants `:46-48`). The
+image blend is not — four details each produce a plausible skin if botched:
+
+- only weights **> 0** contribute, gathered caucasian, african, asian;
+- **one** contributor returns the image **unmixed**, with no rounding pass;
+- two are `w0*a + w1*b` — **both weights supplied, so not a lerp**;
+- a third folds in at **weight 1.0 on the accumulator**, not a running average.
+
+Rounding is `int(w1*d1 + w2*d2 + 0.5)`.
+
+### Checked against the reference, not against myself
+My hand-computed expectations (75, 40, 60) agreeing with my own code proves
+nothing — the arithmetic and the port could share a misreading. So I ran
+`image_operations.mixData` in the reference Python: it returns the same
+**75, 40, 60**, and the same mid tone **[0.59033, 0.44, 0.338]**. Two
+implementations agreeing.
+
+### Honest limit
+**Not yet wired to the viewport.** `MeshInstance` takes a litsphere *path*, and
+a blended tone is an in-memory image. Feeding it through needs an
+in-memory-texture path on `MeshInstance` — recorded as the next step rather
+than claimed as done.
+
+### Verification
+ctest **400/400** in debug, release, ASan; TSan separately. Format clean.
+CI green on `52c44896`.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk
