@@ -218,3 +218,99 @@ TEST_CASE("every shipped target parses", "[core][target][golden]") {
     CHECK(entries == 6147800);  // measured total sparse entries
     CHECK(maxIdx == 19157);     // exactly base mesh vertexCount - 1
 }
+
+// --- Concurrent prewarming -------------------------------------------------
+//
+// A character can reach 364 of the 1,280 shipped targets, and reading them one
+// at a time dominates the cost of opening a saved .mhm. prewarm() loads them
+// concurrently. The only thing that matters is that it changes the SPEED and
+// nothing else: a concurrently-loaded target must be byte-identical to the one
+// get() would have produced on its own.
+
+TEST_CASE("prewarm loads byte-identical targets to serial get", "[core][target][prewarm]") {
+    const auto root = std::filesystem::path(MH_DATA_DIR) / "targets";
+    if (!std::filesystem::exists(root)) return;
+
+    // A spread of real shipped targets, deliberately including several from the
+    // same directory so the threads contend on the same parent inode.
+    std::vector<std::string> paths;
+    for (const auto& e : std::filesystem::recursive_directory_iterator(root)) {
+        if (e.is_regular_file() && e.path().extension() == ".target")
+            paths.push_back(std::filesystem::relative(e.path(), root).string());
+        if (paths.size() >= 200) break;
+    }
+    REQUIRE(paths.size() > 20);
+
+    TargetLibrary serial(root);
+    std::vector<const Target*> expected;
+    expected.reserve(paths.size());
+    for (const auto& p : paths) {
+        auto t = serial.get(p);
+        REQUIRE(t.has_value());
+        expected.push_back(*t);
+    }
+
+    TargetLibrary warmed(root);
+    warmed.prewarm(paths);
+    REQUIRE(warmed.cachedCount() == serial.cachedCount());
+
+    for (size_t i = 0; i < paths.size(); ++i) {
+        auto got = warmed.get(paths[i]);
+        REQUIRE(got.has_value());
+        // Byte-exact: same vertices, same offsets, same order, same bound.
+        REQUIRE((*got)->verts == expected[i]->verts);
+        REQUIRE((*got)->offsets.size() == expected[i]->offsets.size());
+        REQUIRE((*got)->maxVertexIndex == expected[i]->maxVertexIndex);
+        for (size_t k = 0; k < (*got)->offsets.size(); ++k) {
+            REQUIRE((*got)->offsets[k].x == expected[i]->offsets[k].x);
+            REQUIRE((*got)->offsets[k].y == expected[i]->offsets[k].y);
+            REQUIRE((*got)->offsets[k].z == expected[i]->offsets[k].z);
+        }
+    }
+}
+
+TEST_CASE("prewarm keeps entries already cached", "[core][target][prewarm]") {
+    const auto root = std::filesystem::path(MH_DATA_DIR) / "targets";
+    if (!std::filesystem::exists(root)) return;
+    std::vector<std::string> paths;
+    for (const auto& e : std::filesystem::recursive_directory_iterator(root)) {
+        if (e.is_regular_file() && e.path().extension() == ".target")
+            paths.push_back(std::filesystem::relative(e.path(), root).string());
+        if (paths.size() >= 30) break;
+    }
+    REQUIRE(paths.size() > 5);
+
+    TargetLibrary lib(root);
+    auto first = lib.get(paths[0]);
+    REQUIRE(first.has_value());
+    const auto* addressBefore = *first;
+
+    lib.prewarm(paths);
+    REQUIRE(lib.cachedCount() == paths.size());
+    // An already-cached target is not reloaded, and callers holding a pointer
+    // into the cache keep a valid one.
+    auto again = lib.get(paths[0]);
+    REQUIRE(again.has_value());
+    REQUIRE(*again == addressBefore);
+}
+
+TEST_CASE("prewarm tolerates paths that do not exist", "[core][target][prewarm]") {
+    const auto root = std::filesystem::path(MH_DATA_DIR) / "targets";
+    if (!std::filesystem::exists(root)) return;
+
+    // prewarm is an optimisation, not a validator: a bad path must not throw
+    // and must not be cached, so the later get() still reports the real error.
+    TargetLibrary lib(root);
+    std::vector<std::string> paths{"definitely/not/here.target"};
+    lib.prewarm(paths);
+    REQUIRE(lib.cachedCount() == 0);
+    auto t = lib.get(paths[0]);
+    REQUIRE_FALSE(t.has_value());
+    REQUIRE(t.error().kind == TargetErrorKind::NotFound);
+}
+
+TEST_CASE("prewarm of an empty list is a no-op", "[core][target][prewarm]") {
+    TargetLibrary lib(std::filesystem::path(MH_DATA_DIR) / "targets");
+    lib.prewarm({});
+    REQUIRE(lib.cachedCount() == 0);
+}

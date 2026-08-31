@@ -323,6 +323,16 @@ uint32_t Human::applyStack(Mesh& mesh, TargetLibrary& targets, uint32_t* missing
     // human.py:1159 -- restore the morph base before replaying the stack.
     mesh.resetToOriginal();
 
+    // Reading the stack's targets one at a time is what makes opening a saved
+    // .mhm slow: a character can reach 364 of the 1,280 shipped targets, and
+    // those files are independent, so they load concurrently (measured 98 ms
+    // serial -> 20 ms warm). Only the first apply pays. Afterwards every path
+    // is cached, `cold` stays empty and never allocates, and this is a scan.
+    std::vector<std::string> cold;
+    for (const auto& [path, weight] : stack_)
+        if (!targets.contains(path)) cold.push_back(path);
+    if (!cold.empty()) targets.prewarm(cold);
+
     uint32_t applied  = 0;
     uint32_t notFound = 0;
     for (const auto& [path, weight] : stack_) {

@@ -137,9 +137,31 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [x] `TargetLibrary` — path-keyed session cache
 - [x] **Byte-level parity**: parsed indices/offsets for 24 sampled targets, and the
       applied 24-target stack vs. the reference's result across all 19,158 verts
-- [ ] Compiled target blob (`tools/mhassetc`), uint32 indices, mmapped —
-      target ≤50 ms for all 1,280. **Now clearly justified**: ASCII parse of the
-      full set is 465 ms in C++ (vs 3,226 ms in Python), still 9x over budget.
+- [x] **Target loading hit the ≤50 ms goal WITHOUT the compiled blob.**
+      The old justification here — "ASCII parse of all 1,280 is 465 ms" — cited a
+      path **nothing takes**. Targets load lazily (`src/app/main.cpp:687`). The
+      default character touches **8** targets; driving all 291 modifiers, the
+      worst a single character can reach is **364** (28% of the set), measured.
+      Where the 196 ms actually went, for that worst-case character:
+      read-only, no parsing **158 ms** (364 separate `open()`s) — so it is
+      dominated by per-file I/O, not by `strtof`.
+      The files are independent, so `TargetLibrary::prewarm()` loads them
+      concurrently: **196 ms -> ~20 ms** end-to-end, and warm-to-warm the parse
+      is **98.1 -> 20.0 ms** (4.9x, 10 threads). Benchmarked at 6.09 ms for 364.
+      `Human::applyStack` prewarms the cold part of its own stack, so opening a
+      saved `.mhm` gets this for free; when everything is cached the scan
+      allocates nothing.
+      **The blob is therefore not built.** It would need a tool, a binary
+      format, versioning, a staleness gate and a CI job to beat a number that is
+      already under budget. **Reopen if** cold-start target loading is ever
+      measured above ~50 ms — the blob's real advantage is turning 364 `open()`s
+      into one `mmap`, which is the 158 ms term, and that term is unmeasured on
+      a genuinely cold page cache (no way to purge it here without sudo).
+- [x] **ThreadSanitizer is now a build preset and a CI job.** This is the
+      project's first concurrent code, and **ASan does not detect data races**.
+      `macos-arm64-tsan` + `MH_ENABLE_TSAN`. Verified the gate is not theatre:
+      the TSan runtime is linked (`otool -L`), and writing to the shared cache
+      from the worker threads is reported as a race **42 times**.
 - [x] Target index: filename tokenisation on `-`, `_`, `.` against the 9-category table
       — `TargetIndex.cpp:9-15`, cited to `targets.py:203`; 4 parity tests.
 - [x] All macro factor formulas (`MacroFactors`), verbatim from the reference,

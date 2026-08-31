@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        preset: [macos-arm64-debug, macos-arm64-release, macos-arm64-asan]
+        preset: [macos-arm64-debug, macos-arm64-release, macos-arm64-asan, macos-arm64-tsan]
     steps:
       - uses: actions/checkout@v4
 

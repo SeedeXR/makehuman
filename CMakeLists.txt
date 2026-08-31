@@ -23,6 +23,7 @@ endif()
 option(MH_BUILD_TESTS      "Build the test suite"        ON)
 option(MH_BUILD_BENCHMARKS "Build benchmark targets"     ON)
 option(MH_ENABLE_ASAN      "AddressSanitizer + UBSan"    OFF)
+option(MH_ENABLE_TSAN      "ThreadSanitizer"             OFF)
 
 set(MH_DATA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/data"
     CACHE PATH "Asset root used by development builds")
@@ -44,6 +45,15 @@ if(MH_ENABLE_ASAN)
     target_compile_options(mh_sanitize INTERFACE
         -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
     target_link_options(mh_sanitize INTERFACE -fsanitize=address,undefined)
+endif()
+
+# ASan does not find data races. Target loading is concurrent, so the race
+# detector is a separate, genuinely different gate. TSan and ASan cannot be
+# combined in one binary.
+if(MH_ENABLE_TSAN)
+    target_compile_options(mh_sanitize INTERFACE
+        -fsanitize=thread -fno-omit-frame-pointer)
+    target_link_options(mh_sanitize INTERFACE -fsanitize=thread)
 endif()
 
 # ------------------------------------------------------------ dependencies ---

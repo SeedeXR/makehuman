@@ -3,8 +3,11 @@
 #include "makehuman/foundation/Chars.h"
 
 #include <algorithm>
+#include <atomic>
 #include <fstream>
+#include <optional>
 #include <string_view>
+#include <thread>
 
 namespace mh::core {
 namespace {
@@ -140,6 +143,47 @@ std::expected<const Target*, TargetError> TargetLibrary::get(const std::string& 
 
     const auto [it, _] = cache_.emplace(relativePath, std::move(*loaded));
     return &it->second;
+}
+
+void TargetLibrary::prewarm(std::span<const std::string> relativePaths) {
+    // Only what is genuinely missing; re-reading a cached target would be pure
+    // waste, and rewriting its entry would invalidate pointers get() handed out.
+    std::vector<const std::string*> todo;
+    todo.reserve(relativePaths.size());
+    for (const auto& rel : relativePaths)
+        if (!cache_.contains(rel)) todo.push_back(&rel);
+
+    // Threads are not free. Below this, the serial path is simply faster --
+    // the default character touches 8 targets.
+    static constexpr size_t kParallelThreshold = 16;
+    if (todo.size() < kParallelThreshold) {
+        for (const auto* rel : todo)
+            if (auto t = loadTarget(root_ / *rel)) cache_.emplace(*rel, std::move(*t));
+        return;
+    }
+
+    const size_t hw      = std::thread::hardware_concurrency();
+    const size_t threads = std::min(todo.size(), hw == 0 ? size_t{4} : hw);
+
+    // Each slot is written by exactly one thread and read only after join, so
+    // no locking is needed. A target that fails to load leaves its slot empty
+    // and is never cached -- get() then reports the real error, as it would
+    // have without prewarming.
+    std::vector<std::optional<Target>> loaded(todo.size());
+    std::atomic<size_t> next{0};
+    std::vector<std::thread> pool;
+    pool.reserve(threads);
+    for (size_t k = 0; k < threads; ++k) {
+        pool.emplace_back([&] {
+            for (size_t i = next++; i < todo.size(); i = next++)
+                if (auto t = loadTarget(root_ / *todo[i])) loaded[i] = std::move(*t);
+        });
+    }
+    for (auto& th : pool)
+        th.join();
+
+    for (size_t i = 0; i < todo.size(); ++i)
+        if (loaded[i]) cache_.emplace(*todo[i], std::move(*loaded[i]));
 }
 
 bool expandTargetToRenderVertices(const Target& target, std::span<const uint32_t> vmap,

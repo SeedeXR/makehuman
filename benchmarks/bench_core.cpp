@@ -192,6 +192,25 @@ int main() {
         }
     }
 
+    // The number that matters for opening a saved .mhm: a worst-case character
+    // reaches 364 targets, and they load concurrently. Fresh library per run --
+    // prewarming an already-warm cache would measure nothing.
+    if (targetPaths.size() >= 364) {
+        const auto root = std::filesystem::path(MH_DATA_DIR) / "targets";
+        std::vector<std::string> rel;
+        rel.reserve(364);
+        for (size_t i = 0; i < 364; ++i)
+            rel.push_back(std::filesystem::relative(targetPaths[i], root).string());
+        results.push_back({"TargetLibrary::prewarm (364 = worst-case character)",
+                           medianMs(
+                               [&] {
+                                   mh::core::TargetLibrary lib(root);
+                                   lib.prewarm(rel);
+                               },
+                               5),
+                           0.0});
+    }
+
     std::vector<mh::core::Target> loaded;
     if (targetPaths.size() >= 200) {
         const std::span<const std::filesystem::path> first200{targetPaths.data(), 200};

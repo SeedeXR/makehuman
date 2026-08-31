@@ -4,6 +4,72 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 20:37:47 — Session 068 · **the ≤50 ms target goal, without the compiled blob**
+
+### The premise was wrong, and checking it changed the work
+M3's open item was a compiled target blob (`tools/mhassetc`), justified in this
+file by "ASCII parse of all 1,280 targets is 465 ms". That number is real, but
+it describes **a path nothing takes**. Targets load lazily — the app says so at
+`src/app/main.cpp:687` — and measurement confirmed it:
+
+| case | targets loaded |
+|---|---|
+| default character | **8** |
+| all 291 modifiers driven (worst a character can reach) | **364** (28%) |
+
+Nothing loads 1,280. Building a binary format to fix a 465 ms cost on an
+unreachable path would have been machinery for its own sake.
+
+### Where the time actually went
+For the worst-case 364-target character, splitting the cost apart:
+- read the bytes, **no parsing**: **158.4 ms** (25.1 MB over 364 `open()`s)
+- serial parse, warm: 98.1 ms
+- **concurrent parse, warm, 10 threads: 20.0 ms**
+
+So it is dominated by *per-file I/O*, not `strtof`. And the files are
+independent — which makes concurrency the obvious lever, not a new file format.
+
+### What shipped
+`TargetLibrary::prewarm()` loads a set of targets concurrently.
+`Human::applyStack` prewarms the cold part of its own stack, so opening a saved
+`.mhm` gets it for free. **196 ms -> ~20 ms** end-to-end; 6.09 ms for 364 in the
+benchmark. Once cached, the scan allocates nothing (`contains()` first, and
+`cold` stays empty).
+
+**The ≤50 ms goal the blob existed to hit is met.** The blob is not built, and
+the item records the threshold that should reopen it: the 158 ms `open()` term
+is what an `mmap` would really fix, and that term is unmeasured on a genuinely
+cold page cache (cannot purge here without sudo).
+
+### ThreadSanitizer, because ASan does not find races
+This is the project's first concurrent code and the existing sanitizer gate
+could not see the class of bug it introduces. Added `macos-arm64-tsan` +
+`MH_ENABLE_TSAN`, and put it in the CI matrix.
+
+**Verified the gate is not theatre** — twice:
+- the TSan runtime is actually linked (`otool -L` shows
+  `libclang_rt.tsan_osx_dynamic.dylib`);
+- writing to the shared cache from the worker threads is reported as a data
+  race **42 times**.
+
+The tests were checked the same way: writing results to the wrong slot — the
+realistic concurrency bug — fails the byte-identity test, which also proves the
+parallel branch is the one under test.
+
+### Verification
+ctest **377/377** in debug, release, ASan **and TSan** (373 + 4 new).
+
+### A process note
+`json.dumps` rewrote all of `CMakePresets.json` (69 lines churned for a
+19-line addition). Reverted and edited textually. Machine-rewriting a
+hand-formatted config file is not a free operation.
+
+### Still blocked on the owner
+**SonarQube credentials** — the one requested gate that has never been runnable.
+Ball-of-foot crease still visually unjudged.
+
+---
+
 ## 2026-08-31 20:12:36 — Session 067 · **M2 closed by measurement, not by building**
 
 ### The chunk
