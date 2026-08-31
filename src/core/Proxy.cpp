@@ -103,6 +103,7 @@ std::string ProxyError::message() const {
         case ProxyErrorKind::NotFound: k = "file not found"; break;
         case ProxyErrorKind::Unreadable: k = "file unreadable"; break;
         case ProxyErrorKind::MalformedLine: k = "malformed line"; break;
+        case ProxyErrorKind::Unsupported: k = "unsupported feature"; break;
         case ProxyErrorKind::IndexOutOfRange: k = "vertex index out of range"; break;
     }
     std::string m = file;
@@ -223,6 +224,20 @@ std::expected<Proxy, ProxyError> loadProxy(const std::filesystem::path& path) {
             p.materialFile = dir / f;
             block          = Block::None;
             continue;
+        }
+        // The reference builds the fit matrix from an affine solve over point
+        // correspondences when shear is present (`shared/proxy.py:476-492`,
+        // `matrixFromShear` -> `affine_matrix_from_points`); this parser
+        // implements only the three diagonal `*_scale` forms.
+        //
+        // No shipped asset uses shear -- all four .mhclo/.proxy files here are
+        // scale-only -- so implementing it would be untested machinery. Silently
+        // dropping it, though, fits the proxy with the wrong transform and
+        // reports success, so it is refused by name instead.
+        if (key.size() > 6 && key.find("shear_") != std::string::npos) {
+            return std::unexpected(
+                ProxyError{ProxyErrorKind::Unsupported, path.string(), lineNo,
+                           key + " is not implemented; only x_scale/y_scale/z_scale are"});
         }
         if ((key == "x_scale" || key == "y_scale" || key == "z_scale") && tok.size() >= 4) {
             const size_t axis = (key[0] == 'x') ? 0 : (key[0] == 'y') ? 1 : 2;

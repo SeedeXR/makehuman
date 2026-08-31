@@ -186,8 +186,18 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 - [x] `.mhclo`/`.proxy` parser incl. `TMatrix` scale
 - [x] Barycentric fit `P = Σ w_k·H[v_k] + M·d` — **parity on 3 proxies × 2 bodies**,
       including a reshaped body so the `TMatrix` rescaling is actually exercised
-- [ ] `TMatrix` shear forms (`shear_*`, `l_shear_*`, `r_shear_*`) — no shipped
-      asset uses them; the three eye/converter proxies are all scale-only
+- [~] **`TMatrix` shear is REFUSED, not implemented.** All nine spellings
+      (`shear_*`, `l_shear_*`, `r_shear_*`) now return `ProxyErrorKind::Unsupported`
+      naming the key.
+      Previously they parsed "successfully" and were **silently dropped** — the
+      proxy then fitted with the wrong transform and reported success, which is
+      the worst of the three outcomes. Refusing is worse than supporting and far
+      better than pretending.
+      Implementing needs `matrixFromShear` → `affine_matrix_from_points`
+      (`shared/proxy.py:476-492`), a general SVD-based affine solve rather than
+      the diagonal scale case. **No shipped asset uses shear** — all four
+      `.mhclo`/`.proxy` files are scale-only — so it would be untestable
+      machinery until one does.
 - [x] Delete-vert mask -> face hiding. `visibleVertexMask` unions the
       `delete_verts` of the worn proxies; `Mesh::faceMaskForVisibleVertices`
       turns that into a face mask. **A face survives if ANY corner is visible**

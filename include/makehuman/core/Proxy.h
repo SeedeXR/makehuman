@@ -95,7 +95,16 @@ struct Proxy {
     uint32_t maxRefIndex_{};
 };
 
-enum class ProxyErrorKind { NotFound, Unreadable, MalformedLine, IndexOutOfRange };
+enum class ProxyErrorKind {
+    NotFound,
+    Unreadable,
+    MalformedLine,
+    IndexOutOfRange,
+    /// A key the reference honours and this parser does not implement. Refused
+    /// rather than skipped: an ignored transform fits the proxy wrongly and
+    /// says nothing, which is the worst of the three outcomes.
+    Unsupported,
+};
 
 struct ProxyError {
     ProxyErrorKind kind{};

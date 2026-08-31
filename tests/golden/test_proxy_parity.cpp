@@ -208,3 +208,51 @@ TEST_CASE("proxy fitting matches the reference on two bodies", "[golden][parity]
     }
     CHECK(compared == 6);  // 3 proxies x 2 bodies
 }
+
+// The reference parses nine shear keys (`shared/proxy.py:476-492`) and builds
+// the fit matrix from an affine solve over point correspondences
+// (`matrixFromShear` -> `affine_matrix_from_points`). We implement only the
+// three diagonal `*_scale` forms.
+//
+// Until this, a `.mhclo` using shear parsed "successfully" and the shear was
+// silently dropped -- the proxy then fitted with the wrong transform and
+// nothing said so. Refusing is worse than supporting it and far better than
+// pretending.
+TEST_CASE("a proxy using shear is refused, not silently mis-fitted", "[proxy][shear]") {
+    const auto path = std::filesystem::temp_directory_path() / "mh_shear.mhclo";
+    {
+        std::ofstream f(path);
+        f << "name ShearedThing\n"
+          << "basemesh hm08\n"
+          << "x_scale 5399 11998 1.4800\n"
+          << "shear_x 5399 11998 0.1 0.9\n"
+          << "verts 0\n"
+          << "0\n";
+    }
+
+    const auto proxy = mh::core::loadProxy(path);
+    REQUIRE_FALSE(proxy.has_value());
+    INFO(proxy.error().message());
+    CHECK(proxy.error().detail.find("shear_x") != std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
+// Every one of the nine spellings must be caught, not just the unprefixed set:
+// a left/right asset that slipped through would mis-fit exactly as before.
+TEST_CASE("every shear spelling is refused", "[proxy][shear]") {
+    for (const char* key : {"shear_x", "shear_y", "shear_z", "l_shear_x", "l_shear_y", "l_shear_z",
+                            "r_shear_x", "r_shear_y", "r_shear_z"}) {
+        const auto path = std::filesystem::temp_directory_path() / "mh_shear_each.mhclo";
+        {
+            std::ofstream f(path);
+            f << "name T\nbasemesh hm08\n" << key << " 1 2 0.1 0.9\nverts 0\n0\n";
+        }
+        const auto proxy = mh::core::loadProxy(path);
+        INFO(key);
+        CHECK_FALSE(proxy.has_value());
+        std::error_code ec;
+        std::filesystem::remove(path, ec);
+    }
+}

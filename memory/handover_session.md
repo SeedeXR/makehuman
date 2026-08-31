@@ -4,6 +4,50 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 19:49:28 — Session 066 · **refusing beats pretending: proxy shear**
+
+### What the todo asked, and what was actually wrong
+The item read "implement `TMatrix` shear forms". Investigating changed the
+shape of the job.
+
+The reference parses **nine** shear keys (`shared/proxy.py:476-492`) and, when
+shear is present, builds the fit matrix from `matrixFromShear` ->
+`affine_matrix_from_points` — a general SVD-based affine solve over point
+correspondences, not the diagonal `*_scale` case we implement.
+
+Meanwhile **no shipped asset uses shear**: all four `.mhclo`/`.proxy` files are
+scale-only, so a port would be numerically delicate code with nothing to verify
+it against.
+
+The real defect was elsewhere and worse: a `.mhclo` containing `shear_x` parsed
+**successfully**, the shear was silently dropped, and the proxy fitted with the
+wrong transform while the loader reported success. A third-party asset would be
+quietly wrong with nothing said.
+
+### What shipped
+All nine spellings now return `ProxyErrorKind::Unsupported`, naming the key and
+what *is* supported. The `l_`/`r_` variants are covered too — a left/right asset
+slipping through would mis-fit exactly as before.
+
+Refusing is worse than supporting and far better than pretending. Implementing
+the affine solve stays on the todo **with the citation**, so whoever takes it
+knows precisely what it needs.
+
+### Verification
+- 9 spellings each refused (one test per spelling, not just the unprefixed set).
+- Every shipped proxy still loads; the app still wears eyes.
+- ctest **373/373** in debug, release and ASan; format clean.
+
+### Scope note
+This chunk is deliberately **smaller than the todo item asked for**. Building an
+unverifiable affine solve to tick an item would have been worse than closing the
+silent-failure hole and saying plainly what remains.
+
+### Still blocked on the owner
+**SonarQube credentials**; the ball-of-foot crease remains visually unjudged.
+
+---
+
 ## 2026-08-31 19:25:11 — Session 065 · **the app could not find its own assets once moved**
 
 ### What was broken
