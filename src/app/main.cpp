@@ -13,6 +13,7 @@
 #include "makehuman/core/Subdivider.h"
 #include "makehuman/core/Target.h"
 #include "makehuman/core/TargetIndex.h"
+#include "makehuman/foundation/DataDir.h"
 #include "makehuman/io/GltfWriter.h"
 #include "makehuman/io/ObjWriter.h"
 #include "makehuman/io/SceneIO.h"
@@ -55,6 +56,24 @@
 #include <string_view>
 
 namespace {
+
+/// The asset root, resolved once at startup.
+///
+/// A process-wide constant, so a set-once accessor rather than a parameter
+/// threaded through every loader: the alternative is five signatures carrying a
+/// value that never differs between calls.
+std::filesystem::path& dataRoot() {
+    static std::filesystem::path root{MH_DATA_DIR};
+    return root;
+}
+
+void setDataRoot(std::filesystem::path root) {
+    dataRoot() = std::move(root);
+}
+
+const std::filesystem::path& dataDir() {
+    return dataRoot();
+}
 
 /// Pixel statistics for the rendered frame. A window that came up but drew
 /// nothing still saves a perfectly valid PNG, so "it ran" is not evidence --
@@ -119,11 +138,9 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
     if (pose == "rest" || pose == "apose" || pose == "a-pose") return true;
 
     std::filesystem::path file = pose;
-    if (pose == "tpose" || pose == "t-pose")
-        file = std::filesystem::path(MH_DATA_DIR) / "poses" / "tpose.bvh";
+    if (pose == "tpose" || pose == "t-pose") file = dataDir() / "poses" / "tpose.bvh";
 
-    auto skel =
-        mh::rig::loadSkeleton(std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel");
+    auto skel = mh::rig::loadSkeleton(dataDir() / "rigs" / "default.mhskel");
     if (!skel) {
         std::fprintf(stderr, "cannot load the rig: %s\n", skel.error().message().c_str());
         return false;
@@ -133,8 +150,8 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
         return false;
     }
 
-    auto weights = mh::rig::loadWeights(
-        std::filesystem::path(MH_DATA_DIR) / "rigs" / "default_weights.mhw", mesh.vertexCount());
+    auto weights =
+        mh::rig::loadWeights(dataDir() / "rigs" / "default_weights.mhw", mesh.vertexCount());
     if (!weights) {
         std::fprintf(stderr, "cannot load weights: %s\n", weights.error().message().c_str());
         return false;
@@ -239,7 +256,7 @@ constexpr const char* kDefaultEyes = "high-poly";
 /// Eyes get their own matcap; shading them with the body's skin makes them read
 /// as flesh-coloured beads.
 std::filesystem::path eyeLitsphere() {
-    return std::filesystem::path(MH_DATA_DIR) / "litspheres" / "skinmat_eye.png";
+    return dataDir() / "litspheres" / "skinmat_eye.png";
 }
 
 /// A proxy the character is wearing: the fitting data, its own geometry, and
@@ -443,7 +460,7 @@ mh::core::MhmFile documentFor(const mh::core::Human& human, const mh::core::MhmF
 /// The body's own material, for export. The viewport shades with a litsphere,
 /// which carries no PBR data at all, so a `.mhmat` is what a DCC tool gets.
 std::optional<mh::foundation::MaterialDesc> bodyMaterial() {
-    const auto path = std::filesystem::path(MH_DATA_DIR) / "skins" / "default.mhmat";
+    const auto path = dataDir() / "skins" / "default.mhmat";
     if (auto mat = mh::core::loadMaterial(path)) return mat->desc();
     std::fprintf(stderr, "cannot load %s; exporting without a body material\n",
                  path.string().c_str());
@@ -559,6 +576,19 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+
+    // Where the assets are is a RUNTIME question. MH_DATA_DIR is an absolute
+    // path into whichever source tree compiled this binary, so an installed or
+    // bundled copy has no assets at all unless it looks elsewhere first.
+    setDataRoot(mh::foundation::resolveDataDir(
+        QCoreApplication::applicationFilePath().toStdString(), MH_DATA_DIR));
+    if (!std::filesystem::exists(dataDir() / "3dobjs" / "base.obj")) {
+        std::fprintf(stderr,
+                     "cannot find the asset tree (looked last at %s)\n"
+                     "set MH_DATA_DIR to point at it\n",
+                     dataDir().string().c_str());
+        return 1;
+    }
     QCoreApplication::setOrganizationName(QStringLiteral("MakeHuman"));
     QCoreApplication::setApplicationName(QStringLiteral("MakeHumanCpp"));
 
@@ -635,7 +665,7 @@ int main(int argc, char** argv) {
     parser.addOption(shotOpt);
     parser.process(app);
 
-    auto mesh = mh::core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    auto mesh = mh::core::loadObj(dataDir() / "3dobjs" / "base.obj");
     if (!mesh) {
         std::fprintf(stderr, "cannot load the base mesh: %s\n", mesh.error().message().c_str());
         return 1;
@@ -644,7 +674,7 @@ int main(int argc, char** argv) {
     // registry and hands down plain TaskViewSpecs, which is what keeps the UI
     // module Apache-2.0. loadStandardLayout also puts the task views in the
     // reference's tab order, which is NOT the order the files are written in.
-    auto standard = mh::core::loadStandardLayout(std::filesystem::path(MH_DATA_DIR) / "modifiers");
+    auto standard = mh::core::loadStandardLayout(dataDir() / "modifiers");
     if (!standard) {
         std::fprintf(stderr, "cannot load the modifier registry: %s\n",
                      standard.error().message().c_str());
@@ -652,12 +682,11 @@ int main(int argc, char** argv) {
     }
     const std::vector<mh::foundation::TaskViewSpec>& views = standard->views;
 
-    const mh::core::TargetIndex index =
-        mh::core::TargetIndex::build(std::filesystem::path(MH_DATA_DIR) / "targets");
+    const mh::core::TargetIndex index = mh::core::TargetIndex::build(dataDir() / "targets");
     mh::core::Human human(&index, standard->modifiers);
     // Lazy: only the targets a slider actually reaches are read from disk, so
     // start-up does not pay for all 1,280.
-    mh::core::TargetLibrary targets(std::filesystem::path(MH_DATA_DIR) / "targets");
+    mh::core::TargetLibrary targets(dataDir() / "targets");
 
     // The character as a file: modifiers are refreshed from `human` on save, but
     // everything else -- uuid, tags, camera, and the skeleton/proxy/material
@@ -989,7 +1018,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr,
                      "no litspheres found in %s -- the viewport cannot shade anything "
                      "without one\n",
-                     (std::filesystem::path(MH_DATA_DIR) / "litspheres").string().c_str());
+                     (dataDir() / "litspheres").string().c_str());
         return 1;
     }
     skin = chosenSkin.toStdString();

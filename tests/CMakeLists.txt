@@ -11,6 +11,7 @@ add_executable(mh_tests
     unit/test_material.cpp
     unit/test_asset_index.cpp
     unit/test_obj_scene.cpp
+    unit/test_data_dir.cpp
     golden/test_base_mesh_parity.cpp
     golden/test_mesh_fixture_parity.cpp
     golden/test_subdiv_fixture_parity.cpp

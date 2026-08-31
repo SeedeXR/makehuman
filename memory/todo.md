@@ -211,7 +211,17 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       (`proxychooser.py:550-552` refuses filenames), so this is what makes a
       saved character's clothes resolve. Search paths are ordered, earlier wins,
       and collisions are **reported** rather than silently last-write-wins.
-- [ ] macOS path resolution (`~/Library/Application Support`, bundle Resources)
+- [x] **Runtime asset-path resolution** — `foundation::resolveDataDir`.
+      `MH_DATA_DIR` was baked in at compile time as an absolute path into
+      whichever source tree built the binary, so **an installed or bundled app
+      had no assets at all**. CMake's own comment conceded it ("used by
+      development builds").
+      Order: `$MH_DATA_DIR` → bundle `Resources/data` → `share/makehuman/data`
+      → `~/Library/Application Support/MakeHuman/data` → compiled default.
+      A candidate counts only if it **looks like an asset tree**
+      (`3dobjs/base.obj` present); an override pointing nowhere is ignored, not
+      obeyed, so the failure surfaces at startup rather than later and vaguer.
+      Verified: a relocated binary loaded a 140 MB tree from a bundle path.
 - [ ] **Parity fixtures**: eye proxy fit at several body shapes
 
 ## M5 — Rig and skinning (`mh-rig`)

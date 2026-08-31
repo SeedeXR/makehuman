@@ -4,6 +4,56 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 19:25:11 — Session 065 · **the app could not find its own assets once moved**
+
+### What was broken
+`MH_DATA_DIR` is a compile-time absolute path into whichever source tree built
+the binary. Every one of the app's 13 asset lookups used it directly, so a
+copied, installed or bundled binary had **no assets at all** — the directory
+does not exist on any other machine. `CMakeLists.txt:27` already called it
+"Asset root used by development builds"; nothing acted on that.
+
+This blocks packaging (M11) outright, not merely inconveniently.
+
+### What shipped
+`foundation::resolveDataDir(executable, compiledDefault)` — first match wins:
+
+1. `$MH_DATA_DIR` — an explicit override beats every built-in guess.
+2. `<exe>/../Resources/data` — inside a macOS `.app`.
+3. `<exe>/../share/makehuman/data` — a Unix install prefix.
+4. `~/Library/Application Support/MakeHuman/data` — separately installed assets.
+5. the compiled default — development builds keep working.
+
+A candidate counts only if it **exists and looks like an asset tree**
+(`3dobjs/base.obj`). Accepting a directory with merely the right shape would
+trade "no assets" for "no assets, reported later and less clearly" — so an
+override pointing nowhere is ignored rather than obeyed, and startup fails with
+the path it looked at.
+
+In `main`, a **set-once accessor** rather than a parameter threaded through five
+loader signatures: the asset root is a process-wide constant and would never
+differ between calls.
+
+### A verification of mine that proved nothing
+My first relocation test "passed" — a copied binary exported successfully. It
+proved nothing: **the compiled default still exists on this machine**, so the
+fallback fired exactly as designed. Correct behaviour, wrong conclusion.
+
+Said so, and tested the override path instead, which *is* isolable here: a
+relocated binary loaded a 140 MB tree from a bundle path, and an empty override
+fell through rather than being obeyed. The bundle and install branches are
+covered by unit tests over synthetic trees; a real `.app` is packaging work.
+
+### Verification
+- ctest **371/371** in debug, release and ASan; format clean; licence gate green
+  (`DataDir.cpp` lives in Apache-2.0 `foundation` and pulls in nothing AGPL).
+- 6 precedence tests, including the two negative cases.
+
+### Still blocked on the owner
+**SonarQube credentials**; the ball-of-foot crease remains visually unjudged.
+
+---
+
 ## 2026-08-31 19:02:58 — Session 064 · **an ungated Apache module, and five todo entries that lied**
 
 ### The real find: `ui` was Apache-2.0 and ungated
