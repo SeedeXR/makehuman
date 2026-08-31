@@ -4,6 +4,64 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 21:56:53 — Session 072 · **the retarget table, and it is not lossy**
+
+### Two stale entries closed first
+`memory/todo.md` listed both as open. Both were already implemented — reality
+beat memory:
+- `matPoseVerts = matPoseGlobal · inv(matRestGlobal)` — `src/rig/Skinning.cpp:27`.
+- Joint positions from vertex clouds — `src/rig/Skeleton.cpp:38`, the mean of
+  each joint's cloud (`skeleton.py:428-434`), benchmarked at 0.01 ms.
+
+### The chunk: `data/rigs/mixamo_retarget.json`
+The mapping existed only as Python source inside a proof tool. It emitted
+nothing, so nothing could consume it. Now emitted as data by
+`tools/mixamo_mapping.py --emit` — one source of truth, no second copy to drift.
+
+### The item's premise turned out to be wrong
+It read "**Lossy by construction**". That was true against MakeHuman's 163. It
+is **not** true against the superset: the 16 Mixamo bones `MAPPING` recorded as
+`None` — meaning "the superset must add this" — are **exactly** the 16 the
+superset added. Checked as a set equality, not by eye. So the table is **TOTAL**:
+all 65 Mixamo bones have a counterpart.
+
+| Mixamo | superset |
+|---|---|
+| `Hips` | `hips` (*not* `root` — the legs and spine meet at root's tail, 0.92 dm away) |
+| `Left/RightToeBase` | `ball.L/R` |
+| `Left/RightToe_End` | `toe_end.L/R` |
+| `HeadTop_End` | `HeadTop_End` |
+| `*Hand{Thumb..Pinky}4` | `finger1..5-4.{L,R}` |
+
+The finger correspondence is **not** my guess: `MAPPING` already sends
+`LeftHandThumb1..3` to `finger1-1..3.L`, so the tip continues the same chain.
+
+### Not a name-matching heuristic — which the item warned against
+Every target must **descend from its Mixamo parent's target** in the 179-bone
+hierarchy. **0 violations** across all 64 parented bones. Plus injectivity and
+existence-in-rig.
+
+### Both gates mutation-tested, not assumed
+- Editing the committed file → `is stale`.
+- Reversing the finger tips (thumb onto the pinky chain) → caught by ancestry,
+  naming each wrong bone. A pure name match would have accepted it.
+
+This is the lesson from session 070 applied: the superset rig had a staleness
+gate and no quality gate. This artifact gets both.
+
+### Deliberately NOT built
+No C++ loader. Nothing retargets yet, and an API with no caller is the
+speculative kind. The table is data; the loader arrives with its first consumer.
+
+### Verification
+`tools/mixamo_mapping.py` and `--check` both exit 0. ctest **384/384** debug and
+release (no C++ changed). CI gate added to the `inventories` job.
+
+### Still blocked on the owner
+**SonarQube credentials.**
+
+---
+
 ## 2026-08-31 21:50:41 — Session 071 · **--rig: making the superset rig reachable**
 
 ### The chunk

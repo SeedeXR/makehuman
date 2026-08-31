@@ -40,6 +40,44 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parent.parent
 SKELETON = REPO / "data" / "rigs" / "default.mhskel"
 MIXAMO_DOC = REPO / "docs" / "rig" / "mixamo_bone_order.md"
+SUPERSET = REPO / "data" / "rigs" / "mixamo_superset.mhskel"
+RETARGET = REPO / "data" / "rigs" / "mixamo_retarget.json"
+
+# The 16 Mixamo bones MakeHuman's 163 do not have. MAPPING records them as None
+# -- "the superset must add this" -- and the superset now does, so against the
+# 179-bone rig the table is TOTAL: every one of Mixamo's 65 has a counterpart.
+#
+# These are not name matches. Each one continues a chain the already-proven
+# segments established: MAPPING sends LeftHandThumb1..3 to finger1-1..3.L, so
+# LeftHandThumb4 -> finger1-4.L is the same chain, and the ancestry check below
+# verifies it structurally rather than trusting the name.
+SUPERSET_ADDITIONS: dict[str, str] = {
+    # Mixamo roots the skeleton at Hips. MakeHuman's `root` is NOT that joint --
+    # the legs and spine meet at root's TAIL, 0.92 dm from its head -- so the
+    # superset carries a real `hips` bone at that junction instead.
+    "Hips": "hips",
+    "HeadTop_End": "HeadTop_End",
+    "LeftToeBase": "ball.L",
+    "RightToeBase": "ball.R",
+    "LeftToe_End": "toe_end.L",
+    "RightToe_End": "toe_end.R",
+}
+for _side, _sfx in (("Left", ".L"), ("Right", ".R")):
+    for _n, _finger in enumerate(("Thumb", "Index", "Middle", "Ring", "Pinky"), start=1):
+        SUPERSET_ADDITIONS[f"{_side}Hand{_finger}4"] = f"finger{_n}-4{_sfx}"
+
+
+def superset_parents() -> dict[str, str | None]:
+    bones = json.loads(SUPERSET.read_text())["bones"]
+    return {name: spec.get("parent") for name, spec in bones.items()}
+
+
+def full_mapping() -> dict[str, str]:
+    """Mixamo bone -> superset bone, for all 65. Total by construction."""
+    out: dict[str, str] = {}
+    for mixamo_bone, target in MAPPING.items():
+        out[mixamo_bone] = target if target is not None else SUPERSET_ADDITIONS[mixamo_bone]
+    return out
 MIXAMO_REST = REPO / "docs" / "rig" / "mixamo_rest_pose.json"
 BASE_MESH = REPO / "data" / "3dobjs" / "base.obj"
 
@@ -297,6 +335,61 @@ def main() -> int:
                 f"is not an ancestor of {target}")
 
     problems += geometric_problems()
+
+    # The full table, against the superset rig. This is the check that makes the
+    # additions a mapping rather than a name match: each target's ancestry in
+    # the 179-bone rig must contain the target of its Mixamo parent.
+    full = full_mapping()
+    sup = superset_parents()
+
+    absent = sorted({v for v in full.values() if v not in sup})
+    if absent:
+        problems.append("retarget target missing from the superset rig: " + ", ".join(absent))
+    if len(set(full.values())) != len(full):
+        problems.append("the full retarget table is not injective")
+
+    def superset_ancestors(bone: str) -> list[str]:
+        out, cur = [], sup.get(bone)
+        while cur:
+            out.append(cur)
+            cur = sup.get(cur)
+        return out
+
+    for bone, parent in mixamo.items():
+        if parent is None:
+            continue
+        target, parent_target = full.get(bone), full.get(parent)
+        if target is None or parent_target is None:
+            continue
+        if parent_target not in superset_ancestors(target):
+            problems.append(f"{bone}->{target} does not descend from "
+                            f"{parent}->{parent_target} in the superset rig")
+
+    if not problems and ("--emit" in sys.argv or "--check" in sys.argv):
+        payload = {
+            "_provenance": {
+                "generated_by": "tools/mixamo_mapping.py --emit",
+                "rig": "data/rigs/mixamo_superset.mhskel",
+                "mixamo_bones": len(mixamo),
+                "note": "Mixamo bone -> superset bone. Total: all 65 have a "
+                        "counterpart, because the superset adds the 16 MakeHuman "
+                        "lacks. Verified injective, and each target descends from "
+                        "its Mixamo parent's target in the superset hierarchy.",
+            },
+            "mapping": dict(sorted(full.items())),
+        }
+        text = json.dumps(payload, indent=2, sort_keys=False) + "\n"
+        if "--check" in sys.argv:
+            if not RETARGET.exists():
+                print(f"{RETARGET} does not exist; run with --emit", file=sys.stderr)
+                return 1
+            if RETARGET.read_text() != text:
+                print(f"{RETARGET} is stale; re-run with --emit", file=sys.stderr)
+                return 1
+            print(f"{RETARGET} is up to date")
+        else:
+            RETARGET.write_text(text)
+            print(f"wrote {RETARGET} ({len(full)} bones)")
 
     mapped = {k: v for k, v in MAPPING.items() if v is not None}
     to_add = sorted(k for k, v in MAPPING.items() if v is None)

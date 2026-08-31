@@ -274,3 +274,11 @@ jobs:
       # file and the tool disagree -- and the tool is the one the docs describe.
       - name: Superset skeleton is not stale
         run: python3 tools/build_mixamo_superset.py --check
+
+      # The retarget table is generated from the same proven mapping and checked
+      # the same way. --check re-derives it and fails on any drift; the run also
+      # re-validates ancestry against the 179-bone rig, so a plausible-looking
+      # hand edit (a fingertip moved onto the wrong finger's chain) fails here
+      # rather than showing up as a twisted hand in an animation.
+      - name: Mixamo retarget table is not stale
+        run: python3 tools/mixamo_mapping.py --check
