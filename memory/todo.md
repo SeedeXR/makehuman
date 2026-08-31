@@ -641,9 +641,21 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       At most one entry may carry a skin; joint nodes follow the mesh nodes at
       `entries.size() + jointIndex`. Verified with assimp: a skinned body beside
       an unskinned proxy gives bones on mesh 0 only, all resolving to real nodes.
-- [ ] Multi-mesh for `.usda`, `.fbx` and the assimp `.dae`/`.stl`/`.3mf` paths.
-      Still single-mesh, and they say on stderr what they omit. `exportScene`
-      takes one `RenderView`.
+- [x] **Multi-mesh FBX / Collada / STL / 3MF** — `io::SceneEntry` +
+      `exportScene(span)`. assimp's `aiScene` holds many meshes natively, so no
+      index arithmetic was needed; extracting `fillMesh`/`fillMaterial` left
+      `SceneIO.cpp` **smaller than before** (537 lines, was 593).
+      **Each mesh gets its own child node.** Not cosmetic: assimp's FBX exporter
+      names a mesh after its owning node, so hanging them all off the root made
+      both meshes `body` — geometry and materials survived, identity did not,
+      and Blender merged them into one object. Only caught by checking with a
+      *second* importer.
+      Side effect accepted: Collada dedupes a mesh whose name matches its node's
+      and emits `body_1`. FBX matters more for DCC round-tripping, and identity
+      is still preserved, so tests assert by prefix.
+- [ ] **USD is the last single-mesh writer.** `writeUsda` takes one
+      `RenderView` and has no material parameter at all. A dressed character
+      still exports body-only to `.usda`, and says so on stderr.
 - [x] **Proxy materials.** `WornProxy` loads the `.mhmat` its proxy names; the
       body loads `data/skins/default.mhmat` (which is what the reference does,
       `apps/human.py:89`). A dressed export carries `DefaultSkin` on the body

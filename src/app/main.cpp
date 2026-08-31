@@ -497,15 +497,27 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
         return report(r ? std::string{} : r.error().message());
     }
 
+    // Every assimp-backed format takes the whole scene now, so the body and
+    // everything worn travel together.
+    const auto sceneEntries = [&] {
+        std::vector<mh::io::SceneEntry> scene;
+        scene.push_back({rm.view(), "body", allDressed ? &*skin : nullptr});
+        for (const auto& [group, proxy] : worn) {
+            scene.push_back({proxy.rm.view(), group.toLower().toStdString(),
+                             allDressed ? &*proxy.material : nullptr});
+        }
+        return scene;
+    };
+
     // Said plainly, and only for a format we are actually going to write.
     // Silently dropping what the character is wearing is the failure this whole
     // change exists to fix; announcing it for an extension we then reject would
     // just be noise before an error.
-    static constexpr std::array kSingleMeshFormats{".usda", ".usd", ".fbx", ".dae", ".stl", ".3mf"};
+    static constexpr std::array kSingleMeshFormats{".usda", ".usd"};
     if (!worn.empty() && std::ranges::find(kSingleMeshFormats, ext) != kSingleMeshFormats.end()) {
         std::fprintf(stderr,
                      "note: %s exports the body only; %zu worn item(s) omitted "
-                     "(multi-mesh is implemented for .obj and .glb so far)\n",
+                     "(USD is the last single-mesh writer)\n",
                      ext.c_str(), worn.size());
     }
     if (ext == ".usda" || ext == ".usd") {
@@ -526,23 +538,19 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     // PLY is deliberately absent -- assimp 6.0.4 writes corrupt faces for any
     // mesh with UVs, and every mesh here has them (SceneIO.h).
     if (ext == ".fbx") {
-        const auto r = mh::io::exportScene(path, rm.view(), mh::io::SceneFormat::FbxBinary, {},
-                                           skin ? &*skin : nullptr);
+        const auto r = mh::io::exportScene(path, sceneEntries(), mh::io::SceneFormat::FbxBinary);
         return report(r ? std::string{} : r.error().message());
     }
     if (ext == ".dae") {
-        const auto r = mh::io::exportScene(path, rm.view(), mh::io::SceneFormat::Collada, {},
-                                           skin ? &*skin : nullptr);
+        const auto r = mh::io::exportScene(path, sceneEntries(), mh::io::SceneFormat::Collada);
         return report(r ? std::string{} : r.error().message());
     }
     if (ext == ".stl") {
-        const auto r = mh::io::exportScene(path, rm.view(), mh::io::SceneFormat::StlBinary, {},
-                                           skin ? &*skin : nullptr);
+        const auto r = mh::io::exportScene(path, sceneEntries(), mh::io::SceneFormat::StlBinary);
         return report(r ? std::string{} : r.error().message());
     }
     if (ext == ".3mf") {
-        const auto r = mh::io::exportScene(path, rm.view(), mh::io::SceneFormat::ThreeMf, {},
-                                           skin ? &*skin : nullptr);
+        const auto r = mh::io::exportScene(path, sceneEntries(), mh::io::SceneFormat::ThreeMf);
         return report(r ? std::string{} : r.error().message());
     }
     std::fprintf(stderr, "unknown export extension \"%s\"\n", ext.c_str());

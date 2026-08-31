@@ -71,6 +71,159 @@ std::string SceneIoError::message() const {
     return m;
 }
 
+namespace {
+
+/// Fills one aiMesh from an entry. assimp owns everything hung off the scene.
+void fillMesh(aiMesh* am, const foundation::RenderView& rm, const std::string& name,
+              unsigned materialIndex, const SceneExportOptions& options, float scale,
+              float groundOffset) {
+    const bool withNormals = options.writeNormals && rm.vnorm.size() == rm.vertexCount();
+    const bool withUVs     = options.writeUVs && rm.texco.size() == rm.vertexCount();
+
+    am->mMaterialIndex  = materialIndex;
+    am->mPrimitiveTypes = aiPrimitiveType_TRIANGLE;
+    am->mName.Set(name);
+    am->mNumVertices = static_cast<unsigned>(rm.vertexCount());
+    am->mVertices    = allocArray<aiVector3D>(rm.vertexCount());
+    for (size_t i = 0; i < rm.vertexCount(); ++i) {
+        const Vec3& v    = rm.coord[i];
+        am->mVertices[i] = aiVector3D(v.x * scale, v.y * scale + groundOffset, v.z * scale);
+    }
+
+    if (withNormals) {
+        am->mNormals = allocArray<aiVector3D>(rm.vertexCount());
+        for (size_t i = 0; i < rm.vertexCount(); ++i) {
+            const Vec3& n   = rm.vnorm[i];
+            am->mNormals[i] = aiVector3D(n.x, n.y, n.z);
+        }
+    }
+
+    if (withUVs) {
+        am->mNumUVComponents[0] = 2;
+        am->mTextureCoords[0]   = allocArray<aiVector3D>(rm.vertexCount());
+        for (size_t i = 0; i < rm.vertexCount(); ++i) {
+            const Vec2& t            = rm.texco[i];
+            am->mTextureCoords[0][i] = aiVector3D(t.x, t.y, 0.0F);
+        }
+    }
+
+    const size_t nTris = rm.indexCount() / 3;
+    am->mNumFaces      = static_cast<unsigned>(nTris);
+    am->mFaces         = allocArray<aiFace>(nTris);
+    for (size_t f = 0; f < nTris; ++f) {
+        aiFace& face     = am->mFaces[f];
+        face.mNumIndices = 3;
+        face.mIndices    = allocArray<unsigned>(3);
+        face.mIndices[0] = rm.index[f * 3 + 0];
+        face.mIndices[1] = rm.index[f * 3 + 1];
+        face.mIndices[2] = rm.index[f * 3 + 2];
+    }
+}
+
+/// Blinn-Phong properties, exactly as the single-mesh path writes them.
+void fillMaterial(aiMaterial* m, const foundation::MaterialDesc* material,
+                  const std::string& fallbackName) {
+    const aiString name(material != nullptr && !material->name.empty() ? material->name
+                                                                       : fallbackName);
+    m->AddProperty(&name, AI_MATKEY_NAME);
+    if (material == nullptr) return;
+    const aiColor3D diffuse(material->diffuse.x, material->diffuse.y, material->diffuse.z);
+    const aiColor3D specular(material->specular.x, material->specular.y, material->specular.z);
+    const aiColor3D ambient(material->ambient.x, material->ambient.y, material->ambient.z);
+    m->AddProperty(&diffuse, 1, AI_MATKEY_COLOR_DIFFUSE);
+    m->AddProperty(&specular, 1, AI_MATKEY_COLOR_SPECULAR);
+    m->AddProperty(&ambient, 1, AI_MATKEY_COLOR_AMBIENT);
+    const float opacity = material->opacity;
+    m->AddProperty(&opacity, 1, AI_MATKEY_OPACITY);
+}
+
+}  // namespace
+
+std::expected<SceneExportResult, SceneIoError> exportScene(const std::filesystem::path& path,
+                                                           std::span<const SceneEntry> entries,
+                                                           SceneFormat format,
+                                                           const SceneExportOptions& options) {
+    if (entries.empty()) {
+        return std::unexpected(SceneIoError{SceneIoErrorKind::EmptyMesh, path.string(), {}});
+    }
+    for (const SceneEntry& e : entries) {
+        if (e.mesh.vertexCount() == 0 || e.mesh.indexCount() == 0) {
+            return std::unexpected(SceneIoError{SceneIoErrorKind::EmptyMesh, path.string(), {}});
+        }
+    }
+
+    const float scale = unitScale(options.unit) * options.scale;
+
+    // One offset for the whole scene: levelling each mesh alone would drop the
+    // clothes to the floor beside the body.
+    float groundOffset = 0.0F;
+    if (options.feetOnGround) {
+        float lowest = std::numeric_limits<float>::infinity();
+        for (const SceneEntry& e : entries) {
+            for (const Vec3& v : e.mesh.coord)
+                lowest = std::min(lowest, v.y * scale);
+        }
+        if (std::isfinite(lowest)) groundOffset = -lowest;
+    }
+
+    auto scene       = std::make_unique<aiScene>();
+    scene->mRootNode = new aiNode();
+    scene->mRootNode->mName.Set(options.meshName);
+
+    // One material per entry. Not deduped: assimp is happy with duplicates and
+    // a shared material is not expressible in every target format anyway.
+    scene->mNumMaterials = static_cast<unsigned>(entries.size());
+    scene->mMaterials    = allocArray<aiMaterial*>(entries.size());
+    scene->mNumMeshes    = static_cast<unsigned>(entries.size());
+    scene->mMeshes       = allocArray<aiMesh*>(entries.size());
+
+    size_t vertices  = 0;
+    size_t triangles = 0;
+    for (size_t i = 0; i < entries.size(); ++i) {
+        scene->mMaterials[i] = new aiMaterial();
+        fillMaterial(scene->mMaterials[i], entries[i].material, options.materialName);
+        scene->mMeshes[i] = new aiMesh();
+        fillMesh(scene->mMeshes[i], entries[i].mesh, entries[i].name, static_cast<unsigned>(i),
+                 options, scale, groundOffset);
+        vertices += entries[i].mesh.vertexCount();
+        triangles += entries[i].mesh.indexCount() / 3;
+    }
+
+    // One CHILD NODE per mesh, rather than hanging them all off the root.
+    //
+    // Not cosmetic: assimp's FBX exporter names a mesh after the node that owns
+    // it, so meshes sharing the root all came back named "body" -- the geometry
+    // and materials survived but the identity did not, and Blender merged them
+    // into a single object. Collada happened to keep the names, which is what
+    // made the difference visible.
+    scene->mRootNode->mNumChildren = static_cast<unsigned>(entries.size());
+    scene->mRootNode->mChildren    = allocArray<aiNode*>(entries.size());
+    for (size_t i = 0; i < entries.size(); ++i) {
+        auto* node = new aiNode();
+        node->mName.Set(entries[i].name);
+        node->mParent                  = scene->mRootNode;
+        node->mNumMeshes               = 1;
+        node->mMeshes                  = allocArray<unsigned>(1);
+        node->mMeshes[0]               = static_cast<unsigned>(i);
+        scene->mRootNode->mChildren[i] = node;
+    }
+
+    Assimp::Exporter exporter;
+    const aiReturn rc = exporter.Export(scene.get(), std::string(formatId(format)), path.string());
+    if (rc != AI_SUCCESS) {
+        return std::unexpected(
+            SceneIoError{SceneIoErrorKind::ExportFailed, path.string(), exporter.GetErrorString()});
+    }
+
+    SceneExportResult result;
+    result.vertices  = vertices;
+    result.triangles = triangles;
+    std::error_code ec;
+    const auto sz    = std::filesystem::file_size(path, ec);
+    result.fileBytes = ec ? 0U : static_cast<size_t>(sz);
+    return result;
+}
+
 std::expected<SceneExportResult, SceneIoError> exportScene(
     const std::filesystem::path& path, const foundation::RenderView& mesh, SceneFormat format,
     const SceneExportOptions& options, const foundation::MaterialDesc* material,
@@ -113,9 +266,6 @@ std::expected<SceneExportResult, SceneIoError> exportScene(
         if (std::isfinite(lowest)) groundOffset = -lowest;
     }
 
-    const bool withNormals = options.writeNormals && rm.vnorm.size() == rm.vertexCount();
-    const bool withUVs     = options.writeUVs && rm.texco.size() == rm.vertexCount();
-
     // aiScene owns everything below; it is released by the unique_ptr on any
     // early return and handed to the exporter otherwise.
     auto scene = std::make_unique<aiScene>();
@@ -126,68 +276,15 @@ std::expected<SceneExportResult, SceneIoError> exportScene(
     scene->mNumMaterials = 1;
     scene->mMaterials    = allocArray<aiMaterial*>(1);
     scene->mMaterials[0] = new aiMaterial();
-    {
-        aiMaterial* m = scene->mMaterials[0];
-        const aiString name(material != nullptr && !material->name.empty() ? material->name
-                                                                           : options.materialName);
-        m->AddProperty(&name, AI_MATKEY_NAME);
-        if (material != nullptr) {
-            const aiColor3D diffuse(material->diffuse.x, material->diffuse.y, material->diffuse.z);
-            const aiColor3D specular(material->specular.x, material->specular.y,
-                                     material->specular.z);
-            const aiColor3D ambient(material->ambient.x, material->ambient.y, material->ambient.z);
-            m->AddProperty(&diffuse, 1, AI_MATKEY_COLOR_DIFFUSE);
-            m->AddProperty(&specular, 1, AI_MATKEY_COLOR_SPECULAR);
-            m->AddProperty(&ambient, 1, AI_MATKEY_COLOR_AMBIENT);
-            const float opacity = material->opacity;
-            m->AddProperty(&opacity, 1, AI_MATKEY_OPACITY);
-        }
-    }
+    fillMaterial(scene->mMaterials[0], material, options.materialName);
 
     scene->mNumMeshes = 1;
     scene->mMeshes    = allocArray<aiMesh*>(1);
     scene->mMeshes[0] = new aiMesh();
 
-    aiMesh* am          = scene->mMeshes[0];
-    am->mMaterialIndex  = 0;
-    am->mPrimitiveTypes = aiPrimitiveType_TRIANGLE;
-    am->mName.Set(options.meshName);
-    am->mNumVertices = static_cast<unsigned>(rm.vertexCount());
-    am->mVertices    = allocArray<aiVector3D>(rm.vertexCount());
-
-    for (size_t i = 0; i < rm.vertexCount(); ++i) {
-        const Vec3& v    = rm.coord[i];
-        am->mVertices[i] = aiVector3D(v.x * scale, v.y * scale + groundOffset, v.z * scale);
-    }
-
-    if (withNormals) {
-        am->mNormals = allocArray<aiVector3D>(rm.vertexCount());
-        for (size_t i = 0; i < rm.vertexCount(); ++i) {
-            const Vec3& n   = rm.vnorm[i];
-            am->mNormals[i] = aiVector3D(n.x, n.y, n.z);
-        }
-    }
-
-    if (withUVs) {
-        am->mNumUVComponents[0] = 2;
-        am->mTextureCoords[0]   = allocArray<aiVector3D>(rm.vertexCount());
-        for (size_t i = 0; i < rm.vertexCount(); ++i) {
-            const Vec2& t            = rm.texco[i];
-            am->mTextureCoords[0][i] = aiVector3D(t.x, t.y, 0.0F);
-        }
-    }
-
+    aiMesh* am = scene->mMeshes[0];
+    fillMesh(am, rm, options.meshName, 0, options, scale, groundOffset);
     const size_t nTris = rm.indexCount() / 3;
-    am->mNumFaces      = static_cast<unsigned>(nTris);
-    am->mFaces         = allocArray<aiFace>(nTris);
-    for (size_t f = 0; f < nTris; ++f) {
-        aiFace& face     = am->mFaces[f];
-        face.mNumIndices = 3;
-        face.mIndices    = allocArray<unsigned>(3);
-        face.mIndices[0] = rm.index[f * 3 + 0];
-        face.mIndices[1] = rm.index[f * 3 + 1];
-        face.mIndices[2] = rm.index[f * 3 + 2];
-    }
 
     // ---- skin ------------------------------------------------------------
     // assimp stores weights per BONE (a list of affected vertices), while we

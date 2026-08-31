@@ -99,6 +99,32 @@ struct SceneExportResult {
     size_t fileBytes{};
 };
 
+/// One mesh in a multi-mesh scene: a dressed character is the body plus each
+/// worn proxy, each with its own name and material.
+struct SceneEntry {
+    foundation::RenderView mesh;
+    std::string name{"MakeHuman"};
+    const foundation::MaterialDesc* material{nullptr};
+};
+
+/// Writes every entry as its own mesh in one scene.
+///
+/// assimp's `aiScene` holds many meshes natively, so unlike OBJ and glTF this
+/// needed no index arithmetic -- each entry becomes an `aiMesh` with its own
+/// material index, all referenced from the root node.
+///
+/// **A skin belongs to the single-mesh overload.** Only the body is rigged, and
+/// giving one entry bones while the others have none is a scene shape nothing
+/// needs yet; it would be untested code. Use the overload below for a rigged
+/// export.
+///
+/// `feetOnGround` levels the whole scene by the lowest point of any entry:
+/// levelling each mesh alone would drop the clothes to the floor beside the
+/// body.
+[[nodiscard]] std::expected<SceneExportResult, SceneIoError> exportScene(
+    const std::filesystem::path& path, std::span<const SceneEntry> entries, SceneFormat format,
+    const SceneExportOptions& options = {});
+
 /// Writes @p mesh in @p format.
 ///
 /// The mesh is unwelded and triangulated first, since every format here wants

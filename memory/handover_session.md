@@ -4,6 +4,67 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 18:21:45 — Session 059 · **multi-mesh FBX, and a bug only a second importer could see**
+
+### What shipped
+`io::SceneEntry` and `exportScene(std::span<const SceneEntry>, ...)`. FBX,
+Collada, STL and 3MF now carry the body plus everything worn. USD is the last
+single-mesh writer and says so.
+
+assimp's `aiScene` holds many meshes natively, so unlike OBJ and glTF this
+needed no index arithmetic. Extracting `fillMesh`/`fillMaterial` for both entry
+points removed ~40 duplicated lines: **`SceneIO.cpp` is 537 lines, down from
+593**, while gaining the feature.
+
+### The bug: assimp said 2 meshes, Blender said 1
+My first version hung every mesh on the root node. assimp read the file back and
+reported 2 meshes, and the test passed. **Blender read one merged object of
+22,909 vertices** — which is exactly 21,833 + 1,076, the two meshes summed.
+
+Cause: assimp's FBX exporter names a mesh after the node that owns it. Sharing
+the root, both meshes came back called `body`. The geometry and the materials
+survived; the *identity* did not, and Blender merged them because they shared a
+node. Collada happened to preserve names, which is the only reason the
+difference was visible at all.
+
+**One importer agreeing with the writer proved nothing** — assimp was reading
+back its own convention. The disagreement between two independent importers is
+what exposed it.
+
+Fixed by giving each mesh its own child node. Both importers now agree on `body`
+and `eyes` as separate objects, with matching vertex counts.
+
+### A second-order effect, accepted deliberately
+That fix made Collada emit `body_1`: its exporter disambiguates a mesh whose
+name matches its node's. Node-per-mesh is still right — FBX matters more for DCC
+round-tripping and identity survives either way — so the tests now assert names
+by **prefix**, which is what is true rather than what I would prefer.
+
+### A test I deleted rather than fixed
+The byte-identity check between the single-mesh and one-entry paths had become
+misleading: they are now deliberately different in structure, so comparing bytes
+would pin the difference in place rather than test anything. Replaced with a
+geometry comparison through both importers.
+
+### Verification
+- ctest **357/357** in debug, release and ASan; format clean; **0** undefined
+  `mh::core` symbols across the Apache-2.0 modules.
+- Previous push (ball weights) green on all 8 CI jobs.
+- Verified end to end: the app's dressed `.fbx` and `.dae` both read back as
+  `body` + `eyes` in assimp *and* in Blender.
+
+### Recurring, now four times this session
+A scripted edit silently failed to match because clang-format had reflowed the
+target. The `assert s.count(old) == 1` guard caught it every time it was
+present, and the one edit written without it was the one that silently did
+nothing. It is not optional.
+
+### Next
+- **USD**: `writeUsda` takes one `RenderView` and has no material parameter.
+- Still blocked on the owner: **SonarQube credentials**.
+
+---
+
 ## 2026-08-31 18:08:47 — Session 058 · **the ball of the foot is weighted, and a gap I had overstated**
 
 ### The correction first

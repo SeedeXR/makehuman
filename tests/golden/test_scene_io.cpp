@@ -15,6 +15,12 @@
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/io/GltfWriter.h"
 
+#if defined(MH_HAVE_ASSIMP)
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
+#include <assimp/Importer.hpp>
+#endif
+
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
@@ -23,6 +29,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -42,6 +49,18 @@ std::vector<uint8_t> head(const std::filesystem::path& p, size_t n) {
     in.read(reinterpret_cast<char*>(out.data()), static_cast<std::streamsize>(n));
     out.resize(static_cast<size_t>(in.gcount()));
     return out;
+}
+
+/// A quad offset along X, so two of them are distinguishable in one file.
+core::Mesh quadAt(float x, const char* name) {
+    core::Mesh m(name, 4);
+    REQUIRE(m.setCoords({{x, 0, 0}, {x + 2, 0, 0}, {x + 2, 0, 3}, {x, 0, 3}}).has_value());
+    REQUIRE(m.setUVs({{0, 0}, {1, 0}, {1, 1}, {0, 1}}).has_value());
+    m.addFaceGroup("g");
+    REQUIRE(m.setFaces({0, 1, 2, 3}, {0, 1, 2, 3}, {0}).has_value());
+    m.buildAdjacency();
+    m.calcNormals();
+    return m;
 }
 
 core::Mesh baseMeshOrSkip() {
@@ -369,4 +388,125 @@ TEST_CASE("a morph target of the wrong length is refused by FBX export", "[io][s
 
     std::error_code ec;
     std::filesystem::remove(out, ec);
+}
+
+// FBX, Collada and the rest were the last single-mesh writers: a dressed
+// character exported to them arrived naked. assimp's aiScene holds many meshes
+// natively, so this is about building the scene rather than fighting a format.
+TEST_CASE("several meshes export and re-import through assimp", "[io][scene][multimesh]") {
+    const core::Mesh a = quadAt(0.0F, "body");
+    const core::Mesh b = quadAt(8.0F, "eyes");
+    const auto rmA     = core::RenderMesh::build(a);
+    const auto rmB     = core::RenderMesh::build(b);
+
+    foundation::MaterialDesc skin;
+    skin.name = "DefaultSkin";
+    foundation::MaterialDesc eye;
+    eye.name = "Eye_brown";
+
+    // Every assimp-backed format we ship, so none of them regresses quietly.
+    const std::pair<io::SceneFormat, const char*> formats[] = {
+        {io::SceneFormat::FbxBinary, ".fbx"},
+        {io::SceneFormat::Collada, ".dae"},
+    };
+    for (const auto& [format, ext] : formats) {
+        const auto out = tempFile("multimesh", ext);
+        std::error_code ec;
+        std::filesystem::remove(out, ec);
+
+        const std::vector<io::SceneEntry> scene{{rmA.view(), "body", &skin},
+                                                {rmB.view(), "eyes", &eye}};
+        const auto r = io::exportScene(out, scene, format);
+        INFO(ext << ": " << (r ? std::string{} : r.error().message()));
+        REQUIRE(r.has_value());
+        CHECK(r->vertices == rmA.view().vertexCount() + rmB.view().vertexCount());
+
+#if defined(MH_HAVE_ASSIMP)
+        Assimp::Importer importer;
+        const aiScene* sc = importer.ReadFile(out.string(), 0);
+        INFO(ext << " import: " << importer.GetErrorString());
+        REQUIRE(sc != nullptr);
+        REQUIRE(sc->mNumMeshes == 2);
+        // Each mesh keeps its own material, or a DCC tool shows one blob.
+        CHECK(sc->mMeshes[0]->mMaterialIndex != sc->mMeshes[1]->mMaterialIndex);
+
+        // Each mesh must keep its own NAME. assimp's FBX exporter names a mesh
+        // after the node that owns it, so hanging every mesh off the root gave
+        // two meshes both called "body" -- geometry and materials survived, the
+        // identity did not, and Blender merged them into one object. Collada
+        // happened to preserve names, which is the only reason it showed up.
+        //
+        // Matched by PREFIX, not equality: Collada's exporter disambiguates a
+        // mesh whose name matches its node's and emits `body_1`, while FBX
+        // gives the name exactly. Both preserve the identity, which is the
+        // property that matters -- a DCC user must be able to tell the clothes
+        // from the body.
+        std::vector<std::string> names;
+        for (unsigned i = 0; i < sc->mNumMeshes; ++i)
+            names.emplace_back(sc->mMeshes[i]->mName.C_Str());
+        const auto namedAfter = [&names](const std::string& want) {
+            return std::count_if(names.begin(), names.end(), [&want](const std::string& n) {
+                       return n.rfind(want, 0) == 0;
+                   }) == 1;
+        };
+        INFO(ext << " mesh names: " << names[0] << ", " << names[1]);
+        CHECK(namedAfter("body"));
+        CHECK(namedAfter("eyes"));
+
+        // And they must sit where they were put -- sharing one vertex block
+        // would stack them.
+        float minA = 1e9F;
+        float minB = 1e9F;
+        for (unsigned i = 0; i < sc->mMeshes[0]->mNumVertices; ++i)
+            minA = std::min(minA, sc->mMeshes[0]->mVertices[i].x);
+        for (unsigned i = 0; i < sc->mMeshes[1]->mNumVertices; ++i)
+            minB = std::min(minB, sc->mMeshes[1]->mVertices[i].x);
+        INFO(ext << " min x: " << minA << " and " << minB);
+        CHECK(std::abs(minA - minB) > 0.1F);
+#endif
+
+        std::filesystem::remove(out, ec);
+    }
+}
+
+// The single-mesh entry point is a separate implementation, not a wrapper -- it
+// also carries skin and morph targets, which a scene does not. It must still
+// agree with a one-entry scene about the GEOMETRY.
+//
+// Not byte-identical: the multi-mesh path gives every mesh its own node, which
+// is what lets FBX keep per-mesh names. That is a deliberate structural
+// difference, so comparing bytes would only pin the difference in place.
+TEST_CASE("a one-entry scene carries the same geometry as the single-mesh writer",
+          "[io][scene][multimesh]") {
+    const core::Mesh m = quadAt(0.0F, "solo");
+    const auto rm      = core::RenderMesh::build(m);
+
+    const auto viaOld = tempFile("one_old", ".dae");
+    const auto viaNew = tempFile("one_new", ".dae");
+    std::error_code ec;
+    std::filesystem::remove(viaOld, ec);
+    std::filesystem::remove(viaNew, ec);
+
+    const auto a = io::exportScene(viaOld, rm.view(), io::SceneFormat::Collada);
+    const auto b = io::exportScene(viaNew, {{{rm.view(), "MakeHuman"}}}, io::SceneFormat::Collada);
+    REQUIRE(a.has_value());
+    REQUIRE(b.has_value());
+    CHECK(a->vertices == b->vertices);
+    CHECK(a->triangles == b->triangles);
+
+#if defined(MH_HAVE_ASSIMP)
+    Assimp::Importer one;
+    Assimp::Importer two;
+    const aiScene* sa = one.ReadFile(viaOld.string(), 0);
+    const aiScene* sb = two.ReadFile(viaNew.string(), 0);
+    REQUIRE(sa != nullptr);
+    REQUIRE(sb != nullptr);
+    REQUIRE(sa->mNumMeshes == 1);
+    REQUIRE(sb->mNumMeshes == 1);
+    CHECK(sa->mMeshes[0]->mNumVertices == sb->mMeshes[0]->mNumVertices);
+    CHECK(sa->mMeshes[0]->mNumFaces == sb->mMeshes[0]->mNumFaces);
+#endif
+
+    std::filesystem::remove(viaOld, ec);
+    std::filesystem::remove(viaNew, ec);
 }
