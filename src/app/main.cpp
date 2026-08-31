@@ -509,19 +509,16 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
         return scene;
     };
 
-    // Said plainly, and only for a format we are actually going to write.
-    // Silently dropping what the character is wearing is the failure this whole
-    // change exists to fix; announcing it for an extension we then reject would
-    // just be noise before an error.
-    static constexpr std::array kSingleMeshFormats{".usda", ".usd"};
-    if (!worn.empty() && std::ranges::find(kSingleMeshFormats, ext) != kSingleMeshFormats.end()) {
-        std::fprintf(stderr,
-                     "note: %s exports the body only; %zu worn item(s) omitted "
-                     "(USD is the last single-mesh writer)\n",
-                     ext.c_str(), worn.size());
-    }
+    // Every writer carries the whole scene now -- obj, glb, fbx, dae, stl, 3mf
+    // and usda alike -- so nothing is silently dropped and there is no longer a
+    // note to print. This is where the "exports the body only" warning lived.
     if (ext == ".usda" || ext == ".usd") {
-        const auto r = mh::io::writeUsda(path, rm.view());
+        std::vector<mh::io::UsdSceneEntry> scene;
+        scene.push_back({rm.view(), "body"});
+        for (const auto& [group, proxy] : worn) {
+            scene.push_back({proxy.rm.view(), group.toLower().toStdString()});
+        }
+        const auto r = mh::io::writeUsdaScene(path, scene);
         return report(r ? std::string{} : r.error().message());
     }
     if (ext == ".glb") {

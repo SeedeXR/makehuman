@@ -6,6 +6,7 @@
 
 #include <expected>
 #include <filesystem>
+#include <span>
 #include <string>
 
 namespace mh::io {
@@ -59,6 +60,25 @@ struct UsdWriteResult {
     size_t triangles{};
     size_t fileBytes{};
 };
+
+/// One mesh in a USD stage: a dressed character is the body plus each worn
+/// proxy, each its own Mesh prim so a DCC tool can select them apart.
+struct UsdSceneEntry {
+    foundation::RenderView mesh;
+    std::string name{"mesh"};
+};
+
+/// Writes every entry as its own `Mesh` prim under one `Xform`.
+///
+/// A USD stage is a scene graph, so this is its natural shape -- no index
+/// arithmetic, unlike OBJ and glTF. `extent` is per prim, as USD expects.
+///
+/// **No materials.** This writer has never emitted any, for one mesh or many;
+/// a `UsdSceneEntry` therefore carries no `MaterialDesc`, rather than accepting
+/// one and silently ignoring it.
+[[nodiscard]] std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(
+    const std::filesystem::path& path, std::span<const UsdSceneEntry> entries,
+    const UsdWriteOptions& options = {});
 
 [[nodiscard]] std::expected<UsdWriteResult, UsdWriteError> writeUsda(
     const std::filesystem::path& path, const foundation::RenderView& mesh,

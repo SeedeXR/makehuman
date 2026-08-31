@@ -23,6 +23,18 @@ using namespace mh;
 
 namespace {
 
+/// A quad offset along X, so two of them are distinguishable in one stage.
+core::Mesh quadAt(float x, const char* name) {
+    core::Mesh m(name, 4);
+    REQUIRE(m.setCoords({{x, 0, 0}, {x + 2, 0, 0}, {x + 2, 0, 3}, {x, 0, 3}}).has_value());
+    REQUIRE(m.setUVs({{0, 0}, {1, 0}, {1, 1}, {0, 1}}).has_value());
+    m.addFaceGroup("g");
+    REQUIRE(m.setFaces({0, 1, 2, 3}, {0, 1, 2, 3}, {0}).has_value());
+    m.buildAdjacency();
+    m.calcNormals();
+    return m;
+}
+
 core::Mesh baseMesh() {
     auto m = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
     REQUIRE(m.has_value());
@@ -219,4 +231,57 @@ TEST_CASE("an empty mesh and a bad path are refused", "[usd]") {
     REQUIRE_FALSE(r2.has_value());
     CHECK(r2.error().kind == io::UsdWriteErrorKind::CannotOpen);
     std::filesystem::remove_all(dir, ec);
+}
+
+// USD was the last single-mesh writer: a dressed character exported to .usda
+// arrived naked. A stage is a scene graph, so several meshes is its natural
+// shape -- one Mesh prim per entry under the same Xform.
+TEST_CASE("several meshes write into one USD stage", "[usd][multimesh]") {
+    const core::Mesh a = quadAt(0.0F, "body");
+    const core::Mesh b = quadAt(8.0F, "eyes");
+    const auto rmA     = core::RenderMesh::build(a);
+    const auto rmB     = core::RenderMesh::build(b);
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_usd_scene.usda";
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+
+    const std::vector<io::UsdSceneEntry> scene{{rmA.view(), "body"}, {rmB.view(), "eyes"}};
+    const auto r = io::writeUsdaScene(out, scene);
+    REQUIRE(r.has_value());
+    CHECK(r->vertices == rmA.view().vertexCount() + rmB.view().vertexCount());
+    CHECK(r->triangles == rmA.view().triangleCount() + rmB.view().triangleCount());
+
+    const std::string t = readAll(out);
+    INFO(t.substr(0, 400));
+    // One Mesh prim per entry, each named -- a DCC tool must be able to select
+    // the clothes apart from the body.
+    CHECK(countOccurrences(t, "def Mesh ") == 2);
+    CHECK(t.find("def Mesh \"body\"") != std::string::npos);
+    CHECK(t.find("def Mesh \"eyes\"") != std::string::npos);
+    // Still exactly one Xform wrapping them, and one defaultPrim.
+    CHECK(countOccurrences(t, "def Xform ") == 1);
+    CHECK(countOccurrences(t, "defaultPrim") == 1);
+
+    std::filesystem::remove(out, ec);
+}
+
+// The single-mesh entry point stays byte-identical: it is a one-entry scene,
+// and every existing consumer of a .usda export must see what it saw before.
+TEST_CASE("a one-entry USD scene matches the single-mesh writer", "[usd][multimesh]") {
+    const core::Mesh m = quadAt(0.0F, "solo");
+    const auto rm      = core::RenderMesh::build(m);
+
+    const auto viaOld = std::filesystem::temp_directory_path() / "mh_usd_one_old.usda";
+    const auto viaNew = std::filesystem::temp_directory_path() / "mh_usd_one_new.usda";
+    std::error_code ec;
+    std::filesystem::remove(viaOld, ec);
+    std::filesystem::remove(viaNew, ec);
+
+    REQUIRE(io::writeUsda(viaOld, rm.view()).has_value());
+    REQUIRE(io::writeUsdaScene(viaNew, {{{rm.view(), "mesh"}}}).has_value());
+    CHECK(readAll(viaOld) == readAll(viaNew));
+
+    std::filesystem::remove(viaOld, ec);
+    std::filesystem::remove(viaNew, ec);
 }

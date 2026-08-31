@@ -4,6 +4,55 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 18:29:43 — Session 060 · **multi-mesh USD: every format now exports a dressed character**
+
+### What shipped
+`io::UsdSceneEntry` and `writeUsdaScene` — one `Mesh` prim per entry under one
+`Xform`, with `extent` per prim as USD expects. A USD stage is already a scene
+graph, so unlike OBJ and glTF this needed no index arithmetic at all. The writer
+went 165 -> 185 lines, and `writeUsda` is a genuine one-entry wrapper whose
+output is **byte-identical** to before.
+
+**This completes multi-mesh export.** OBJ, glTF, FBX, Collada, STL, 3MF and USD
+all carry the body plus everything worn. The "exports the body only" warning was
+**deleted rather than reworded** — there is nothing left for it to report — with
+a comment left where it lived.
+
+### The best-validated format so far
+USD was the only one with a *first-party* validator available:
+
+- **Pixar's `usdchecker`: Success** — and crucially I ran it on the
+  **pre-existing single-mesh output first**, so a pass afterwards means nothing
+  was introduced, not merely that the new code is self-consistent.
+- **Blender's USD importer**: `body` (21,833) + `eyes` (1,076), matching what
+  FBX and Collada produce.
+
+Checking the baseline before the change is what makes the "after" meaningful.
+The glTF work last session found a pre-existing spec violation precisely because
+a validator was pointed at code nobody had changed.
+
+### Guards earning their keep
+Two scripted edits failed their `assert s.count(old) == 1` this session, both
+because the target had been reflowed by clang-format. In each case the guard
+stopped a *partial* write rather than letting a half-applied edit through. That
+pattern has now caught the same class of failure five times; it is the reason
+none of them reached a commit.
+
+### Verification
+- ctest **359/359** in debug and release; ASan run separately.
+- format clean; **0** undefined `mh::core` symbols across the Apache-2.0 modules.
+- Previous push (multi-mesh FBX/Collada/STL/3MF) green on all 8 CI jobs.
+- Ran all seven formats dressed: zero omission notes.
+
+### Next
+- **USD carries no materials** — it never has, for one mesh or many, so
+  `UsdSceneEntry` has no `MaterialDesc` rather than silently ignoring one. Every
+  other format now carries them.
+- Still blocked on the owner: **SonarQube credentials**.
+- Unjudged: whether the ball-of-foot crease *looks* right under a roll.
+
+---
+
 ## 2026-08-31 18:21:45 — Session 059 · **multi-mesh FBX, and a bug only a second importer could see**
 
 ### What shipped

@@ -51,16 +51,21 @@ std::string UsdWriteError::message() const {
     return m;
 }
 
-std::expected<UsdWriteResult, UsdWriteError> writeUsda(const std::filesystem::path& path,
-                                                       const foundation::RenderView& mesh,
-                                                       const UsdWriteOptions& options) {
-    if (mesh.vertexCount() == 0 || mesh.indexCount() == 0) {
+std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesystem::path& path,
+                                                            std::span<const UsdSceneEntry> entries,
+                                                            const UsdWriteOptions& options) {
+    if (entries.empty()) {
         return std::unexpected(UsdWriteError{UsdWriteErrorKind::EmptyMesh, path.string(), {}});
     }
-    for (const Vec3& v : mesh.coord) {
-        if (!std::isfinite(v.x) || !std::isfinite(v.y) || !std::isfinite(v.z)) {
-            return std::unexpected(
-                UsdWriteError{UsdWriteErrorKind::NonFiniteValue, path.string(), "vertex position"});
+    for (const UsdSceneEntry& entry : entries) {
+        if (entry.mesh.vertexCount() == 0 || entry.mesh.indexCount() == 0) {
+            return std::unexpected(UsdWriteError{UsdWriteErrorKind::EmptyMesh, path.string(), {}});
+        }
+        for (const Vec3& v : entry.mesh.coord) {
+            if (!std::isfinite(v.x) || !std::isfinite(v.y) || !std::isfinite(v.z)) {
+                return std::unexpected(UsdWriteError{UsdWriteErrorKind::NonFiniteValue,
+                                                     path.string(), "vertex position"});
+            }
         }
     }
 
@@ -69,22 +74,7 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsda(const std::filesystem::pa
         return std::unexpected(UsdWriteError{UsdWriteErrorKind::CannotOpen, path.string(), {}});
     }
 
-    const float s          = unitScale(options.unit) * options.scale;
-    const bool withNormals = options.writeNormals && mesh.vnorm.size() == mesh.vertexCount();
-    const bool withUVs     = options.writeUVs && mesh.texco.size() == mesh.vertexCount();
-    const size_t nTris     = mesh.indexCount() / 3;
-
-    Vec3 lo{std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(),
-            std::numeric_limits<float>::infinity()};
-    Vec3 hi{-lo.x, -lo.y, -lo.z};
-    for (const Vec3& v : mesh.coord) {
-        lo.x = std::min(lo.x, v.x * s);
-        lo.y = std::min(lo.y, v.y * s);
-        lo.z = std::min(lo.z, v.z * s);
-        hi.x = std::max(hi.x, v.x * s);
-        hi.y = std::max(hi.y, v.y * s);
-        hi.z = std::max(hi.z, v.z * s);
-    }
+    const float s = unitScale(options.unit) * options.scale;
 
     out << "#usda 1.0\n(\n";
     out << "    defaultPrim = \"" << options.primName << "\"\n";
@@ -96,60 +86,83 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsda(const std::filesystem::pa
     out << ")\n\n";
 
     out << "def Xform \"" << options.primName << "\"\n{\n";
-    out << "    def Mesh \"mesh\"\n    {\n";
 
-    out << "        float3[] extent = [(" << num(lo.x) << ", " << num(lo.y) << ", " << num(lo.z)
-        << "), (" << num(hi.x) << ", " << num(hi.y) << ", " << num(hi.z) << ")]\n";
+    size_t vertices  = 0;
+    size_t triangles = 0;
+    for (const UsdSceneEntry& entry : entries) {
+        const foundation::RenderView& mesh = entry.mesh;
+        const bool withNormals = options.writeNormals && mesh.vnorm.size() == mesh.vertexCount();
+        const bool withUVs     = options.writeUVs && mesh.texco.size() == mesh.vertexCount();
+        const size_t nTris     = mesh.indexCount() / 3;
 
-    // Every face is a triangle: RenderView is already fan-triangulated.
-    out << "        int[] faceVertexCounts = [";
-    for (size_t f = 0; f < nTris; ++f)
-        out << (f != 0 ? ", 3" : "3");
-    out << "]\n";
-
-    out << "        int[] faceVertexIndices = [";
-    for (size_t i = 0; i < mesh.indexCount(); ++i) {
-        if (i != 0) out << ", ";
-        out << mesh.index[i];
-    }
-    out << "]\n";
-
-    if (withNormals) {
-        out << "        normal3f[] normals = [";
-        for (size_t i = 0; i < mesh.vertexCount(); ++i) {
-            const Vec3& n = mesh.vnorm[i];
-            if (i != 0) out << ", ";
-            out << "(" << num(n.x) << ", " << num(n.y) << ", " << num(n.z) << ")";
+        // `extent` is per prim, not per stage: USD expects each Mesh to declare
+        // its own bounds.
+        Vec3 lo{std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(),
+                std::numeric_limits<float>::infinity()};
+        Vec3 hi{-lo.x, -lo.y, -lo.z};
+        for (const Vec3& v : mesh.coord) {
+            lo.x = std::min(lo.x, v.x * s);
+            lo.y = std::min(lo.y, v.y * s);
+            lo.z = std::min(lo.z, v.z * s);
+            hi.x = std::max(hi.x, v.x * s);
+            hi.y = std::max(hi.y, v.y * s);
+            hi.z = std::max(hi.z, v.z * s);
         }
-        // "vertex", not "faceVarying": the mesh is already unwelded, so there
-        // is exactly one normal per point and no per-corner variation left.
-        out << "] (\n            interpolation = \"vertex\"\n        )\n";
-    }
 
-    out << "        point3f[] points = [";
-    for (size_t i = 0; i < mesh.vertexCount(); ++i) {
-        const Vec3& v = mesh.coord[i];
-        if (i != 0) out << ", ";
-        out << "(" << num(v.x * s) << ", " << num(v.y * s) << ", " << num(v.z * s) << ")";
-    }
-    out << "]\n";
+        out << "    def Mesh \"" << entry.name << "\"\n    {\n";
+        out << "        float3[] extent = [(" << num(lo.x) << ", " << num(lo.y) << ", " << num(lo.z)
+            << "), (" << num(hi.x) << ", " << num(hi.y) << ", " << num(hi.z) << ")]\n";
 
-    if (withUVs) {
-        out << "        texCoord2f[] primvars:st = [";
-        for (size_t i = 0; i < mesh.vertexCount(); ++i) {
-            const Vec2& t = mesh.texco[i];
+        // Every face is a triangle: RenderView is already fan-triangulated.
+        out << "        int[] faceVertexCounts = [";
+        for (size_t f = 0; f < nTris; ++f)
+            out << (f != 0 ? ", 3" : "3");
+        out << "]\n";
+
+        out << "        int[] faceVertexIndices = [";
+        for (size_t i = 0; i < mesh.indexCount(); ++i) {
             if (i != 0) out << ", ";
-            // USD's UV origin is bottom-left, the same as OBJ and MakeHuman, so
-            // V is NOT flipped here -- unlike glTF, whose origin is top-left.
-            out << "(" << num(t.x) << ", " << num(t.y) << ")";
+            out << mesh.index[i];
         }
-        out << "] (\n            interpolation = \"vertex\"\n        )\n";
-    }
+        out << "]\n";
 
-    // Without this a consumer may treat the mesh as a subdivision cage and
-    // render a smoothed, shrunken body.
-    out << "        uniform token subdivisionScheme = \"none\"\n";
-    out << "    }\n}\n";
+        out << "        point3f[] points = [";
+        for (size_t i = 0; i < mesh.vertexCount(); ++i) {
+            const Vec3& v = mesh.coord[i];
+            if (i != 0) out << ", ";
+            out << "(" << num(v.x * s) << ", " << num(v.y * s) << ", " << num(v.z * s) << ")";
+        }
+        out << "]\n";
+
+        if (withNormals) {
+            out << "        normal3f[] normals = [";
+            for (size_t i = 0; i < mesh.vertexCount(); ++i) {
+                const Vec3& n = mesh.vnorm[i];
+                if (i != 0) out << ", ";
+                out << "(" << num(n.x) << ", " << num(n.y) << ", " << num(n.z) << ")";
+            }
+            out << "] (\n            interpolation = \"vertex\"\n        )\n";
+        }
+
+        if (withUVs) {
+            out << "        texCoord2f[] primvars:st = [";
+            for (size_t i = 0; i < mesh.vertexCount(); ++i) {
+                const Vec2& t = mesh.texco[i];
+                if (i != 0) out << ", ";
+                out << "(" << num(t.x) << ", " << num(t.y) << ")";
+            }
+            out << "] (\n            interpolation = \"vertex\"\n        )\n";
+        }
+
+        // Without this a consumer may treat the mesh as a subdivision cage and
+        // render a smoothed, shrunken body.
+        out << "        uniform token subdivisionScheme = \"none\"\n";
+        out << "    }\n";
+
+        vertices += mesh.vertexCount();
+        triangles += nTris;
+    }
+    out << "}\n";
 
     out.close();
     if (!out) {
@@ -159,7 +172,14 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsda(const std::filesystem::pa
 
     std::error_code ec;
     const auto sz = std::filesystem::file_size(path, ec);
-    return UsdWriteResult{mesh.vertexCount(), nTris, ec ? 0U : static_cast<size_t>(sz)};
+    return UsdWriteResult{vertices, triangles, ec ? 0U : static_cast<size_t>(sz)};
+}
+
+std::expected<UsdWriteResult, UsdWriteError> writeUsda(const std::filesystem::path& path,
+                                                       const foundation::RenderView& mesh,
+                                                       const UsdWriteOptions& options) {
+    const UsdSceneEntry entry{mesh, "mesh"};
+    return writeUsdaScene(path, {&entry, 1}, options);
 }
 
 }  // namespace mh::io

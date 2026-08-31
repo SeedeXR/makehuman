@@ -653,9 +653,18 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       Side effect accepted: Collada dedupes a mesh whose name matches its node's
       and emits `body_1`. FBX matters more for DCC round-tripping, and identity
       is still preserved, so tests assert by prefix.
-- [ ] **USD is the last single-mesh writer.** `writeUsda` takes one
-      `RenderView` and has no material parameter at all. A dressed character
-      still exports body-only to `.usda`, and says so on stderr.
+- [x] **Multi-mesh USD** — `io::UsdSceneEntry` + `writeUsdaScene`, one `Mesh`
+      prim per entry under one `Xform`, `extent` per prim as USD expects. A
+      stage is already a scene graph, so no index arithmetic was needed.
+      `writeUsda` is a one-entry wrapper and its output is **byte-identical**.
+      Validated two independent ways: **Pixar's `usdchecker` reports Success**
+      (checked before the change too, so nothing was introduced), and Blender
+      imports `body` (21,833) + `eyes` (1,076) — matching FBX and Collada.
+      **Every export format now carries a dressed character**, so the
+      "exports the body only" warning was deleted rather than reworded.
+- [ ] **USD carries no materials.** `writeUsda` has never emitted any, for one
+      mesh or many, so `UsdSceneEntry` deliberately has no `MaterialDesc` rather
+      than accepting one and ignoring it. Every other format now carries them.
 - [x] **Proxy materials.** `WornProxy` loads the `.mhmat` its proxy names; the
       body loads `data/skins/default.mhmat` (which is what the reference does,
       `apps/human.py:89`). A dressed export carries `DefaultSkin` on the body
