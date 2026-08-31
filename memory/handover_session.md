@@ -49,6 +49,20 @@ loop: dirty-range tracking targets `refreshPositions`, already **0.04 ms**; and
 `findFaceGroup`'s string allocation has **no production caller** — tests only.
 Optimising either would be speculative.
 
+### Process defect found: pushes were cancelling each other's CI
+`ci.yml:11-13` sets `cancel-in-progress: true`. Combined with the loop's fast
+cadence, **pushing the next chunk cancels the previous run mid-flight** — commit
+`7771a0a6` (masked subdivision) shows `cancelled`, its ASan job never finished.
+Seven jobs had passed; ASan was killed by the next push.
+
+The owner's standing requirement is that workflows pass on *every* push, so
+"HEAD is green, therefore the tree is fine" is not the standard being asked for,
+even though it is true. The cumulative run on `3f81802a` did verify everything.
+
+**Rule adopted: wait for the CI run to finish before pushing the next chunk.**
+The watch was already being started after each push; what was missing was
+treating its result as a gate rather than a notification.
+
 ### Still blocked on the owner
 **SonarQube credentials**; the ball-of-foot crease remains visually unjudged.
 
