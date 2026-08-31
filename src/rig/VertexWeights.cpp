@@ -75,8 +75,14 @@ CompiledWeights VertexWeights::compile(const Skeleton& skeleton, uint8_t influen
         // influence survives truncation on symmetric vertices.
         std::ranges::sort(infl, std::ranges::greater{});
 
+        out.maxInfluences =
+            std::max(out.maxInfluences, static_cast<uint8_t>(std::min<size_t>(infl.size(), 255)));
+
         const bool truncated = infl.size() > n;
-        if (truncated) infl.resize(n);
+        if (truncated) {
+            ++out.clampedVertices;
+            infl.resize(n);
+        }
 
         if (truncated) {
             // Re-normalise so the kept weights still sum to 1. Without this,

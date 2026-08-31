@@ -215,11 +215,21 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
         return false;
     }
 
+    // 4 is what glTF's JOINTS_0/WEIGHTS_0 allow, and it clamps ~19% of the
+    // shipped rig's vertices while the reference truncates nothing. Measured
+    // cost under a hard 60-degree pose: ONE vertex of 19,158 moves more than
+    // 10 microns (that one by 2.0 mm), so this is reported, not fixed --
+    // see memory/todo.md, M5.
+    out.weights = weights->compile(*skel, 4);
+    std::printf("rig %s (%zu bones)\n", rigNameRef().c_str(), skel->boneCount());
+    if (out.weights.clampedVertices > 0) {
+        std::printf("  clamped %zu of %zu vertices to 4 influences (rig uses up to %u)\n",
+                    out.weights.clampedVertices, mesh.vertexCount(), out.weights.maxInfluences);
+    }
+
     // The file's rotations are in model space; skinning wants them in each
     // bone's rest frame. Skipping this yields a plausible but wrong pose.
-    std::printf("rig %s (%zu bones)\n", rigNameRef().c_str(), skel->boneCount());
     out.localPose = mh::rig::poseToBoneLocal(*skel, *bodyPose);
-    out.weights   = weights->compile(*skel, 4);
     out.skeleton  = std::move(*skel);
     out.active    = true;
     return true;

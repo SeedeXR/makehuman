@@ -286,3 +286,64 @@ TEST_CASE("the superset weights preserve every vertex's total influence", "[weig
     // The foot keeps the heel; it must not have been emptied.
     CHECK(superset.perBone.at("foot.L").verts.size() > 100);
 }
+
+// --- Influence clamping is a real, silent fidelity loss ---------------------
+//
+// glTF's JOINTS_0/WEIGHTS_0 are exactly 4 wide, so compiling to 4 influences
+// truncates. On the shipped rig that is not a rare edge case:
+//
+//     19,158 vertices, 3,665 of them (19.1%) carry MORE than 4 influences,
+//     and the worst carries 12.
+//
+// compile() already computed that and threw it away, so nearly a fifth of the
+// mesh lost influences with nothing said. It is now reported.
+TEST_CASE("compile reports how much it clamped", "[rig][weights][clamp]") {
+    const auto rig = std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel";
+    if (!std::filesystem::exists(rig)) return;
+
+    auto skel = rig::loadSkeleton(rig);
+    REQUIRE(skel.has_value());
+    auto w = rig::loadWeights(std::filesystem::path(MH_DATA_DIR) / "rigs" / "default_weights.mhw",
+                              19158);
+    REQUIRE(w.has_value());
+
+    const auto four = w->compile(*skel, 4);
+    // Cross-checked against an independent count over the raw .mhw in Python,
+    // so this pins agreement between two implementations rather than just
+    // recording whatever the C++ happened to produce.
+    CHECK(four.clampedVertices == 3665);
+    CHECK(four.maxInfluences == 12);
+
+    // Asking for as many influences as any vertex actually has must clamp
+    // nothing. Without this the two numbers above could both be constants.
+    const auto twelve = w->compile(*skel, 12);
+    CHECK(twelve.clampedVertices == 0);
+    CHECK(twelve.maxInfluences == 12);
+
+    // ...and asking for fewer must clamp strictly more.
+    const auto two = w->compile(*skel, 2);
+    CHECK(two.clampedVertices > four.clampedVertices);
+}
+
+TEST_CASE("clamped weights still sum to one", "[rig][weights][clamp]") {
+    const auto rig = std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel";
+    if (!std::filesystem::exists(rig)) return;
+    auto skel = rig::loadSkeleton(rig);
+    auto w    = rig::loadWeights(
+        std::filesystem::path(MH_DATA_DIR) / "rigs" / "default_weights.mhw", 19158);
+    REQUIRE(w.has_value());
+
+    // Truncating without renormalising makes every heavily-weighted vertex lose
+    // mass and drift toward the origin when posed -- a subtle, whole-body bug.
+    const auto c = w->compile(*skel, 4);
+    size_t weighted = 0;
+    for (size_t v = 0; v < 19158; ++v) {
+        float sum = 0.0F;
+        for (size_t k = 0; k < c.influences; ++k) sum += c.weight[v * c.influences + k];
+        if (sum == 0.0F) continue;  // an unweighted vertex is left alone
+        ++weighted;
+        INFO("vertex " << v << " sums to " << sum);
+        CHECK(std::abs(sum - 1.0F) < 1e-5F);
+    }
+    CHECK(weighted > 19000);
+}

@@ -36,6 +36,17 @@ struct CompiledWeights {
     std::vector<uint32_t> boneIndex;
     std::vector<float> weight;
 
+    /// How many vertices had more influences than `influences` and so lost
+    /// some, and the largest influence count seen before truncation.
+    ///
+    /// This is not a rare edge case worth ignoring: compiling the shipped rig
+    /// to 4 -- which is what glTF's JOINTS_0/WEIGHTS_0 require -- clamps
+    /// **3,665 of 19,158 vertices (19.1%)**, the worst of them carrying 12.
+    /// compile() always computed this and used to discard it, so a fifth of the
+    /// mesh silently lost influence. A caller that exports should say so.
+    size_t clampedVertices{};
+    uint8_t maxInfluences{};
+
     [[nodiscard]] size_t vertexCount() const noexcept {
         return influences != 0 ? boneIndex.size() / influences : 0;
     }

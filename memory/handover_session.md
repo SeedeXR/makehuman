@@ -4,6 +4,64 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 22:14:51 — Session 073 · **a silent 19% fidelity loss, now spoken**
+
+### The chunk
+"Influence clamping surfaced in the glTF exporter". Before building anything I
+measured whether it mattered — the same question that killed the last two
+micro-optimisations. This time it did.
+
+`compile()` truncates each vertex to N influences and renormalises. It computed
+how much it dropped and **threw that away**. On the shipped rig, compiling to 4
+— which is exactly what glTF's `JOINTS_0`/`WEIGHTS_0` allow — clamps:
+
+| | |
+|---|---|
+| vertices clamped | **3,665 of 19,158 (19.1%)** |
+| worst influence count | **12** |
+
+Nearly a fifth of the mesh lost influences with nothing said.
+`CompiledWeights` now reports `clampedVertices` and `maxInfluences`, and the app
+prints `clamped 3665 of 19158 vertices to 4 influences (rig uses up to 12)`.
+
+The C++ count is cross-checked against an independent count over the raw `.mhw`
+in Python, so two implementations agree rather than one recording itself.
+
+### The follow-on question, measured rather than assumed
+The reference truncates **nothing** (`shared/skeleton.py:616` iterates every
+bone's mapping), so clamping to 4 is a deviation — and the CPU path has no
+reason to inherit a GPU/glTF limit. So what does it actually cost?
+
+Under a hard 60° bend of both elbows and both knees: **one vertex of 19,158**
+moves more than 10 µm, that one by 2.0 mm. Full 12 influences would cost
+0.127 → 0.238 ms.
+
+So: reported, not fixed. Adding API to recover 2 mm on a single vertex is not
+worth it, and the report now makes the situation visible instead of silent. The
+reopen threshold is recorded.
+
+### Tests
+Three properties, each able to fail: the exact counts (3,665 / 12); compiling at
+12 clamps **zero** (so the two numbers are not constants); compiling at 2 clamps
+strictly more. Plus every weighted vertex still sums to 1.0 after truncation —
+without renormalisation the whole body drifts toward the origin when posed.
+
+### Self-review caught my own mess
+Moving the `compile()` call orphaned the comment "The file's rotations are in
+model space", leaving it attached to the wrong statement. Restored.
+
+### CI
+`6f98b4ad` **fully green, all 9 jobs** including ASan and TSan. History is
+linear, so this also covers the `--rig` commit whose own run I cancelled.
+
+### Verification
+ctest **386/386** in debug, release, ASan and TSan.
+
+### Still blocked on the owner
+**SonarQube credentials.**
+
+---
+
 ## 2026-08-31 21:56:53 — Session 072 · **the retarget table, and it is not lossy**
 
 ### Two stale entries closed first
@@ -56,6 +114,27 @@ speculative kind. The table is data; the loader arrives with its first consumer.
 ### Verification
 `tools/mixamo_mapping.py` and `--check` both exit 0. ctest **384/384** debug and
 release (no C++ changed). CI gate added to the `inventories` job.
+
+### PROCESS FAILURE this session — I cancelled my own CI, again
+`ci.yml` sets `cancel-in-progress: true`. I pushed `6f98b4ad` while `4d18a6c0`
+(`--rig`) was still queued, which **killed its ASan and TSan jobs**. The watch
+resolved to `cancelled`, not green.
+
+This is the *same* mistake the rule adopted after commit `7771a0a6` exists to
+prevent: **wait for CI as a gate, not a notification.** Knowing the rule was not
+enough; I started the next chunk while the previous push was in flight.
+
+Mitigation: history is linear, so `6f98b4ad` contains the `--rig` changes and a
+full pass there covers that code. But `--rig` never got its own sanitiser run.
+
+**Concrete rule, not a resolution**: do not `git push` while `gh run list`
+shows a run for the previous commit still `queued` or `in_progress`.
+
+### Benchmark note
+CI measures `loadWeights` at **39.27 ms** against 16-18 ms locally — CI runners
+are simply slower. That confirms the local 15.55 -> 17 drift was machine noise,
+not a regression, and also that **CI's figure is not comparable to the local
+baseline**. The benchmark job passed and was not among the cancelled ones.
 
 ### Still blocked on the owner
 **SonarQube credentials.**

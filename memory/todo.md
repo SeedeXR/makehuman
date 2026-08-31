@@ -484,7 +484,23 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       the rig reaches 12 influences), and ties break by **descending bone
       index**, matching Python's `sorted(reverse=True)` over `(w, idx)` tuples.
       Arbitrary, but it decides which influence survives on symmetric vertices.
-- [ ] Influence clamping surfaced in the glTF exporter (JOINTS_0/WEIGHTS_0)
+- [x] **Influence clamping surfaced.** `CompiledWeights` now carries
+      `clampedVertices` and `maxInfluences`; `compile()` always computed both and
+      **discarded them**, so the loss was silent.
+      It is not a rare edge case: compiling the shipped rig to 4 — what glTF's
+      `JOINTS_0`/`WEIGHTS_0` require — clamps **3,665 of 19,158 vertices
+      (19.1%)**, the worst carrying **12**. The app now says so:
+      `clamped 3665 of 19158 vertices to 4 influences (rig uses up to 12)`.
+      The C++ count matches an independent count over the raw `.mhw` in Python,
+      so the number is agreed by two implementations, not just recorded.
+- [x] **Clamping to 4 measured, and deliberately NOT removed.** The reference
+      truncates nothing — `shared/skeleton.py:616` iterates every bone's mapping
+      — so 4 is a deviation. Its cost, under a hard 60° bend of both elbows and
+      both knees: **1 vertex of 19,158** moves more than 10 µm, that one by
+      2.0 mm. Using all 12 would cost 0.127 → 0.238 ms.
+      A new API to recover 2 mm on a single vertex is not worth it. **Reopen if**
+      a rig ever appears whose 5th-and-beyond influences carry real weight — the
+      report now makes that visible instead of silent.
 - [x] Euler conventions — **all 24**, plus quaternion matrix/from-matrix/
       multiply/slerp and arbitrary-axis rotation. 120 captured cases
       (24 conventions x 5 angle sets), worst matrix delta at float32 epsilon.
