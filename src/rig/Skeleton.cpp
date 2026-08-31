@@ -105,7 +105,32 @@ bool Skeleton::buildRestMatrices() {
 
     for (Bone& b : bones) {
         Vec3 boneDir;
-        if (!normalized(b.direction(), boneDir)) return false;  // zero-length bone
+        if (!normalized(b.direction(), boneDir)) {
+            // A zero-length bone is a TIP MARKER, not corrupt data. Mixamo's
+            // own 65 bones include HeadTop_End, Left/RightToe_End and a 4th
+            // segment on every finger; each sits exactly at its parent's tail
+            // and deforms nothing (0 weighted vertices on all 13 in
+            // mixamo_superset.mhskel, verified). Head == tail is how "the tip
+            // is here" is expressed, so there is no direction to derive.
+            //
+            // It inherits the parent's basis -- the convention Blender applies
+            // to leaf bones -- keeping its own head as the translation. A root
+            // with no length has nothing to inherit and stays an error.
+            //
+            // Rejecting the whole skeleton instead, which is what this used to
+            // do, made the 179-bone superset rig unusable for skinning
+            // entirely: one tip marker failed and took the other 178 with it.
+            if (b.parent < 0) return false;
+            foundation::Mat4 g = bones[static_cast<size_t>(b.parent)].matRestGlobal;
+            g.m[0][3]          = b.head.x;
+            g.m[1][3]          = b.head.y;
+            g.m[2][3]          = b.head.z;
+            b.matRestGlobal    = g;
+            b.length           = 0.0F;
+            b.matRestRelative =
+                foundation::rigidInverse(bones[static_cast<size_t>(b.parent)].matRestGlobal) * g;
+            continue;
+        }
 
         Vec3 normal = kFallbackNormal;
         if (!b.planeName.empty()) {

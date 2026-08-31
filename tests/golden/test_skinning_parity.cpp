@@ -16,6 +16,9 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <set>
+#include <span>
+#include <string>
 #include <vector>
 
 using namespace mh;
@@ -216,4 +219,131 @@ TEST_CASE("mismatched inputs are refused", "[skinning]") {
     // A weight naming a bone the pose does not have.
     CHECK_FALSE(
         rig::skinPositions(r.mesh.coord(), r.weights, std::span<const foundation::Mat4>{}, out));
+}
+
+// --- Deformation quality of the generated ball bones ------------------------
+//
+// `tools/build_mixamo_superset.py` invents weights for a bone MakeHuman does
+// not have, so there is no reference to compare against. CI gated the file for
+// STALENESS -- is it current with its generator? -- but never for whether the
+// rig deforms acceptably. That is the same gap that let 13 zero-length bones
+// ship in a rig that could not skin at all.
+//
+// The honest measure is comparative: under the same mesh, the same linear blend
+// skinning and the same bend angle, our generated crease must be no worse than
+// a joint MakeHuman itself ships. Measured at 45 degrees:
+//
+//     ball.L/R        792 faces   min area ratio 0.364   7 flips (0.88%)
+//     lowerarm01.L/R 1152 faces   min area ratio 0.023  22 flips (1.91%)
+//
+// Some collapse at a sharp bend is inherent to LBS -- the elbow shows more of
+// it. Pinning the comparison rather than the absolute number keeps the test
+// self-calibrating.
+namespace {
+
+using mh::foundation::Vec3;
+
+struct Deformation {
+    size_t faces{};
+    size_t flips{};
+    float minAreaRatio{1.0F};
+};
+
+Vec3 newellNormal(std::span<const Vec3> v, std::span<const uint32_t> face, float& area) {
+    Vec3 n{};
+    for (size_t i = 0; i < face.size(); ++i) {
+        const Vec3& a = v[face[i]];
+        const Vec3& b = v[face[(i + 1) % face.size()]];
+        n.x += (a.y - b.y) * (a.z + b.z);
+        n.y += (a.z - b.z) * (a.x + b.x);
+        n.z += (a.x - b.x) * (a.y + b.y);
+    }
+    const float m = std::sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
+    area          = m * 0.5F;
+    return (m > 1e-12F) ? Vec3{n.x / m, n.y / m, n.z / m} : Vec3{};
+}
+
+/// Rolls every bone whose name starts with @p prefix by @p degrees about X and
+/// reports how the faces touching those bones deform.
+Deformation rollAndMeasure(const std::filesystem::path& rigStem, const std::string& prefix,
+                           float degrees, const core::Mesh& mesh) {
+    Deformation d{};
+    auto skel = rig::loadSkeleton(rigStem.string() + ".mhskel");
+    REQUIRE(skel.has_value());
+    REQUIRE(skel->updateJoints(mesh.coord()));
+    REQUIRE(skel->buildRestMatrices());
+    auto w = rig::loadWeights(rigStem.string() + "_weights.mhw", mesh.vertexCount());
+    REQUIRE(w.has_value());
+    const auto compiled = w->compile(*skel, 4);
+
+    const float r = degrees * 3.14159265358979F / 180.0F;
+    std::vector<foundation::Mat4> local(skel->boneCount(), foundation::Mat4::identity());
+    std::set<size_t> rolled;
+    for (size_t i = 0; i < skel->boneCount(); ++i) {
+        if (skel->bones[i].name.rfind(prefix, 0) != 0) continue;
+        auto& m   = local[i];
+        m.m[1][1] = std::cos(r);
+        m.m[1][2] = -std::sin(r);
+        m.m[2][1] = std::sin(r);
+        m.m[2][2] = std::cos(r);
+        rolled.insert(i);
+    }
+    REQUIRE_FALSE(rolled.empty());
+
+    std::vector<Vec3> posed;
+    REQUIRE(rig::skinPositions(mesh.coord(), compiled, rig::computeSkinningMatrices(*skel, local),
+                               posed));
+
+    // Vertices the rolled bones actually influence.
+    std::vector<uint8_t> touched(mesh.vertexCount(), 0U);
+    const size_t per = compiled.influences;
+    for (size_t v = 0; v < mesh.vertexCount(); ++v)
+        for (size_t k = 0; k < per; ++k)
+            if (compiled.weight[v * per + k] > 0.0F &&
+                rolled.contains(compiled.boneIndex[v * per + k]))
+                touched[v] = 1U;
+
+    const auto fv    = mesh.fvert();
+    const size_t vpp = mesh.vertsPerPrimitive();
+    for (size_t f = 0; f + vpp <= fv.size(); f += vpp) {
+        const std::span<const uint32_t> face{fv.data() + f, vpp};
+        if (std::none_of(face.begin(), face.end(), [&](uint32_t i) { return touched[i] != 0U; }))
+            continue;
+        ++d.faces;
+        float a0      = 0.0F;
+        float a1      = 0.0F;
+        const Vec3 n0 = newellNormal(mesh.coord(), face, a0);
+        const Vec3 n1 = newellNormal(posed, face, a1);
+        if (a0 < 1e-9F) continue;
+        d.minAreaRatio = std::min(d.minAreaRatio, a1 / a0);
+        if (n0.x * n1.x + n0.y * n1.y + n0.z * n1.z < 0.0F) ++d.flips;
+    }
+    return d;
+}
+
+}  // namespace
+
+TEST_CASE("the generated ball crease is no worse than a shipped joint", "[rig][mixamo][crease]") {
+    const std::filesystem::path rigs = std::filesystem::path(MH_DATA_DIR) / "rigs";
+    if (!std::filesystem::exists(rigs / "mixamo_superset.mhskel")) return;
+
+    auto mesh = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+
+    // A walking toe-off. Nothing may invert here -- this is the common case.
+    const auto walk = rollAndMeasure(rigs / "mixamo_superset", "ball", 25.0F, *mesh);
+    INFO("ball at 25 deg: " << walk.faces << " faces, " << walk.flips << " flips, min area ratio "
+                            << walk.minAreaRatio);
+    CHECK(walk.flips == 0);
+    CHECK(walk.minAreaRatio > 0.5F);
+
+    // A hard roll, against MakeHuman's own elbow under identical conditions.
+    const auto ball       = rollAndMeasure(rigs / "mixamo_superset", "ball", 45.0F, *mesh);
+    const auto elbow      = rollAndMeasure(rigs / "default", "lowerarm01", 45.0F, *mesh);
+    const float ballRate  = static_cast<float>(ball.flips) / static_cast<float>(ball.faces);
+    const float elbowRate = static_cast<float>(elbow.flips) / static_cast<float>(elbow.faces);
+    INFO("ball " << ball.flips << "/" << ball.faces << " (" << ballRate << "), elbow "
+                 << elbow.flips << "/" << elbow.faces << " (" << elbowRate << ")");
+    CHECK(ballRate <= elbowRate);
+    CHECK(ball.minAreaRatio > elbow.minAreaRatio);
 }

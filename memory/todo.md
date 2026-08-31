@@ -344,10 +344,39 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       **moves weight, never creates it** — worst per-vertex influence drift
       across all 19,158 vertices is 2.22e-16. Centroids run heel → ball → toe
       (z = 0.348 → 1.141 → 1.495), so the region is anatomically coherent.
-- [ ] **Visual check on the ball crease.** The ramp is a principled choice, not
-      a match to any reference — MakeHuman has no ball bone to compare against.
-      The weights are provably conservative and spatially coherent, but whether
-      the crease *looks* right under a roll is unjudged. Blender is available.
+- [x] **Ball crease judged — and it beats a shipped joint.** Turned the
+      subjective question into a measured one: under the same mesh, the same LBS
+      and the same 45° bend, compare our generated crease against a joint
+      MakeHuman itself ships.
+
+      | region | faces | min area ratio | inverted normals |
+      |---|---|---|---|
+      | `ball.L/R` (generated) | 792 | 0.364 | **7 (0.88%)** |
+      | `lowerarm01.L/R` (shipped) | 1152 | 0.023 | **22 (1.91%)** |
+
+      Half the flip rate and 16x less area collapse than MakeHuman's own elbow.
+      At 25° (a walking toe-off) **nothing inverts at all**. The residual flips
+      at 45° are inherent to linear blend skinning, not to these weights.
+      Gated by `[rig][mixamo][crease]`, which pins the *comparison* rather than
+      an absolute number so it stays self-calibrating.
+- [x] **CRITICAL, found by trying to use it: the superset rig could not skin.**
+      13 of its 179 bones are tip markers whose head and tail resolve to the
+      same joint, and `buildRestMatrices` rejected the **entire skeleton** on the
+      first zero-length bone. The rig shipped, had a CI staleness gate, and was
+      **completely unusable** — one bad bone took the other 178 with it.
+      The 13 are legitimate Mixamo counterparts, not junk: Mixamo's own 65
+      include `HeadTop_End`, `Left/RightToe_End` and a 4th segment on every
+      finger (`LeftHandIndex4` …). They sit at their parent's tail and deform
+      nothing — 0 weighted vertices on all 13, verified — so head == tail is how
+      "the tip is here" is expressed.
+      A tip marker now inherits its parent's basis (the convention Blender
+      applies to leaf bones), keeping its own head as the translation. A
+      length-less **root** is still an error.
+      **The lesson**: the staleness gate asked "is this file current?" and never
+      "does it work?". Both new tests ask the second question.
+- [ ] **`--rig` is not wired to the CLI.** `src/app/main.cpp:143` hard-codes
+      `default.mhskel`, so the 179-bone superset is unreachable from the
+      application — which is why nothing had ever exercised it.
       **`hips` is not `root`**: the legs and spine meet at root's *tail*, 0.92 dm
       from its head, so binding Mixamo's Hips to `root` would pivot the whole
       character ~9 cm off on every rotation and every root-motion translation.

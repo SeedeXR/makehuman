@@ -4,6 +4,74 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 21:26:26 — Session 070 · **the superset rig could not skin at all**
+
+### What I set out to do
+Close the one M5 item I had repeatedly reported as "blocked on the owner": the
+ball-crease visual check. It was never really blocked — the note itself said
+"Blender is available". Keeping the question rather than answering it was the
+error.
+
+### What trying to do it found
+The check needs a posed superset rig. It could not be posed:
+`buildRestMatrices()` **failed** on `mixamo_superset.mhskel`.
+
+13 of the 179 bones are tip markers whose head and tail resolve to the same
+joint, and the loop rejected the **whole skeleton** on the first zero-length
+bone. So the rig shipped, passed a CI staleness gate, and was **unusable for
+skinning** — one bad bone taking the other 178 with it. Nothing noticed because
+nothing had ever tried to skin with it.
+
+The 13 are legitimate, not junk to delete — I checked before reaching for the
+delete key. Mixamo's own 65 bones include `HeadTop_End`, `Left/RightToe_End`
+**and a 4th segment on every finger** (`LeftHandIndex4` and friends). They sit
+at their parent's tail and deform nothing (0 weighted vertices on all 13), so
+head == tail is simply how "the tip is here" is expressed.
+
+Fix: a tip marker inherits its parent's basis — the convention Blender applies
+to leaf bones — keeping its own head as the translation. A length-less root
+stays an error.
+
+### The crease, once it could be measured
+Rather than squint at a render, compare like with like: same mesh, same LBS,
+same 45° bend, our generated crease against a joint MakeHuman itself ships.
+
+| region | faces | min area ratio | inverted normals |
+|---|---|---|---|
+| `ball.L/R` (generated) | 792 | 0.364 | **7 (0.88%)** |
+| `lowerarm01.L/R` (shipped) | 1152 | 0.023 | **22 (1.91%)** |
+
+Half the flip rate and 16x less area collapse than the shipped elbow, and at 25°
+(a walking toe-off) **nothing inverts at all**. The residual flips at 45° are
+inherent to linear blend skinning, not to these weights. The gate pins the
+comparison, not an absolute, so it stays self-calibrating.
+
+### The lesson worth keeping
+The superset rig had a CI gate that asked **"is this file current with its
+generator?"** and never **"does it work?"**. A staleness gate is not a quality
+gate. Both new tests ask the second question.
+
+### Also worth knowing
+`src/app/main.cpp:143` hard-codes `default.mhskel`, so the superset rig is
+unreachable from the application. That is *why* nothing had exercised it. Filed.
+
+### Blender notes (cost me several attempts)
+Renders came back black, then white. The mesh imported fine all along (19,158
+verts, Y **is** up — the importer did not rotate it); the fault was my camera.
+A `TRACK_TO` constraint did not give a usable view in background mode;
+`view3d.camera_to_view_selected()` with an explicit rotation did. Two renders
+having identical file sizes was coincidence, not a bug — checked by hash.
+
+Ultimately the numeric measure answered the question better than any render.
+
+### Verification
+ctest **381/381** in debug, release, ASan and TSan. CI green on `82ffcccb`.
+
+### Still blocked on the owner
+**SonarQube credentials** — genuinely blocked, unlike the crease check was.
+
+---
+
 ## 2026-08-31 21:03:04 — Session 069 · **proxy parity at six body shapes, and a fixture that could not fail**
 
 ### The chunk

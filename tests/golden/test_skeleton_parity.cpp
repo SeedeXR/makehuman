@@ -421,3 +421,82 @@ TEST_CASE("every mapped Mixamo target exists in the superset", "[skeleton][mixam
         }
     }
 }
+
+// --- The Mixamo superset rig must actually be usable ------------------------
+//
+// The superset rig had a CI staleness gate (is the file current with its
+// generator?) but nothing ever checked it could SKIN. It could not: 13 of its
+// 179 bones are tip markers whose head and tail resolve to the same joint, and
+// one zero-length bone made buildRestMatrices reject the entire skeleton. The
+// rig shipped, was gated, and was unusable.
+//
+// The 13 are legitimate Mixamo counterparts, not junk to delete: Mixamo's own
+// 65 bones include HeadTop_End, Left/RightToe_End, and a 4th segment on every
+// finger (LeftHandIndex4 and friends). They sit AT the tip of their parent and
+// deform nothing -- 0 weighted vertices on all 13, verified.
+TEST_CASE("the Mixamo superset rig builds rest matrices", "[rig][mixamo][superset]") {
+    const auto rig = std::filesystem::path(MH_DATA_DIR) / "rigs" / "mixamo_superset.mhskel";
+    if (!std::filesystem::exists(rig)) return;
+
+    auto mesh = mh::core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+
+    auto skel = mh::rig::loadSkeleton(rig);
+    REQUIRE(skel.has_value());
+    REQUIRE(skel->boneCount() == 179);
+    REQUIRE(skel->updateJoints(mesh->coord()));
+
+    // This is the assertion that was missing.
+    REQUIRE(skel->buildRestMatrices());
+
+    // Every bone must end up with an orthonormal basis -- a tip marker that
+    // silently produced a zero or NaN matrix would pass the line above and
+    // corrupt every child.
+    size_t tips = 0;
+    for (const auto& b : skel->bones) {
+        INFO("bone " << b.name);
+        const auto& g = b.matRestGlobal;
+        for (size_t axis = 0; axis < 3; ++axis) {
+            const auto a   = g.axis(axis);
+            const float sq = a.x * a.x + a.y * a.y + a.z * a.z;
+            CHECK(std::isfinite(sq));
+            CHECK(std::abs(sq - 1.0F) < 1e-4F);
+        }
+        if (b.length < 1e-9F) ++tips;
+    }
+    CHECK(tips == 13);
+}
+
+// A tip marker has no direction of its own, so it takes its parent's basis --
+// the same convention Blender applies to leaf bones. Pinning it explicitly
+// because "it built" would also be true of a wrong-but-orthonormal answer.
+TEST_CASE("a tip marker inherits its parent's rest basis", "[rig][mixamo][superset]") {
+    const auto rig = std::filesystem::path(MH_DATA_DIR) / "rigs" / "mixamo_superset.mhskel";
+    if (!std::filesystem::exists(rig)) return;
+
+    auto mesh = mh::core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    auto skel = mh::rig::loadSkeleton(rig);
+    REQUIRE(skel.has_value());
+    REQUIRE(skel->updateJoints(mesh->coord()));
+    REQUIRE(skel->buildRestMatrices());
+
+    size_t checked = 0;
+    for (const auto& b : skel->bones) {
+        if (b.length >= 1e-9F || b.parent < 0) continue;
+        const auto& p = skel->bones[static_cast<size_t>(b.parent)];
+        INFO(b.name << " under " << p.name);
+        for (size_t axis = 0; axis < 3; ++axis) {
+            const auto tip = b.matRestGlobal.axis(axis);
+            const auto par = p.matRestGlobal.axis(axis);
+            CHECK(std::abs(tip.x - par.x) < 1e-5F);
+            CHECK(std::abs(tip.y - par.y) < 1e-5F);
+            CHECK(std::abs(tip.z - par.z) < 1e-5F);
+        }
+        // Its position is still its own: the tip, not the parent's head.
+        CHECK(std::abs(b.matRestGlobal.at(0, 3) - b.head.x) < 1e-6F);
+        CHECK(std::abs(b.matRestGlobal.at(1, 3) - b.head.y) < 1e-6F);
+        CHECK(std::abs(b.matRestGlobal.at(2, 3) - b.head.z) < 1e-6F);
+        ++checked;
+    }
+    CHECK(checked == 13);
+}
