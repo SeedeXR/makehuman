@@ -336,7 +336,12 @@ TEST_CASE("the litsphere shader keeps the reference's exact terms", "[render][li
     INFO("shader body:\n" << code);
     CHECK(code.find("vec3(0.495)") != std::string::npos);
     CHECK(code.find("2.0 - (shading.r + shading.g + shading.b) / 3.0") != std::string::npos);
-    // The reference does not renormalize; neither may we.
-    CHECK(code.find("normalize(vNormal)") == std::string::npos);
+    // The reference does not renormalize on the no-map path; neither may we.
+    //
+    // This checks the ASSIGNMENT, not any use of normalize(vNormal): the
+    // normal-map branch legitimately normalizes to build an orthonormal TBN
+    // basis. A blanket ban was the first version of this test and it started
+    // failing the moment normal mapping arrived -- for a correct change.
+    CHECK(code.find("normal = normalize(vNormal)") == std::string::npos);
     CHECK(code.find("normal = vNormal") != std::string::npos);
 }

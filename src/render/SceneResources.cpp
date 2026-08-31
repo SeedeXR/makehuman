@@ -14,7 +14,8 @@ namespace {
 /// built and where the litsphere texture is replaced, or the two disagree about
 /// which texture is at which slot.
 void bindAll(QRhiShaderResourceBindings* srb, QRhiBuffer* ubuf, QRhiTexture* lit,
-             QRhiTexture* diffuse, QRhiSampler* sampler) {
+             QRhiTexture* diffuse, QRhiTexture* normalMap, QRhiSampler* sampler,
+             QRhiBuffer* meshBuf) {
     srb->setBindings({
         QRhiShaderResourceBinding::uniformBuffer(
             0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
@@ -23,13 +24,24 @@ void bindAll(QRhiShaderResourceBindings* srb, QRhiBuffer* ubuf, QRhiTexture* lit
                                                   sampler),
         QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage,
                                                   diffuse, sampler),
+        // Always bound, even with no map: a slot the shader declares must have
+        // a live texture or the bindings are incomplete. The shader branches on
+        // params.z rather than sampling it.
+        QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage,
+                                                  normalMap, sampler),
+        QRhiShaderResourceBinding::uniformBuffer(4, QRhiShaderResourceBinding::FragmentStage,
+                                                 meshBuf),
     });
 }
 
 /// Three mat4 plus a vec4, matching the `Buf` block in litsphere.vert.
 constexpr quint32 kUboSize = 64 * 3 + 16;
-/// Interleaved position (3) + normal (3) + uv (2).
-constexpr quint32 kStride = 8 * sizeof(float);
+/// Interleaved position (3) + normal (3) + uv (2) + tangent (4).
+///
+/// The tangent is always present rather than switching layouts per mesh: 4
+/// floats a vertex is ~1.3 MB on the subdivided mesh, against a second pipeline
+/// and the state to pick between them.
+constexpr quint32 kStride = 12 * sizeof(float);
 
 std::expected<QShader, RenderError> loadShader(const std::filesystem::path& p) {
     QFile f(QString::fromStdString(p.string()));
@@ -68,6 +80,12 @@ struct Drawable {
     /// Null when the instance named no diffuse map; the shared white stand-in
     /// is bound instead.
     std::unique_ptr<QRhiTexture> diffuseTex;
+    /// Null when the instance named no normal map. The shader then takes the
+    /// no-map branch and never samples whatever is bound in that slot.
+    std::unique_ptr<QRhiTexture> normalTex;
+    /// Per-mesh material parameters; `Buf` is per frame and cannot hold them.
+    std::unique_ptr<QRhiBuffer> meshBuf;
+    float normalMapIntensity{1.0F};
     std::unique_ptr<QRhiShaderResourceBindings> srb;
     quint32 indexCount{};
 };
@@ -78,6 +96,9 @@ struct SceneResources::Impl {
     // stand-in, one pipeline. Only the bindings and geometry vary per mesh.
     std::unique_ptr<QRhiBuffer> ubuf;
     std::unique_ptr<QRhiTexture> diffuseTex;
+    /// Bound only so the pipeline has a layout to compile against; never read,
+    /// because each drawable brings its own.
+    std::unique_ptr<QRhiBuffer> layoutMeshBuf;
     std::unique_ptr<QRhiSampler> sampler;
     std::unique_ptr<QRhiShaderResourceBindings> layoutSrb;
     std::unique_ptr<QRhiGraphicsPipeline> pipeline;
@@ -130,8 +151,13 @@ std::expected<std::unique_ptr<SceneResources>, RenderError> SceneResources::crea
     // cares that the slot is a sampled texture; a throwaway texture created
     // here would be destroyed while the SRB still pointed at it.
     r->d_->layoutSrb.reset(rhi->newShaderResourceBindings());
+    r->d_->layoutMeshBuf.reset(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 16));
+    if (!r->d_->layoutMeshBuf->create()) {
+        return std::unexpected(RenderError{RenderErrorKind::Failed, "material uniform buffer"});
+    }
     bindAll(r->d_->layoutSrb.get(), r->d_->ubuf.get(), r->d_->diffuseTex.get(),
-            r->d_->diffuseTex.get(), r->d_->sampler.get());
+            r->d_->diffuseTex.get(), r->d_->diffuseTex.get(), r->d_->sampler.get(),
+            r->d_->layoutMeshBuf.get());
     if (!r->d_->layoutSrb->create()) {
         return std::unexpected(RenderError{RenderErrorKind::Failed, "shader resource bindings"});
     }
@@ -146,6 +172,7 @@ std::expected<std::unique_ptr<SceneResources>, RenderError> SceneResources::crea
         {0, 0, QRhiVertexInputAttribute::Float3, 0},
         {0, 1, QRhiVertexInputAttribute::Float3, 3 * sizeof(float)},
         {0, 2, QRhiVertexInputAttribute::Float2, 6 * sizeof(float)},
+        {0, 3, QRhiVertexInputAttribute::Float4, 8 * sizeof(float)},
     });
     r->d_->pipeline->setVertexInputLayout(layout);
     r->d_->pipeline->setShaderResourceBindings(r->d_->layoutSrb.get());
@@ -182,7 +209,8 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
         Drawable drawable;
         std::vector<float> verts;
         QImage lit;
-        QImage diffuse;  ///< null when the instance named no diffuse map
+        QImage diffuse;    ///< null when the instance named no diffuse map
+        QImage normalMap;  ///< null when the instance named no normal map
     };
 
     std::vector<Pending> pending;
@@ -233,12 +261,23 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
             diffuse = diffuse.convertToFormat(QImage::Format_RGBA8888);
         }
 
+        QImage normalMap;
+        if (!instance.normalMap.empty()) {
+            normalMap = QImage(QString::fromStdString(instance.normalMap.string()));
+            if (normalMap.isNull()) {
+                return std::unexpected(
+                    RenderError{RenderErrorKind::TextureMissing, instance.normalMap.string()});
+            }
+            normalMap = normalMap.convertToFormat(QImage::Format_RGBA8888);
+        }
+
         // Interleaved, because that is what the vertex layout declares and one
         // buffer is one binding instead of three.
         std::vector<float> verts;
         verts.reserve(mesh.vertexCount() * 8);
-        const bool hasN = mesh.vnorm.size() == mesh.vertexCount();
-        const bool hasT = mesh.texco.size() == mesh.vertexCount();
+        const bool hasN  = mesh.vnorm.size() == mesh.vertexCount();
+        const bool hasT  = mesh.texco.size() == mesh.vertexCount();
+        const bool hasTg = mesh.vtang.size() == mesh.vertexCount();
         for (size_t i = 0; i < mesh.vertexCount(); ++i) {
             verts.push_back(mesh.coord[i].x);
             verts.push_back(mesh.coord[i].y);
@@ -248,6 +287,13 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
             verts.push_back(hasN ? mesh.vnorm[i].z : 1.0F);
             verts.push_back(hasT ? mesh.texco[i].x : 0.0F);
             verts.push_back(hasT ? mesh.texco[i].y : 0.0F);
+            // A mesh with no tangents still fills the slot: the attribute is
+            // always in the layout, and +X with handedness +1 is a valid frame
+            // for the branch that never samples it.
+            verts.push_back(hasTg ? mesh.vtang[i].x : 1.0F);
+            verts.push_back(hasTg ? mesh.vtang[i].y : 0.0F);
+            verts.push_back(hasTg ? mesh.vtang[i].z : 0.0F);
+            verts.push_back(hasTg ? mesh.vtang[i].w : 1.0F);
         }
 
         Drawable dr;
@@ -274,16 +320,30 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
                     RenderError{RenderErrorKind::TextureMissing, instance.diffuse.string()});
             }
         }
+        if (!normalMap.isNull()) {
+            dr.normalTex.reset(rhi->newTexture(QRhiTexture::RGBA8, normalMap.size()));
+            if (!dr.normalTex->create()) {
+                return std::unexpected(
+                    RenderError{RenderErrorKind::TextureMissing, instance.normalMap.string()});
+            }
+        }
+        dr.normalMapIntensity = instance.normalMapIntensity;
+        dr.meshBuf.reset(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 16));
+        if (!dr.meshBuf->create()) {
+            return std::unexpected(RenderError{RenderErrorKind::Failed, "material uniform buffer"});
+        }
         bindAll(dr.srb.get(), d_->ubuf.get(), dr.litTex.get(),
-                dr.diffuseTex ? dr.diffuseTex.get() : d_->diffuseTex.get(), d_->sampler.get());
+                dr.diffuseTex ? dr.diffuseTex.get() : d_->diffuseTex.get(),
+                dr.normalTex ? dr.normalTex.get() : d_->diffuseTex.get(), d_->sampler.get(),
+                dr.meshBuf.get());
         if (!dr.srb->create()) {
             return std::unexpected(
                 RenderError{RenderErrorKind::Failed, "shader resource bindings"});
         }
 
         dr.indexCount = static_cast<quint32>(mesh.indexCount());
-        pending.push_back(
-            Pending{std::move(dr), std::move(verts), std::move(lit), std::move(diffuse)});
+        pending.push_back(Pending{std::move(dr), std::move(verts), std::move(lit),
+                                  std::move(diffuse), std::move(normalMap)});
     }
 
     // Every mesh built, so it is now safe to queue: no early return remains.
@@ -301,6 +361,12 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
         batch->uploadStaticBuffer(p.drawable.vbuf.get(), p.verts.data());
         batch->uploadTexture(p.drawable.litTex.get(), p.lit);
         if (p.drawable.diffuseTex) batch->uploadTexture(p.drawable.diffuseTex.get(), p.diffuse);
+        if (p.drawable.normalTex) batch->uploadTexture(p.drawable.normalTex.get(), p.normalMap);
+        // x = intensity, y = 1 when a normal map is bound. Written per mesh
+        // because whether one exists is a material property, not a frame one.
+        const float material[4] = {p.drawable.normalMapIntensity,
+                                   p.drawable.normalTex ? 1.0F : 0.0F, 0.0F, 0.0F};
+        batch->updateDynamicBuffer(p.drawable.meshBuf.get(), 0, 16, material);
         built.push_back(std::move(p.drawable));
     }
     // Index data comes from the caller's mesh, which outlives this call.

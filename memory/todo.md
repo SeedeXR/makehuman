@@ -733,10 +733,41 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         check per asset.
       I also cannot fetch binaries (the fetch tool returns text), so the image
       files have to come from the owner.
-      **Next, in order**: (1) normal/roughness/AO channels through the same
-      per-mesh path the diffuse now takes; (2) ~~`autoBlendSkin`~~ **done, see
-      below**; (3) a real PBR metallic-roughness pipeline; (4) the skin `.mhmat`
-      set.
+      **Next, in order**: (1) ~~normal~~ **done, see below**; roughness/AO still
+      to come through the same per-mesh path; (2) ~~`autoBlendSkin`~~ **done**;
+      (3) a real PBR metallic-roughness pipeline; (4) the skin `.mhmat` set.
+- [x] **Normal maps — where surface detail actually lives.** Pores, wrinkles and
+      fine skin structure come from a tangent-space normal map, not the albedo,
+      so this is the mechanism behind the "MetaHuman-level detail" request.
+      The mesh already had **correct** tangents (Lengyel, with the reference's
+      three bugs fixed); they were simply never uploaded. Vertex layout is now
+      pos+normal+uv+**tangent** (12 floats, ~1.3 MB more on the subdivided
+      mesh).
+      **One pipeline, not two.** The vertex shader's own comment planned a
+      separate shader per variant; a uniform branch is uniform control flow and
+      avoids doubling pipeline state for a per-mesh runtime choice. Whether a
+      map exists is per MESH, so it needed a **per-mesh uniform block** —
+      the existing `Buf` is per frame.
+      A flat 1x1 placeholder cannot replace the branch: unpacking a flat map
+      gives `normalize(TBN * (0,0,1))` = `normalize(vNormal)`, and normalizing
+      is exactly what the no-map path must not do.
+- [x] **TWO reference defects found and NOT ported** (recorded in
+      `project_context.md` §8.0):
+      1. **`normalmapIntensity` does nothing in the reference.** It computes
+         `(2*normalH - 1) * intensity` then `normalize(tbnMat * normal)` — a
+         uniform scale followed by a normalize **cancels exactly**. It would
+         only matter under `CALC_NORMAL_Z`, commented out at `:64`. Caught
+         because the test measured **0 pixels** between intensity 1.0 and 0.01.
+         Ours scales **XY only, keeping Z** — the standard strength idiom and
+         what `CALC_NORMAL_Z` was reaching for.
+      2. **The binormal discards handedness**: `cross(vNormal, tang)` ignores
+         Lengyel's sign, so mirrored UV islands on a symmetric human get
+         inverted normal-map lighting on one side. We carry `tangent.w`.
+- [x] **The litsphere source guard had to become more precise.** It banned
+      `normalize(vNormal)` outright, which broke the moment normal mapping
+      arrived — for a *correct* change, since the TBN basis needs a unit normal.
+      It now bans the **assignment** `normal = normalize(vNormal)`, which is the
+      regression it was actually written for. Re-verified by mutation.
 - [x] **`autoBlendSkin` ported — continuous skin tone from the ethnic sliders.**
       `mh::core::SkinTone` (**AGPL**: a translation of `apps/autoskinblender.py`,
       so it belongs in `core`, never in a permissive module).

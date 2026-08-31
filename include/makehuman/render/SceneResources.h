@@ -78,6 +78,18 @@ struct MeshInstance {
     std::span<const uint8_t> litsphereRgba{};
     int litsphereWidth{};
     int litsphereHeight{};
+
+    /// Tangent-space normal map. Empty means none, and the shader then uses the
+    /// interpolated normal rather than sampling a flat placeholder -- the two
+    /// are NOT equivalent, because unpacking a flat map renormalizes and the
+    /// no-map path deliberately does not.
+    ///
+    /// This is what carries surface detail: pores, wrinkles and fine skin
+    /// structure live here, not in the albedo.
+    std::filesystem::path normalMap{};
+    /// The reference's `normalmapIntensity` uniform, scaling the unpacked
+    /// tangent-space vector.
+    float normalMapIntensity{1.0F};
 };
 
 /// The buffers, textures and pipeline for drawing meshes with the litsphere

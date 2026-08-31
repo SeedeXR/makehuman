@@ -509,3 +509,95 @@ TEST_CASE("an in-memory litsphere must match its declared size", "[render][blend
     REQUIRE_FALSE(img.has_value());
     CHECK(img.error().kind == render::RenderErrorKind::TextureMissing);
 }
+
+// --- Normal maps: where surface detail lives --------------------------------
+//
+// Pores, wrinkles and fine skin structure are carried by a tangent-space normal
+// map, not by the albedo. The mesh already has correct tangents (Lengyel, with
+// the reference's three bugs fixed), they were simply never uploaded.
+TEST_CASE("a normal map changes shading", "[render][normalmap]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    const auto s   = settings();
+
+    // A map that leans hard off-axis, so the effect cannot be lost in noise.
+    const auto path = std::filesystem::temp_directory_path() / "mh_test_normal.png";
+    QImage nm(64, 64, QImage::Format_RGBA8888);
+    nm.fill(QColor(230, 40, 200));
+    REQUIRE(nm.save(QString::fromStdString(path.string())));
+
+    render::MeshInstance mapped;
+    mapped.mesh      = sc.rm.view();
+    mapped.litsphere = s.litsphere;
+    mapped.normalMap = path;
+
+    const std::vector<render::MeshInstance> plain{{sc.rm.view(), s.litsphere}};
+    const std::vector<render::MeshInstance> bumpy{mapped};
+
+    const auto a = (*r)->render(plain, s);
+    const auto b = (*r)->render(bumpy, s);
+    REQUIRE(a.has_value());
+    REQUIRE(b.has_value());
+    const size_t changed = differingPixels(*a, *b);
+    INFO("a normal map changes " << changed << " pixels");
+    CHECK(changed > 1000);
+
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("normal map intensity scales the effect", "[render][normalmap]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc  = bodyScene();
+    const auto s    = settings();
+    const auto path = std::filesystem::temp_directory_path() / "mh_test_normal_i.png";
+    QImage nm(64, 64, QImage::Format_RGBA8888);
+    nm.fill(QColor(230, 40, 200));
+    REQUIRE(nm.save(QString::fromStdString(path.string())));
+
+    // Intensity is the reference's `normalmapIntensity` uniform. At a very low
+    // value the perturbation nearly vanishes, so full strength must differ from
+    // it -- otherwise the uniform is not reaching the shader at all.
+    render::MeshInstance strong;
+    strong.mesh               = sc.rm.view();
+    strong.litsphere          = s.litsphere;
+    strong.normalMap          = path;
+    strong.normalMapIntensity = 1.0F;
+
+    render::MeshInstance weak = strong;
+    weak.normalMapIntensity   = 0.01F;
+
+    const std::vector<render::MeshInstance> hi{strong};
+    const std::vector<render::MeshInstance> lo{weak};
+    const auto a = (*r)->render(hi, s);
+    const auto b = (*r)->render(lo, s);
+    REQUIRE(a.has_value());
+    REQUIRE(b.has_value());
+    const size_t changed = differingPixels(*a, *b);
+    INFO("intensity 1.0 vs 0.01 changes " << changed << " pixels");
+    CHECK(changed > 1000);
+
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("a normal map that will not load is reported", "[render][normalmap]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    render::MeshInstance bad;
+    bad.mesh      = sc.rm.view();
+    bad.litsphere = settings().litsphere;
+    bad.normalMap = "/definitely/not/a/normal.png";
+
+    const std::vector<render::MeshInstance> one{bad};
+    const auto img = (*r)->render(one, settings());
+    REQUIRE_FALSE(img.has_value());
+    CHECK(img.error().kind == render::RenderErrorKind::TextureMissing);
+}

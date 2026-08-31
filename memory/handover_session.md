@@ -315,6 +315,62 @@ CI green on `a4d478fe` (0 genuine failures).
 
 ---
 
+## 2026-09-01 02:53:08 — Session 082 · **normal maps, and a uniform that did nothing**
+
+### The chunk
+Surface detail — pores, wrinkles, fine skin structure — comes from a
+tangent-space normal map, not the albedo. This is the mechanism behind the
+owner's "MetaHuman-level detail" request.
+
+The mesh already had **correct** tangents (Lengyel, with the reference's three
+bugs fixed). They were simply never uploaded. Vertex layout is now
+pos+normal+uv+tangent.
+
+**One pipeline, not two.** `litsphere.vert`'s own comment planned a separate
+shader per variant. A uniform branch is uniform control flow — every fragment in
+a draw takes the same side — and avoids doubling pipeline state for a per-mesh
+runtime choice. Whether a map exists is per MESH, so it needed a **per-mesh
+uniform block**; the existing `Buf` is written once per frame.
+
+A flat 1x1 placeholder cannot stand in for the branch: unpacking a flat map
+gives `normalize(TBN * (0,0,1))` = `normalize(vNormal)`, and normalizing is
+precisely what the no-map path must not do.
+
+### The find: `normalmapIntensity` is dead in the reference
+The intensity test failed with **0 differing pixels**. That was not a wiring bug.
+The reference computes
+
+    vec3 normal = (2.0 * normalH - 1.0) * normalmapIntensity;
+    normal = normalize(tbnMat * normal);
+
+A uniform scale followed by a normalize **cancels exactly**. The uniform has no
+effect at any positive value; it would only matter under `CALC_NORMAL_Z`, which
+the reference leaves commented out at `:64`.
+
+Porting that faithfully would ship a control that silently does nothing, so it
+is a deliberate divergence: scale **XY only, keeping Z** — the standard strength
+idiom, and what `CALC_NORMAL_Z` was reaching for. Recorded in §8.0.
+
+**Second defect, same area**: the reference's binormal is
+`cross(vNormal, tang)`, discarding Lengyel's handedness sign. On a symmetric
+human, mirrored UV islands then get inverted normal-map lighting on one side. We
+carry `tangent.w` through.
+
+### A guard of mine that had to get smarter
+The litsphere source check banned `normalize(vNormal)` outright. Normal mapping
+broke it — for a **correct** change, since a TBN basis needs a unit normal. It
+now bans the *assignment* `normal = normalize(vNormal)`, which is the regression
+it was written for, and I re-ran the mutation to confirm it still bites.
+
+A blanket ban that fires on correct code is a bad test; this one earned its keep
+only after being made precise.
+
+### Verification
+ctest **401/401** in debug, release, ASan; TSan separately. Format clean.
+CI green on `d03c23fb`.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

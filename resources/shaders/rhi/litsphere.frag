@@ -39,6 +39,8 @@
 
 layout(location = 0) in vec2 vTexCoord;
 layout(location = 1) in vec3 vNormal;
+layout(location = 2) in vec3 vTangent;
+layout(location = 3) in float vHanded;
 
 layout(location = 0) out vec4 fragColor;
 
@@ -46,17 +48,61 @@ layout(std140, binding = 0) uniform Buf {
     mat4 mvp;
     mat4 modelView;
     mat4 normalMatrix;
-    vec4 params;  // x = AdditiveShading, y = normalmapIntensity
+    vec4 params;  // x = AdditiveShading
 }
 ubuf;
 
+/// Per-MESH, unlike `Buf` which is per frame. Whether a normal map exists is a
+/// property of the material, so it cannot live in a buffer shared by every draw
+/// in the frame.
+layout(std140, binding = 4) uniform MeshBuf {
+    // x = normalmapIntensity, y = 1 when a normal map is bound. At 0 the map
+    // is NOT sampled: the slot holds a placeholder only because a declared
+    // binding must point at a live texture.
+    vec4 material;
+}
+mbuf;
+
 layout(binding = 1) uniform sampler2D litsphereTexture;
 layout(binding = 2) uniform sampler2D diffuseTexture;
+layout(binding = 3) uniform sampler2D normalTexture;
 
 void main() {
-    // Raw, NOT renormalized -- see the header. This one word changes every
-    // rendered skin.
-    const vec3 normal = vNormal;
+    // With a normal map: the reference's NORMALMAP path
+    // (litsphere_fragment_shader.txt:63-77) -- unpack, scale by intensity, and
+    // rotate from tangent into view space, normalizing at the end.
+    //
+    // Without one: the RAW interpolated normal, NOT renormalized -- see the
+    // header. This one word changes every rendered skin.
+    //
+    // A flat 1x1 placeholder cannot stand in for the branch: it would give
+    // normalize(TBN * (0,0,1)) == normalize(vNormal), and normalizing is
+    // exactly what the no-map path must not do.
+    vec3 normal;
+    if (mbuf.material.y > 0.5) {
+        const vec3 packed = texture(normalTexture, vTexCoord).rgb;
+        const vec3 unpacked = 2.0 * packed - 1.0;
+        // Intensity scales XY only, keeping Z.
+        //
+        // The reference writes `(2.0*normalH - 1.0) * normalmapIntensity` and
+        // then normalizes (litsphere_fragment_shader.txt:74-77). A uniform
+        // scale followed by a normalize CANCELS EXACTLY, so its
+        // `normalmapIntensity` uniform does nothing at all -- it only bites
+        // under CALC_NORMAL_Z, which the reference leaves commented out at :64.
+        //
+        // Porting that would ship a control that silently does nothing, so this
+        // diverges deliberately: flattening XY against a fixed Z is the standard
+        // normal-map strength idiom and is what the CALC_NORMAL_Z branch was
+        // reaching for. Verified by test: 1.0 vs 0.01 changes the image.
+        const vec3 tangentSpace = vec3(unpacked.xy * mbuf.material.x, unpacked.z);
+        // Handedness applied here; the reference drops it. See litsphere.vert.
+        const vec3 n = normalize(vNormal);
+        const vec3 t = normalize(vTangent - n * dot(n, vTangent));  // Gram-Schmidt
+        const vec3 b = cross(n, t) * vHanded;
+        normal = normalize(mat3(t, b, n) * tangentSpace);
+    } else {
+        normal = vNormal;
+    }
 
     // 0.495, not 0.5 -- see the header.
     const vec3 shading =

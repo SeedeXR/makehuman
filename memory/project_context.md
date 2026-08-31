@@ -248,6 +248,26 @@ retarget did; name matching will silently drop a third of the data.
 `UpperArmUpLeft2` drive `oris01`/`oris02` — *mouth* bones. Raising the left arm
 must not move the lips. Pinned by the audit so it is never mistaken for our bug.
 
+**`normalmapIntensity` does nothing in the reference's litsphere shader.**
+`litsphere_fragment_shader.txt:74-77` computes
+`(2.0*normalH - 1.0) * normalmapIntensity` and then `normalize(tbnMat * normal)`.
+A uniform scale followed by a normalize **cancels exactly**, so the uniform has
+no effect on the rendered image at any positive value. It would matter only
+under `CALC_NORMAL_Z`, which the reference leaves commented out at `:64`.
+
+Not ported: shipping a control that silently does nothing is worse than
+diverging. Our shader scales **XY only, keeping Z**, which is the standard
+normal-map strength idiom and what the `CALC_NORMAL_Z` branch was reaching for.
+Verified by test — intensity 1.0 vs 0.01 changes the image; under the
+reference's formula it changed **0 pixels**.
+
+**The binormal discards handedness there too.** The reference builds
+`cross(vNormal, tang)` (`litsphere_vertex_shader.txt:59`), ignoring the sign
+Lengyel's method produces. On a symmetric human, mirrored UV islands have
+opposite handedness, so one side of the body gets its normal-map lighting
+inverted. We carry `tangent.w` through and apply it. Of a piece with not porting
+the three tangent bugs already listed here.
+
 ### 8.0.1 Reference edits made to keep it runnable
 
 Hard rule 2 permits editing `legacy/python/` only to keep the oracle running.
