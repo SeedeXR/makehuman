@@ -237,6 +237,63 @@ def capture_skeleton() -> None:
     )
 
 
+def capture_subdiv_masked() -> None:
+    """Catmull-Clark with the static face mask, which is what the app does.
+
+    `guicommon.py:433` passes `staticFaceMask` into `createSubdivisionObject`,
+    and the docstring there is explicit that masked faces "are not included as
+    geometry in this subdivision object (higher performance)". The unmasked
+    capture above therefore does NOT exercise the path the application uses --
+    it subdivides all 18,486 faces where the app subdivides 13,378.
+
+    The mask is built exactly as `apps/human.py:274-289` builds it: hide any
+    face whose group is named `joint-*` or `helper-*`.
+    """
+    import catmull_clark_subdivision as cks
+    import files3d
+    import material as _material
+    import numpy as np
+
+    print("capturing: subdiv_masked")
+    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+
+    class _StubObject:
+        def __init__(self):
+            self.material = _material.Material()
+
+    stub = _StubObject()
+    mesh.object = stub
+
+    group_mask = np.ones(len(mesh._faceGroups), dtype=bool)
+    for g in mesh._faceGroups:
+        g.name = str(g.name)
+        if g.name.startswith("joint-") or g.name.startswith("helper-"):
+            group_mask[g.idx] = False
+    face_mask = group_mask[mesh.group]
+
+    sub = cks.createSubdivisionObject(mesh, face_mask)
+    sub.update_coords()
+
+    out = GOLDEN / "subdiv_masked"
+    out.mkdir(parents=True, exist_ok=True)
+    entries = {
+        "coord": _write_blob(out / "coord.bin", sub.coord, "f4"),
+        "fvert": _write_blob(out / "fvert.bin", sub.fvert, "u4"),
+        "texco": _write_blob(out / "texco.bin", sub.texco, "f4"),
+        "fuvs": _write_blob(out / "fuvs.bin", sub.fuvs, "u4"),
+    }
+    _finish(
+        "subdiv_masked",
+        entries,
+        {
+            "source": "data/3dobjs/base.obj",
+            "parent_verts": int(len(mesh.coord)),
+            "parent_faces": int(len(mesh.fvert)),
+            "visible_faces": int(face_mask.sum()),
+        },
+    )
+
+
 def capture_subdiv() -> None:
     """One level of Catmull-Clark on the base mesh, from the reference."""
     import catmull_clark_subdivision as cks
@@ -1222,6 +1279,7 @@ def capture_proxy() -> None:
 SUBSYSTEMS = {
     "mesh": capture_mesh,
     "subdiv": capture_subdiv,
+    "subdiv_masked": capture_subdiv_masked,
     "targets": capture_targets,
     "skeleton": capture_skeleton,
     "character": capture_character,

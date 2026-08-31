@@ -85,7 +85,19 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
       both faces and edges. We keep separate `vface`/`nfaces` (faces) and
       `vedge_`/`nedges_` (edges) arrays, each sized from its own measured maximum,
       so there is no shared bound to over-allocate.
-- [ ] Subdivision with a face mask (hidden geometry never generated) — with M4
+- [x] **Masked subdivision** — `Subdivider::build(parent, faceMask)`. This was
+      filed as an optimisation and is really a **correctness gap**: the app path
+      in the reference (`guicommon.py:433`) passes `staticFaceMask` into
+      `createSubdivisionObject`, whose docstring says masked faces "are not
+      included as geometry". We subdivided all 18,486 faces; the reference
+      subdivides 13,378.
+      **The old fixture never caught it** because it was captured with
+      `createSubdivisionObject(mesh, None)` — it tested a branch the app does
+      not take. New fixture `tests/golden/subdiv_masked/` (53,512 faces) matches
+      byte-for-byte.
+      Implemented by compacting to visible faces and running the *existing*
+      verified algorithm, mirroring the reference's `face_map`/`vtx_map`.
+      **6.97 -> 5.25 ms** on the app's real path.
 - [ ] Heterogeneous lookup in `findFaceGroup` (currently allocates a `std::string`)
 
 ## M3 — Targets and modifiers (`mh-core`)  ✅ core complete

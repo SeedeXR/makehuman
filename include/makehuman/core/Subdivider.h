@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <span>
 #include <vector>
 
 namespace mh::core {
@@ -40,6 +41,24 @@ public:
     /// Unlike the reference (`:520-521`) a UV-less mesh is accepted; there is
     /// nothing to subdivide in the UV space, and positions are unaffected.
     [[nodiscard]] static std::expected<Subdivider, MeshError> build(const Mesh& parent);
+
+    /// Builds the topology for the VISIBLE faces only.
+    ///
+    /// This is what the application does: `guicommon.py:433` hands
+    /// `staticFaceMask` to `createSubdivisionObject`, whose docstring says the
+    /// masked faces "are not included as geometry in this subdivision object
+    /// (higher performance)". On the base mesh that is 13,378 faces instead of
+    /// 18,486 -- helper cages and joint cubes are never subdivided at all.
+    ///
+    /// Implemented by compacting the parent to its visible faces and then
+    /// running the ordinary build, which is what the reference does with its
+    /// `face_map`/`vtx_map` remaps. Parent vertices and UVs keep ascending
+    /// order, as `np.argwhere` on the masks gives.
+    ///
+    /// @param faceMask one byte per parent face, nonzero = keep. An empty mask
+    ///        means everything is visible and this is exactly `build(parent)`.
+    [[nodiscard]] static std::expected<Subdivider, MeshError> build(
+        const Mesh& parent, std::span<const uint8_t> faceMask);
 
     /// Recomputes subdivided vertex positions from the parent's current
     /// positions, then normals. Cheap: no topology work.

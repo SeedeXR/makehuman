@@ -1,0 +1,54 @@
+{
+  "subsystem": "subdiv_masked",
+  "captured_at": "2026-08-31T15:52:14.709898+00:00",
+  "reference_commit": "ba0d7e840cd3fd76fb5392353e3f023c1312cbe8",
+  "python": "3.14.6",
+  "numpy": "2.5.2",
+  "platform": "darwin",
+  "entries": {
+    "coord": {
+      "file": "coord.bin",
+      "dtype": "f4",
+      "shape": [
+        53514,
+        3
+      ],
+      "count": 160542,
+      "sha256": "6106d7d626ae72d9158cae199fd1b96d1c7ab89a6224279dc5fcee27b0078cc4"
+    },
+    "fvert": {
+      "file": "fvert.bin",
+      "dtype": "u4",
+      "shape": [
+        53512,
+        4
+      ],
+      "count": 214048,
+      "sha256": "f10adde89bb9ade0fda9ac5194c4a91009712462469e9421e7bd63fd3b4e8b9c"
+    },
+    "texco": {
+      "file": "texco.bin",
+      "dtype": "f4",
+      "shape": [
+        55784,
+        2
+      ],
+      "count": 111568,
+      "sha256": "af3eb65de574675b68c919e41a58fbe62eb89216908acbc2973887857a30b015"
+    },
+    "fuvs": {
+      "file": "fuvs.bin",
+      "dtype": "u4",
+      "shape": [
+        53512,
+        4
+      ],
+      "count": 214048,
+      "sha256": "1d6ee12509c9d3fcb892da3fd0698e249a05e80f8027409baafa971985b7c264"
+    }
+  },
+  "source": "data/3dobjs/base.obj",
+  "parent_verts": 19158,
+  "parent_faces": 18486,
+  "visible_faces": 13378
+}

@@ -163,6 +163,16 @@ int main() {
     results.push_back({"Subdivider::build (Catmull-Clark topology+geometry)",
                        medianMs([&] { (void)mh::core::Subdivider::build(*mesh); }, 5), 202.30});
 
+    // The path the application actually takes: helper cages and joint cubes are
+    // never subdivided, so 13,378 faces instead of 18,486. No Python figure --
+    // the reference's masked timing was never captured.
+    {
+        const auto mask = mesh->staticFaceMask();
+        results.push_back({"Subdivider::build (masked -- the app path)",
+                           medianMs([&] { (void)mh::core::Subdivider::build(*mesh, mask); }, 5),
+                           0.0});
+    }
+
     auto sd = mh::core::Subdivider::build(*mesh);
     if (sd) {
         results.push_back({"Subdivider::refresh (geometry + normals)",

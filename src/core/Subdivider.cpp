@@ -70,6 +70,87 @@ EdgeTable buildEdges(std::span<const uint32_t> indices, size_t nFaces, size_t vp
 
 }  // namespace
 
+namespace {
+
+/// A copy of @p parent holding only the faces @p faceMask keeps, with vertices
+/// and UVs renumbered.
+///
+/// This is the reference's `face_map`/`vtx_map` remap
+/// (`catmull_clark_subdivision.py:95-110`) done once, up front, so the ordinary
+/// subdivision below runs unchanged on a smaller mesh. Doing it this way rather
+/// than threading a mask through the whole algorithm keeps the byte-parity
+/// verified code path intact.
+///
+/// Parent vertices and UVs keep ASCENDING order, which is what `np.argwhere` on
+/// the masks yields and what the reference's output order depends on.
+std::expected<Mesh, MeshError> compactToVisible(const Mesh& parent,
+                                                std::span<const uint8_t> faceMask) {
+    const size_t vpp    = parent.vertsPerPrimitive();
+    const size_t nFaces = parent.faceCount();
+    const bool hasUV    = parent.hasUV();
+
+    std::vector<uint32_t> vertexOf(parent.vertexCount(), UINT32_MAX);
+    std::vector<uint32_t> uvOf(hasUV ? parent.texco().size() : 0, UINT32_MAX);
+
+    // Ascending order, so walk the parent's arrays rather than the faces.
+    for (size_t f = 0; f < nFaces; ++f) {
+        if (!faceMask[f]) continue;
+        for (size_t c = 0; c < vpp; ++c) {
+            vertexOf[parent.fvert()[f * vpp + c]] = 0;
+            if (hasUV) uvOf[parent.fuvs()[f * vpp + c]] = 0;
+        }
+    }
+    std::vector<Vec3> coords;
+    for (size_t v = 0; v < vertexOf.size(); ++v) {
+        if (vertexOf[v] == UINT32_MAX) continue;
+        vertexOf[v] = static_cast<uint32_t>(coords.size());
+        coords.push_back(parent.coord()[v]);
+    }
+    std::vector<Vec2> uvs;
+    for (size_t t = 0; t < uvOf.size(); ++t) {
+        if (uvOf[t] == UINT32_MAX) continue;
+        uvOf[t] = static_cast<uint32_t>(uvs.size());
+        uvs.push_back(parent.texco()[t]);
+    }
+
+    std::vector<uint32_t> fvert;
+    std::vector<uint32_t> fuvs;
+    std::vector<uint16_t> groups;
+    for (size_t f = 0; f < nFaces; ++f) {
+        if (!faceMask[f]) continue;
+        for (size_t c = 0; c < vpp; ++c) {
+            fvert.push_back(vertexOf[parent.fvert()[f * vpp + c]]);
+            if (hasUV) fuvs.push_back(uvOf[parent.fuvs()[f * vpp + c]]);
+        }
+        groups.push_back(parent.group().empty() ? uint16_t{0} : parent.group()[f]);
+    }
+
+    Mesh out(parent.name(), static_cast<uint8_t>(vpp));
+    for (const auto& g : parent.faceGroups())
+        out.addFaceGroup(g.name);
+    if (const auto ok = out.setCoords(std::move(coords)); !ok) return std::unexpected(ok.error());
+    if (hasUV) {
+        if (const auto ok = out.setUVs(std::move(uvs)); !ok) return std::unexpected(ok.error());
+    }
+    if (const auto ok = out.setFaces(std::move(fvert), std::move(fuvs), std::move(groups)); !ok) {
+        return std::unexpected(ok.error());
+    }
+    return out;
+}
+
+}  // namespace
+
+std::expected<Subdivider, MeshError> Subdivider::build(const Mesh& parent,
+                                                       std::span<const uint8_t> faceMask) {
+    if (faceMask.empty()) return build(parent);
+    if (faceMask.size() != parent.faceCount()) {
+        return std::unexpected(MeshError::MaskSizeMismatch);
+    }
+    auto visible = compactToVisible(parent, faceMask);
+    if (!visible) return std::unexpected(visible.error());
+    return build(*visible);
+}
+
 std::expected<Subdivider, MeshError> Subdivider::build(const Mesh& parent) {
     const size_t vpp = parent.vertsPerPrimitive();
     // The reference gates on vertsPerFaceForExport (:516-518). A triangle mesh

@@ -4,6 +4,57 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 18:57:54 — Session 063 · **a fixture that tested the wrong branch**
+
+### What this turned out to be
+`memory/todo.md` filed masked subdivision as a performance item. Checking the
+reference showed it is a **correctness gap**.
+
+`guicommon.py:433` passes `staticFaceMask` into `createSubdivisionObject`, and
+that function's docstring is explicit: masked faces "are not included as
+geometry in this subdivision object (higher performance)". So the application
+subdivides **13,378** faces. We subdivided all **18,486**.
+
+**The existing parity fixture never caught this**, because
+`tools/capture_fixture.py` captured it with `createSubdivisionObject(mesh, None)`
+— it pinned a branch the application does not take. A green fixture is only
+evidence about the path it captured.
+
+### What shipped
+`Subdivider::build(parent, faceMask)`, plus a new fixture captured from the real
+Python reference: **53,512 faces (13,378 x 4)** against the old 73,944. Our
+output matches it byte-for-byte — positions and indices — on the first run.
+
+Implemented by **compacting the parent to its visible faces and then running the
+existing algorithm unchanged**, which is what the reference does with its
+`face_map`/`vtx_map` remaps. Threading a mask through 317 lines of
+byte-parity-verified Catmull-Clark would have risked the verified path for no
+gain.
+
+**6.97 -> 5.25 ms**, 25% off the app's real path.
+
+### Verification
+- New parity fixture, captured from the reference, matches exactly.
+- ctest **365/365** in debug, release and ASan; format clean; **0** undefined
+  `mh::core` symbols.
+- Previous push (RenderMesh radix sort) green on all 8 CI jobs.
+
+### The lesson
+Two sessions running, the fixture or test was the weak link rather than the
+code: last session nothing pinned render-vertex *order*; this session the subdiv
+fixture pinned the wrong *branch*. Both were found by asking what the test
+actually proves, not whether it passes.
+
+### Still open in M2
+Dirty-range tracking (`refreshPositions` is already 0.04 ms, so low value), and
+heterogeneous lookup in `findFaceGroup` (**no production caller** — tests only,
+so optimising it would be speculative).
+
+### Still blocked on the owner
+**SonarQube credentials**; the ball-of-foot crease remains visually unjudged.
+
+---
+
 ## 2026-08-31 18:48:24 — Session 062 · **a 30% faster unweld, and the test that should have existed**
 
 ### What shipped
