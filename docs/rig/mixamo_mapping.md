@@ -136,8 +136,47 @@ rejected left-to-right mappings. It does not. A *single* swapped bone is caught
 by its children; a whole-side mirror is not, and a whole-side mirror is the
 version of that bug that actually happens.
 
-A geometric oracle — assert each target is the nearest candidate in the
-normalised frame — would subsume all three and is the natural next step.
+### The geometric oracle, and why the obvious version does not work
+
+Comparing bone **positions** looks like the obvious oracle and is wrong. The two
+rigs are in different rest poses, so error accumulates down the arm — measured,
+0.13 at the shoulder, 0.40 at the elbow, 0.83 at the wrist, over 1.0 at the
+fingers — and 42 of 49 mappings "fail" while being perfectly correct.
+
+What *is* pose-invariant is **arc length along a chain**: bone lengths do not
+change when a rig moves. Expressing each bone as a percentage of its chain's
+total length gives a measure both rigs agree on:
+
+| chain | Mixamo | MakeHuman |
+|---|---|---|
+| `Spine` | 18.1% | `spine03` 19.1% |
+| `Spine1` | 36.0% | `spine02` 33.6% |
+| `Spine2` | 52.6% | `spine01` 57.7% |
+| `Neck` | 82.6% | `neck01` 81.9% |
+| `LeftShoulder` | 0.0% | `clavicle.L` 0.0% |
+| `LeftForeArm` | 57.7% | `lowerarm01.L` 63.5% |
+| `LeftLeg` | 43.2% | `lowerleg01.L` 44.3% |
+| `LeftFoot` | 86.5% | `foot.L` 84.2% |
+
+This settled the arm question with a number rather than an argument: `LeftArm`
+is at **16.2%**, `shoulder01.L` at **16.0%**, `upperarm01.L` at **26.8%**. It is
+now mapped to `shoulder01.L`.
+
+**A chain root needs a different check.** A root is at 0% on both sides by
+definition, so the arc measure can never fault it — it was blind to precisely
+the error it was built for. Chain roots are therefore checked by position
+against where the MakeHuman chain actually starts, which catches the original
+mistake outright:
+
+```
+Hips maps to root, which sits 0.920 dm (14.2% of the chain) from spine05,
+where that chain actually starts
+```
+
+Rest positions are measured once with Blender and committed to
+`mixamo_rest_pose.json`, so the check runs in CI without Blender. Regenerate by
+walking `armature.data.bones[].head_local` after importing any of the reference
+clips.
 
 ## The evidence chain, verified end to end
 

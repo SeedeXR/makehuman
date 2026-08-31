@@ -248,8 +248,8 @@ jobs:
           fi
           exit 0
 
-  taskviews:
-    name: task-view inventory
+  inventories:
+    name: inventories (task views, Mixamo rig)
     # One stdlib-only Python script -- no need for a macOS runner.
     runs-on: ubuntu-latest
     steps:

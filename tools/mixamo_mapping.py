@@ -32,6 +32,7 @@ been made, but a geometric oracle would be stronger. See
 """
 
 import json
+import math
 import pathlib
 import re
 import sys
@@ -39,6 +40,34 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parent.parent
 SKELETON = REPO / "data" / "rigs" / "default.mhskel"
 MIXAMO_DOC = REPO / "docs" / "rig" / "mixamo_bone_order.md"
+MIXAMO_REST = REPO / "docs" / "rig" / "mixamo_rest_pose.json"
+BASE_MESH = REPO / "data" / "3dobjs" / "base.obj"
+
+# Chains to check geometrically, Mixamo side and MakeHuman side.
+#
+# Comparing bone POSITIONS directly does not work: the two rigs are in different
+# rest poses, so arm error grows down the chain (0.13 at the shoulder to over
+# 1.0 at the fingers) and every arm bone looks wrong. Arc length along the chain
+# is pose-invariant -- bone lengths do not change when a rig moves -- so that is
+# what is compared.
+CHAINS: list[tuple[list[str], list[str]]] = [
+    (["Hips", "Spine", "Spine1", "Spine2", "Neck", "Head"],
+     ["spine05", "spine04", "spine03", "spine02", "spine01", "neck01", "neck02", "neck03",
+      "head"]),
+]
+for _side, _sfx in (("Left", ".L"), ("Right", ".R")):
+    CHAINS.append(([f"{_side}Shoulder", f"{_side}Arm", f"{_side}ForeArm", f"{_side}Hand"],
+                   [f"clavicle{_sfx}", f"shoulder01{_sfx}", f"upperarm01{_sfx}",
+                    f"upperarm02{_sfx}", f"lowerarm01{_sfx}", f"lowerarm02{_sfx}",
+                    f"wrist{_sfx}"]))
+    CHAINS.append(([f"{_side}UpLeg", f"{_side}Leg", f"{_side}Foot", f"{_side}ToeBase"],
+                   [f"upperleg01{_sfx}", f"upperleg02{_sfx}", f"lowerleg01{_sfx}",
+                    f"lowerleg02{_sfx}", f"foot{_sfx}", f"toe1-1{_sfx}"]))
+
+# How far a mapped bone may sit from its Mixamo counterpart along the chain.
+# The worst legitimate gap measured is 5.8 points (ForeArm); 10 leaves headroom
+# without admitting the 10.6-point error that put `Arm` on the wrong bone.
+ARC_TOLERANCE = 0.10
 
 # Mixamo bone -> the MakeHuman bone that plays its part.
 #
@@ -66,7 +95,12 @@ MAPPING: dict[str, str | None] = {
 
 for side, suffix in (("Left", ".L"), ("Right", ".R")):
     MAPPING[f"{side}Shoulder"] = f"clavicle{suffix}"
-    MAPPING[f"{side}Arm"] = f"upperarm01{suffix}"
+    # `shoulder01`, NOT `upperarm01`. Measured along the clavicle->wrist chain,
+    # Mixamo's `Arm` head sits at 16.2% where `shoulder01` is at 16.0% and
+    # `upperarm01` at 26.8%. `upperarm01` is the conventional humerus and carries
+    # the skin weight, but binding the humerus rotation 10% down the arm leaves
+    # `shoulder01` rigid while the arm swings beneath it -- deltoid collapse.
+    MAPPING[f"{side}Arm"] = f"shoulder01{suffix}"
     MAPPING[f"{side}ForeArm"] = f"lowerarm01{suffix}"
     MAPPING[f"{side}Hand"] = f"wrist{suffix}"
     MAPPING[f"{side}UpLeg"] = f"upperleg01{suffix}"
@@ -112,6 +146,93 @@ def mixamo_hierarchy() -> dict[str, str | None]:
 def makehuman_parents() -> dict[str, str | None]:
     bones = json.loads(SKELETON.read_text())["bones"]
     return {name: spec.get("parent") for name, spec in bones.items()}
+
+
+def makehuman_joint_positions() -> dict[str, tuple[float, float, float]]:
+    """Each bone's head, averaged from the vertex group the skeleton names.
+
+    Positions are not stored in the `.mhskel`; a bone's head is a set of base
+    mesh vertex indices, exactly as the reference resolves them
+    (`apps/human.py:1129`).
+    """
+    skeleton = json.loads(SKELETON.read_text())
+    joints, bones = skeleton["joints"], skeleton["bones"]
+    coords: list[tuple[float, float, float]] = []
+    for line in BASE_MESH.read_text().splitlines():
+        if line.startswith("v "):
+            _, x, y, z = line.split()[:4]
+            coords.append((float(x), float(y), float(z)))
+
+    out = {}
+    for bone, spec in bones.items():
+        idx = joints.get(spec["head"])
+        if idx:
+            out[bone] = tuple(sum(coords[i][k] for i in idx) / len(idx) for k in range(3))
+    return out
+
+
+def arc_fractions(chain: list[str],
+                  pos: dict[str, tuple[float, float, float]]) -> dict[str, float]:
+    """Cumulative distance along @p chain, as a fraction of its total length."""
+    points = [pos[b] for b in chain if b in pos]
+    if len(points) != len(chain):
+        return {}
+    cumulative, total = [0.0], 0.0
+    for a, b in zip(points, points[1:]):
+        total += math.dist(a, b)
+        cumulative.append(total)
+    return {} if total == 0 else {b: c / total for b, c in zip(chain, cumulative)}
+
+
+def geometric_problems() -> list[str]:
+    """Where a mapped bone sits nowhere near its counterpart along the chain.
+
+    This is the check that would have caught `Hips -> root` without a reviewer,
+    and the one that settled `Arm -> shoulder01` with a number instead of an
+    argument.
+    """
+    if not MIXAMO_REST.exists():
+        return ["no measured Mixamo rest pose; geometric check skipped"]
+    mixamo = {k: tuple(v) for k, v in json.loads(MIXAMO_REST.read_text())["bones"].items()}
+    makehuman = makehuman_joint_positions()
+
+    out = []
+
+    # A chain ROOT is at 0% by definition on both sides, so the arc check above
+    # can never fault it -- it was blind to exactly the error it was built for
+    # (`Hips -> root`, whose head is 0.92 dm from where the legs and spine
+    # actually meet). Chain roots are therefore checked by POSITION against the
+    # MakeHuman chain's own start, scaled by that chain's length.
+    for mixamo_chain, mh_chain in CHAINS:
+        target = MAPPING.get(mixamo_chain[0])
+        if target is None or target not in makehuman or mh_chain[0] not in makehuman:
+            continue
+        span = sum(math.dist(makehuman[a], makehuman[b])
+                   for a, b in zip(mh_chain, mh_chain[1:]) if a in makehuman and b in makehuman)
+        offset = math.dist(makehuman[target], makehuman[mh_chain[0]])
+        if span > 0 and offset / span > ARC_TOLERANCE:
+            out.append(
+                f"{mixamo_chain[0]} maps to {target}, which sits {offset:.3f} dm "
+                f"({offset / span * 100:.1f}% of the chain) from {mh_chain[0]}, where that "
+                f"chain actually starts")
+
+    for mixamo_chain, mh_chain in CHAINS:
+        mf, hf = arc_fractions(mixamo_chain, mixamo), arc_fractions(mh_chain, makehuman)
+        if not mf or not hf:
+            out.append(f"cannot measure the chain starting at {mixamo_chain[0]}")
+            continue
+        for bone in mixamo_chain:
+            target = MAPPING.get(bone)
+            if target is None or target not in hf:
+                continue
+            gap = abs(mf[bone] - hf[target])
+            if gap > ARC_TOLERANCE:
+                nearest = min(hf, key=lambda k: abs(hf[k] - mf[bone]))
+                out.append(
+                    f"{bone} is {mf[bone] * 100:.1f}% along its chain but {target} is "
+                    f"{hf[target] * 100:.1f}% ({gap * 100:.1f} points apart); "
+                    f"{nearest} at {hf[nearest] * 100:.1f}% fits better")
+    return out
 
 
 def ancestors(bone: str, parents: dict[str, str | None]) -> list[str]:
@@ -175,6 +296,8 @@ def main() -> int:
                 f"{bone} -> {target}, but its parent {parent} -> {parent_target} "
                 f"is not an ancestor of {target}")
 
+    problems += geometric_problems()
+
     mapped = {k: v for k, v in MAPPING.items() if v is not None}
     to_add = sorted(k for k, v in MAPPING.items() if v is None)
 
@@ -194,7 +317,8 @@ def main() -> int:
         for p in problems:
             print("  " + p, file=sys.stderr)
         return 1
-    print("\nmapping is consistent: every Mixamo parent relationship survives it")
+    print("\nmapping is consistent: hierarchy, injectivity, laterality, and every")
+    print("mapped bone sits within 10 points of its counterpart along the chain")
     return 0
 
 

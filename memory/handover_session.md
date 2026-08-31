@@ -4,6 +4,73 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 17:51:39 — Session 056 · **the geometric oracle, and the check that was blind to its own reason for existing**
+
+### What shipped
+`tools/mixamo_mapping.py` gained the geometric check the last review said was
+the missing one, plus `docs/rig/mixamo_rest_pose.json` — 65 measured Mixamo rest
+positions, committed so CI never needs Blender.
+
+Both errors that previously required a human reviewer are now caught
+automatically.
+
+### The obvious oracle is wrong, and measuring showed it
+Comparing bone **positions** is the natural idea. It fails: the two rigs sit in
+different rest poses, so error accumulates down the arm — 0.13 at the shoulder,
+0.40 at the elbow, 0.83 at the wrist, over 1.0 at the fingers — and **42 of 49
+perfectly correct mappings "fail"**. A position oracle silently assumes a shared
+pose.
+
+**Arc length along a chain is pose-invariant** — bone lengths do not change when
+a rig moves. Comparing each bone as a percentage of its chain's total length
+gives a measure both rigs agree on, and every mapping lands within a few points.
+
+### It settled the open arm question with a number
+`LeftArm` sits at **16.2%** along the clavicle→wrist chain. `shoulder01.L` is at
+**16.0%**; `upperarm01.L` at **26.8%**. Remapped to `shoulder01.L` — a 0.2-point
+match against a 10.6-point one. `upperarm01` stays in the rig, unmapped, and
+still carries the skin weight.
+
+### The bit worth remembering: the new check was blind to its own motivation
+I built the arc oracle *because* `Hips -> root` had slipped past. Mutation-testing
+it, restoring that exact error passed cleanly.
+
+A chain **root** is at 0% on both sides by definition, so an along-chain measure
+can never fault it — and `root` was not even in the chain list, so the check
+skipped it outright. The oracle could not see the error it existed to catch.
+
+Chain roots now get a positional check against where the MakeHuman chain
+actually starts:
+
+```
+Hips maps to root, which sits 0.920 dm (14.2% of the chain) from spine05,
+where that chain actually starts
+```
+
+**Mutation-testing a new check against the bug that motivated it is not
+optional.** Had I only run the suite, I would have shipped an oracle that looked
+like protection and was not.
+
+### Verification
+- Both original errors rejected: `Arm -> upperarm01` (10.7 points apart) and
+  `Hips -> root` (14.2% of the chain away), each with a message naming the
+  better candidate.
+- Mirror, finger-collision, wrong-ancestor and wrong-side mappings still
+  rejected.
+- ctest **352/352**; no C++ touched. CI green on the previous push (8/8).
+- The CI job was renamed `inventories (task views, Mixamo rig)` — it had been
+  called "task-view inventory" while also running a rig check.
+
+### Still blocked on the owner
+- **SonarQube**: scanner installed, no credentials (`SONAR_TOKEN` +
+  `sonar.organization`, or a self-hosted `SONAR_HOST_URL`).
+- Mixamo's **online auto-rigger** behaviour remains unverified (no web access).
+
+### Parked
+`git stash@{0}` — WIP multi-mesh FBX/Collada export tests.
+
+---
+
 ## 2026-08-31 17:44:29 — Session 055 · **Mixamo: a 179-bone superset, and a review that caught me twice**
 
 ### The question

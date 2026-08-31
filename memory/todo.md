@@ -202,19 +202,18 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       character ~9 cm off on every rotation and every root-motion translation.
       `root`'s rest direction also points forward where Mixamo's Hips points up,
       so the hip basis needs an explicit rest offset.
-- [ ] **Decide `LeftArm`: `upperarm01.L` or `shoulder01.L`?** Currently the
-      former (conventional humerus, carries the skin weight), but geometrically
-      Mixamo's `Arm` sits at 12.6% along the arm arc against `shoulder01.L`'s
-      12.4% and `upperarm01.L`'s 20.8%. The current choice leaves `shoulder01`
-      rigid while the arm swings beneath it — deltoid collapse. Revisit once the
-      skeleton exists and can be looked at.
-- [ ] **A geometric oracle for the mapping.** Ancestry + injectivity +
-      laterality reject every mistake made so far, but they are necessary rather
-      than sufficient: `Spine -> spine03` is picked by being 0.1 cm away, which
-      nothing checks. Asserting each target is the nearest candidate in a
-      normalised frame would subsume all three — and would have caught the
-      `Hips` error without review. Needs Mixamo rest positions committed as
-      measured data.
+- [x] **`LeftArm` decided: `shoulder01.L`.** Settled by measurement, not
+      argument — along the clavicle→wrist chain Mixamo's `Arm` is at 16.2%,
+      `shoulder01.L` at 16.0%, `upperarm01.L` at 26.8%. `upperarm01` remains in
+      the rig, just unmapped.
+- [x] **Geometric oracle built.** Positions alone do not work — the rigs are in
+      different rest poses, so arm error grows down the chain and 42 of 49
+      correct mappings "fail". **Arc length along a chain is pose-invariant**
+      (bone lengths do not change), so that is what is compared, with Mixamo
+      rest positions committed to `docs/rig/mixamo_rest_pose.json` so CI needs
+      no Blender. Chain roots need a separate positional check — a root is 0% on
+      both sides by definition, so the arc measure was blind to the very error
+      it was built for.
 - [ ] **SonarQube is blocked on credentials.** `sonar-scanner` 8.1.0 is
       installed but fails with `You must define ... sonar.organization` and
       needs `SONAR_TOKEN`. Ask the owner for a SonarCloud token + organisation,
