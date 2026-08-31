@@ -37,7 +37,7 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [x] `tools/capture_fixture.py` — captures mesh / targets / skeleton fixtures with a
       MANIFEST recording reference commit, interpreter and numpy version
 
-## M2 — Core geometry (`mh-core`)  [~ in progress]
+## M2 — Core geometry (`mh-core`)  ✅ COMPLETE
 
 - [x] `Mesh` — SoA layout, dual index space preserved, degenerate-quad triangles
 - [x] OBJ reader — `v/vt/f/g/o`, negative indices, leading-dot floats, `vn`/`usemtl` ignored
@@ -76,7 +76,27 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [x] Exact staleness detection: `Mesh::topologyVersion()`, recorded by
       `RenderMesh` and `Subdivider`. Replaces count-comparison, which missed a
       same-size topology swap and silently produced wrong geometry.
-- [ ] Dirty-range tracking replacing `ucoor`/`unorm`/… (partial buffer updates)
+- [x] **Dirty-range tracking: measured, deliberately NOT built.**
+      Two independent reasons, both observed:
+      1. **There is no headroom to win.** The 60 fps target means a 16.7 ms
+         frame. The interactive mesh is the *subdivided* one (smoothing is on
+         by default), and a morph there costs `Subdivider::refresh` 0.48 ms +
+         `RenderMesh::refreshPositions` **0.11 ms** — the gather is 0.7% of the
+         frame budget. (Medians of 5 runs. A single cold run after linking read
+         0.12 ms for the *base* case against a 0.04 ms median, so single reads at
+         this resolution are noise; every figure here is a median.) Benchmarked, not assumed: the subdivided case was
+         unmeasured until this session, and it is the only case that mattered.
+      2. **The reference's partial path is a pessimisation.** `module3d.py:880`
+         reads
+         `r_coord[ucoor[vmap]] = coord[vmap][ucoor[vmap]]`.
+         `coord[vmap]` is fancy indexing — it materialises the **full** gather
+         first, then masks it. The "partial" update does all the work of the
+         full copy plus a mask allocation. Porting it would be slower.
+      The cost side is real: a dirty bitmask threaded through every mutation
+      site (`applyTarget`, `fitProxy`, skinning, `resetToOriginal`), where one
+      missed mark silently renders stale geometry. Paying that for 0.6% of a
+      frame, to copy a design that is slower than what we already do, is a bad
+      trade. **Reopen if** the profile ever shows the gather above ~2 ms.
 - [x] Catmull-Clark subdivision (`Subdivider`) — **exact parity: 75,008 verts /
       73,944 faces / 37,364 edges**, matching the reference. Split into a topology
       pass and a geometry pass so a morph costs only the geometry.
@@ -98,7 +118,15 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
       Implemented by compacting to visible faces and running the *existing*
       verified algorithm, mirroring the reference's `face_map`/`vtx_map`.
       **6.97 -> 5.25 ms** on the app's real path.
-- [ ] Heterogeneous lookup in `findFaceGroup` (currently allocates a `std::string`)
+- [x] **`findFaceGroup` heterogeneous lookup: NOT built, by the same rule.**
+      `findFaceGroup` has **zero production callers** — it appears only in its
+      own definition (`src/core/Mesh.cpp:119`), its declaration, and one unit
+      test. The `std::string{name}` it allocates is on a path nothing takes, so
+      the transparent-hasher machinery would buy a measured nothing, and no
+      test could distinguish it (both spellings pass every input identically).
+      A change with no measurable effect and no test that can fail is not an
+      improvement. The API stays as-is; add transparent lookup the day a real
+      caller appears on a hot path.
 
 ## M3 — Targets and modifiers (`mh-core`)  ✅ core complete
 
@@ -135,7 +163,16 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [x] **End-to-end parity: 14 characters**, modifier values → macro factors →
       target weights → applied targets → final vertex positions, all matching
       the reference within 1e-5 across 19,158 vertices
-- [ ] Incremental stack application (apply only the delta on a slider drag)
+- [x] **Incremental stack application: measured, deliberately NOT built.**
+      Same rule, same session's measurements. The whole slider-drag path on the
+      subdivided mesh is `Human::rebuildStack` 0.01 + `Human::applyStack` 0.07 +
+      `Subdivider::refresh` 0.48 + `RenderMesh::refreshPositions` 0.11 =
+      **0.67 ms** of a 16.7 ms frame. Applying only the delta targets the 0.07 ms
+      term — at best **0.4% of a frame** — in exchange for tracking which
+      modifiers changed and reasoning about targets shared between modifiers,
+      where a missed invalidation silently produces the wrong body.
+      A full stack rebuild is already 43.5x the reference (0.11 ms vs 4.86 ms for
+      200 targets). Reopen if `applyStack` ever exceeds ~2 ms.
 - [x] `.mhm` saved-model parser + `applyMhm`. **Round-trip parity**: a real
       `.mhm` written by the reference, loaded in C++ and applied, reproduces the
       geometry the reference itself produces from that file. Unrecognised lines

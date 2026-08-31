@@ -300,6 +300,15 @@ int main() {
     results.push_back({"RenderMesh::refreshPositions (morph hot path)",
                        medianMs([&] { rm.refreshPositions(*mesh); }, 50), 0.0});
 
+    // Smoothing is on by default, so the interactive mesh is the subdivided one:
+    // 80,252 render verts vs 21,833. This is the number that decides whether
+    // dirty-range tracking is worth building -- see memory/todo.md, M2.
+    if (sd) {
+        auto rmSub = mh::core::RenderMesh::build(sd->mesh());
+        results.push_back({"RenderMesh::refreshPositions (SUBDIVIDED -- the 60fps case)",
+                           medianMs([&] { rmSub.refreshPositions(sd->mesh()); }, 50), 0.0});
+    }
+
     if (sd) {
         std::printf("subdiv: %zu verts, %zu faces, %zu edges\n", sd->mesh().vertexCount(),
                     sd->mesh().faceCount(), sd->edgeCount());
