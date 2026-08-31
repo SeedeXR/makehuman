@@ -44,7 +44,7 @@ std::expected<std::unique_ptr<OffscreenRenderer>, RenderError> OffscreenRenderer
 
 std::expected<QImage, RenderError> OffscreenRenderer::render(const foundation::RenderView& mesh,
                                                              const RenderSettings& s) {
-    const std::array<MeshInstance, 1> one{MeshInstance{mesh, s.litsphere}};
+    const std::array<MeshInstance, 1> one{MeshInstance{mesh, s.litsphere, {}}};
     return render(one, s);
 }
 

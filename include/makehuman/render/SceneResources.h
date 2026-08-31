@@ -53,6 +53,17 @@ struct RenderError {
 struct MeshInstance {
     foundation::RenderView mesh;
     std::filesystem::path litsphere;
+
+    /// The material's diffuse/albedo map, sampled by the MESH's UVs.
+    ///
+    /// Empty means "no map", which binds a 1x1 white stand-in so
+    /// `shading * diffuse` is a no-op and the mesh is pure matcap -- the
+    /// behaviour every mesh had before this existed.
+    ///
+    /// This is per MESH, not shared: a dressed character is a body skin plus a
+    /// separate eye material, and one shared diffuse would paint the eyes with
+    /// the body's skin.
+    std::filesystem::path diffuse;
 };
 
 /// The buffers, textures and pipeline for drawing meshes with the litsphere

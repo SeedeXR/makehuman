@@ -702,6 +702,41 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       cannot pass by the proxy simply not drawing.
       Mutation-verified: disabling depth testing puts **16 eye pixels through
       the back of the head** and fails the test.
+- [x] **Per-mesh diffuse (albedo) maps — the skin-texture path now exists.**
+      Every mesh used to sample ONE shared **1x1 white** diffuse
+      (`SceneResources.cpp`), so a skin texture could not be shown at all.
+      `MeshInstance` now carries a `diffuse` path, each `Drawable` owns its own
+      texture, and the app feeds each mesh **its own material's**
+      `diffuseTexture` — body from the skin `.mhmat`, each proxy from its own,
+      so one shared map cannot paint the eyes with body skin.
+      Empty stays the 1x1 white (pure matcap), which is what every mesh had
+      before. A **named-but-unloadable** map is an error, not a silent fallback:
+      otherwise a wrong path renders a plausible untextured body and reads as a
+      shading bug.
+      Tests generate their texture in-process — no skin texture ships, and this
+      also keeps the suite free of any third-party asset licence.
+      Mutation-verified: forcing the shared white back fails 2 of the 3.
+- [ ] **OWNER REQUEST (2026-09-01): varied human skin tones, MetaHuman-level
+      detail.** Sources given: freepbr.com/product/human-skin1, texturecan.com
+      /details/574, 3dtextures.me/tag/skin, texturing.xyz/collections/vface.
+      **Current state**: `data/skins/` holds exactly ONE material,
+      `default.mhmat`, which names **no texture** (`shaderConfig diffuse false`)
+      and sets `autoBlendSkin true`; `data/textures/` holds only
+      `texture_notfound.png`. The three "Skin" choices in the UI are
+      **litspheres (matcaps)** — lighting captures, not skin colour. So there is
+      no albedo, normal, roughness or cavity map anywhere in the tree.
+      **Licence triage before anything lands in `data/`** (hard rule 6):
+      - `texturing.xyz` VFace — **paid commercial, redistribution forbidden.
+        Cannot go in this AGPL repo.** Usable only as a private local asset.
+      - `3dtextures.me`, `texturecan.com` — CC0, fine, record in `LICENSING.md`.
+      - `freepbr.com` — free to use but restricts redistributing the raw files;
+        check per asset.
+      I also cannot fetch binaries (the fetch tool returns text), so the image
+      files have to come from the owner.
+      **Next, in order**: (1) normal/roughness/AO channels through the same
+      per-mesh path the diffuse now takes; (2) `autoBlendSkin` — the reference
+      tints by ethnicity, which is how one albedo becomes many tones;
+      (3) a real PBR metallic-roughness pipeline; (4) the skin `.mhmat` set.
 - [ ] PBR metallic-roughness path + Blinn-Phong→PBR conversion
 - [ ] GPU skinning (matrix palette UBO/SSBO)
 - [ ] ID-buffer picking with async readback (replaces the full-window sync readback)

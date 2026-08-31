@@ -64,6 +64,9 @@ struct Drawable {
     std::unique_ptr<QRhiBuffer> vbuf;
     std::unique_ptr<QRhiBuffer> ibuf;
     std::unique_ptr<QRhiTexture> litTex;
+    /// Null when the instance named no diffuse map; the shared white stand-in
+    /// is bound instead.
+    std::unique_ptr<QRhiTexture> diffuseTex;
     std::unique_ptr<QRhiShaderResourceBindings> srb;
     quint32 indexCount{};
 };
@@ -178,6 +181,7 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
         Drawable drawable;
         std::vector<float> verts;
         QImage lit;
+        QImage diffuse;  ///< null when the instance named no diffuse map
     };
 
     std::vector<Pending> pending;
@@ -195,6 +199,19 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
                 RenderError{RenderErrorKind::TextureMissing, instance.litsphere.string()});
         }
         lit = lit.convertToFormat(QImage::Format_RGBA8888);
+
+        // A named-but-unloadable diffuse is an ERROR, not a silent fall back to
+        // white: a skin whose texture path is wrong would otherwise render as a
+        // plausible untextured body and look like a shading bug.
+        QImage diffuse;
+        if (!instance.diffuse.empty()) {
+            diffuse = QImage(QString::fromStdString(instance.diffuse.string()));
+            if (diffuse.isNull()) {
+                return std::unexpected(
+                    RenderError{RenderErrorKind::TextureMissing, instance.diffuse.string()});
+            }
+            diffuse = diffuse.convertToFormat(QImage::Format_RGBA8888);
+        }
 
         // Interleaved, because that is what the vertex layout declares and one
         // buffer is one binding instead of three.
@@ -230,15 +247,23 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
         // Its own bindings, so each mesh samples its own litsphere. Sharing one
         // SRB would shade every mesh with whichever texture uploaded last.
         dr.srb.reset(rhi->newShaderResourceBindings());
-        bindAll(dr.srb.get(), d_->ubuf.get(), dr.litTex.get(), d_->diffuseTex.get(),
-                d_->sampler.get());
+        if (!diffuse.isNull()) {
+            dr.diffuseTex.reset(rhi->newTexture(QRhiTexture::RGBA8, diffuse.size()));
+            if (!dr.diffuseTex->create()) {
+                return std::unexpected(
+                    RenderError{RenderErrorKind::TextureMissing, instance.diffuse.string()});
+            }
+        }
+        bindAll(dr.srb.get(), d_->ubuf.get(), dr.litTex.get(),
+                dr.diffuseTex ? dr.diffuseTex.get() : d_->diffuseTex.get(), d_->sampler.get());
         if (!dr.srb->create()) {
             return std::unexpected(
                 RenderError{RenderErrorKind::Failed, "shader resource bindings"});
         }
 
         dr.indexCount = static_cast<quint32>(mesh.indexCount());
-        pending.push_back(Pending{std::move(dr), std::move(verts), std::move(lit)});
+        pending.push_back(
+            Pending{std::move(dr), std::move(verts), std::move(lit), std::move(diffuse)});
     }
 
     // Every mesh built, so it is now safe to queue: no early return remains.
@@ -255,6 +280,7 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
     for (Pending& p : pending) {
         batch->uploadStaticBuffer(p.drawable.vbuf.get(), p.verts.data());
         batch->uploadTexture(p.drawable.litTex.get(), p.lit);
+        if (p.drawable.diffuseTex) batch->uploadTexture(p.drawable.diffuseTex.get(), p.diffuse);
         built.push_back(std::move(p.drawable));
     }
     // Index data comes from the caller's mesh, which outlives this call.

@@ -52,7 +52,7 @@ void ViewportWidget::setMeshes(std::vector<render::MeshInstance> meshes) {
 }
 
 void ViewportWidget::setMesh(const foundation::RenderView& mesh) {
-    d_->meshes      = {render::MeshInstance{mesh, d_->litsphere}};
+    d_->meshes      = {render::MeshInstance{mesh, d_->litsphere, {}}};
     d_->needsUpload = true;
     update();
 }

@@ -930,11 +930,20 @@ int main(int argc, char** argv) {
         }
         // Worn proxies follow the body: re-fitted against the posed, morphed
         // base mesh every rebuild, not just when they are put on.
+        // The diffuse map comes from each thing's own material, not from a
+        // single shared one: the body wears the skin `.mhmat`, a proxy wears
+        // its own. Empty is normal -- the shipped DefaultSkin names no texture
+        // at all (`shaderConfig diffuse false`), so the body is pure matcap
+        // until a skin with a real albedo map is installed.
         std::vector<mh::render::MeshInstance> scene;
-        scene.push_back({rm.view(), skin});
+        const auto bodyMat = bodyMaterial();
+        scene.push_back(
+            {rm.view(), skin, bodyMat ? bodyMat->diffuseTexture : std::filesystem::path{}});
         for (auto& [group, worn] : wornProxies) {
             refitProxy(worn, *mesh);
-            scene.push_back({worn.rm.view(), worn.litsphere});
+            scene.push_back(
+                {worn.rm.view(), worn.litsphere,
+                 worn.material ? worn.material->diffuseTexture : std::filesystem::path{}});
         }
         w.setMeshes(std::move(scene));
     };

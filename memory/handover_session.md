@@ -159,6 +159,64 @@ CI green on `239473c9`.
 
 ---
 
+## 2026-09-01 01:26:01 — Session 079 · **skin textures: the renderer could not show one**
+
+### Owner request (2026-09-01)
+Varied human skin tones with MetaHuman-level detail, with four texture sources
+named. Investigating it first found the blocker is ours, not the assets'.
+
+### The finding
+`data/skins/` contains exactly **one** material, `default.mhmat`, and it names
+**no texture at all** — `shaderConfig diffuse false`, `autoBlendSkin true`.
+`data/textures/` holds only `texture_notfound.png`. The three "Skin" entries in
+the UI are **litspheres (matcaps)**: captured *lighting*, not skin colour.
+
+And the renderer could not have displayed a skin texture anyway: every mesh
+sampled **one shared 1x1 white** diffuse. `MeshInstance` carried only
+`{mesh, litsphere}`; the material's seven parsed texture channels reached
+exporters and nothing else.
+
+### What shipped
+- `MeshInstance` carries a `diffuse` path; each `Drawable` owns its texture.
+- The app feeds each mesh **its own material's** `diffuseTexture` — body from
+  the skin `.mhmat`, each proxy from its own. One shared map would paint the
+  eyes with body skin.
+- Empty keeps the 1x1 white (pure matcap) — what every mesh had before, so
+  today's output is unchanged.
+- A **named-but-unloadable** map is an error, not a silent fallback to white: a
+  wrong path would otherwise render a plausible untextured body and read as a
+  shading bug.
+
+Tests generate their texture in-process. Nothing ships to test against, and it
+keeps the suite free of any third-party asset licence.
+
+### Licence triage, done before touching `data/`
+- **`texturing.xyz` VFace — paid commercial, redistribution forbidden. It
+  cannot go in this AGPL repo** (hard rule 6). Private local use only.
+- `3dtextures.me`, `texturecan.com` — CC0, fine, record in `LICENSING.md`.
+- `freepbr.com` — free to use, restricts redistributing raw files; per-asset.
+
+I also cannot fetch binaries — the fetch tool returns text — so the images have
+to come from the owner.
+
+### Two stale M6 entries closed on the way
+Quad->triangle already happens at buffer-build time (`RenderMesh.cpp:172`), and
+the eye-space-fixed light is already how the camera works
+(`SceneResources.cpp:277`).
+
+### A mutation that did not compile
+The first attempt at reverting to the shared white left a dangling `bindAll`
+argument. The build failed, the **stale binary** ran, and all three tests
+"passed". Caught by checking the error count rather than trusting the test line.
+Redone so it compiles: **2 of 3 fail**, and the third correctly still passes
+because it tests error reporting, not sampling.
+
+### Verification
+ctest **395/395** in debug, release, ASan; TSan separately. Format clean.
+CI green on `72828a87`.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

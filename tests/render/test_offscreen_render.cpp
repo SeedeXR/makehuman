@@ -42,6 +42,16 @@ Scene bodyScene() {
 /// A build machine may have no Metal device at all. That is not a renderer
 /// defect, so these skip rather than fail -- but they skip loudly, because a
 /// silent pass would hide the renderer never having been exercised.
+/// Pixels that differ between two renders of the same size.
+size_t differingPixels(const QImage& a, const QImage& b) {
+    if (a.size() != b.size()) return SIZE_MAX;
+    size_t n = 0;
+    for (int y = 0; y < a.height(); ++y)
+        for (int x = 0; x < a.width(); ++x)
+            if (a.pixelColor(x, y) != b.pixelColor(x, y)) ++n;
+    return n;
+}
+
 void requireDevice() {
     static const bool ok = render::OffscreenRenderer::create(MH_SHADER_DIR).has_value();
     if (!ok) SKIP("no Metal device on this machine -- renderer not exercised");
@@ -110,7 +120,7 @@ TEST_CASE("two meshes both draw", "[render][multimesh]") {
     const Shifted b = shiftedBy(sc.rm.view(), 6.0F);
 
     const auto s = settings();
-    const std::vector<render::MeshInstance> both{{a.view, lit}, {b.view, lit}};
+    const std::vector<render::MeshInstance> both{{a.view, lit, {}}, {b.view, lit, {}}};
     const auto img = (*r)->render(both, s);
     REQUIRE(img.has_value());
 
@@ -124,7 +134,7 @@ TEST_CASE("two meshes both draw", "[render][multimesh]") {
     CHECK(right > 0.02);
 
     // And together they must exceed either one alone.
-    const std::vector<render::MeshInstance> justOne{{a.view, lit}};
+    const std::vector<render::MeshInstance> justOne{{a.view, lit, {}}};
     const auto one = (*r)->render(justOne, s);
     REQUIRE(one.has_value());
     CHECK(coverage(*img, s) > coverage(*one, s) * 1.5);
@@ -148,8 +158,8 @@ TEST_CASE("each mesh keeps its own litsphere", "[render][multimesh]") {
     const Shifted b = shiftedBy(sc.rm.view(), 6.0F);
     const auto s    = settings();
 
-    const std::vector<render::MeshInstance> mixed{{a.view, skin}, {b.view, other}};
-    const std::vector<render::MeshInstance> same{{a.view, skin}, {b.view, skin}};
+    const std::vector<render::MeshInstance> mixed{{a.view, skin, {}}, {b.view, other, {}}};
+    const std::vector<render::MeshInstance> same{{a.view, skin, {}}, {b.view, skin, {}}};
     const auto mixedImg = (*r)->render(mixed, s);
     const auto sameImg  = (*r)->render(same, s);
     REQUIRE(mixedImg.has_value());
@@ -179,8 +189,8 @@ TEST_CASE("an empty mesh among several is reported", "[render][multimesh]") {
 
     const Scene sc = bodyScene();
     const std::vector<render::MeshInstance> withEmpty{
-        {sc.rm.view(), settings().litsphere},
-        {foundation::RenderView{}, settings().litsphere},
+        {sc.rm.view(), settings().litsphere, {}},
+        {foundation::RenderView{}, settings().litsphere, {}},
     };
     const auto img = (*r)->render(withEmpty, settings());
     REQUIRE_FALSE(img.has_value());
@@ -226,8 +236,8 @@ TEST_CASE("a batch submitted after a failed upload does not use freed resources"
     // Mesh 0 is fine and would have been queued; mesh 1 fails. Order matters:
     // the bug needs a success BEFORE the failure.
     const std::vector<render::MeshInstance> meshes{
-        {sc.rm.view(), settings().litsphere},
-        {sc.rm.view(), "/definitely/not/a/file.png"},
+        {sc.rm.view(), settings().litsphere, {}},
+        {sc.rm.view(), "/definitely/not/a/file.png", {}},
     };
 
     QRhiCommandBuffer* cb = nullptr;
@@ -346,6 +356,88 @@ TEST_CASE("a missing litsphere is reported", "[render]") {
     auto s         = settings();
     s.litsphere    = "/nonexistent/litsphere.png";
     const auto img = (*r)->render(sc.rm.view(), s);
+    REQUIRE_FALSE(img.has_value());
+    CHECK(img.error().kind == render::RenderErrorKind::TextureMissing);
+}
+
+// --- Per-mesh diffuse (skin albedo) -----------------------------------------
+//
+// Until now every mesh sampled ONE shared 1x1 white diffuse, so a skin texture
+// could not be displayed at all: `data/skins/default.mhmat` names no texture
+// (`shaderConfig diffuse false`) and `data/textures/` holds only
+// `texture_notfound.png`. Adding varied human skin tones needs this path first.
+//
+// No skin texture ships, so the fixture is generated here rather than imported
+// -- which also keeps the test independent of any third-party asset licence.
+TEST_CASE("a per-mesh diffuse map changes the render", "[render][diffuse]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    const auto s   = settings();
+
+    const auto texPath = std::filesystem::temp_directory_path() / "mh_test_skin.png";
+    QImage tex(64, 64, QImage::Format_RGBA8888);
+    tex.fill(QColor(40, 200, 90));  // nothing like a litsphere, so it cannot be confused
+    REQUIRE(tex.save(QString::fromStdString(texPath.string())));
+
+    const std::vector<render::MeshInstance> plain{{sc.rm.view(), s.litsphere, {}}};
+    const std::vector<render::MeshInstance> textured{{sc.rm.view(), s.litsphere, texPath}};
+
+    const auto a = (*r)->render(plain, s);
+    const auto b = (*r)->render(textured, s);
+    REQUIRE(a.has_value());
+    REQUIRE(b.has_value());
+
+    const size_t changed = differingPixels(*a, *b);
+    INFO("a diffuse map changes " << changed << " pixels");
+    CHECK(changed > 1000);  // the body covers far more than this
+
+    std::filesystem::remove(texPath);
+}
+
+TEST_CASE("each mesh keeps its own diffuse map", "[render][diffuse]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    const auto s   = settings();
+    const auto one = std::filesystem::temp_directory_path() / "mh_test_skin_a.png";
+    const auto two = std::filesystem::temp_directory_path() / "mh_test_skin_b.png";
+    QImage ta(32, 32, QImage::Format_RGBA8888);
+    ta.fill(QColor(230, 60, 60));
+    QImage tb(32, 32, QImage::Format_RGBA8888);
+    tb.fill(QColor(60, 60, 230));
+    REQUIRE(ta.save(QString::fromStdString(one.string())));
+    REQUIRE(tb.save(QString::fromStdString(two.string())));
+
+    // Two meshes, two different skins. If the diffuse were still shared, both
+    // would take whichever uploaded last and these would be identical.
+    const std::vector<render::MeshInstance> red{{sc.rm.view(), s.litsphere, one}};
+    const std::vector<render::MeshInstance> blue{{sc.rm.view(), s.litsphere, two}};
+    const auto ra = (*r)->render(red, s);
+    const auto rb = (*r)->render(blue, s);
+    REQUIRE(ra.has_value());
+    REQUIRE(rb.has_value());
+    CHECK(differingPixels(*ra, *rb) > 1000);
+
+    std::filesystem::remove(one);
+    std::filesystem::remove(two);
+}
+
+TEST_CASE("a diffuse map that will not load is reported", "[render][diffuse]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    // Silently falling back to white would render a plausible untextured body
+    // and read as a shading bug rather than a missing file.
+    const Scene sc = bodyScene();
+    const std::vector<render::MeshInstance> bad{
+        {sc.rm.view(), settings().litsphere, "/definitely/not/a/skin.png"}};
+    const auto img = (*r)->render(bad, settings());
     REQUIRE_FALSE(img.has_value());
     CHECK(img.error().kind == render::RenderErrorKind::TextureMissing);
 }

@@ -72,11 +72,11 @@ TEST_CASE("the geometry setters are safe before RHI initialisation", "[ui]") {
     w.setLitsphere("first.png");
     w.setMesh(view);
     w.setLitsphere("second.png");
-    w.setMeshes({{view, "a.png"}, {view, "b.png"}});
+    w.setMeshes({{view, "a.png", {}}, {view, "b.png", {}}});
     // A multi-mesh list carries its own litspheres, so this must not flatten
     // them; against a one-mesh list it does apply, whatever set that list.
     w.setLitsphere("third.png");
-    w.setMeshes({{view, "only.png"}});
+    w.setMeshes({{view, "only.png", {}}});
     w.setLitsphere("fourth.png");
 
     CHECK(w.lastError().isEmpty());
