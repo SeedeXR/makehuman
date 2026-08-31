@@ -4,6 +4,62 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 18:08:47 — Session 058 · **the ball of the foot is weighted, and a gap I had overstated**
+
+### The correction first
+Last session I wrote that a foot roll "deforms nothing" without `ball` weights.
+**That was wrong.** Rotating `ball.L` already moved **1,042 toe vertices**,
+because the five toes are its children and carry their own weights. The real gap
+was much narrower: only the *crease at the ball of the foot* failed to deform,
+since that skin still belonged to `foot`.
+
+I found it by checking the claim before building on it, which is the only reason
+this chunk is scoped correctly rather than solving an imaginary problem.
+
+### What shipped
+`data/rigs/mixamo_superset_weights.mhw` — the default weights with the foot's
+forward influence divided between `foot` and `ball`. 309 vertices per side.
+
+The rule is a linear ramp between the ball joint and the toe roots: a vertex at
+the ball line keeps all its `foot` weight, one at the toe roots gives all of it
+to `ball`, split in between.
+
+**Weight is moved, never created**, and the generator asserts it rather than
+assuming:
+
+```
+vertices: 19158 before, 19158 after
+worst per-vertex influence drift: 2.22e-16
+```
+
+Mutation-tested: copying weight instead of moving it is caught with "618
+vertices changed total influence". The C++ test checks the same property through
+the real loader, plus that `ball` received something and `foot` kept its heel.
+
+Spatially coherent too — centroids run heel → ball → toe
+(z = 0.348 → 1.141 → 1.495), which a scattered ramp would not produce.
+
+### Verification
+- ctest **355/355** in debug, release and ASan.
+- Previous push (superset skeleton) green on all 8 CI jobs.
+- Staleness gate covers the weights file as well as the skeleton.
+
+### The limit of this, stated plainly
+The ramp is a **principled choice, not a parity match** — MakeHuman has no ball
+bone to compare against, so there is no reference behaviour to port. The weights
+are provably conservative and anatomically ordered, but whether the crease
+*looks* right under a roll is a visual judgement nobody has made. Blender is
+available for it.
+
+### Still blocked on the owner
+- **SonarQube credentials** — the one requested gate that cannot run.
+- Mixamo's online auto-rigger behaviour, unverifiable without web access.
+
+### Parked
+`git stash@{0}` — WIP multi-mesh FBX/Collada export tests.
+
+---
+
 ## 2026-08-31 17:59:56 — Session 057 · **the 179-bone superset exists, and two of my own tests were worthless**
 
 ### What shipped

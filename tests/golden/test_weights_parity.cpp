@@ -243,3 +243,46 @@ TEST_CASE("a vertex listed twice under one bone is merged", "[weights][parity]")
     std::error_code ec;
     std::filesystem::remove(p, ec);
 }
+
+// The superset's weights are the default's with the foot's forward influence
+// divided between `foot` and the new `ball`. Weight is MOVED, never created --
+// if a vertex's total changed, the skin would deform differently everywhere
+// that vertex appears, far beyond the foot.
+TEST_CASE("the superset weights preserve every vertex's total influence", "[weights][mixamo]") {
+    const auto path = std::filesystem::path(MH_DATA_DIR) / "rigs" / "mixamo_superset_weights.mhw";
+    if (!std::filesystem::exists(path)) SKIP("superset weights not generated");
+
+    auto supersetOrErr = rig::loadWeights(path, kVerts);
+    if (!supersetOrErr) {
+        UNSCOPED_INFO("load failed: " << supersetOrErr.error().message());
+    }
+    REQUIRE(supersetOrErr.has_value());
+    const rig::VertexWeights superset = std::move(*supersetOrErr);
+
+    const auto totals = [](const rig::VertexWeights& vw) {
+        std::vector<float> total(kVerts, 0.0F);
+        for (const auto& [bone, bw] : vw.perBone) {
+            for (size_t k = 0; k < bw.verts.size(); ++k)
+                total[bw.verts[k]] += bw.weights[k];
+        }
+        return total;
+    };
+    const std::vector<float> before = totals(loaded());
+    const std::vector<float> after  = totals(superset);
+
+    size_t drifted = 0;
+    for (size_t v = 0; v < kVerts; ++v) {
+        if (std::abs(before[v] - after[v]) > 1e-4F) ++drifted;
+    }
+    CHECK(drifted == 0);
+
+    // And the ball must actually have been given something, or the whole
+    // exercise deformed nothing new.
+    REQUIRE(superset.perBone.count("ball.L") == 1);
+    REQUIRE(superset.perBone.count("ball.R") == 1);
+    CHECK(superset.perBone.at("ball.L").verts.size() > 100);
+    CHECK(superset.perBone.at("ball.R").verts.size() > 100);
+
+    // The foot keeps the heel; it must not have been emptied.
+    CHECK(superset.perBone.at("foot.L").verts.size() > 100);
+}

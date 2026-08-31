@@ -202,9 +202,20 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       existing joint (a fingertip is the tail of the last phalanx, `hips` sits
       on `root`'s tail), so the superset adds no new dependency on the base
       mesh's helper geometry.
-- [ ] **Weight `ball.L/R`.** The bones exist and the toes hang off them, but
-      nothing assigns vertices to them yet, so a foot roll still deforms
-      nothing. Needs the weights file extended.
+- [x] **`ball.L/R` weighted** — 309 vertices each, in
+      `data/rigs/mixamo_superset_weights.mhw` (generated, staleness-gated).
+      **Correction to the previous entry: a foot roll never "deformed nothing".**
+      Rotating `ball` already moved 1,042 toe vertices through its children. The
+      real gap was only the crease at the ball of the foot, whose skin stayed
+      with `foot`. Measuring corrected an overstatement.
+      The rule is a linear ramp between the ball joint and the toe roots, and it
+      **moves weight, never creates it** — worst per-vertex influence drift
+      across all 19,158 vertices is 2.22e-16. Centroids run heel → ball → toe
+      (z = 0.348 → 1.141 → 1.495), so the region is anatomically coherent.
+- [ ] **Visual check on the ball crease.** The ramp is a principled choice, not
+      a match to any reference — MakeHuman has no ball bone to compare against.
+      The weights are provably conservative and spatially coherent, but whether
+      the crease *looks* right under a roll is unjudged. Blender is available.
       **`hips` is not `root`**: the legs and spine meet at root's *tail*, 0.92 dm
       from its head, so binding Mixamo's Hips to `root` would pivot the whole
       character ~9 cm off on every rotation and every root-motion translation.
