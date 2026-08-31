@@ -75,6 +75,53 @@ const std::filesystem::path& dataDir() {
     return dataRoot();
 }
 
+/// The rig the application skins with, as a stem under `data/rigs` (so
+/// "default" means default.mhskel + default_weights.mhw) or an explicit path to
+/// a .mhskel. Set once from --rig, before anything loads a skeleton.
+///
+/// This exists because main.cpp hard-coded "default" and the 179-bone Mixamo
+/// superset was therefore unreachable from the application -- which is exactly
+/// why nothing ever noticed it could not build its rest matrices.
+std::string& rigNameRef() {
+    static std::string name{"default"};
+    return name;
+}
+
+void setRigName(std::string name) {
+    rigNameRef() = std::move(name);
+}
+
+/// The skeleton file for the selected rig, and the weights beside it.
+std::filesystem::path rigFile(std::string_view suffix) {
+    const std::string& name = rigNameRef();
+    // An explicit path wins; a bare stem is looked up under data/rigs. Reduce
+    // both to a base with no extension, so `--rig /x/foo.mhskel`, `--rig /x/foo`
+    // and `--rig default` all behave the same.
+    std::filesystem::path base = (name.find('/') != std::string::npos || name.ends_with(".mhskel"))
+                                     ? std::filesystem::path{name}
+                                     : dataDir() / "rigs" / name;
+    if (base.extension() == ".mhskel") base.replace_extension();
+    base += std::string(suffix);
+    return base;
+}
+
+/// Every rig that is actually installed, so an unknown --rig can say what IS
+/// available instead of making the user guess.
+std::string availableRigs() {
+    std::vector<std::string> stems;
+    std::error_code ec;
+    for (const auto& e : std::filesystem::directory_iterator(dataDir() / "rigs", ec)) {
+        if (e.path().extension() == ".mhskel") stems.push_back(e.path().stem().string());
+    }
+    std::ranges::sort(stems);
+    std::string out;
+    for (const auto& st : stems) {
+        if (!out.empty()) out += ", ";
+        out += st;
+    }
+    return out;
+}
+
 /// Pixel statistics for the rendered frame. A window that came up but drew
 /// nothing still saves a perfectly valid PNG, so "it ran" is not evidence --
 /// coverage and spread are.
@@ -140,7 +187,13 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
     std::filesystem::path file = pose;
     if (pose == "tpose" || pose == "t-pose") file = dataDir() / "poses" / "tpose.bvh";
 
-    auto skel = mh::rig::loadSkeleton(dataDir() / "rigs" / "default.mhskel");
+    const auto skelPath = rigFile(".mhskel");
+    if (!std::filesystem::exists(skelPath)) {
+        std::fprintf(stderr, "unknown --rig %s; available: %s\n", rigNameRef().c_str(),
+                     availableRigs().c_str());
+        return false;
+    }
+    auto skel = mh::rig::loadSkeleton(skelPath);
     if (!skel) {
         std::fprintf(stderr, "cannot load the rig: %s\n", skel.error().message().c_str());
         return false;
@@ -150,8 +203,7 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
         return false;
     }
 
-    auto weights =
-        mh::rig::loadWeights(dataDir() / "rigs" / "default_weights.mhw", mesh.vertexCount());
+    auto weights = mh::rig::loadWeights(rigFile("_weights.mhw"), mesh.vertexCount());
     if (!weights) {
         std::fprintf(stderr, "cannot load weights: %s\n", weights.error().message().c_str());
         return false;
@@ -165,6 +217,7 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
 
     // The file's rotations are in model space; skinning wants them in each
     // bone's rest frame. Skipping this yields a plausible but wrong pose.
+    std::printf("rig %s (%zu bones)\n", rigNameRef().c_str(), skel->boneCount());
     out.localPose = mh::rig::poseToBoneLocal(*skel, *bodyPose);
     out.weights   = weights->compile(*skel, 4);
     out.skeleton  = std::move(*skel);
@@ -619,6 +672,11 @@ int main(int argc, char** argv) {
         QStringLiteral("rest (the authored A-pose, default), tpose, or a path to a "
                        "single-frame .bvh"),
         QStringLiteral("pose"), QStringLiteral("rest"));
+    const QCommandLineOption rigOpt(
+        QStringLiteral("rig"),
+        QStringLiteral("Skeleton to pose and skin with: a stem under data/rigs "
+                       "(default, mixamo_superset) or a path to a .mhskel."),
+        QStringLiteral("name"), QStringLiteral("default"));
     const QCommandLineOption exportOpt(
         QStringLiteral("export"),
         QStringLiteral("Write the posed mesh here and exit. Format from the extension: "
@@ -659,11 +717,15 @@ int main(int argc, char** argv) {
     parser.addOption(skinOpt);
     parser.addOption(eyesOpt);
     parser.addOption(setOpt);
+    parser.addOption(rigOpt);
     parser.addOption(poseOpt);
     parser.addOption(exportOpt);
     parser.addOption(shaderOpt);
     parser.addOption(shotOpt);
     parser.process(app);
+
+    // Set once, before anything loads a skeleton.
+    setRigName(parser.value(rigOpt).toStdString());
 
     auto mesh = mh::core::loadObj(dataDir() / "3dobjs" / "base.obj");
     if (!mesh) {

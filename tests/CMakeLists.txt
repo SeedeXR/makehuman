@@ -144,5 +144,40 @@ if(MH_HAVE_RENDER)
         SKIP_REGULAR_EXPRESSION "viewport error"
         FAIL_REGULAR_EXPRESSION "cannot load proxy;unknown --eyes;references body vertex")
 
+    # --rig. The 179-bone Mixamo superset shipped, had a CI staleness gate, and
+    # could not skin at all -- because main.cpp hard-coded default.mhskel and
+    # nothing in the application had ever loaded it. A test that only checked
+    # the export succeeded would have passed throughout that, so this asserts
+    # the app announced which rig it actually posed with.
+    add_test(NAME app_rig_superset COMMAND makehuman
+             --rig mixamo_superset
+             --pose tpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_rig_superset.obj)
+    set_tests_properties(app_rig_superset PROPERTIES
+        PASS_REGULAR_EXPRESSION "rig mixamo_superset \\(179 bones\\)"
+        FAIL_REGULAR_EXPRESSION "cannot load the rig;Unknown option;cannot build the rest pose")
+
+    # A path, not a stem -- and deliberately without the .mhskel extension,
+    # which resolved to an extensionless filename until the path and stem cases
+    # were reduced to a common base.
+    add_test(NAME app_rig_path COMMAND makehuman
+             --rig ${MH_DATA_DIR}/rigs/mixamo_superset
+             --pose tpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_rig_path.obj)
+    set_tests_properties(app_rig_path PROPERTIES
+        PASS_REGULAR_EXPRESSION "\\(179 bones\\)"
+        FAIL_REGULAR_EXPRESSION "unknown --rig;cannot load the rig")
+
+    # An unknown rig must say so, and say what IS available, rather than
+    # silently falling back to the default rig and posing the wrong skeleton.
+    add_test(NAME app_rig_unknown COMMAND makehuman
+             --rig no_such_rig --pose tpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_rig_unknown.obj)
+    # PASS_REGULAR_EXPRESSION alone: the app must SAY "unknown --rig". Pairing
+    # it with WILL_FAIL passed vacuously on Qt's own "Unknown option" message,
+    # which is a different failure entirely.
+    set_tests_properties(app_rig_unknown PROPERTIES
+        PASS_REGULAR_EXPRESSION "unknown --rig")
+
     set_tests_properties(ui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()

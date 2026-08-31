@@ -4,6 +4,63 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 21:50:41 — Session 071 · **--rig: making the superset rig reachable**
+
+### The chunk
+Last session found the 179-bone superset rig could not skin. The reason nothing
+had noticed was filed at the end: `src/app/main.cpp` hard-coded
+`default.mhskel`, so the application could not load any other rig. Fixed.
+
+`--rig default|mixamo_superset|<path>` now selects the skeleton the app poses
+and skins with, taking weights from `<stem>_weights.mhw` beside it. Set once
+from the CLI, mirroring the existing `setDataRoot` pattern, so the four
+`loadPoseRig` call sites — two of them UI callbacks — need no new parameter.
+
+An unknown rig **fails and lists what is installed**:
+`unknown --rig nope; available: default, mixamo_superset`. It exits 1 and writes
+no file (both verified), rather than silently falling back to `default` and
+posing the wrong skeleton.
+
+### Giving the tests teeth
+The app announces which rig it posed with, and the tests assert on that string:
+`rig mixamo_superset (179 bones)`. An export-only check would have passed
+throughout the entire period the superset was unreachable and unusable — which
+is precisely the failure mode being guarded against.
+
+### A bug in my own first version
+Reviewing the diff, `--rig ../rigs/default` — a path *without* the `.mhskel`
+extension — resolved to a filename with no extension and failed with a
+confusing "unknown --rig". Stem and path cases are now reduced to one
+extension-less base, so `--rig /x/foo.mhskel`, `--rig /x/foo` and
+`--rig default` all behave identically. The fix is also shorter than what it
+replaced, and `app_rig_path` covers it.
+
+### Two honest notes
+- I tried to demonstrate the path bug empirically with `git stash`, but that
+  reverted `--rig` wholesale rather than just the fix, and my grep was
+  case-sensitive so Qt's "Unknown option" did not match. The experiment proved
+  nothing. Both forms are verified working *now*; the necessity of the fix rests
+  on reading the old code path, not on a captured before/after.
+- `loadWeights` benchmarks at **16.6-18.0 ms** against 15.55 ms recorded
+  earlier, ~8% over. Nothing in this chunk touches `.mhw` parsing and
+  `buildRestMatrices` is unchanged at 0.02 ms, so this is most likely machine
+  load — four full ctest sweeps and several Blender renders ran before it.
+  CI's own benchmark job is the independent reading. **Not claimed as within
+  5%.**
+
+### Scope
+`--rig` selects the skeleton used to pose and skin. The app's multi-mesh export
+path carries no bones by design (`SceneIO.h:116`), so exported bone data is
+unaffected.
+
+### Verification
+ctest **384/384** in debug, release, ASan and TSan. CI green on `22e43d01`.
+
+### Still blocked on the owner
+**SonarQube credentials.**
+
+---
+
 ## 2026-08-31 21:26:26 — Session 070 · **the superset rig could not skin at all**
 
 ### What I set out to do

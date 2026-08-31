@@ -374,9 +374,25 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       length-less **root** is still an error.
       **The lesson**: the staleness gate asked "is this file current?" and never
       "does it work?". Both new tests ask the second question.
-- [ ] **`--rig` is not wired to the CLI.** `src/app/main.cpp:143` hard-codes
-      `default.mhskel`, so the 179-bone superset is unreachable from the
-      application — which is why nothing had ever exercised it.
+- [x] **`--rig` wired.** `--rig default|mixamo_superset|<path>` selects the
+      skeleton the app poses and skins with; weights are taken from
+      `<stem>_weights.mhw` beside it. Set once from the CLI, mirroring
+      `setDataRoot`, so the four `loadPoseRig` call sites need no new parameter.
+      An unknown rig **fails and lists what is installed** rather than silently
+      falling back to `default` and posing the wrong skeleton; it exits 1 and
+      writes no file (verified).
+      Three ctest cases run the real binary and assert the app **announced which
+      rig it posed with** (`rig mixamo_superset (179 bones)`) — an export-only
+      check would have passed the entire time the superset was unreachable.
+      Stem, explicit path, and path-without-extension all resolve through one
+      base: `--rig /x/foo.mhskel`, `--rig /x/foo` and `--rig default` behave the
+      same. The extensionless path form was **broken in my first version** (it
+      resolved to a filename with no extension) and is now covered by
+      `app_rig_path`.
+      **Scope**: `--rig` selects the skeleton used to pose and skin. The app's
+      multi-mesh export path deliberately carries no bones — see
+      `include/makehuman/io/SceneIO.h:116`, "a skin belongs to the single-mesh
+      overload" — so exported bone data is unaffected.
       **`hips` is not `root`**: the legs and spine meet at root's *tail*, 0.92 dm
       from its head, so binding Mixamo's Hips to `root` would pivot the whole
       character ~9 cm off on every rotation and every root-motion translation.
