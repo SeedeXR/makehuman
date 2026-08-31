@@ -601,7 +601,30 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       Improvement over the reference: every End Site there is named
       "End effector", so they collide and are unaddressable; ours derives
       `<parent>_end`.
-- [ ] BVH **export**
+- [x] **BVH export** — `io::writeBvh(path, BvhFile)` (`src/io/BvhWriter.cpp`).
+      Round-trips `tpose.bvh` and the 60-frame, 212-joint `face-poseunits.bvh`:
+      worst matrix delta **5.96e-08**, which is float32 epsilon and exactly the
+      floor the pure Euler decompose/recompose achieves.
+      **The bug worth remembering**: the reader assigns channel values by *axis
+      identity* (`Xrotation`->ax, …) and always calls
+      `eulerMatrix(az, ay, ax, order)` (`BvhReader.cpp:323-337`). My first writer
+      emitted the angles *positionally*, which agrees only when the channels
+      happen to be Z,Y,X — measured **1.69** off on a matrix element otherwise.
+      Angles are now written against their own axis's channel.
+      **Y-up on output, deliberately.** BVH does not record its up axis;
+      `readBvh` converts Z-up input (both shipped MakeHuman poses measure Z-up),
+      so Y-up is what was actually parsed. Writing the original channel names
+      against converted data would re-read with a different Euler order.
+      Standard BVH is conventionally Y-up, so the written file is the more
+      conformant of the two — but a Z-up source does **not** come back as Z-up.
+      **Blender, a third-party importer, agrees**: it reads generations 1 and 2
+      to the same pose (worst delta **0.0** across all 163 bones at frame 30),
+      while placing generation 1 **11.19** from the Z-up original — that gap is
+      the documented input conversion, not an export error. Our own reader
+      agreeing with our own writer would only have proved self-consistency.
+      Idempotent in **meaning, not bytes**: generation 2 differs by 7 bytes of
+      340,964 because angles pass through a float32 `Mat4` between generations.
+      Byte-identity was my first claim and it was wrong.
 - [x] Pose units wired — **stale entry**. `loadPoseUnitNames` +
       `makePoseUnits` already map the 60 `framemapping` names onto the BVH
       frames; `test_poseunits_parity.cpp:79` pins all 60 in order, and the

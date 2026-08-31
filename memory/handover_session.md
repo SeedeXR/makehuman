@@ -4,6 +4,61 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-01 00:08:19 — Session 076 · **BVH export, and Blender contradicting our own reader**
+
+### The chunk
+`io::writeBvh(path, BvhFile)`. Round-trips `tpose.bvh` and the 60-frame,
+212-joint `face-poseunits.bvh` at a worst matrix delta of **5.96e-08** — float32
+epsilon, and exactly the floor a pure Euler decompose/recompose achieves (which
+I measured separately first, to know whether any error was the maths or mine).
+
+### The bug: positional vs axis-identity channel mapping
+`BvhReader` assigns channel values by **axis identity** — `Xrotation` always
+lands in `ax`, `Yrotation` in `ay`, `Zrotation` in `az` — and then always calls
+`eulerMatrix(az, ay, ax, order)` (`BvhReader.cpp:323-337`).
+
+My first writer popped the angles **positionally** off `eulerFromMatrix`'s
+result. That agrees only when the channels happen to be Z,Y,X. Otherwise it
+writes a completely different rotation: **1.69** off on a matrix element.
+
+Diagnosis order mattered. The failing test showed deltas of ~2e-3, which looked
+like a precision problem. It was not: a direct probe found the true worst was
+**1.69**, and a separate probe showed the Euler round-trip alone was exact. That
+ruled out precision and pointed straight at the mapping.
+
+### Blender contradicted our own reader, and was right to
+Our reader said the round-trip was exact. Blender put generation 1 **11.19**
+away from the original.
+
+Both are correct. `readBvh` converts Z-up input (both shipped MakeHuman poses
+measure Z-up), so the in-memory data is Y-up and that is what gets written. The
+11.19 is the up-axis conversion, not an export error. Proven by isolating it:
+Y-up in -> Y-up out compares **0.0** in Blender across all 163 bones.
+
+Standard BVH is conventionally Y-up, so our output is the more conformant file —
+but **a Z-up source does not come back as Z-up**, and that is documented in
+`BvhWriter.h` rather than left to be discovered.
+
+Our own reader agreeing with our own writer proves self-consistency, not
+correctness. The third-party importer is what made the difference visible.
+
+### A claim of mine that was simply wrong
+I asserted byte-level idempotency. Generation 2 differs by **7 bytes of
+340,964**: angles pass through a float32 `Mat4` between generations, so
+low-order digits shift and exact text reproduction is unattainable. The test now
+pins idempotency in **meaning** — the two generations decode to the same
+transforms — which is both true and the property that matters.
+
+### Verification
+ctest **395/395** in debug, release and ASan; TSan run separately (the combined
+sweep exceeded the command timeout, which is not a failure). Format clean.
+CI green on `44540d6d`.
+
+### Still blocked on the owner
+**SonarQube credentials.**
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

@@ -8,6 +8,7 @@
 add_library(mh_io STATIC
     ObjWriter.cpp
     BvhReader.cpp
+    BvhWriter.cpp
     UsdWriter.cpp
     GltfWriter.cpp
     SceneIO.cpp)

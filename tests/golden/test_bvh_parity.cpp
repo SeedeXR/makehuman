@@ -9,6 +9,7 @@
 //     ./.venv-mh/bin/python tools/capture_fixture.py bvh
 
 #include "makehuman/io/BvhReader.h"
+#include "makehuman/io/BvhWriter.h"
 
 #include <nlohmann/json.hpp>
 
@@ -297,4 +298,133 @@ TEST_CASE("unbalanced braces are reported", "[bvh]") {
 
     std::error_code ec;
     std::filesystem::remove(p, ec);
+}
+
+// --- BVH export -------------------------------------------------------------
+//
+// The property that matters is read -> write -> read stability: the second read
+// must reproduce the first exactly enough that a pose survives the trip. This
+// is a stronger check than comparing text, which would only pin our own
+// formatting.
+//
+// Note what round-tripping does NOT preserve: a Z-up source comes back as the
+// equivalent Y-up file. readBvh converts on the way in (both shipped MakeHuman
+// pose files measure as Z-up), so Y-up is what was actually parsed, and writing
+// the original channel names against converted data would re-read with a
+// different Euler order. See BvhWriter.h.
+namespace {
+
+std::filesystem::path roundTripPath(std::string_view stem) {
+    return std::filesystem::temp_directory_path() /
+           (std::string("mh_bvh_rt_") + std::string(stem) + ".bvh");
+}
+
+void checkRoundTrip(const std::filesystem::path& source, float tolerance) {
+    if (!std::filesystem::exists(source)) return;
+
+    const auto first = io::readBvh(source);
+    REQUIRE(first.has_value());
+    REQUIRE(first->jointCount() > 0);
+
+    const auto out   = roundTripPath(source.stem().string());
+    const auto wrote = io::writeBvh(out, *first);
+    REQUIRE(wrote.has_value());
+    REQUIRE(std::filesystem::exists(out));
+
+    const auto second = io::readBvh(out);
+    REQUIRE(second.has_value());
+
+    INFO("round-tripping " << source.filename().string());
+    REQUIRE(second->jointCount() == first->jointCount());
+    REQUIRE(second->frameCount == first->frameCount);
+    CHECK(std::abs(second->frameTime - first->frameTime) < 1e-9);
+
+    for (size_t j = 0; j < first->jointCount(); ++j) {
+        const auto& a = first->joints[j];
+        const auto& b = second->joints[j];
+        INFO("joint " << j << " " << a.name);
+        CHECK(b.name == a.name);
+        CHECK(b.parent == a.parent);
+        CHECK(b.endSite == a.endSite);
+        CHECK(std::abs(b.offset.x - a.offset.x) < tolerance);
+        CHECK(std::abs(b.offset.y - a.offset.y) < tolerance);
+        CHECK(std::abs(b.offset.z - a.offset.z) < tolerance);
+        REQUIRE(b.frames.size() == a.frames.size());
+        for (size_t f = 0; f < a.frames.size(); ++f) {
+            for (size_t r = 0; r < 4; ++r)
+                for (size_t c = 0; c < 4; ++c) {
+                    INFO("frame " << f << " element [" << r << "][" << c << "]");
+                    CHECK(std::abs(b.frames[f].m[r][c] - a.frames[f].m[r][c]) < tolerance);
+                }
+        }
+    }
+    std::filesystem::remove(out);
+}
+
+}  // namespace
+
+TEST_CASE("a single-frame pose survives a BVH round trip", "[io][bvh][write]") {
+    checkRoundTrip(std::filesystem::path(MH_DATA_DIR) / "poses" / "tpose.bvh", 1e-4F);
+}
+
+TEST_CASE("the 60-frame face pose units survive a BVH round trip", "[io][bvh][write]") {
+    // 212 joints x 60 frames: every joint, every frame, every matrix element.
+    checkRoundTrip(std::filesystem::path(MH_DATA_DIR) / "poseunits" / "face-poseunits.bvh", 1e-4F);
+}
+
+TEST_CASE("writeBvh reports a path it cannot open", "[io][bvh][write]") {
+    io::BvhFile bvh;
+    bvh.joints.push_back(io::BvhJoint{.name = "root"});
+    bvh.frameCount = 0;
+    const auto r   = io::writeBvh("/definitely/not/a/directory/x.bvh", bvh);
+    REQUIRE_FALSE(r.has_value());
+    CHECK(r.error().kind == io::BvhErrorKind::Unreadable);
+}
+
+// Writing is idempotent in MEANING, not in bytes. Generation 2 differs from
+// generation 1 by 7 bytes out of 340,964: the angles pass through a float32
+// Mat4 between generations, so their low-order digits shift and exact text
+// reproduction is unattainable. Byte-identity was the claim I first wrote and
+// it was simply wrong.
+//
+// What does hold, and is what matters: the two generations decode to the same
+// transforms. A third party agrees -- Blender imports generation 1 and 2 to the
+// same pose (worst delta 0.0 across all 163 bones at frame 30, measured), while
+// it puts generation 1 11.19 away from the Z-up original. That gap is the
+// conversion readBvh performs on input, not an export error: standard BVH is
+// conventionally Y-up, so the written file is the more conformant of the two.
+TEST_CASE("writing a BVH is idempotent in meaning", "[io][bvh][write]") {
+    const auto source = std::filesystem::path(MH_DATA_DIR) / "poseunits" / "face-poseunits.bvh";
+    if (!std::filesystem::exists(source)) return;
+
+    const auto gen1 = roundTripPath("gen1");
+    const auto gen2 = roundTripPath("gen2");
+
+    const auto first = io::readBvh(source);
+    REQUIRE(first.has_value());
+    REQUIRE(io::writeBvh(gen1, *first).has_value());
+
+    const auto readA = io::readBvh(gen1);
+    REQUIRE(readA.has_value());
+    CHECK_FALSE(readA->convertedFromZUp);  // already Y-up; nothing to convert
+    REQUIRE(io::writeBvh(gen2, *readA).has_value());
+
+    const auto readB = io::readBvh(gen2);
+    REQUIRE(readB.has_value());
+    REQUIRE(readB->jointCount() == readA->jointCount());
+
+    float worst = 0.0F;
+    for (size_t j = 0; j < readA->jointCount(); ++j) {
+        REQUIRE(readB->joints[j].frames.size() == readA->joints[j].frames.size());
+        for (size_t f = 0; f < readA->joints[j].frames.size(); ++f)
+            for (size_t r = 0; r < 4; ++r)
+                for (size_t c = 0; c < 4; ++c)
+                    worst = std::max(worst, std::abs(readB->joints[j].frames[f].m[r][c] -
+                                                     readA->joints[j].frames[f].m[r][c]));
+    }
+    INFO("worst second-generation drift " << worst);
+    CHECK(worst < 1e-5F);
+
+    std::filesystem::remove(gen1);
+    std::filesystem::remove(gen2);
 }
