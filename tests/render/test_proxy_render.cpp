@@ -295,3 +295,48 @@ TEST_CASE("geometry inside the head is hidden from behind", "[render][proxy][dep
     INFO("from the front, adding the eyes changes " << frontChanged << " pixels");
     CHECK(frontChanged > 0);
 }
+
+// --- Litsphere parity, guarded at the source ---------------------------------
+//
+// The lit-sphere shader is a translation of the reference's AGPL GLSL. Three
+// things in it are load-bearing and each is a single token that a well-meaning
+// edit would "clean up":
+//
+//   * `0.495`, not 0.5, when mapping the normal into litsphere UV space;
+//   * the `2.0 - mean(shading)` brightness term, which is not a normalisation;
+//   * sampling the RAW interpolated normal -- the reference does NOT
+//     renormalize per fragment (`litsphere_fragment_shader.txt:78`).
+//
+// No rendered-image test can defend these: every variant still produces a
+// plausible lit figure, which is exactly why the divergence survived. So the
+// guard is a literal source check, the same trade `.mhmat` writing makes
+// (project_context.md §8.0).
+//
+// Measured before choosing parity: renormalizing changes 0.98% of the frame by
+// up to 107/255 in a channel.
+TEST_CASE("the litsphere shader keeps the reference's exact terms", "[render][litsphere]") {
+    const auto path = fs::path(MH_SHADER_SRC_DIR) / "litsphere.frag";
+    REQUIRE(fs::exists(path));
+    std::ifstream in(path);
+    REQUIRE(in);
+    const std::string src((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+
+    // Strip comments so the header's prose cannot satisfy these checks.
+    std::string code;
+    code.reserve(src.size());
+    for (size_t i = 0; i < src.size();) {
+        if (src.compare(i, 2, "//") == 0) {
+            while (i < src.size() && src[i] != '\n')
+                ++i;
+        } else {
+            code.push_back(src[i++]);
+        }
+    }
+
+    INFO("shader body:\n" << code);
+    CHECK(code.find("vec3(0.495)") != std::string::npos);
+    CHECK(code.find("2.0 - (shading.r + shading.g + shading.b) / 3.0") != std::string::npos);
+    // The reference does not renormalize; neither may we.
+    CHECK(code.find("normalize(vNormal)") == std::string::npos);
+    CHECK(code.find("normal = vNormal") != std::string::npos);
+}

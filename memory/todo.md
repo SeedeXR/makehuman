@@ -666,7 +666,27 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 - [ ] Wire `qt6_add_shaders()` into CMake — deferred until Qt is a real build
       dependency, so CI does not pay a 5-minute Qt install for shaders nothing
       renders yet.
-- [ ] Litsphere/matcap **pixel-faithful** (incl. `0.495` scale, `2.0 − mean` term)
+- [x] **Litsphere/matcap pixel-faithful** — and it was **not** faithful.
+      `0.495` and the `2.0 − mean` term were already correct. A **third** term
+      was not: the reference samples the **raw interpolated normal**
+      (`litsphere_fragment_shader.txt:78`, `vec3 normal = vNormal;`) and does
+      **not** renormalize per fragment. We did.
+      Interpolation shortens the normal across a triangle, pulling the litsphere
+      UV toward the sphere centre, and the shipped litspheres were authored
+      against that. **Measured**: renormalizing changes **0.98% of the frame**,
+      by up to **107/255** in a channel — visible, not rounding. The
+      `normalize()` is gone.
+      **A tempting argument I tested and had to discard**: that renormalizing is
+      more stable under tessellation. Base vs subdivided differs by 3.09%
+      (reference) against 2.92% (renormalized) — confounded, because
+      subdividing moves the silhouette too. It favours nothing, and is not
+      offered as a reason.
+      Renormalizing remains available as a deliberate *quality* choice; it just
+      is not parity.
+      Guarded by `[render][litsphere]`, a **source-literal** check — no rendered
+      image can defend these, since every variant still draws a plausible lit
+      figure, which is precisely why the divergence survived. Both mutations
+      fail it (restoring `normalize()`; `0.495`->`0.5`).
 - [ ] Eye-space-fixed light (model rotates, camera does not)
 - [x] **Depth range `[0,1]` — already correct by construction, now tested.**
       The renderer never hand-rolls a projection: `SceneResources.cpp:273` takes

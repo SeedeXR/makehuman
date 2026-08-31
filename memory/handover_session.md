@@ -104,6 +104,61 @@ CI green on `29c90f62`.
 
 ---
 
+## 2026-09-01 00:54:55 — Session 078 · **the litsphere was not pixel-faithful, and no image test could tell**
+
+### The finding
+The todo tracked two magic numbers as the whole of litsphere parity: the `0.495`
+scale and the `2.0 − mean(shading)` term. Both were already correct.
+
+Diffing our shader against the reference line by line found a **third** term
+nobody had listed. The reference samples the **raw interpolated normal**:
+
+    vec3 normal = vNormal;          // litsphere_fragment_shader.txt:78
+
+We wrote `normalize(vNormal)`. Both vertex stages normalize identically, so this
+is purely a fragment-stage divergence — and it is not cosmetic. Interpolation
+shortens a normal across a triangle, which pulls the litsphere UV toward the
+sphere centre, and the shipped litspheres were authored against exactly that.
+
+**Measured before deciding**: renormalizing changes **0.98% of the rendered
+frame**, by up to **107/255** in a channel, concentrated where the matcap
+gradient is steepest. Visible, not rounding. The `normalize()` is gone.
+
+### An argument I built, tested, and had to throw away
+The appealing case for keeping `normalize()` is that it makes shading
+independent of tessellation. I tested it: base vs subdivided differs by **3.09%**
+(reference) against **2.92%** (renormalized).
+
+That is **confounded** — subdividing moves the silhouette too, so most of both
+numbers is geometry, not shading. A 0.17pp gap proves nothing, and I am not
+offering it as a reason. Parity is the reason.
+
+Renormalizing stays available as a deliberate *quality* choice. It is simply not
+parity, and the difference is now a number rather than an opinion.
+
+### Why the guard is a source check, not a render
+No rendered-image test can defend any of these three terms: every variant still
+produces a plausible lit figure. That is exactly why the divergence survived
+this long in a project with a render test suite. So `[render][litsphere]` reads
+the shader source, strips comments so the header's prose cannot satisfy it, and
+asserts the three terms literally — the same trade `.mhmat` writing makes
+(project_context.md §8.0).
+
+Both mutations fail it: restoring `normalize()`, and `0.495` -> `0.5`.
+
+### A restore that caught itself
+Reverting the `0.495` mutation asserted `count == 1` and **failed** — because
+after the mutation `vec3(0.5)` appears **twice** (the scale and the `+0.5`
+offset). Without the assertion the shader would have been left silently wrong
+with the tests still red for a reason I would have misread. The assert-before-
+write rule paid for itself again.
+
+### Verification
+ctest **395/395** in debug, release, ASan; TSan run separately. Format clean.
+CI green on `239473c9`.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

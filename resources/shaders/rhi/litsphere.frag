@@ -16,6 +16,24 @@
 //     brightness compensation, not a normalisation, and does not simplify.
 //
 // Changing either silently changes every rendered skin.
+//
+// A THIRD thing is preserved, and it is the easiest to "fix" by accident: the
+// reference samples the RAW INTERPOLATED normal, `vec3 normal = vNormal;`
+// (litsphere_fragment_shader.txt:78). It does not renormalize per fragment.
+// Interpolation shortens the normal across a triangle, which pulls the
+// litsphere UV toward the sphere centre, and the shipped litspheres were
+// authored against exactly that.
+//
+// We renormalized here until it was measured: doing so changes 0.98% of the
+// rendered frame, by up to 107/255 in a channel -- concentrated where the
+// matcap gradient is steepest. That is a visible difference, not rounding, so
+// parity wins and the normalize() is gone.
+//
+// Renormalizing IS the more conventional choice, and it remains available as a
+// deliberate quality decision. It was not adopted on a "more stable under
+// tessellation" argument: that was tested and the result was confounded
+// (subdividing moves the silhouette too), 3.09% vs 2.92% of the frame, which
+// favours nothing.
 
 #version 450
 
@@ -36,7 +54,9 @@ layout(binding = 1) uniform sampler2D litsphereTexture;
 layout(binding = 2) uniform sampler2D diffuseTexture;
 
 void main() {
-    const vec3 normal = normalize(vNormal);
+    // Raw, NOT renormalized -- see the header. This one word changes every
+    // rendered skin.
+    const vec3 normal = vNormal;
 
     // 0.495, not 0.5 -- see the header.
     const vec3 shading =

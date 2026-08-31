@@ -86,7 +86,8 @@ if(MH_HAVE_RENDER)
         PRIVATE mh::core mh::render mh::io Catch2::Catch2WithMain mh::warnings mh::sanitize)
     target_compile_definitions(mh_render_tests PRIVATE
         MH_DATA_DIR="${MH_DATA_DIR}"
-        MH_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders")
+        MH_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders"
+        MH_SHADER_SRC_DIR="${CMAKE_SOURCE_DIR}/resources/shaders/rhi")
     set_target_properties(mh_render_tests PROPERTIES
         CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
     add_dependencies(mh_render_tests mh_shaders)
