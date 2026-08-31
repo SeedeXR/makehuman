@@ -193,7 +193,11 @@ jobs:
       - name: Apache-2.0 modules do not depend on AGPL ones
         run: |
           fail=0
-          for permissive in io foundation render; do
+          # Every Apache-2.0 module, not a subset. `ui` was Apache-2.0 and
+          # ungated for months -- the rule was being enforced by review, which
+          # is exactly what this gate exists to replace. Keep this list equal to
+          # the set of modules whose CMakeLists declares Apache-2.0.
+          for permissive in io foundation render ui; do
             # Strip comments first: this file EXPLAINS why it must not link
             # mh::core, and a naive grep flags that explanation. Same trap as
             # the FBX gate below.

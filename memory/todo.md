@@ -112,7 +112,8 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 - [ ] Compiled target blob (`tools/mhassetc`), uint32 indices, mmapped —
       target ≤50 ms for all 1,280. **Now clearly justified**: ASCII parse of the
       full set is 465 ms in C++ (vs 3,226 ms in Python), still 9x over budget.
-- [ ] Target index: filename tokenisation on `-`, `_`, `.` against the 9-category table
+- [x] Target index: filename tokenisation on `-`, `_`, `.` against the 9-category table
+      — `TargetIndex.cpp:9-15`, cited to `targets.py:203`; 4 parity tests.
 - [x] All macro factor formulas (`MacroFactors`), verbatim from the reference,
       **920 assertions of parity** across 34 parameter combinations x 27 values
 - [x] Ethnic renormalisation incl. all three degenerate branches
@@ -128,7 +129,8 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
       components**, every group name and size matching the reference.
 - [x] `targetWeight` = `value x groupFactor x PROD(macro factors)`
       (`humanmodifier.py:644-652`)
-- [ ] `weight = value × Π factors`
+- [x] `weight = value × Π factors` — `TargetIndex.cpp:125-132`, cited to
+      `humanmodifier.py:644-652`.
 - [x] `applyStack` — reset to morph base + replay, matching `applyAllTargets`
 - [x] **End-to-end parity: 14 characters**, modifier values → macro factors →
       target weights → applied targets → final vertex positions, all matching
@@ -138,8 +140,12 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
       `.mhm` written by the reference, loaded in C++ and applied, reproduces the
       geometry the reference itself produces from that file. Unrecognised lines
       (skeleton / pose / proxy / material) are preserved verbatim for M4-M5.
-- [ ] **Parity fixtures**: default stack, extreme macro combinations, every modifier at ±1
-- [ ] `data/modifiers/*.json` loader
+- [x] **Parity fixtures**: default stack, extreme macro combinations, every
+      modifier at ±1 — `tests/golden/modifiers.txt` holds all **291** modifiers
+      with min/max ±1.0 and `test_modifier_parity` checks every one; character
+      and macro fixtures cover the stack.
+- [x] `data/modifiers/*.json` loader — `loadModifiers`, exercised on all three
+      shipped files by `test_mhm_parity` and `test_theme`.
 
 ## RESOLVED — the licence boundary (2026-08-29)
 
@@ -168,9 +174,12 @@ The unweld moved OUT of the writers: glTF and FBX now take a `RenderView` the
 caller has already built. That makes the cost visible at the call site instead
 of hidden in a writer, and is what actually removed the last AGPL call from io.
 
-- [ ] `mh_rig`, `mh_asset`, `mh_render`, `mh_ui` must respect the same rule as
-      they are created. The CI gate covers `io` and `foundation`; extend its
-      module list rather than trusting review.
+- [x] **Every Apache-2.0 module is gated.** The list was `io foundation render`;
+      **`ui` is Apache-2.0 and was ungated**, enforced only by review — which is
+      what the gate exists to replace. Verified it bites: an AGPL include added
+      to `src/ui/Theme.cpp` now fails it.
+      `app`, `core` and `rig` are AGPL, so nothing else needs adding; keep the
+      list equal to the set of modules declaring Apache-2.0.
 
 ## M4 — Proxies, materials, assets (`mh-asset`)
 

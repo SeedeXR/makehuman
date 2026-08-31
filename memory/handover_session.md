@@ -4,6 +4,56 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 19:02:58 — Session 064 · **an ungated Apache module, and five todo entries that lied**
+
+### The real find: `ui` was Apache-2.0 and ungated
+The CI licence gate iterated `io foundation render`. The Apache-2.0 modules are
+`foundation`, `io`, `render` **and `ui`** — so `ui` was enforced by review only,
+which is precisely what the gate exists to replace. `app`, `core` and `rig` are
+AGPL, so nothing else was missing.
+
+`ui` happens to be clean today, but "happens to be" is the problem. Extended and
+**verified it bites**: an AGPL include added to `src/ui/Theme.cpp` now fails it,
+where before it would have passed.
+
+The todo had named this exactly ("extend its module list rather than trusting
+review") and it had sat open while I checked `ui` by hand every chunk. My manual
+`nm -u` check was doing the gate's job — which is how a gap survives.
+
+### Five todo entries were stale, not open
+M3 listed 7 open items; **5 were finished work never ticked**. Each verified
+against the code before changing, with a citation now recorded:
+
+| entry | reality |
+|---|---|
+| target-index tokenisation | `TargetIndex.cpp:9-15`, cited to `targets.py:203`, 4 parity tests |
+| `weight = value × Π factors` | `TargetIndex.cpp:125-132`, cited to `humanmodifier.py:644-652` |
+| `data/modifiers/*.json` loader | `loadModifiers`, exercised on all three shipped files |
+| parity fixtures at ±1 | `modifiers.txt` holds all **291** modifiers, every one checked |
+| Apache module gating | done in this chunk |
+
+M3 is now 2 genuinely open items: the compiled target blob, and incremental
+stack application.
+
+A todo that overstates what is left is as misleading as one that overstates what
+is done — it hides the real remaining work behind noise.
+
+### Verification
+- ctest **365/365**; no C++ changed this chunk; all inventory gates green.
+- The extended gate demonstrated failing on an injected violation and passing
+  once reverted.
+
+### M2 assessment, stated plainly
+Its two remaining items are low value and I would rather say so than pad the
+loop: dirty-range tracking targets `refreshPositions`, already **0.04 ms**; and
+`findFaceGroup`'s string allocation has **no production caller** — tests only.
+Optimising either would be speculative.
+
+### Still blocked on the owner
+**SonarQube credentials**; the ball-of-foot crease remains visually unjudged.
+
+---
+
 ## 2026-08-31 18:57:54 — Session 063 · **a fixture that tested the wrong branch**
 
 ### What this turned out to be
