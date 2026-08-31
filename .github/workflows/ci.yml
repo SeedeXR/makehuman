@@ -282,3 +282,10 @@ jobs:
       # rather than showing up as a twisted hand in an animation.
       - name: Mixamo retarget table is not stale
         run: python3 tools/mixamo_mapping.py --check
+
+      # body-poseunits.json was authored against a richer, differently-named
+      # skeleton than MakeHuman ships: only 29 of its 61 poses resolve fully and
+      # 8 resolve to nothing. Gated so a future pose-unit consumer cannot be
+      # built on it in ignorance, and so the numbers move only upward.
+      - name: Body pose-unit resolvability has not regressed
+        run: python3 tools/audit_poseunits.py

@@ -222,6 +222,32 @@ error. The writer must use the canonical camelCase spellings
 regression here, because our own reader accepts either; the guard is a literal
 string check plus `tools/verify_material_roundtrip.py`.
 
+**`body-poseunits.json` targets a skeleton MakeHuman does not ship.** Measured
+by `tools/audit_poseunits.py`, gated in CI. Of its 61 poses, against **both**
+`default.mhskel` and `mixamo_superset.mhskel`:
+
+| | |
+|---|---|
+| fully resolvable | **29** |
+| partially resolvable (silently do less than intended) | 24 |
+| resolve to **nothing at all** | **8** |
+
+The 8 dead ones are `TorsoRight`, `UpperLegForwardLeft`, `LowerLegBendLeft1/2`,
+`FootDownLeft`, `FootUpLeft`, `Finger1CloseLeft`, `Finger2CloseLeft`.
+
+24 referenced bone names are absent from both rigs. Many are a **different
+naming generation** rather than genuinely missing joints — `spine1..spine4` for
+our `spine01..spine03`, `neck` for `neck01..neck03`, `shoulder.L` for
+`shoulder01.L`, `upperleg.L` for `upperleg01/02.L` — alongside ones we truly
+lack (`collisionArm*`, `heel.L`, `metatarsal1..5`, `platysma03/06`, `scapula.L`).
+
+So a pose-unit consumer needs an **explicit bone table**, exactly as the Mixamo
+retarget did; name matching will silently drop a third of the data.
+
+**Two poses are authoring errors in the reference asset**: `UpperArmUpLeft1` and
+`UpperArmUpLeft2` drive `oris01`/`oris02` — *mouth* bones. Raising the left arm
+must not move the lips. Pinned by the audit so it is never mistaken for our bug.
+
 ### 8.0.1 Reference edits made to keep it runnable
 
 Hard rule 2 permits editing `legacy/python/` only to keep the oracle running.

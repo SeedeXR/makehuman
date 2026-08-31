@@ -4,6 +4,77 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 22:39:00 — Session 074 · **body pose units do not fit our rig; and I broke CI**
+
+### CI failure on `1e09e93d`, and it was mine
+`clang-format` failed. Every other job passed (debug, release, ASan, TSan,
+benchmark, inventories, licence, charconv).
+
+Cause: in the previous chunk's final sweep I ran `clang-format -i` on
+`src/app/main.cpp` **only**, and dropped the repo-wide
+`find … | xargs clang-format --dry-run --Werror` that earlier chunks ran. The
+test file I had appended to was never checked. It reproduces locally in one
+command — I simply did not run it.
+
+**Rule**: the sweep is the repo-wide `--dry-run --Werror` check, never
+`-i` on the files I happen to remember touching. CI did its job; my local gate
+was the one that regressed.
+
+### The chunk: body pose units
+Investigated before building, and the investigation was the deliverable.
+
+`data/poseunits/body-poseunits.json` is 61 poses of bone -> `[w,x,y,z]`
+quaternion (format confirmed, no BVH frames). But it targets a **richer,
+differently-named skeleton**. Against **both** shipped rigs:
+
+| | |
+|---|---|
+| fully resolvable | **29 of 61** |
+| partially resolvable — silently do less than intended | 24 |
+| resolve to **nothing at all** | **8** |
+
+Dead: `TorsoRight`, `UpperLegForwardLeft`, `LowerLegBendLeft1/2`, `FootDownLeft`,
+`FootUpLeft`, `Finger1CloseLeft`, `Finger2CloseLeft`.
+
+24 referenced bones are absent from both rigs, and many are a naming
+*generation* difference rather than missing joints — `spine1..4` for
+`spine01..03`, `neck` for `neck01..03`, `shoulder.L` for `shoulder01.L`,
+`upperleg.L` for `upperleg01/02.L` — beside ones we genuinely lack
+(`collisionArm*`, `heel.L`, `metatarsal1..5`, `platysma03/06`, `scapula.L`).
+
+**So a consumer needs an explicit bone table**, exactly as the Mixamo retarget
+did. Name matching would silently drop a third of the data — a foot pose that
+does nothing, with no error.
+
+**An authoring error in the reference asset**: `UpperArmUpLeft1` and
+`UpperArmUpLeft2` drive `oris01`/`oris02` — **mouth** bones. Raising the left arm
+must not move the lips. Pinned so it is never mistaken for ours.
+
+`tools/audit_poseunits.py` measures it and gates it in CI; both assertions
+mutation-tested (rc=1 perturbed, rc=0 restored). **Loader deliberately not
+built** — before the bone table exists it would ship poses that do nothing.
+Recorded in `memory/project_context.md` §8.0.
+
+### Two more stale entries closed
+- Euler helpers **are** wired into BVH: `src/io/BvhReader.cpp:224`
+  (`eulerOrderFromString`) and `:336` (`eulerMatrix`).
+- `.mhpose`: **no asset exists anywhere in the repo** (`find . -name '*.mhpose'`
+  is empty); the format appears only in reference *plugins*. Unverifiable, so
+  unbuilt — the same call as the proxy shear forms.
+
+### A measurement trap I nearly fell into again
+Checking the audit's exit code through `| tail -3` reported `rc=0` for a run
+that had actually failed — `$?` was `tail`'s. zsh has no `PIPESTATUS`. Captured
+the code directly instead.
+
+### Verification
+ctest **386/386** in debug, release, ASan and TSan; repo-wide clang-format clean.
+
+### Still blocked on the owner
+**SonarQube credentials.**
+
+---
+
 ## 2026-08-31 22:14:51 — Session 073 · **a silent 19% fidelity loss, now spoken**
 
 ### The chunk

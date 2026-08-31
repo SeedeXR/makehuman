@@ -329,17 +329,18 @@ TEST_CASE("clamped weights still sum to one", "[rig][weights][clamp]") {
     const auto rig = std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel";
     if (!std::filesystem::exists(rig)) return;
     auto skel = rig::loadSkeleton(rig);
-    auto w    = rig::loadWeights(
-        std::filesystem::path(MH_DATA_DIR) / "rigs" / "default_weights.mhw", 19158);
+    auto w = rig::loadWeights(std::filesystem::path(MH_DATA_DIR) / "rigs" / "default_weights.mhw",
+                              19158);
     REQUIRE(w.has_value());
 
     // Truncating without renormalising makes every heavily-weighted vertex lose
     // mass and drift toward the origin when posed -- a subtle, whole-body bug.
-    const auto c = w->compile(*skel, 4);
+    const auto c    = w->compile(*skel, 4);
     size_t weighted = 0;
     for (size_t v = 0; v < 19158; ++v) {
         float sum = 0.0F;
-        for (size_t k = 0; k < c.influences; ++k) sum += c.weight[v * c.influences + k];
+        for (size_t k = 0; k < c.influences; ++k)
+            sum += c.weight[v * c.influences + k];
         if (sum == 0.0F) continue;  // an unweighted vertex is left alone
         ++weighted;
         INFO("vertex " << v << " sums to " << sum);

@@ -509,7 +509,15 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       Licensing: `transformations.py` is **BSD-3-Clause** (C. Gohlke) with
       MakeHuman's AGPL boilerplate wrongly stamped into its docstring — see
       `LICENSING.md` §4.1. The port is BSD and lives in `mh_foundation`.
-- [ ] Wire the Euler/quaternion helpers into pose loading (`.mhpose`, BVH)
+- [x] **Euler helpers are wired into BVH** — this entry was half stale.
+      `src/io/BvhReader.cpp:224` builds the convention with
+      `foundation::eulerOrderFromString`, and `:336` builds the matrix with
+      `foundation::eulerMatrix`. No duplicated rotation maths to drift.
+- [ ] `.mhpose` loading — **no asset to verify against.** `find . -name '*.mhpose'`
+      returns nothing; the format is referenced only by reference *plugins*
+      (`7_expression_mixer.py`, `2_posing_expression.py`). Implementing it now
+      would be unverifiable machinery, the same call as the proxy shear forms.
+      Reopen when a `.mhpose` file exists to test against.
 - [x] **CPU LBS — parity on all 19,158 vertices** under a real pose (7 bones
       rotated, 18,069 vertices moved, 3.2 dm max displacement). Worst vertex
       delta **3.8e-6 dm (0.38 um)**; worst pose-matrix delta 6.7e-6 — float32
@@ -535,8 +543,25 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       Weights are **not** normalised: the blend is additive.
 - [ ] `.mhupb` expression files (weighted unit references) — the consumer of
       the blend above
-- [ ] Body pose units (`body-poseunits.json`) — a different format: bone ->
-      quaternion directly, not BVH frames
+- [~] **Body pose units: investigated, and the asset does not fit our rig.**
+      Format confirmed — 61 poses, each bone -> `[w,x,y,z]` quaternion directly,
+      no BVH frames. But it was authored against a richer, differently-named
+      skeleton. Against **both** shipped rigs:
+      **29 of 61 resolve fully, 24 partially, and 8 resolve to nothing at all**
+      (`TorsoRight`, `UpperLegForwardLeft`, `LowerLegBendLeft1/2`, `FootDownLeft`,
+      `FootUpLeft`, `Finger1CloseLeft`, `Finger2CloseLeft`).
+      24 bone names are absent from both rigs. Many are a naming *generation*
+      difference (`spine1..4` vs `spine01..03`, `neck` vs `neck01..03`,
+      `shoulder.L` vs `shoulder01.L`) rather than genuinely missing joints;
+      others we truly lack (`collisionArm*`, `heel.L`, `metatarsal1..5`).
+      **A consumer therefore needs an explicit bone table**, exactly as the
+      Mixamo retarget did — name matching silently drops a third of the data.
+      Also found: `UpperArmUpLeft1/2` drive `oris01`/`oris02`, **mouth** bones.
+      That is an authoring error in the reference asset, now pinned so it is
+      never mistaken for ours.
+      Measured and gated by `tools/audit_poseunits.py` (CI). **Loader not built**
+      — building one before the bone table exists would produce poses that
+      silently do nothing. Recorded in `memory/project_context.md` §8.0.
 - [x] **Whole-body poses: A-pose and T-pose, render and export** (owner request,
       2026-08-29). `rig::loadBodyPose` reads a single-frame BVH;
       `rig::poseToBoneLocal` converts it into each bone's rest frame.
