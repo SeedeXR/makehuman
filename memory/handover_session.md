@@ -4,6 +4,60 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 20:12:36 — Session 067 · **M2 closed by measurement, not by building**
+
+### The chunk
+M2's last two items were micro-optimisations. Both are now closed as
+**deliberately not built**, each with the number that justifies it and the
+threshold that should reopen it. M2 is complete.
+
+### The measurement that was missing
+`RenderMesh::refreshPositions` was benchmarked on the **base** mesh (0.04 ms).
+But smoothing is on by default, so the interactive mesh is the **subdivided**
+one — 80,252 render verts against 21,833 — and that case had never been
+measured. It is the only case the 60 fps target cares about. Now benchmarked:
+**0.11 ms**.
+
+Whole slider-drag path on the subdivided mesh:
+`rebuildStack` 0.01 + `applyStack` 0.07 + `Subdivider::refresh` 0.48 +
+`refreshPositions` 0.11 = **0.67 ms of a 16.7 ms frame**.
+
+### Why dirty-range tracking is not being built
+Two independent reasons:
+1. **No headroom.** The gather is 0.7% of the frame budget.
+2. **The reference's partial path is a pessimisation.** `module3d.py:880`:
+   `r_coord[ucoor[vmap]] = coord[vmap][ucoor[vmap]]`. `coord[vmap]` is fancy
+   indexing — it materialises the *full* gather, then masks it. The "partial"
+   update does everything the full copy does, plus a mask allocation. Porting
+   it would be **slower**.
+
+The cost is real and asymmetric: a dirty bitmask threaded through every
+mutation site, where one missed mark silently renders stale geometry.
+
+`findFaceGroup` heterogeneous lookup: **zero production callers** (definition,
+declaration, one unit test). No measurable gain, and no test could tell the two
+spellings apart. Incremental stack application (M3) falls to the same evidence.
+
+### The check I nearly skipped
+`refreshPositions` returns early when `matches()` fails — so a wrong benchmark
+would have measured *nothing* and reported a fast number. Verified before
+trusting it: moving a source vertex 7.5 dm and watching it arrive at the render
+vertex proves the gather runs (y 6.814 -> 14.314).
+
+Also caught a noise trap: the first run after linking read **0.12 ms** for the
+base case against a 0.04 ms median. Every figure recorded is a median of 5.
+
+### Verification
+ctest **373/373** debug, release, ASan. CI green on `c4e6776b`, all 8 jobs.
+
+### Still blocked on the owner
+**SonarQube credentials** — `sonar-scanner` 8.1.0 is installed but needs
+`SONAR_TOKEN` + `sonar.organization`, or a self-hosted `SONAR_HOST_URL`. This is
+the one requested gate that has never been runnable.
+Ball-of-foot crease remains visually unjudged.
+
+---
+
 ## 2026-08-31 19:49:28 — Session 066 · **refusing beats pretending: proxy shear**
 
 ### What the todo asked, and what was actually wrong
