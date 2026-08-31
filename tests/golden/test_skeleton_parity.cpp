@@ -16,6 +16,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -342,4 +343,81 @@ TEST_CASE("relative matrices compose back to global", "[skeleton][parity]") {
     }
     INFO("worst composition error " << worst);
     CHECK(worst < 1e-4F);
+}
+
+// The Mixamo superset must load through the SAME loader as the default rig --
+// if it needs special handling it is not a drop-in replacement, and the whole
+// point is that a rigged export can use it without the engine caring.
+TEST_CASE("the Mixamo superset skeleton loads", "[skeleton][mixamo]") {
+    const auto path = std::filesystem::path(MH_DATA_DIR) / "rigs" / "mixamo_superset.mhskel";
+    if (!std::filesystem::exists(path)) SKIP("superset not generated");
+
+    const auto superset = rig::loadSkeleton(path);
+    if (!superset) {
+        UNSCOPED_INFO("load failed: " << superset.error().message());
+    }
+    REQUIRE(superset.has_value());
+
+    // 163 MakeHuman bones + the 16 Mixamo needs and MakeHuman lacks.
+    CHECK(superset->boneCount() == 179);
+
+    // NOT "every parent precedes its child" -- loadSkeleton reorders
+    // breadth-first, so that assertion can never fail and proves nothing.
+    // What is worth checking is that the reparenting actually happened: the
+    // superset only earns its name if `hips` really sits between `root` and the
+    // legs, and `ball` really sits between the foot and the toes.
+    std::map<std::string, std::string> parentOf;
+    for (const auto& b : superset->bones) {
+        parentOf[b.name] = b.parent >= 0 ? superset->bones[static_cast<size_t>(b.parent)].name
+                                         : std::string{"<root>"};
+    }
+    CHECK(parentOf.at("hips") == "root");
+    CHECK(parentOf.at("pelvis.L") == "hips");
+    CHECK(parentOf.at("pelvis.R") == "hips");
+    CHECK(parentOf.at("spine05") == "hips");
+    for (const char* side : {".L", ".R"}) {
+        INFO(side);
+        CHECK(parentOf.at(std::string("ball") + side) == std::string("foot") + side);
+        // All five toes must hang off the ball, not the foot -- that is what
+        // makes a foot roll expressible at all.
+        for (int toe = 1; toe <= 5; ++toe) {
+            CHECK(parentOf.at("toe" + std::to_string(toe) + "-1" + side) ==
+                  std::string("ball") + side);
+        }
+    }
+
+    // The default rig must still load unchanged beside it -- the superset is an
+    // addition, not a migration.
+    const auto base =
+        rig::loadSkeleton(std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel");
+    REQUIRE(base.has_value());
+    CHECK(base->boneCount() == 163);
+}
+
+// The bones Mixamo drives must all be present under the names the mapping
+// promises. If one is missing, a retargeted clip silently loses that joint.
+TEST_CASE("every mapped Mixamo target exists in the superset", "[skeleton][mixamo]") {
+    const auto path = std::filesystem::path(MH_DATA_DIR) / "rigs" / "mixamo_superset.mhskel";
+    if (!std::filesystem::exists(path)) SKIP("superset not generated");
+    const auto superset = rig::loadSkeleton(path);
+    REQUIRE(superset.has_value());
+
+    std::set<std::string> present;
+    for (const auto& b : superset->bones)
+        present.insert(b.name);
+
+    // The three additions that are real, weight-bearing bones rather than tip
+    // markers -- the hip pivot and the two ball-of-foot joints.
+    for (const char* name : {"hips", "ball.L", "ball.R"}) {
+        INFO(name);
+        CHECK(present.count(name) == 1);
+    }
+    // A fingertip per finger per hand, so Mixamo's 4th joint has a home.
+    for (const char* side : {".L", ".R"}) {
+        for (int finger = 1; finger <= 5; ++finger) {
+            const std::string tip = "finger" + std::to_string(finger) + "-4" + side;
+            INFO(tip);
+            CHECK(present.count(tip) == 1);
+        }
+    }
 }

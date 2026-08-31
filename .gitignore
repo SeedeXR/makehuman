@@ -36,6 +36,13 @@ __pycache__/
 *.bvh
 *.mhskel
 # (data/ moved to the repo root in the 2026-08-29 restructure and is tracked)
+#
+# Those asset-extension rules predate the move and would now silently drop
+# anything new under data/ -- the generated mixamo_superset.mhskel was ignored
+# on creation, which would have failed the CI staleness gate on its first run
+# because the file was never committed. The tracked assets only survive because
+# they were added before the rules. Everything under data/ is repo content.
+!data/**
 base_1-1_contents.txt
 
 # Pydev Eclipse#

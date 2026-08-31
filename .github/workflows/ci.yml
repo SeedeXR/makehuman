@@ -264,3 +264,9 @@ jobs:
       # pairing is exactly the mistake a hand-written bone table makes.
       - name: Mixamo bone mapping is consistent
         run: python3 tools/mixamo_mapping.py
+
+      # The superset skeleton is generated, not hand-edited. If someone edits it
+      # directly, or changes the generator without regenerating, the committed
+      # file and the tool disagree -- and the tool is the one the docs describe.
+      - name: Superset skeleton is not stale
+        run: python3 tools/build_mixamo_superset.py --check
