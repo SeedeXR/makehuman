@@ -166,4 +166,30 @@ std::expected<std::vector<Mat4>, PoseUnitsError> loadBodyPose(const std::filesys
     return std::vector<Mat4>(frame.begin(), frame.end());
 }
 
+std::expected<std::vector<Mat4>, PoseUnitsError> mixPoses(std::span<const Mat4> base,
+                                                          std::span<const Mat4> overlay,
+                                                          std::span<const size_t> bones) {
+    if (base.size() != overlay.size()) {
+        return std::unexpected(
+            PoseUnitsError{PoseUnitsErrorKind::FrameCountMismatch,
+                           {},
+                           "poses are for different skeletons: " + std::to_string(base.size()) +
+                               " bones vs " + std::to_string(overlay.size())});
+    }
+    for (const size_t b : bones) {
+        if (b >= base.size()) {
+            return std::unexpected(PoseUnitsError{PoseUnitsErrorKind::Malformed,
+                                                  {},
+                                                  "bone index " + std::to_string(b) +
+                                                      " is past the end of a " +
+                                                      std::to_string(base.size()) + "-bone pose"});
+        }
+    }
+
+    std::vector<Mat4> out(base.begin(), base.end());
+    for (const size_t b : bones)
+        out[b] = overlay[b];
+    return out;
+}
+
 }  // namespace mh::rig

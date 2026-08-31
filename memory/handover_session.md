@@ -4,6 +4,66 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
+
+### The chunk
+`rig::mixPoses(base, overlay, bones)`: copy `base`, take `overlay`'s transforms
+for the listed bones. This is what layers a facial expression onto a posed body
+(`shared/animation.py:449-467`).
+
+Both of the reference's refusals are kept rather than softened:
+- differing bone counts -> `FrameCountMismatch`. Mixing poses built for two
+  different rigs would otherwise produce a plausible-looking wrong body.
+- an index past the end -> `Malformed`. Silently skipping it would drop part of
+  the expression.
+
+**No parity fixture, by explicit exclusion.** This is index replacement with no
+numerical content — nothing for float32 to round differently, and a captured
+`.bin` would only re-assert that a copy copies. Five property tests pin what can
+actually break, including a real case: a face expression layered onto the T-pose,
+checking all 163 bones took the right source.
+
+### I broke my own mutation rule, and it cost a false negative
+The first mutation "passed" — all 5 tests green. That was wrong. `clang-format`
+had reflowed
+
+    for (const size_t b : bones) out[b] = overlay[b];
+
+onto two lines, so my one-line search string matched **nothing** and
+`str.replace` silently did nothing. I had not asserted the match.
+
+This is *precisely* the failure documented earlier this session, with the rule
+already written down: **always `assert s.count(old) == 1` before writing.** A
+mutation that does not change the artifact is not a mutation, and its green run
+is worthless.
+
+Re-run correctly, the mutation fails **3 of 5 cases, 922 assertions**. The tests
+do discriminate.
+
+### Two more stale entries closed
+- Pose units are already wired: `makePoseUnits` maps all 60 `framemapping`
+  names onto BVH frames; `test_poseunits_parity.cpp:79` pins them in order.
+- The parity fixtures said to be missing all exist:
+  `skeleton/{rest_global,rest_relative}.bin`,
+  `skinning/{skinned,mat_pose,pose_verts}.bin`,
+  `poseunits/{blended,blended_reversed}.bin`.
+
+M5's remaining open items are now: SonarQube (owner), `.mhpose` (no asset),
+`.mhupb`, BVH export, pose-library UI, and two that belong to M6
+(skin normals/tangents, GPU LBS).
+
+### CI
+`5eb5cd60` green — the clang-format failure I introduced is cleared. The
+repo-wide format check now runs in every sweep.
+
+### Verification
+ctest **391/391** in debug, release, ASan and TSan; format clean.
+
+### Still blocked on the owner
+**SonarQube credentials.**
+
+---
+
 ## 2026-08-31 22:39:00 — Session 074 · **body pose units do not fit our rig; and I broke CI**
 
 ### CI failure on `1e09e93d`, and it was mine

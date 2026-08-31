@@ -576,7 +576,19 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       App: `makehuman --pose rest|tpose|<path.bvh> [--export out.ext]`,
       7 formats (obj fbx glb usda dae stl 3mf).
 - [ ] Pose library UI — `--pose` is CLI only; nothing in the window selects one.
-- [ ] `mixPoses` for face/foot layering
+- [x] **`mixPoses`** — `rig::mixPoses(base, overlay, bones)` copies `base` and
+      takes `overlay`'s transforms for the listed bones, which is what puts a
+      facial expression on a posed body (`shared/animation.py:449-467`).
+      Both of the reference's refusals are kept: differing bone counts
+      (`FrameCountMismatch` — mixing poses from two rigs yields a
+      plausible-looking wrong body) and an out-of-range index (`Malformed`;
+      silently skipping it would drop part of the expression).
+      **No parity fixture, by explicit exclusion**: this is index replacement
+      with no numerical content, so a captured `.bin` would only re-assert that
+      a copy copies. Five property tests pin what can break, and a mutation
+      that ignores the bone list fails 3 of them (922 assertions).
+      The reference's `[[bonesList]]` double-bracket is a numpy quirk, not
+      replicated.
 - [x] BVH **import** — parity on both shipped files: `tpose.bvh` (222 joints)
       and `face-poseunits.bvh` (212 joints x 60 frames). 12,942 joint-frames
       compared, worst delta < 1e-5. 2.04 ms for the 60-frame file.
@@ -590,8 +602,15 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       "End effector", so they collide and are unaddressable; ours derives
       `<parent>_end`.
 - [ ] BVH **export**
-- [ ] Pose units: wire `face-poseunits.json` (60 units) onto the BVH frames
-- [ ] **Parity fixtures**: rest matrices, skinned positions, blended expression
+- [x] Pose units wired — **stale entry**. `loadPoseUnitNames` +
+      `makePoseUnits` already map the 60 `framemapping` names onto the BVH
+      frames; `test_poseunits_parity.cpp:79` pins all 60 in order, and the
+      fixtures (`unit_data.bin`, `blended.bin`, `blended_reversed.bin`) exist.
+- [x] **Parity fixtures: rest matrices, skinned positions, blended expression**
+      — **stale entry**, all three shipped:
+      `tests/golden/skeleton/{rest_global,rest_relative}.bin`,
+      `tests/golden/skinning/{skinned,mat_pose,pose_verts}.bin`, and
+      `tests/golden/poseunits/{blended,blended_reversed}.bin`.
 
 ## M6 — Renderer (`mh-render`)
 

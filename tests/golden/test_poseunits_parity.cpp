@@ -250,3 +250,126 @@ TEST_CASE("a name count that disagrees with the frame count is refused", "[poseu
     REQUIRE_FALSE(r.has_value());
     CHECK(r.error().kind == rig::PoseUnitsErrorKind::FrameCountMismatch);
 }
+
+using mh::foundation::Mat4;
+
+// --- mixPoses: layering a face pose over a body pose ------------------------
+//
+// The reference (`shared/animation.py:449-467`) copies pose1 and replaces the
+// listed bone indices with pose2's:
+//
+//     data = pose1.getAtFramePos(0).copy()
+//     data[bonesList] = pose2.getAtFramePos(0)[[bonesList]]
+//
+// **No parity fixture, deliberately.** This is index replacement with no
+// numerical content -- there is nothing for float32 to round differently, and a
+// captured .bin would only re-assert that a copy copies. The properties below
+// pin the behaviour that can actually break: which bones move, which do not,
+// and that mismatched inputs are refused rather than silently truncated.
+//
+// The reference's `[[bonesList]]` double bracket is a numpy indexing quirk that
+// happens to broadcast; it is not replicated as such.
+TEST_CASE("mixPoses replaces exactly the listed bones", "[rig][poseunits][mix]") {
+    std::vector<Mat4> base(5, Mat4::identity());
+    std::vector<Mat4> overlay(5, Mat4::identity());
+    for (size_t i = 0; i < 5; ++i) {
+        base[i].m[0][3]    = static_cast<float>(i) + 1.0F;     // 1..5
+        overlay[i].m[0][3] = -(static_cast<float>(i) + 1.0F);  // -1..-5
+    }
+
+    const std::array<size_t, 2> pick{1, 3};
+    const auto mixed = rig::mixPoses(base, overlay, pick);
+    REQUIRE(mixed.has_value());
+    REQUIRE(mixed->size() == 5);
+    CHECK((*mixed)[0].m[0][3] == 1.0F);   // untouched
+    CHECK((*mixed)[1].m[0][3] == -2.0F);  // replaced
+    CHECK((*mixed)[2].m[0][3] == 3.0F);   // untouched
+    CHECK((*mixed)[3].m[0][3] == -4.0F);  // replaced
+    CHECK((*mixed)[4].m[0][3] == 5.0F);   // untouched
+}
+
+TEST_CASE("mixPoses with no bones is the base pose", "[rig][poseunits][mix]") {
+    std::vector<Mat4> base(3, Mat4::identity());
+    base[1].m[1][3] = 7.0F;
+    std::vector<Mat4> overlay(3, Mat4::identity());
+    overlay[1].m[1][3] = -7.0F;
+
+    const auto mixed = rig::mixPoses(base, overlay, {});
+    REQUIRE(mixed.has_value());
+    CHECK((*mixed)[1].m[1][3] == 7.0F);
+}
+
+TEST_CASE("mixPoses refuses poses for different skeletons", "[rig][poseunits][mix]") {
+    // The reference raises here. Silently mixing what it can would produce a
+    // plausible pose built from two different rigs.
+    const std::vector<Mat4> base(5, Mat4::identity());
+    const std::vector<Mat4> overlay(4, Mat4::identity());
+    const std::array<size_t, 1> pick{0};
+    const auto mixed = rig::mixPoses(base, overlay, pick);
+    REQUIRE_FALSE(mixed.has_value());
+    CHECK(mixed.error().kind == rig::PoseUnitsErrorKind::FrameCountMismatch);
+}
+
+TEST_CASE("mixPoses refuses a bone index it cannot address", "[rig][poseunits][mix]") {
+    const std::vector<Mat4> base(3, Mat4::identity());
+    const std::vector<Mat4> overlay(3, Mat4::identity());
+    const std::array<size_t, 2> pick{1, 9};
+    const auto mixed = rig::mixPoses(base, overlay, pick);
+    REQUIRE_FALSE(mixed.has_value());
+    CHECK(mixed.error().kind == rig::PoseUnitsErrorKind::Malformed);
+}
+
+// The case it exists for: a face expression layered onto a whole-body pose.
+TEST_CASE("a face expression layers onto a body pose", "[rig][poseunits][mix][golden]") {
+    const auto rigPath = std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel";
+    const auto bvhPath = std::filesystem::path(MH_DATA_DIR) / "poseunits" / "face-poseunits.bvh";
+    if (!std::filesystem::exists(rigPath) || !std::filesystem::exists(bvhPath)) return;
+
+    auto mesh = mh::core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+    auto skel = rig::loadSkeleton(rigPath);
+    REQUIRE(skel.has_value());
+    REQUIRE(skel->updateJoints(mesh->coord()));
+    REQUIRE(skel->buildRestMatrices());
+
+    auto bvh = io::readBvh(bvhPath);
+    REQUIRE(bvh.has_value());
+    auto names = rig::loadPoseUnitNames(std::filesystem::path(MH_DATA_DIR) / "poseunits" /
+                                        "face-poseunits.json");
+    REQUIRE(names.has_value());
+    auto units = rig::makePoseUnits(*bvh, *skel, std::move(*names));
+    REQUIRE(units.has_value());
+
+    const auto body =
+        rig::loadBodyPose(std::filesystem::path(MH_DATA_DIR) / "poses" / "tpose.bvh", *skel);
+    REQUIRE(body.has_value());
+
+    // Every bone the expression actually moves.
+    const auto face = units->unit(0);
+    std::vector<size_t> faceBones;
+    for (size_t i = 0; i < face.size(); ++i) {
+        bool identity = true;
+        for (size_t r = 0; r < 4 && identity; ++r)
+            for (size_t c = 0; c < 4; ++c)
+                if (std::abs(face[i].m[r][c] - Mat4::identity().m[r][c]) > 1e-6F) {
+                    identity = false;
+                    break;
+                }
+        if (!identity) faceBones.push_back(i);
+    }
+    REQUIRE_FALSE(faceBones.empty());
+
+    const auto mixed = rig::mixPoses(*body, face, faceBones);
+    REQUIRE(mixed.has_value());
+    REQUIRE(mixed->size() == body->size());
+
+    // The face bones took the expression; every other bone kept the T-pose.
+    for (size_t i = 0; i < mixed->size(); ++i) {
+        const bool isFace = std::ranges::find(faceBones, i) != faceBones.end();
+        const auto& want  = isFace ? face[i] : (*body)[i];
+        INFO("bone " << i << (isFace ? " (face)" : " (body)"));
+        for (size_t r = 0; r < 4; ++r)
+            for (size_t c = 0; c < 4; ++c)
+                CHECK((*mixed)[i].m[r][c] == want.m[r][c]);
+    }
+}

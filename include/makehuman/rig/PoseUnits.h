@@ -97,4 +97,21 @@ struct PoseUnitsError {
 [[nodiscard]] std::expected<std::vector<Mat4>, PoseUnitsError> loadBodyPose(
     const std::filesystem::path& path, const Skeleton& skeleton);
 
+/// Layers @p overlay's transforms for @p bones onto @p base, leaving the rest
+/// of @p base alone. This is what puts a facial expression on a posed body.
+///
+/// The reference (`shared/animation.py:449-467`) copies pose1 and assigns
+/// pose2's rows for the listed indices; it raises when the two poses have
+/// different bone counts, because mixing poses built for different skeletons
+/// produces a plausible-looking wrong body. Both refusals are kept:
+///
+///   - differing sizes -> `FrameCountMismatch`;
+///   - a bone index past the end -> `Malformed` (the reference would raise
+///     IndexError; silently skipping it would drop part of the expression).
+///
+/// Order does not matter here and no interpolation happens -- unlike
+/// PoseUnits::blend, this replaces rather than composes.
+[[nodiscard]] std::expected<std::vector<Mat4>, PoseUnitsError> mixPoses(
+    std::span<const Mat4> base, std::span<const Mat4> overlay, std::span<const size_t> bones);
+
 }  // namespace mh::rig
