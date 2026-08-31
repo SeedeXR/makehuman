@@ -3,9 +3,11 @@
 
 #include "makehuman/foundation/Chars.h"
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <limits>
+#include <vector>
 
 namespace mh::io {
 namespace {
@@ -87,6 +89,83 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
 
     out << "def Xform \"" << options.primName << "\"\n{\n";
 
+    // ---- materials -------------------------------------------------------
+    // UsdPreviewSurface under one Looks scope, bound per mesh. A scene with no
+    // materials writes no scope at all, so its output is unchanged from before
+    // materials existed -- a test pins that.
+    std::vector<const foundation::MaterialDesc*> materials;
+    for (const UsdSceneEntry& entry : entries) {
+        if (entry.material == nullptr) continue;
+        const auto seen = std::find_if(
+            materials.begin(), materials.end(),
+            [&](const foundation::MaterialDesc* m) { return m->name == entry.material->name; });
+        if (seen == materials.end()) materials.push_back(entry.material);
+    }
+
+    if (!materials.empty()) {
+        out << "    def Scope \"Looks\"\n    {\n";
+        for (const foundation::MaterialDesc* material : materials) {
+            const std::string base = "/" + options.primName + "/Looks/" + material->name;
+            out << "        def Material \"" << material->name << "\"\n        {\n";
+            out << "            token outputs:surface.connect = <" << base
+                << "/Shader.outputs:surface>\n";
+            out << "            def Shader \"Shader\"\n            {\n";
+            out << "                uniform token info:id = \"UsdPreviewSurface\"\n";
+
+            if (!material->diffuseTexture.empty()) {
+                // Referenced by asset path, so the file must be beside the
+                // stage. Copied for the same reason the OBJ writer copies a
+                // map_Kd: naming a texture that is not there is a broken file.
+                const std::filesystem::path dst =
+                    path.parent_path() / material->diffuseTexture.filename();
+                std::error_code ec;
+                if (!std::filesystem::equivalent(material->diffuseTexture, dst, ec)) {
+                    std::filesystem::copy_file(material->diffuseTexture, dst,
+                                               std::filesystem::copy_options::overwrite_existing,
+                                               ec);
+                    if (ec) {
+                        return std::unexpected(UsdWriteError{
+                            UsdWriteErrorKind::CannotOpen, material->diffuseTexture.string(),
+                            "texture named by the material: " + ec.message()});
+                    }
+                }
+                out << "                color3f inputs:diffuseColor.connect = <" << base
+                    << "/DiffuseTexture.outputs:rgb>\n";
+            } else {
+                out << "                color3f inputs:diffuseColor = (" << num(material->diffuse.x)
+                    << ", " << num(material->diffuse.y) << ", " << num(material->diffuse.z)
+                    << ")\n";
+            }
+            // The same Blinn-Phong to PBR conversion every other writer uses.
+            out << "                float inputs:roughness = "
+                << num(std::clamp(1.0F - material->shininess, 0.0F, 1.0F)) << "\n";
+            out << "                float inputs:metallic = 0\n";
+            out << "                float inputs:opacity = " << num(material->opacity) << "\n";
+            out << "                token outputs:surface\n";
+            out << "            }\n";
+
+            if (!material->diffuseTexture.empty()) {
+                out << "            def Shader \"DiffuseTexture\"\n            {\n";
+                out << "                uniform token info:id = \"UsdUVTexture\"\n";
+                out << "                asset inputs:file = @"
+                    << material->diffuseTexture.filename().string() << "@\n";
+                out << "                float2 inputs:st.connect = <" << base
+                    << "/Reader.outputs:result>\n";
+                out << "                color3f outputs:rgb\n";
+                out << "            }\n";
+                out << "            def Shader \"Reader\"\n            {\n";
+                out << "                uniform token info:id = \"UsdPrimvarReader_float2\"\n";
+                // `string`, not `token`: usdchecker rejects a token here with
+                // ShaderSdrCompliance.MismatchedPropertyType.
+                out << "                string inputs:varname = \"st\"\n";
+                out << "                float2 outputs:result\n";
+                out << "            }\n";
+            }
+            out << "        }\n";
+        }
+        out << "    }\n";
+    }
+
     size_t vertices  = 0;
     size_t triangles = 0;
     for (const UsdSceneEntry& entry : entries) {
@@ -109,7 +188,20 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
             hi.z = std::max(hi.z, v.z * s);
         }
 
-        out << "    def Mesh \"" << entry.name << "\"\n    {\n";
+        // A prim that binds a material must APPLY the API schema, or usdchecker
+        // reports MissingMaterialBindingAPI -- the binding alone looks right
+        // and is not conformant. It is prim METADATA, so it belongs in the
+        // parentheses before the body, not among the properties: putting it
+        // inside the braces makes the stage fail to open at all.
+        out << "    def Mesh \"" << entry.name << "\"\n";
+        if (entry.material != nullptr) {
+            out << "    (\n        prepend apiSchemas = [\"MaterialBindingAPI\"]\n    )\n";
+        }
+        out << "    {\n";
+        if (entry.material != nullptr) {
+            out << "        rel material:binding = </" << options.primName << "/Looks/"
+                << entry.material->name << ">\n";
+        }
         out << "        float3[] extent = [(" << num(lo.x) << ", " << num(lo.y) << ", " << num(lo.z)
             << "), (" << num(hi.x) << ", " << num(hi.y) << ", " << num(hi.z) << ")]\n";
 

@@ -662,9 +662,17 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       imports `body` (21,833) + `eyes` (1,076) — matching FBX and Collada.
       **Every export format now carries a dressed character**, so the
       "exports the body only" warning was deleted rather than reworded.
-- [ ] **USD carries no materials.** `writeUsda` has never emitted any, for one
-      mesh or many, so `UsdSceneEntry` deliberately has no `MaterialDesc` rather
-      than accepting one and ignoring it. Every other format now carries them.
+- [x] **USD materials** — `UsdPreviewSurface` under one `Looks` scope, bound per
+      mesh, with `UsdUVTexture` + `UsdPrimvarReader_float2` for a diffuse map
+      and the texture copied beside the stage (same rule as OBJ's `map_Kd`).
+      A material-less scene emits **no `Looks` scope at all**, so its output is
+      unchanged from before materials existed.
+      **Every format now carries per-mesh materials.**
+      `usdchecker` caught three things tests could not: `MissingMaterialBindingAPI`
+      (a binding must *apply* the API schema), `varname` needing `string` not
+      `token`, and — worst — my first fix emitting `prepend apiSchemas` as a
+      *property*, which made the stage fail to open at all while every test
+      still passed.
 - [x] **Proxy materials.** `WornProxy` loads the `.mhmat` its proxy names; the
       body loads `data/skins/default.mhmat` (which is what the reference does,
       `apps/human.py:89`). A dressed export carries `DefaultSkin` on the body

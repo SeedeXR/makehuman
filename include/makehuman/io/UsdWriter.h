@@ -66,6 +66,7 @@ struct UsdWriteResult {
 struct UsdSceneEntry {
     foundation::RenderView mesh;
     std::string name{"mesh"};
+    const foundation::MaterialDesc* material{nullptr};
 };
 
 /// Writes every entry as its own `Mesh` prim under one `Xform`.
@@ -73,9 +74,13 @@ struct UsdSceneEntry {
 /// A USD stage is a scene graph, so this is its natural shape -- no index
 /// arithmetic, unlike OBJ and glTF. `extent` is per prim, as USD expects.
 ///
-/// **No materials.** This writer has never emitted any, for one mesh or many;
-/// a `UsdSceneEntry` therefore carries no `MaterialDesc`, rather than accepting
-/// one and silently ignoring it.
+/// Materials become `UsdPreviewSurface` shaders under a single `Looks` scope,
+/// bound per mesh. A scene with no materials emits no `Looks` scope at all, so
+/// its output is exactly what it was before materials existed.
+///
+/// A `diffuseTexture` is referenced by asset path and **copied beside the
+/// stage**, the same rule the OBJ writer follows for `map_Kd`: a stage naming a
+/// texture that is not there is a broken file.
 [[nodiscard]] std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(
     const std::filesystem::path& path, std::span<const UsdSceneEntry> entries,
     const UsdWriteOptions& options = {});

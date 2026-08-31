@@ -4,6 +4,57 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-08-31 18:38:11 — Session 061 · **USD materials, and a fix that made the file unopenable**
+
+### What shipped
+USD carries materials: `UsdPreviewSurface` under one `Looks` scope, bound per
+mesh, with `UsdUVTexture` + `UsdPrimvarReader_float2` for a diffuse map and the
+texture copied beside the stage — the same rule the OBJ writer follows for
+`map_Kd`. A material-less scene writes **no `Looks` scope at all**, so its output
+is byte-for-byte what it was before materials existed.
+
+**Every export format now carries per-mesh materials**: OBJ, glTF, FBX, Collada
+and USD.
+
+### The lesson: my tests were blind to the worst mistake
+`usdchecker` rejected three things in sequence, and this is the record of them
+because the third is the instructive one.
+
+1. **`MissingMaterialBindingAPI`** — a prim that binds a material must *apply*
+   the API schema. The binding alone looks right and is not conformant.
+2. **`MismatchedPropertyType`** — `inputs:varname` must be `string`, not
+   `token`.
+3. **My fix for (1) made it worse.** I emitted `prepend apiSchemas` as a
+   *property* inside the braces. It is prim **metadata** and belongs in
+   parentheses before the body. The stage stopped opening entirely — and
+   **every test still passed**, because they all assert on substrings of a file
+   nothing was parsing.
+
+A plausible fix took the output from "invalid but loadable" to "will not open",
+and only the first-party validator saw it. String assertions over a serialised
+format cannot tell you the format is well-formed; they only tell you the bytes
+you looked for are present.
+
+Pinned now by a regression test asserting the exact metadata form.
+
+### Verification
+- `usdchecker`: **Success** on the dressed, textured stage.
+- Blender: `body` (21,833) + `eyes` (1,076), materials bound.
+- ctest **363/363** debug and release; ASan separately. format clean.
+- Previous push (multi-mesh USD) green on all 8 CI jobs.
+
+### Guards, sixth occurrence
+A scripted edit failed its `assert s.count(old) == 1` because clang-format had
+aligned `size_t vertices  = 0;` to two spaces. The guard stopped the write and I
+inserted by line position instead. Six times now; without it these would be
+silent partial edits.
+
+### Still blocked on the owner
+- **SonarQube credentials** — never yet runnable.
+- The ball-of-foot crease remains visually unjudged.
+
+---
+
 ## 2026-08-31 18:29:43 — Session 060 · **multi-mesh USD: every format now exports a dressed character**
 
 ### What shipped

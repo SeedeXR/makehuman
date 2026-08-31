@@ -285,3 +285,121 @@ TEST_CASE("a one-entry USD scene matches the single-mesh writer", "[usd][multime
     std::filesystem::remove(viaOld, ec);
     std::filesystem::remove(viaNew, ec);
 }
+
+// USD was the only format left carrying no materials at all. The convention is
+// UsdPreviewSurface: a Material prim wrapping a Shader, and each Mesh binding
+// the one it uses.
+TEST_CASE("a material becomes a UsdPreviewSurface the mesh binds", "[usd][material]") {
+    const core::Mesh m = quadAt(0.0F, "body");
+    const auto rm      = core::RenderMesh::build(m);
+
+    foundation::MaterialDesc skin;
+    skin.name      = "DefaultSkin";
+    skin.diffuse   = {0.9F, 0.7F, 0.6F};
+    skin.shininess = 0.25F;
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_usd_mat.usda";
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+    REQUIRE(io::writeUsdaScene(out, {{{rm.view(), "body", &skin}}}).has_value());
+
+    const std::string t = readAll(out);
+    INFO(t.substr(0, 900));
+    CHECK(t.find("def Material \"DefaultSkin\"") != std::string::npos);
+    CHECK(t.find("uniform token info:id = \"UsdPreviewSurface\"") != std::string::npos);
+    // The mesh must actually bind it, or the material is decoration.
+    CHECK(t.find("rel material:binding = </MakeHuman/Looks/DefaultSkin>") != std::string::npos);
+    // MaterialBindingAPI must be APPLIED, and it is prim metadata -- it belongs
+    // in the parentheses before the body. Emitting it as a property instead
+    // made the stage fail to open at all, which only usdchecker revealed.
+    CHECK(t.find("    (\n        prepend apiSchemas = [\"MaterialBindingAPI\"]\n    )\n") !=
+          std::string::npos);
+    // A UsdPrimvarReader's varname is a string; a token is rejected as
+    // ShaderSdrCompliance.MismatchedPropertyType.
+    CHECK(t.find("token inputs:varname") == std::string::npos);
+    // Roughness is derived from shininess, as every other writer does.
+    CHECK(t.find("inputs:roughness = 0.75") != std::string::npos);
+
+    std::filesystem::remove(out, ec);
+}
+
+// Two meshes with different materials must bind different ones -- otherwise a
+// DCC tool paints the clothes with the skin.
+TEST_CASE("each mesh binds its own material", "[usd][material]") {
+    const core::Mesh a = quadAt(0.0F, "body");
+    const core::Mesh b = quadAt(8.0F, "eyes");
+    const auto rmA     = core::RenderMesh::build(a);
+    const auto rmB     = core::RenderMesh::build(b);
+
+    foundation::MaterialDesc skin;
+    skin.name = "DefaultSkin";
+    foundation::MaterialDesc eye;
+    eye.name = "Eye_brown";
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_usd_mat2.usda";
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+    REQUIRE(io::writeUsdaScene(out, {{{rmA.view(), "body", &skin}, {rmB.view(), "eyes", &eye}}})
+                .has_value());
+
+    const std::string t = readAll(out);
+    CHECK(countOccurrences(t, "def Material ") == 2);
+    CHECK(t.find("</MakeHuman/Looks/DefaultSkin>") != std::string::npos);
+    CHECK(t.find("</MakeHuman/Looks/Eye_brown>") != std::string::npos);
+    // One Looks scope holding both.
+    CHECK(countOccurrences(t, "def Scope \"Looks\"") == 1);
+
+    std::filesystem::remove(out, ec);
+}
+
+// A material-less scene must be exactly what it was before materials existed --
+// no empty Looks scope, no stray binding.
+TEST_CASE("no material means no Looks scope", "[usd][material]") {
+    const core::Mesh m = quadAt(0.0F, "solo");
+    const auto rm      = core::RenderMesh::build(m);
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_usd_nomat.usda";
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+    REQUIRE(io::writeUsdaScene(out, {{{rm.view(), "mesh"}}}).has_value());
+
+    const std::string t = readAll(out);
+    CHECK(t.find("Looks") == std::string::npos);
+    CHECK(t.find("material:binding") == std::string::npos);
+
+    std::filesystem::remove(out, ec);
+}
+
+// A texture is referenced by an asset path, so the file has to be beside the
+// stage -- the same rule the OBJ writer follows for map_Kd.
+TEST_CASE("a textured material references a copied texture", "[usd][material]") {
+    const auto texDir = std::filesystem::temp_directory_path() / "mh_usd_tex_src";
+    std::filesystem::create_directories(texDir);
+    const auto texSrc = texDir / "mh_usd_tex.png";
+    {
+        std::ofstream f(texSrc, std::ios::binary);
+        f << "not really a png, but a real file";
+    }
+
+    const core::Mesh m = quadAt(0.0F, "body");
+    const auto rm      = core::RenderMesh::build(m);
+    foundation::MaterialDesc mat;
+    mat.name           = "Painted";
+    mat.diffuseTexture = texSrc;
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_usd_tex.usda";
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+    REQUIRE(io::writeUsdaScene(out, {{{rm.view(), "body", &mat}}}).has_value());
+
+    const std::string t = readAll(out);
+    INFO(t.substr(0, 1200));
+    CHECK(t.find("uniform token info:id = \"UsdUVTexture\"") != std::string::npos);
+    CHECK(t.find("asset inputs:file = @mh_usd_tex.png@") != std::string::npos);
+    // Named beside the stage, so it must BE beside the stage.
+    CHECK(std::filesystem::exists(out.parent_path() / "mh_usd_tex.png"));
+
+    std::filesystem::remove_all(texDir, ec);
+    std::filesystem::remove(out.parent_path() / "mh_usd_tex.png", ec);
+    std::filesystem::remove(out, ec);
+}

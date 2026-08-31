@@ -514,9 +514,10 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     // note to print. This is where the "exports the body only" warning lived.
     if (ext == ".usda" || ext == ".usd") {
         std::vector<mh::io::UsdSceneEntry> scene;
-        scene.push_back({rm.view(), "body"});
+        scene.push_back({rm.view(), "body", allDressed ? &*skin : nullptr});
         for (const auto& [group, proxy] : worn) {
-            scene.push_back({proxy.rm.view(), group.toLower().toStdString()});
+            scene.push_back({proxy.rm.view(), group.toLower().toStdString(),
+                             allDressed ? &*proxy.material : nullptr});
         }
         const auto r = mh::io::writeUsdaScene(path, scene);
         return report(r ? std::string{} : r.error().message());
