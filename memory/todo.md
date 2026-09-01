@@ -1344,9 +1344,23 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       **Blender 5.2 on a dressed, rigged FBX from the app**: armature with
       **179 bones**, body carrying an ARMATURE modifier and **141 vertex
       groups**, eyes unskinned with 0. Exactly the intended shape.
-      Still no skeleton in OBJ (no such concept) or USD (`UsdSceneEntry` has no
-      skin field yet, though `writeUsdaScene` emits UsdSkel for the single-mesh
-      path) — both now say so.
+      **USD closed the same day — and it was never the writer's fault.**
+      `writeUsdaScene` has taken a `SkinView*` all along (as a parameter, bound
+      to the first entry, rather than a field on `UsdSceneEntry` — my earlier
+      note said otherwise and was wrong). `main.cpp` simply passed none. One
+      argument, and a dressed rigged stage now emits `SkelRoot`, `def Skeleton`
+      and `primvars:skel:jointIndices/jointWeights`. **`usdchecker` says
+      Success!**
+      **`.usdz` was implemented and unreachable.** `writeUsdzScene` existed,
+      validated, tested — and no branch in the app could reach it, so the format
+      an Apple or AR pipeline actually takes could not be produced. Now
+      `--export x.usdz` works and **`usdchecker --arkit` passes** on a dressed,
+      rigged archive.
+      **OBJ is the only format left with no skeleton**, because it has no
+      concept of one, and it says so.
+      The GLB/USDA/USDZ file checks share one `tests/file_contains.cmake`. It
+      greps a USDZ directly: the stage inside is STORED uncompressed, which is a
+      format requirement rather than luck.
 - [ ] **The application still exports no morph targets.** `writeGlb` takes them
       and sparse accessors made a large set affordable, but `main.cpp` passes
       none. Open question the owner may want to settle: the 102 files under

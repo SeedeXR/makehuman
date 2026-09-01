@@ -194,9 +194,44 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION "skin: 179 joints"
         FIXTURES_SETUP app_rig_glb_file)
     add_test(NAME app_rig_glb_skinned COMMAND ${CMAKE_COMMAND}
-             -DGLB=${CMAKE_CURRENT_BINARY_DIR}/app_rig.glb
-             -P ${CMAKE_CURRENT_SOURCE_DIR}/glb_has_skin.cmake)
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_rig.glb
+             # No embedded quotes: a `"` in the value stops CMake splitting the
+             # rest on `;`, and these four names appear in a GLB only when it
+             # carries a skin, so the quotes bought nothing.
+             "-DKEYS=skins;JOINTS_0;WEIGHTS_0;inverseBindMatrices"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
     set_tests_properties(app_rig_glb_skinned PROPERTIES FIXTURES_REQUIRED app_rig_glb_file)
+
+    # The same for USD, which was the last format still dropping the rig
+    # silently: writeUsdaScene has taken a skin all along and main.cpp passed
+    # none. A skinned stage must be rooted at a SkelRoot -- UsdSkel requires it
+    # -- so its absence is the whole failure in one token.
+    add_test(NAME app_rig_usda COMMAND makehuman
+             --rig mixamo_superset --eyes high-poly
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_rig.usda)
+    set_tests_properties(app_rig_usda PROPERTIES
+        PASS_REGULAR_EXPRESSION "skin: 179 joints"
+        FIXTURES_SETUP app_rig_usda_file)
+    add_test(NAME app_rig_usda_skinned COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_rig.usda
+             "-DKEYS=def SkelRoot;def Skeleton;primvars:skel:jointIndices;primvars:skel:jointWeights"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_rig_usda_skinned PROPERTIES FIXTURES_REQUIRED app_rig_usda_file)
+
+    # .usdz was implemented in the writer and unreachable from the application.
+    # It is the format an Apple or AR pipeline takes, and the one Apple's own
+    # usdchecker --arkit validates.
+    add_test(NAME app_rig_usdz COMMAND makehuman
+             --rig mixamo_superset --eyes high-poly
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_rig.usdz)
+    set_tests_properties(app_rig_usdz PROPERTIES
+        PASS_REGULAR_EXPRESSION "skin: 179 joints"
+        FIXTURES_SETUP app_rig_usdz_file)
+    add_test(NAME app_rig_usdz_skinned COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_rig.usdz
+             "-DKEYS=def SkelRoot;primvars:skel:jointIndices"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_rig_usdz_skinned PROPERTIES FIXTURES_REQUIRED app_rig_usdz_file)
 
     # A path, not a stem -- and deliberately without the .mhskel extension,
     # which resolved to an extensionless filename until the path and stem cases

@@ -1370,6 +1370,62 @@ ctest **430/430** in debug, release, ASan and TSan. Format clean.
 
 ---
 
+## 2026-09-01 15:15:00 — Session 102 · **USD had taken a skin all along, and USDZ was unreachable**
+
+### The chunk
+The last two formats that dropped the rig: USD, and USDZ that the application
+could not produce at all.
+
+### I was wrong about the cause, and checking said so
+Last session I recorded that USD needed a `UsdSceneEntry::skin` field. Reading
+the header rather than trusting that note: **`writeUsdaScene` has taken a
+`SkinView*` all along** — as a parameter, bound to the first entry, the same
+one-skin rule glTF follows. The writer was complete. `main.cpp` passed
+`nullptr`.
+
+One argument. A dressed rigged stage now emits `def SkelRoot`, `def Skeleton`,
+`primvars:skel:jointIndices` and `primvars:skel:jointWeights`, and
+**`usdchecker` returns Success!**
+
+### .usdz was implemented and unreachable
+`writeUsdzScene` existed, was validated against Apple's own `usdzip` layout and
+tested — and no branch in `exportMesh` could reach it. The format an Apple or
+AR pipeline actually takes could not be produced by the application. Five lines.
+**`usdchecker --arkit` passes** on a dressed, rigged archive.
+
+### Two misreads of my own, both mine to correct
+1. `--export x.usdz` looked like it failed silently. It did not: the app prints
+   `unknown export extension` and exits 1. My `tail -2` cut the line off. Same
+   mistake twice this session — a `tail` is not a reading of the output.
+2. A scripted edit failed to match because **clang-format had reflowed the
+   `std::fprintf` I committed last session** onto more lines. The assertion
+   before the write caught it, which is why that assertion exists.
+
+### One measurement I will not stand behind
+The debug suite reported **507 s** in one run and **44.65 s** on a clean re-run,
+with no single test above 3.9 s. Almost certainly contention with a background
+build. Recorded as noise, not as a regression — but recorded, because a
+507-second number left unexplained is how a real regression gets waved through.
+
+### Test plumbing
+`glb_has_skin.cmake` became `file_contains.cmake` taking a `KEYS` list, and now
+serves GLB, USDA and USDZ. It greps a **USDZ directly**: the stage inside is
+STORED uncompressed, which is a format requirement (a consumer memory-maps the
+archive), not luck.
+
+A detail worth keeping: CMake stops splitting a `-DKEYS=a;b;c` value on `;`
+once it contains a `"`. The GLB keys were `\"skins\":[` and friends and arrived
+as one string; dropping the quotes fixed it, and the bare names appear in a GLB
+only when it carries a skin anyway.
+
+Mutation-verified per format: passing `nullptr` to `writeUsdaScene` fails
+`app_rig_usda_skinned` and leaves the USDZ test green, and vice versa.
+
+### Verification
+ctest **434/434** in debug, release, ASan and TSan. Format clean.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

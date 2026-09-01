@@ -725,14 +725,13 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
                                          : "the body skin could not be loaded");
     }
 
-    // Said once, here, rather than per format. OBJ has no concept of a
-    // skeleton and USD's scene entry does not carry one yet, so those two say
-    // what they are dropping instead of writing a statue in silence.
-    if (skin != nullptr && (ext == ".obj" || ext == ".usda" || ext == ".usd")) {
+    // OBJ is the only format left that cannot carry a skeleton -- it has no
+    // concept of one. Said here rather than per format, because silence is how
+    // the rig went missing from every export for four milestones.
+    if (skin != nullptr && ext == ".obj") {
         std::fprintf(stderr,
-                     "%s carries no skeleton; export .glb, .fbx or .dae for a rigged "
-                     "character\n",
-                     ext.c_str());
+                     "obj carries no skeleton; export .glb, .fbx, .dae or .usda for a "
+                     "rigged character\n");
     }
 
     if (ext == ".obj") {
@@ -764,14 +763,21 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     // Every writer carries the whole scene now -- obj, glb, fbx, dae, stl, 3mf
     // and usda alike -- so nothing is silently dropped and there is no longer a
     // note to print. This is where the "exports the body only" warning lived.
-    if (ext == ".usda" || ext == ".usd") {
+    // .usdz was implemented in the writer and unreachable from here: the
+    // packaging is validated by Apple's own usdchecker --arkit, and it is the
+    // format an AR or Apple pipeline actually takes.
+    if (ext == ".usda" || ext == ".usd" || ext == ".usdz") {
         std::vector<mh::io::UsdSceneEntry> scene;
         scene.push_back({rm.view(), "body", allDressed ? &*bodyMat : nullptr});
         for (const auto& [group, proxy] : worn) {
             scene.push_back({proxy.rm.view(), group.toLower().toStdString(),
                              allDressed ? &*proxy.material : nullptr});
         }
-        const auto r = mh::io::writeUsdaScene(path, scene);
+        // Both writers take the skin as a parameter rather than per entry and
+        // bind it to the FIRST one, which is the body -- the same one-skin rule
+        // glTF and the assimp path follow.
+        const auto r = ext == ".usdz" ? mh::io::writeUsdzScene(path, scene, {}, skin)
+                                      : mh::io::writeUsdaScene(path, scene, {}, skin);
         return report(r ? std::string{} : r.error().message());
     }
     if (ext == ".glb") {
@@ -872,7 +878,7 @@ int main(int argc, char** argv) {
     const QCommandLineOption exportOpt(
         QStringLiteral("export"),
         QStringLiteral("Write the posed mesh here and exit. Format from the extension: "
-                       ".obj .fbx .glb .usda .dae .stl .3mf"),
+                       ".obj .fbx .glb .usda .usdz .dae .stl .3mf"),
         QStringLiteral("path"));
     const QCommandLineOption setOpt(
         QStringLiteral("set"),
