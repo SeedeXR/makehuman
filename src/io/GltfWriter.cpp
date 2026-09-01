@@ -142,10 +142,11 @@ namespace {
 /// Where one entry's data landed in the shared binary buffer, and which
 /// accessors describe it. Filled in two passes: packing, then index assignment.
 struct Packed {
-    bool withNormals{}, withUVs{};
+    bool withNormals{}, withUVs{}, withTangents{};
     size_t posOffset{}, posBytes{};
     size_t normOffset{}, normBytes{};
     size_t uvOffset{}, uvBytes{};
+    size_t tangOffset{}, tangBytes{};
     size_t jointOffset{}, jointBytes{}, weightOffset{}, weightBytes{}, ibmOffset{}, ibmBytes{};
     size_t idxOffset{}, idxBytes{};
 
@@ -164,7 +165,8 @@ struct Packed {
     Vec3 lo{}, hi{};
     std::vector<foundation::Mat4> localRest;
 
-    int posAcc{-1}, normAcc{-1}, uvAcc{-1}, jointAcc{-1}, weightAcc{-1}, ibmAcc{-1}, idxAcc{-1};
+    int posAcc{-1}, normAcc{-1}, uvAcc{-1}, tangAcc{-1}, jointAcc{-1}, weightAcc{-1}, ibmAcc{-1},
+        idxAcc{-1};
     std::vector<int> morphAcc;
     int materialIndex{};
 };
@@ -253,6 +255,10 @@ Packed packEntry(std::vector<uint8_t>& bin, const GltfSceneEntry& entry,
     Packed pk;
     pk.withNormals = options.writeNormals && rm.vnorm.size() == rm.vertexCount();
     pk.withUVs     = options.writeUVs && rm.texco.size() == rm.vertexCount();
+    // Tangents ride with normals: a TANGENT without a NORMAL is meaningless,
+    // and glTF's normal-map path needs both. Written when the mesh has them --
+    // Mesh::calcVertexTangents leaves the array empty for a UV-less mesh.
+    pk.withTangents = pk.withNormals && rm.vtang.size() == rm.vertexCount();
 
     pk.lo = Vec3{std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(),
                  std::numeric_limits<float>::infinity()};
@@ -296,6 +302,23 @@ Packed packEntry(std::vector<uint8_t>& bin, const GltfSceneEntry& entry,
             appendFloat(bin, 1.0F - t.y);
         }
         pk.uvBytes = bin.size() - pk.uvOffset;
+    }
+
+    if (pk.withTangents) {
+        padTo4(bin);
+        pk.tangOffset = bin.size();
+        for (const Vec4& t : rm.vtang) {
+            appendFloat(bin, t.x);
+            appendFloat(bin, t.y);
+            appendFloat(bin, t.z);
+            // The handedness, and the reason this is VEC4 rather than VEC3.
+            // The reference computes its binormal as `cross(normal, tangent)`
+            // and so discards Lengyel's sign, which inverts normal-map lighting
+            // on the mirrored half of a symmetric body (project_context.md 8).
+            // Ours carries it, and glTF's spec says exactly +1 or -1.
+            appendFloat(bin, t.w < 0.0F ? -1.0F : 1.0F);
+        }
+        pk.tangBytes = bin.size() - pk.tangOffset;
     }
 
     if (entry.skin != nullptr) {
@@ -701,6 +724,7 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
         view(pk.posOffset, pk.posBytes, kTargetArrayBuffer);
         if (pk.withNormals) view(pk.normOffset, pk.normBytes, kTargetArrayBuffer);
         if (pk.withUVs) view(pk.uvOffset, pk.uvBytes, kTargetArrayBuffer);
+        if (pk.withTangents) view(pk.tangOffset, pk.tangBytes, kTargetArrayBuffer);
         if (entries[i].skin != nullptr) {
             view(pk.jointOffset, pk.jointBytes, kTargetArrayBuffer);
             view(pk.weightOffset, pk.weightBytes, kTargetArrayBuffer);
@@ -756,6 +780,11 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
         if (pk.withUVs) {
             pk.uvAcc = nextAcc++;
             acc(kComponentFloat, n, "VEC2");
+            j += "}";
+        }
+        if (pk.withTangents) {
+            pk.tangAcc = nextAcc++;
+            acc(kComponentFloat, n, "VEC4");
             j += "}";
         }
         if (entries[i].skin != nullptr) {
@@ -818,6 +847,7 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
              R"(","primitives":[{"attributes":{"POSITION":)" + std::to_string(pk.posAcc);
         if (pk.normAcc >= 0) j += R"(,"NORMAL":)" + std::to_string(pk.normAcc);
         if (pk.uvAcc >= 0) j += R"(,"TEXCOORD_0":)" + std::to_string(pk.uvAcc);
+        if (pk.tangAcc >= 0) j += R"(,"TANGENT":)" + std::to_string(pk.tangAcc);
         if (pk.jointAcc >= 0) j += R"(,"JOINTS_0":)" + std::to_string(pk.jointAcc);
         if (pk.weightAcc >= 0) j += R"(,"WEIGHTS_0":)" + std::to_string(pk.weightAcc);
         j += R"(},"indices":)" + std::to_string(pk.idxAcc) + R"(,"material":)" +

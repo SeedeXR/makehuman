@@ -103,6 +103,17 @@ void fillMesh(aiMesh* am, const foundation::RenderView& rm, const std::string& n
         }
     }
 
+    // NO TANGENTS HERE, and it is not an oversight. assimp's FBX and Collada
+    // exporters do not write them whatever the aiMesh carries: an export with
+    // `mTangents`/`mBitangents` populated produces a file containing
+    // `LayerElementNormal` and `LayerElementUV` and no `LayerElementTangent`,
+    // and a Collada with `semantic="NORMAL"`/`"TEXCOORD"` and no `TEXTANGENT`.
+    // Verified by grepping our own output, both formats.
+    //
+    // So the code to fill them was written, measured to do nothing, and
+    // removed. Our glTF writer emits `TANGENT` (VEC4, handedness in w) because
+    // that writer is ours.
+
     if (withUVs) {
         am->mNumUVComponents[0] = 2;
         am->mTextureCoords[0]   = allocArray<aiVector3D>(rm.vertexCount());

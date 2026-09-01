@@ -1167,6 +1167,52 @@ struct SparseView {
     foundation::Vec3 lo{}, hi{};
 };
 
+/// The `index`-th object of the JSON array named `arrayKey`.
+///
+/// The writer emits flat lists of objects, so counting braces from the array's
+/// opening bracket is enough and avoids pulling a JSON parser into one test.
+std::string jsonObjectAt(const std::string& j, const char* arrayKey, int index) {
+    const size_t arr = j.find(arrayKey);
+    REQUIRE(arr != std::string::npos);
+    size_t pos   = arr + std::strlen(arrayKey);
+    int depth    = 0;
+    int seen     = -1;
+    size_t begin = pos;
+    for (; pos < j.size(); ++pos) {
+        if (j[pos] == '{') {
+            if (depth == 0) begin = pos;
+            ++depth;
+        } else if (j[pos] == '}') {
+            --depth;
+            if (depth == 0) {
+                ++seen;
+                if (seen == index) return j.substr(begin, pos - begin + 1);
+            }
+        } else if (j[pos] == ']' && depth == 0) {
+            break;
+        }
+    }
+    REQUIRE(seen == index);
+    return {};
+}
+
+/// Byte offset and length of accessor `index`'s bufferView, in the BIN chunk.
+size_t accessorOffset(const std::string& j, int index, size_t& bytes) {
+    const std::string acc = jsonObjectAt(j, "\"accessors\":[", index);
+    const size_t vAt      = acc.find("\"bufferView\":");
+    REQUIRE(vAt != std::string::npos);
+    const int view = std::atoi(acc.c_str() + vAt + std::strlen("\"bufferView\":"));
+
+    const std::string bv = jsonObjectAt(j, "\"bufferViews\":[", view);
+    const size_t oAt     = bv.find("\"byteOffset\":");
+    const size_t lAt     = bv.find("\"byteLength\":");
+    REQUIRE(lAt != std::string::npos);
+    bytes = static_cast<size_t>(std::atol(bv.c_str() + lAt + std::strlen("\"byteLength\":")));
+    return oAt == std::string::npos
+               ? 0U
+               : static_cast<size_t>(std::atol(bv.c_str() + oAt + std::strlen("\"byteOffset\":")));
+}
+
 /// Reads target 0's POSITION accessor out of a GLB, sparse or dense.
 SparseView readMorph0(const std::filesystem::path& p) {
     const std::string j            = glbJson(p);
@@ -1411,6 +1457,82 @@ TEST_CASE("a dense morph target stays dense", "[gltf][morph][sparse]") {
 
     const SparseView sv = readMorph0(out);
     CHECK_FALSE(sv.isSparse);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+// ------------------------------------------------------------------ tangents
+//
+// `Mesh::calcVertexTangents` had **no caller anywhere in src/**. The tangents
+// are the good ones -- Lengyel's method with the reference's three bugs fixed
+// (project_context.md 8) -- `RenderMesh` carries them when the mesh has them,
+// and the viewport's vertex layout has a slot for them. Nothing ever computed
+// them, so the slot was always empty and no file ever carried one.
+//
+// It matters twice over. glTF validators warn
+// `MESH_PRIMITIVE_GENERATED_TANGENT_SPACE` on a `normalTexture` with no
+// `TANGENT`, and a consumer left to regenerate its own basis will not reproduce
+// ours -- which is the basis three fixed bugs went into.
+//
+// glTF's TANGENT is VEC4: xyz plus a handedness w of exactly +1 or -1. The w is
+// the half the reference threw away (`cross(normal, tangent)` discards
+// Lengyel's sign), so asserting it is +-1 asserts the bug stayed fixed through
+// the writer.
+TEST_CASE("a GLB carries the tangent basis when the mesh has one", "[gltf][tangent]") {
+    auto mesh = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+    mesh->calcNormals();
+    mesh->calcVertexTangents();
+    REQUIRE(mesh->vtang().size() == mesh->vertexCount());
+
+    const auto rm = core::RenderMesh::build(*mesh);
+    REQUIRE(rm.view().vtang.size() == rm.view().vertexCount());
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_tangent.glb";
+    REQUIRE(io::writeGlb(out, rm.view()).has_value());
+
+    const std::string j = glbJson(out);
+    INFO(j.substr(0, 400));
+    CHECK(j.find("\"TANGENT\":") != std::string::npos);
+
+    // VEC4, not VEC3: the handedness rides in w.
+    const auto tAt = j.find("\"TANGENT\":");
+    REQUIRE(tAt != std::string::npos);
+    const int accIdx = std::atoi(j.c_str() + tAt + std::strlen("\"TANGENT\":"));
+    CHECK(accIdx >= 0);
+
+    // Read the values back and check the invariants a consumer relies on.
+    const auto bin   = glbBin(out);
+    size_t bytes     = 0;
+    const size_t off = accessorOffset(j, accIdx, bytes);
+    REQUIRE(bytes >= 16);
+    const size_t count = bytes / 16;
+    CHECK(count == rm.view().vertexCount());
+
+    size_t badW     = 0;
+    size_t badLen   = 0;
+    size_t leftHand = 0;
+    for (size_t v = 0; v < count; ++v) {
+        float t[4];
+        std::memcpy(t, bin.data() + off + v * 16, 16);
+        if (t[3] != 1.0F && t[3] != -1.0F) ++badW;
+        if (t[3] < 0.0F) ++leftHand;
+        const float len = std::sqrt(t[0] * t[0] + t[1] * t[1] + t[2] * t[2]);
+        // A vertex with no usable basis is written as a zero tangent rather
+        // than a normalised lie; everything else must be unit length.
+        if (len > 1e-4F && std::abs(len - 1.0F) > 1e-3F) ++badLen;
+    }
+    INFO("bad w " << badW << ", bad length " << badLen << ", left-handed " << leftHand << " of "
+                  << count);
+    CHECK(badW == 0);
+    CHECK(badLen == 0);
+
+    // The sign has to actually VARY, or the handedness is being dropped and
+    // written as a constant +1. Asserting only `w == +-1` passes on a writer
+    // that emits +1 everywhere -- measured: replacing the sign with a literal
+    // 1.0F leaves the array 14,517x +1 and every other assertion here green.
+    CHECK(leftHand > 0);
 
     std::error_code ec;
     std::filesystem::remove(out, ec);

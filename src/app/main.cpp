@@ -415,6 +415,7 @@ void refitProxy(WornProxy& worn, const mh::core::Mesh& body) {
     if (!mh::core::fitProxy(worn.proxy, body.coord(), fitted)) return;
     if (!worn.mesh.setCoords(std::move(fitted))) return;
     worn.mesh.calcNormals();
+    worn.mesh.calcVertexTangents();
     worn.rm.refreshPositions(worn.mesh);
 }
 
@@ -1037,6 +1038,13 @@ int main(int argc, char** argv) {
     mesh->buildAdjacency();
     if (!poseInPlace(*mesh, rig)) return 1;
     mesh->calcNormals();
+    // `calcVertexTangents` had no caller anywhere in src/, so the tangent array
+    // was always empty: the viewport's normal-map branch had no basis to build a
+    // TBN from, and no export carried a TANGENT. The tangents themselves are the
+    // good ones -- Lengyel's method with the reference's three bugs fixed --
+    // which is exactly why a consumer should get ours rather than regenerate
+    // its own. Measured cost: 0.19 ms on the base mesh, per rebuild.
+    mesh->calcVertexTangents();
 
     // Subdivision, honoured rather than merely stored. The .mhm carries the flag
     // and this build parsed it for three milestones without acting on it.
@@ -1192,6 +1200,7 @@ int main(int argc, char** argv) {
         human.applyStack(*mesh, targets);
         if (!poseInPlace(*mesh, rig)) return {};
         mesh->calcNormals();
+        mesh->calcVertexTangents();
 
         const mh::core::Mesh& shown = displayMesh();
         // refreshPositions keeps the existing buffers only while the topology is

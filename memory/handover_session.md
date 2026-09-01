@@ -1827,6 +1827,64 @@ byte-identical.
 
 ---
 
+## 2026-09-01 20:47:45 — Session 110 · **the tangents were computed by nobody**
+
+### The chunk
+`TANGENT` in the glTF export — and the reason there was none to export.
+
+### The defect, and it was one level deeper than todo.md said
+todo.md recorded "`RenderView::vtang` exists but is never written". The truth is
+worse: **`Mesh::calcVertexTangents()` had no caller anywhere in `src/`.** The
+tangent array was always empty, so:
+
+* the viewport's normal-map branch had no basis to build a TBN from — session
+  082 wired the vertex slot and the upload, and nothing ever filled it;
+* no export carried a tangent.
+
+These are the good tangents: Lengyel's method with the reference's three bugs
+fixed. That is precisely why a consumer should get ours rather than regenerate
+its own basis.
+
+### The w, and a test that could not see it
+glTF's TANGENT is VEC4 — xyz plus handedness w of exactly ±1. The w is the half
+the reference throws away (`cross(normal, tangent)`, unsigned), and losing it
+inverts normal-map lighting on the mirrored half of a symmetric body.
+
+Measured in our own file: **16 of 14,517 body vertices and 256 of 1,076 eye
+vertices carry −1.**
+
+My first test asserted `w ∈ {+1, −1}`. That **passes on a writer that emits +1
+everywhere** — verified by replacing the sign with a literal `1.0F`, which left
+all 21,833 at +1 with every assertion green. Same shape as the one-directional
+morph two sessions ago. It asserts the sign VARIES now, and the mutation fails.
+
+### Something I nearly claimed and did not
+I imported the GLB into Blender and read `loop.bitangent_sign`: body all +1,
+eyes a mix. That is **not** validation of our values — `calc_tangents()`
+recomputes Blender's own basis from the UVs and does not read the imported
+TANGENT. The real evidence is the file itself, read back byte for byte.
+
+### Code written, measured to do nothing, and removed
+I also filled `aiMesh::mTangents`/`mBitangents` for the FBX/Collada path. assimp
+does not write them: our exported FBX carries `LayerElementNormal` and
+`LayerElementUV` and **no** `LayerElementTangent`, and the Collada carries
+`semantic="NORMAL"`/`"TEXCOORD"` and **no** `TEXTANGENT` — grepped from our own
+output, both formats, with the elements that ARE written as the control that
+the grep works.
+
+Twenty-one lines removed rather than left in. Adding a capability that provably
+does nothing is the exact bug class this whole run has been fixing.
+
+### Cost
+`calcVertexTangents` is **0.18 ms** on the base mesh, per rebuild. Headless
+export: 0.15 s before and after, unchanged within noise.
+
+### Verification
+ctest **450/450** in debug, release, ASan and TSan — TSan run alone. Format clean.
+SonarQube gate **OK** (8 findings, all pre-existing `S3776` in tools).
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

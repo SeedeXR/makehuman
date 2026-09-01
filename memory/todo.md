@@ -1802,10 +1802,35 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       embedded and then ignored, since glTF defaults to `alphaMode: OPAQUE`. The
       shipped eyes are `opacity 1.0` + `transparent True` over an RGBA map, so
       the cornea rendered solid. They now export `alphaMode: BLEND`.
-- [ ] **Normal maps need TANGENT.** A `normalTexture` without a `TANGENT`
-      attribute makes validators warn `MESH_PRIMITIVE_GENERATED_TANGENT_SPACE`.
-      `RenderView::vtang` exists but is never written. Not reachable from
-      shipped data — no `.mhmat` sets a normal map — but the path is live.
+- [x] **TANGENT is exported — and `calcVertexTangents` had no caller at all.**
+      Not "never written by the writer": `Mesh::calcVertexTangents()` had **no
+      caller anywhere in `src/`**, so the tangent array was always empty. The
+      viewport's normal-map branch had no basis to build a TBN from (session 082
+      wired the vertex slot and the upload; nothing ever filled it), and no
+      export carried one.
+      These are the good tangents — Lengyel's method with the reference's three
+      bugs fixed (`project_context.md` §8) — which is exactly why a consumer
+      should get ours instead of regenerating its own.
+      Now computed beside `calcNormals()` in the app (body and every worn
+      proxy) and written by the glTF writer as **VEC4**: xyz plus handedness
+      w = ±1.
+      **The `w` is the half the reference throws away** (`cross(normal,
+      tangent)` unsigned), and losing it inverts normal-map lighting on the
+      mirrored half of a symmetric body. Measured in our own file: **16 of
+      14,517 body vertices and 256 of 1,076 eye vertices carry −1.**
+      **The first version of the test could not see that.** Asserting
+      `w ∈ {+1, −1}` passes on a writer that emits +1 everywhere — verified by
+      replacing the sign with a literal `1.0F`, which left all 21,833 at +1 and
+      every assertion green. It asserts the sign VARIES now.
+      **Cost**: `calcVertexTangents` is **0.18 ms** on the base mesh, per
+      rebuild. Headless export went 0.15 s → 0.15 s, unchanged within noise.
+- [x] **assimp's FBX and Collada exporters do not write tangents at all** —
+      code to fill `aiMesh::mTangents`/`mBitangents` was written, measured to do
+      nothing, and removed rather than left in. Grepping our own output: the FBX
+      carries `LayerElementNormal` and `LayerElementUV` and no
+      `LayerElementTangent`; the Collada carries `semantic="NORMAL"` and
+      `"TEXCOORD"` and no `TEXTANGENT`. glTF gets tangents because that writer
+      is ours.
 - [ ] **Canonicalise the texture dedup key.** Dedup compares
       `std::filesystem::path` exactly, so the same file reached by two spellings
       (`a/../b.png` vs `b.png`) embeds twice. Unreachable today (one textured
