@@ -964,8 +964,28 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       Shininess is deliberately **not** asserted: FBX returned a default and
       Collada a 0..128-style exponent, so one expected value would be wrong
       somewhere.
-      **Still open**: skins on import — geometry, names, placement and materials
-      now, but no rigging.
+- [x] **Skins on import — a rigged export now comes back rigged.** All **163
+      joints** survive a glTF round trip, with names and inverse-bind matrices.
+      Without this the geometry and the bones both survived and **nothing
+      connected them**: a character round-tripped through glTF silently lost its
+      skeleton binding.
+      `ImportedSkin` is **owning**, unlike `foundation::SkinView` — a view over
+      assimp's scene dangles the moment the importer goes out of scope.
+      The test asserts the property a bad vertex-id remap would break:
+      **weights are a partition of unity per vertex**. 110,113 assertions; every
+      weight in [0,1], every weighted vertex summing to 1 within 1e-3.
+      Mutation-verified: halving the weights fails it.
+      A weight naming a vertex the mesh does not have is an **error, not a
+      silent drop** — dropping it would leave a body part unbound and moving
+      with the wrong bone, which looks like a rigging bug rather than a corrupt
+      file.
+      Bone vertex ids are post-`JoinIdenticalVertices`: assimp remaps them, so
+      they index the vertices we just read rather than the file's originals.
+
+- [x] **M7 import is functionally complete**: geometry, names, node placement,
+      materials and skins. Remaining gaps are format-specific and recorded
+      above (assimp's FBX importer does not read material textures back;
+      Collada replaces diffuse colour with its texture).
 - [x] **Export glTF 2.0 / GLB** — from spec, single self-contained `.glb`,
       metallic-roughness material, correct metre units, V flipped for glTF's
       top-left UV origin. Validated by spec conformance **and by assimp**, an

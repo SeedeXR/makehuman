@@ -151,6 +151,20 @@ struct ImportedMesh {
 [[nodiscard]] std::expected<ImportedMesh, SceneIoError> importMesh(
     const std::filesystem::path& path);
 
+/// One bone's influence on a mesh, as the file states it.
+struct ImportedBone {
+    std::string name;
+    /// The inverse bind matrix: mesh space -> this bone's local space.
+    foundation::Mat4 offset{};
+    /// Parallel arrays, one entry per influenced vertex.
+    std::vector<uint32_t> verts;
+    std::vector<float> weights;
+};
+
+struct ImportedSkin {
+    std::vector<ImportedBone> bones;
+};
+
 struct ImportedSceneMesh {
     std::string name;  ///< the file's own name for it, or "mesh<N>" if unnamed
     foundation::MeshData mesh;
@@ -164,6 +178,13 @@ struct ImportedSceneMesh {
     /// usually relative to the file. Resolving them is the caller's job,
     /// because only the caller knows where the file came from.
     std::optional<foundation::MaterialDesc> material;
+
+    /// The mesh's skin, when the file carried one.
+    ///
+    /// Owning, unlike `foundation::SkinView`: an importer has to allocate what
+    /// it read, and a view over assimp's scene would dangle the moment the
+    /// importer goes out of scope.
+    std::optional<ImportedSkin> skin;
 };
 
 struct ImportedScene {

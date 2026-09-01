@@ -740,6 +740,47 @@ Skins. Geometry, names, placement and materials now; no rigging.
 
 ---
 
+## 2026-09-01 06:32:31 — Session 091 · **rigged exports came back unrigged**
+
+### The last piece of import
+Skins. All **163 joints** now survive a glTF round trip with their names and
+inverse-bind matrices.
+
+Before this, a character round-tripped through glTF kept its geometry AND its
+bones — and **nothing connected them**. Both halves present, the binding gone.
+That is the third variant of the same failure this milestone has produced:
+data intact, assembly silently missing (first mesh only, then node transforms,
+now skin binding).
+
+### The test asserts the property, not the plumbing
+Bone counts and names are easy to check and weak. The property a bad vertex-id
+remap actually breaks is that **weights are a partition of unity per vertex**.
+110,113 assertions: every weight in [0,1], every weighted vertex summing to 1
+within 1e-3. Mutation-verified — halving the weights fails it.
+
+Bone vertex ids are post-`JoinIdenticalVertices`; assimp remaps them, so they
+index the vertices we just read rather than the file's originals. That is
+exactly the kind of off-by-a-remap that a count-only test would wave through.
+
+### Two deliberate choices
+- `ImportedSkin` is **owning**, unlike `foundation::SkinView`. A view over
+  assimp's scene dangles the moment the importer goes out of scope, and an
+  importer that hands back dangling spans is a trap.
+- A weight naming a vertex the mesh does not have is an **error, not a silent
+  drop**. Dropping it leaves a body part unbound and moving with the wrong bone
+  — which presents as a rigging bug, not a corrupt file.
+
+### M7 import is functionally complete
+Geometry, names, node placement, materials, skins. The remaining gaps are
+format-specific and recorded: assimp's FBX importer does not read material
+textures back (we do write them), and Collada replaces diffuse colour with its
+texture.
+
+### Verification
+ctest **410/410** in debug, release, ASan; TSan separately. Format clean.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

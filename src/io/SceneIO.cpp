@@ -2,6 +2,7 @@
 #include "makehuman/io/SceneIO.h"
 
 #include <assimp/material.h>
+#include <assimp/mesh.h>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 #include <assimp/Exporter.hpp>
@@ -720,6 +721,45 @@ std::expected<ImportedScene, SceneIoError> importScene(const std::filesystem::pa
                 }
                 entry.material = std::move(desc);
             }
+        }
+
+        // The skin, when the file carried one. Bone vertex ids are post-join:
+        // assimp remaps them through JoinIdenticalVertices, so they index the
+        // vertices we just read rather than the file's originals.
+        if (am->mNumBones > 0 && am->mBones != nullptr) {
+            ImportedSkin skin;
+            skin.bones.reserve(am->mNumBones);
+            for (unsigned b = 0; b < am->mNumBones; ++b) {
+                const aiBone* ab = am->mBones[b];
+                if (ab == nullptr) continue;
+                ImportedBone bone;
+                bone.name = ab->mName.C_Str();
+                // assimp's aiMatrix4x4 is row-major and so is ours, so this is
+                // an element-wise copy rather than a transpose.
+                for (unsigned r = 0; r < 4; ++r) {
+                    for (unsigned c = 0; c < 4; ++c) {
+                        bone.offset.m[r][c] = ab->mOffsetMatrix[r][c];
+                    }
+                }
+                bone.verts.reserve(ab->mNumWeights);
+                bone.weights.reserve(ab->mNumWeights);
+                for (unsigned w = 0; w < ab->mNumWeights; ++w) {
+                    const aiVertexWeight& vw = ab->mWeights[w];
+                    // A weight naming a vertex the mesh does not have is a
+                    // corrupt file; dropping it silently would leave a body
+                    // part unbound and moving with the wrong bone.
+                    if (vw.mVertexId >= am->mNumVertices) {
+                        return std::unexpected(SceneIoError{SceneIoErrorKind::ImportFailed,
+                                                            path.string(),
+                                                            "bone weight names a vertex that "
+                                                            "does not exist"});
+                    }
+                    bone.verts.push_back(vw.mVertexId);
+                    bone.weights.push_back(vw.mWeight);
+                }
+                skin.bones.push_back(std::move(bone));
+            }
+            if (!skin.bones.empty()) entry.skin = std::move(skin);
         }
 
         out.meshes.push_back(std::move(entry));

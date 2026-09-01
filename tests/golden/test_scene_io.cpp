@@ -14,6 +14,7 @@
 
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/io/GltfWriter.h"
+#include "makehuman/rig/Skinning.h"
 
 #if defined(MH_HAVE_ASSIMP)
 #include <assimp/postprocess.h>
@@ -739,6 +740,100 @@ TEST_CASE("a mesh with no material reports none", "[io][import][material]") {
     if (back->meshes[0].material) {
         CHECK(back->meshes[0].material->name != "TestSkin");
     }
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+// --- Skins on import --------------------------------------------------------
+//
+// The last piece: a rigged export must come back rigged. Without this, a
+// character round-tripped through glTF loses its skeleton binding entirely --
+// the geometry and bones both survive, and nothing connects them.
+TEST_CASE("a rigged export imports back with its skin", "[io][import][skin]") {
+    const auto rigPath = std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel";
+    if (!std::filesystem::exists(rigPath)) SKIP("rig not present");
+
+    core::Mesh mesh = baseMeshOrSkip();
+    auto skel       = rig::loadSkeleton(rigPath);
+    REQUIRE(skel.has_value());
+    REQUIRE(skel->updateJoints(mesh.coord()));
+    REQUIRE(skel->buildRestMatrices());
+
+    auto vw = rig::loadWeights(std::filesystem::path(MH_DATA_DIR) / "rigs" / "default_weights.mhw",
+                               mesh.vertexCount());
+    REQUIRE(vw.has_value());
+
+    const auto rm       = core::RenderMesh::build(mesh);
+    const auto compiled = vw->compile(*skel, io::kGltfInfluences);
+    const auto skin     = rig::buildSkinData(*skel, compiled, rm.vmap());
+    REQUIRE_FALSE(skin.jointNames.empty());
+    const auto skinView = skin.view();
+
+    const auto out = tempFile("riggedimport", ".glb");
+    REQUIRE(io::writeGlb(out, rm.view(), {}, nullptr, &skinView).has_value());
+
+    const auto back = io::importScene(out);
+    REQUIRE(back.has_value());
+    REQUIRE(back->meshes.size() == 1);
+    REQUIRE(back->meshes[0].skin.has_value());
+    const auto& got = *back->meshes[0].skin;
+
+    // Every joint that actually influences something comes back. glTF stores
+    // only the joints a skin references, so this is "no bone was lost", not
+    // "the count matches the whole 163-bone rig".
+    INFO("exported " << skin.jointNames.size() << " joints, imported " << got.bones.size());
+    CHECK(got.bones.size() > 100);
+    CHECK(got.bones.size() <= skin.jointNames.size());
+
+    // Names survive, which is what makes a re-bind possible at all.
+    const bool named =
+        std::ranges::all_of(got.bones, [](const auto& b) { return !b.name.empty(); });
+    CHECK(named);
+
+    // Weights are a partition of unity per vertex, or the mesh deforms wrongly
+    // -- and this is the property a bad vertex-id remap would break.
+    std::vector<float> perVertex(back->meshes[0].mesh.coord.size(), 0.0F);
+    size_t outOfRange = 0;
+    for (const auto& b : got.bones) {
+        REQUIRE(b.verts.size() == b.weights.size());
+        for (size_t i = 0; i < b.verts.size(); ++i) {
+            if (b.verts[i] >= perVertex.size()) {
+                ++outOfRange;
+                continue;
+            }
+            CHECK(b.weights[i] >= 0.0F);
+            CHECK(b.weights[i] <= 1.0F + 1e-5F);
+            perVertex[b.verts[i]] += b.weights[i];
+        }
+    }
+    CHECK(outOfRange == 0);
+
+    size_t weighted = 0;
+    size_t badSum   = 0;
+    for (const float sum : perVertex) {
+        if (sum <= 0.0F) continue;
+        ++weighted;
+        if (std::abs(sum - 1.0F) > 1e-3F) ++badSum;
+    }
+    INFO("weighted vertices " << weighted << ", not summing to 1: " << badSum);
+    CHECK(weighted > 1000);
+    CHECK(badSum == 0);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("an unrigged mesh reports no skin", "[io][import][skin]") {
+    const core::Mesh m = baseMeshOrSkip();
+    const auto rm      = core::RenderMesh::build(m);
+    const auto out     = tempFile("noskin", ".glb");
+    const std::vector<io::GltfSceneEntry> scene{{rm.view(), "body", nullptr}};
+    REQUIRE(io::writeGlbScene(out, scene).has_value());
+
+    const auto back = io::importScene(out);
+    REQUIRE(back.has_value());
+    CHECK_FALSE(back->meshes[0].skin.has_value());
 
     std::error_code ec;
     std::filesystem::remove(out, ec);
