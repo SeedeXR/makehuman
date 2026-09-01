@@ -421,6 +421,55 @@ of "drop a PNG in `data/` and name it in a `.mhmat`" now works.
 
 ---
 
+## 2026-09-01 03:41:45 — Session 084 · **the headline metric, and a perf test that measured the sanitizer**
+
+### 60 fps on the subdivided mesh: MET
+The project's headline metric, finally measured rather than assumed.
+
+Subdivided mesh, 55,784 render verts, 1280x960:
+**2.5-4.6 ms median in release — 218 to 354 fps** against a 16.7 ms budget.
+Base mesh 1.86 ms.
+
+**Measured pessimistically on purpose.** The offscreen path builds a whole
+`SceneResources`, uploads every buffer and texture, draws, AND reads the image
+back — on every call. The interactive widget does none of that per frame:
+`ViewportWidget.cpp:94` creates its resources once and `:113` re-uploads only on
+change. So the interactive steady-state frame is strictly cheaper than the
+number above, and an upper bound that fits the budget is the useful direction.
+
+I also owed this measurement: last session added 4 floats a vertex (tangents),
+a 50% larger vertex. The budget has 3.6x headroom even including full re-upload.
+
+### The test I nearly shipped broken
+I wrote it as `CHECK(median < 16.7)`. It passed in debug and release, then
+**failed under ASan at 59.5 ms** — 24x slower, because every memory access is
+instrumented.
+
+A timing assertion under a sanitizer measures the **sanitizer**. It says nothing
+about the renderer and fails for a reason unrelated to the code under test. The
+timing is now skipped when `__has_feature(address_sanitizer)` or
+`thread_sanitizer` holds; the render itself is still exercised for correctness
+in every configuration.
+
+Worth remembering as a rule: **never assert wall-clock under instrumentation.**
+
+### A stale entry closed with it
+"Persistent vertex/index buffers" was already true for the path that matters —
+the widget keeps its resources across frames. `OffscreenRenderer` rebuilds per
+call by design, being one-shot, which is precisely what makes its timing a
+pessimistic bound. Partial dirty-range updates stay closed from M2: 0.7% of a
+frame, and the reference's own "partial" path is a pessimisation.
+
+### Still unmeasured
+The real interactive swapchain path (`QRhiWidget` with a live surface). The
+offscreen bound is strong evidence, not a substitute.
+
+### Verification
+ctest **401/401** in debug, release, ASan; TSan separately. Format clean.
+CI green on `855aed96`.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

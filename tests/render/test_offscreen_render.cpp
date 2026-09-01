@@ -15,10 +15,13 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <vector>
+#include "makehuman/core/Subdivider.h"
 
 using namespace mh;
 
@@ -666,4 +669,78 @@ TEST_CASE("an AO map that will not load is reported", "[render][aomap]") {
     const auto img = (*r)->render(one, settings());
     REQUIRE_FALSE(img.has_value());
     CHECK(img.error().kind == render::RenderErrorKind::TextureMissing);
+}
+
+// --- The headline metric: 60 fps on the SUBDIVIDED mesh ---------------------
+//
+// Smoothing is on by default, so the interactive mesh is the subdivided one.
+// 60 fps is a 16.7 ms frame.
+//
+// This measures the OFFSCREEN path, which is a deliberate over-estimate: it
+// builds a whole SceneResources, uploads every buffer and texture, draws, and
+// reads the image back -- on every call. The interactive widget creates its
+// resources once and re-uploads only when something changes
+// (ViewportWidget.cpp:94,113), so its steady-state frame is strictly cheaper
+// than this. An upper bound that fits the budget is the useful direction.
+//
+// Measured on an M-series at 1280x960: base 1.86 ms, subdivided 2.49 ms. The
+// threshold is the real budget, not the measurement, so it stays meaningful on
+// a slower machine instead of becoming a flaky equality.
+/// True when this binary is instrumented by ASan or TSan.
+///
+/// A timing assertion under a sanitizer measures the SANITIZER. Observed on the
+/// same machine: 2.5 ms in release against **59.5 ms under ASan**, 24x slower,
+/// because every memory access is instrumented. Asserting a frame budget there
+/// says nothing about the renderer and fails for a reason unrelated to the code
+/// under test.
+constexpr bool sanitized() {
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer)
+    return true;
+#endif
+#endif
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+    return true;
+#else
+    return false;
+#endif
+}
+
+TEST_CASE("the subdivided mesh renders inside a 60 fps budget", "[render][fps]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    auto sd        = core::Subdivider::build(sc.mesh, sc.mesh.staticFaceMask());
+    REQUIRE(sd.has_value());
+    const auto subRm = core::RenderMesh::build(sd->mesh());
+    REQUIRE(subRm.coord().size() > 50000);  // it really is the subdivided mesh
+
+    auto s   = settings();
+    s.width  = 1280;
+    s.height = 960;
+    const std::vector<render::MeshInstance> one{{subRm.view(), s.litsphere}};
+
+    REQUIRE((*r)->render(one, s).has_value());  // warm: shader compile, texture decode
+
+    std::vector<double> ms;
+    for (int i = 0; i < 9; ++i) {
+        const auto t0  = std::chrono::steady_clock::now();
+        const auto img = (*r)->render(one, s);
+        const auto t1  = std::chrono::steady_clock::now();
+        REQUIRE(img.has_value());
+        ms.push_back(std::chrono::duration<double, std::milli>(t1 - t0).count());
+    }
+    std::ranges::sort(ms);
+    const double median = ms[ms.size() / 2];
+
+    INFO("subdivided render median " << median << " ms over " << subRm.coord().size()
+                                     << " render verts (" << (1000.0 / median) << " fps)");
+    if constexpr (sanitized()) {
+        // Still exercised for correctness above; only the budget is meaningless.
+        SUCCEED("timing not asserted under a sanitizer");
+    } else {
+        CHECK(median < 16.7);
+    }
 }

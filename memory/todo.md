@@ -656,7 +656,15 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       (`apps/human.py:274-289`): hide any group named `joint-*` or `helper-*`.
       13,378 of 18,486 faces remain.
 - [ ] Qt RHI **swapchain** and MSAA — the interactive widget, not offscreen
-- [ ] Persistent vertex/index buffers; partial updates from dirty ranges
+- [x] **Persistent vertex/index buffers — already done for the path that
+      matters.** `ViewportWidget` creates its `SceneResources` **once**
+      (`ViewportWidget.cpp:94`) and re-uploads only when something changes
+      (`:113`), so interactive frames do not rebuild anything.
+      `OffscreenRenderer` rebuilds per call by design — it is one-shot, and that
+      is what makes its timing a pessimistic upper bound on the interactive one.
+      Partial updates from dirty ranges were measured and closed in M2: the
+      gather is 0.7% of a frame, and the reference's own "partial" path is a
+      pessimisation.
 - [ ] Quad→triangle conversion at buffer-build time
 - [~] Shader port to `.qsb`: **litsphere done** (`resources/shaders/rhi/`),
       compiles to SPIR-V + GLSL 450 + MSL 12 via `tools/compile_shaders.sh`;
@@ -830,7 +838,23 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 - [ ] ID-buffer picking with async readback (replaces the full-window sync readback)
 - [ ] Cached bounding box
 - [ ] Offscreen render + alpha mask for production render
-- [ ] **60 fps on the subdivided mesh** — the headline metric
+- [x] **60 fps on the subdivided mesh — MET, with a wide margin.**
+      Subdivided mesh, 55,784 render verts, 1280x960:
+      **2.5-4.6 ms median in release, i.e. 218-354 fps** against a 16.7 ms
+      budget. Base mesh 1.86 ms.
+      **Deliberately measured pessimistically**: the offscreen path builds a
+      whole `SceneResources`, uploads every buffer and texture, draws AND reads
+      the image back on every call. The interactive widget does none of that per
+      frame, so its steady-state frame is strictly cheaper. An upper bound that
+      fits the budget is the useful direction.
+      Guarded by `[render][fps]`, which asserts the **budget** rather than the
+      measurement so it stays meaningful on slower hardware.
+      **The timing assertion is skipped under sanitizers**: the same render is
+      2.5 ms in release and **59.5 ms under ASan** (24x), because every memory
+      access is instrumented. Asserting a frame budget there measures the
+      sanitizer, not the renderer — it failed exactly that way before the guard.
+      **Not yet measured**: the real interactive swapchain path (`QRhiWidget`),
+      which remains an open M6 item.
 
 ## M7 — Interchange (`mh-io`)
 
