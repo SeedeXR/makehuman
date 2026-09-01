@@ -985,6 +985,82 @@ synthetic proxies only, because no shipped asset declares any.
 
 ---
 
+## 2026-09-01 10:10:41 — Session 096 · **our FBX exports arrived in Blender as chrome**
+
+### The chunk
+Specular material data across the assimp-backed writers: shininess written and
+read as an **exponent**, and metalness stated rather than left to a template.
+
+### Two defects, and the second needed a third party to see
+**One.** `fillMaterial` never wrote `AI_MATKEY_SHININESS` — while `importScene`
+**read** it. Measured, not inferred: a 0.96 skin came back
+
+| format | before | after |
+|---|---|---|
+| FBX | **0.2** (our own struct default; the file carried nothing) | 0.96 |
+| Collada | **10** (assimp substituting a fixed exponent) | 0.96 |
+
+10 in a field every consumer treats as 0..1 is not a small error. glTF and USD
+roughness is `1 - shininess`, so a Collada round trip asked for roughness
+**-9**, clamping to 0 — a perfect mirror. There is now a test that does exactly
+that round trip and asserts `"roughnessFactor":0.04`.
+
+An earlier session had *already seen* half of this and written it off in a
+comment: "Shininess is deliberately not asserted: the conventions differ per
+format (FBX returned a default, Collada a 0..128-style exponent)". The
+conventions did not differ. The exporter was silent and the numbers were
+invented downstream. A plausible explanation is how a measurement stops being
+followed up.
+
+**Two.** Blender 5.2, reading our own `makehuman --export x.fbx`:
+
+```
+before   DefaultSkin  roughness 0.0000  metallic 1.0000     <- chrome
+after    DefaultSkin  roughness 0.0000  metallic 0.0000
+GLB      DefaultSkin  roughness 0.0400  metallic 0.0000     <- always was right
+```
+
+assimp's FBX exporter fills its material template with `ReflectionFactor` 1, and
+Blender reads that key straight into Principled `metallic`
+(`import_fbx.py:2101`). `.mhmat` has no metalness concept at all — which is
+exactly why our glTF writer already hard-codes `"metallicFactor":0` — so the two
+exports of one material disagreed about whether skin is metal. One property
+(`AI_MATKEY_REFLECTIVITY = 0`) closes it.
+
+### What I did NOT change
+Blender's FBX roughness stays 0. It reads `Shininess` as 0..100 through
+`1 - sqrt(S)/10` (`import_fbx.py:2083`, whose own comment calls it "totally
+empirical"), so anything above shininess 0.78 clamps. Bending our scale to that
+curve would abandon the exponent's defined meaning to please one importer, and
+would still not agree with the linear glTF conversion — the two are different
+curves, not different constants. Recorded as an observation.
+
+I also left `roughness = 1 - shininess` alone. The reference documents shininess
+as "the inverse of roughness" (`material.py:686`) and `.mhmat` clamps it to
+0..1 (`Material.cpp:242`); I have no oracle saying the physically-motivated
+`sqrt(2/(exponent+2))` is what the assets were authored against.
+
+### Mutation
+| mutation | result |
+|---|---|
+| import without the exponent conversion | 2 tests fail |
+| export the raw 0..1 number | 2 tests fail |
+| `ReflectionFactor` back to 1 | the FBX property test fails |
+
+The FBX property test reads the file with **assimp directly**, not through our
+importer — the round-trip tests would pass just as happily if both ends were
+wrong in the same way.
+
+### Ponytail
+`std::clamp` for a hand-rolled ternary; 11 comment lines cut to 5 by moving the
+Blender measurement into the test that reproduces it.
+
+### Verification
+ctest **423/423** in debug, release, ASan and TSan. Format clean. Benchmarks
+unchanged.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

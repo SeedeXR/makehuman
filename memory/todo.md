@@ -991,9 +991,40 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         A reader limitation, not a missing export, so the test checks the FILE.
       - **Collada replaces the diffuse colour with the texture**
         (`<diffuse><texture/></diffuse>`) — the format's own semantics.
-      Shininess is deliberately **not** asserted: FBX returned a default and
-      Collada a 0..128-style exponent, so one expected value would be wrong
-      somewhere.
+      Shininess was deliberately **not** asserted, on the belief that "the
+      conventions differ per format". **They did not — see the next entry.**
+- [x] **Shininess was never exported at all, and our FBX arrived in Blender as
+      chrome.** Two defects, one measured through our own reader and one through
+      a third party.
+      1. **`fillMaterial` never wrote `AI_MATKEY_SHININESS`** while `importScene`
+         **read** it. A 0.96 skin came back **0.2** from FBX (our own struct
+         default — the file carried nothing) and **10** from Collada (assimp's
+         exporter substituting a fixed exponent). 10 in a field every consumer
+         treats as 0..1 is not merely wrong: glTF and USD roughness is
+         `1 - shininess`, so a Collada round trip asked for roughness **-9**,
+         clamped to **0** — a perfect mirror. Now written and read as an
+         **exponent** (`foundation::specularExponentOf` /
+         `shininessFromExponent`, the 0..128 `GL_SHININESS` scale), clamped on
+         the way in because the number comes from a file. FBX and Collada both
+         round-trip 0.96 → 0.96, measured.
+      2. **assimp's FBX exporter fills its material template with
+         `ReflectionFactor` 1**, and Blender reads that key straight into
+         Principled `metallic` (`import_fbx.py:2101`). Measured in **Blender
+         5.2** on `makehuman --export x.fbx`: `DefaultSkin` came in at
+         **metallic 1.0** — a chrome mirror — while the **GLB of the same
+         character read 0.04 / 0.0 and always did**. Two files from one material
+         disagreeing about whether skin is metal. Stating
+         `AI_MATKEY_REFLECTIVITY = 0` takes it to **0.0**; `.mhmat` has no
+         metalness concept at all, which is why the glTF writer already
+         hard-coded `"metallicFactor":0`.
+      **Not fixed, and not ours**: Blender reads FBX `Shininess` as 0..100
+      through `1 - sqrt(S)/10` (`import_fbx.py:2083`, whose own comment calls it
+      "totally empirical"), so any shininess above **0.78** clamps its roughness
+      to 0. Chasing that curve would mean abandoning the exponent's defined
+      meaning to please one importer.
+      Mutation-verified: reverting either the export scale or the import
+      conversion fails 2 tests; `ReflectionFactor` 1 fails the FBX property
+      test.
 - [x] **Skins on import — a rigged export now comes back rigged.** All **163
       joints** survive a glTF round trip, with names and inverse-bind matrices.
       Without this the geometry and the bones both survived and **nothing

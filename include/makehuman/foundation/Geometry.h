@@ -3,6 +3,7 @@
 
 #include "makehuman/foundation/Types.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <span>
@@ -172,5 +173,32 @@ struct MaterialDesc {
     std::filesystem::path diffuseTexture;
     std::filesystem::path normalTexture;
 };
+
+/// The largest Blinn-Phong specular exponent OpenGL's fixed-function pipeline
+/// accepts (`GL_SHININESS` is specified as 0..128), and the scale every
+/// Blinn-Phong interchange format inherited from it.
+inline constexpr float kMaxSpecularExponent = 128.0F;
+
+/// `MaterialDesc::shininess` as the specular EXPONENT a Blinn-Phong file wants.
+///
+/// The two ranges are the whole reason this exists. `shininess` is 0..1 --
+/// `.mhmat` clamps it on the way in -- while FBX, Collada and assimp's
+/// `AI_MATKEY_SHININESS` all carry an exponent. Writing the 0..1 number into an
+/// exponent field says "almost perfectly matte" for a value that means "almost
+/// perfectly polished".
+[[nodiscard]] constexpr float specularExponentOf(float shininess) noexcept {
+    return shininess * kMaxSpecularExponent;
+}
+
+/// The inverse, and it must stay the inverse: a round trip through any
+/// Blinn-Phong format goes out through one and back through the other.
+///
+/// Clamped, because the incoming number is whatever the file says. assimp's own
+/// Collada exporter emits a fixed exponent of 10 when none is supplied, and 10
+/// stored unscaled in a 0..1 field then makes `1 - shininess` (the glTF and USD
+/// roughness conversion) come out **negative** -- clamping to a perfect mirror.
+[[nodiscard]] constexpr float shininessFromExponent(float exponent) noexcept {
+    return std::clamp(exponent / kMaxSpecularExponent, 0.0F, 1.0F);
+}
 
 }  // namespace mh::foundation

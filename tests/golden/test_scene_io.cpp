@@ -7,6 +7,7 @@
 
 #include "makehuman/core/RenderMesh.h"
 #include "makehuman/core/Target.h"
+#include "makehuman/io/GltfWriter.h"
 #include "makehuman/io/SceneIO.h"
 #include "makehuman/rig/Skeleton.h"
 #include "makehuman/rig/Skinning.h"
@@ -657,9 +658,12 @@ TEST_CASE("node transforms place imported meshes", "[io][import][scene][transfor
 //    present (`<diffuse><texture/></diffuse>`), which is the format's own
 //    semantics, not a loss on our side.
 //
-// Shininess is deliberately not asserted: the conventions differ per format
-// (FBX returned a default, Collada a 0..128-style exponent), so a single
-// expected value would be wrong somewhere.
+// Shininess USED to be "deliberately not asserted: the conventions differ per
+// format". They did not differ -- the exporter simply never wrote the key.
+// Measured: a 0.96 skin came back as **0.2** from FBX (our own struct default,
+// the file carrying nothing) and as **10** from Collada (assimp's exporter
+// substituting a fixed exponent). It is written and read as an exponent now,
+// and both round-trip exactly.
 TEST_CASE("materials survive an export and import", "[io][import][material]") {
     const core::Mesh m = baseMeshOrSkip();
     const auto rm      = core::RenderMesh::build(m);
@@ -669,6 +673,7 @@ TEST_CASE("materials survive an export and import", "[io][import][material]") {
     want.diffuse        = {0.80F, 0.60F, 0.50F};
     want.specular       = {0.30F, 0.30F, 0.30F};
     want.opacity        = 0.75F;
+    want.shininess      = 0.96F;  // DefaultSkin's own value
     want.diffuseTexture = "skin_albedo.png";
     want.normalTexture  = "skin_normal.png";
 
@@ -689,6 +694,7 @@ TEST_CASE("materials survive an export and import", "[io][import][material]") {
         CHECK(got.diffuse.y == Catch::Approx(0.60F).margin(0.01F));
         CHECK(got.opacity == Catch::Approx(0.75F).margin(0.01F));
         CHECK(got.transparent);  // opacity < 1 implies it
+        CHECK(got.shininess == Catch::Approx(0.96F).margin(0.01F));
 
         // The texture reference IS in the file even though assimp will not read
         // it back, so this is checked where it exists rather than skipped.
@@ -715,10 +721,112 @@ TEST_CASE("materials survive an export and import", "[io][import][material]") {
         CHECK(got.normalTexture == "skin_normal.png");
         CHECK(got.specular.x == Catch::Approx(0.30F).margin(0.01F));
         CHECK(got.opacity == Catch::Approx(0.75F).margin(0.01F));
+        CHECK(got.shininess == Catch::Approx(0.96F).margin(0.01F));
 
         std::error_code ec;
         std::filesystem::remove(out, ec);
     }
+}
+
+// What is actually IN the FBX, read with assimp rather than through our own
+// importer -- the round-trip tests above would pass just as happily if both
+// ends were wrong in the same way.
+//
+// Third-party check, Blender 5.2 on `makehuman --export x.fbx`:
+//   before  DefaultSkin  roughness 0.0000  metallic 1.0000   (a chrome mirror)
+//   after   DefaultSkin  roughness 0.0000  metallic 0.0000
+// The GLB of the same character reads 0.0400 / 0.0000 and always did, so the
+// two exports of one material disagreed about whether skin is metal.
+//
+// Roughness stays 0 in Blender and that is Blender's own curve, not a loss on
+// our side: it reads FBX Shininess as 0..100 through `1 - sqrt(S)/10`
+// (import_fbx.py:2083, whose comment calls it "totally empirical"), so any
+// shininess above 0.78 clamps. Our exponent is on OpenGL's documented 0..128
+// GL_SHININESS scale and round-trips exactly through assimp.
+TEST_CASE("an FBX states the specular exponent and states it is not metal", "[io][material][fbx]") {
+#if defined(MH_HAVE_ASSIMP)
+    const core::Mesh m = baseMeshOrSkip();
+    const auto rm      = core::RenderMesh::build(m);
+
+    foundation::MaterialDesc want;
+    want.name      = "TestSkin";
+    want.shininess = 0.96F;
+
+    const auto out = tempFile("fbxmat", ".fbx");
+    const std::vector<io::SceneEntry> scene{{rm.view(), "body", &want}};
+    REQUIRE(io::exportScene(out, scene, io::SceneFormat::FbxBinary).has_value());
+
+    Assimp::Importer importer;
+    const aiScene* sc = importer.ReadFile(out.string(), 0);
+    INFO("fbx import: " << importer.GetErrorString());
+    REQUIRE(sc != nullptr);
+    REQUIRE(sc->mNumMaterials >= 1);
+
+    float shine = -1.0F;
+    float refl  = -1.0F;
+    CHECK(sc->mMaterials[0]->Get(AI_MATKEY_SHININESS, shine) == AI_SUCCESS);
+    CHECK(shine == Catch::Approx(122.88F).margin(0.01F));
+    CHECK(sc->mMaterials[0]->Get(AI_MATKEY_REFLECTIVITY, refl) == AI_SUCCESS);
+    CHECK(refl == 0.0F);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+#endif
+}
+
+TEST_CASE("shininess and the specular exponent are inverses", "[io][material]") {
+    // The pair has to stay a pair: a Blinn-Phong round trip leaves through one
+    // and returns through the other.
+    for (const float s : {0.0F, 0.2F, 0.5F, 0.96F, 1.0F}) {
+        CHECK(foundation::shininessFromExponent(foundation::specularExponentOf(s)) ==
+              Catch::Approx(s).margin(1e-6F));
+    }
+    CHECK(foundation::specularExponentOf(0.96F) == Catch::Approx(122.88F).margin(0.01F));
+
+    // Clamped, because the exponent comes from a file. assimp's own Collada
+    // exporter writes 10 when given nothing, and 10 in a 0..1 field is what
+    // made `1 - shininess` go negative.
+    CHECK(foundation::shininessFromExponent(10.0F) == Catch::Approx(0.078F).margin(0.001F));
+    CHECK(foundation::shininessFromExponent(1000.0F) == 1.0F);
+    CHECK(foundation::shininessFromExponent(-5.0F) == 0.0F);
+}
+
+// The compounding failure, end to end: import a Collada file and re-export it
+// as glTF. glTF roughness is `1 - shininess`, so an unscaled exponent arriving
+// from the importer does not merely look wrong -- it asks for a NEGATIVE
+// roughness, which clamps to 0 and turns every surface into a mirror.
+//
+// Measured before the fix: Collada came back with shininess 10, so this GLB
+// carried `"roughnessFactor":0`. It is 0.04 now, which is what 0.96 means.
+TEST_CASE("a Collada round trip does not turn the skin into a mirror",
+          "[io][import][material][gltf]") {
+    const core::Mesh m = baseMeshOrSkip();
+    const auto rm      = core::RenderMesh::build(m);
+
+    foundation::MaterialDesc want;
+    want.name      = "TestSkin";
+    want.shininess = 0.96F;  // no textures: GLB embeds them and these do not exist
+
+    const auto dae = tempFile("mirror", ".dae");
+    const std::vector<io::SceneEntry> out{{rm.view(), "body", &want}};
+    REQUIRE(io::exportScene(dae, out, io::SceneFormat::Collada).has_value());
+
+    const auto back = io::importScene(dae);
+    REQUIRE(back.has_value());
+    REQUIRE(back->meshes[0].material.has_value());
+
+    const auto glb = tempFile("mirror", ".glb");
+    const std::vector<io::GltfSceneEntry> scene{{rm.view(), "body", &*back->meshes[0].material}};
+    REQUIRE(io::writeGlbScene(glb, scene).has_value());
+
+    std::ifstream f(glb, std::ios::binary);
+    const std::string bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    CHECK(bytes.find(R"("roughnessFactor":0.04)") != std::string::npos);
+    CHECK(bytes.find(R"("roughnessFactor":0,)") == std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(dae, ec);
+    std::filesystem::remove(glb, ec);
 }
 
 TEST_CASE("a mesh with no material reports none", "[io][import][material]") {

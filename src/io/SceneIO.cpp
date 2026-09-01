@@ -138,6 +138,21 @@ void fillMaterial(aiMaterial* m, const foundation::MaterialDesc* material,
     m->AddProperty(&ambient, 1, AI_MATKEY_COLOR_AMBIENT);
     const float opacity = material->opacity;
     m->AddProperty(&opacity, 1, AI_MATKEY_OPACITY);
+    // Written as an EXPONENT, which is what the key means. Omitting it entirely
+    // is what we did before, and it does not read as missing: assimp's Collada
+    // exporter then substitutes a fixed 10, and the FBX comes back carrying our
+    // own 0.2 default -- so a 0.96 skin round-tripped as 0.2 with nothing to
+    // suggest the number had been invented.
+    const float shininess = foundation::specularExponentOf(material->shininess);
+    m->AddProperty(&shininess, 1, AI_MATKEY_SHININESS);
+
+    // Stated as zero, not left out. `.mhmat` has no metalness concept -- which
+    // is why the glTF writer hard-codes `"metallicFactor":0` -- but unset does
+    // not mean zero in an FBX: assimp's exporter fills its material template
+    // with `ReflectionFactor` 1, and Blender reads that key straight into
+    // Principled `metallic`. The Blender measurement is in the test.
+    const float reflectivity = 0.0F;
+    m->AddProperty(&reflectivity, 1, AI_MATKEY_REFLECTIVITY);
 
     // Texture paths. Without these a character exported to FBX or DAE arrives
     // in a DCC tool with its colours but NO skin -- the reference to the albedo
@@ -729,7 +744,13 @@ std::expected<ImportedScene, SceneIoError> importScene(const std::filesystem::pa
                 colour(AI_MATKEY_COLOR_AMBIENT, desc.ambient);
                 colour(AI_MATKEY_COLOR_SPECULAR, desc.specular);
                 float f = 0.0F;
-                if (mat->Get(AI_MATKEY_SHININESS, f) == AI_SUCCESS) desc.shininess = f;
+                // Back from the exponent, and clamped: `.mhmat` guarantees
+                // 0..1 for this field (Material.cpp:242) and every consumer
+                // relies on it -- glTF and USD roughness is `1 - shininess`, so
+                // an unscaled exponent of 10 would ask for roughness -9.
+                if (mat->Get(AI_MATKEY_SHININESS, f) == AI_SUCCESS) {
+                    desc.shininess = foundation::shininessFromExponent(f);
+                }
                 if (mat->Get(AI_MATKEY_OPACITY, f) == AI_SUCCESS) {
                     desc.opacity = f;
                     // Only opacity below 1 implies transparency. Deriving it
