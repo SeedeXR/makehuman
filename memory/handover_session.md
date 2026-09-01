@@ -1885,6 +1885,53 @@ SonarQube gate **OK** (8 findings, all pre-existing `S3776` in tools).
 
 ---
 
+## 2026-09-01 21:16:03 — Session 111 · **the shader wrote the alpha and the pipeline threw it away**
+
+### The chunk
+Alpha blending in the viewport: a second pipeline and a two-pass draw.
+
+### The defect
+`litsphere.frag:120` writes `outColor.a = diffuse.a`, and has for several
+sessions. `QRhiGraphicsPipeline`'s default target blend is **disabled**, so the
+alpha reached the framebuffer and was discarded. Meanwhile the GLB export
+already wrote `alphaMode: BLEND` for the same material, so the file and the
+screen disagreed about it.
+
+Fixed with a second pipeline — SrcAlpha / OneMinusSrcAlpha, **depth write off,
+depth test on** — and a two-pass draw: opaque, then blended. Order is
+load-bearing: a transparent surface drawn before the opaque geometry behind it
+blends against the clear colour instead, which reads as the transparency simply
+not working.
+
+No back-to-front sort inside the transparent set. One shipped material is
+transparent, so the question does not arise yet; the sort belongs when a second
+one lands, not as machinery nothing exercises.
+
+### The part I will not overstate
+**It changes nothing visible today.** The shipped `brown.mhmat` is
+`transparent True` over an RGBA `brown_eye.png` — colour type 6, with **13,282
+of 1,048,576 texels below alpha 255 and 13,238 of them fully clear** — but the
+eye mesh's UV island never reaches them. Enabling blending for the eyes moves
+**0 of 1,048,576 pixels**, measured before and after.
+
+So the fixture is synthetic, and the writeup says so. What changed is that a
+material with real transparency now renders as one; the shipped asset does not
+happen to be that material.
+
+### The test asserts direction, not difference
+"Blending changed some pixels" would pass on a pipeline that changed any other
+state. It asserts the mean green over the model **drops** when a half-alpha map
+is blended over the dark background — the direction blending must move it.
+Mutation-verified: `blend.enable = false` gives 0.120844 against 0.120755, and
+fails.
+
+### Verification
+ctest **450/450** in debug, release, ASan and TSan — TSan run alone. Format
+clean. Render timing unchanged: subdivided median **2.62 ms** (381 fps), within
+the spread of the 2.67-4.79 ms range measured for this scene.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

@@ -104,6 +104,18 @@ struct MeshInstance {
     /// tangent-space vector.
     float normalMapIntensity{1.0F};
 
+    /// The material declares itself transparent, so this mesh is drawn with
+    /// alpha blending after the opaque ones.
+    ///
+    /// The shader has always written `outColor.a = diffuse.a`, and the pipeline
+    /// has always thrown it away: `QRhiGraphicsPipeline`'s default target blend
+    /// is disabled, so the alpha reached the framebuffer and was ignored. The
+    /// shipped `brown.mhmat` is `transparent True` over an RGBA `brown_eye.png`
+    /// (colour type 6, verified), and the GLB export already writes
+    /// `alphaMode: BLEND` for it -- so the file and the screen disagreed about
+    /// the same material.
+    bool transparent{false};
+
     /// Ambient-occlusion map, multiplied over the shaded result. Empty means
     /// none. This is what darkens creases and contact areas -- the `.mhmat`
     /// `AoMap` channel.

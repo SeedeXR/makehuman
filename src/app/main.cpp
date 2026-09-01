@@ -549,6 +549,9 @@ struct ViewportMaps {
     std::filesystem::path normal;
     std::filesystem::path ao;
     bool autoBlendSkin{false};
+    /// `.mhmat`'s own `transparent` flag, or an opacity below 1. Either means
+    /// the mesh is drawn blended.
+    bool transparent{false};
     float normalMapIntensity{1.0F};
 };
 
@@ -1234,6 +1237,7 @@ int main(int argc, char** argv) {
         body.normalMap          = bodyMaps.normal;
         body.normalMapIntensity = bodyMaps.normalMapIntensity;
         body.aoMap              = bodyMaps.ao;
+        body.transparent        = bodyMaps.transparent;
 
         // autoBlendSkin: the tone follows the ethnic sliders, so it is a blend
         // of the three ethnic litspheres and has no file behind it. `toneBuf`
@@ -1259,6 +1263,7 @@ int main(int argc, char** argv) {
             inst.normalMap          = wornMaps.normal;
             inst.normalMapIntensity = wornMaps.normalMapIntensity;
             inst.aoMap              = wornMaps.ao;
+            inst.transparent        = wornMaps.transparent;
             scene.push_back(std::move(inst));
         }
         return scene;

@@ -76,6 +76,8 @@ std::string RenderError::message() const {
 
 /// Everything that belongs to one mesh rather than to the frame.
 struct Drawable {
+    /// Drawn in the second pass, blended. See MeshInstance::transparent.
+    bool transparent{false};
     std::unique_ptr<QRhiBuffer> vbuf;
     std::unique_ptr<QRhiBuffer> ibuf;
     std::unique_ptr<QRhiTexture> litTex;
@@ -106,6 +108,10 @@ struct SceneResources::Impl {
     std::unique_ptr<QRhiSampler> sampler;
     std::unique_ptr<QRhiShaderResourceBindings> layoutSrb;
     std::unique_ptr<QRhiGraphicsPipeline> pipeline;
+    /// The same pipeline with alpha blending on and depth WRITE off. Kept as a
+    /// second object rather than mutated per draw: a QRhi pipeline's state is
+    /// baked at create().
+    std::unique_ptr<QRhiGraphicsPipeline> blendPipeline;
     std::vector<Drawable> drawables;
 };
 
@@ -190,6 +196,37 @@ std::expected<std::unique_ptr<SceneResources>, RenderError> SceneResources::crea
     r->d_->pipeline->setSampleCount(sampleCount);
     if (!r->d_->pipeline->create()) {
         return std::unexpected(RenderError{RenderErrorKind::Failed, "graphics pipeline"});
+    }
+
+    // The blended variant. Identical but for two things:
+    //
+    //  * source-alpha / one-minus-source-alpha blending, which is what makes
+    //    the shader's `outColor.a = diffuse.a` mean anything. Without it the
+    //    alpha reached the framebuffer and was discarded, so the shipped
+    //    `transparent True` eye material rendered solid while its GLB export
+    //    said `alphaMode: BLEND`.
+    //  * depth WRITE off, test still on. A blended surface must not occlude
+    //    what is drawn after it, but it must still be hidden by opaque
+    //    geometry already in front of it.
+    r->d_->blendPipeline.reset(rhi->newGraphicsPipeline());
+    r->d_->blendPipeline->setShaderStages(
+        {{QRhiShaderStage::Vertex, *vs}, {QRhiShaderStage::Fragment, *fs}});
+    r->d_->blendPipeline->setVertexInputLayout(layout);
+    r->d_->blendPipeline->setShaderResourceBindings(r->d_->layoutSrb.get());
+    r->d_->blendPipeline->setRenderPassDescriptor(rp);
+    r->d_->blendPipeline->setDepthTest(true);
+    r->d_->blendPipeline->setDepthWrite(false);
+    r->d_->blendPipeline->setCullMode(QRhiGraphicsPipeline::Back);
+    r->d_->blendPipeline->setSampleCount(sampleCount);
+    QRhiGraphicsPipeline::TargetBlend blend;
+    blend.enable   = true;
+    blend.srcColor = QRhiGraphicsPipeline::SrcAlpha;
+    blend.dstColor = QRhiGraphicsPipeline::OneMinusSrcAlpha;
+    blend.srcAlpha = QRhiGraphicsPipeline::One;
+    blend.dstAlpha = QRhiGraphicsPipeline::OneMinusSrcAlpha;
+    r->d_->blendPipeline->setTargetBlends({blend});
+    if (!r->d_->blendPipeline->create()) {
+        return std::unexpected(RenderError{RenderErrorKind::Failed, "blend pipeline"});
     }
 
     return r;
@@ -312,6 +349,7 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
         }
 
         Drawable dr;
+        dr.transparent = instance.transparent;
         dr.vbuf.reset(rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer,
                                      static_cast<quint32>(verts.size() * sizeof(float))));
         dr.ibuf.reset(rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::IndexBuffer,
@@ -434,17 +472,34 @@ void SceneResources::updateCamera(QRhiResourceUpdateBatch* batch, const Camera& 
 void SceneResources::draw(QRhiCommandBuffer* cb, const QSize& pixelSize) {
     if (d_->drawables.empty()) return;
 
-    // Pipeline and viewport are the same for every mesh, so they are set once.
-    cb->setGraphicsPipeline(d_->pipeline.get());
     cb->setViewport(
         {0, 0, static_cast<float>(pixelSize.width()), static_cast<float>(pixelSize.height())});
 
-    for (const Drawable& dr : d_->drawables) {
-        cb->setShaderResources(dr.srb.get());
-        const QRhiCommandBuffer::VertexInput vin(dr.vbuf.get(), 0);
-        cb->setVertexInput(0, 1, &vin, dr.ibuf.get(), 0, QRhiCommandBuffer::IndexUInt32);
-        cb->drawIndexed(dr.indexCount);
-    }
+    // Opaque first, then blended. Order matters for the blend equation: a
+    // transparent surface drawn BEFORE the opaque geometry behind it blends
+    // against the clear colour instead, which looks like the transparency
+    // simply not working.
+    //
+    // Within the transparent set there is no back-to-front sort. One shipped
+    // material is transparent (the eyes) so the question does not arise yet;
+    // it will the moment a second one lands, and a sort belongs then rather
+    // than as machinery nothing exercises.
+    const auto pass = [&](bool transparent) {
+        bool bound = false;
+        for (const Drawable& dr : d_->drawables) {
+            if (dr.transparent != transparent) continue;
+            if (!bound) {
+                cb->setGraphicsPipeline(transparent ? d_->blendPipeline.get() : d_->pipeline.get());
+                bound = true;
+            }
+            cb->setShaderResources(dr.srb.get());
+            const QRhiCommandBuffer::VertexInput vin(dr.vbuf.get(), 0);
+            cb->setVertexInput(0, 1, &vin, dr.ibuf.get(), 0, QRhiCommandBuffer::IndexUInt32);
+            cb->drawIndexed(dr.indexCount);
+        }
+    };
+    pass(false);
+    pass(true);
 }
 
 }  // namespace mh::render

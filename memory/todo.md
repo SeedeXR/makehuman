@@ -1841,11 +1841,29 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       reference does not have the flag at all — it derives the litsphere from
       the ethnicity modifiers (`apps/autoskinblender.py:52-60`). **User-facing
       rename, so worth asking first.**
-- [ ] Per-mesh diffuse texture + alpha blending — hair and eyelash proxies need
-      it. Today the shader's alpha comes from a shared 1x1 white stand-in, so
-      it is always 1.0; it also needs a second pipeline (blend state) and
-      back-to-front ordering, which means `setGraphicsPipeline` moves into the
-      per-mesh loop.
+- [x] **Alpha blending — the shader wrote the alpha and the pipeline threw it
+      away.** `outColor.a = diffuse.a` has been in `litsphere.frag:120` all
+      along, and `QRhiGraphicsPipeline`'s default target blend is **disabled**,
+      so it reached the framebuffer and was ignored. Meanwhile the GLB export
+      already wrote `alphaMode: BLEND` for the same material — the file and the
+      screen disagreed.
+      Second pipeline (SrcAlpha / OneMinusSrcAlpha, **depth write off, test
+      on**) and a two-pass draw: opaque, then blended. A transparent surface
+      drawn before the opaque geometry behind it blends against the clear colour
+      instead, which reads as the transparency simply not working.
+      **No back-to-front sort within the transparent set.** One shipped material
+      is transparent, so the question does not arise; a sort belongs when a
+      second one lands rather than as machinery nothing exercises.
+      **Honest about the effect: it changes nothing visible today.** The shipped
+      `brown.mhmat` is `transparent True` over an RGBA `brown_eye.png` — colour
+      type 6, **13,282 of 1,048,576 texels below alpha 255, 13,238 of them fully
+      clear** — but the eye mesh's UV island never reaches them, so enabling
+      blending moves **0 of 1,048,576 pixels**. The fixture is synthetic for
+      that reason.
+      The test asserts DIRECTION, not difference: mean green over the model must
+      **drop** when a half-alpha map is blended over the dark background.
+      Mutation-verified: `blend.enable = false` gives 0.120844 against 0.120755
+      and fails.
 - [x] **Undo/redo** — `ui::ValueChangeCommand` on a `QUndoStack`, Edit menu with the
       platform ⌘Z/⇧⌘Z. Generic by design: it holds a key, two floats and a
       callback, so undo lives in Apache-2.0 `mh_ui` while the AGPL side says

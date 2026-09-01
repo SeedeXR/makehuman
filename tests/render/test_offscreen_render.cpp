@@ -874,3 +874,73 @@ TEST_CASE("the production render antialiases its silhouette", "[render][msaa]") 
     // only "> 0" would pass on a single stray sample.
     CHECK(edge > 200);
 }
+
+// --- Alpha blending ---------------------------------------------------------
+//
+// The fragment shader has always written `outColor.a = diffuse.a`, and the
+// pipeline has always thrown it away: `QRhiGraphicsPipeline`'s default target
+// blend is disabled, so the alpha reached the framebuffer and was ignored.
+//
+// The shipped `data/eyes/materials/brown.mhmat` is `transparent True` over an
+// RGBA `brown_eye.png` (colour type 6, 13,282 of 1,048,576 texels below alpha
+// 255, 13,238 of them fully clear), and the GLB export already writes
+// `alphaMode: BLEND` for it -- so the file and the screen disagreed about the
+// same material.
+//
+// The fixture is synthetic because the shipped one cannot show it: enabling
+// blending for the eyes changes **0 of 1,048,576 pixels**, since the eye mesh's
+// UV island never reaches the clear texels. That is worth stating rather than
+// implying a visible fix.
+TEST_CASE("a transparent mesh blends with what is behind it", "[render][blend]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    const auto s   = settings();
+
+    // Half-alpha green. With blending the body shows through it; without, the
+    // green wins outright.
+    const auto texPath = std::filesystem::temp_directory_path() / "mh_test_alpha.png";
+    QImage tex(64, 64, QImage::Format_RGBA8888);
+    tex.fill(QColor(40, 200, 90, 128));
+    REQUIRE(tex.save(QString::fromStdString(texPath.string())));
+
+    render::MeshInstance opaque{sc.rm.view(), s.litsphere, texPath};
+    render::MeshInstance blended = opaque;
+    blended.transparent          = true;
+
+    const auto a = (*r)->render(std::vector<render::MeshInstance>{opaque}, s);
+    const auto b = (*r)->render(std::vector<render::MeshInstance>{blended}, s);
+    REQUIRE(a.has_value());
+    REQUIRE(b.has_value());
+
+    const size_t changed = differingPixels(*a, *b);
+    INFO("blending changes " << changed << " pixels");
+    CHECK(changed > 1000);
+
+    // ...and it must blend TOWARDS the background, not merely differ. The body
+    // is lit green in both; with alpha 0.5 over the dark background the result
+    // must be darker. A pipeline that changed some other state would move
+    // pixels without moving them in this direction.
+    const auto meanGreen = [&s](const QImage& img) {
+        const QColor bg = QColor::fromRgbF(s.background.x, s.background.y, s.background.z);
+        double sum      = 0.0;
+        size_t n        = 0;
+        for (int y = 0; y < img.height(); ++y) {
+            for (int x = 0; x < img.width(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (c == bg) continue;  // background, not the model
+                sum += static_cast<double>(c.greenF());
+                ++n;
+            }
+        }
+        return n != 0 ? sum / static_cast<double>(n) : 0.0;
+    };
+    const double opaqueGreen  = meanGreen(*a);
+    const double blendedGreen = meanGreen(*b);
+    INFO("mean green: opaque " << opaqueGreen << ", blended " << blendedGreen);
+    CHECK(blendedGreen < opaqueGreen);
+
+    std::filesystem::remove(texPath);
+}
