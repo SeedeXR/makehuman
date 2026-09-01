@@ -379,4 +379,30 @@ std::vector<uint8_t> visibleVertexMask(std::span<const Proxy* const> proxies,
     return visible;
 }
 
+std::expected<std::vector<uint8_t>, MeshError> bodyFaceMask(const Mesh& base, const Mesh& shown,
+                                                            std::span<const Proxy* const> worn) {
+    auto mask = base.faceMaskForVisibleVertices(visibleVertexMask(worn, base.vertexCount()));
+    if (!mask) return std::unexpected(mask.error());
+
+    // AND, not OR: a face is drawn only if its group is visible AND nothing
+    // worn deleted every one of its corners.
+    const std::vector<uint8_t> groups = base.staticFaceMask();
+    for (size_t f = 0; f < mask->size(); ++f)
+        (*mask)[f] = static_cast<uint8_t>((*mask)[f] & groups[f]);
+
+    if (shown.faceCount() == base.faceCount()) return mask;
+    if (shown.faceCount() != base.faceCount() * 4) {
+        // Not `base` and not one subdivision level of it: there is no mapping,
+        // and returning the wrong-sized mask would be refused by
+        // RenderMesh::setFaceMask as a size mismatch with no clue why.
+        return std::unexpected(MeshError::MaskSizeMismatch);
+    }
+
+    std::vector<uint8_t> expanded(shown.faceCount());
+    for (size_t f = 0; f < mask->size(); ++f)
+        for (size_t k = 0; k < 4; ++k)
+            expanded[f * 4 + k] = (*mask)[f];
+    return expanded;
+}
+
 }  // namespace mh::core

@@ -15,6 +15,7 @@
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/core/Proxy.h"
 #include "makehuman/core/RenderMesh.h"
+#include "makehuman/core/Subdivider.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -241,4 +242,90 @@ TEST_CASE("proxy delete_verts accumulate into a body vertex mask", "[mask][proxy
     const auto all = visibleVertexMask(one, mesh.vertexCount());
     CHECK(all.size() == mesh.vertexCount());
     CHECK(std::count(all.begin(), all.end(), uint8_t{0}) == static_cast<long>(mesh.vertexCount()));
+}
+
+// The two halves of the body mask were previously computed in different places
+// or not at all: `staticFaceMask` reached the render mesh only -- so OBJ export
+// shipped the helper cages -- and `visibleVertexMask` had no caller anywhere in
+// src/. `bodyFaceMask` is the one place both are answered.
+TEST_CASE("bodyFaceMask is the static mask when nothing is worn", "[mask][proxy]") {
+    const Mesh mesh = loadBase();
+
+    const auto mask = bodyFaceMask(mesh, mesh, {});
+    REQUIRE(mask.has_value());
+    CHECK(*mask == mesh.staticFaceMask());
+
+    // The number the GLB writer already ships: 13,378 of 18,486 quads survive,
+    // the rest being joint-* and helper-* groups.
+    const auto visible = static_cast<size_t>(std::count(mask->begin(), mask->end(), uint8_t{1}));
+    CHECK(mesh.faceCount() == 18486);
+    CHECK(visible == 13378);
+}
+
+TEST_CASE("bodyFaceMask hides the faces a worn proxy deletes", "[mask][proxy]") {
+    const Mesh mesh   = loadBase();
+    const auto before = mesh.staticFaceMask();
+
+    // Locate a face that is actually drawn, then delete all four of its
+    // corners. Picking fixed vertex indices would risk landing in a helper
+    // group, where the face is hidden already and the test proves nothing.
+    const auto it = std::find(before.begin(), before.end(), uint8_t{1});
+    REQUIRE(it != before.end());
+    const size_t face = static_cast<size_t>(it - before.begin());
+
+    Proxy p;
+    p.deleteVerts.assign(mesh.vertexCount(), 0U);
+    for (size_t c = 0; c < 4; ++c)
+        p.deleteVerts[mesh.fvert()[face * 4 + c]] = 1U;
+
+    const std::array<const Proxy*, 1> worn{&p};
+    const auto mask = bodyFaceMask(mesh, mesh, worn);
+    REQUIRE(mask.has_value());
+
+    CHECK((*mask)[face] == 0U);
+    // AND, not OR: nothing the static mask hid may come back.
+    for (size_t f = 0; f < mask->size(); ++f)
+        if (before[f] == 0U) REQUIRE((*mask)[f] == 0U);
+
+    const auto wasVisible = std::count(before.begin(), before.end(), uint8_t{1});
+    const auto nowVisible = std::count(mask->begin(), mask->end(), uint8_t{1});
+    CHECK(nowVisible < wasVisible);
+}
+
+TEST_CASE("bodyFaceMask expands 4:1 onto a subdivided mesh", "[mask][proxy][subdiv]") {
+    const Mesh mesh = loadBase();
+    auto sd         = Subdivider::build(mesh);
+    REQUIRE(sd.has_value());
+    const Mesh& sub = sd->mesh();
+
+    // Independent derivation: the subdivided mesh carries its own face groups
+    // (each child inherits its parent's), so its own staticFaceMask is computed
+    // without any knowledge of the 4:1 layout. If the expansion is wrong, these
+    // disagree.
+    const auto mask = bodyFaceMask(mesh, sub, {});
+    REQUIRE(mask.has_value());
+    CHECK(mask->size() == mesh.faceCount() * 4);
+    CHECK(*mask == sub.staticFaceMask());
+
+    // With something worn there is no independent oracle, so pin the mapping.
+    Proxy p;
+    p.deleteVerts.assign(mesh.vertexCount(), 1U);  // hide everything
+    const std::array<const Proxy*, 1> worn{&p};
+    const auto all = bodyFaceMask(mesh, sub, worn);
+    REQUIRE(all.has_value());
+    CHECK(std::count(all->begin(), all->end(), uint8_t{0}) ==
+          static_cast<long>(mesh.faceCount() * 4));
+}
+
+TEST_CASE("bodyFaceMask refuses a mesh that is neither the base nor its subdivision",
+          "[mask][proxy]") {
+    const Mesh mesh = loadBase();
+    Mesh other("other", 4);
+    REQUIRE(other.setCoords(std::vector<mh::core::Vec3>(4, mh::core::Vec3{})));
+    other.addFaceGroup("body");
+    REQUIRE(other.setFaces({0, 1, 2, 3}, {}, {0}));
+
+    const auto mask = bodyFaceMask(mesh, other, {});
+    REQUIRE_FALSE(mask.has_value());
+    CHECK(mask.error() == MeshError::MaskSizeMismatch);
 }

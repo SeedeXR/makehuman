@@ -911,6 +911,80 @@ ctest **415/415** in debug, release, ASan; TSan separately. Format clean.
 
 ---
 
+## 2026-09-01 08:57:00 — Session 095 · **the OBJ was the one export shipping the helper cages**
+
+### The chunk
+`mh::core::bodyFaceMask(base, shown, worn)` — one function answering "which body
+faces exist" — wired into the viewport, into OBJ export, and (through
+`RenderMesh`) into every other writer.
+
+### What was actually wrong
+Two things, and the second was bigger than the one I set out to fix.
+
+`todo.md` said proxy `delete_verts` were never applied: `visibleVertexMask` and
+`Mesh::faceMaskForVisibleVertices` existed and were tested, but a grep of `src/`
+found **`visibleVertexMask` had no caller at all**. True, and a no-op today —
+all four shipped `.mhclo`/`.proxy` files declare zero `delete_verts`.
+
+Wiring it up meant looking at where the body mask reaches the writers, and that
+is where the measured defect was. Exporting the **same** default character:
+
+```
+--export mask.obj   body 18486 faces
+--export mask.glb   body 13378 quads (26756 tris)
+```
+
+Every format takes its geometry from the `RenderMesh`, which has
+`staticFaceMask` applied. OBJ alone wrote the `Mesh` directly, with `{}` for
+its face mask — so the OBJ, and only the OBJ, carried the **5,108**
+`joint-*`/`helper-*` faces. base.obj is 138 parts helper geometry to 1 part
+body; that file opens as a figure in a solid skirt with a box over its face.
+Nothing was broken enough to fail: the file parsed, the counts were plausible,
+and no test looked.
+
+### The fix is one answer, not two
+`staticFaceMask` (helper groups) **AND** `visibleVertexMask` (what is worn),
+computed in one place. `delete_verts` index the base mesh, so the mask can only
+be built there; the subdivided case expands it 4:1, because child face `f*4+k`
+comes from parent `f` and inherits its group (`Subdivider.cpp:258-277`).
+
+The expansion is checked against an **independent** derivation rather than
+itself: the subdivided mesh carries its own face groups, so `sub.staticFaceMask()`
+is computed with no knowledge of the 4:1 layout. If the expansion is wrong they
+disagree.
+
+### Mutation, four ways
+| mutation | result |
+|---|---|
+| `&` → `\|` in the combine | 3 of 4 unit tests fail |
+| `expanded[f*4+k] = mask[f/2]` | the subdivision test fails |
+| drop the OBJ mask argument | **does not compile** — `-Werror,-Wunused-parameter` |
+| pass an empty span instead | `app_smoke` still **passes**; `app_smoke_obj_faces` fails, 19,506 vs 14,398 |
+
+That last row is the whole reason `app_smoke_obj_faces` exists. Asserting on the
+app's own announcement (`body: 13378 of 18486 faces visible`) proves the mask was
+*computed*; only reading the file proves it was *written*, and it was the second
+claim that had been false.
+
+### Ponytail
+Cut the per-group counting loop from the CMake checker — the regression is helper
+faces leaking **in**, which moves the total just as surely. `file(STRINGS ...
+REGEX "^f ")` + `list(LENGTH)`, 12 lines shorter. Kept the memoisation guard in
+`applyBodyMask`, but rewrote its comment: 0.21 ms of `setFaceMask` does not earn
+it, and suppressing a printf on every slider drag does.
+
+### Verification
+ctest **420/420** in debug, release, ASan and TSan. Format clean. Benchmarks
+unchanged and all ahead of the Python baseline (`setFaceMask` 0.21 ms vs 1.85,
+`faceMaskForVisibleVertices` 0.01 ms).
+
+### Still open
+Proxy-on-proxy masking (`transferVertexMaskToProxy`) — each worn proxy still
+exports with an empty face mask. And the `delete_verts` half remains covered by
+synthetic proxies only, because no shipped asset declares any.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

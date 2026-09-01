@@ -126,6 +126,25 @@ if(MH_HAVE_RENDER)
              --set macrodetails/Gender=1.0
              --pose tpose
              --export ${CMAKE_CURRENT_BINARY_DIR}/app_smoke.obj)
+    # The face mask has to REACH the writer, not merely be computed. It did not:
+    # every format took its geometry from the masked RenderMesh except OBJ,
+    # which wrote the Mesh directly and so shipped 18,486 faces -- the helper
+    # cages and joint cubes included -- where the GLB of the same character
+    # shipped 13,378. An export test that only checked the file parsed would
+    # have passed throughout, so assert the count the app announces.
+    set_tests_properties(app_smoke PROPERTIES
+        PASS_REGULAR_EXPRESSION "body: 13378 of 18486 faces visible"
+        FAIL_REGULAR_EXPRESSION "cannot apply the body face mask"
+        FIXTURES_SETUP app_smoke_obj)
+    # ...and then read the file, because "the app said 13378" and "the file
+    # holds 13378" are different claims, and it was the second one that was
+    # false. 14,398 = 13,378 body + 1,020 eyes, and 13,378 is exactly what the
+    # GLB of the same character writes -- the two exports agreeing is the
+    # property under test.
+    add_test(NAME app_smoke_obj_faces COMMAND ${CMAKE_COMMAND}
+             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/app_smoke.obj -DEXPECT=14398
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_body_faces.cmake)
+    set_tests_properties(app_smoke_obj_faces PROPERTIES FIXTURES_REQUIRED app_smoke_obj)
     # The window path. app_smoke now also exercises the proxy wiring through
     # --export, but only this reaches setMeshes and the viewport.
     #

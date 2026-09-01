@@ -147,4 +147,22 @@ bool fitProxy(const Proxy& proxy, std::span<const Vec3> humanCoords, std::vector
 [[nodiscard]] std::vector<uint8_t> visibleVertexMask(std::span<const Proxy* const> proxies,
                                                      size_t bodyVertexCount);
 
+/// The body's drawn-and-exported face mask: group visibility AND everything the
+/// worn proxies delete.
+///
+/// This is the single answer to "which body faces exist", and it exists because
+/// the two halves were previously answered in different places or not at all:
+/// `Mesh::staticFaceMask` was applied to the render mesh only, so OBJ export
+/// shipped the helper cages, and `visibleVertexMask` had no caller anywhere.
+///
+/// @param base  the mesh the proxies were fitted against; `delete_verts` index
+///              into it, so the mask can only be computed here.
+/// @param shown what is actually drawn: @p base itself, or exactly one
+///              Catmull-Clark level of it. A subdivided face mask is the parent
+///              mask expanded 4:1, because child face `f*4+k` comes from parent
+///              face `f` and inherits its group (Subdivider.cpp:258-277).
+/// @return one byte per face of @p shown, nonzero = visible.
+[[nodiscard]] std::expected<std::vector<uint8_t>, MeshError> bodyFaceMask(
+    const Mesh& base, const Mesh& shown, std::span<const Proxy* const> worn);
+
 }  // namespace mh::core

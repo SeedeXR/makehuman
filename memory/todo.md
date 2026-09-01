@@ -266,6 +266,8 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       reference's own code.
 - [ ] Proxy-on-proxy masking (`transferVertexMaskToProxy`) — clothes hiding
       clothes. Needs the render-order stack; the body mask does not.
+      The body half is wired up as of session 032 — see the `delete_verts` entry
+      in M8. Each worn proxy still exports with an empty face mask.
 - [x] `.mhmat` **parser** — all keys, 7 texture channels, shader config
 - [x] `.mhmat` **writer** — lossless round-trip on all 3 shipped materials,
       plus a fixed-point check (a second save must reproduce the first).
@@ -1290,11 +1292,36 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 - [ ] The remaining seven proxy choosers (clothes, hair, teeth, tongue,
       eyebrows, eyelashes, generic proxy). The machinery is in place; each needs
       its asset group and a litsphere/material choice.
-- [ ] **Proxy `delete_verts` are not applied to the body.** `visibleVertexMask`
-      and `Mesh::faceMaskForVisibleVertices` exist and are tested, but nothing
-      calls them yet. A no-op today — all four shipped `.mhclo`/`.proxy` files
-      declare zero `delete_verts` (verified) — and a real bug the first time a
-      clothing asset expects the body hidden underneath it.
+- [x] **Proxy `delete_verts` now reach the body — and the OBJ export was
+      leaking the helper cages.** `visibleVertexMask` and
+      `Mesh::faceMaskForVisibleVertices` existed and were tested, but
+      **`visibleVertexMask` had no caller anywhere in `src/`**. Wiring it up
+      surfaced a second, larger defect measured on shipped assets:
+      `--export x.obj` wrote **18,486** body faces where `--export x.glb` of the
+      same character wrote **13,378**. Every format takes its geometry from the
+      masked `RenderMesh`; OBJ alone wrote the `Mesh` directly with an empty
+      mask, so it was the one export shipping the **5,108** `joint-*`/`helper-*`
+      faces — a figure in a solid skirt with a box over its face.
+      Both halves are now one function, `mh::core::bodyFaceMask(base, shown,
+      worn)` (`src/core/Proxy.cpp:382`): group visibility **AND** what the worn
+      proxies delete. It is the single answer to "which body faces exist", used
+      by the viewport, by OBJ, and — through `RenderMesh` — by every other
+      writer.
+      **Subdivision**: `delete_verts` index the base mesh, so the mask is
+      computed there and expanded 4:1 (child `f*4+k` comes from parent `f` and
+      inherits its group, `Subdivider.cpp:258-277`). The expansion is checked
+      against an **independent** derivation — the subdivided mesh's own
+      `staticFaceMask`, computed from inherited groups with no knowledge of the
+      layout — so agreement is not self-confirming.
+      **Mutation-verified four ways**: `&`→`|` fails 3 of the 4 unit tests;
+      breaking the 4:1 map fails the subdivision one; dropping the OBJ mask
+      argument does not even compile (`-Werror,-Wunused-parameter`); passing an
+      empty span leaves `app_smoke` **passing** and fails `app_smoke_obj_faces`
+      at 19,506 vs 14,398 — which is exactly why the file is read and not just
+      the app's own announcement believed.
+      Still a no-op for `delete_verts` specifically: all four shipped
+      `.mhclo`/`.proxy` files declare zero, so that half stays covered by
+      synthetic proxies only.
 - [~] **Export includes worn proxies — `.obj` only so far.**
       `io::writeObjScene` writes several meshes into one OBJ, each its own named
       `g` group, with file-global indices offset per entry; `writeObj` is now a

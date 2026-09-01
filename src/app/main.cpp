@@ -630,8 +630,14 @@ std::optional<mh::foundation::MaterialDesc> bodyMaterial() {
 /// @param worn proxies to include. OBJ writes them as extra groups; the other
 ///        formats are still single-mesh, so they say what they are leaving out
 ///        rather than quietly exporting a dressed character naked.
+/// @param bodyMask which body faces to write. Every format except OBJ takes its
+///        geometry from @p rm, which already has the mask applied; OBJ writes
+///        from the Mesh directly and so needs it handed over. Without this the
+///        OBJ was the one export carrying the helper cages -- 18,486 faces
+///        against the GLB's 13,378.
 bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
-                const mh::core::RenderMesh& rm, const std::map<QString, WornProxy>& worn) {
+                const mh::core::RenderMesh& rm, const std::map<QString, WornProxy>& worn,
+                std::span<const uint8_t> bodyMask) {
     std::string ext = path.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -663,7 +669,7 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
 
     if (ext == ".obj") {
         std::vector<mh::io::ObjSceneEntry> scene;
-        scene.push_back({mesh.view(), "body", allDressed ? &*skin : nullptr, {}});
+        scene.push_back({mesh.view(), "body", allDressed ? &*skin : nullptr, bodyMask});
         for (const auto& [group, proxy] : worn) {
             scene.push_back({proxy.mesh.view(),
                              group.toLower().toStdString(),
@@ -957,12 +963,9 @@ int main(int argc, char** argv) {
 
     const mh::core::Mesh& initial = displayMesh();
     auto rm                       = mh::core::RenderMesh::build(initial);
-    // base.obj is 138 parts helper geometry to 1 part body; drawing it raw
-    // gives a figure in a solid skirt with a box over its face.
-    if (!rm.setFaceMask(initial, initial.staticFaceMask())) {
-        std::fprintf(stderr, "cannot apply the static face mask\n");
-        return 1;
-    }
+    // The face mask is applied below, not here: half of it is the helper-group
+    // mask this mesh already knows, and half is what the worn proxies delete,
+    // which is not decided until the choosers have run.
 
     if (parser.isSet(saveOpt)) {
         const std::filesystem::path file = parser.value(saveOpt).toStdString();
@@ -1000,10 +1003,45 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Which body faces exist. base.obj is 138 parts helper geometry to 1 part
+    // body -- drawing it raw gives a figure in a solid skirt with a box over its
+    // face -- and on top of that a worn proxy may delete the body underneath it.
+    // Both halves come from mh::core::bodyFaceMask so the viewport and every
+    // writer get the same answer.
+    //
+    // Kept alive because it is also handed to the OBJ writer as a span.
+    std::vector<uint8_t> bodyMask;
+    const auto applyBodyMask = [&](const mh::core::Mesh& shown) -> bool {
+        std::vector<const mh::core::Proxy*> worn;
+        worn.reserve(wornProxies.size());
+        for (const auto& [group, w] : wornProxies)
+            worn.push_back(&w.proxy);
+
+        auto mask = mh::core::bodyFaceMask(*mesh, shown, worn);
+        if (!mask) return false;
+        // The mask only changes when something is put on or taken off, so
+        // everything below this line -- including the announcement -- would
+        // otherwise repeat on every slider drag.
+        if (*mask == bodyMask) return true;
+        bodyMask = std::move(*mask);
+        // Announced, because a mask that silently stopped being applied still
+        // renders a plausible picture and still writes a valid file -- it just
+        // has the helper cages in it. app_smoke asserts on this line.
+        std::printf("body: %zu of %zu faces visible\n",
+                    static_cast<size_t>(std::count(bodyMask.begin(), bodyMask.end(), uint8_t{1})),
+                    bodyMask.size());
+        return rm.setFaceMask(shown, bodyMask);
+    };
+    if (!applyBodyMask(initial)) {
+        std::fprintf(stderr, "cannot apply the body face mask\n");
+        return 1;
+    }
+
     if (parser.isSet(exportOpt)) {
         for (auto& [group, worn] : wornProxies)
             refitProxy(worn, *mesh);
-        return exportMesh(parser.value(exportOpt).toStdString(), displayMesh(), rm, wornProxies)
+        return exportMesh(parser.value(exportOpt).toStdString(), displayMesh(), rm, wornProxies,
+                          bodyMask)
                    ? 0
                    : 1;
     }
@@ -1032,12 +1070,14 @@ int main(int argc, char** argv) {
             rm.refreshPositions(shown);
         } else {
             rm = mh::core::RenderMesh::build(shown);
-            if (!rm.setFaceMask(shown, shown.staticFaceMask())) {
-                // Unreachable today -- rm was just built from `shown` -- but
-                // silently leaving every face visible draws the helper geometry
-                // as a solid skirt with no clue why.
-                std::fprintf(stderr, "cannot apply the static face mask after a topology change\n");
-            }
+            // The fresh render mesh has no mask, so force a reapply rather than
+            // letting the unchanged-mask shortcut skip it.
+            bodyMask.clear();
+        }
+        if (!applyBodyMask(shown)) {
+            // Silently leaving every face visible draws the helper geometry as
+            // a solid skirt with no clue why.
+            std::fprintf(stderr, "cannot apply the body face mask\n");
         }
         // Worn proxies follow the body: re-fitted against the posed, morphed
         // base mesh every rebuild, not just when they are put on.
