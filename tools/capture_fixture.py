@@ -43,6 +43,33 @@ for _p in ("", "lib", "core", "apps", "shared"):
 
 import numpy as np  # noqa: E402
 
+# Assets and fixture filenames the capture functions share. Named because they
+# are repeated across a dozen capture functions, and a typo in one of them
+# produces a fixture that captures the wrong thing rather than an error.
+BASE_OBJ = "data/3dobjs/base.obj"
+DEFAULT_SKEL = "data/rigs/default.mhskel"
+DEFAULT_WEIGHTS = "data/rigs/default_weights.mhw"
+MODIFIER_DIR = "data/modifiers/"
+MODELING_MODIFIERS = "modeling_modifiers.json"
+MEASUREMENT_MODIFIERS = "measurement_modifiers.json"
+BODYSHAPES_MODIFIERS = "bodyshapes_modifiers.json"
+
+COORD_BIN = "coord.bin"
+FVERT_BIN = "fvert.bin"
+TEXCO_BIN = "texco.bin"
+FUVS_BIN = "fuvs.bin"
+CASES_JSON = "cases.json"
+
+# The macro modifiers a character is defined by. Spelled once: these are the
+# reference's own keys and a mistyped one silently does nothing.
+M_GENDER = "macrodetails/Gender"
+M_AGE = "macrodetails/Age"
+M_MUSCLE = "macrodetails-universal/Muscle"
+M_WEIGHT = "macrodetails-universal/Weight"
+M_HEIGHT = "macrodetails-height/Height"
+# A two-sided modifier: the same key, driven positive and negative.
+M_HEAD_AGE = "head/head-age-decr|incr"
+
 
 # --------------------------------------------------------------------------- io
 def _write_blob(path: Path, arr: np.ndarray, dtype: str) -> dict:
@@ -95,20 +122,20 @@ def capture_mesh() -> None:
     import files3d
 
     print("capturing: mesh")
-    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+    mesh = files3d.loadMesh(BASE_OBJ, maxFaces=8)
     out = GOLDEN / "mesh"
     out.mkdir(parents=True, exist_ok=True)
 
     entries = {
-        "coord": _write_blob(out / "coord.bin", mesh.coord, "f4"),
-        "fvert": _write_blob(out / "fvert.bin", mesh.fvert, "u4"),
+        "coord": _write_blob(out / COORD_BIN, mesh.coord, "f4"),
+        "fvert": _write_blob(out / FVERT_BIN, mesh.fvert, "u4"),
         "vnorm": _write_blob(out / "vnorm.bin", mesh.vnorm, "f4"),
         "fnorm": _write_blob(out / "fnorm.bin", mesh.fnorm, "f4"),
         "group": _write_blob(out / "group.bin", mesh.group, "u2"),
     }
     if mesh.has_uv:
-        entries["texco"] = _write_blob(out / "texco.bin", mesh.texco, "f4")
-        entries["fuvs"] = _write_blob(out / "fuvs.bin", mesh.fuvs, "u4")
+        entries["texco"] = _write_blob(out / TEXCO_BIN, mesh.texco, "f4")
+        entries["fuvs"] = _write_blob(out / FUVS_BIN, mesh.fuvs, "u4")
 
     names = [g.name for g in mesh._faceGroups]
     (out / "face_groups.json").write_text(json.dumps(names, indent=2))
@@ -118,7 +145,7 @@ def capture_mesh() -> None:
         "mesh",
         entries,
         {
-            "source": "data/3dobjs/base.obj",
+            "source": BASE_OBJ,
             "vertex_count": int(len(mesh.coord)),
             "face_count": int(len(mesh.fvert)),
             "uv_count": int(len(mesh.texco)) if mesh.has_uv else 0,
@@ -138,7 +165,7 @@ def capture_targets() -> None:
     import files3d
 
     print("capturing: targets")
-    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+    mesh = files3d.loadMesh(BASE_OBJ, maxFaces=8)
     out = GOLDEN / "targets"
     out.mkdir(parents=True, exist_ok=True)
 
@@ -185,7 +212,7 @@ def capture_skeleton() -> None:
     import skeleton as mhskel
 
     print("capturing: skeleton")
-    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+    mesh = files3d.loadMesh(BASE_OBJ, maxFaces=8)
 
     # Skeleton.fromFile reaches for G.app.selectedHuman when no human is given
     # (skeleton.py:774, :1279). Headless we supply a minimal stand-in.
@@ -207,7 +234,7 @@ def capture_skeleton() -> None:
 
     # Real callers pass the mesh OBJECT, not its coords
     # (core/mhmain.py:417, plugins/3_libraries_skeleton/skeletonlibrary.py:207).
-    skel = mhskel.load("data/rigs/default.mhskel", mesh)
+    skel = mhskel.load(DEFAULT_SKEL, mesh)
     skel.build()
 
     out = GOLDEN / "skeleton"
@@ -228,7 +255,7 @@ def capture_skeleton() -> None:
         "skeleton",
         entries,
         {
-            "source": "data/rigs/default.mhskel",
+            "source": DEFAULT_SKEL,
             "bone_count": len(bones),
             "joint_count": len(skel.joint_pos_idxs),
             "matrix_layout": "row-major storage, column vectors (v' = M*v), translation in M[:3,3]",
@@ -255,7 +282,7 @@ def capture_subdiv_masked() -> None:
     import numpy as np
 
     print("capturing: subdiv_masked")
-    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+    mesh = files3d.loadMesh(BASE_OBJ, maxFaces=8)
 
     class _StubObject:
         def __init__(self):
@@ -267,7 +294,7 @@ def capture_subdiv_masked() -> None:
     group_mask = np.ones(len(mesh._faceGroups), dtype=bool)
     for g in mesh._faceGroups:
         g.name = str(g.name)
-        if g.name.startswith("joint-") or g.name.startswith("helper-"):
+        if g.name.startswith(("joint-", "helper-")):
             group_mask[g.idx] = False
     face_mask = group_mask[mesh.group]
 
@@ -277,16 +304,16 @@ def capture_subdiv_masked() -> None:
     out = GOLDEN / "subdiv_masked"
     out.mkdir(parents=True, exist_ok=True)
     entries = {
-        "coord": _write_blob(out / "coord.bin", sub.coord, "f4"),
-        "fvert": _write_blob(out / "fvert.bin", sub.fvert, "u4"),
-        "texco": _write_blob(out / "texco.bin", sub.texco, "f4"),
-        "fuvs": _write_blob(out / "fuvs.bin", sub.fuvs, "u4"),
+        "coord": _write_blob(out / COORD_BIN, sub.coord, "f4"),
+        "fvert": _write_blob(out / FVERT_BIN, sub.fvert, "u4"),
+        "texco": _write_blob(out / TEXCO_BIN, sub.texco, "f4"),
+        "fuvs": _write_blob(out / FUVS_BIN, sub.fuvs, "u4"),
     }
     _finish(
         "subdiv_masked",
         entries,
         {
-            "source": "data/3dobjs/base.obj",
+            "source": BASE_OBJ,
             "parent_verts": int(len(mesh.coord)),
             "parent_faces": int(len(mesh.fvert)),
             "visible_faces": int(face_mask.sum()),
@@ -301,7 +328,7 @@ def capture_subdiv() -> None:
     import material as _material
 
     print("capturing: subdiv")
-    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+    mesh = files3d.loadMesh(BASE_OBJ, maxFaces=8)
 
     # SubdivisionObject copies mesh.object (catmull_clark_subdivision.py:67),
     # which is a weakref property (module3d.py:459-464), so the stub must be
@@ -320,16 +347,16 @@ def capture_subdiv() -> None:
     out = GOLDEN / "subdiv"
     out.mkdir(parents=True, exist_ok=True)
     entries = {
-        "coord": _write_blob(out / "coord.bin", sub.coord, "f4"),
-        "fvert": _write_blob(out / "fvert.bin", sub.fvert, "u4"),
-        "texco": _write_blob(out / "texco.bin", sub.texco, "f4"),
-        "fuvs": _write_blob(out / "fuvs.bin", sub.fuvs, "u4"),
+        "coord": _write_blob(out / COORD_BIN, sub.coord, "f4"),
+        "fvert": _write_blob(out / FVERT_BIN, sub.fvert, "u4"),
+        "texco": _write_blob(out / TEXCO_BIN, sub.texco, "f4"),
+        "fuvs": _write_blob(out / FUVS_BIN, sub.fuvs, "u4"),
     }
     _finish(
         "subdiv",
         entries,
         {
-            "source": "data/3dobjs/base.obj",
+            "source": BASE_OBJ,
             "parent_verts": int(len(mesh.coord)),
             "parent_faces": int(len(mesh.fvert)),
             "verts": int(len(sub.coord)),
@@ -377,33 +404,33 @@ def capture_character() -> None:
 
     G.app = _StubApp()
 
-    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+    mesh = files3d.loadMesh(BASE_OBJ, maxFaces=8)
     h = human_mod.Human(mesh)
-    for f in ("modeling_modifiers.json", "measurement_modifiers.json",
-              "bodyshapes_modifiers.json"):
-        humanmodifier.loadModifiers("data/modifiers/" + f, h)
+    for f in (MODELING_MODIFIERS, MEASUREMENT_MODIFIERS,
+              BODYSHAPES_MODIFIERS):
+        humanmodifier.loadModifiers(MODIFIER_DIR + f, h)
 
     # Parameter sets chosen to exercise: the neutral default, each macro axis at
     # both extremes, a plain shape slider on each side, and a mixed case.
     cases = [
         ("default", {}),
-        ("male", {"macrodetails/Gender": 1.0}),
-        ("female", {"macrodetails/Gender": 0.0}),
-        ("baby", {"macrodetails/Age": 0.0}),
-        ("old", {"macrodetails/Age": 1.0}),
-        ("muscular", {"macrodetails-universal/Muscle": 1.0}),
-        ("heavy", {"macrodetails-universal/Weight": 1.0}),
-        ("tall", {"macrodetails-height/Height": 1.0}),
-        ("short", {"macrodetails-height/Height": 0.0}),
+        ("male", {M_GENDER: 1.0}),
+        ("female", {M_GENDER: 0.0}),
+        ("baby", {M_AGE: 0.0}),
+        ("old", {M_AGE: 1.0}),
+        ("muscular", {M_MUSCLE: 1.0}),
+        ("heavy", {M_WEIGHT: 1.0}),
+        ("tall", {M_HEIGHT: 1.0}),
+        ("short", {M_HEIGHT: 0.0}),
         ("african", {"macrodetails/African": 1.0}),
         ("asian", {"macrodetails/Asian": 1.0}),
-        ("head_age_incr", {"head/head-age-decr|incr": 1.0}),
-        ("head_age_decr", {"head/head-age-decr|incr": -1.0}),
-        ("mixed", {"macrodetails/Gender": 1.0, "macrodetails/Age": 0.8,
-                   "macrodetails-universal/Muscle": 0.9,
-                   "macrodetails-universal/Weight": 0.2,
-                   "macrodetails-height/Height": 0.75,
-                   "head/head-age-decr|incr": 0.5}),
+        ("head_age_incr", {M_HEAD_AGE: 1.0}),
+        ("head_age_decr", {M_HEAD_AGE: -1.0}),
+        ("mixed", {M_GENDER: 1.0, M_AGE: 0.8,
+                   M_MUSCLE: 0.9,
+                   M_WEIGHT: 0.2,
+                   M_HEIGHT: 0.75,
+                   M_HEAD_AGE: 0.5}),
     ]
 
     out = GOLDEN / "character"
@@ -425,9 +452,9 @@ def capture_character() -> None:
         described.append({"name": name, "settings": settings,
                           "stack_size": len(stack), "stack": stack})
 
-    (out / "cases.json").write_text(json.dumps(described, indent=2, sort_keys=True))
+    (out / CASES_JSON).write_text(json.dumps(described, indent=2, sort_keys=True))
     _finish("character", entries,
-            {"source": "data/3dobjs/base.obj", "cases": len(cases),
+            {"source": BASE_OBJ, "cases": len(cases),
              "vertex_count": int(len(mesh.coord)),
              "note": "each .bin is the full coord array after applyAllTargets for that case"})
 
@@ -466,7 +493,7 @@ def capture_weights() -> None:
             return self._bones
 
     vw = animation.VertexBoneWeights.fromFile(
-        "data/rigs/default_weights.mhw", 19158, rootBone="root")
+        DEFAULT_WEIGHTS, 19158, rootBone="root")
 
     out = GOLDEN / "weights"
     out.mkdir(parents=True, exist_ok=True)
@@ -499,7 +526,7 @@ def capture_weights() -> None:
     entries["compiled4_weights"] = _write_blob(out / "compiled4_weights.bin", w4, "f4")
 
     _finish("weights", entries, {
-        "source": "data/rigs/default_weights.mhw",
+        "source": DEFAULT_WEIGHTS,
         "vertex_count": int(vw.vertexCount),
         "bones_with_weights": len(bone_names),
         "max_weights_per_vertex": int(vw.getMaxNumberVertexWeights()),
@@ -526,7 +553,7 @@ def capture_mhm_save() -> None:
     from core import G
 
     print("capturing: mhm_save")
-    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+    mesh = files3d.loadMesh(BASE_OBJ, maxFaces=8)
 
     class _StubCamera:
         def getRotation(self):
@@ -559,9 +586,9 @@ def capture_mhm_save() -> None:
     import human as human_mod
 
     h = human_mod.Human(mesh)
-    for f in ("modeling_modifiers.json", "measurement_modifiers.json",
-              "bodyshapes_modifiers.json"):
-        humanmodifier.loadModifiers("data/modifiers/" + f, h)
+    for f in (MODELING_MODIFIERS, MEASUREMENT_MODIFIERS,
+              BODYSHAPES_MODIFIERS):
+        humanmodifier.loadModifiers(MODIFIER_DIR + f, h)
 
     h.setName("hero")
     h.setUuid("1234-abcd")
@@ -570,7 +597,7 @@ def capture_mhm_save() -> None:
     for t in ("Zulu", "alpha", "MIKE", "alpha"):
         h.addTag(t)
 
-    for name, value in (("head/head-oval", 0.4), ("macrodetails/Gender", 1.0)):
+    for name, value in (("head/head-oval", 0.4), (M_GENDER, 1.0)):
         h.getModifier(name).setValue(value)
 
     # A plugin-contributed line, so the unhandled write-back path is covered.
@@ -625,15 +652,15 @@ def capture_slider_layout() -> None:
 
     # Modifiers keyed by fullName, so the layout can be resolved against them.
     mods = {}
-    for name in ("modeling_modifiers.json", "bodyshapes_modifiers.json",
-                 "measurement_modifiers.json"):
-        for m in humanmodifier.loadModifiers("data/modifiers/" + name, None):
+    for name in (MODELING_MODIFIERS, BODYSHAPES_MODIFIERS,
+                 MEASUREMENT_MODIFIERS):
+        for m in humanmodifier.loadModifiers(MODIFIER_DIR + name, None):
             mods[m.fullName] = m
 
     out_views = OrderedDict()
     for fname in ("modeling_sliders.json", "bodyshapes_sliders.json",
                   "measurement_sliders.json"):
-        data = _json.load(open("data/modifiers/" + fname, encoding="utf-8"),
+        data = _json.load(open(MODIFIER_DIR + fname, encoding="utf-8"),
                           object_pairs_hook=OrderedDict)
         for task_name, props in data.items():
             view = OrderedDict()
@@ -694,7 +721,7 @@ def capture_body_pose() -> None:
     import skeleton as mhskel
 
     print("capturing: body_pose")
-    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+    mesh = files3d.loadMesh(BASE_OBJ, maxFaces=8)
 
     from core import G
 
@@ -712,7 +739,7 @@ def capture_body_pose() -> None:
     app.selectedHuman = _StubHuman(mesh)
     G.app = app
 
-    skel = mhskel.load("data/rigs/default.mhskel", mesh)
+    skel = mhskel.load(DEFAULT_SKEL, mesh)
     skel.build()
     bones = skel.getBones()
 
@@ -726,7 +753,7 @@ def capture_body_pose() -> None:
     mat_pose = np.stack([b.matPose for b in bones]).astype(np.float32)
 
     vw = animation.VertexBoneWeights.fromFile(
-        "data/rigs/default_weights.mhw", len(mesh.coord), rootBone="root")
+        DEFAULT_WEIGHTS, len(mesh.coord), rootBone="root")
     compiled = vw._compileVertexWeights(vw.data, skel, 4, len(mesh.coord))
 
     coords4 = np.concatenate(
@@ -775,7 +802,7 @@ def capture_skinning() -> None:
     import skeleton as mhskel
 
     print("capturing: skinning")
-    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+    mesh = files3d.loadMesh(BASE_OBJ, maxFaces=8)
 
     from core import G
 
@@ -793,7 +820,7 @@ def capture_skinning() -> None:
     app.selectedHuman = _StubHuman(mesh)
     G.app = app
 
-    skel = mhskel.load("data/rigs/default.mhskel", mesh)
+    skel = mhskel.load(DEFAULT_SKEL, mesh)
     skel.build()
     bones = skel.getBones()
 
@@ -835,7 +862,7 @@ def capture_skinning() -> None:
     pose_verts = np.stack([b.matPoseVerts for b in bones]).astype(np.float32)
 
     vw = animation.VertexBoneWeights.fromFile(
-        "data/rigs/default_weights.mhw", len(mesh.coord), rootBone="root")
+        DEFAULT_WEIGHTS, len(mesh.coord), rootBone="root")
     compiled = vw._compileVertexWeights(vw.data, skel, 4, len(mesh.coord))
 
     coords4 = np.concatenate(
@@ -933,7 +960,7 @@ def capture_transform() -> None:
         "rotations": _write_blob(
             out / "rotations.bin", np.stack(rots).astype(np.float64), "f8"),
     }
-    (out / "cases.json").write_text(json.dumps({
+    (out / CASES_JSON).write_text(json.dumps({
         "conventions": conventions,
         "angle_sets": [list(a) for a in angle_sets],
         "slerp_fractions": fractions,
@@ -1041,7 +1068,7 @@ def capture_poseunits() -> None:
     import skeleton as mhskel
 
     print("capturing: poseunits")
-    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+    mesh = files3d.loadMesh(BASE_OBJ, maxFaces=8)
 
     from core import G
 
@@ -1059,7 +1086,7 @@ def capture_poseunits() -> None:
     app.selectedHuman = _StubHuman(mesh)
     G.app = app
 
-    skel = mhskel.load("data/rigs/default.mhskel", mesh)
+    skel = mhskel.load(DEFAULT_SKEL, mesh)
     skel.build()
 
     b = bvh_mod.load("data/poseunits/face-poseunits.bvh", allowTranslation="none")
@@ -1095,7 +1122,7 @@ def capture_poseunits() -> None:
         "blended_reversed": _write_blob(
             out / "blended_reversed.bin", np.asarray(reversed_blend, dtype=np.float32), "f4"),
     }
-    (out / "cases.json").write_text(json.dumps({
+    (out / CASES_JSON).write_text(json.dumps({
         "names": names,
         "bone_count": int(skel.getBoneCount()),
         "frame_count": int(b.frameCount),
@@ -1137,7 +1164,7 @@ def capture_mask() -> None:
     import files3d
 
     print("capturing: mask")
-    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+    mesh = files3d.loadMesh(BASE_OBJ, maxFaces=8)
     nverts = len(mesh.coord)
 
     # Visible = True, matching the reference's convention (guicommon.py:536-538).
@@ -1186,7 +1213,7 @@ def capture_mask() -> None:
         })
 
     _finish("mask", entries, {
-        "source": "data/3dobjs/base.obj",
+        "source": BASE_OBJ,
         "vertex_count": int(nverts),
         "face_count": int(len(mesh.fvert)),
         "note": "index is QUAD corners here (reference submits GL_QUADS); the "
@@ -1226,11 +1253,11 @@ def capture_proxy() -> None:
 
     G.app = _StubApp()
 
-    mesh = files3d.loadMesh("data/3dobjs/base.obj", maxFaces=8)
+    mesh = files3d.loadMesh(BASE_OBJ, maxFaces=8)
     h = human_mod.Human(mesh)
-    for f in ("modeling_modifiers.json", "measurement_modifiers.json",
-              "bodyshapes_modifiers.json"):
-        humanmodifier.loadModifiers("data/modifiers/" + f, h)
+    for f in (MODELING_MODIFIERS, MEASUREMENT_MODIFIERS,
+              BODYSHAPES_MODIFIERS):
+        humanmodifier.loadModifiers(MODIFIER_DIR + f, h)
     G.app.selectedHuman = h
 
     proxies = ["data/eyes/high-poly/high-poly.mhclo",
@@ -1244,20 +1271,20 @@ def capture_proxy() -> None:
     # not merely the ones that look different. The macro extremes bracket the
     # range, and head-scale-* drives exactly the three axes the matrix measures.
     bodies = [("neutral", {}),
-              ("mixed", {"macrodetails/Gender": 1.0, "macrodetails/Age": 0.8,
-                         "macrodetails-universal/Muscle": 0.9,
-                         "macrodetails-height/Height": 0.75}),
+              ("mixed", {M_GENDER: 1.0, M_AGE: 0.8,
+                         M_MUSCLE: 0.9,
+                         M_HEIGHT: 0.75}),
               # Age 0.0 is an infant: the largest head-to-body ratio the model
               # produces, and the far end of the scale numerator.
-              ("extreme_min", {"macrodetails/Gender": 0.0, "macrodetails/Age": 0.0,
-                               "macrodetails-universal/Muscle": 0.0,
-                               "macrodetails-universal/Weight": 0.0,
-                               "macrodetails-height/Height": 0.0,
+              ("extreme_min", {M_GENDER: 0.0, M_AGE: 0.0,
+                               M_MUSCLE: 0.0,
+                               M_WEIGHT: 0.0,
+                               M_HEIGHT: 0.0,
                                "macrodetails-proportions/BodyProportions": 0.0}),
-              ("extreme_max", {"macrodetails/Gender": 1.0, "macrodetails/Age": 1.0,
-                               "macrodetails-universal/Muscle": 1.0,
-                               "macrodetails-universal/Weight": 1.0,
-                               "macrodetails-height/Height": 1.0,
+              ("extreme_max", {M_GENDER: 1.0, M_AGE: 1.0,
+                               M_MUSCLE: 1.0,
+                               M_WEIGHT: 1.0,
+                               M_HEIGHT: 1.0,
                                "macrodetails-proportions/BodyProportions": 1.0}),
               # Straight at the three axes the TMatrix divides by.
               ("head_small", {"head/head-scale-depth-decr|incr": -1.0,

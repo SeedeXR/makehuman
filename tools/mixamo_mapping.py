@@ -168,6 +168,10 @@ def mixamo_hierarchy() -> dict[str, str | None]:
     parents: dict[str, str | None] = {}
     stack: dict[int, str] = {}
     for line in MIXAMO_DOC.read_text().splitlines():
+        # NOT `\w`, though SonarQube's python:S6353 asks for it: Python's `\w`
+        # is Unicode-aware by default and would also match accented and
+        # non-Latin letters. A Mixamo bone name is ASCII, and saying so is the
+        # point of spelling the class out.
         m = re.match(r"^(\s*)(\d+)(\s+)mixamorig:([A-Za-z0-9_]+)\s*$", line)
         if not m:
             continue
@@ -265,7 +269,7 @@ def geometric_problems() -> list[str]:
                 continue
             gap = abs(mf[bone] - hf[target])
             if gap > ARC_TOLERANCE:
-                nearest = min(hf, key=lambda k: abs(hf[k] - mf[bone]))
+                nearest = min(hf, key=lambda k, b=bone: abs(hf[k] - mf[b]))
                 out.append(
                     f"{bone} is {mf[bone] * 100:.1f}% along its chain but {target} is "
                     f"{hf[target] * 100:.1f}% ({gap * 100:.1f} points apart); "

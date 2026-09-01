@@ -123,3 +123,7 @@ benchmarks/results/
 # in the repository.
 references/**/*.blend
 references/**/*.abc
+
+# Local SonarQube secrets -- never commit.
+.sonar-token
+.scannerwork/

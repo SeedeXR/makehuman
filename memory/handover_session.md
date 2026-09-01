@@ -1761,6 +1761,72 @@ ctest **449/449** in debug, release, ASan and TSan — TSan run alone. Format cl
 
 ---
 
+## 2026-09-01 20:18:48 — Session 109 · **SonarQube unblocked, and it cannot see the C++**
+
+### The chunk
+The owner pointed at Docker. SonarQube **26.8.0 Community** was already running
+as `m2m-sonarqube` for the mesh2motion project — started it, created a
+`makehuman` project, minted a **PROJECT_ANALYSIS_TOKEN scoped to this project
+only**, and wired up `sonar-project.properties`. Secrets live in `./.sonar-token`
+(gitignored, 0600).
+
+### The thing that matters more than the setup
+**Community Edition ships no C or C++ analyser.** Verified against the server
+rather than assumed: `GET /api/languages/list` returns 26 languages and neither
+`c` nor `cpp` is one. Confirmed independently by the measures —
+`ncloc_language_distribution = py=1956` for a repo of ~60k lines of C++23.
+
+So **a green Sonar gate says nothing about the C++**. What it does cover is the
+Python in `tools/` and `benchmarks/` (which gates three CI jobs), the workflow
+YAML, and the `secrets` analyser over every indexed file — which is the reason
+`src/` and `include/` are in `sonar.sources` at all. That is written at the top
+of `sonar-project.properties` so nobody reads a green badge as C++ assurance.
+
+### 70 findings to 8, and 1 bug to 0
+* **36 were one false-positive class.** `capture_fixture.py` stubs the
+  reference's own API — `getRestposeCoordinates`, `callAsync`, `addSetting`,
+  `zoomFactor` — and Sonar flagged each for not being snake_case. Renaming would
+  stop the stubs matching the thing they exist to mirror. Suppressed per rule,
+  per file, with the reason in the properties file.
+* **Real, and fixed**: a lambda capturing a loop variable (the one *bug*); an
+  `assert` inside `except Exception`, which both swallows AssertionError and
+  disappears under `python -O`; a `# noqa: BLE001 - prose` whose trailing text
+  can make the suppression silently inert; three chained
+  `endswith`/`startswith`; 19 duplicated literals named.
+* **One rejected with a reason rather than deferred**: `python:S6353` wants
+  `\w` for `[A-Za-z0-9_]`. Python's `\w` is Unicode-aware, so it would widen
+  the class to accented and non-Latin letters. Mixamo bone names are ASCII and
+  spelling it out is the point.
+
+**Behaviour preservation proved, not assumed**: after extracting 19 constants
+from the oracle generator I re-captured **every** golden fixture. All `.bin`
+blobs byte-identical.
+
+### The gate, and the honest bit about coverage
+A `MakeHuman` gate copying the pattern the owner already accepted for
+Mesh2Motion: `new_violations = 0`, hotspots reviewed 100%, new duplication
+<= 3%. The default gate's `new_coverage >= 80` is **removed** — this server
+cannot see the 449 C++ tests, and there are no Python tests, so the condition
+would read 0% forever and make the gate uninformative. That is not weakening a
+test: Python coverage genuinely is 0, and it says so in `todo.md` and
+`test.md` rather than being hidden by the removal.
+
+### Found on the way, not fixed
+The `character` fixture is **not reproducible**: re-capturing rewrites
+`cases.json`'s stack keys from `../../data/...` to `../../../data/...`.
+Verified environmental by re-running the ORIGINAL script — it does the same, so
+it predates today. Benign (the parity test reads only `name`, `settings` and
+`stack_size`, and every `.bin` matches) but an oracle whose content depends on
+where the repo sits is a fragile one.
+
+### Verification
+Gate **OK**. ctest **449/449** in debug. ASan and TSan not re-run: **no C++ file
+changed** — the diff is Python tooling, `.gitignore` and the Sonar config — and
+the only coupling to C++ is the golden fixtures, which were re-captured and are
+byte-identical.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

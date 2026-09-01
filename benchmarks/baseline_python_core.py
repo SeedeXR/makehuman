@@ -174,7 +174,10 @@ def main():
 
         stub = _StubObject()          # strong ref, must outlive the benchmark
         mesh.object = stub
-        assert mesh.object is not None, "stub was garbage collected"
+        # Not an assert: this sits inside `except Exception`, which catches
+        # AssertionError too, and asserts vanish entirely under `python -O`.
+        if mesh.object is None:
+            raise RuntimeError("stub was garbage collected")
 
         sub_holder = {}
 

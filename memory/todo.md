@@ -412,10 +412,75 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       no Blender. Chain roots need a separate positional check — a root is 0% on
       both sides by definition, so the arc measure was blind to the very error
       it was built for.
-- [ ] **SonarQube is blocked on credentials.** `sonar-scanner` 8.1.0 is
-      installed but fails with `You must define ... sonar.organization` and
-      needs `SONAR_TOKEN`. Ask the owner for a SonarCloud token + organisation,
-      or a self-hosted `SONAR_HOST_URL`.
+- [x] **SonarQube UNBLOCKED (2026-09-01, owner pointed at Docker).** Self-hosted
+      SonarQube **26.8.0 Community** in the `m2m-sonarqube` container (shared
+      with the mesh2motion project), `http://localhost:9000`.
+
+      ```bash
+      docker start m2m-sonarqube            # persists in docker_sonarqube_* volumes
+      set -a; . ./.sonar-token; set +a      # SONAR_HOST_URL + SONAR_TOKEN, gitignored
+      sonar-scanner                         # reads sonar-project.properties
+      ```
+
+      The token is a **PROJECT_ANALYSIS_TOKEN scoped to `makehuman`**: it can
+      analyse this project and nothing else, so it is not a way into the server.
+      It lives only in `./.sonar-token` (gitignored, 0600) — never committed.
+
+      **READ THIS BEFORE TRUSTING A GREEN GATE. Community Edition ships NO C or
+      C++ analyser** — CFamily is Developer Edition and above. Verified against
+      the server, not assumed: `GET /api/languages/list` returns 26 languages
+      and neither `cpp` nor `c` is among them. Confirmed by the measures:
+      **`ncloc_language_distribution = py=1956`** for a repo that is ~60k lines
+      of C++23.
+      So Sonar covers `tools/` and `benchmarks/` Python (which gate three CI
+      jobs), the workflow YAML, and the **secrets** analyser across every
+      indexed file — `src/` and `include/` are in `sonar.sources` for that
+      reason alone. **The C++ gates remain `-Werror` + ctest in four presets +
+      ASan + TSan.** Those are the real ones.
+
+      **First scan: 70 violations (1 bug, 69 smells). Now 8, 0 bugs.**
+      - **36 were one false-positive class.** `capture_fixture.py` stubs the
+        reference's own API — `getRestposeCoordinates`, `callAsync`,
+        `addSetting`, `zoomFactor`, `modelCamera` — and Sonar flagged every one
+        for not being snake_case. Renaming would simply stop the stubs matching.
+        Suppressed per rule, per file, each with the reason in the properties.
+      - **Real and fixed**: a lambda capturing a loop variable
+        (`mixamo_mapping.py`, the one *bug*); an `assert` inside
+        `except Exception`, which swallows AssertionError and vanishes under
+        `python -O`; a `# noqa: BLE001 - prose` whose trailing text can make the
+        suppression inert; three chained `endswith`/`startswith`; 19 duplicated
+        literals turned into named constants.
+      - **One rejected with a reason, not deferred**: `python:S6353` wants `\w`
+        for `[A-Za-z0-9_]`. Python's `\w` is Unicode-aware, so it would also
+        match accented and non-Latin letters. The class is deliberately ASCII.
+      - **Behaviour-preservation proved, not assumed**: re-captured **every**
+        golden fixture after the constant extraction — all `.bin` blobs
+        byte-identical.
+      **The gate** is a `MakeHuman` gate copying the pattern the owner already
+      accepted for Mesh2Motion: `new_violations = 0`,
+      `new_security_hotspots_reviewed = 100%`, `new_duplicated_lines_density
+      <= 3`. The default gate's `new_coverage >= 80` was removed **because this
+      server cannot see the coverage that exists**: there are no Python tests,
+      the 449 C++ tests are invisible to it, so the condition would read 0%
+      forever and make the gate uninformative rather than informative. Python
+      coverage really is 0 and that is recorded here rather than hidden.
+- [ ] **8 remaining findings, all `python:S3776` (cognitive complexity)** in
+      developer tools: `capture_fixture.py:624` (40), `mixamo_mapping.py:290`
+      (55) and `:229` (22), `audit_taskviews.py:86` (32),
+      `audit_poseunits.py:29` (20), `blender_validate.py:57` (17),
+      `baseline_python_core.py:46` (17), `build_mixamo_superset.py:64` (16).
+      Real, and deliberately not fixed in the same pass: `capture_fixture.py`
+      *generates the oracle fixtures*, so refactoring it trades a style metric
+      for risk to every parity test. Reopen with the re-capture-and-diff proof
+      the constant extraction used.
+- [ ] **The `character` fixture is not reproducible, and it is not my change.**
+      Re-running `capture_fixture.py character` rewrites `cases.json`'s stack
+      keys from `../../data/targets/...` to `../../../data/...`. Verified
+      environmental by re-running the ORIGINAL script: it does the same. Benign
+      today — `test_character_parity.cpp` reads only `name`, `settings` and
+      `stack_size`, and every `.bin` is byte-identical — but an oracle whose
+      content depends on where the repo sits is a fragile one, and it makes
+      "re-capture and diff" noisier than it should be.
 
 - [ ] **Bone naming/order: Mixamo standard** (owner decision, 2026-08-29).
       Measured and documented in `docs/rig/mixamo_bone_order.md` — 65 bones,

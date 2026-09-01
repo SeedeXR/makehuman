@@ -38,7 +38,7 @@ def _clear():
 
 def _import(path: str) -> None:
     lower = path.lower()
-    if lower.endswith(".glb") or lower.endswith(".gltf"):
+    if lower.endswith((".glb", ".gltf")):
         bpy.ops.import_scene.gltf(filepath=path)
     elif lower.endswith(".fbx"):
         bpy.ops.import_scene.fbx(filepath=path)
@@ -48,7 +48,7 @@ def _import(path: str) -> None:
         bpy.ops.wm.collada_import(filepath=path)
     elif lower.endswith(".stl"):
         bpy.ops.wm.stl_import(filepath=path)
-    elif lower.endswith(".usda") or lower.endswith(".usdc") or lower.endswith(".usdz"):
+    elif lower.endswith((".usda", ".usdc", ".usdz")):
         bpy.ops.wm.usd_import(filepath=path)
     else:
         raise RuntimeError("unsupported extension: " + path)
@@ -151,7 +151,9 @@ def main() -> int:
     for path in args:
         try:
             result = describe(path)
-        except Exception as exc:  # noqa: BLE001 - report, do not abort the batch
+        # Broad by intent: one bad file must not abort the batch, and the
+        # exception type is reported in the JSON line below.
+        except Exception as exc:  # noqa: BLE001
             result = {"file": path, "ok": False, "error": f"{type(exc).__name__}: {exc}"}
         print("BLENDER_VALIDATE:" + json.dumps(result))
     return 0

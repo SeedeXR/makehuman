@@ -217,3 +217,38 @@ A change is done when **all** of these are true and were **observed this session
 Report the outcome honestly: failing tests are reported **with output**, skipped
 steps are named as skipped, and "done" is said only when the list above is
 genuinely complete.
+
+---
+
+## SonarQube (added 2026-09-01)
+
+Self-hosted **SonarQube 26.8.0 Community**, `m2m-sonarqube` container, shared
+with the mesh2motion project.
+
+```bash
+docker start m2m-sonarqube
+set -a; . ./.sonar-token; set +a      # SONAR_HOST_URL + SONAR_TOKEN, gitignored
+sonar-scanner                          # reads sonar-project.properties
+```
+
+`./.sonar-token` is gitignored and 0600. Its token is a
+**PROJECT_ANALYSIS_TOKEN scoped to `makehuman`** — it can analyse this project
+and nothing else.
+
+**Community Edition has no C or C++ analyser.** Verified:
+`GET /api/languages/list` lists 26 languages, none of them `c` or `cpp`, and the
+project measures report `ncloc_language_distribution = py=1956` for a repo of
+~60k lines of C++23. **A green Sonar gate says nothing about the C++.** It
+covers the Python in `tools/` and `benchmarks/`, the workflow YAML, and the
+`secrets` analyser across every indexed file.
+
+**The C++ gates are unchanged and remain the real ones**: `-Wall -Wextra
+-Wpedantic -Werror -Wconversion -Wsign-conversion`, `ctest` in
+debug/release/ASan/TSan, the golden parity fixtures, and Blender / usdchecker as
+third-party validators.
+
+The `MakeHuman` quality gate deliberately carries **no coverage condition**: the
+449 tests are C++ and invisible to this server, there are no Python tests, so
+`new_coverage` would read 0% forever. Removing a condition that can only ever
+fail is not the same as weakening a test — Python coverage genuinely is 0, and
+that is stated in `todo.md` rather than hidden.
