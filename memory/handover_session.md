@@ -1932,6 +1932,57 @@ the spread of the 2.67-4.79 ms range measured for this scene.
 
 ---
 
+## 2026-09-01 21:49:28 — Session 112 · **the application could not read a mesh**
+
+### How it was found
+By scanning instead of guessing. This run has found the same bug shape eight
+times — capability built, tested, never connected — so I looked for the rest of
+them mechanically: every function name declared in `include/`, counted against
+its occurrences in `src/`.
+
+**274 declared names; 57 appear at most once**, i.e. only at their own
+definition. Most are accessors used from tests, or Qt event overrides Qt itself
+calls. Two were real capabilities with no application path: **`importScene`**
+and **`writeBvh`**.
+
+### `--inspect <file>`
+`io::importScene` is five sessions of work — multi-mesh, node transforms,
+materials, skins, and a unit contract — and **nothing in the application called
+it**. Its only consumers were tests. Every "what does our reader actually see in
+this file?" across those five sessions was answered with a throwaway probe I
+wrote and threw away.
+
+It prints meshes, vertices, triangles, per-mesh UVs / material / skin, and what
+the file says about its unit. `metersPerUnit == 0` stays **"the format does not
+say"** rather than becoming a guess — the contract from session 094, surfaced.
+
+Side by side it makes that contract visible:
+
+```
+t.glb : units: 1 = 1 m,    so 1.6594 m tall   body 179-bone skin
+t.fbx : units: 1 = 0.01 m, so 1.6594 m tall   body 179-bone skin
+h.obj : units: the format does not say
+```
+
+### The test that could not fail
+My first `--inspect` test used the GLB. glTF is metres, so
+`height * metersPerUnit` is a **no-op** there: deleting the multiplication left
+it green. The FBX is written in centimetres, so only it can tell the difference
+— and the mutation fails that one. Third time this run that a first test passed
+on a mutation; the pattern is always the same, a fixture whose value happens to
+be the identity.
+
+### Not done, and why it is not the same job
+`writeBvh` also has no application path, but wiring it is not a connection: it
+takes a `BvhFile`, so exporting the current pose means BUILDING one from the
+skeleton and local pose — hierarchy, offsets, channels, a frame. That is a
+feature, recorded rather than half-started.
+
+### Verification
+ctest **454/454** in debug, release, ASan and TSan — TSan run alone. Format clean. SonarQube gate OK.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

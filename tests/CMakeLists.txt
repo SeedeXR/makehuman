@@ -235,6 +235,45 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
     set_tests_properties(app_rig_usdz_skinned PROPERTIES FIXTURES_REQUIRED app_rig_usdz_file)
 
+    # `io::importScene` is five sessions of work -- multi-mesh, node transforms,
+    # materials, skins, a unit contract -- and until `--inspect` NOTHING in the
+    # application called it. Its only consumers were tests.
+    #
+    # The assertion is the unit line, not just "it read something": the GLB is
+    # written in metres and the FBX in centimetres, and both must report the
+    # same 1.6594 m character. A reader that ignored the file's declared unit
+    # would still list the meshes correctly.
+    add_test(NAME app_inspect_glb COMMAND makehuman
+             --inspect ${CMAKE_CURRENT_BINARY_DIR}/app_rig.glb)
+    set_tests_properties(app_inspect_glb PROPERTIES
+        PASS_REGULAR_EXPRESSION "units: 1 = 1 m, so 1\\.6[0-9]+ m tall"
+        FIXTURES_REQUIRED app_rig_glb_file)
+
+    # ...and the FBX, which is where the conversion has teeth. The GLB is
+    # written in METRES, so `height * metersPerUnit` is a no-op there and a
+    # writer that dropped the multiplication would still pass the case above --
+    # verified by mutation. The FBX is written in CENTIMETRES, so the same
+    # character only reads as 1.6594 m if the unit is actually applied.
+    add_test(NAME app_inspect_fbx_export COMMAND makehuman
+             --rig mixamo_superset
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_rig.fbx)
+    set_tests_properties(app_inspect_fbx_export PROPERTIES
+        PASS_REGULAR_EXPRESSION "skin: 179 joints"
+        FIXTURES_SETUP app_rig_fbx_file)
+    add_test(NAME app_inspect_fbx COMMAND makehuman
+             --inspect ${CMAKE_CURRENT_BINARY_DIR}/app_rig.fbx)
+    set_tests_properties(app_inspect_fbx PROPERTIES
+        PASS_REGULAR_EXPRESSION "units: 1 = 0\\.01 m, so 1\\.6[0-9]+ m tall"
+        FIXTURES_REQUIRED app_rig_fbx_file)
+
+    # A file that is not a mesh must be reported and must exit non-zero, not
+    # print an empty summary.
+    add_test(NAME app_inspect_bad COMMAND makehuman
+             --inspect ${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt)
+    set_tests_properties(app_inspect_bad PROPERTIES
+        PASS_REGULAR_EXPRESSION "cannot read"
+        WILL_FAIL FALSE)
+
     # A path, not a stem -- and deliberately without the .mhskel extension,
     # which resolved to an extensionless filename until the path and stem cases
     # were reduced to a common base.

@@ -1394,6 +1394,31 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 
 ## M8 — Application shell (`mh-app`, `mh-ui`)
 
+- [x] **`--inspect <file>`: the application can finally read a mesh.**
+      `io::importScene` is five sessions of work — multi-mesh, node transforms,
+      materials, skins, a unit contract — and **nothing in the application ever
+      called it**. Its only consumers were tests, so every "what does our reader
+      actually see in this file?" during those five sessions was answered with a
+      throwaway probe.
+      Found by a systematic scan rather than by hand: of 274 names declared in
+      `include/`, 57 appear at most once in `src/`. Most are accessors or Qt
+      overrides; `importScene` and `writeBvh` were the two real capabilities
+      with no application path.
+      Prints meshes, vertices, triangles, per-mesh UVs/material/skin, and what
+      the file says about its unit — `metersPerUnit` 0 stays "the format does not
+      say" rather than becoming a guess. Side by side it makes the unit contract
+      visible: the GLB reports `1 = 1 m` and the FBX `1 = 0.01 m`, and **both**
+      report the same 1.6594 m character.
+      **The GLB test could not catch a dropped conversion** — glTF is metres, so
+      `height * metersPerUnit` is a no-op there, and removing the multiplication
+      left it green. The FBX case is the one with teeth, and the mutation fails
+      it.
+- [ ] **`writeBvh` has no application path either.** Unlike `--inspect` this is
+      not wiring: `writeBvh` takes a `BvhFile`, so exporting the current pose
+      means BUILDING one from `rig.skeleton` + `rig.localPose` — hierarchy,
+      offsets, channels, one frame. A feature, not a connection. The reference
+      has `9_export_bvh`.
+
 - [x] **Every export from the application was a statue.** The app loaded the
       skeleton, fitted the joints to the morphed body, compiled the weights,
       reported *"clamped 3,725 of 19,158 vertices to 4 influences"*, posed the

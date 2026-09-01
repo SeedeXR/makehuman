@@ -650,6 +650,64 @@ std::optional<mh::foundation::MaterialDesc> bodyMaterial() {
 /// @param worn proxies to include. OBJ writes them as extra groups; the other
 ///        formats are still single-mesh, so they say what they are leaving out
 ///        rather than quietly exporting a dressed character naked.
+/// Prints what our own importer sees in @p path.
+///
+/// `io::importScene` is five sessions of work -- multi-mesh, node transforms,
+/// materials, skins, and a unit contract -- and until now **nothing in the
+/// application called it**. Its only consumers were tests, so every question of
+/// the form "what does our reader actually see in this file?" was answered with
+/// a throwaway probe.
+///
+/// It reports what the file SAYS, not a guess: `metersPerUnit` is 0 for a
+/// genuinely unitless format, and the real-world size is printed only when the
+/// file is in a position to state one.
+bool inspectFile(const std::filesystem::path& path) {
+    const auto scene = mh::io::importScene(path);
+    if (!scene) {
+        std::fprintf(stderr, "cannot read %s: %s\n", path.string().c_str(),
+                     scene.error().message().c_str());
+        return false;
+    }
+
+    size_t vertices  = 0;
+    size_t triangles = 0;
+    for (const auto& m : scene->meshes) {
+        vertices += m.mesh.vertexCount();
+        triangles += m.mesh.faceCount();
+    }
+    std::printf("%s: %zu meshes, %zu vertices, %zu triangles\n", path.string().c_str(),
+                scene->meshes.size(), vertices, triangles);
+
+    if (scene->metersPerUnit > 0.0) {
+        float lo = std::numeric_limits<float>::infinity();
+        float hi = -lo;
+        for (const auto& m : scene->meshes) {
+            for (const auto& v : m.mesh.coord) {
+                lo = std::min(lo, v.y);
+                hi = std::max(hi, v.y);
+            }
+        }
+        std::printf("  units: 1 = %.4g m, so %.4f m tall\n", scene->metersPerUnit,
+                    static_cast<double>(hi - lo) * scene->metersPerUnit);
+    } else {
+        std::printf("  units: the format does not say\n");
+    }
+
+    for (const auto& m : scene->meshes) {
+        std::printf("  mesh \"%s\": %zu verts, %zu tris, %s UVs", m.name.c_str(),
+                    m.mesh.vertexCount(), m.mesh.faceCount(), m.mesh.texco.empty() ? "no" : "with");
+        if (m.material) {
+            std::printf(", material \"%s\"%s", m.material->name.c_str(),
+                        m.material->transparent ? " (transparent)" : "");
+        }
+        if (m.skin) {
+            std::printf(", skin of %zu bones", m.skin->bones.size());
+        }
+        std::printf("\n");
+    }
+    return true;
+}
+
 /// The body's skin for export, or nothing when there is no rig to export.
 ///
 /// The application built a complete rig -- loaded the skeleton, fitted the
@@ -908,6 +966,11 @@ int main(int argc, char** argv) {
         QStringLiteral("Write the posed mesh here and exit. Format from the extension: "
                        ".obj .fbx .glb .usda .usdz .dae .stl .3mf"),
         QStringLiteral("path"));
+    const QCommandLineOption inspectOpt(
+        QStringLiteral("inspect"),
+        QStringLiteral("Read a mesh file with our own importer, print what it holds, and exit. "
+                       "Anything assimp reads: .obj .fbx .glb .gltf .dae .stl .3mf"),
+        QStringLiteral("path"));
     const QCommandLineOption setOpt(
         QStringLiteral("set"),
         QStringLiteral("Set a modifier before rendering or exporting, as "
@@ -948,9 +1011,16 @@ int main(int argc, char** argv) {
     parser.addOption(rigOpt);
     parser.addOption(poseOpt);
     parser.addOption(exportOpt);
+    parser.addOption(inspectOpt);
     parser.addOption(shaderOpt);
     parser.addOption(shotOpt);
     parser.process(app);
+
+    // Before anything else, because it is about the file it is given rather
+    // than about a character: no base mesh, no rig, no assets.
+    if (parser.isSet(inspectOpt)) {
+        return inspectFile(parser.value(inspectOpt).toStdString()) ? 0 : 1;
+    }
 
     // Set once, before anything loads a skeleton.
     setRigName(parser.value(rigOpt).toStdString());
