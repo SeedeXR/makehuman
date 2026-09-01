@@ -1139,3 +1139,279 @@ TEST_CASE("a shared texture is embedded once", "[io][gltf][texture]") {
     std::error_code ec;
     std::filesystem::remove(out, ec);
 }
+
+// --------------------------------------------------------- sparse morphs
+//
+// A morph target is a delta per RENDER vertex, and almost all of them are zero:
+// `nose/nose-base-up.target` touches **305 of 19,158** mesh vertices, 1.6%.
+// Written densely, every target costs the same 261,996 bytes whatever it moves,
+// and the three-target fixture GLB is 1,930,380 bytes -- **786 KB of it, 41%,
+// morph deltas that are overwhelmingly zero**.
+//
+// That is not merely wasteful, it is what makes exporting the modifier set
+// impossible: 1,280 targets dense is 335 MB.
+//
+// glTF's answer is a sparse accessor -- an index list plus a value list, with
+// the base implicitly zero when the accessor has no bufferView of its own. The
+// decisive test is not that the file shrank but that it still says the same
+// thing, so this decodes the sparse encoding back and compares it delta for
+// delta against what went in. A wrong index mapping shrinks the file just as
+// well and produces a valid GLB that moves the wrong vertices.
+namespace {
+
+struct SparseView {
+    bool isSparse{false};
+    size_t count{0};
+    std::vector<uint32_t> indices;
+    std::vector<foundation::Vec3> values;
+    foundation::Vec3 lo{}, hi{};
+};
+
+/// Reads target 0's POSITION accessor out of a GLB, sparse or dense.
+SparseView readMorph0(const std::filesystem::path& p) {
+    const std::string j            = glbJson(p);
+    const std::vector<uint8_t> bin = glbBin(p);
+    SparseView out;
+
+    // The morph accessor is the one inside "targets":[{"POSITION":N}].
+    const size_t t = j.find("\"targets\":[{\"POSITION\":");
+    REQUIRE(t != std::string::npos);
+    const size_t idStart = t + std::strlen("\"targets\":[{\"POSITION\":");
+    const int accIdx     = std::atoi(j.c_str() + idStart);
+
+    // Walk to accessor `accIdx` in the accessors array. The writer emits them
+    // as a flat list of objects, so counting braces from the array start is
+    // enough and avoids pulling in a JSON parser for one test.
+    const size_t accArr = j.find("\"accessors\":[");
+    REQUIRE(accArr != std::string::npos);
+    size_t pos   = accArr + std::strlen("\"accessors\":[");
+    int depth    = 0;
+    int seen     = -1;
+    size_t begin = pos;
+    for (; pos < j.size(); ++pos) {
+        if (j[pos] == '{') {
+            if (depth == 0) begin = pos;
+            ++depth;
+        } else if (j[pos] == '}') {
+            --depth;
+            if (depth == 0) {
+                ++seen;
+                if (seen == accIdx) break;
+            }
+        } else if (j[pos] == ']' && depth == 0) {
+            break;
+        }
+    }
+    REQUIRE(seen == accIdx);
+    const std::string acc = j.substr(begin, pos - begin + 1);
+
+    const auto intAfter = [&acc](const char* key, size_t from) -> long {
+        const size_t at = acc.find(key, from);
+        REQUIRE(at != std::string::npos);
+        return std::atol(acc.c_str() + at + std::strlen(key));
+    };
+
+    out.count = static_cast<size_t>(intAfter("\"count\":", 0));
+
+    const auto vec3After = [&acc](const char* key) {
+        const size_t at = acc.find(key);
+        REQUIRE(at != std::string::npos);
+        const char* p2 = acc.c_str() + at + std::strlen(key);
+        char* end      = nullptr;
+        foundation::Vec3 v{};
+        v.x = std::strtof(p2, &end);
+        v.y = std::strtof(end + 1, &end);
+        v.z = std::strtof(end + 1, &end);
+        return v;
+    };
+    out.lo = vec3After("\"min\":[");
+    out.hi = vec3After("\"max\":[");
+
+    if (acc.find("\"sparse\":") == std::string::npos) return out;
+
+    out.isSparse       = true;
+    const size_t sp    = acc.find("\"sparse\":");
+    const size_t n     = static_cast<size_t>(intAfter("\"count\":", sp));
+    const size_t idxAt = acc.find("\"indices\":", sp);
+    const size_t valAt = acc.find("\"values\":", sp);
+    const auto idxView = static_cast<size_t>(intAfter("\"bufferView\":", idxAt));
+    const auto valView = static_cast<size_t>(intAfter("\"bufferView\":", valAt));
+    // componentType 5125 = UNSIGNED_INT, the only one this writer emits.
+    CHECK(intAfter("\"componentType\":", idxAt) == 5125);
+
+    // bufferView offsets, read the same brace-counting way.
+    const auto viewOffset = [&j](size_t which) -> std::pair<size_t, size_t> {
+        const size_t arr = j.find("\"bufferViews\":[");
+        REQUIRE(arr != std::string::npos);
+        size_t p2 = arr + std::strlen("\"bufferViews\":[");
+        int d2 = 0, s2 = -1;
+        size_t b2 = p2;
+        for (; p2 < j.size(); ++p2) {
+            if (j[p2] == '{') {
+                if (d2 == 0) b2 = p2;
+                ++d2;
+            } else if (j[p2] == '}') {
+                --d2;
+                if (d2 == 0) {
+                    ++s2;
+                    if (s2 == static_cast<int>(which)) break;
+                }
+            } else if (j[p2] == ']' && d2 == 0) {
+                break;
+            }
+        }
+        REQUIRE(s2 == static_cast<int>(which));
+        const std::string bv = j.substr(b2, p2 - b2 + 1);
+        const size_t oAt     = bv.find("\"byteOffset\":");
+        const size_t lAt     = bv.find("\"byteLength\":");
+        REQUIRE(lAt != std::string::npos);
+        return {
+            oAt == std::string::npos
+                ? 0U
+                : static_cast<size_t>(std::atol(bv.c_str() + oAt + std::strlen("\"byteOffset\":"))),
+            static_cast<size_t>(std::atol(bv.c_str() + lAt + std::strlen("\"byteLength\":")))};
+    };
+
+    const auto [idxOff, idxLen] = viewOffset(idxView);
+    const auto [valOff, valLen] = viewOffset(valView);
+    REQUIRE(idxLen >= n * 4);
+    REQUIRE(valLen >= n * 12);
+
+    out.indices.resize(n);
+    out.values.resize(n);
+    for (size_t i = 0; i < n; ++i) {
+        std::memcpy(&out.indices[i], bin.data() + idxOff + i * 4, 4);
+        std::memcpy(&out.values[i], bin.data() + valOff + i * 12, 12);
+    }
+    return out;
+}
+
+}  // namespace
+
+TEST_CASE("a sparse morph target says exactly what the dense one said", "[gltf][morph][sparse]") {
+    const auto mesh = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+    const auto rm = core::RenderMesh::build(*mesh);
+
+    // 305 of 19,158 mesh vertices -- the sparsest shipped target.
+    const auto nose = expandedTarget(*mesh, rm, "nose/nose-base-up.target");
+    const std::vector<foundation::MorphTarget> morphs{{"nose-base-up", nose}};
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_morph_sparse.glb";
+    REQUIRE(io::writeGlb(out, rm.view(), {}, nullptr, nullptr, morphs).has_value());
+
+    const SparseView sv = readMorph0(out);
+    REQUIRE(sv.isSparse);
+    CHECK(sv.count == rm.vertexCount());  // still logically one delta per vertex
+
+    // Reconstruct and compare against the input, delta for delta. Indices must
+    // also be strictly increasing, which the spec requires and a naive
+    // implementation gets right only by accident.
+    std::vector<foundation::Vec3> rebuilt(rm.vertexCount(), foundation::Vec3{});
+    for (size_t i = 0; i < sv.indices.size(); ++i) {
+        if (i > 0) REQUIRE(sv.indices[i] > sv.indices[i - 1]);
+        REQUIRE(sv.indices[i] < rm.vertexCount());
+        rebuilt[sv.indices[i]] = sv.values[i];
+    }
+
+    // Deltas are written in the file's unit, like positions. Comparing against
+    // the raw decimetres would fail on all 294 moved vertices and say nothing
+    // about the encoding.
+    const float scale = io::unitScale(io::Unit::Meter);
+    size_t wrong      = 0;
+    for (size_t v = 0; v < rm.vertexCount(); ++v) {
+        const auto& a = rebuilt[v];
+        const auto& b = nose[v];
+        if (std::abs(a.x - b.x * scale) > 1e-7F || std::abs(a.y - b.y * scale) > 1e-7F ||
+            std::abs(a.z - b.z * scale) > 1e-7F) {
+            ++wrong;
+        }
+    }
+    CHECK(wrong == 0);
+    // 305 rows in the .target, 11 of them literal (0,0,0), so 294 vertices
+    // actually move -- the number Blender reports. Sparse stores exactly those.
+    // It is 294 render vertices too, not more: a UV seam duplicates a mesh
+    // vertex into several render vertices and would inflate this, and measured,
+    // none of the moved nose vertices lies on one.
+    CHECK(sv.indices.size() == 294);
+
+    // min/max describe the accessor's EFFECTIVE values, and a sparse accessor
+    // with no bufferView reads zero everywhere it has no entry -- which is most
+    // of the mesh, or it would not be sparse. So the bounds must straddle zero.
+    // Computing them over the stored values alone produces a file that loads
+    // fine and fails glTF-Validator with ACCESSOR_MIN_MISMATCH.
+    INFO("min " << sv.lo.x << "," << sv.lo.y << "," << sv.lo.z << "  max " << sv.hi.x << ","
+                << sv.hi.y << "," << sv.hi.z);
+    CHECK(sv.lo.x <= 0.0F);
+    CHECK(sv.lo.y <= 0.0F);
+    CHECK(sv.lo.z <= 0.0F);
+    CHECK(sv.hi.x >= 0.0F);
+    CHECK(sv.hi.y >= 0.0F);
+    CHECK(sv.hi.z >= 0.0F);
+
+    // And it actually got smaller. Dense was 12 bytes per render vertex.
+    const auto dense = static_cast<uintmax_t>(rm.vertexCount()) * 12U;
+    const auto size  = std::filesystem::file_size(out);
+    INFO("nonzero " << sv.indices.size() << " of " << rm.vertexCount() << ", file " << size
+                    << ", dense morph block would be " << dense);
+    CHECK(sv.indices.size() * 16U < dense);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+// The bounds have to include the implicit zeros, and a real target does not
+// prove it: nose-base-up moves vertices in BOTH directions on every axis, so
+// its min/max straddle zero whether or not the zeros are folded in. Commenting
+// out that fold left every other test passing.
+//
+// A ONE-DIRECTIONAL morph is what separates the two. Ten vertices moving only
+// +y: bounds over the stored values alone give min.y > 0, which is wrong for an
+// accessor that reads zero at 21,823 of its 21,833 entries -- a file that loads
+// fine and fails glTF-Validator with ACCESSOR_MIN_MISMATCH.
+TEST_CASE("a one-directional sparse morph still bounds the zeros it omits",
+          "[gltf][morph][sparse]") {
+    const auto mesh = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+    const auto rm = core::RenderMesh::build(*mesh);
+
+    std::vector<foundation::Vec3> up(rm.vertexCount(), foundation::Vec3{});
+    for (size_t v = 0; v < 10; ++v)
+        up[v] = foundation::Vec3{0.0F, 0.5F, 0.0F};
+    const std::vector<foundation::MorphTarget> morphs{{"up-only", up}};
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_morph_onedir.glb";
+    REQUIRE(io::writeGlb(out, rm.view(), {}, nullptr, nullptr, morphs).has_value());
+
+    const SparseView sv = readMorph0(out);
+    REQUIRE(sv.isSparse);
+    CHECK(sv.indices.size() == 10);
+    INFO("min y " << sv.lo.y << "  max y " << sv.hi.y);
+    CHECK(sv.lo.y == 0.0F);  // the omitted zeros ARE the minimum
+    CHECK(sv.hi.y > 0.0F);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+// Sparse is a size optimisation, not a format preference: a target that moves
+// most of the mesh costs MORE sparse (16 bytes a vertex against 12), so the
+// writer must keep those dense.
+TEST_CASE("a dense morph target stays dense", "[gltf][morph][sparse]") {
+    const auto mesh = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+    const auto rm = core::RenderMesh::build(*mesh);
+
+    // Every vertex moves.
+    const std::vector<foundation::Vec3> all(rm.vertexCount(), foundation::Vec3{0.1F, 0.0F, 0.0F});
+    const std::vector<foundation::MorphTarget> morphs{{"everything", all}};
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_morph_dense.glb";
+    REQUIRE(io::writeGlb(out, rm.view(), {}, nullptr, nullptr, morphs).has_value());
+
+    const SparseView sv = readMorph0(out);
+    CHECK_FALSE(sv.isSparse);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}

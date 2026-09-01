@@ -1196,8 +1196,40 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       the hierarchy lives in the nodes.
       `aiAnimMesh` holds **absolute positions**, not deltas — sending deltas
       collapses the model toward the origin when a key is enabled.
-- [ ] Sparse morph accessors — a target touches ~2k of 19,158 vertices, so dense
-      costs ~262 KB each. Fine for a handful, 335 MB for all 1,280.
+- [x] **Sparse morph accessors — a dense target cost the same whatever it moved.**
+      A morph target is a delta per RENDER vertex and almost all of them are
+      zero: `nose/nose-base-up.target` moves **305 of 19,158** mesh vertices,
+      1.6%. Written densely every target cost the same **261,996 bytes**, and
+      the three-target fixture GLB was 1,930,380 bytes with **785,988 of it —
+      41% — morph deltas that were overwhelmingly zero.**
+      Not merely wasteful: it is what made exporting the modifier set
+      impossible. 1,280 targets dense is **335 MB**.
+      glTF's sparse accessor stores an index list plus a value list and takes
+      the base as zero — exactly what an unmoved vertex means. Chosen **per
+      target**, because a target that moves most of the mesh is genuinely
+      cheaper dense (16 bytes a vertex against 12).
+
+      | | morph bytes | file |
+      |---|---|---|
+      | dense | 785,988 (3 x 261,996) | 1,930,380 |
+      | sparse | 133,744 (35,200 + 93,840 + 4,704) | 1,278,576 |
+
+      **−83% of the morph payload, −34% of the file.**
+      **Blender 5.2 reports the two files identical**: shape keys `head-oval`
+      2200 / `head-trans-backward` 5865 / `nose-base-up` 294 moved vertices,
+      max deltas matching to six decimals. The unit test also decodes the sparse
+      encoding back out of the BIN chunk and compares delta for delta — a wrong
+      index mapping shrinks the file just as well and writes a valid GLB that
+      moves the wrong vertices.
+      **A test that looked right and was not.** `min`/`max` must describe the
+      accessor's *effective* values, zeros included, or glTF-Validator reports
+      `ACCESSOR_MIN_MISMATCH`. Asserting "the bounds straddle zero" on
+      nose-base-up proves nothing: its deltas already go both ways on every
+      axis, and commenting out the fold left every test green. It took a
+      **one-directional** morph — ten vertices moving only +y — to separate
+      them.
+      Not done, and it is the interesting part: **nothing in the application
+      exports morph targets yet.** Only `mh_export_fixture` does.
 - [ ] Texture packing (ORM), GLB embedding, KTX2/Basis, optional Draco
 - [x] **Unit-correctness at dm/m/cm/inch, for every writer.** Each height is
       measured back out of the file the writer produced, not taken from its

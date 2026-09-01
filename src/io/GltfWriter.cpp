@@ -148,8 +148,19 @@ struct Packed {
     size_t uvOffset{}, uvBytes{};
     size_t jointOffset{}, jointBytes{}, weightOffset{}, weightBytes{}, ibmOffset{}, ibmBytes{};
     size_t idxOffset{}, idxBytes{};
-    std::vector<size_t> morphOffsets, morphByteCounts;
-    std::vector<Vec3> morphLo, morphHi;
+
+    /// One morph target's blocks in the binary buffer. Grouped rather than
+    /// kept as another five parallel vectors: sparse doubled the per-target
+    /// state, and three loops walk it by index.
+    struct MorphBlock {
+        size_t valOffset{}, valBytes{};
+        /// Zero means dense: `val` then describes every vertex and there is no
+        /// index block.
+        size_t sparseCount{}, idxOffset{}, idxBytes{};
+        Vec3 lo{}, hi{};
+    };
+
+    std::vector<MorphBlock> morphs;
     Vec3 lo{}, hi{};
     std::vector<foundation::Mat4> localRest;
 
@@ -341,33 +352,73 @@ Packed packEntry(std::vector<uint8_t>& bin, const GltfSceneEntry& entry,
         pk.ibmBytes = bin.size() - pk.ibmOffset;
     }
 
-    // Morph targets: dense deltas, one block per target. Scaled like positions,
-    // but WITHOUT the ground offset -- a delta is a displacement, not a point,
-    // so adding the offset would shift the body once per active target.
+    // Morph targets, one block per target. Scaled like positions, but WITHOUT
+    // the ground offset -- a delta is a displacement, not a point, so adding the
+    // offset would shift the body once per active target.
+    //
+    // Written SPARSE when that is smaller. A target is a delta per render
+    // vertex and almost all of them are zero: nose-base-up moves 305 of 19,158
+    // mesh vertices, yet dense costs the same 12 bytes per vertex as one that
+    // moves everything. glTF's sparse accessor stores an index list plus a
+    // value list and takes the base as zero, which is exactly what an unmoved
+    // vertex means.
     for (const auto& t : entry.morphTargets) {
-        padTo4(bin);
-        const size_t off = bin.size();
+        std::vector<uint32_t> nonZero;
+        for (uint32_t v = 0; v < t.deltas.size(); ++v) {
+            const Vec3& d = t.deltas[v];
+            if (d.x != 0.0F || d.y != 0.0F || d.z != 0.0F) nonZero.push_back(v);
+        }
+
+        // 16 bytes a vertex sparse (a uint32 index and a vec3) against 12
+        // dense, plus roughly 120 bytes for the second bufferView's JSON. A
+        // target that moves most of the mesh is genuinely cheaper dense, so the
+        // choice is made per target rather than once for the file.
+        Packed::MorphBlock mb;
+        const bool sparse = nonZero.size() * 16U + 120U < t.deltas.size() * 12U;
+
         Vec3 tlo{std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(),
                  std::numeric_limits<float>::infinity()};
         Vec3 thi{-tlo.x, -tlo.y, -tlo.z};
-        for (const Vec3& d : t.deltas) {
-            const float x = d.x * scale;
-            const float y = d.y * scale;
-            const float z = d.z * scale;
-            appendFloat(bin, x);
-            appendFloat(bin, y);
-            appendFloat(bin, z);
-            tlo.x = std::min(tlo.x, x);
-            tlo.y = std::min(tlo.y, y);
-            tlo.z = std::min(tlo.z, z);
-            thi.x = std::max(thi.x, x);
-            thi.y = std::max(thi.y, y);
-            thi.z = std::max(thi.z, z);
+        const auto extend = [&](const Vec3& v) {
+            tlo.x = std::min(tlo.x, v.x);
+            tlo.y = std::min(tlo.y, v.y);
+            tlo.z = std::min(tlo.z, v.z);
+            thi.x = std::max(thi.x, v.x);
+            thi.y = std::max(thi.y, v.y);
+            thi.z = std::max(thi.z, v.z);
+        };
+
+        if (sparse) {
+            // Indices first, ascending -- the spec requires strictly
+            // increasing, which walking the deltas in order gives for free.
+            padTo4(bin);
+            mb.sparseCount = nonZero.size();
+            mb.idxOffset   = bin.size();
+            for (const uint32_t v : nonZero)
+                appendU32(bin, v);
+            mb.idxBytes = bin.size() - mb.idxOffset;
+
+            // The vertices left out read as zero, and min/max describe the
+            // accessor's EFFECTIVE values. Sparse always leaves some out -- it
+            // would not be smaller otherwise -- so the zero is unconditional.
+            extend(Vec3{});
         }
-        pk.morphOffsets.push_back(off);
-        pk.morphByteCounts.push_back(bin.size() - off);
-        pk.morphLo.push_back(tlo);
-        pk.morphHi.push_back(thi);
+
+        padTo4(bin);
+        mb.valOffset   = bin.size();
+        const size_t n = sparse ? nonZero.size() : t.deltas.size();
+        for (size_t k = 0; k < n; ++k) {
+            const Vec3& d = t.deltas[sparse ? nonZero[k] : k];
+            const Vec3 v{d.x * scale, d.y * scale, d.z * scale};
+            appendFloat(bin, v.x);
+            appendFloat(bin, v.y);
+            appendFloat(bin, v.z);
+            extend(v);
+        }
+        mb.valBytes = bin.size() - mb.valOffset;
+        mb.lo       = tlo;
+        mb.hi       = thi;
+        pk.morphs.push_back(mb);
     }
 
     padTo4(bin);
@@ -657,8 +708,16 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
             // validator flags an ARRAY_BUFFER target on a MAT4 accessor.
             view(pk.ibmOffset, pk.ibmBytes, -1);
         }
-        for (size_t t = 0; t < pk.morphOffsets.size(); ++t)
-            view(pk.morphOffsets[t], pk.morphByteCounts[t], kTargetArrayBuffer);
+        for (const Packed::MorphBlock& mb : pk.morphs) {
+            // A sparse accessor's own bufferViews must NOT declare a target
+            // (glTF 2.0 5.1.1); its index block is not vertex data at all.
+            if (mb.sparseCount != 0) {
+                view(mb.idxOffset, mb.idxBytes, -1);
+                view(mb.valOffset, mb.valBytes, -1);
+            } else {
+                view(mb.valOffset, mb.valBytes, kTargetArrayBuffer);
+            }
+        }
         view(pk.idxOffset, pk.idxBytes, kTargetElementArray);
     }
     // Image views come last so the accessor indices assigned above stay valid.
@@ -710,16 +769,39 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
             acc(kComponentFloat, entries[i].skin->jointCount(), "MAT4");
             j += "}";
         }
-        for (size_t t = 0; t < pk.morphOffsets.size(); ++t) {
+        for (const Packed::MorphBlock& mb : pk.morphs) {
             pk.morphAcc.push_back(nextAcc++);
+            int idxView = -1;
+            int valView = -1;
+            if (mb.sparseCount != 0) {
+                // No bufferView of its own: with `sparse` and no view the base
+                // values are all zero, which is what an unmoved vertex is. The
+                // two views written above are consumed here, in that order.
+                idxView = nextView++;
+                valView = nextView++;
+                if (!firstAcc) j += ",";
+                firstAcc = false;
+                j += R"({"componentType":)" + std::to_string(kComponentFloat) + R"(,"count":)" +
+                     std::to_string(n) + R"(,"type":"VEC3")";
+            } else {
+                acc(kComponentFloat, n, "VEC3");
+            }
             // min/max is required on every POSITION accessor, and a morph
             // target's deltas are one. Omitting it is the most common way a
             // hand-written morph export fails validation while still loading in
-            // some engines.
-            acc(kComponentFloat, n, "VEC3");
-            j += R"(,"min":[)" + fmtBound(pk.morphLo[t].x) + "," + fmtBound(pk.morphLo[t].y) + "," +
-                 fmtBound(pk.morphLo[t].z) + R"(],"max":[)" + fmtBound(pk.morphHi[t].x) + "," +
-                 fmtBound(pk.morphHi[t].y) + "," + fmtBound(pk.morphHi[t].z) + "]}";
+            // some engines. For a sparse target these describe the EFFECTIVE
+            // values, zeros included.
+            j += R"(,"min":[)" + fmtBound(mb.lo.x) + "," + fmtBound(mb.lo.y) + "," +
+                 fmtBound(mb.lo.z) + R"(],"max":[)" + fmtBound(mb.hi.x) + "," + fmtBound(mb.hi.y) +
+                 "," + fmtBound(mb.hi.z) + "]";
+            if (mb.sparseCount != 0) {
+                j += R"(,"sparse":{"count":)" + std::to_string(mb.sparseCount) +
+                     R"(,"indices":{"bufferView":)" + std::to_string(idxView) +
+                     R"(,"byteOffset":0,"componentType":)" + std::to_string(kComponentUnsignedInt) +
+                     R"(},"values":{"bufferView":)" + std::to_string(valView) +
+                     R"(,"byteOffset":0}})";
+            }
+            j += "}";
         }
         pk.idxAcc = nextAcc++;
         acc(kComponentUnsignedInt, entries[i].mesh.indexCount(), "SCALAR");

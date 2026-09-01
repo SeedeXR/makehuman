@@ -1172,6 +1172,66 @@ Mutation-verified: forcing `samples = 1` fails the new test at partial 0.
 
 ---
 
+## 2026-09-01 12:58:03 — Session 099 · **a dense morph target cost the same whatever it moved**
+
+### The chunk
+Sparse glTF morph accessors, chosen per target.
+
+### The measurement
+A morph target is a delta per RENDER vertex and almost all of them are zero.
+`nose/nose-base-up.target` moves **305 of 19,158** mesh vertices — 1.6% — and
+dense cost it the same **261,996 bytes** as a target that moves everything. The
+three-target fixture GLB was 1,930,380 bytes with **785,988 of it, 41%, deltas
+that were overwhelmingly zero**.
+
+That is not just waste. It is what made exporting the modifier set impossible:
+1,280 targets dense is **335 MB**.
+
+| | morph bytes | file |
+|---|---|---|
+| dense | 785,988 = 3 x 261,996 | 1,930,380 |
+| sparse | 133,744 = 35,200 + 93,840 + 4,704 | 1,278,576 |
+
+**−83% of the morph payload, −34% of the file.**
+
+### Verified three ways, because "smaller" is the easy half
+1. **Byte-level**: the test decodes the sparse indices and values back out of
+   the BIN chunk, rebuilds the delta array and compares it to the input delta
+   for delta. A wrong index mapping shrinks the file just as well and writes a
+   perfectly valid GLB that moves the wrong vertices. Mutation: shifting every
+   index by one leaves 190 vertices wrong and fails.
+2. **Blender 5.2**, dense file against sparse file: `head-oval` 2200,
+   `head-trans-backward` 5865, `nose-base-up` 294 moved vertices, max deltas
+   equal to six decimals. Identical.
+3. Indices asserted **strictly increasing**, which the spec requires.
+
+### The test that looked right and was not
+`min`/`max` must describe the accessor's **effective** values — zeros included —
+or glTF-Validator reports `ACCESSOR_MIN_MISMATCH`. My first assertion was "the
+bounds straddle zero" on nose-base-up. It passes either way: that target's
+deltas already go both directions on every axis, so commenting out the
+zero-fold left every test green.
+
+It took a **one-directional** morph to separate them — ten vertices moving only
++y, where bounds over the stored values alone give `min.y = 0.05` for an
+accessor that reads zero at 21,823 of its 21,833 entries. Only then did the
+mutation fail.
+
+### Ponytail
+Sparse doubled the per-target state and left **eight** parallel vectors on
+`Packed`. Grouped into one `MorphBlock` and merged the sparse and dense write
+loops into one, indexed either way.
+
+### Still open, and it is the interesting part
+**Nothing in the application exports morph targets.** `writeGlb` takes them,
+`mh_export_fixture` passes three, and `main.cpp` passes none. Sparse accessors
+are what make wiring that up feasible; the wiring itself is not done.
+
+### Verification
+ctest **427/427** in debug, release, ASan and TSan. Format clean.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk
