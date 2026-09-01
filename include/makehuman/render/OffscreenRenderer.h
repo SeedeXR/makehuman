@@ -29,6 +29,20 @@ struct RenderSettings {
     int height{512};
     Camera camera;
     foundation::Vec3 background{0.098F, 0.098F, 0.106F};  ///< design.md surface-0
+
+    /// Clear the background to alpha 0 instead of opaque.
+    ///
+    /// This is what a PRODUCTION render needs: a character on transparency,
+    /// ready to composite. The readback is already RGBA8888, so the alpha
+    /// channel was always carried -- it was simply always 1, because the clear
+    /// hard-coded it.
+    ///
+    /// The body still comes out opaque: the shader writes `outColor.a` from the
+    /// diffuse map's alpha, and the no-map stand-in is opaque white.
+    ///
+    /// Default false, so every existing render is unchanged.
+    bool transparentBackground{false};
+
     std::filesystem::path litsphere;
 };
 

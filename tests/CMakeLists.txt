@@ -181,5 +181,16 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_rig_unknown PROPERTIES
         PASS_REGULAR_EXPRESSION "unknown --rig")
 
+    # The headless production render. Unlike app_screenshot this needs a GPU but
+    # NO window, so it is the path that works on a machine with no display.
+    # PASS_REGULAR_EXPRESSION gives it teeth: a render that silently produced an
+    # empty or opaque image would otherwise still exit 0.
+    add_test(NAME app_render COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_render.png --transparent)
+    set_tests_properties(app_render PROPERTIES
+        PASS_REGULAR_EXPRESSION "rendered .*app_render\\.png \\(1024x1024, transparent\\)"
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FAIL_REGULAR_EXPRESSION "nothing to draw;cannot write")
+
     set_tests_properties(ui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()

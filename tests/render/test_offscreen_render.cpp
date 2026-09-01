@@ -759,3 +759,67 @@ TEST_CASE("the subdivided mesh renders inside a 60 fps budget", "[render][fps]")
         SUCCEED("timing not asserted in an unoptimized or instrumented build");
     }
 }
+
+// --- Production render: alpha mask ------------------------------------------
+//
+// Compositing a rendered character needs the background transparent and the
+// body opaque. The readback was already RGBA8888, so alpha was always carried;
+// the clear simply hard-coded it to 1.
+TEST_CASE("a transparent background leaves the body opaque", "[render][alpha]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc          = bodyScene();
+    auto s                  = settings();
+    s.transparentBackground = true;
+
+    const auto img = (*r)->render(sc.rm.view(), s);
+    REQUIRE(img.has_value());
+    REQUIRE(img->hasAlphaChannel());
+
+    // A corner is background: fully transparent.
+    CHECK(img->pixelColor(0, 0).alpha() == 0);
+    CHECK(img->pixelColor(img->width() - 1, 0).alpha() == 0);
+
+    // The body must still be opaque, or the character composites as a ghost.
+    // Counted rather than sampled at one point: which pixel the body covers
+    // depends on framing, and a single probe would be brittle.
+    size_t opaque      = 0;
+    size_t transparent = 0;
+    for (int y = 0; y < img->height(); ++y) {
+        for (int x = 0; x < img->width(); ++x) {
+            const int a = img->pixelColor(x, y).alpha();
+            if (a == 255)
+                ++opaque;
+            else if (a == 0)
+                ++transparent;
+        }
+    }
+    INFO("opaque " << opaque << ", transparent " << transparent << " of "
+                   << (img->width() * img->height()));
+    CHECK(opaque > 1000);       // the figure is really there
+    CHECK(transparent > 1000);  // and so is the hole around it
+}
+
+TEST_CASE("the default render stays fully opaque", "[render][alpha]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    // Existing behaviour must be untouched: every pixel opaque, background
+    // included. A default that silently became transparent would break every
+    // screenshot and export path downstream.
+    const Scene sc = bodyScene();
+    const auto img = (*r)->render(sc.rm.view(), settings());
+    REQUIRE(img.has_value());
+
+    size_t notOpaque = 0;
+    for (int y = 0; y < img->height(); ++y) {
+        for (int x = 0; x < img->width(); ++x) {
+            if (img->pixelColor(x, y).alpha() != 255) ++notOpaque;
+        }
+    }
+    INFO("non-opaque pixels in a default render: " << notOpaque);
+    CHECK(notOpaque == 0);
+}

@@ -19,6 +19,7 @@
 #include "makehuman/io/ObjWriter.h"
 #include "makehuman/io/SceneIO.h"
 #include "makehuman/io/UsdWriter.h"
+#include "makehuman/render/OffscreenRenderer.h"
 #include "makehuman/rig/PoseUnits.h"
 #include "makehuman/rig/Skeleton.h"
 #include "makehuman/rig/Skinning.h"
@@ -778,6 +779,14 @@ int main(int argc, char** argv) {
         QStringLiteral("rest (the authored A-pose, default), tpose, or a path to a "
                        "single-frame .bvh"),
         QStringLiteral("pose"), QStringLiteral("rest"));
+    const QCommandLineOption renderOpt(
+        QStringLiteral("render"),
+        QStringLiteral("Production render to this PNG and exit. Needs a GPU but NO window, "
+                       "unlike --screenshot."),
+        QStringLiteral("path"));
+    const QCommandLineOption transparentOpt(
+        QStringLiteral("transparent"),
+        QStringLiteral("Render --render's background transparent, for compositing."));
     const QCommandLineOption rigOpt(
         QStringLiteral("rig"),
         QStringLiteral("Skeleton to pose and skin with: a stem under data/rigs "
@@ -823,6 +832,8 @@ int main(int argc, char** argv) {
     parser.addOption(skinOpt);
     parser.addOption(eyesOpt);
     parser.addOption(setOpt);
+    parser.addOption(renderOpt);
+    parser.addOption(transparentOpt);
     parser.addOption(rigOpt);
     parser.addOption(poseOpt);
     parser.addOption(exportOpt);
@@ -1009,9 +1020,9 @@ int main(int argc, char** argv) {
     // bytes must outlive every render, not just the rebuild that made them.
     std::vector<uint8_t> toneBuf;
 
-    const auto rebuildInto = [&](mh::ui::MainWindow& w) {
+    const auto buildScene = [&]() -> std::vector<mh::render::MeshInstance> {
         human.applyStack(*mesh, targets);
-        if (!poseInPlace(*mesh, rig)) return;
+        if (!poseInPlace(*mesh, rig)) return {};
         mesh->calcNormals();
 
         const mh::core::Mesh& shown = displayMesh();
@@ -1071,8 +1082,13 @@ int main(int argc, char** argv) {
             inst.aoMap              = wornMaps.ao;
             scene.push_back(std::move(inst));
         }
-        w.setMeshes(std::move(scene));
+        return scene;
     };
+
+    // The window path and the headless production render assemble the SAME
+    // scene; only the destination differs. Sharing it is what stops a
+    // production render quietly disagreeing with what the viewport shows.
+    const auto rebuildInto = [&](mh::ui::MainWindow& w) { w.setMeshes(buildScene()); };
 
     // Above `window` for the same reason rebuildInto is: the File-menu
     // connections are owned by the window and reference this, so it has to
@@ -1354,6 +1370,41 @@ int main(int argc, char** argv) {
         }
     }
     window.show();
+
+    // Headless production render. Deliberately BEFORE the window path: it needs
+    // a GPU but no surface, so it works where --screenshot cannot -- and it
+    // renders the same scene the viewport would, via buildScene().
+    if (parser.isSet(renderOpt)) {
+        const std::filesystem::path out = parser.value(renderOpt).toStdString();
+        auto renderer                   = mh::render::OffscreenRenderer::create(MH_SHADER_DIR);
+        if (!renderer) {
+            std::fprintf(stderr, "cannot render: %s\n", renderer.error().message().c_str());
+            return 1;
+        }
+        mh::render::RenderSettings rs;
+        rs.width                 = 1024;
+        rs.height                = 1024;
+        rs.litsphere             = skin;
+        rs.transparentBackground = parser.isSet(transparentOpt);
+
+        const auto scene = buildScene();
+        if (scene.empty()) {
+            std::fprintf(stderr, "cannot render: nothing to draw\n");
+            return 1;
+        }
+        const auto img = (*renderer)->render(scene, rs);
+        if (!img) {
+            std::fprintf(stderr, "cannot render: %s\n", img.error().message().c_str());
+            return 1;
+        }
+        if (!img->save(QString::fromStdString(out.string()))) {
+            std::fprintf(stderr, "cannot write %s\n", out.string().c_str());
+            return 1;
+        }
+        std::printf("rendered %s (%dx%d%s)\n", out.string().c_str(), img->width(), img->height(),
+                    rs.transparentBackground ? ", transparent" : "");
+        return 0;
+    }
 
     if (parser.isSet(shotOpt)) {
         const QString out = parser.value(shotOpt);

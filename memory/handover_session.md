@@ -507,6 +507,52 @@ ctest **401/401** in debug, release, ASan; TSan separately. Format clean.
 
 ---
 
+## 2026-09-01 04:30:38 — Session 086 · **a production render the app could not reach**
+
+### CI recovered
+`5da99c58` green, all 9 jobs. The red I introduced with the frame-budget
+assertion is cleared.
+
+### The finding
+`OffscreenRenderer` existed, was tested, and was **never used by the
+application**. The "production render" capability had no user-facing entry
+point at all — `--screenshot` grabs the *window* (chrome included), which is a
+UI capture, not a render.
+
+### What shipped
+- `RenderSettings::transparentBackground` clears alpha to 0. The readback was
+  already RGBA8888, so alpha was carried all along; the clear hard-coded it to 1.
+  The body stays opaque because the shader writes `outColor.a` from the diffuse
+  and the no-map stand-in is opaque white.
+- `--render <png> [--transparent]`: headless, needs a GPU but **no window**, so
+  it works where `--screenshot` cannot.
+- The scene assembly is factored into `buildScene()` and **shared** by the
+  viewport and the render. A duplicate would let the two quietly disagree about
+  what a character looks like — which is exactly the bug a "production" path
+  must not have.
+
+### Verified by a third party, not by our own reader
+Blender reading the PNGs: opaque render **1,048,576/1,048,576 opaque**;
+transparent render **84,894 opaque (the figure) against 963,682 clear**, corner
+alpha 0.00. Then looked at the image: a clean full figure on transparency.
+
+The companion test matters as much: the **default** render must stay fully
+opaque. A default that drifted transparent would break every screenshot and
+export path downstream, and would look like a compositing bug somewhere else
+entirely.
+
+### Three stale entries closed
+Quad->triangle already happens at buffer-build time (`RenderMesh.cpp:172`), the
+eye-space-fixed light is already how the camera works
+(`SceneResources.cpp:277`), and the cached bounding box is **not worth
+building**: `Mesh::boundingBox()` has zero production callers and is one linear
+pass. Same call as `findFaceGroup`.
+
+### Verification
+ctest **402/402** in debug, release, ASan; TSan separately. Format clean.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

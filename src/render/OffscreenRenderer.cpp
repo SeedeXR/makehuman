@@ -92,7 +92,9 @@ std::expected<QImage, RenderError> OffscreenRenderer::render(std::span<const Mes
     }
     (*scene)->updateCamera(u, s.camera, static_cast<float>(s.width) / static_cast<float>(s.height));
 
-    cb->beginPass(rt.get(), QColor::fromRgbF(s.background.x, s.background.y, s.background.z, 1.0F),
+    cb->beginPass(rt.get(),
+                  QColor::fromRgbF(s.background.x, s.background.y, s.background.z,
+                                   s.transparentBackground ? 0.0F : 1.0F),
                   {1.0F, 0}, u);
     (*scene)->draw(cb, size);
     cb->endPass();

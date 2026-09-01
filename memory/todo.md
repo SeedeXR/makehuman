@@ -665,7 +665,10 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       Partial updates from dirty ranges were measured and closed in M2: the
       gather is 0.7% of a frame, and the reference's own "partial" path is a
       pessimisation.
-- [ ] Quad→triangle conversion at buffer-build time
+- [x] Quad→triangle at buffer-build time — **already done**, stale entry.
+      `src/core/RenderMesh.cpp:172` fan-triangulates at unweld time: `(0,1,2)`,
+      `(0,2,3)`, … for any corner count, and a triangle stored as a degenerate
+      quad emits one triangle.
 - [~] Shader port to `.qsb`: **litsphere done** (`resources/shaders/rhi/`),
       compiles to SPIR-V + GLSL 450 + MSL 12 via `tools/compile_shaders.sh`;
       the `0.495` constant verified present in the generated Metal.
@@ -695,7 +698,10 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       image can defend these, since every variant still draws a plausible lit
       figure, which is precisely why the divergence survived. Both mutations
       fail it (restoring `normalize()`; `0.495`->`0.5`).
-- [ ] Eye-space-fixed light (model rotates, camera does not)
+- [x] Eye-space-fixed light — **already done**, stale entry.
+      `src/render/SceneResources.cpp:277`: the MODEL rotates and the camera
+      stays put, which is what keeps the litsphere's fixed eye-space lighting
+      correct (`glmodule.py`).
 - [x] **Depth range `[0,1]` — already correct by construction, now tested.**
       The renderer never hand-rolls a projection: `SceneResources.cpp:273` takes
       Qt RHI's own `clipSpaceCorrMatrix()`, which supplies the live backend's
@@ -836,8 +842,33 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 - [ ] PBR metallic-roughness path + Blinn-Phong→PBR conversion
 - [ ] GPU skinning (matrix palette UBO/SSBO)
 - [ ] ID-buffer picking with async readback (replaces the full-window sync readback)
-- [ ] Cached bounding box
-- [ ] Offscreen render + alpha mask for production render
+- [x] **Cached bounding box: measured, deliberately NOT built.**
+      `Mesh::boundingBox()` has **zero production callers** — it appears only in
+      three tests. It is one linear pass over 19,158 `Vec3`.
+      Caching a value nothing asks for adds invalidation to every mutation site
+      for no measurable gain. Same call as `findFaceGroup` in M2.
+      **Reopen if** a per-frame caller appears (a camera framing or culling
+      path would be the plausible one).
+- [x] **Offscreen render + alpha mask — and the app can finally reach it.**
+      `OffscreenRenderer` existed but **nothing in the app ever used it**: it was
+      library-and-test-only, so the "production render" capability had no
+      user-facing entry point at all.
+      `RenderSettings::transparentBackground` clears alpha to 0. The readback was
+      always RGBA8888, so alpha was carried all along — the clear simply
+      hard-coded it to 1. The body stays opaque because the shader writes
+      `outColor.a` from the diffuse, and the no-map stand-in is opaque white.
+      `--render <png> [--transparent]` renders headlessly: it needs a GPU but
+      **no window**, unlike `--screenshot`, so it works on a machine with no
+      display.
+      The scene assembly was factored into `buildScene()` and is now **shared**
+      by the viewport and the production render — a duplicate would let the two
+      quietly disagree about what a character looks like.
+      Verified end to end by a third party: Blender reads the opaque PNG as
+      1,048,576/1,048,576 opaque, and the transparent one as **84,894 opaque
+      (the figure) against 963,682 clear**, corner alpha 0.00. Gated by
+      `app_render`, plus `[render][alpha]` which also pins that the **default**
+      render stays fully opaque — a default that drifted transparent would break
+      every screenshot path downstream.
 - [x] **60 fps on the subdivided mesh — MET, with a wide margin.**
       Subdivided mesh, 55,784 render verts, 1280x960:
       **2.5-4.6 ms median in release, i.e. 218-354 fps** against a 16.7 ms
