@@ -849,10 +849,19 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       fits the budget is the useful direction.
       Guarded by `[render][fps]`, which asserts the **budget** rather than the
       measurement so it stays meaningful on slower hardware.
-      **The timing assertion is skipped under sanitizers**: the same render is
-      2.5 ms in release and **59.5 ms under ASan** (24x), because every memory
-      access is instrumented. Asserting a frame budget there measures the
-      sanitizer, not the renderer — it failed exactly that way before the guard.
+      **The timing assertion runs ONLY in optimized, uninstrumented builds.**
+      The same render, same mesh:
+
+      | build | subdivided median |
+      |---|---|
+      | release, dev machine | **2.5-4.6 ms** |
+      | ASan, dev machine | **59.5 ms** (24x) |
+      | **debug, CI runner** | **35.5 ms** (~10x) |
+
+      A frame budget is a claim about the build people run. Both exclusions were
+      learned the hard way: ASan failed locally, and **debug went red on CI**
+      because I fixed the sanitizer case and assumed the sibling was fine.
+      The measurement is still printed in every configuration.
       **Not yet measured**: the real interactive swapchain path (`QRhiWidget`),
       which remains an open M6 item.
 

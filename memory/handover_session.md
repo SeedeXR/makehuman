@@ -470,6 +470,43 @@ CI green on `855aed96`.
 
 ---
 
+## 2026-09-01 03:59:29 — Session 085 · **I broke CI with the fix for the last thing I broke**
+
+### What happened
+The previous chunk's fps guard asserted `median < 16.7` and I made it skip under
+sanitizers, having watched ASan report 59.5 ms. I stopped there.
+
+CI then failed the **debug** job: **35.5 ms on a CI runner**, ~10x the release
+figure. Unoptimized code on shared, virtualised hardware is no more a valid
+subject for a frame budget than instrumented code is. I had fixed one instance
+of the error and assumed its sibling was fine.
+
+| build | subdivided median |
+|---|---|
+| release, dev machine | **2.5-4.6 ms** |
+| ASan, dev machine | **59.5 ms** (24x) |
+| debug, CI runner | **35.5 ms** (~10x) |
+
+### The rule, stated properly this time
+A wall-clock budget is a claim about **the build people actually run**.
+`timingIsMeaningful()` now requires `NDEBUG` **and** no sanitizer. Verified in
+both directions rather than assumed: release prints `CHECK( median < 16.7 )`,
+debug prints `timing not asserted in an unoptimized or instrumented build`.
+
+The measurement is still printed everywhere, so the number stays visible where
+it is not asserted.
+
+### What I should have done
+When ASan exposed the problem, the question was "where else is this wrong?", not
+"how do I silence ASan?". Two configurations were already failing that test's
+premise; I only looked at the one in front of me.
+
+### Verification
+ctest **401/401** in debug, release, ASan; TSan separately. Format clean.
+`855aed96` was green; `db2e3c1c` failed debug and is fixed here.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

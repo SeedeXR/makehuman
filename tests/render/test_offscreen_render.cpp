@@ -686,23 +686,37 @@ TEST_CASE("an AO map that will not load is reported", "[render][aomap]") {
 // Measured on an M-series at 1280x960: base 1.86 ms, subdivided 2.49 ms. The
 // threshold is the real budget, not the measurement, so it stays meaningful on
 // a slower machine instead of becoming a flaky equality.
-/// True when this binary is instrumented by ASan or TSan.
+/// True when a wall-clock budget is meaningful for THIS binary.
 ///
-/// A timing assertion under a sanitizer measures the SANITIZER. Observed on the
-/// same machine: 2.5 ms in release against **59.5 ms under ASan**, 24x slower,
-/// because every memory access is instrumented. Asserting a frame budget there
-/// says nothing about the renderer and fails for a reason unrelated to the code
-/// under test.
-constexpr bool sanitized() {
+/// A frame-budget claim is about the build people actually run. Asserting it
+/// anywhere else measures something other than the renderer, and the numbers
+/// are not close:
+///
+///   | build                | subdivided median |
+///   |----------------------|-------------------|
+///   | release, this machine| 2.5 - 4.6 ms      |
+///   | ASan, this machine   | 59.5 ms  (24x)    |
+///   | DEBUG, a CI runner   | 35.5 ms  (~10x)   |
+///
+/// Both exclusions were learned the hard way: the ASan one failed locally, and
+/// the debug one went red on CI after I fixed only the sanitizer case and
+/// assumed the sibling was fine. Unoptimized code on shared, virtualised
+/// hardware is not the thing under test.
+///
+/// The measurement is still printed in every configuration, so the number is
+/// visible even where it is not asserted.
+constexpr bool timingIsMeaningful() {
 #if defined(__has_feature)
 #if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer)
-    return true;
+    return false;
 #endif
 #endif
 #if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
-    return true;
-#else
     return false;
+#elif !defined(NDEBUG)
+    return false;  // unoptimized
+#else
+    return true;
 #endif
 }
 
@@ -737,10 +751,11 @@ TEST_CASE("the subdivided mesh renders inside a 60 fps budget", "[render][fps]")
 
     INFO("subdivided render median " << median << " ms over " << subRm.coord().size()
                                      << " render verts (" << (1000.0 / median) << " fps)");
-    if constexpr (sanitized()) {
-        // Still exercised for correctness above; only the budget is meaningless.
-        SUCCEED("timing not asserted under a sanitizer");
-    } else {
+    if constexpr (timingIsMeaningful()) {
         CHECK(median < 16.7);
+    } else {
+        // The render itself still ran, and its result was checked above; only
+        // the budget is meaningless here.
+        SUCCEED("timing not asserted in an unoptimized or instrumented build");
     }
 }
