@@ -553,6 +553,50 @@ ctest **402/402** in debug, release, ASan; TSan separately. Format clean.
 
 ---
 
+## 2026-09-01 04:48:59 — Session 087 · **third red run from one bad idea**
+
+### What happened
+`76c18bf6` failed the **release** job: **17.08 ms** on a CI runner against the
+16.7 ms I was asserting. Debug passed, because I had already excluded it.
+
+That is the same assertion failing for the third time:
+
+| build / machine | subdivided median |
+|---|---|
+| release, dev machine | **2.5-4.6 ms** |
+| ASan, dev machine | **59.5 ms** (24x) |
+| debug, CI runner | **35.5 ms** (~10x) |
+| release, CI runner | **17.1 ms** (over) |
+
+Each time I narrowed the exemption — skip sanitizers, then skip debug — instead
+of asking whether the assertion belonged in CI at all. It does not. **A
+wall-clock budget is a claim about target hardware**, and a shared, virtualised
+runner with a shared GPU is not the target. The premise was wrong from the
+first commit; the two "fixes" were treating symptoms.
+
+### The actual fix
+The test now **measures and reports**, and asserts only what is
+hardware-independent: that the subdivided mesh renders repeatedly and returns a
+correctly sized image. The timing prints on every run.
+
+The 60 fps claim lives in `memory/todo.md` as a measurement on **stated
+hardware** — this machine, release, 1280x960, 2.5-4.6 ms — which is what such a
+claim always was.
+
+**Rule recorded: performance gates belong on controlled hardware. Never assert
+wall-clock in CI.**
+
+### Worth noticing about my own process
+The mutation-testing and grounding discipline has been catching real bugs all
+session, but it did not catch this, because the test *passed locally every
+time*. What exposed it was CI hardware I do not control — three times. The
+lesson is about where a check runs, not how hard it checks.
+
+### Verification
+ctest **402/402** in debug, release, ASan; TSan separately. Format clean.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk
