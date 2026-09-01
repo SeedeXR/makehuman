@@ -805,3 +805,72 @@ TEST_CASE("the default render stays fully opaque", "[render][alpha]") {
     INFO("non-opaque pixels in a default render: " << notOpaque);
     CHECK(notOpaque == 0);
 }
+
+// The production render was aliased while the viewport was not.
+//
+// `OffscreenRenderer.h` claimed the two "cannot drift" because they share
+// SceneResources. They shared everything except the one number that is not in
+// SceneResources: ViewportWidget asks for 4x MSAA
+// (`ViewportWidget.cpp`), while this renderer passed a hard-coded **1**.
+//
+// Measured on `makehuman --render out.png --transparent` at 1024x1024:
+// 963,682 pixels at alpha 0, 84,894 at alpha 255, and **0 in between** -- a
+// silhouette with no partial coverage anywhere, which is exactly what "no
+// antialiasing" looks like and what a composited production frame must not be.
+//
+// Partial alpha is the right assertion because it cannot be produced by
+// anything else here: the shader writes alpha from the diffuse map, whose
+// no-map stand-in is opaque white, so every fragment is alpha 1. The only way
+// a pixel lands between 0 and 255 is coverage resolved from several samples.
+TEST_CASE("the production render antialiases its silhouette", "[render][msaa]") {
+    requireDevice();
+
+    // The renderer falls back to single-sample where 4x is not offered, and
+    // that fallback is correct -- an aliased image beats no image. So this
+    // skips rather than fails there: it is asserting that MSAA is USED when
+    // available, not that every machine has it.
+    {
+        QRhiMetalInitParams params;
+        const std::unique_ptr<QRhi> probe(QRhi::create(QRhi::Metal, &params));
+        REQUIRE(probe);
+        if (!probe->supportedSampleCounts().contains(render::kSampleCount)) {
+            SKIP("this device does not offer " << render::kSampleCount << "x MSAA");
+        }
+    }
+
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc           = bodyScene();
+    render::RenderSettings s = settings();
+    s.transparentBackground  = true;
+    const std::vector<render::MeshInstance> one{{sc.rm.view(), s.litsphere}};
+
+    const auto img = (*r)->render(one, s);
+    REQUIRE(img.has_value());
+
+    size_t clear = 0;
+    size_t solid = 0;
+    size_t edge  = 0;
+    for (int y = 0; y < img->height(); ++y) {
+        for (int x = 0; x < img->width(); ++x) {
+            const int a = qAlpha(img->pixel(x, y));
+            if (a == 0) {
+                ++clear;
+            } else if (a == 255) {
+                ++solid;
+            } else {
+                ++edge;
+            }
+        }
+    }
+    INFO("alpha 0: " << clear << "  alpha 255: " << solid << "  partial: " << edge);
+
+    // The body must actually be there, or "no edges" would pass on an empty
+    // image.
+    CHECK(solid > 1000);
+    CHECK(clear > 1000);
+    // A 256x256 human silhouette is a few hundred pixels of outline. Demanding
+    // only "> 0" would pass on a single stray sample.
+    CHECK(edge > 200);
+}

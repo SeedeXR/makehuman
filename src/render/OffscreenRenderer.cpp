@@ -53,19 +53,43 @@ std::expected<QImage, RenderError> OffscreenRenderer::render(std::span<const Mes
     QRhi* rhi = d_->rhi.get();
     const QSize size(s.width, s.height);
 
+    // Asked for, not assumed: a backend that does not offer 4x samples would
+    // otherwise fail to create the render buffer and the whole render would
+    // fail rather than fall back to the aliased image it used to produce.
+    const int samples = rhi->supportedSampleCounts().contains(kSampleCount) ? kSampleCount : 1;
+
+    // The texture that is read back is always single-sample -- readBackTexture
+    // cannot resolve, and a multisample texture is not readable. With MSAA on,
+    // drawing goes to a multisample colour buffer and the render pass resolves
+    // into this one at endPass.
     std::unique_ptr<QRhiTexture> colour(
         rhi->newTexture(QRhiTexture::RGBA8, size, 1, QRhiTexture::RenderTarget));
     if (!colour->create()) {
         return std::unexpected(RenderError{RenderErrorKind::Failed, "colour target"});
     }
+    std::unique_ptr<QRhiRenderBuffer> msaa;
+    QRhiColorAttachment attachment;
+    if (samples > 1) {
+        msaa.reset(rhi->newRenderBuffer(QRhiRenderBuffer::Color, size, samples));
+        if (!msaa->create()) {
+            return std::unexpected(RenderError{RenderErrorKind::Failed, "msaa colour buffer"});
+        }
+        attachment.setRenderBuffer(msaa.get());
+        attachment.setResolveTexture(colour.get());
+    } else {
+        attachment.setTexture(colour.get());
+    }
+
+    // Depth must carry the SAME sample count as colour or the target is
+    // incomplete.
     std::unique_ptr<QRhiRenderBuffer> depth(
-        rhi->newRenderBuffer(QRhiRenderBuffer::DepthStencil, size, 1));
+        rhi->newRenderBuffer(QRhiRenderBuffer::DepthStencil, size, samples));
     if (!depth->create()) {
         return std::unexpected(RenderError{RenderErrorKind::Failed, "depth buffer"});
     }
 
     QRhiTextureRenderTargetDescription rtDesc;
-    rtDesc.setColorAttachments({QRhiColorAttachment(colour.get())});
+    rtDesc.setColorAttachments({attachment});
     rtDesc.setDepthStencilBuffer(depth.get());
     std::unique_ptr<QRhiTextureRenderTarget> rt(rhi->newTextureRenderTarget(rtDesc));
     std::unique_ptr<QRhiRenderPassDescriptor> rp(rt->newCompatibleRenderPassDescriptor());
@@ -74,7 +98,7 @@ std::expected<QImage, RenderError> OffscreenRenderer::render(std::span<const Mes
         return std::unexpected(RenderError{RenderErrorKind::Failed, "render target"});
     }
 
-    auto scene = SceneResources::create(rhi, rp.get(), d_->shaderDir, 1);
+    auto scene = SceneResources::create(rhi, rp.get(), d_->shaderDir, samples);
     if (!scene) return std::unexpected(scene.error());
 
     QRhiCommandBuffer* cb = nullptr;

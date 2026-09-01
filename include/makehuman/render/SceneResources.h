@@ -22,6 +22,19 @@ class QRhiResourceUpdateBatch;
 
 namespace mh::render {
 
+/// MSAA samples every target in this application asks for.
+///
+/// One constant because the viewport and the offscreen renderer had drifted
+/// apart at exactly this number -- the widget requested 4 and the production
+/// render passed a hard-coded 1, so `makehuman --render` wrote an image whose
+/// silhouette had **no partial coverage at any pixel** while the same scene on
+/// screen was smooth. Sharing SceneResources was not enough, because the sample
+/// count is the one parameter that lives outside it.
+///
+/// A request, not a guarantee: a backend may refuse it, so both users check
+/// what they actually got rather than assuming.
+inline constexpr int kSampleCount = 4;
+
 /// How the camera is placed. The MODEL rotates and the camera stays put, which
 /// is the reference's convention (`glmodule.py`) and is what makes the
 /// litsphere's fixed eye-space lighting look right.

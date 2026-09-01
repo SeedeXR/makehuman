@@ -40,7 +40,7 @@ ViewportWidget::ViewportWidget(std::filesystem::path shaderDir, QWidget* parent)
     setApi(QRhiWidget::Api::Metal);
     // 4x MSAA: the body's silhouette is the most visible edge in the app, and
     // this is the cheapest place to fix it.
-    setSampleCount(4);
+    setSampleCount(render::kSampleCount);
 }
 
 ViewportWidget::~ViewportWidget() = default;

@@ -657,7 +657,39 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       a renderer bug. `Mesh::staticFaceMask()` applies the reference's rule
       (`apps/human.py:274-289`): hide any group named `joint-*` or `helper-*`.
       13,378 of 18,486 faces remain.
-- [ ] Qt RHI **swapchain** and MSAA — the interactive widget, not offscreen
+- [x] **Qt RHI swapchain and MSAA — stale entry, and it hid a real defect.**
+      The interactive widget has had both since it was written: `QRhiWidget`
+      owns the swapchain and `ViewportWidget.cpp` asks for 4x MSAA. The entry
+      said "the interactive widget, **not offscreen**", which turned out to be
+      an accurate description of a bug rather than a scope note.
+      **The production render was aliased.** `OffscreenRenderer.h` claims the
+      two "cannot drift" because they share `SceneResources`. They shared
+      everything except the one number that is not in `SceneResources`: the
+      widget requested **4** and the offscreen path passed a hard-coded **1**.
+      Measured on `makehuman --render out.png --transparent`, 1024x1024:
+
+      | | alpha 0 | alpha 255 | partial |
+      |---|---|---|---|
+      | before | 963,682 | 84,894 | **0** |
+      | after  | 962,487 | 83,720 | **2,369** |
+
+      **Zero** pixels of partial coverage anywhere — a hard stair-step
+      silhouette in the one output meant for compositing.
+      Partial alpha is the assertion because nothing else here can produce it:
+      the shader writes alpha from the diffuse map and the no-map stand-in is
+      opaque white, so a fragment is always alpha 1. Between 0 and 255 means
+      coverage resolved from several samples, and nothing else.
+      Now one `render::kSampleCount` that both users read, so the claim in the
+      header is true rather than aspirational. Multisample colour buffer
+      resolving into the single-sample texture that gets read back —
+      `readBackTexture` cannot resolve and a multisample texture is not
+      readable. Falls back to single-sample where the backend does not offer
+      4x, and the test **skips** rather than fails there: it asserts MSAA is
+      used when available, not that every machine has it.
+      **Cost: not measurable at this noise level.** Three runs each of the
+      subdivided render: 1x gave 2.67 / 2.99 / 4.79 ms, 4x gave 4.89 / 3.26 /
+      3.83 ms. The ranges overlap; both are far inside a 16.7 ms budget. Stated
+      as indistinguishable rather than free.
 - [x] **Persistent vertex/index buffers — already done for the path that
       matters.** `ViewportWidget` creates its `SceneResources` **once**
       (`ViewportWidget.cpp:94`) and re-uploads only when something changes

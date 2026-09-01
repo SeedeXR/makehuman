@@ -1114,6 +1114,64 @@ ctest **424/424** in debug, release, ASan and TSan. Format clean. Sweep costs
 
 ---
 
+## 2026-09-01 11:17:35 — Session 098 · **the production render was aliased and the header said it could not be**
+
+### The chunk
+MSAA in `OffscreenRenderer`, and one `render::kSampleCount` that the viewport
+and the offscreen path both read.
+
+### The defect
+`OffscreenRenderer.h` says the offscreen renderer "shares SceneResources with
+the interactive viewport, **so the two cannot drift**". They shared everything
+except the one number that does not live in `SceneResources`: `ViewportWidget`
+asked for 4x MSAA, `OffscreenRenderer` passed a hard-coded **1**.
+
+So `makehuman --render out.png` — the production output, the one a picture
+would ship from — was aliased, while the same scene on screen was smooth.
+Measured at 1024x1024 with `--transparent`:
+
+| | alpha 0 | alpha 255 | partial |
+|---|---|---|---|
+| before | 963,682 | 84,894 | **0** |
+| after | 962,487 | 83,720 | **2,369** |
+
+**Zero** partial-coverage pixels: a hard stair-step silhouette everywhere.
+
+### Why partial alpha is the right assertion
+Nothing else in this scene can produce it. The shader writes `outColor.a` from
+the diffuse map, and the no-map stand-in is opaque white, so every fragment is
+alpha 1. A pixel between 0 and 255 can only be coverage resolved from several
+samples. A coverage or luminance metric would have been satisfied by a slightly
+different camera.
+
+### How it was found
+Not by reading the code. The todo entry read "Qt RHI swapchain and MSAA — the
+interactive widget, **not offscreen**", which I took for a scope note and
+checked: the widget half was already done and stale, and "not offscreen" turned
+out to be an accurate description of a bug.
+
+### Implementation notes worth keeping
+- The read-back texture stays **single-sample**. `readBackTexture` cannot
+  resolve and a multisample texture is not readable, so drawing goes to a
+  multisample colour buffer that the pass resolves into it at `endPass`.
+- Depth must carry the same sample count as colour or the target is incomplete.
+- `supportedSampleCounts()` is checked; where 4x is not offered it falls back to
+  1, and the test **skips** rather than fails. It asserts MSAA is used when
+  available, not that every machine has it.
+
+### Cost: not measurable here
+Three runs each of the subdivided render, release: **1x gave 2.67 / 2.99 /
+4.79 ms, 4x gave 4.89 / 3.26 / 3.83 ms**. The ranges overlap; the difference is
+below this machine's noise. Both sit far inside a 16.7 ms budget. Stated as
+indistinguishable rather than free, because the measurement does not support
+the stronger claim.
+
+### Verification
+ctest **424/424** in debug, release, ASan and TSan. Format clean.
+Mutation-verified: forcing `samples = 1` fails the new test at partial 0.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk
