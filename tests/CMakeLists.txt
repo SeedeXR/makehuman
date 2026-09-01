@@ -12,6 +12,7 @@ add_executable(mh_tests
     unit/test_asset_index.cpp
     unit/test_obj_scene.cpp
     unit/test_data_dir.cpp
+    unit/test_malformed_input.cpp
     golden/test_base_mesh_parity.cpp
     golden/test_mesh_fixture_parity.cpp
     golden/test_subdiv_fixture_parity.cpp
@@ -68,6 +69,11 @@ if(assimp_FOUND)
     target_compile_definitions(mh_tests PRIVATE MH_HAVE_ASSIMP=1)
 endif()
 
+# A hang is the one malformed-input failure a test cannot assert on: an
+# unbounded loop in a parser never returns. ctest's own 1500 s per-test default
+# is what turns that into a failure, so no property is set here -- and
+# set_tests_properties could not see these tests anyway, since
+# catch_discover_tests registers them at test time, not configure time.
 catch_discover_tests(mh_tests)
 
 # Writes the base mesh through every exporter so tools/blender_validate.py can

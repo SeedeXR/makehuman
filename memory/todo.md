@@ -1190,7 +1190,33 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       units for every format we touch, with what each disagreement actually
       cost (glTF's flipped V, USD's un-flipped V, BVH's unrecorded up axis,
       Blender's Z-up world).
-- [ ] Round-trip + malformed-input tests for every format
+- [x] **Malformed-input sweep — 11 readers, one corpus, and it found nothing.**
+      Reported as the null result it is: every reader already survived, in debug
+      and under **ASan**. What the sweep buys is that it stays true.
+      Corpus is derived from **real shipped files**, not invented junk — junk
+      bounces off the first `if` in a parser, a file that is valid for a hundred
+      thousand lines and then is not gets deep into the state machine. Mutants:
+      unmodified (the control), empty, truncated at 1/10/50/99%, valid-prefix +
+      0xFF, valid-prefix + NUL, every digit turned to 9 (so every count and
+      index is enormous), and 8 × 32 scattered byte flips from a fixed
+      xorshift32 seed.
+      Readers: `.obj`, `.mhclo`, `.mhmat`, `.mhm`, `.target`, `.mhskel`, `.mhw`,
+      `.bvh`, sliders JSON, poseunits JSON, and **`.glb` through assimp** — the
+      one parser we do not own and the one a user is most likely to point at an
+      untrusted file. It survived too.
+      **Two flaws found in the test itself, both by mutation:**
+      1. The 256 KB sample cap made the OBJ corpus **vacuous**. An OBJ is
+         *sectioned* — every `v`, then every `vt`, then every `f` — so 256 KB of
+         the 1.7 MB `base.obj` held **no face lines at all**. Removing *both* of
+         the codebase's vertex-index bounds checks (`ObjReader.cpp:75` and
+         `Mesh.cpp:61`) did not fail the sweep. Fixed by using the 6 KB
+         `axis.obj`, and guarded by a per-reader `mustContain` so a cap can
+         never silently truncate the interesting records again.
+      2. There was **no unmodified control**, so "nothing crashed" was satisfied
+         just as well by a reader that rejects everything — which is exactly
+         what the OBJ reader does to all 14 mutants.
+      The codebase's own guard is fine: the mutation *is* caught by
+      `test_obj_reader.cpp:109`. The sweep is defence in depth, not the gate.
 
 ## M8 — Application shell (`mh-app`, `mh-ui`)
 

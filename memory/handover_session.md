@@ -1061,6 +1061,59 @@ unchanged.
 
 ---
 
+## 2026-09-01 10:42:02 — Session 097 · **a malformed-input sweep that found nothing, and two holes in itself**
+
+### The chunk
+`tests/unit/test_malformed_input.cpp`: 11 readers, one corpus of hostile bytes,
+run in debug and under **ASan**.
+
+### The result, stated as what it is
+**It found no bugs.** Every reader we own already returns an error rather than
+crashing or reading out of bounds, and so does assimp on a corrupted GLB. The
+sweep's value is that this stays true, not that it fixed anything today.
+
+Corpus is derived from **real shipped files**. Invented junk bounces off the
+first `if` in a parser; a file that is valid for a hundred thousand lines and
+then is not gets deep into the state machine first. Mutants: unmodified
+(control), empty, truncated at 1/10/50/99%, valid prefix + 0xFF, valid prefix +
+NUL, every digit turned to 9, and 8 x 32 scattered byte flips from a fixed
+xorshift32 seed.
+
+### Two holes, both found by mutating rather than by reading
+**One — the corpus was vacuous for OBJ.** I capped samples at 256 KB for
+wall-clock. An OBJ is *sectioned*: every `v`, then every `vt`, then every `f`.
+The first face line of `base.obj` is at **line 40,511**, well past the cap, so
+the entire face parser went unfuzzed. Proof rather than suspicion: I removed
+**both** of the codebase's vertex-index bounds checks — `ObjReader.cpp:75` and
+`Mesh.cpp:61` — and the sweep still passed.
+
+Fixed by using `axis.obj` (6 KB, 100 faces, fits whole) and, so it cannot
+recur, a per-reader `mustContain` string the capped sample must still hold. The
+`.target` guard was `"\n"` at first, which matches a licence header and would
+have guarded nothing; it is a real delta line now.
+
+**Two — there was no control.** "Nothing crashed" is satisfied just as well by a
+reader that rejects every input, and that is precisely what the OBJ reader does
+to all 14 mutants. The unmodified sample is now the first mutant, so the
+success-path assertions (a loaded mesh must be indexable, a skeleton's parents
+must precede their children) actually run.
+
+The codebase itself was never at risk: `test_obj_reader.cpp:109` catches that
+mutation. The sweep is defence in depth, not the gate — and I would have
+believed otherwise if I had not mutated.
+
+### Ponytail
+Kept the hand-rolled xorshift32 over `<random>` and said why in the comment:
+`<random>`'s engines are reproducible but its **distributions are not
+specified**, so libc++ and libstdc++ produce different sequences from one seed.
+A corpus that differs per standard library is not a fixture.
+
+### Verification
+ctest **424/424** in debug, release, ASan and TSan. Format clean. Sweep costs
+0.8 s in debug, 2.1 s under ASan.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk
