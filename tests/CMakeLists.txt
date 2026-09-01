@@ -184,6 +184,20 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION "rig mixamo_superset \\(179 bones\\)"
         FAIL_REGULAR_EXPRESSION "cannot load the rig;Unknown option;cannot build the rest pose")
 
+    # A rigged export must actually be rigged. The app built the whole rig and
+    # then wrote none of it -- 0 skins, 2 nodes, POSITION/NORMAL/TEXCOORD_0 and
+    # nothing else -- while app_rig_superset passed on the announcement alone.
+    add_test(NAME app_rig_glb COMMAND makehuman
+             --rig mixamo_superset
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_rig.glb)
+    set_tests_properties(app_rig_glb PROPERTIES
+        PASS_REGULAR_EXPRESSION "skin: 179 joints"
+        FIXTURES_SETUP app_rig_glb_file)
+    add_test(NAME app_rig_glb_skinned COMMAND ${CMAKE_COMMAND}
+             -DGLB=${CMAKE_CURRENT_BINARY_DIR}/app_rig.glb
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/glb_has_skin.cmake)
+    set_tests_properties(app_rig_glb_skinned PROPERTIES FIXTURES_REQUIRED app_rig_glb_file)
+
     # A path, not a stem -- and deliberately without the .mhskel extension,
     # which resolved to an extensionless filename until the path and stem cases
     # were reduced to a common base.

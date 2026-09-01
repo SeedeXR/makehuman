@@ -175,16 +175,31 @@ struct PoseRig {
     mh::rig::Skeleton skeleton;
     mh::rig::CompiledWeights weights;
     std::vector<mh::foundation::Mat4> localPose;
-    bool active{false};
+
+    /// The skeleton and weights are loaded. Independent of `posed()`: a rig
+    /// with no pose is still a rig, and it is exactly what an export wants --
+    /// the bind pose plus a usable skeleton.
+    ///
+    /// Derived rather than stored. A `loaded` flag beside `skeleton` is a
+    /// second copy of the same fact and a second thing to forget to set.
+    [[nodiscard]] bool loaded() const { return !skeleton.bones.empty(); }
+
+    /// There is a pose to apply; `localPose` is empty otherwise.
+    [[nodiscard]] bool posed() const { return !localPose.empty(); }
 };
 
-/// Loads the rig and pose named by @p pose, or leaves @p out inactive.
+/// Loads the rig, and the pose named by @p pose if there is one.
 ///
 /// "A-pose" is not a file: the MakeHuman base mesh is authored in one, so the
 /// rest mesh IS the A-pose and posing it would be posing it twice. Only a pose
 /// that differs from the authored rest needs a BVH.
+///
+/// **The rig loads either way.** It used to return here for "rest", so
+/// `--rig mixamo_superset` with no `--pose` loaded no skeleton at all and the
+/// export could not have carried one -- the bind pose being precisely the most
+/// useful thing to export.
 bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& out) {
-    if (pose == "rest" || pose == "apose" || pose == "a-pose") return true;
+    const bool wantPose = !(pose == "rest" || pose == "apose" || pose == "a-pose");
 
     std::filesystem::path file = pose;
     if (pose == "tpose" || pose == "t-pose") file = dataDir() / "poses" / "tpose.bvh";
@@ -211,35 +226,35 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
         return false;
     }
 
-    const auto bodyPose = mh::rig::loadBodyPose(file, *skel);
-    if (!bodyPose) {
-        std::fprintf(stderr, "cannot load pose: %s\n", bodyPose.error().message().c_str());
-        return false;
-    }
-
     // 4 is what glTF's JOINTS_0/WEIGHTS_0 allow, and it clamps ~19% of the
     // shipped rig's vertices while the reference truncates nothing. Measured
     // cost under a hard 60-degree pose: ONE vertex of 19,158 moves more than
     // 10 microns (that one by 2.0 mm), so this is reported, not fixed --
     // see memory/todo.md, M5.
-    out.weights = weights->compile(*skel, 4);
+    out.weights = weights->compile(*skel, mh::io::kGltfInfluences);
     std::printf("rig %s (%zu bones)\n", rigNameRef().c_str(), skel->boneCount());
     if (out.weights.clampedVertices > 0) {
         std::printf("  clamped %zu of %zu vertices to 4 influences (rig uses up to %u)\n",
                     out.weights.clampedVertices, mesh.vertexCount(), out.weights.maxInfluences);
     }
 
-    // The file's rotations are in model space; skinning wants them in each
-    // bone's rest frame. Skipping this yields a plausible but wrong pose.
-    out.localPose = mh::rig::poseToBoneLocal(*skel, *bodyPose);
-    out.skeleton  = std::move(*skel);
-    out.active    = true;
+    if (wantPose) {
+        const auto bodyPose = mh::rig::loadBodyPose(file, *skel);
+        if (!bodyPose) {
+            std::fprintf(stderr, "cannot load pose: %s\n", bodyPose.error().message().c_str());
+            return false;
+        }
+        // The file's rotations are in model space; skinning wants them in each
+        // bone's rest frame. Skipping this yields a plausible but wrong pose.
+        out.localPose = mh::rig::poseToBoneLocal(*skel, *bodyPose);
+    }
+    out.skeleton = std::move(*skel);
     return true;
 }
 
 /// Applies @p rig's pose to @p mesh in place. A no-op when no pose is loaded.
 bool poseInPlace(mh::core::Mesh& mesh, PoseRig& rig) {
-    if (!rig.active) return true;
+    if (!rig.posed()) return true;
 
     if (!rig.skeleton.updateJoints(mesh.coord()) || !rig.skeleton.buildRestMatrices()) {
         std::fprintf(stderr, "cannot re-fit the rig to the morphed mesh\n");
@@ -630,14 +645,57 @@ std::optional<mh::foundation::MaterialDesc> bodyMaterial() {
 /// @param worn proxies to include. OBJ writes them as extra groups; the other
 ///        formats are still single-mesh, so they say what they are leaving out
 ///        rather than quietly exporting a dressed character naked.
+/// The body's skin for export, or nothing when there is no rig to export.
+///
+/// The application built a complete rig -- loaded the skeleton, fitted the
+/// joints to the morphed body, compiled the weights and posed with them -- and
+/// then handed none of it to a writer. Every export was a statue.
+///
+/// The exported mesh is the POSED one, so the bind pose is the pose: joint b's
+/// bind global is `skinning[b] * restGlobal[b]`, which makes the skinning
+/// matrices identity in the file and the mesh arrive exactly as it looks here.
+/// Handing over the REST globals instead would let a DCC apply the pose twice.
+std::optional<mh::rig::SkinData> exportSkin(const PoseRig& rig, const mh::core::RenderMesh& rm,
+                                            bool subdivided) {
+    if (!rig.loaded()) return std::nullopt;
+    if (subdivided) {
+        // Weights are per BASE vertex while a subdivided render mesh's vmap
+        // indexes subdivided vertices, so buildSkinData would silently weight
+        // the wrong points.
+        std::fprintf(stderr,
+                     "a subdivided mesh cannot carry the rig; exporting without a skeleton\n");
+        return std::nullopt;
+    }
+
+    mh::rig::SkinData skin = mh::rig::buildSkinData(rig.skeleton, rig.weights, rm.vmap());
+    if (skin.jointNames.empty()) {
+        std::fprintf(stderr,
+                     "cannot expand the weights onto the render vertices; "
+                     "exporting without a skeleton\n");
+        return std::nullopt;
+    }
+    if (rig.posed()) {
+        const auto skinning = mh::rig::computeSkinningMatrices(rig.skeleton, rig.localPose);
+        for (size_t b = 0; b < skin.globalRest.size() && b < skinning.size(); ++b)
+            skin.globalRest[b] = skinning[b] * skin.globalRest[b];
+    }
+    std::printf("skin: %zu joints, %u influences/vertex\n", skin.globalRest.size(),
+                static_cast<unsigned>(skin.influences));
+    return skin;
+}
+
 /// @param bodyMask which body faces to write. Every format except OBJ takes its
 ///        geometry from @p rm, which already has the mask applied; OBJ writes
 ///        from the Mesh directly and so needs it handed over. Without this the
 ///        OBJ was the one export carrying the helper cages -- 18,486 faces
 ///        against the GLB's 13,378.
+/// @param skin the body's skeleton and weights, or null. **Only glTF carries it
+///        today**: `GltfSceneEntry` has a skin field and the assimp and USD
+///        scene entries do not, so the other formats say what they are dropping
+///        rather than writing a statue in silence.
 bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
                 const mh::core::RenderMesh& rm, const std::map<QString, WornProxy>& worn,
-                std::span<const uint8_t> bodyMask) {
+                std::span<const uint8_t> bodyMask, const mh::foundation::SkinView* skin) {
     std::string ext = path.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -656,20 +714,28 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     // the previous one. So it is all or nothing, and if it is nothing the user
     // hears about it: the body had a perfectly good material and lost it
     // because something it was wearing did not.
-    const auto skin       = bodyMaterial();
-    const bool allDressed = skin.has_value() && std::ranges::all_of(worn, [](const auto& kv) {
+    const auto bodyMat    = bodyMaterial();
+    const bool allDressed = bodyMat.has_value() && std::ranges::all_of(worn, [](const auto& kv) {
                                 return kv.second.material.has_value();
                             });
-    if (!allDressed && (skin.has_value() || !worn.empty())) {
+    if (!allDressed && (bodyMat.has_value() || !worn.empty())) {
         std::fprintf(stderr, "exporting without materials: %s\n",
-                     skin.has_value() ? "something worn has none, and a partly-materialled scene "
-                                        "cannot be written"
-                                      : "the body skin could not be loaded");
+                     bodyMat.has_value() ? "something worn has none, and a partly-materialled "
+                                           "scene cannot be written"
+                                         : "the body skin could not be loaded");
+    }
+
+    // Said once, here, rather than per format: a rigged character exported to
+    // anything but GLB arrives as a statue, and silence about that is how the
+    // whole rig went missing from every export for four milestones.
+    if (skin != nullptr && ext != ".glb") {
+        std::fprintf(stderr, "%s carries no skeleton yet; export .glb for a rigged character\n",
+                     ext.c_str());
     }
 
     if (ext == ".obj") {
         std::vector<mh::io::ObjSceneEntry> scene;
-        scene.push_back({mesh.view(), "body", allDressed ? &*skin : nullptr, bodyMask});
+        scene.push_back({mesh.view(), "body", allDressed ? &*bodyMat : nullptr, bodyMask});
         for (const auto& [group, proxy] : worn) {
             scene.push_back({proxy.mesh.view(),
                              group.toLower().toStdString(),
@@ -684,7 +750,7 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     // everything worn travel together.
     const auto sceneEntries = [&] {
         std::vector<mh::io::SceneEntry> scene;
-        scene.push_back({rm.view(), "body", allDressed ? &*skin : nullptr});
+        scene.push_back({rm.view(), "body", allDressed ? &*bodyMat : nullptr});
         for (const auto& [group, proxy] : worn) {
             scene.push_back({proxy.rm.view(), group.toLower().toStdString(),
                              allDressed ? &*proxy.material : nullptr});
@@ -697,7 +763,7 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     // note to print. This is where the "exports the body only" warning lived.
     if (ext == ".usda" || ext == ".usd") {
         std::vector<mh::io::UsdSceneEntry> scene;
-        scene.push_back({rm.view(), "body", allDressed ? &*skin : nullptr});
+        scene.push_back({rm.view(), "body", allDressed ? &*bodyMat : nullptr});
         for (const auto& [group, proxy] : worn) {
             scene.push_back({proxy.rm.view(), group.toLower().toStdString(),
                              allDressed ? &*proxy.material : nullptr});
@@ -707,7 +773,9 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     }
     if (ext == ".glb") {
         std::vector<mh::io::GltfSceneEntry> scene;
-        scene.push_back({rm.view(), "body", allDressed ? &*skin : nullptr});
+        // Only the body is rigged, and writeGlbScene allows exactly one skinned
+        // entry -- worn proxies follow the body by being re-fitted, not skinned.
+        scene.push_back({rm.view(), "body", allDressed ? &*bodyMat : nullptr, skin});
         for (const auto& [group, proxy] : worn) {
             scene.push_back({proxy.rm.view(), group.toLower().toStdString(),
                              allDressed ? &*proxy.material : nullptr});
@@ -1040,8 +1108,12 @@ int main(int argc, char** argv) {
     if (parser.isSet(exportOpt)) {
         for (auto& [group, worn] : wornProxies)
             refitProxy(worn, *mesh);
+
+        const auto skinData = exportSkin(rig, rm, subdivided);
+        const auto skinView = skinData ? std::optional{skinData->view()} : std::nullopt;
+
         return exportMesh(parser.value(exportOpt).toStdString(), displayMesh(), rm, wornProxies,
-                          bodyMask)
+                          bodyMask, skinView ? &*skinView : nullptr)
                    ? 0
                    : 1;
     }

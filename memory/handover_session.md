@@ -1232,6 +1232,79 @@ ctest **427/427** in debug, release, ASan and TSan. Format clean.
 
 ---
 
+## 2026-09-01 13:38:31 — Session 100 · **every export from the application was a statue**
+
+### The chunk
+Hand the rig the application already built to a writer.
+
+### The defect
+The app loads the skeleton, fits the joints to the morphed body, compiles the
+weights, prints *"clamped 3,725 of 19,158 vertices to 4 influences"*, and poses
+the mesh with them. Then it exports none of it. Measured on
+`makehuman --rig mixamo_superset --pose tpose --export out.glb`:
+
+```
+skins: 0
+nodes: 2
+attributes: ['NORMAL', 'POSITION', 'TEXCOORD_0']
+```
+
+No skin, no joint hierarchy, no `JOINTS_0`, no `WEIGHTS_0`. Every export the
+application has ever produced was a statue.
+
+Everything needed already existed and was tested: `buildSkinData`,
+`GltfSceneEntry::skin`, `writeGlb`'s skin path, and `mh_export_fixture`'s
+`rigged.glb` validated in Blender. **Nothing connected them**, and
+`app_rig_superset` passed the whole time because it only checked that the app
+*announced* the rig. Same shape as the OBJ helper cages two sessions ago.
+
+### A second defect, found doing it
+`--rig` alone did nothing. `loadPoseRig` returned early for `"rest"`, so
+`--rig mixamo_superset` with no `--pose` loaded no skeleton at all — and the
+bind pose is precisely the most useful thing to export. The rig now loads
+whether or not a pose is asked for.
+
+### The decision worth recording: bind pose = the exported pose
+The mesh written out is the **posed** one. Writing the REST globals with it
+would let a DCC apply the pose a second time. So joint b's bind global is
+`skinning[b] * restGlobal[b]`, which makes the file's skinning matrices
+identity and the mesh arrive exactly as the app draws it.
+
+Blender confirms both halves: armature with **179 bones**, body with an
+ARMATURE modifier and **179 vertex groups**, and the armature-evaluated mesh
+differing from the raw mesh by at most **1.2e-5**. No double transform.
+
+One thing not to chase later: Blender lists a stray `Icosphere` after importing
+a rigged GLB. It is Blender's own bone-shape object — importing a non-rigged
+GLB produces none, and our file declares exactly two meshes, `body` and `eyes`.
+
+### Limits, said out loud rather than silently
+- **Only `.glb` carries a skin.** `GltfSceneEntry` has the field; the assimp
+  and USD scene entries do not. Every other format now prints that it is
+  dropping the skeleton, instead of writing a statue in silence.
+- **A subdivided mesh is refused.** Weights are per BASE vertex while a
+  subdivided `vmap` indexes subdivided vertices, so `buildSkinData` would
+  silently weight the wrong points.
+
+### Cost
+Loading the rig unconditionally adds **~40 ms** to a headless run — 0.17 s
+against 0.13 s, three runs each. Kept: it also removes the stall the first time
+the pose chooser is used.
+
+### Ponytail
+`PoseRig` gained two bools that duplicated state its own members already
+carried; they are `loaded()` and `posed()` now, derived from `skeleton.bones`
+and `localPose`. The 28-line skin build moved out of `main()` into
+`exportSkin()` beside the other export helpers.
+
+### Verification
+ctest **429/429** in debug, release, ASan and TSan. Format clean.
+The new `app_rig_glb_skinned` reads the file for `skins`, `JOINTS_0`,
+`WEIGHTS_0` and `inverseBindMatrices` — asserting on the app's announcement
+alone is what let this survive four milestones.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

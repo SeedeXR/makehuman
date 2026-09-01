@@ -1284,6 +1284,53 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 
 ## M8 — Application shell (`mh-app`, `mh-ui`)
 
+- [x] **Every export from the application was a statue.** The app loaded the
+      skeleton, fitted the joints to the morphed body, compiled the weights,
+      reported *"clamped 3,725 of 19,158 vertices to 4 influences"*, posed the
+      mesh with them — and handed **none** of it to a writer. Measured on
+      `makehuman --rig mixamo_superset --pose tpose --export out.glb`:
+      **`skins: 0`, `nodes: 2`, attributes `POSITION/NORMAL/TEXCOORD_0`** and
+      nothing else. `app_rig_superset` passed throughout, because it only
+      checked that the app *announced* the rig.
+      Everything needed already existed and was tested: `buildSkinData`,
+      `GltfSceneEntry::skin`, `writeGlb`'s skin path, and `mh_export_fixture`'s
+      `rigged.glb` validated in Blender. Nothing connected them.
+      **A second defect found doing it: `--rig` alone did nothing.**
+      `loadPoseRig` returned early for `"rest"`, so a rig with no `--pose`
+      loaded no skeleton at all — and the bind pose is precisely the most useful
+      thing to export. The rig now loads either way.
+      **Bind pose = the exported pose.** The mesh written out is the POSED one,
+      so joint b's bind global is `skinning[b] * restGlobal[b]`. That makes the
+      skinning matrices identity in the file and the mesh arrive exactly as the
+      app draws it. Writing the REST globals instead would let a DCC apply the
+      pose a second time.
+      Now: **`skins: 1`, 179 joints, 181 nodes, `JOINTS_0` + `WEIGHTS_0`**.
+      **Blender 5.2 confirms it**, and confirms the bind choice: armature with
+      **179 bones**, body carrying an ARMATURE modifier and **179 vertex
+      groups**, and the armature-evaluated mesh differing from the raw mesh by
+      at most **1.2e-5** — no double transform. (The stray `Icosphere` Blender
+      lists is its own bone-shape object, not ours: the GLB declares exactly
+      two meshes, `body` and `eyes`.)
+      **Limits, stated rather than silent**: only `.glb` carries it —
+      `GltfSceneEntry` has a skin field, the assimp and USD scene entries do
+      not — so every other format now *says* it is dropping the skeleton. A
+      subdivided mesh is refused too: weights are per BASE vertex while a
+      subdivided `vmap` indexes subdivided vertices, so `buildSkinData` would
+      silently weight the wrong points.
+      **Cost**: loading the rig unconditionally adds **~40 ms** to a headless
+      run (0.17 s against 0.13 s). Kept, because it also removes the stall when
+      the pose chooser is first used.
+- [ ] **Rigged export for the assimp scene path.** `exportScene(entries…)` has
+      no skin parameter while the single-mesh overload does, so a dressed
+      character can never be rigged in FBX/DAE. The app warns; the writer needs
+      `SceneEntry::skin`.
+- [ ] **The application still exports no morph targets.** `writeGlb` takes them
+      and sparse accessors made a large set affordable, but `main.cpp` passes
+      none. Open question the owner may want to settle: the 102 files under
+      `data/targets/expression/units/` are **34 units x 3 ethnicities**
+      (african/asian/caucasian), so a correct blendshape export is 34 targets
+      blended by `Human::factors()`, not 102.
+
 - [~] `QMainWindow` + `QDockWidget` — two docks, left/right areas, object names
       set so `saveState` actually restores. Nested and tabbed docking not yet.
 - [x] **Task-view registry + modelling sliders** — `core::loadSliderLayout` ports
