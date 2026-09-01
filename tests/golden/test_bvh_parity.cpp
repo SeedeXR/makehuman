@@ -8,8 +8,12 @@
 // Regenerate with:
 //     ./.venv-mh/bin/python tools/capture_fixture.py bvh
 
+#include "makehuman/core/ObjReader.h"
 #include "makehuman/io/BvhReader.h"
 #include "makehuman/io/BvhWriter.h"
+#include "makehuman/rig/BvhPose.h"
+#include "makehuman/rig/PoseUnits.h"
+#include "makehuman/rig/Skinning.h"
 
 #include <nlohmann/json.hpp>
 
@@ -427,4 +431,97 @@ TEST_CASE("writing a BVH is idempotent in meaning", "[io][bvh][write]") {
 
     std::filesystem::remove(gen1);
     std::filesystem::remove(gen2);
+}
+
+// --- Writing a POSE, not re-writing a file ----------------------------------
+//
+// `writeBvh` could always serialise a `BvhFile`. Nothing could produce one from
+// a posed character, so the application could read a BVH and never write what
+// it was showing -- `writeBvh` had no caller outside tests.
+//
+// The round trip is the only oracle available: there is no reference file for a
+// pose we generate, so the check is that OUR reader reproduces the transforms
+// that went in. That is exactly the property `writeBvh`'s doc comment claims
+// (channel names derived from the rotation order, so read -> write -> read is
+// stable), applied to a file built from a skeleton rather than parsed from one.
+TEST_CASE("a posed skeleton writes a BVH our own reader reproduces", "[io][bvh][write][pose]") {
+    auto skel = rig::loadSkeleton(std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel");
+    REQUIRE(skel.has_value());
+    auto mesh = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+    REQUIRE(skel->updateJoints(mesh->coord()));
+    REQUIRE(skel->buildRestMatrices());
+
+    // A real pose, not the rest one: the rest pose is all identities and would
+    // round-trip through any writer that emitted zeros.
+    const auto bvh = io::readBvh(std::filesystem::path(MH_DATA_DIR) / "poses" / "tpose.bvh");
+    REQUIRE(bvh.has_value());
+    const auto pose =
+        rig::loadBodyPose(std::filesystem::path(MH_DATA_DIR) / "poses" / "tpose.bvh", *skel);
+    REQUIRE(pose.has_value());
+    const auto local = rig::poseToBoneLocal(*skel, *pose);
+    REQUIRE(local.size() == skel->bones.size());
+
+    size_t moved = 0;
+    for (const auto& m : local) {
+        double off = 0.0;
+        for (size_t r = 0; r < 4; ++r)
+            for (size_t c = 0; c < 4; ++c)
+                off = std::max(off, std::abs(static_cast<double>(
+                                        m.m[r][c] - foundation::Mat4::identity().m[r][c])));
+        if (off > 1e-6) ++moved;
+    }
+    INFO("bones moved by the pose: " << moved);
+    REQUIRE(moved > 0);  // or the fixture proves nothing
+
+    const io::BvhFile file = rig::toBvhPose(*skel, local);
+    REQUIRE(file.frameCount == 1);
+    // One joint per bone, plus an End Site for every childless bone.
+    REQUIRE(file.joints.size() > skel->bones.size());
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_pose_out.bvh";
+    REQUIRE(io::writeBvh(out, file).has_value());
+
+    // Read back with the DEFAULT options, Auto up-axis included: a file we
+    // wrote must be readable the way any other file is.
+    const auto back = io::readBvh(out);
+    if (!back) INFO(back.error().message());
+    REQUIRE(back.has_value());
+    REQUIRE(back->joints.size() == file.joints.size());
+    REQUIRE(back->frameCount == 1);
+
+    // Matched by NAME, not by index. `writeBvh` emits the hierarchy
+    // depth-first from each root, while this builder appends bones in the
+    // skeleton's own parents-first order -- so a BvhFile's joint ORDER is not
+    // preserved across write -> read, only its content. Comparing positionally
+    // made 211 of 390 assertions fail on nothing but the ordering.
+    std::map<std::string, size_t> byName;
+    for (size_t j = 0; j < back->joints.size(); ++j)
+        byName[back->joints[j].name] = j;
+
+    double worst    = 0.0;
+    size_t compared = 0;
+    std::string firstBad;
+    for (const auto& want : file.joints) {
+        const auto at = byName.find(want.name);
+        REQUIRE(at != byName.end());
+        const auto& got = back->joints[at->second];
+        if (want.frames.empty() || got.frames.empty()) continue;
+        ++compared;
+        double d = 0.0;
+        for (size_t r = 0; r < 4; ++r)
+            for (size_t c = 0; c < 4; ++c)
+                d = std::max(d, std::abs(static_cast<double>(want.frames[0].m[r][c] -
+                                                             got.frames[0].m[r][c])));
+        if (d > worst) {
+            worst = d;
+            if (d > 1e-5) firstBad = want.name;
+        }
+    }
+    INFO("compared " << compared << " posed joints, worst delta " << worst
+                     << (firstBad.empty() ? "" : (", first over tolerance: " + firstBad)));
+    CHECK(compared > 100);
+    CHECK(worst < 1e-5);
+
+    std::filesystem::remove(out);
 }

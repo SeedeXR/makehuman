@@ -15,12 +15,14 @@
 #include "makehuman/core/Target.h"
 #include "makehuman/core/TargetIndex.h"
 #include "makehuman/foundation/DataDir.h"
+#include "makehuman/io/BvhWriter.h"
 #include "makehuman/io/Compact.h"
 #include "makehuman/io/GltfWriter.h"
 #include "makehuman/io/ObjWriter.h"
 #include "makehuman/io/SceneIO.h"
 #include "makehuman/io/UsdWriter.h"
 #include "makehuman/render/OffscreenRenderer.h"
+#include "makehuman/rig/BvhPose.h"
 #include "makehuman/rig/PoseUnits.h"
 #include "makehuman/rig/Skeleton.h"
 #include "makehuman/rig/Skinning.h"
@@ -747,6 +749,8 @@ std::optional<mh::rig::SkinData> exportSkin(const PoseRig& rig, const mh::core::
     return skin;
 }
 
+/// @param rig the loaded skeleton and pose, for the formats that carry a
+///        SKELETON rather than a mesh. Only BVH uses it.
 /// @param bodyMask which body faces to write. Every format except OBJ takes its
 ///        geometry from @p rm, which already has the mask applied; OBJ writes
 ///        from the Mesh directly and so needs it handed over. Without this the
@@ -760,7 +764,8 @@ std::optional<mh::rig::SkinData> exportSkin(const PoseRig& rig, const mh::core::
 ///        except OBJ writes from this.
 bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
                 const mh::foundation::RenderView& body, const std::map<QString, WornProxy>& worn,
-                std::span<const uint8_t> bodyMask, const mh::foundation::SkinView* skin) {
+                std::span<const uint8_t> bodyMask, const mh::foundation::SkinView* skin,
+                const PoseRig& rig) {
     std::string ext = path.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -814,6 +819,23 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
         std::fprintf(stderr,
                      "obj carries no skeleton; export .glb, .fbx, .dae or .usda for a "
                      "rigged character\n");
+    }
+
+    // BVH is the odd one out: it carries a SKELETON and a pose, not geometry, so
+    // it neither takes the mesh nor cares about the face mask.
+    if (ext == ".bvh") {
+        if (!rig.loaded()) {
+            std::fprintf(stderr, "no rig loaded, so there is no skeleton to write\n");
+            return false;
+        }
+        const auto file = mh::rig::toBvhPose(rig.skeleton, rig.localPose);
+        if (file.joints.empty()) {
+            std::fprintf(stderr, "cannot build a BVH from this skeleton\n");
+            return false;
+        }
+        std::printf("bvh: %zu joints, 1 frame\n", file.joints.size());
+        const auto r = mh::io::writeBvh(path, file);
+        return report(r ? std::string{} : r.error().message());
     }
 
     if (ext == ".obj") {
@@ -964,7 +986,7 @@ int main(int argc, char** argv) {
     const QCommandLineOption exportOpt(
         QStringLiteral("export"),
         QStringLiteral("Write the posed mesh here and exit. Format from the extension: "
-                       ".obj .fbx .glb .usda .usdz .dae .stl .3mf"),
+                       ".obj .fbx .glb .usda .usdz .dae .stl .3mf .bvh"),
         QStringLiteral("path"));
     const QCommandLineOption inspectOpt(
         QStringLiteral("inspect"),
@@ -1252,7 +1274,7 @@ int main(int argc, char** argv) {
         }
 
         return exportMesh(parser.value(exportOpt).toStdString(), displayMesh(), compact.view(),
-                          wornProxies, bodyMask, skinView ? &*skinView : nullptr)
+                          wornProxies, bodyMask, skinView ? &*skinView : nullptr, rig)
                    ? 0
                    : 1;
     }

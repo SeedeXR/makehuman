@@ -1413,11 +1413,40 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `height * metersPerUnit` is a no-op there, and removing the multiplication
       left it green. The FBX case is the one with teeth, and the mutation fails
       it.
-- [ ] **`writeBvh` has no application path either.** Unlike `--inspect` this is
-      not wiring: `writeBvh` takes a `BvhFile`, so exporting the current pose
-      means BUILDING one from `rig.skeleton` + `rig.localPose` — hierarchy,
-      offsets, channels, one frame. A feature, not a connection. The reference
-      has `9_export_bvh`.
+- [x] **`--export x.bvh` — and it found a latent defect in `writeBvh`.**
+      `rig::toBvhPose(skeleton, localPose)` builds a single-frame `BvhFile`;
+      `writeBvh` could always serialise one but nothing could produce one from a
+      posed character, so the app could READ a pose and never write the one it
+      was showing.
+      Conventions taken from the reference (`shared/bvh.py:369-428`), not
+      invented: root carries `Xposition Yposition Zposition Zrotation Xrotation
+      Yrotation` and every other joint `Zrotation Xrotation Yrotation`; a
+      childless bone gets an `End Site` of `tail - head`; a joint's offset is
+      its head relative to its parent's head. 163 bones → **212 joints**
+      (49 End Sites).
+      **`dummyJoints` deliberately not done.** The reference inserts a `__name`
+      joint wherever a bone's head is not its parent's tail, because tools
+      disagree about where a bone ends when a parent has several children
+      (`bvh.py:374-387`). Omitting them is a supported reference mode
+      (`dummyJoints=False`) and keeps one joint per bone, which is what lets the
+      file round-trip onto the same skeleton.
+- [x] **`writeBvh` wrote MOTION in array order and HIERARCHY depth-first.**
+      Found by building a `BvhFile` from a skeleton instead of from a parsed
+      file. `readBvh` always produces depth-first joints, so for every file the
+      round-trip tests had ever seen the two orders coincided — and a
+      skeleton-built file is in the skeleton's parents-first order, where they
+      do not. The result parses, every joint gets three plausible angles, and
+      **they belong to other joints**: measured at **0.96** on a matrix element,
+      on the arms of a T-pose.
+      Fixed in the writer rather than the builder: HIERARCHY and MOTION must
+      agree by definition, whatever order the caller's array is in.
+      Mutation-verified — reverting to array order fails the new test and leaves
+      the other 11 BVH tests green, which is exactly why it survived.
+      Diagnosis took four wrong hypotheses (Euler order, angle-to-channel
+      mapping, up-axis, local-vs-global pose), each eliminated by measurement.
+      The one that settled it: the Euler round trip is exact (1.19e-07) with no
+      file in the loop, so the loss had to be in the file.
+      **Blender reads it**: 163-bone armature, 40 bones posed.
 
 - [x] **Every export from the application was a statue.** The app loaded the
       skeleton, fitted the joints to the morphed body, compiled the weights,

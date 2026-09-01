@@ -1983,6 +1983,67 @@ ctest **454/454** in debug, release, ASan and TSan — TSan run alone. Format cl
 
 ---
 
+## 2026-09-01 22:31:13 — Session 113 · **MOTION and HIERARCHY were in different orders**
+
+### The chunk
+`--export x.bvh`: `rig::toBvhPose` builds a single-frame `BvhFile` from a
+skeleton and a pose, which is the piece `writeBvh` never had. The app could READ
+a pose and never write the one it was showing.
+
+Conventions taken from the reference (`shared/bvh.py:369-428`) rather than
+invented: root channels `Xposition Yposition Zposition Zrotation Xrotation
+Yrotation`, others `Zrotation Xrotation Yrotation`, an `End Site` of
+`tail - head` for every childless bone, offsets relative to the parent's head.
+163 bones become 212 joints.
+
+`dummyJoints` is deliberately not done — the reference's `__name` joints exist
+because tools disagree about where a bone ends when a parent has several
+children, and omitting them is a supported reference mode that keeps one joint
+per bone, which is what lets the file round-trip onto the same skeleton.
+
+### The defect it uncovered
+`writeBvh` emitted the HIERARCHY depth-first and the MOTION values **in array
+order**.
+
+`readBvh` always produces joints depth-first, so for every file the round-trip
+tests had ever seen — including the 212-joint, 60-frame face pose units — the
+two orders were the same and the bug was invisible. A `BvhFile` built from a
+skeleton is in the skeleton's parents-first order, where they are not. The file
+parses, every joint gets three plausible angles, and **they belong to other
+joints**: 0.96 on a matrix element, on the arms of a T-pose.
+
+Fixed in the writer, not the builder: HIERARCHY and MOTION must agree by
+definition, whatever order the caller's array happens to be in.
+
+### Four wrong hypotheses, each killed by measurement
+1. **Euler order** — derived `syxz` from the channel list and confirmed the
+   reader derives the same.
+2. **Angle-to-channel mapping** — the reference maps `euler_from_matrix`'s
+   outputs differently from our writer, so I swapped ours to match. It broke 4
+   of 5 existing round-trips and did not fix mine. Reverted.
+3. **Up axis** — forced `UpAxis::YUp` on the read. No change.
+4. **Local vs global pose** — passed the global matrices instead of the
+   bone-local ones. No change.
+
+What settled it: the Euler round trip is exact (**1.19e-07**) for the offending
+matrix with **no file in the loop**. So the loss was in the file, not the maths,
+and the only thing between them is the ordering.
+
+The general lesson: a self-consistent reader/writer pair can hide an ordering
+bug indefinitely, because every test feeds the writer what the reader just
+produced. It took a `BvhFile` from a third source to expose it.
+
+### Third party
+Blender imports the file as a **163-bone armature with 40 bones posed** — the
+End Sites become bone tails, as they should.
+
+### Verification
+ctest **457/457** in debug, release, ASan and TSan — TSan run alone. Format clean. SonarQube gate OK.
+Mutation-verified: reverting MOTION to array order fails the new test and leaves
+the other 11 BVH tests green.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

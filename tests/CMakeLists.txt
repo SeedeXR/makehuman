@@ -266,6 +266,24 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION "units: 1 = 0\\.01 m, so 1\\.6[0-9]+ m tall"
         FIXTURES_REQUIRED app_rig_fbx_file)
 
+    # BVH export: the app could READ a pose and never write the one it was
+    # showing. `writeBvh` had no caller outside tests.
+    #
+    # 212 joints for a 163-bone rig -- one per bone plus an End Site for each of
+    # the 49 childless ones, which is what tells a consumer how long a leaf bone
+    # is. Blender reads it back as a 163-bone armature with 40 bones posed.
+    add_test(NAME app_export_bvh COMMAND makehuman
+             --rig default --pose tpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_pose.bvh)
+    set_tests_properties(app_export_bvh PROPERTIES
+        PASS_REGULAR_EXPRESSION "bvh: 212 joints, 1 frame"
+        FIXTURES_SETUP app_pose_bvh)
+    add_test(NAME app_export_bvh_content COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_pose.bvh
+             "-DKEYS=HIERARCHY;ROOT root;CHANNELS 6 Xposition Yposition Zposition Zrotation Xrotation Yrotation;End Site;MOTION;Frames: 1"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_export_bvh_content PROPERTIES FIXTURES_REQUIRED app_pose_bvh)
+
     # A file that is not a mesh must be reported and must exit non-zero, not
     # print an empty summary.
     add_test(NAME app_inspect_bad COMMAND makehuman

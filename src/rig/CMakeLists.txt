@@ -3,7 +3,7 @@
 # mh_rig ports legacy/python/shared/skeleton.py, so it is AGPL-3.0. It may
 # depend on the permissive modules; never the reverse. See LICENSING.md 4.
 
-add_library(mh_rig STATIC Skeleton.cpp VertexWeights.cpp Skinning.cpp PoseUnits.cpp)
+add_library(mh_rig STATIC Skeleton.cpp VertexWeights.cpp Skinning.cpp PoseUnits.cpp BvhPose.cpp)
 add_library(mh::rig ALIAS mh_rig)
 
 target_include_directories(mh_rig PUBLIC

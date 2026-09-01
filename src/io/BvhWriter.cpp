@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <fstream>
+#include <functional>
 #include <numbers>
 #include <string>
 #include <vector>
@@ -134,9 +135,31 @@ std::expected<void, BvhError> writeBvh(const std::filesystem::path& path, const 
     out << "Frames: " << bvh.frameCount << '\n';
     out << "Frame Time: " << bvh.frameTime << '\n';
 
+    // MOTION values follow the HIERARCHY, not the array.
+    //
+    // The hierarchy is written depth-first from each root; the motion loop used
+    // to walk `bvh.joints` in array order. For a file that came from `readBvh`
+    // those are the same order, so every round-trip test passed -- but a
+    // `BvhFile` built from a skeleton is in the skeleton's own parents-first
+    // order, and the two then disagree. The file parses, every joint gets three
+    // plausible angles, and they belong to other joints: measured at 0.96 on a
+    // matrix element, on the arms of a T-pose.
+    std::vector<size_t> hierarchyOrder;
+    hierarchyOrder.reserve(bvh.joints.size());
+    {
+        const std::function<void(size_t)> visit = [&](size_t i) {
+            hierarchyOrder.push_back(i);
+            for (size_t k = 0; k < bvh.joints.size(); ++k)
+                if (bvh.joints[k].parent == static_cast<int32_t>(i)) visit(k);
+        };
+        for (size_t i = 0; i < bvh.joints.size(); ++i)
+            if (bvh.joints[i].parent < 0) visit(i);
+    }
+
     for (size_t f = 0; f < bvh.frameCount; ++f) {
         bool first = true;
-        for (const BvhJoint& j : bvh.joints) {
+        for (const size_t ji : hierarchyOrder) {
+            const BvhJoint& j   = bvh.joints[ji];
             const auto channels = writtenChannels(j);
             if (channels.empty()) continue;
 
