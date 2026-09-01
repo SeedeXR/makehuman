@@ -106,6 +106,10 @@ struct SceneEntry {
     foundation::RenderView mesh;
     std::string name{"MakeHuman"};
     const foundation::MaterialDesc* material{nullptr};
+    /// Only ONE entry in a scene may carry a skin. Only the body is rigged --
+    /// worn proxies follow it by being re-fitted, not skinned -- and a second
+    /// skeleton in the graph is a scene shape nothing needs and nothing tests.
+    const foundation::SkinView* skin{nullptr};
 };
 
 /// Writes every entry as its own mesh in one scene.
@@ -115,9 +119,10 @@ struct SceneEntry {
 /// material index, all referenced from the root node.
 ///
 /// **A skin belongs to the single-mesh overload.** Only the body is rigged, and
-/// giving one entry bones while the others have none is a scene shape nothing
-/// needs yet; it would be untested code. Use the overload below for a rigged
-/// export.
+/// One entry may carry a skin. It used not to: the scene overload took no skin
+/// at all, so the moment a character wore anything its FBX and Collada exports
+/// became statues -- and FBX is the format a rigged character is usually handed
+/// over in.
 ///
 /// `feetOnGround` levels the whole scene by the lowest point of any entry:
 /// levelling each mesh alone would drop the clothes to the floor beside the

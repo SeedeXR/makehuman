@@ -1320,10 +1320,33 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       **Cost**: loading the rig unconditionally adds **~40 ms** to a headless
       run (0.17 s against 0.13 s). Kept, because it also removes the stall when
       the pose chooser is first used.
-- [ ] **Rigged export for the assimp scene path.** `exportScene(entries…)` has
-      no skin parameter while the single-mesh overload does, so a dressed
-      character can never be rigged in FBX/DAE. The app warns; the writer needs
-      `SceneEntry::skin`.
+- [x] **Rigged export for the assimp scene path — a dressed character was a
+      statue in FBX and DAE.** `exportScene(entries…)` took no skin at all while
+      the single-mesh overload did, so the moment a character wore anything its
+      FBX and Collada exports lost the rig — and FBX is the format a rigged
+      character is usually handed over in.
+      `SceneEntry::skin` now, with the same one-skinned-entry rule glTF has:
+      only the body is rigged, worn proxies follow it by being re-fitted.
+      **No second copy of the bone code.** `attachSkin` and `addJointNodes` are
+      the single-mesh path's own blocks, lifted so both callers share them.
+      Verified as a **move**, not a rewrite: the fixture's `rigged.fbx` came out
+      byte-identical afterwards apart from **3 bytes** of FBX creation
+      timestamp (and 2 after the ponytail pass).
+      **The extraction had a real bug the test caught immediately**:
+      `addJointNodes` still *replaced* `root->mChildren`, which is fine for a
+      single mesh with no children and a **SIGSEGV** for a scene that already
+      has one child node per mesh. It grows the array now.
+      **Measured, not assumed — the two formats differ**: FBX writes all 163
+      bones, Collada writes only the **139** that carry weights, because
+      `default_weights.mhw` names 139 of the rig's 163 and assimp's Collada
+      exporter prunes the empty ones. The test asserts the weighted set with the
+      extra allowed, rather than a magic number that is right for one format.
+      **Blender 5.2 on a dressed, rigged FBX from the app**: armature with
+      **179 bones**, body carrying an ARMATURE modifier and **141 vertex
+      groups**, eyes unskinned with 0. Exactly the intended shape.
+      Still no skeleton in OBJ (no such concept) or USD (`UsdSceneEntry` has no
+      skin field yet, though `writeUsdaScene` emits UsdSkel for the single-mesh
+      path) — both now say so.
 - [ ] **The application still exports no morph targets.** `writeGlb` takes them
       and sparse accessors made a large set affordable, but `main.cpp` passes
       none. Open question the owner may want to settle: the 102 files under

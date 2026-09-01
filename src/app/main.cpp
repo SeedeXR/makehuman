@@ -725,11 +725,13 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
                                          : "the body skin could not be loaded");
     }
 
-    // Said once, here, rather than per format: a rigged character exported to
-    // anything but GLB arrives as a statue, and silence about that is how the
-    // whole rig went missing from every export for four milestones.
-    if (skin != nullptr && ext != ".glb") {
-        std::fprintf(stderr, "%s carries no skeleton yet; export .glb for a rigged character\n",
+    // Said once, here, rather than per format. OBJ has no concept of a
+    // skeleton and USD's scene entry does not carry one yet, so those two say
+    // what they are dropping instead of writing a statue in silence.
+    if (skin != nullptr && (ext == ".obj" || ext == ".usda" || ext == ".usd")) {
+        std::fprintf(stderr,
+                     "%s carries no skeleton; export .glb, .fbx or .dae for a rigged "
+                     "character\n",
                      ext.c_str());
     }
 
@@ -750,10 +752,11 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     // everything worn travel together.
     const auto sceneEntries = [&] {
         std::vector<mh::io::SceneEntry> scene;
-        scene.push_back({rm.view(), "body", allDressed ? &*bodyMat : nullptr});
+        // Only the body is rigged; exactly one entry may carry a skin.
+        scene.push_back({rm.view(), "body", allDressed ? &*bodyMat : nullptr, skin});
         for (const auto& [group, proxy] : worn) {
             scene.push_back({proxy.rm.view(), group.toLower().toStdString(),
-                             allDressed ? &*proxy.material : nullptr});
+                             allDressed ? &*proxy.material : nullptr, nullptr});
         }
         return scene;
     };

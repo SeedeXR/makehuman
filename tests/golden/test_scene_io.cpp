@@ -32,6 +32,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <limits>
 #include <set>
 #include <string>
@@ -335,6 +336,93 @@ FbxRigFixture buildFbxRig() {
 }
 
 }  // namespace
+
+// A DRESSED character has to keep its rig too.
+//
+// The single-mesh overload carried a skin from the start; the scene overload
+// did not even take one, so the moment a character wore anything its FBX and
+// Collada exports became statues -- and FBX is the format a rigged character
+// is usually handed over in. Only the body is skinned: worn proxies follow it
+// by being re-fitted, not skinned, which is also why exactly one entry may
+// carry a skin.
+TEST_CASE("a dressed character keeps its rig through the scene path",
+          "[io][scene][skin][multimesh]") {
+    auto f                   = buildFbxRig();
+    const auto rm            = core::RenderMesh::build(f.mesh);
+    const core::Mesh eyeMesh = quadAt(8.0F, "eyes");
+    const auto rmEye         = core::RenderMesh::build(eyeMesh);
+    const auto skinView      = f.skin.view();
+
+    const std::pair<io::SceneFormat, const char*> formats[] = {
+        {io::SceneFormat::FbxBinary, ".fbx"},
+        {io::SceneFormat::Collada, ".dae"},
+    };
+    for (const auto& [format, ext] : formats) {
+        const auto out = tempFile("dressedrig", ext);
+        std::error_code ec;
+        std::filesystem::remove(out, ec);
+
+        std::vector<io::SceneEntry> scene{{rm.view(), "body", nullptr, &skinView},
+                                          {rmEye.view(), "eyes", nullptr, nullptr}};
+        const auto r = io::exportScene(out, scene, format);
+        INFO(ext << ": " << (r ? std::string{} : r.error().message()));
+        REQUIRE(r.has_value());
+
+#if defined(MH_HAVE_ASSIMP)
+        Assimp::Importer importer;
+        const aiScene* sc = importer.ReadFile(out.string(), 0);
+        INFO(ext << " import: " << importer.GetErrorString());
+        REQUIRE(sc != nullptr);
+        REQUIRE(sc->mNumMeshes == 2);
+
+        // The bones must land on the BODY, not on whichever mesh happens to be
+        // first. Matched by name, because the two formats order meshes
+        // differently.
+        unsigned bonesOnBody = 0;
+        unsigned bonesOnEyes = 0;
+        for (unsigned m = 0; m < sc->mNumMeshes; ++m) {
+            const std::string name = sc->mMeshes[m]->mName.C_Str();
+            if (name.rfind("body", 0) == 0) bonesOnBody = sc->mMeshes[m]->mNumBones;
+            if (name.rfind("eyes", 0) == 0) bonesOnEyes = sc->mMeshes[m]->mNumBones;
+        }
+        // Not every joint of the 163-bone rig is weighted: `default_weights.mhw`
+        // names 139. FBX writes all 163 bones, Collada writes only the weighted
+        // 139 -- assimp's exporter prunes the empty ones. Both keep a usable
+        // rig, so the assertion is the weighted set, with the format-specific
+        // extra allowed rather than demanded.
+        std::vector<bool> used(f.skin.jointNames.size(), false);
+        for (size_t k = 0; k < f.skin.weights.size(); ++k)
+            if (f.skin.weights[k] > 0.0F) used[f.skin.joints[k]] = true;
+        const size_t weighted = static_cast<size_t>(std::count(used.begin(), used.end(), true));
+        INFO(ext << " bones: body " << bonesOnBody << " eyes " << bonesOnEyes << " weighted "
+                 << weighted);
+        CHECK(weighted > 100);  // the fixture must exercise a real rig
+        CHECK(bonesOnBody >= weighted);
+        CHECK(bonesOnBody <= f.skin.jointNames.size());
+        CHECK(bonesOnEyes == 0);
+
+        // ...and the joint NODES must survive alongside the two mesh nodes. An
+        // aiBone with no node of its own name is what made the FBX writer fail
+        // outright, so their presence is the half that cannot be assumed.
+        size_t jointNodes                             = 0;
+        const std::function<void(const aiNode*)> walk = [&](const aiNode* n) {
+            const std::string name = n->mName.C_Str();
+            for (const std::string& j : f.skin.jointNames) {
+                if (name == j) {
+                    ++jointNodes;
+                    break;
+                }
+            }
+            for (unsigned c = 0; c < n->mNumChildren; ++c)
+                walk(n->mChildren[c]);
+        };
+        walk(sc->mRootNode);
+        INFO(ext << " joint nodes: " << jointNodes);
+        CHECK(jointNodes == f.skin.jointNames.size());
+#endif
+        std::filesystem::remove(out, ec);
+    }
+}
 
 // assimp's FBX writer needs a NODE per bone in the scene graph. The aiBone
 // array alone is not a skeleton -- the hierarchy lives in the nodes and aiBone

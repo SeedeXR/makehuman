@@ -1305,6 +1305,71 @@ alone is what let this survive four milestones.
 
 ---
 
+## 2026-09-01 14:16:12 — Session 101 · **a dressed character was a statue in FBX and DAE**
+
+### The chunk
+`SceneEntry::skin`: the assimp scene path can carry a rig.
+
+### The defect
+The single-mesh overload took a `SkinView` from the start. The scene overload
+took none at all — so the moment a character wore anything, its FBX and Collada
+exports lost the skeleton. FBX is the format a rigged character is usually
+handed over in, so this was the gap that mattered most after last session's.
+
+### No second copy
+`attachSkin` and `addJointNodes` are the single-mesh path's own blocks, lifted
+out so both callers share them rather than the scene path growing a duplicate.
+
+Verified as a **move** rather than a rewrite, which is the only way to believe
+a 300-line diff: the fixture's `rigged.fbx` came out **byte-identical**
+afterwards apart from **3 bytes** — the FBX header's Hour/Minute/Second.
+
+### The extraction had a bug, and the test found it in one run
+`addJointNodes` still *replaced* `root->mChildren`. Harmless for a single mesh
+whose root has no children; a **SIGSEGV** for a scene that already has one
+child node per mesh, because `mNumChildren` kept counting entries the new array
+did not hold. I had even written a doc comment saying it grows the array — the
+comment described intent, the code did not do it. It grows the array now.
+
+### Measured, not assumed: the two formats disagree
+FBX writes all **163** bones. Collada writes **139**. Not a bug either side:
+`default_weights.mhw` names 139 of the rig's 163 joints, and assimp's Collada
+exporter prunes bones with no weights. So the test computes the weighted set
+and asserts `bonesOnBody >= weighted`, with the format-specific extra allowed,
+instead of a magic number that is right for exactly one format.
+
+The joint NODES survive in both — 163 of them — which is the half that cannot
+be assumed: an aiBone with no node of its own name is what makes assimp's FBX
+writer fail outright with "Failed to find node for bone: root".
+
+### Third party
+Blender 5.2 on a dressed, rigged FBX straight from the app
+(`--rig mixamo_superset --eyes high-poly --export dressed.fbx`):
+
+```
+ARMATURE bones=179
+MESH body verts=21833 groups=141 mods=['ARMATURE']
+MESH eyes verts=1076  groups=0   mods=[]
+```
+
+The rig on the body, the eyes unskinned, exactly as intended.
+
+### Ponytail
+The scale-and-ground-offset of a rest matrix appeared three times — bone offset,
+joint node, joint parent. One `placedRest()` now, because a ground offset
+applied to two of the three would drift the rig off the body in a way that
+still looks like a rig. Re-verified byte-neutral afterwards (2 differing bytes).
+
+### Still open
+OBJ has no skeleton concept; `UsdSceneEntry` has no skin field, though
+`writeUsda` emits UsdSkel for the single-mesh path (`UsdWriter.cpp:100,135`).
+Both now say what they are dropping instead of writing a statue in silence.
+
+### Verification
+ctest **430/430** in debug, release, ASan and TSan. Format clean.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk
