@@ -728,6 +728,23 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
                                          : "the body skin could not be loaded");
     }
 
+    // Feet on the ground, in every format. The base mesh's origin is at hip
+    // height -- measured: feet at -0.82 m and head at +0.84 m -- so an export
+    // without this arrives in a DCC tool buried to the waist. The reference
+    // defaults it on for every one of its exporters
+    // (legacy/python/core/export.py:58) and this matches that.
+    //
+    // Each writer takes its own options struct; there is no shared one, which
+    // is why this is four assignments rather than one.
+    mh::io::ObjWriteOptions objOpts;
+    objOpts.feetOnGround = true;
+    mh::io::GltfWriteOptions gltfOpts;
+    gltfOpts.feetOnGround = true;
+    mh::io::UsdWriteOptions usdOpts;
+    usdOpts.feetOnGround = true;
+    mh::io::SceneExportOptions sceneOpts;
+    sceneOpts.feetOnGround = true;
+
     // OBJ is the only format left that cannot carry a skeleton -- it has no
     // concept of one. Said here rather than per format, because silence is how
     // the rig went missing from every export for four milestones.
@@ -746,7 +763,7 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
                              allDressed ? &*proxy.material : nullptr,
                              {}});
         }
-        const auto r = mh::io::writeObjScene(path, scene);
+        const auto r = mh::io::writeObjScene(path, scene, objOpts);
         return report(r ? std::string{} : r.error().message());
     }
 
@@ -779,8 +796,8 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
         // Both writers take the skin as a parameter rather than per entry and
         // bind it to the FIRST one, which is the body -- the same one-skin rule
         // glTF and the assimp path follow.
-        const auto r = ext == ".usdz" ? mh::io::writeUsdzScene(path, scene, {}, skin)
-                                      : mh::io::writeUsdaScene(path, scene, {}, skin);
+        const auto r = ext == ".usdz" ? mh::io::writeUsdzScene(path, scene, usdOpts, skin)
+                                      : mh::io::writeUsdaScene(path, scene, usdOpts, skin);
         return report(r ? std::string{} : r.error().message());
     }
     if (ext == ".glb") {
@@ -792,26 +809,30 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
             scene.push_back({proxy.rm.view(), group.toLower().toStdString(),
                              allDressed ? &*proxy.material : nullptr});
         }
-        const auto r = mh::io::writeGlbScene(path, scene);
+        const auto r = mh::io::writeGlbScene(path, scene, gltfOpts);
         return report(r ? std::string{} : r.error().message());
     }
 
     // PLY is deliberately absent -- assimp 6.0.4 writes corrupt faces for any
     // mesh with UVs, and every mesh here has them (SceneIO.h).
     if (ext == ".fbx") {
-        const auto r = mh::io::exportScene(path, sceneEntries(), mh::io::SceneFormat::FbxBinary);
+        const auto r =
+            mh::io::exportScene(path, sceneEntries(), mh::io::SceneFormat::FbxBinary, sceneOpts);
         return report(r ? std::string{} : r.error().message());
     }
     if (ext == ".dae") {
-        const auto r = mh::io::exportScene(path, sceneEntries(), mh::io::SceneFormat::Collada);
+        const auto r =
+            mh::io::exportScene(path, sceneEntries(), mh::io::SceneFormat::Collada, sceneOpts);
         return report(r ? std::string{} : r.error().message());
     }
     if (ext == ".stl") {
-        const auto r = mh::io::exportScene(path, sceneEntries(), mh::io::SceneFormat::StlBinary);
+        const auto r =
+            mh::io::exportScene(path, sceneEntries(), mh::io::SceneFormat::StlBinary, sceneOpts);
         return report(r ? std::string{} : r.error().message());
     }
     if (ext == ".3mf") {
-        const auto r = mh::io::exportScene(path, sceneEntries(), mh::io::SceneFormat::ThreeMf);
+        const auto r =
+            mh::io::exportScene(path, sceneEntries(), mh::io::SceneFormat::ThreeMf, sceneOpts);
         return report(r ? std::string{} : r.error().message());
     }
     std::fprintf(stderr, "unknown export extension \"%s\"\n", ext.c_str());

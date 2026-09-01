@@ -9,6 +9,7 @@
 #include "makehuman/io/ObjWriter.h"
 #include "makehuman/io/SceneIO.h"
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
@@ -287,6 +288,53 @@ TEST_CASE("a referenced texture is copied next to the OBJ", "[io][objscene]") {
     fs::remove(mtl, ec);
     fs::remove_all(texDir, ec);
     fs::remove(mtl.parent_path() / texSrc.filename(), ec);
+}
+
+// Two features that each looked right alone, and were wrong together.
+//
+// Compaction drops vertices no surviving face names; feetOnGround levels the
+// scene by its lowest point. Taking the offset from ALL vertices means
+// levelling by one that is then dropped -- and the body's helper cage reaches
+// below the visible feet, so the character came out floating **0.27 m above the
+// ground**. Measured in Blender after both changes were in, each passing its
+// own tests.
+TEST_CASE("the ground offset ignores vertices the mask drops", "[io][objscene][compact]") {
+    // A visible quad at y = 1..2 and a hidden one a long way below it. The
+    // hidden quad must not decide where the ground is.
+    Quad visible = quadAt(0.0F);
+    for (auto& v : visible.coord)
+        v.y += 1.0F;
+    Quad buried = quadAt(0.0F);
+    for (auto& v : buried.coord)
+        v.y -= 10.0F;
+
+    const auto out = tmp("mh_scene_ground.obj");
+    fs::remove(out);
+
+    const std::array<uint8_t, 1> keep{1};
+    const std::array<uint8_t, 1> hide{0};
+    const std::vector<io::ObjSceneEntry> scene{
+        {visible.view(), "body", nullptr, keep},
+        {buried.view(), "cage", nullptr, hide},
+    };
+    io::ObjWriteOptions o;
+    o.feetOnGround = true;
+    REQUIRE(io::writeObjScene(out, scene, o).has_value());
+
+    double lo = 1e9;
+    std::istringstream in(readAll(out));
+    for (std::string line; std::getline(in, line);) {
+        if (line.rfind("v ", 0) != 0) continue;
+        std::istringstream vs(line.substr(2));
+        double x = 0;
+        double y = 0;
+        vs >> x >> y;
+        lo = std::min(lo, y);
+    }
+    INFO("lowest written y: " << lo);
+    CHECK(lo == Catch::Approx(0.0).margin(1e-4));
+
+    fs::remove(out);
 }
 
 // The strongest statement of the same defect: **our own reader refused our own

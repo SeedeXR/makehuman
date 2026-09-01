@@ -1431,14 +1431,34 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       bind translation must lie inside the mesh's own declared `extent`. 155 of
       163 were outside before; a 10x rig fails by an order of magnitude and the
       property survives a change of unit.
-- [ ] **Every export puts the character half underground.** Measured: feet at
-      **−0.82 m**, head at **+0.84 m**, origin at hip height, in OBJ, GLB, FBX
-      and USD alike. The reference defaults **"Feet on ground" to True** for
-      every exporter (`legacy/python/core/export.py:58`); our app passes `{}` so
-      `feetOnGround` is false everywhere. `UsdWriteOptions` has no such field at
-      all, so USD could not be grounded even on request — the same "one exporter
-      that cannot be set like the rest" the header comment says M7 exists to
-      remove.
+- [x] **Every export put the character half underground.** Measured in Blender:
+      feet at **−0.82 m**, head at **+0.84 m**, origin at hip height, in OBJ,
+      GLB, FBX and USD alike — a character imported anywhere arrived buried to
+      the waist. The reference defaults **"Feet on ground" to True** for every
+      one of its exporters (`legacy/python/core/export.py:58`); our app passed
+      `{}` so it was false everywhere, and `UsdWriteOptions` had no such field
+      at all — the "one exporter that cannot be set like the rest" its own
+      `unit` comment says M7 exists to remove.
+      Added to USD (points, `extent`, and the skeleton's bind/rest transforms),
+      and defaulted on for every format in the app. **All four now land at
+      0.0000** and the USD armature moves with the body: mesh z 0.0000..1.6594,
+      armature 0.0139..1.6626, `usdchecker --arkit` Success.
+- [x] **Two correct features were wrong together.** Compaction drops vertices no
+      surviving face names; `feetOnGround` levels by the lowest point. Taking
+      the offset over ALL vertices means levelling by one that is then
+      dropped — and the body's helper cage reaches below the visible feet, so
+      the OBJ came out **floating 0.27 m above the ground** with both changes
+      in and each passing its own tests. Caught by measuring the finished file
+      in Blender, not by either test suite.
+      `writeObjScene` computes its reachability pre-pass **before** the ground
+      offset now, and the offset is taken only over vertices that will be
+      written.
+- [ ] **Test temp filenames are not run-unique.** `mh_units_*.obj` and friends
+      live at fixed paths under `temp_directory_path()`, so two ctest runs of
+      the same binary — an ASan and a TSan preset at once, locally — fight over
+      them. Observed once: "all writers agree at the same unit" failed in a
+      concurrent run and passed 444/444 serially, twice. CI is unaffected (one
+      preset per runner), so this is a local-workflow hazard, not a product bug.
 - [ ] **The application still exports no morph targets.** `writeGlb` takes them
       and sparse accessors made a large set affordable, but `main.cpp` passes
       none. Open question the owner may want to settle: the 102 files under

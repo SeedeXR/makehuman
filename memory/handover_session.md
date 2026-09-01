@@ -1604,6 +1604,64 @@ ctest **441/441** in debug, release, ASan and TSan. Format clean.
 
 ---
 
+## 2026-09-01 17:27:04 — Session 106 · **feet on the ground, and two correct features that were wrong together**
+
+### The chunk
+`feetOnGround` for USD, and on by default for every format in the app.
+
+### The defect
+Measured in Blender on the app's own output in four formats: feet at
+**−0.82 m**, head at **+0.84 m**. The origin sits at hip height, so a character
+imported anywhere arrived buried to the waist. The reference defaults
+"Feet on ground" to **True** for every one of its exporters
+(`legacy/python/core/export.py:58`); our app passed `{}` so it was false
+everywhere, and `UsdWriteOptions` had no such field at all — the "one exporter
+that cannot be set like the rest" its own `unit` comment says M7 exists to
+remove.
+
+All four now land at **0.0000**, and the USD armature moves with the body:
+mesh z 0.0000..1.6594, armature 0.0139..1.6626, `usdchecker --arkit` Success.
+
+### The interesting part: two correct features, wrong together
+Compaction (last session) drops vertices no surviving face names. `feetOnGround`
+levels the scene by its lowest point. Each is right. Together they were not:
+the offset was taken over **all** vertices, so the OBJ levelled by a vertex it
+then dropped — and the body's helper cage reaches below the visible feet, so the
+character came out **floating 0.27 m above the ground**.
+
+Neither test suite caught it. Both features passed their own tests. It showed up
+only in the finished file, in Blender, because I checked the result rather than
+the change. `writeObjScene` now does its reachability pre-pass **before** the
+ground offset and levels only by what it will write, and there is a test with a
+buried hidden quad that fails if the offset ever looks at dropped vertices
+again.
+
+### A flake I chased rather than waved away
+"all writers agree at the same unit" failed once in a full ASan run and passed
+in isolation, then passed 444/444 serially twice. Cause found, and it is mine:
+I had an ASan suite and a background TSan suite running at the same time, and
+the test binaries share **fixed** temp filenames (`mh_units_agree.obj` under
+`temp_directory_path()`). Two concurrent runs of the same tests fight over the
+same files. CI is unaffected — one preset per runner — so it is a local-workflow
+hazard, recorded in todo.md rather than fixed here.
+
+The lesson I am taking: stop launching a sanitizer suite in the background and
+then editing or running another. It has also produced two stale greens this
+session.
+
+### Ponytail
+The pre-pass's `renumber` computed the kept count and threw it away, so the
+emission loop re-derived it with two `count_if` scans over 19k elements per
+entry. Kept instead. (And the edit had to be retried: clang-format had
+reflowed the `count_if` I was matching against — the third time that has caught
+me, and the assert-before-write is what makes it cheap.)
+
+### Verification
+ctest **444/444** in debug, release, ASan and TSan — TSan run alone on the
+final tree, for the reason above. Format clean.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

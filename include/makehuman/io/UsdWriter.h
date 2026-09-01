@@ -42,6 +42,18 @@ struct UsdWriteOptions {
     bool writeNormals{true};
     bool writeUVs{true};
 
+    /// Level the stage so the lowest point of any entry sits at y = 0.
+    ///
+    /// USD was the one exporter without this, which made it the one that could
+    /// not be set like the rest -- exactly the inconsistency the `unit` comment
+    /// above says M7 exists to remove. Measured before it existed: the app's
+    /// exports put the origin at hip height, feet at -0.82 m and head at
+    /// +0.84 m, so a character arrived buried to the waist.
+    ///
+    /// One offset for the whole SCENE, like every other writer: levelling each
+    /// mesh alone would drop the clothes to the floor beside the body.
+    bool feetOnGround{false};
+
     std::string primName{"MakeHuman"};
 };
 

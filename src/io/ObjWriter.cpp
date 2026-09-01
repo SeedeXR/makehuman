@@ -124,15 +124,60 @@ std::expected<ObjWriteResult, ObjWriteError> writeObjScene(const std::filesystem
 
     const float scale = unitScale(options.unit) * options.scale;
 
-    // One ground offset for the whole scene, taken from the lowest point of any
-    // entry: levelling each mesh independently would drop the clothes to the
+    /// Marks a vertex or UV no surviving face names.
+    constexpr uint32_t kUnused = ~0U;
+
+    // Which vertices each entry will actually write. Computed BEFORE the ground
+    // offset, because the offset has to be taken from the geometry that ends up
+    // in the file: the body's helper cage reaches below the visible feet, and
+    // levelling by a vertex that is then dropped left the character floating
+    // 0.27 m above the ground -- measured, after both this and compaction were
+    // in place and each looked right on its own.
+    std::vector<std::vector<uint32_t>> keptVerts(entries.size());
+    std::vector<std::vector<uint32_t>> keptUVs(entries.size());
+    std::vector<uint32_t> keptVertCount(entries.size(), 0);
+    std::vector<uint32_t> keptUVCount(entries.size(), 0);
+    for (size_t i = 0; i < entries.size(); ++i) {
+        const ObjSceneEntry& e           = entries[i];
+        const foundation::MeshView& mesh = e.mesh;
+        const size_t vpp                 = mesh.vertsPerPrimitive;
+        const size_t corners             = mesh.vertsPerFaceForExport;
+        keptVerts[i].assign(mesh.vertexCount(), kUnused);
+        keptUVs[i].assign(mesh.texco.size(), kUnused);
+        for (size_t f = 0; f < mesh.faceCount(); ++f) {
+            if (!e.faceMask.empty() && e.faceMask[f] == 0) continue;
+            for (size_t c = 0; c < corners; ++c) {
+                const uint32_t v = mesh.fvert[f * vpp + c];
+                if (v < keptVerts[i].size()) keptVerts[i][v] = 0U;
+                if (!keptUVs[i].empty()) {
+                    const uint32_t t = mesh.fuvs[f * vpp + c];
+                    if (t < keptUVs[i].size()) keptUVs[i][t] = 0U;
+                }
+            }
+        }
+        // Numbered in ascending order, so the file's vertex list is the input's
+        // with deletions rather than a reshuffle.
+        const auto renumber = [](std::vector<uint32_t>& r) {
+            uint32_t n = 0;
+            for (uint32_t& x : r)
+                if (x != kUnused) x = n++;
+            return n;
+        };
+        keptVertCount[i] = renumber(keptVerts[i]);
+        keptUVCount[i]   = renumber(keptUVs[i]);
+    }
+
+    // One ground offset for the whole scene, taken from the lowest point that is
+    // WRITTEN: levelling each mesh independently would drop the clothes to the
     // floor beside the body.
     float groundOffset = 0.0F;
     if (options.feetOnGround) {
         float lowest = std::numeric_limits<float>::infinity();
-        for (const ObjSceneEntry& e : entries) {
-            for (const Vec3& v : e.mesh.coord)
-                lowest = std::min(lowest, v.y * scale);
+        for (size_t i = 0; i < entries.size(); ++i) {
+            for (size_t v = 0; v < entries[i].mesh.coord.size(); ++v) {
+                if (keptVerts[i][v] == kUnused) continue;
+                lowest = std::min(lowest, entries[i].mesh.coord[v].y * scale);
+            }
         }
         if (std::isfinite(lowest)) groundOffset = -lowest;
     }
@@ -179,9 +224,6 @@ std::expected<ObjWriteResult, ObjWriteError> writeObjScene(const std::filesystem
         buf += '\n';
     }
 
-    /// Marks a vertex or UV no surviving face names.
-    constexpr uint32_t kUnused = ~0U;
-
     // Running totals of what has already been written, because OBJ indices
     // address the file rather than the mesh. Normals and UVs are counted
     // separately: an entry may carry one and not the other.
@@ -189,44 +231,17 @@ std::expected<ObjWriteResult, ObjWriteError> writeObjScene(const std::filesystem
     size_t tBase = 0;
     size_t nBase = 0;
 
+    size_t entryIndex = 0;
     for (const ObjSceneEntry& entry : entries) {
         const foundation::MeshView& mesh = entry.mesh;
         const bool withUVs               = options.writeUVs && mesh.hasUV();
         const bool withNormals = options.writeNormals && mesh.vnorm.size() == mesh.vertexCount();
 
-        // Only what the SURVIVING faces name. The mask skips faces; writing the
-        // vertex and UV lists whole left the file declaring points no `f` ever
-        // referenced -- measured at **20,222 `v` lines of which 14,444 were
-        // used**, 28.6% dead, on a default character.
-        //
-        // Normals are indexed by the vertex index here, so they share its
-        // remap; UVs have their own.
-        const size_t vppScan    = mesh.vertsPerPrimitive;
-        const size_t cornerScan = mesh.vertsPerFaceForExport;
-        std::vector<uint32_t> vRemap(mesh.vertexCount(), kUnused);
-        std::vector<uint32_t> tRemap(mesh.texco.size(), kUnused);
-        for (size_t f = 0; f < mesh.faceCount(); ++f) {
-            if (!entry.faceMask.empty() && entry.faceMask[f] == 0) continue;
-            for (size_t c = 0; c < cornerScan; ++c) {
-                const uint32_t v = mesh.fvert[f * vppScan + c];
-                if (v < vRemap.size()) vRemap[v] = 0U;
-                if (withUVs) {
-                    const uint32_t t = mesh.fuvs[f * vppScan + c];
-                    if (t < tRemap.size()) tRemap[t] = 0U;
-                }
-            }
-        }
-        // Numbered in ascending order, so the file's vertex list is the input's
-        // with deletions rather than a reshuffle. One lambda for both, so the
-        // two cannot drift into different numbering rules.
-        const auto renumber = [](std::vector<uint32_t>& r) {
-            uint32_t n = 0;
-            for (uint32_t& x : r)
-                if (x != kUnused) x = n++;
-            return n;
-        };
-        const uint32_t nextV = renumber(vRemap);
-        const uint32_t nextT = renumber(tRemap);
+        const std::vector<uint32_t>& vRemap = keptVerts[entryIndex];
+        const std::vector<uint32_t>& tRemap = keptUVs[entryIndex];
+        const uint32_t nextV                = keptVertCount[entryIndex];
+        const uint32_t nextT                = keptUVCount[entryIndex];
+        ++entryIndex;
 
         for (size_t i = 0; i < mesh.coord.size(); ++i) {
             if (vRemap[i] == kUnused) continue;

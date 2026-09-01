@@ -69,9 +69,21 @@ std::filesystem::path tmp(const std::string& stem, const std::string& ext) {
     return std::filesystem::temp_directory_path() / ("mh_units_" + stem + ext);
 }
 
-/// Height measured from the OBJ's own `v` lines -- parsed back out of the file,
-/// not taken from the writer's return value.
-double objHeight(const std::filesystem::path& p) {
+/// The vertical span of a written file: `{lowest, highest}`.
+///
+/// A pair rather than a height, because two different questions are asked of
+/// these files -- how TALL the character is (the unit tests) and where its FEET
+/// are (the ground tests) -- and deriving the first from the second keeps one
+/// parser per format instead of two.
+using Span = std::pair<double, double>;
+
+double height(const Span& s) {
+    return s.second - s.first;
+}
+
+/// Measured from the OBJ's own `v` lines -- parsed back out of the file, not
+/// taken from the writer's return value.
+Span objSpan(const std::filesystem::path& p) {
     std::ifstream in(p);
     std::string line;
     double lo = std::numeric_limits<double>::infinity();
@@ -84,12 +96,12 @@ double objHeight(const std::filesystem::path& p) {
         lo             = std::min(lo, y);
         hi             = std::max(hi, y);
     }
-    return hi - lo;
+    return {lo, hi};
 }
 
-/// glTF records POSITION min/max in the JSON, so the height is readable without
+/// glTF records POSITION min/max in the JSON, so this is readable without
 /// decoding the binary chunk.
-double gltfHeight(const std::filesystem::path& p) {
+Span gltfSpan(const std::filesystem::path& p) {
     const std::string b         = readAll(p);
     const std::string minMarker = "\"min\":[";
     const auto minAt            = b.find(minMarker);
@@ -105,10 +117,10 @@ double gltfHeight(const std::filesystem::path& p) {
     q = b.c_str() + maxAt + maxMarker.size();
     std::strtod(q, &end);
     const double maxY = std::strtod(end + 1, &end);
-    return maxY - minY;
+    return {minY, maxY};
 }
 
-double usdHeight(const std::filesystem::path& p) {
+Span usdSpan(const std::filesystem::path& p) {
     const std::string t        = readAll(p);
     const std::string exMarker = "float3[] extent = [";
     const auto exAt            = t.find(exMarker);
@@ -130,11 +142,11 @@ double usdHeight(const std::filesystem::path& p) {
         }
     }
     REQUIRE(nums.size() == 6);
-    return nums[4] - nums[1];
+    return {nums[1], nums[4]};
 }
 
 /// FBX is binary, so it is measured by reading it back through assimp.
-double fbxHeight(const std::filesystem::path& p) {
+Span fbxSpan(const std::filesystem::path& p) {
     const auto back = io::importMesh(p);
     REQUIRE(back.has_value());
     double lo = std::numeric_limits<double>::infinity();
@@ -143,7 +155,7 @@ double fbxHeight(const std::filesystem::path& p) {
         lo = std::min(lo, static_cast<double>(v.y));
         hi = std::max(hi, static_cast<double>(v.y));
     }
-    return hi - lo;
+    return {lo, hi};
 }
 
 }  // namespace
@@ -159,7 +171,7 @@ TEST_CASE("OBJ exports at the requested unit", "[units][io]") {
         REQUIRE(io::writeObj(out, mesh.view(), o).has_value());
 
         const double want = kHeightDm * c.factor;
-        const double got  = objHeight(out);
+        const double got  = height(objSpan(out));
         INFO("got " << got << " want " << want);
         CHECK(std::abs(got - want) < want * 1e-4);
 
@@ -180,7 +192,7 @@ TEST_CASE("glTF exports at the requested unit", "[units][io]") {
         REQUIRE(io::writeGlb(out, rm.view(), o).has_value());
 
         const double want = kHeightDm * c.factor;
-        const double got  = gltfHeight(out);
+        const double got  = height(gltfSpan(out));
         INFO("got " << got << " want " << want);
         CHECK(std::abs(got - want) < want * 1e-4);
 
@@ -201,7 +213,7 @@ TEST_CASE("USD exports at the requested unit", "[units][io]") {
         REQUIRE(io::writeUsda(out, rm.view(), o).has_value());
 
         const double want = kHeightDm * c.factor;
-        const double got  = usdHeight(out);
+        const double got  = height(usdSpan(out));
         INFO("got " << got << " want " << want);
         CHECK(std::abs(got - want) < want * 1e-4);
 
@@ -225,7 +237,7 @@ TEST_CASE("FBX exports at the requested unit", "[units][io]") {
         REQUIRE(io::exportScene(out, rm.view(), io::SceneFormat::FbxBinary, o).has_value());
 
         const double want = kHeightDm * c.factor;
-        const double got  = fbxHeight(out);
+        const double got  = height(fbxSpan(out));
         INFO("got " << got << " want " << want);
         CHECK(std::abs(got - want) < want * 1e-3);  // through a binary round trip
 
@@ -257,9 +269,9 @@ TEST_CASE("all writers agree at the same unit", "[units][io]") {
         REQUIRE(io::writeGlb(pg, rm.view(), go).has_value());
         REQUIRE(io::writeUsda(pu, rm.view(), uo).has_value());
 
-        const double a = objHeight(po);
-        const double b = gltfHeight(pg);
-        const double d = usdHeight(pu);
+        const double a = height(objSpan(po));
+        const double b = height(gltfSpan(pg));
+        const double d = height(usdSpan(pu));
         INFO("obj " << a << " gltf " << b << " usd " << d);
         CHECK(std::abs(a - b) < a * 1e-4);
         CHECK(std::abs(a - d) < a * 1e-4);
@@ -281,6 +293,100 @@ TEST_CASE("all writers agree at the same unit", "[units][io]") {
 // The failure is concrete: our own GLB round-trips a 16.9455 dm human back as
 // 1.6946, because glTF is metres. Used as-is that is a 17 cm doll -- the same
 // 10x class of error recorded against the reference's FBX.
+// Every export left the character half underground.
+//
+// Measured in Blender, on the app's own output in four formats: feet at
+// **-0.82 m**, head at **+0.84 m** -- the origin sits at hip height, so a
+// character imported anywhere arrives buried to the waist. The reference
+// defaults "Feet on ground" to **True** for every one of its exporters
+// (legacy/python/core/export.py:58).
+//
+// The option existed in three of the four writers and in none of the app's
+// calls; USD had no such field at all, which made it the one exporter that
+// could not be set like the rest.
+//
+// Asserted as "the lowest point is zero", not "the file changed": a levelling
+// applied to the wrong axis, or once per mesh instead of once per scene, still
+// changes the file.
+TEST_CASE("every writer can put the feet on the ground", "[units][io][ground]") {
+    const core::Mesh mesh = baseMesh();
+    const auto rm         = core::RenderMesh::build(mesh);
+
+    SECTION("OBJ") {
+        const auto out = tmp("ground", ".obj");
+        io::ObjWriteOptions o;
+        o.feetOnGround = true;
+        REQUIRE(io::writeObj(out, mesh.view(), o).has_value());
+        const auto s = objSpan(out);
+        INFO("lo " << s.first << " hi " << s.second);
+        CHECK(s.first == Catch::Approx(0.0).margin(1e-4));
+        CHECK(s.second > 1.0);
+        std::filesystem::remove(out);
+    }
+    SECTION("glTF") {
+        const auto out = tmp("ground", ".glb");
+        io::GltfWriteOptions o;
+        o.feetOnGround = true;
+        REQUIRE(io::writeGlb(out, rm.view(), o).has_value());
+        const auto s = gltfSpan(out);
+        INFO("lo " << s.first << " hi " << s.second);
+        CHECK(s.first == Catch::Approx(0.0).margin(1e-4));
+        std::filesystem::remove(out);
+    }
+    SECTION("USD") {
+        const auto out = tmp("ground", ".usda");
+        io::UsdWriteOptions o;
+        o.feetOnGround = true;
+        REQUIRE(io::writeUsda(out, rm.view(), o).has_value());
+        const auto s = usdSpan(out);
+        INFO("lo " << s.first << " hi " << s.second);
+        CHECK(s.first == Catch::Approx(0.0).margin(1e-4));
+        std::filesystem::remove(out);
+    }
+    SECTION("FBX") {
+        const auto out = tmp("ground", ".fbx");
+        io::SceneExportOptions o;
+        o.feetOnGround = true;
+        REQUIRE(io::exportScene(out, rm.view(), io::SceneFormat::FbxBinary, o).has_value());
+        const auto s = fbxSpan(out);
+        INFO("lo " << s.first << " hi " << s.second);
+        CHECK(s.first == Catch::Approx(0.0).margin(1e-3));
+        std::filesystem::remove(out);
+    }
+}
+
+// One offset for the whole SCENE, not one per mesh: levelling each mesh alone
+// drops the clothes to the floor beside the body. The eyes sit well above the
+// feet, so their lowest point must stay well above zero.
+TEST_CASE("the ground offset levels the scene, not each mesh", "[units][io][ground]") {
+    const core::Mesh mesh = baseMesh();
+    const auto rm         = core::RenderMesh::build(mesh);
+
+    // A second mesh floating a decimetre above the body's feet.
+    core::Mesh up("floater", 4);
+    std::vector<foundation::Vec3> pts;
+    for (const auto& v : mesh.coord())
+        pts.push_back(foundation::Vec3{v.x, v.y + 5.0F, v.z});
+    REQUIRE(up.setCoords(std::move(pts)));
+    up.addFaceGroup("floater");
+    REQUIRE(up.setFaces(std::vector<uint32_t>(mesh.fvert().begin(), mesh.fvert().end()), {},
+                        std::vector<uint16_t>(mesh.faceCount(), 0)));
+    up.calcNormals();
+    const auto rmUp = core::RenderMesh::build(up);
+
+    const auto out = tmp("groundscene", ".glb");
+    io::GltfWriteOptions o;
+    o.feetOnGround = true;
+    const std::vector<io::GltfSceneEntry> scene{{rm.view(), "body"}, {rmUp.view(), "floater"}};
+    REQUIRE(io::writeGlbScene(out, scene, o).has_value());
+
+    // gltfSpan reads the FIRST min/max, which is the body's.
+    const auto s = gltfSpan(out);
+    INFO("body lo " << s.first);
+    CHECK(s.first == Catch::Approx(0.0).margin(1e-4));
+    std::filesystem::remove(out);
+}
+
 TEST_CASE("import reports what a file unit is worth", "[units][io][import]") {
     const core::Mesh m = baseMesh();
     const auto rm      = core::RenderMesh::build(m);

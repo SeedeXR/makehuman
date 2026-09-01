@@ -120,6 +120,20 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
 
     const float s = unitScale(options.unit) * options.scale;
 
+    // One offset for the whole stage: levelling each mesh alone would drop the
+    // clothes to the floor beside the body.
+    float groundOffset = 0.0F;
+    if (options.feetOnGround) {
+        float lowest = std::numeric_limits<float>::infinity();
+        for (const UsdSceneEntry& e : entries) {
+            for (const foundation::Vec3& v : e.mesh.coord)
+                lowest = std::min(lowest, v.y * s);
+        }
+        if (std::isfinite(lowest)) groundOffset = -lowest;
+    }
+    /// A point placed in the stage: unit-scaled, then lifted onto the ground.
+    const auto placedY = [s, groundOffset](float y) { return y * s + groundOffset; };
+
     out << "#usda 1.0\n(\n";
     out << "    defaultPrim = \"" << options.primName << "\"\n";
     out << "    doc = \"MakeHuman C++ USD writer\"\n";
@@ -163,9 +177,9 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
         // s = 0.1 -- the mesh came out in metres and the rig in decimetres: a
         // skeleton TEN TIMES the size of the body. usdchecker passes either
         // way; it validates the stage's structure, not whether the rig fits.
-        const auto placed = [s](foundation::Mat4 m) {
+        const auto placed = [s, &placedY](foundation::Mat4 m) {
             m.m[0][3] *= s;
-            m.m[1][3] *= s;
+            m.m[1][3] = placedY(m.m[1][3]);
             m.m[2][3] *= s;
             return m;
         };
@@ -291,10 +305,10 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
         Vec3 hi{-lo.x, -lo.y, -lo.z};
         for (const Vec3& v : mesh.coord) {
             lo.x = std::min(lo.x, v.x * s);
-            lo.y = std::min(lo.y, v.y * s);
+            lo.y = std::min(lo.y, placedY(v.y));
             lo.z = std::min(lo.z, v.z * s);
             hi.x = std::max(hi.x, v.x * s);
-            hi.y = std::max(hi.y, v.y * s);
+            hi.y = std::max(hi.y, placedY(v.y));
             hi.z = std::max(hi.z, v.z * s);
         }
 
@@ -356,7 +370,7 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
         for (size_t i = 0; i < mesh.vertexCount(); ++i) {
             const Vec3& v = mesh.coord[i];
             if (i != 0) out << ", ";
-            out << "(" << num(v.x * s) << ", " << num(v.y * s) << ", " << num(v.z * s) << ")";
+            out << "(" << num(v.x * s) << ", " << num(placedY(v.y)) << ", " << num(v.z * s) << ")";
         }
         out << "]\n";
 
