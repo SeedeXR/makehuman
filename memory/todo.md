@@ -1361,6 +1361,41 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       The GLB/USDA/USDZ file checks share one `tests/file_contains.cmake`. It
       greps a USDZ directly: the stage inside is STORED uncompressed, which is a
       format requirement rather than luck.
+- [x] **A third of every export was vertices nothing referenced.**
+      `RenderMesh::setFaceMask` filters the INDEX buffer and leaves the vertex
+      buffer alone — right for the renderer, which uploads it once and must keep
+      mask toggles cheap, and wrong for a file. Export inherited it. Measured on
+      a default character's GLB: **21,833 body vertices, 14,517 referenced,
+      7,316 dead — 33.5%** of every position, normal, UV, tangent, joint and
+      weight written.
+      **Not only size.** A consumer that bounds the vertex buffer sees the
+      hidden helper cages: Blender read the exported body as **1.6940 m** where
+      the visible mesh is **1.6594 m**, a 2% error inherited by anything that
+      frames or scales by bounds. That number is also why the earlier
+      "Blender reads our FBX at 1.694 m" note in §M7 was measuring the buffer,
+      not the character.
+      `io::compactUnusedVertices` + `compactSkinAttributes`, called once at the
+      app's export site. **Deliberately not inside the writers**: a writer
+      renumbering vertices behind a caller's back would break anyone
+      round-tripping indices, and the tests asserting
+      `result.vertices == view.vertexCount()` are that caller.
+
+      | | before | after | |
+      |---|---|---|---|
+      | GLB | 2,255,576 | 1,845,876 | **−18.2%** |
+      | FBX | 4,529,552 | 4,154,624 | **−8.3%** |
+      | USD | 3,833,150 | 2,831,381 | **−26.1%** |
+
+      Blender now reads the FBX body at **1.6594 m** with **14,517** vertices,
+      and the rigged GLB still binds exactly: 179 bones, 179 vertex groups, max
+      shift **1.2e-5**. (The FBX's vertex-group count drops 141 → 126: bones
+      that only weighted helper vertices now weight nothing, so Blender makes no
+      group for them. The bones are all still there.)
+- [ ] **OBJ carries the same dead weight, by a different mechanism.** Measured:
+      **20,222 `v` lines, 14,444 referenced** — 5,778 dead, 28.6% — plus
+      unreferenced `vt`. The OBJ writer works in mesh/UV index space rather than
+      render-vertex space, so `compactUnusedVertices` does not apply; it needs
+      the same remap done inside `writeObjScene` against its face mask.
 - [ ] **The application still exports no morph targets.** `writeGlb` takes them
       and sparse accessors made a large set affordable, but `main.cpp` passes
       none. Open question the owner may want to settle: the 102 files under

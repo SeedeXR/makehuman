@@ -6,6 +6,7 @@
 # depend on one.
 
 add_library(mh_io STATIC
+    Compact.cpp
     ObjWriter.cpp
     BvhReader.cpp
     BvhWriter.cpp

@@ -15,6 +15,7 @@
 #include "makehuman/core/Target.h"
 #include "makehuman/core/TargetIndex.h"
 #include "makehuman/foundation/DataDir.h"
+#include "makehuman/io/Compact.h"
 #include "makehuman/io/GltfWriter.h"
 #include "makehuman/io/ObjWriter.h"
 #include "makehuman/io/SceneIO.h"
@@ -693,8 +694,10 @@ std::optional<mh::rig::SkinData> exportSkin(const PoseRig& rig, const mh::core::
 ///        today**: `GltfSceneEntry` has a skin field and the assimp and USD
 ///        scene entries do not, so the other formats say what they are dropping
 ///        rather than writing a statue in silence.
+/// @param body the body's render geometry, already compacted. Every format
+///        except OBJ writes from this.
 bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
-                const mh::core::RenderMesh& rm, const std::map<QString, WornProxy>& worn,
+                const mh::foundation::RenderView& body, const std::map<QString, WornProxy>& worn,
                 std::span<const uint8_t> bodyMask, const mh::foundation::SkinView* skin) {
     std::string ext = path.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(),
@@ -752,7 +755,7 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     const auto sceneEntries = [&] {
         std::vector<mh::io::SceneEntry> scene;
         // Only the body is rigged; exactly one entry may carry a skin.
-        scene.push_back({rm.view(), "body", allDressed ? &*bodyMat : nullptr, skin});
+        scene.push_back({body, "body", allDressed ? &*bodyMat : nullptr, skin});
         for (const auto& [group, proxy] : worn) {
             scene.push_back({proxy.rm.view(), group.toLower().toStdString(),
                              allDressed ? &*proxy.material : nullptr, nullptr});
@@ -768,7 +771,7 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     // format an AR or Apple pipeline actually takes.
     if (ext == ".usda" || ext == ".usd" || ext == ".usdz") {
         std::vector<mh::io::UsdSceneEntry> scene;
-        scene.push_back({rm.view(), "body", allDressed ? &*bodyMat : nullptr});
+        scene.push_back({body, "body", allDressed ? &*bodyMat : nullptr});
         for (const auto& [group, proxy] : worn) {
             scene.push_back({proxy.rm.view(), group.toLower().toStdString(),
                              allDressed ? &*proxy.material : nullptr});
@@ -784,7 +787,7 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
         std::vector<mh::io::GltfSceneEntry> scene;
         // Only the body is rigged, and writeGlbScene allows exactly one skinned
         // entry -- worn proxies follow the body by being re-fitted, not skinned.
-        scene.push_back({rm.view(), "body", allDressed ? &*bodyMat : nullptr, skin});
+        scene.push_back({body, "body", allDressed ? &*bodyMat : nullptr, skin});
         for (const auto& [group, proxy] : worn) {
             scene.push_back({proxy.rm.view(), group.toLower().toStdString(),
                              allDressed ? &*proxy.material : nullptr});
@@ -1119,10 +1122,35 @@ int main(int argc, char** argv) {
             refitProxy(worn, *mesh);
 
         const auto skinData = exportSkin(rig, rm, subdivided);
-        const auto skinView = skinData ? std::optional{skinData->view()} : std::nullopt;
 
-        return exportMesh(parser.value(exportOpt).toStdString(), displayMesh(), rm, wornProxies,
-                          bodyMask, skinView ? &*skinView : nullptr)
+        // A third of the body's vertex buffer is not referenced by any visible
+        // triangle: setFaceMask filters INDICES and leaves the vertex buffer
+        // alone, which is right for the renderer and wrong for a file. Measured
+        // on the default character: 21,833 vertices, 14,517 referenced, 7,316
+        // written for nothing -- and a consumer that bounds the buffer sees the
+        // hidden helper cages rather than the body.
+        const auto compact = mh::io::compactUnusedVertices(rm.view());
+        if (compact.dropped() > 0) {
+            std::printf("compacted %zu of %zu vertices (%zu unreferenced)\n", compact.coord.size(),
+                        compact.remap.size(), compact.dropped());
+        }
+
+        // The skin's joints and weights are per RENDER vertex, so they move
+        // with them or every vertex past the first dropped one is weighted to
+        // the wrong bone.
+        std::vector<uint32_t> joints;
+        std::vector<float> weights;
+        std::optional<mh::foundation::SkinView> skinView;
+        if (skinData) {
+            std::tie(joints, weights) = mh::io::compactSkinAttributes(
+                skinData->view(), compact.remap, compact.coord.size());
+            skinView = mh::foundation::SkinView{
+                skinData->jointNames, skinData->jointParents, skinData->globalRest, joints, weights,
+                skinData->influences};
+        }
+
+        return exportMesh(parser.value(exportOpt).toStdString(), displayMesh(), compact.view(),
+                          wornProxies, bodyMask, skinView ? &*skinView : nullptr)
                    ? 0
                    : 1;
     }

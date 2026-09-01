@@ -13,6 +13,7 @@ add_executable(mh_tests
     unit/test_obj_scene.cpp
     unit/test_data_dir.cpp
     unit/test_malformed_input.cpp
+    unit/test_compact.cpp
     golden/test_base_mesh_parity.cpp
     golden/test_mesh_fixture_parity.cpp
     golden/test_subdiv_fixture_parity.cpp

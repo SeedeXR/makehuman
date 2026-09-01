@@ -1426,6 +1426,75 @@ ctest **434/434** in debug, release, ASan and TSan. Format clean.
 
 ---
 
+## 2026-09-01 15:47:00 — Session 103 · **a third of every export was vertices nothing referenced**
+
+### How it was found
+Not from todo.md. I went looking for the next instance of the session's
+recurring shape — capability built, never connected — by asking what the
+writers support that the app never sets, and found that the app never sets ANY
+export option. Chasing whether that mattered, I measured the exported height of
+the same character in every format through Blender:
+
+```
+OBJ   16.5937        GLB   1.6594
+FBX    1.6940        USD   1.6940        STL 165.9377
+```
+
+Each unit is its format's own convention, so those are fine. But **GLB says
+1.6594 and FBX says 1.6940 for the same body**, and that is not a convention.
+
+### The defect
+`RenderMesh::setFaceMask` filters the INDEX buffer and leaves the vertex buffer
+alone. That is right for the renderer — it uploads the buffer once and a mask
+toggle must stay cheap; there is even a test asserting it. Export inherited it.
+
+Counted in the GLB itself: **21,833 body vertices, 14,517 referenced, 7,316
+dead — 33.5%** of every position, normal, UV, tangent, joint and weight
+written. glTF's importer drops unreferenced vertices, FBX's does not, which is
+exactly why the two disagreed about the height: **1.6940 is the helper cages,
+1.6594 is the body.** Anything that frames or scales by bounds inherits that 2%.
+
+### The fix, and where it does NOT go
+`io::compactUnusedVertices` plus `compactSkinAttributes`, called once at the
+app's export site.
+
+**Not inside the writers.** A writer renumbering vertices behind a caller's
+back would break anyone round-tripping indices — and the tests asserting
+`result.vertices == view.vertexCount()` are that caller. This is a step an
+exporter takes, explicitly.
+
+| | before | after | |
+|---|---|---|---|
+| GLB | 2,255,576 | 1,845,876 | **−18.2%** |
+| FBX | 4,529,552 | 4,154,624 | **−8.3%** |
+| USD | 3,833,150 | 2,831,381 | **−26.1%** |
+
+Blender now reads the FBX body at **1.6594 m** with 14,517 vertices, and the
+rigged GLB still binds exactly: 179 bones, 179 vertex groups, max shift
+**1.2e-5**. The FBX's vertex-group count drops 141 → 126 — bones that only
+weighted helper vertices now weight nothing, so Blender makes no group for
+them. All 179 bones are still there.
+
+### Ponytail cut something I had just written
+`compactDeltas` had **no caller**: the application exports no morph targets. I
+had written it "so the next person does not forget". That is precisely the
+mistake this whole change exists to fix — a capability built and never wired —
+so it is gone, with a comment in the header saying why and a todo entry
+recording that morph deltas will need the same remap.
+
+### Still open, measured
+OBJ carries the same dead weight by a different mechanism: **20,222 `v` lines,
+14,444 referenced**, 28.6% dead, plus unreferenced `vt`. The OBJ writer works
+in mesh/UV index space rather than render-vertex space, so this function does
+not apply; it needs the same remap inside `writeObjScene` against its face mask.
+
+### Verification
+ctest **438/438** in debug, release, ASan and TSan. Format clean.
+Mutation-verified: reusing the new index on the read side of the skin remap
+fails the skin test; leaving indices unremapped fails the compaction test.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk
