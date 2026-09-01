@@ -4,9 +4,13 @@
 // support at all -- and assimp has none either, so these tests check the format
 // structurally and tools/run_blender_validation.sh checks it in Blender.
 
+#include <sstream>
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/core/RenderMesh.h"
 #include "makehuman/io/UsdWriter.h"
+#include "makehuman/rig/Skeleton.h"
+#include "makehuman/rig/Skinning.h"
+#include "makehuman/rig/VertexWeights.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -461,6 +465,113 @@ TEST_CASE("a usdz is a stored, 64-byte aligned zip", "[io][usd][usdz]") {
 
     // And the payload really is the stage.
     CHECK(bytes.compare(dataAt, 9, "#usda 1.0") == 0);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+// --- UsdSkel ----------------------------------------------------------------
+//
+// `usdchecker` reports Success on the result, but it cannot catch either of the
+// two traps below -- both produce a perfectly valid stage that poses wrongly.
+// So they are pinned here.
+TEST_CASE("a skinned stage binds a UsdSkel skeleton", "[io][usd][usdskel]") {
+    const auto rigPath = std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel";
+    if (!std::filesystem::exists(rigPath)) return;
+
+    core::Mesh mesh = baseMesh();
+    auto skel       = rig::loadSkeleton(rigPath);
+    REQUIRE(skel.has_value());
+    REQUIRE(skel->updateJoints(mesh.coord()));
+    REQUIRE(skel->buildRestMatrices());
+    auto vw = rig::loadWeights(std::filesystem::path(MH_DATA_DIR) / "rigs" / "default_weights.mhw",
+                               mesh.vertexCount());
+    REQUIRE(vw.has_value());
+
+    const auto rm       = core::RenderMesh::build(mesh);
+    const auto compiled = vw->compile(*skel, 4);
+    const auto skin     = rig::buildSkinData(*skel, compiled, rm.vmap());
+    const auto view     = skin.view();
+    REQUIRE(skin.globalRest.size() == 163);
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_usdskel.usda";
+    const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr}};
+    REQUIRE(io::writeUsdaScene(out, scene, {}, &view).has_value());
+
+    std::ifstream in(out);
+    const std::string t((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+
+    // UsdSkel requires the skeleton and everything bound to it under a SkelRoot.
+    CHECK(t.find("def SkelRoot ") != std::string::npos);
+    CHECK(t.find("def Skeleton \"Skel\"") != std::string::npos);
+    CHECK(t.find("prepend apiSchemas = [\"SkelBindingAPI\"]") != std::string::npos);
+    CHECK(t.find("rel skel:skeleton = </") != std::string::npos);
+    CHECK(t.find("int[] primvars:skel:jointIndices") != std::string::npos);
+    CHECK(t.find("float[] primvars:skel:jointWeights") != std::string::npos);
+    CHECK(t.find("elementSize = 4") != std::string::npos);
+
+    // TRAP 1: joint tokens are USD PATHS made of identifiers. MakeHuman bone
+    // names carry a dot and a dash -- `upperarm01.L`, `finger1-1.L` -- and a dot
+    // is the property separator in a USD path. Emitting them raw makes a stage
+    // usdchecker rejects, so they are sanitised.
+    const std::string kJointsKey = "uniform token[] joints = [";
+    const auto jointsAt          = t.find(kJointsKey);
+    REQUIRE(jointsAt != std::string::npos);
+    // From the OPENING bracket of the array, not from the key: the key itself
+    // contains a `]` (in `token[]`), and searching from its start finds that
+    // one and yields an empty slice that trivially "has no dots".
+    const auto arrayAt   = jointsAt + kJointsKey.size();
+    const auto jointsEnd = t.find(']', arrayAt);
+    REQUIRE(jointsEnd != std::string::npos);
+    const std::string joints = t.substr(arrayAt, jointsEnd - arrayAt);
+    CHECK(joints.find('.') == std::string::npos);
+    CHECK(joints.find('-') == std::string::npos);
+    // The hierarchy IS the token: a child's path contains its parent's.
+    CHECK(joints.find("root/spine05") != std::string::npos);
+    CHECK(joints.find("clavicle_L/shoulder01_L/upperarm01_L") != std::string::npos);
+
+    // TRAP 2: USD uses ROW vectors, this codebase uses COLUMN vectors. The two
+    // are transposes, so an untransposed write emits every joint transposed --
+    // and the stage still validates. The check is where translation lands: in
+    // USD it is the LAST ROW, so the root bone's head must appear there.
+    const auto bindAt = t.find("uniform matrix4d[] bindTransforms = [");
+    REQUIRE(bindAt != std::string::npos);
+    const std::string firstMatrix = t.substr(bindAt, 260);
+
+    // The FOURTH tuple must BE the translation. Checking only that the numbers
+    // appear somewhere is vacuous -- they appear either way, just in different
+    // places -- and an earlier version of this test did exactly that and passed
+    // with the transpose removed.
+    const auto t0 = skel->bones[0].matRestGlobal.translation();
+    std::ostringstream lastRow;
+    lastRow << "(" << t0.x << ", " << t0.y << ", " << t0.z << ", 1)";
+    INFO("first bindTransform: " << firstMatrix);
+    INFO("expecting last row " << lastRow.str());
+    CHECK(firstMatrix.find(lastRow.str()) != std::string::npos);
+
+    // Untransposed, the last row would be the identity's (0, 0, 0, 1) and the
+    // translation would sit in the last COLUMN instead.
+    CHECK(firstMatrix.find("(0, 0, 0, 1)") == std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("an unskinned stage is unchanged", "[io][usd][usdskel]") {
+    // Passing no skin must leave the output exactly as it was before UsdSkel
+    // existed -- a plain Xform, no skeleton, no binding.
+    const core::Mesh m = baseMesh();
+    const auto rm      = core::RenderMesh::build(m);
+    const auto out     = std::filesystem::temp_directory_path() / "mh_usdnoskel.usda";
+    const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr}};
+    REQUIRE(io::writeUsdaScene(out, scene).has_value());
+
+    std::ifstream in(out);
+    const std::string t((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    CHECK(t.find("def Xform ") != std::string::npos);
+    CHECK(t.find("SkelRoot") == std::string::npos);
+    CHECK(t.find("Skeleton") == std::string::npos);
+    CHECK(t.find("skel:") == std::string::npos);
 
     std::error_code ec;
     std::filesystem::remove(out, ec);

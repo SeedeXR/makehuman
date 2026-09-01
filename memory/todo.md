@@ -1041,8 +1041,30 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `writeUsdaScene` already copies textures beside the stage, so whatever
       lands in the scratch directory **is** the archive's contents.;
       needs a zip writer.
-- [ ] **UsdSkel** — skeleton and skinning in USD. A bigger schema than the mesh;
-      glTF and FBX already carry the rig.
+- [x] **UsdSkel** — skeleton and skinning in USD. `usdchecker` reports
+      **Success** on a 163-joint skinned stage.
+      `SkelRoot` root, a `Skeleton` prim with `joints`/`bindTransforms`/
+      `restTransforms`, and the first entry bound via `SkelBindingAPI` with
+      `primvars:skel:jointIndices`/`jointWeights` at `elementSize = 4`.
+      **Two traps that `usdchecker` cannot see** — both produce a valid stage
+      that poses wrongly, so both are pinned by tests:
+      1. **USD uses ROW vectors; this codebase uses COLUMN vectors.** They are
+         transposes, so an untransposed write emits every joint transposed.
+         Verified positionally: the root bone's head `(0, 0.5639, -0.7609)` must
+         be the **last ROW**, and it is.
+      2. **Joint tokens are USD paths of identifiers.** MakeHuman bone names
+         carry a dot and a dash (`upperarm01.L`, `finger1-1.L`) and a dot is the
+         path property separator, so they are sanitised —
+         `clavicle_L/shoulder01_L/upperarm01_L`. This one `usdchecker` *does*
+         reject, which is how it was caught.
+      `restTransforms` are **local**, unlike `bindTransforms` which are world:
+      emitting world for both compounds every joint by its ancestors.
+      **A vacuous assertion of my own, caught by mutation**: the first transpose
+      check only looked for the number `0.5639` *somewhere* in the matrix — it
+      appears either way, just in a different place — and passed with the
+      transpose removed. Strengthened to match the whole last-row tuple; the
+      mutation now fails 2 assertions.
+      Forwarded through `writeUsdzScene`, so a skinned USDZ works too.
 - [x] **Export OBJ** (`mh::io`, Apache-2.0) — face lines byte-identical to the
       reference across all 18,486 faces; unit conversion; feet-on-ground computed
       from the mesh minimum rather than the reference's Y-only joint offset;

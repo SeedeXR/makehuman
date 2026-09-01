@@ -830,6 +830,47 @@ CI green on `8d9d1855`.
 
 ---
 
+## 2026-09-01 07:29:01 — Session 093 · **UsdSkel, and a vacuous test I wrote myself**
+
+### The chunk
+UsdSkel: skeleton and skinning in USD. `usdchecker` reports **Success** on a
+163-joint skinned stage — `SkelRoot`, a `Skeleton` prim with joints,
+bindTransforms and restTransforms, and the mesh bound through `SkelBindingAPI`
+with `primvars:skel:jointIndices`/`jointWeights`.
+
+### Two traps usdchecker cannot see
+Both produce a stage that **validates and poses wrongly**, so both are pinned:
+
+1. **USD uses ROW vectors; this codebase uses COLUMN vectors.** They are
+   transposes. An untransposed write emits every joint transposed and nothing
+   complains. Verified positionally: the root bone's head
+   `(0, 0.5639, -0.7609)` must be the **last ROW** of its bindTransform.
+2. **`restTransforms` are LOCAL, `bindTransforms` are WORLD.** Emitting world
+   for both compounds every joint by its ancestors.
+
+A third trap `usdchecker` *did* catch: joint tokens are USD **paths made of
+identifiers**, and MakeHuman bone names carry a dot and a dash
+(`upperarm01.L`, `finger1-1.L`) — a dot being the path property separator. They
+are sanitised to `clavicle_L/shoulder01_L/upperarm01_L`.
+
+### The part worth remembering: my own test was vacuous
+My first transpose check asserted the number `0.5639` appeared *somewhere* in
+the first matrix. It appears either way — transposing moves it, it does not
+remove it. **The mutation passed all 29 assertions.**
+
+That is precisely the failure I have spent this session catching in other
+people's absence, written by me, in a test whose entire purpose was to catch a
+transpose. The lesson is not "mutation-test more"; it is that an assertion about
+a VALUE is worthless when the bug is about POSITION. Strengthened to match the
+whole last-row tuple, and to require that `(0, 0, 0, 1)` is absent — the
+mutation now fails 2 assertions.
+
+### Verification
+ctest **413/413** in debug, release, ASan; TSan separately. Format clean.
+CI green on `97282c55`.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

@@ -28,6 +28,45 @@ std::string num(double v) {
     return foundation::formatShortest(static_cast<float>(v));
 }
 
+/// A USD prim name: identifiers only, so `[A-Za-z_][A-Za-z0-9_]*`.
+///
+/// MakeHuman bone names are NOT valid here -- `upperarm01.L` and `finger1-1.L`
+/// carry a dot and a dash, and a dot is the property separator in a USD path.
+/// Emitting them raw produces a stage `usdchecker` rejects.
+std::string usdIdentifier(std::string_view name) {
+    std::string out;
+    out.reserve(name.size());
+    for (const char c : name) {
+        out.push_back((std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_') ? c : '_');
+    }
+    if (out.empty()) out = "_";
+    if (std::isdigit(static_cast<unsigned char>(out.front())) != 0) out.insert(out.begin(), '_');
+    return out;
+}
+
+/// A matrix4d literal in USD's convention.
+///
+/// **USD uses ROW vectors** (`v' = v * M`); this codebase uses COLUMN vectors
+/// (`v' = M * v`). The two conventions are transposes, so writing our matrix
+/// element-for-element would emit every joint transposed -- a stage that still
+/// validates and poses wrongly. Translation therefore lands in the LAST ROW
+/// here, not the last column.
+std::string matrix4d(const foundation::Mat4& m) {
+    std::string out = "( ";
+    for (size_t r = 0; r < 4; ++r) {
+        out += "(";
+        for (size_t c = 0; c < 4; ++c) {
+            // Transposed: USD row r is our column r.
+            out += num(static_cast<double>(m.m[c][r]));
+            if (c < 3) out += ", ";
+        }
+        out += ")";
+        if (r < 3) out += ", ";
+    }
+    out += " )";
+    return out;
+}
+
 }  // namespace
 
 double UsdWriteOptions::metersPerUnit() const noexcept {
@@ -57,7 +96,8 @@ std::string UsdWriteError::message() const {
 
 std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesystem::path& path,
                                                             std::span<const UsdSceneEntry> entries,
-                                                            const UsdWriteOptions& options) {
+                                                            const UsdWriteOptions& options,
+                                                            const foundation::SkinView* skin) {
     if (entries.empty()) {
         return std::unexpected(UsdWriteError{UsdWriteErrorKind::EmptyMesh, path.string(), {}});
     }
@@ -89,7 +129,58 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
     out << "    upAxis = \"" << (options.yUp ? "Y" : "Z") << "\"\n";
     out << ")\n\n";
 
-    out << "def Xform \"" << options.primName << "\"\n{\n";
+    // A skinned stage MUST be rooted at a SkelRoot: UsdSkel requires the
+    // skeleton and everything bound to it to live under one, and usdchecker
+    // reports the stage as non-conformant otherwise.
+    out << "def " << (skin != nullptr ? "SkelRoot" : "Xform") << " \"" << options.primName
+        << "\"\n{\n";
+
+    // ---- skeleton --------------------------------------------------------
+    std::vector<std::string> jointPaths;
+    if (skin != nullptr && skin->jointCount() > 0) {
+        // UsdSkel joint tokens are PATHS, so each joint's token is its parent's
+        // token plus its own name -- that is how the hierarchy is expressed;
+        // there is no separate parent array.
+        jointPaths.reserve(skin->jointCount());
+        for (size_t j = 0; j < skin->jointCount(); ++j) {
+            const std::string leaf = usdIdentifier(
+                j < skin->jointNames.size() ? skin->jointNames[j] : ("joint" + std::to_string(j)));
+            const int32_t parent = j < skin->jointParents.size() ? skin->jointParents[j] : -1;
+            jointPaths.push_back(parent >= 0 && static_cast<size_t>(parent) < jointPaths.size()
+                                     ? jointPaths[static_cast<size_t>(parent)] + "/" + leaf
+                                     : leaf);
+        }
+
+        out << "    def Skeleton \"Skel\"\n    {\n";
+        out << "        uniform token[] joints = [";
+        for (size_t j = 0; j < jointPaths.size(); ++j) {
+            out << (j != 0 ? ", " : "") << "\"" << jointPaths[j] << "\"";
+        }
+        out << "]\n";
+
+        out << "        uniform matrix4d[] bindTransforms = [";
+        for (size_t j = 0; j < skin->globalRest.size(); ++j) {
+            out << (j != 0 ? ", " : "") << matrix4d(skin->globalRest[j]);
+        }
+        out << "]\n";
+
+        // restTransforms are LOCAL, unlike bindTransforms which are world.
+        // Emitting the world matrices for both leaves every joint's rest pose
+        // compounded by its ancestors -- a stage that validates and poses
+        // wrongly, which is the whole class of bug this milestone keeps hitting.
+        out << "        uniform matrix4d[] restTransforms = [";
+        for (size_t j = 0; j < skin->globalRest.size(); ++j) {
+            const int32_t parent = j < skin->jointParents.size() ? skin->jointParents[j] : -1;
+            const foundation::Mat4 local =
+                (parent >= 0 && static_cast<size_t>(parent) < skin->globalRest.size())
+                    ? foundation::rigidInverse(skin->globalRest[static_cast<size_t>(parent)]) *
+                          skin->globalRest[j]
+                    : skin->globalRest[j];
+            out << (j != 0 ? ", " : "") << matrix4d(local);
+        }
+        out << "]\n";
+        out << "    }\n\n";
+    }
 
     // ---- materials -------------------------------------------------------
     // UsdPreviewSurface under one Looks scope, bound per mesh. A scene with no
@@ -195,11 +286,35 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
         // and is not conformant. It is prim METADATA, so it belongs in the
         // parentheses before the body, not among the properties: putting it
         // inside the braces makes the stage fail to open at all.
+        // Only the FIRST entry is skinned -- the body. Clothing follows the
+        // body through its own fit, not through the skeleton.
+        const bool skinned = skin != nullptr && !jointPaths.empty() && &entry == entries.data();
+
         out << "    def Mesh \"" << entry.name << "\"\n";
-        if (entry.material != nullptr) {
-            out << "    (\n        prepend apiSchemas = [\"MaterialBindingAPI\"]\n    )\n";
+        if (entry.material != nullptr || skinned) {
+            out << "    (\n        prepend apiSchemas = [";
+            if (entry.material != nullptr) out << "\"MaterialBindingAPI\"";
+            if (entry.material != nullptr && skinned) out << ", ";
+            if (skinned) out << "\"SkelBindingAPI\"";
+            out << "]\n    )\n";
         }
         out << "    {\n";
+        if (skinned) {
+            out << "        rel skel:skeleton = </" << options.primName << "/Skel>\n";
+            const size_t infl = skin->influences != 0 ? skin->influences : 1;
+            out << "        int[] primvars:skel:jointIndices = [";
+            for (size_t i = 0; i < skin->joints.size(); ++i) {
+                out << (i != 0 ? ", " : "") << skin->joints[i];
+            }
+            out << "] (\n            elementSize = " << infl
+                << "\n            interpolation = \"vertex\"\n        )\n";
+            out << "        float[] primvars:skel:jointWeights = [";
+            for (size_t i = 0; i < skin->weights.size(); ++i) {
+                out << (i != 0 ? ", " : "") << num(skin->weights[i]);
+            }
+            out << "] (\n            elementSize = " << infl
+                << "\n            interpolation = \"vertex\"\n        )\n";
+        }
         if (entry.material != nullptr) {
             out << "        rel material:binding = </" << options.primName << "/Looks/"
                 << entry.material->name << ">\n";
@@ -333,7 +448,8 @@ std::string alignmentExtra(size_t headerEnd) {
 
 std::expected<UsdWriteResult, UsdWriteError> writeUsdzScene(const std::filesystem::path& path,
                                                             std::span<const UsdSceneEntry> entries,
-                                                            const UsdWriteOptions& options) {
+                                                            const UsdWriteOptions& options,
+                                                            const foundation::SkinView* skin) {
     // Build the stage in a scratch directory. writeUsdaScene copies each
     // texture beside the stage and references it by filename, so whatever ends
     // up in this directory IS the archive's contents -- no second code path
@@ -358,7 +474,7 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdzScene(const std::filesyste
 
     const std::string stem = path.stem().string();
     const auto stagePath   = scratch / (stem + ".usda");
-    auto wrote             = writeUsdaScene(stagePath, entries, options);
+    auto wrote             = writeUsdaScene(stagePath, entries, options, skin);
     if (!wrote) return std::unexpected(wrote.error());
 
     // The stage FIRST -- that is how a reader finds it -- then everything else

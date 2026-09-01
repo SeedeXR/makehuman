@@ -81,9 +81,13 @@ struct UsdSceneEntry {
 /// A `diffuseTexture` is referenced by asset path and **copied beside the
 /// stage**, the same rule the OBJ writer follows for `map_Kd`: a stage naming a
 /// texture that is not there is a broken file.
+/// @param skin optional UsdSkel binding. When present the root becomes a
+///        `SkelRoot`, a `Skeleton` prim is emitted, and the **first** entry is
+///        bound to it -- the same "one skin per scene" rule glTF export
+///        follows, because only the body is rigged.
 [[nodiscard]] std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(
     const std::filesystem::path& path, std::span<const UsdSceneEntry> entries,
-    const UsdWriteOptions& options = {});
+    const UsdWriteOptions& options = {}, const foundation::SkinView* skin = nullptr);
 
 [[nodiscard]] std::expected<UsdWriteResult, UsdWriteError> writeUsda(
     const std::filesystem::path& path, const foundation::RenderView& mesh,
@@ -107,6 +111,6 @@ struct UsdSceneEntry {
 /// and its siblings are exactly the set to package.
 [[nodiscard]] std::expected<UsdWriteResult, UsdWriteError> writeUsdzScene(
     const std::filesystem::path& path, std::span<const UsdSceneEntry> entries,
-    const UsdWriteOptions& options = {});
+    const UsdWriteOptions& options = {}, const foundation::SkinView* skin = nullptr);
 
 }  // namespace mh::io
