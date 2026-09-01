@@ -403,3 +403,65 @@ TEST_CASE("a textured material references a copied texture", "[usd][material]") 
     std::filesystem::remove(out.parent_path() / "mh_usd_tex.png", ec);
     std::filesystem::remove(out, ec);
 }
+
+// --- USDZ -------------------------------------------------------------------
+//
+// USDZ is a zip with two rules that are not optional, both taken from a
+// reference archive produced by Apple's own `usdzip` rather than from memory:
+//
+//   * every entry STORED, never deflated -- a consumer memory-maps the archive
+//     and reads the stage in place, so compressed data is unreadable;
+//   * every entry's DATA on a 64-byte boundary, padded through the zip extra
+//     field with header id 0x1986 (usdzip emits id 0x1986 / size 22 / zeros,
+//     giving 30 + 8 + 26 = 64).
+//
+// `usdchecker --arkit` accepts the result -- Apple's own validator on its
+// strictest profile -- which is the check that actually matters. These
+// assertions pin the structure so a regression is caught without that tool.
+TEST_CASE("a usdz is a stored, 64-byte aligned zip", "[io][usd][usdz]") {
+    const core::Mesh m = baseMesh();
+    const auto rm      = core::RenderMesh::build(m);
+    const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr}};
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_package.usdz";
+    REQUIRE(io::writeUsdzScene(out, scene).has_value());
+
+    std::ifstream in(out, std::ios::binary);
+    REQUIRE(in);
+    const std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    REQUIRE(bytes.size() > 64);
+
+    const auto u16 = [&bytes](size_t at) {
+        return static_cast<unsigned>(static_cast<unsigned char>(bytes[at])) |
+               (static_cast<unsigned>(static_cast<unsigned char>(bytes[at + 1])) << 8U);
+    };
+
+    // Local file header signature.
+    CHECK(bytes.compare(0, 4, "PK\x03\x04", 4) == 0);
+    // Compression method 0 = STORED. Deflate here makes the stage unreadable to
+    // a consumer that memory-maps the archive.
+    CHECK(u16(8) == 0);
+
+    const size_t nameLen  = u16(26);
+    const size_t extraLen = u16(28);
+    const size_t dataAt   = 30 + nameLen + extraLen;
+
+    // The stage is the FIRST entry -- that is how a reader finds it.
+    CHECK(bytes.compare(30, nameLen, out.stem().string() + ".usda") == 0);
+
+    // The rule that a hand-rolled zip gets wrong.
+    INFO("data begins at " << dataAt);
+    CHECK(dataAt % 64 == 0);
+
+    // Padding must be a WELL-FORMED extra field, not loose bytes: a strict
+    // reader parses this as TLV.
+    REQUIRE(extraLen >= 4);
+    CHECK(u16(30 + nameLen) == 0x1986);
+    CHECK(u16(30 + nameLen + 2) == extraLen - 4);
+
+    // And the payload really is the stage.
+    CHECK(bytes.compare(dataAt, 9, "#usda 1.0") == 0);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}

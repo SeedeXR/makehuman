@@ -4,8 +4,10 @@
 #include "makehuman/foundation/Chars.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <fstream>
+#include <functional>
 #include <limits>
 #include <vector>
 
@@ -272,6 +274,190 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsda(const std::filesystem::pa
                                                        const UsdWriteOptions& options) {
     const UsdSceneEntry entry{mesh, "mesh"};
     return writeUsdaScene(path, {&entry, 1}, options);
+}
+
+namespace {
+
+/// CRC-32 (IEEE), which every zip entry carries. Table built once.
+uint32_t crc32Of(std::span<const char> bytes) {
+    static const std::array<uint32_t, 256> table = [] {
+        std::array<uint32_t, 256> t{};
+        for (uint32_t i = 0; i < 256; ++i) {
+            uint32_t c = i;
+            for (int k = 0; k < 8; ++k)
+                c = (c & 1U) ? (0xEDB88320U ^ (c >> 1U)) : (c >> 1U);
+            t[i] = c;
+        }
+        return t;
+    }();
+    uint32_t c = 0xFFFFFFFFU;
+    for (const char b : bytes) {
+        c = table[(c ^ static_cast<unsigned char>(b)) & 0xFFU] ^ (c >> 8U);
+    }
+    return c ^ 0xFFFFFFFFU;
+}
+
+void put16(std::string& out, uint16_t v) {
+    out.push_back(static_cast<char>(v & 0xFFU));
+    out.push_back(static_cast<char>((v >> 8U) & 0xFFU));
+}
+
+void put32(std::string& out, uint32_t v) {
+    for (int i = 0; i < 4; ++i)
+        out.push_back(static_cast<char>((v >> (8 * i)) & 0xFFU));
+}
+
+/// USDZ alignment: an entry's DATA must start on a 64-byte boundary, and the
+/// padding goes in the extra field under header id 0x1986 -- verified against
+/// `usdzip`, which emits id 0x1986 / size 22 / zero payload so that
+/// 30 + 8 + 26 = 64.
+///
+/// A TLV extra field cannot be shorter than its own 4-byte header, so when the
+/// gap is 1..3 bytes another whole 64 is taken rather than emitting a malformed
+/// field.
+constexpr size_t kUsdzAlign   = 64;
+constexpr uint16_t kPaddingId = 0x1986;
+
+std::string alignmentExtra(size_t headerEnd) {
+    size_t pad = (kUsdzAlign - (headerEnd % kUsdzAlign)) % kUsdzAlign;
+    if (pad != 0 && pad < 4) pad += kUsdzAlign;
+    std::string extra;
+    if (pad == 0) return extra;
+    put16(extra, kPaddingId);
+    put16(extra, static_cast<uint16_t>(pad - 4));
+    extra.append(pad - 4, '\0');
+    return extra;
+}
+
+}  // namespace
+
+std::expected<UsdWriteResult, UsdWriteError> writeUsdzScene(const std::filesystem::path& path,
+                                                            std::span<const UsdSceneEntry> entries,
+                                                            const UsdWriteOptions& options) {
+    // Build the stage in a scratch directory. writeUsdaScene copies each
+    // texture beside the stage and references it by filename, so whatever ends
+    // up in this directory IS the archive's contents -- no second code path
+    // deciding what a self-contained stage needs.
+    std::error_code ec;
+    const auto scratch = std::filesystem::temp_directory_path() /
+                         ("mh_usdz_" + std::to_string(std::hash<std::string>{}(path.string())));
+    std::filesystem::remove_all(scratch, ec);
+    if (!std::filesystem::create_directories(scratch, ec)) {
+        return std::unexpected(UsdWriteError{UsdWriteErrorKind::CannotOpen, scratch.string(),
+                                             "cannot stage the usdz"});
+    }
+
+    struct Cleanup {
+        std::filesystem::path dir;
+
+        ~Cleanup() {
+            std::error_code e;
+            std::filesystem::remove_all(dir, e);
+        }
+    } cleanup{scratch};
+
+    const std::string stem = path.stem().string();
+    const auto stagePath   = scratch / (stem + ".usda");
+    auto wrote             = writeUsdaScene(stagePath, entries, options);
+    if (!wrote) return std::unexpected(wrote.error());
+
+    // The stage FIRST -- that is how a reader finds it -- then everything else
+    // in a stable order so the archive is reproducible.
+    std::vector<std::filesystem::path> files{stagePath};
+    std::vector<std::filesystem::path> rest;
+    for (const auto& e : std::filesystem::directory_iterator(scratch, ec)) {
+        if (e.is_regular_file() && e.path() != stagePath) rest.push_back(e.path());
+    }
+    std::ranges::sort(rest);
+    files.insert(files.end(), rest.begin(), rest.end());
+
+    std::string archive;
+
+    struct Central {
+        std::string name;
+        uint32_t crc;
+        uint32_t size;
+        uint32_t offset;
+    };
+
+    std::vector<Central> central;
+    central.reserve(files.size());
+
+    for (const auto& file : files) {
+        std::ifstream in(file, std::ios::binary);
+        if (!in) {
+            return std::unexpected(
+                UsdWriteError{UsdWriteErrorKind::CannotOpen, file.string(), "cannot read to pack"});
+        }
+        const std::string data((std::istreambuf_iterator<char>(in)),
+                               std::istreambuf_iterator<char>());
+        const std::string name  = file.filename().string();
+        const uint32_t crc      = crc32Of(data);
+        const auto offset       = static_cast<uint32_t>(archive.size());
+        const std::string extra = alignmentExtra(archive.size() + 30 + name.size());
+
+        put32(archive, 0x04034B50U);  // local file header
+        put16(archive, 20);           // version needed
+        put16(archive, 0);            // flags
+        put16(archive, 0);            // STORED, never deflated
+        put16(archive, 0);            // mod time
+        put16(archive, 0x21);         // mod date (1980-01-01)
+        put32(archive, crc);
+        put32(archive, static_cast<uint32_t>(data.size()));  // compressed == uncompressed
+        put32(archive, static_cast<uint32_t>(data.size()));
+        put16(archive, static_cast<uint16_t>(name.size()));
+        put16(archive, static_cast<uint16_t>(extra.size()));
+        archive += name;
+        archive += extra;
+        archive += data;
+
+        central.push_back({name, crc, static_cast<uint32_t>(data.size()), offset});
+    }
+
+    const auto centralStart = static_cast<uint32_t>(archive.size());
+    for (const Central& c : central) {
+        put32(archive, 0x02014B50U);  // central directory header
+        put16(archive, 20);           // version made by
+        put16(archive, 20);           // version needed
+        put16(archive, 0);
+        put16(archive, 0);  // STORED
+        put16(archive, 0);
+        put16(archive, 0x21);
+        put32(archive, c.crc);
+        put32(archive, c.size);
+        put32(archive, c.size);
+        put16(archive, static_cast<uint16_t>(c.name.size()));
+        put16(archive, 0);  // no extra in the central record
+        put16(archive, 0);  // comment
+        put16(archive, 0);  // disk
+        put16(archive, 0);  // internal attrs
+        put32(archive, 0);  // external attrs
+        put32(archive, c.offset);
+        archive += c.name;
+    }
+    const auto centralSize = static_cast<uint32_t>(archive.size()) - centralStart;
+
+    put32(archive, 0x06054B50U);  // end of central directory
+    put16(archive, 0);
+    put16(archive, 0);
+    put16(archive, static_cast<uint16_t>(central.size()));
+    put16(archive, static_cast<uint16_t>(central.size()));
+    put32(archive, centralSize);
+    put32(archive, centralStart);
+    put16(archive, 0);  // comment length
+
+    std::ofstream out(path, std::ios::binary);
+    if (!out) {
+        return std::unexpected(
+            UsdWriteError{UsdWriteErrorKind::CannotOpen, path.string(), "cannot write the usdz"});
+    }
+    out.write(archive.data(), static_cast<std::streamsize>(archive.size()));
+    out.flush();
+    if (!out) {
+        return std::unexpected(
+            UsdWriteError{UsdWriteErrorKind::CannotOpen, path.string(), "write failed"});
+    }
+    return *wrote;
 }
 
 }  // namespace mh::io

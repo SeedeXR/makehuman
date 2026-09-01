@@ -999,7 +999,11 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       Weights are expanded from mesh vertices (19,158) onto **render** vertices
       (21,833) via `vmap`; glTF's are vertex attributes, so skipping that leaves
       everything past the first UV seam weighted to the wrong bone.
-- [ ] glTF: embedded textures, Draco (blendshapes are done — session 029)
+- [x] glTF **embedded textures** — already done, stale entry. `EmbeddedImage`
+      packs images into the BIN chunk with MIME sniffed from magic bytes and
+      identical images deduplicated; covered by `test_gltf_writer.cpp` including
+      the rejection path for a format GLB cannot carry.
+- [ ] glTF **Draco** compression (blendshapes done — session 029)
 - [ ] **Export** FBX 7.4/7.5 — from spec, **not** by translating the GPL Blender code
 - [x] **Export USD (`.usda`)** — written from the published format, **not** by
       linking OpenUSD. Checked first: assimp has **no USD support at all**,
@@ -1015,7 +1019,27 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `subdivisionScheme = "none"` is written explicitly: without it a consumer
       may treat the mesh as a subdivision cage and render a smoothed, shrunken
       body.
-- [ ] **USDZ** — a zip of the `.usda` plus textures. Packaging, not geometry;
+- [x] **USDZ** — `io::writeUsdzScene`. One self-contained file: stage plus
+      every texture.
+      **`usdchecker --arkit` reports Success** — Apple's own validator on its
+      strictest profile. That is the check that matters; the unit test pins the
+      structure so a regression is caught without the tool.
+      The format rules came from **a reference archive `usdzip` actually
+      produced**, not from memory of the spec:
+      - every entry **STORED**, never deflated — a consumer memory-maps the
+        archive and reads the stage in place, so deflated data is unreadable;
+      - every entry's **data on a 64-byte boundary**, padded through the zip
+        extra field with header id **0x1986** (usdzip emits id 0x1986 / size 22
+        / zeros, giving 30 + 8 + 26 = 64). The padding is a **well-formed TLV**,
+        not loose bytes, because a strict reader parses it as one — which is why
+        a 1..3 byte gap takes another whole 64 rather than emitting a malformed
+        field.
+      - the stage is the **first** entry, which is how a reader finds it.
+      Verified independently by Python's `zipfile`: CRCs valid, `stored=True`,
+      data at offset 64, and the payload reads back as `#usda 1.0`.
+      No second code path decides what a self-contained stage needs:
+      `writeUsdaScene` already copies textures beside the stage, so whatever
+      lands in the scratch directory **is** the archive's contents.;
       needs a zip writer.
 - [ ] **UsdSkel** — skeleton and skinning in USD. A bigger schema than the mesh;
       glTF and FBX already carry the rig.
@@ -1023,7 +1047,10 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       reference across all 18,486 faces; unit conversion; feet-on-ground computed
       from the mesh minimum rather than the reference's Y-only joint offset;
       face masking; `.mtl` sidecar
-- [ ] Export STL, DAE, BVH
+- [x] Export STL, DAE, BVH — **already done**, stale entry. STL (binary and
+      ASCII), Collada and 3MF are `SceneFormat` values through `exportScene`;
+      BVH export is `io::writeBvh` (session 076, round-tripped to float32
+      epsilon).
 - [x] Skin weights: sorted, normalised, clamped to 4 — `VertexWeights::compile`
       (session 022), consumed by both the glTF and FBX skin exports.
 - [x] **Blendshape export (glTF)** — dead in the reference everywhere, so there

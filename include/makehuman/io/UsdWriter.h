@@ -89,4 +89,24 @@ struct UsdSceneEntry {
     const std::filesystem::path& path, const foundation::RenderView& mesh,
     const UsdWriteOptions& options = {});
 
+/// Writes the scene as a **USDZ**: one self-contained file, stage plus textures.
+///
+/// USDZ is a zip with two rules that are not optional, both verified against a
+/// reference archive produced by Apple's own `usdzip`:
+///
+///   * every entry is **STORED**, never deflated -- a consumer memory-maps the
+///     archive and reads the stage in place, so compressed data is unreadable;
+///   * every entry's DATA must begin on a **64-byte boundary**, padded through
+///     the zip extra field with header id `0x1986` (that is what `usdzip`
+///     emits: id 0x1986, size 22, zero payload, giving 30 + 8 + 26 = 64).
+///
+/// The stage is the FIRST entry, which is how a reader finds it.
+///
+/// Nothing here re-implements the stage: `writeUsdaScene` already copies each
+/// texture beside the stage and references it by filename, so a written stage
+/// and its siblings are exactly the set to package.
+[[nodiscard]] std::expected<UsdWriteResult, UsdWriteError> writeUsdzScene(
+    const std::filesystem::path& path, std::span<const UsdSceneEntry> entries,
+    const UsdWriteOptions& options = {});
+
 }  // namespace mh::io

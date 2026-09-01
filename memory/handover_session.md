@@ -781,6 +781,55 @@ ctest **410/410** in debug, release, ASan; TSan separately. Format clean.
 
 ---
 
+## 2026-09-01 07:03:34 — Session 092 · **USDZ, validated by Apple's own checker**
+
+### The chunk
+`io::writeUsdzScene` — one self-contained file, stage plus every texture.
+**`usdchecker --arkit` reports Success**: Apple's own validator on its strictest
+profile.
+
+### Grounding the format in a real artifact, not the spec from memory
+Rather than implement from what I remembered of USDZ, I had `usdzip` produce a
+reference archive and read it:
+
+    entry: ref.usda  compress=0  data offset 64 (mod 64 = 0)  extra_len 26
+    extra: id 0x1986, size 22, zero payload   (30 + 8 + 26 = 64)
+
+That gave three rules I would otherwise have guessed at:
+
+- **STORED, never deflated.** A consumer memory-maps the archive and reads the
+  stage in place, so compressed data is simply unreadable.
+- **Data on a 64-byte boundary**, padded through the zip extra field with header
+  id **0x1986**.
+- The padding is a **well-formed TLV**, not loose bytes — which is why a 1..3
+  byte gap must take another whole 64 rather than emit a malformed field. I
+  would not have known to do that from the prose description.
+
+### Verified twice, by things that are not us
+- `usdchecker --arkit`: Success.
+- Python's `zipfile`: CRCs valid, `stored=True`, data at offset 64, payload
+  reads back as `#usda 1.0`.
+
+The unit test then pins the structure so a regression is caught on a machine
+with no USD tooling.
+
+### No second definition of "self-contained"
+`writeUsdaScene` already copies each texture beside the stage and references it
+by filename. So the packager stages into a scratch directory and archives
+**whatever is there** — there is no separate list of what a self-contained stage
+needs, which is the thing that would drift.
+
+### Two more stale entries closed
+STL, Collada, 3MF and BVH export all exist; glTF embedded textures exist and are
+tested, including the rejection path for a format GLB cannot carry. Draco
+remains genuinely open and is now its own line.
+
+### Verification
+ctest **411/411** in debug, release, ASan; TSan separately. Format clean.
+CI green on `8d9d1855`.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk
