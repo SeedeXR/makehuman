@@ -5,7 +5,9 @@
 // navigation bindings and the workspace round-trip. What the viewport actually
 // draws is checked by the render tests and by `makehuman --screenshot`, which
 // needs a real device and so cannot run on a build box.
+#include "makehuman/core/SliderLayout.h"
 #include "makehuman/ui/MainWindow.h"
+#include "makehuman/ui/ModifierPanel.h"
 #include "makehuman/ui/TaskRegistry.h"
 #include "makehuman/ui/ViewportWidget.h"
 
@@ -13,18 +15,33 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <filesystem>
 #include <vector>
 
+#include <QAccessible>
 #include <QApplication>
 #include <QDockWidget>
+#include <QLabel>
 #include <QMouseEvent>
 #include <QSettings>
+#include <QSlider>
 #include <QTemporaryDir>
 #include <QWheelEvent>
 
 using Catch::Matchers::WithinAbs;
 
 namespace {
+
+/// The shipped modifier task views, or empty when this machine has no data
+/// directory. The panel is built from real specs so the row structure under
+/// test is the one the app ships.
+std::vector<mh::foundation::TaskViewSpec> shippedModifierViews() {
+    // `loadStandardLayout` takes the MODIFIERS directory, not the data root.
+    const auto layout =
+        mh::core::loadStandardLayout(std::filesystem::path(MH_DATA_DIR) / "modifiers");
+    if (!layout) return {};
+    return layout->views;
+}
 
 /// The two panels the app registers.
 mh::ui::TaskRegistry shippedTasks() {
@@ -200,4 +217,57 @@ TEST_CASE("resetting the workspace discards the saved one", "[ui]") {
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     return Catch::Session().run(argc, argv);
+}
+
+// --- What a screen reader is told a slider's value is -----------------------
+//
+// Measured before the fix, on the first shipped slider:
+//
+//     slider name : "Neck circum, Neck"
+//     slider value: "500"          <- the raw TICK
+//     readout text: "0.00"
+//
+// Qt's default for a QSlider is `QString::number(value())`, and these run
+// 0..1000 ticks whatever the modifier's own range is. So a screen-reader user
+// heard "500" for a modifier sitting at 0.00 -- a number with no meaning, and
+// one that disagrees with the label right beside it.
+//
+// `text(QAccessible::Value)` is not a proxy for what VoiceOver reads: it is the
+// string Qt's Cocoa accessibility bridge hands over. What is NOT verified here
+// is VoiceOver's own behaviour, which needs a real device.
+TEST_CASE("a slider announces its value, not its tick", "[ui][a11y]") {
+    const auto views = shippedModifierViews();
+    if (views.empty()) return;  // no data dir on this machine
+
+    mh::ui::ModifierPanel panel(views);
+    QSlider* slider = panel.findChild<QSlider*>(QString(), Qt::FindChildrenRecursively);
+    REQUIRE(slider != nullptr);
+
+    auto* row = qobject_cast<QWidget*>(slider->parent());
+    REQUIRE(row != nullptr);
+    QLabel* readout = nullptr;
+    for (QLabel* l : row->findChildren<QLabel*>(QString(), Qt::FindChildrenRecursively)) {
+        if (l->objectName() == QStringLiteral("modifiers.readout")) readout = l;
+    }
+    REQUIRE(readout != nullptr);
+
+    QAccessibleInterface* iface = QAccessible::queryAccessibleInterface(slider);
+    REQUIRE(iface != nullptr);
+    CHECK_FALSE(iface->text(QAccessible::Name).isEmpty());
+
+    // Heard and seen must be the same number.
+    INFO("announced " << iface->text(QAccessible::Value).toStdString() << ", shown "
+                      << readout->text().toStdString());
+    CHECK(iface->text(QAccessible::Value) == readout->text());
+
+    // ...and it must follow the slider, not be a one-off at construction. The
+    // tick and the value differ by three orders of magnitude here, so a stale
+    // or raw reading cannot coincide with the right answer.
+    slider->setValue(slider->maximum());
+    QAccessibleInterface* after = QAccessible::queryAccessibleInterface(slider);
+    REQUIRE(after != nullptr);
+    INFO("at maximum: announced " << after->text(QAccessible::Value).toStdString() << ", shown "
+                                  << readout->text().toStdString() << ", tick " << slider->value());
+    CHECK(after->text(QAccessible::Value) == readout->text());
+    CHECK(after->text(QAccessible::Value) != QString::number(slider->value()));
 }

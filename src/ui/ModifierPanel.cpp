@@ -4,6 +4,8 @@
 #include "makehuman/ui/Theme.h"
 
 #include <QAbstractSlider>
+#include <QAccessible>
+#include <QAccessibleWidget>
 #include <QHBoxLayout>
 #include <QHash>
 #include <QLabel>
@@ -37,11 +39,60 @@ float fromTick(const foundation::SliderSpec& s, int tick) {
     return s.minValue + t * (s.maxValue - s.minValue);
 }
 
+/// The slider's own range, stashed on the widget so the accessibility factory
+/// below can find it. `QAccessible`'s factory is a free function with no
+/// context, and these two floats are the whole of what it needs.
+constexpr auto kMinProperty = "mh.sliderMin";
+constexpr auto kMaxProperty = "mh.sliderMax";
+
+/// What a screen reader is told a slider's value IS.
+///
+/// Measured before this existed: the Neck-circumference slider announced
+/// **"500"** -- Qt's default for a QSlider is `QString::number(value())`, and
+/// our sliders run 0..1000 ticks whatever the modifier's own range is. So a
+/// screen-reader user heard a number with no meaning: 500 for a modifier
+/// sitting at 0.00.
+///
+/// There is no widget-level API for this; `QAccessible::installFactory` is the
+/// documented way.
+class SliderAccessible : public QAccessibleWidget {
+public:
+    explicit SliderAccessible(QSlider* slider) : QAccessibleWidget(slider, QAccessible::Slider) {}
+
+    QString text(QAccessible::Text t) const override {
+        const auto* slider = qobject_cast<const QSlider*>(object());
+        if (t != QAccessible::Value || slider == nullptr) return QAccessibleWidget::text(t);
+        const float lo = slider->property(kMinProperty).toFloat();
+        const float hi = slider->property(kMaxProperty).toFloat();
+        const float v =
+            lo + (static_cast<float>(slider->value()) / static_cast<float>(kSteps)) * (hi - lo);
+        // The same two decimals the readout label shows, so what is heard and
+        // what is seen are the same number.
+        return QString::number(static_cast<double>(v), 'f', 2);
+    }
+};
+
+/// Claims only the sliders this panel built -- the ones carrying the range
+/// properties. Anything else falls through to Qt's own interface.
+QAccessibleInterface* sliderAccessibleFactory(const QString& className, QObject* object) {
+    if (className != QLatin1String("QSlider")) return nullptr;
+    if (!object->property(kMinProperty).isValid()) return nullptr;
+    return new SliderAccessible(qobject_cast<QSlider*>(object));
+}
+
 }  // namespace
 
 ModifierPanel::ModifierPanel(std::span<const foundation::TaskViewSpec> views, QWidget* parent)
     : QWidget(parent) {
     setObjectName(QStringLiteral("panel.modifiers"));
+
+    // Once per process. QAccessible keeps a list and would call a duplicate
+    // twice; the first non-null wins, so a second registration is harmless but
+    // pointless.
+    [[maybe_unused]] static const bool installed = [] {
+        QAccessible::installFactory(&sliderAccessibleFactory);
+        return true;
+    }();
 
     auto* column = new QVBoxLayout(this);
     column->setContentsMargins(8, 8, 8, 8);
@@ -128,6 +179,11 @@ ModifierPanel::ModifierPanel(std::span<const foundation::TaskViewSpec> views, QW
                 slider->setAccessibleName(tr("%1, %2").arg(QString::fromStdString(spec.label),
                                                            QString::fromStdString(section.name)));
                 rowColumn->addWidget(slider);
+
+                // What the accessibility factory reads to announce a value
+                // rather than a raw tick.
+                slider->setProperty(kMinProperty, spec.minValue);
+                slider->setProperty(kMaxProperty, spec.maxValue);
 
                 Row row;
                 row.container   = rowWidget;

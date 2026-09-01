@@ -2140,6 +2140,86 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-02 02:41:59 — Session 117 · **the slider announced 500 for a value of 0.00**
+
+### The chunk
+The last M8 accessibility item I could act on without the owner's hardware.
+
+### Measured before writing any fix
+`memory/todo.md` recorded one known gap here (the readout label announcing the
+value twice). Rather than trust the note, I built the shipped panel in a test
+and printed what Qt actually hands the Cocoa accessibility bridge:
+
+```
+slider name : "Neck circum, Neck"
+slider value: "500"        <- the raw TICK
+readout name: "0.00"
+readout text: "0.00"
+```
+
+The recorded gap was real, but it was the *smaller* of two. The slider's
+announced **value** was `500` -- Qt's `QAccessibleAbstractSlider` default is
+`QString::number(value())`, and our sliders run 0..1000 ticks regardless of the
+modifier's own range. A screen-reader user heard a number with no meaning, one
+that contradicted the readout label sitting right beside it.
+
+### What shipped
+`SliderAccessible : QAccessibleWidget` in `src/ui/ModifierPanel.cpp`, installed
+once per process with `QAccessible::installFactory`. It overrides
+`text(QAccessible::Value)` to map tick -> modifier value and format it with the
+same two decimals the readout uses, so what is heard and what is seen are the
+same number.
+
+The factory claims only sliders carrying the `mh.sliderMin` / `mh.sliderMax`
+dynamic properties the panel sets; every other QSlider in the app falls through
+to Qt's own interface.
+
+### A finding from my own review
+My first version kept a file-static `std::map<const QObject*, SliderSpec>` plus
+a `QObject::destroyed` connection to evict entries. `fromTick` uses only
+`minValue` and `maxValue`, so two Qt dynamic properties on the widget replace
+all of it -- and delete the hazard rather than guarding it: properties die with
+the widget, so no stale pointer-keyed entry can hand a dangling range to the
+next QSlider allocated at the same address. Net **-31 lines** against my own
+first draft.
+
+I also deleted a second test I had written that asserted the readout label
+still announces itself. It characterised Qt's own default QLabel behaviour and
+would have failed the day someone improved it -- a test that blocks a fix.
+
+### What I did NOT ship, and why
+Suppressing the duplicate announcement needs the label's accessible interface
+to report itself invisible. **Whether macOS then drops it cannot be established
+from the Qt API** -- it needs VoiceOver on a real device. Left recorded in
+`todo.md` rather than shipped unverifiable. The same reason still parks
+`reduceMotion()`'s true branch.
+
+### Also fixed
+`tests/CMakeLists.txt`: the `render` test had two `set_tests_properties(...
+ENVIRONMENT ...)` calls. The second **replaces** the property rather than adding
+to it, so the first was silently dropped -- self-inflicted in `1faca7ab`, which
+had thereby lost the `TMPDIR` isolation that commit existed to add. One call now.
+
+### Verification
+- Two mutations, both caught (3 assertions each): factory returns `nullptr`;
+  announce the raw tick.
+- 465/465 in **all four** presets -- debug, release, ASan, TSan (TSan alone,
+  after all edits, per the lesson in Session 112).
+- Benchmarks unchanged: 4.2x-59.5x over the Python baseline. UI-only chunk.
+- SonarQube quality gate **OK** (`new_violations` 0, duplication 0.0%).
+- CI green at `1faca7ab` before this commit.
+
+### Files changed
+`src/ui/ModifierPanel.cpp`, `tests/ui/test_ui.cpp`, `tests/CMakeLists.txt`,
+`memory/todo.md`, `memory/handover_session.md`.
+
+### Next
+M8 has no remaining item that does not need the owner: skin texture files, the
+`mixamorig:*` naming decision, the blendshape set to export, the `--skin` ->
+`--litsphere` rename, and the two accessibility items above all wait on them.
+
+---
+
 ## 2026-09-02 01:38:58 — Session 116 · **a fix I could not prove, stated as one**
 
 ### The chunk

@@ -2036,10 +2036,28 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       exercised — the setting is off on this machine and on CI, so only the
       false branch runs. `dockOptionsFor(true)` is tested, but the AppKit read
       itself is not. Needs one manual toggle in System Settings before shipping.
-- [ ] **Known gap:** the readout label beside each slider repeats the slider's
-      value, so VoiceOver announces it twice. An empty `accessibleName` does NOT
-      suppress it — Qt falls back to `QLabel::text()` — so this needs a custom
-      `QAccessibleInterface`.
+- [x] **A slider announced its tick, not its value** (2026-09-02). Measured, not
+      assumed: the first shipped slider reported `text(QAccessible::Value)` ==
+      **"500"** while its readout showed **"0.00"**. Qt's default for a QSlider
+      is `QString::number(value())`, and ours run 0..1000 ticks whatever the
+      modifier's own range is — so a screen-reader user heard a meaningless
+      number that disagreed with the label beside it.
+      Fixed with a `QAccessibleWidget` subclass installed via
+      `QAccessible::installFactory` (`src/ui/ModifierPanel.cpp`). The factory
+      claims only sliders carrying the `mh.sliderMin`/`mh.sliderMax` dynamic
+      properties the panel sets, so nothing else in the app is affected.
+      Dynamic properties rather than a side table **on purpose**: they die with
+      the widget, so there is no pointer-keyed map to leave a stale entry that
+      would hand a dangling range to the next QSlider at the same address.
+      Two mutations verified (factory returns nullptr; announce the raw tick) —
+      both fail 3 assertions.
+- [ ] **Known gap, re-measured 2026-09-02:** the readout label beside each
+      slider is still offered under its own accessible name, so the number is
+      announced twice. An empty `accessibleName` does NOT suppress it — Qt falls
+      back to `QLabel::text()`. Suppressing it means reporting the label's
+      interface invisible, and **whether macOS then drops it cannot be
+      established from the Qt API** — it needs VoiceOver on a real device. Not
+      shipped rather than shipped unverifiable.
 
 ## Third-party validation (Blender) — wired in 2026-08-29
 

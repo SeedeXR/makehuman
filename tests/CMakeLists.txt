@@ -117,9 +117,11 @@ if(MH_HAVE_RENDER)
         CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
     add_dependencies(mh_render_tests mh_shaders)
     add_test(NAME render COMMAND mh_render_tests)
-    set_tests_properties(render PROPERTIES ENVIRONMENT "TMPDIR=${MH_TEST_TMPDIR}")
-    # Offscreen platform: these must not try to open a window on a build box.
-    set_tests_properties(render PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    # ONE set_tests_properties for ENVIRONMENT, not two: a second call REPLACES
+    # the property rather than adding to it, so splitting these silently drops
+    # the first. That is exactly what the previous commit did to TMPDIR here.
+    set_tests_properties(render PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;TMPDIR=${MH_TEST_TMPDIR}")
 
     # The UI tests provide their own main() so a QApplication exists before any
     # widget is constructed -- Catch2's main would build the widgets first.
