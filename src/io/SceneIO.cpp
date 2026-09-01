@@ -9,6 +9,7 @@
 #include <assimp/Importer.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <filesystem>
 #include <limits>
@@ -620,6 +621,31 @@ std::expected<ImportedScene, SceneIoError> importScene(const std::filesystem::pa
 
     ImportedScene out;
     out.meshes.reserve(placements.size());
+
+    // What one file unit is worth in metres, where the file says. Coordinates
+    // themselves are NOT converted -- see ImportedScene::metersPerUnit.
+    {
+        const std::string ext = [&path] {
+            std::string e = path.extension().string();
+            std::ranges::transform(
+                e, e.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            return e;
+        }();
+        if (ext == ".glb" || ext == ".gltf") {
+            // glTF defines metres and carries no unit metadata, so the spec is
+            // the only source there is.
+            out.metersPerUnit = 1.0;
+        } else if (scene->mMetaData != nullptr) {
+            // FBX's UnitScaleFactor is CENTIMETRES per unit.
+            float cmPerUnit = 0.0F;
+            double dPerUnit = 0.0;
+            if (scene->mMetaData->Get("UnitScaleFactor", cmPerUnit) && cmPerUnit > 0.0F) {
+                out.metersPerUnit = static_cast<double>(cmPerUnit) / 100.0;
+            } else if (scene->mMetaData->Get("UnitScaleFactor", dPerUnit) && dPerUnit > 0.0) {
+                out.metersPerUnit = dPerUnit / 100.0;
+            }
+        }
+    }
 
     for (const Placement& placed : placements) {
         if (placed.meshIndex >= scene->mNumMeshes) continue;

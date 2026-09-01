@@ -871,6 +871,46 @@ CI green on `97282c55`.
 
 ---
 
+## 2026-09-01 07:54:32 — Session 094 · **import had no unit contract: a 17 cm human**
+
+### The finding
+Our own GLB round-trips a **16.9455 dm** human back as **1.6946**. glTF is
+metres, the internal unit is the decimetre, and import treats whatever it reads
+as internal units. Fed straight back into the app that is a **17 cm doll** — the
+same 10x class recorded against the reference's FBX in §8.
+
+### The fix is a contract, not a silent conversion
+Rescaling on import would have been the obvious move and would have been wrong:
+`fbxHeight` in the unit tests measures a file *precisely because* import does not
+rescale. Breaking that to fix the other use would trade one bug for another.
+
+So import now **states** what it returns: coordinates in file units, plus
+`ImportedScene::metersPerUnit`. `decimetres = units * metersPerUnit * 10`.
+
+Sources, in order of trust:
+- **glTF/GLB — 1.0 by specification.** Verified: assimp reports *no* unit
+  metadata at all for glTF, so the spec is the only source there is.
+- **FBX — the file's own `UnitScaleFactor`** (centimetres per unit).
+- **Everything else — 0, meaning "you decide".** OBJ and STL are genuinely
+  unitless, and reporting a made-up 1.0 would let a caller convert confidently
+  and wrongly. Saying "unknown" is the useful answer.
+
+### What I checked before assuming a problem
+- `unitScale()` is defined **once** and used by all four writers; USD's second
+  switch is a different quantity, not a duplicate.
+- **A new unit cannot silently go wrong**: adding `Unit::Millimeter` produced
+  three `-Werror,-Wswitch` errors, one per switch. That is what makes the
+  writer-side item closable rather than merely believed.
+- **Our FBX export is correct for real tools**: Blender reads it at
+  **1.694 m**. assimp's own readback of the same file disagrees with Blender's,
+  which is worth knowing but is not our defect — recorded as an observation, not
+  a claim.
+
+### Verification
+ctest **415/415** in debug, release, ASan; TSan separately. Format clean.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

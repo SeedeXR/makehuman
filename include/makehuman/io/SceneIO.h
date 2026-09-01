@@ -189,6 +189,33 @@ struct ImportedSceneMesh {
 
 struct ImportedScene {
     std::vector<ImportedSceneMesh> meshes;
+
+    /// How many METRES one unit of the imported coordinates represents, or 0
+    /// when the file does not say.
+    ///
+    /// **Coordinates are returned in the FILE's units, never converted.** That
+    /// is deliberate -- a caller measuring a file (as the unit tests do) needs
+    /// the numbers the file actually holds, and silently rescaling would make
+    /// that impossible. But a caller feeding an import into the app must
+    /// convert, and this is what makes that possible instead of guesswork.
+    ///
+    /// The internal unit is the **decimetre**, so:
+    ///
+    ///     decimetres = fileUnits * metersPerUnit * 10
+    ///
+    /// This matters: our own GLB round-trips a 16.9455 dm human back as
+    /// 1.6946, because glTF is metres. Used as-is that is a 17 cm doll --
+    /// the same 10x class of error recorded against the reference's FBX
+    /// (project_context.md §8).
+    ///
+    /// Sources, in order of trust:
+    ///   * **glTF/GLB — 1.0 by specification.** The format defines metres and
+    ///     carries no unit metadata at all (verified: assimp reports none).
+    ///   * **FBX — the file's own `UnitScaleFactor`**, which is centimetres per
+    ///     unit, so metres per unit is that over 100.
+    ///   * anything else — 0, meaning the caller must decide. OBJ and STL are
+    ///     genuinely unitless; inventing a number would be worse than saying so.
+    double metersPerUnit{0.0};
 };
 
 /// Reads EVERY mesh from a file, not just the first.

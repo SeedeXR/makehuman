@@ -906,7 +906,35 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 ## M7 — Interchange (`mh-io`)
 
 - [ ] `mh::io::Scene` intermediate representation
-- [ ] One `UnitSystem`/`Transform` consumed by **every** reader and writer
+- [x] **One unit system across every WRITER — verified, not assumed.**
+      `unitScale()` is defined once (`src/io/ObjWriter.cpp:41`) and used by all
+      four writers (OBJ, glTF, USD, assimp/SceneIO). USD's second switch is a
+      different quantity (`metersPerUnit`, real-world scale), not a duplicate.
+      **A new unit cannot silently go wrong**: adding `Unit::Millimeter`
+      produced three `-Werror,-Wswitch` errors, one per switch. Measured, not
+      assumed.
+      `test_unit_correctness.cpp` already had per-writer tests plus "all writers
+      agree at the same unit".
+- [x] **Import had NO unit contract — a 10x error, now recoverable.**
+      Our own GLB round-trips a **16.9455 dm** human back as **1.6946**, because
+      glTF is metres and import treats file numbers as internal units. Used
+      as-is that is a **17 cm doll** — the same class as the reference's FBX 10x
+      defect (§8).
+      Fixed by stating the contract rather than silently rescaling:
+      `ImportedScene::metersPerUnit` says what one file unit is worth.
+      Coordinates stay in **file units on purpose** — `fbxHeight` in the unit
+      tests measures a file precisely because import does not rescale, and
+      converting would break that. Now `decimetres = units * metersPerUnit * 10`
+      is available instead of guesswork.
+      Sources by trust: **glTF/GLB = 1.0 by specification** (verified: assimp
+      reports no unit metadata at all for it); **FBX = its own
+      `UnitScaleFactor`**, centimetres per unit; anything else **0, meaning
+      "you decide"** — OBJ and STL are genuinely unitless and inventing 1.0
+      would let a caller convert confidently and wrongly.
+      **Our FBX export is fine for real tools**: Blender reads it at
+      **1.694 m**, a correct human.
+- [ ] `Transform` shared by every reader and writer (the unit half is done
+      above; a common transform type is not)
 - [~] **Import: multi-mesh now works** (`io::importScene`). Formats come from
       assimp, so FBX, glTF/GLB, DAE, STL and OBJ all read.
       **The gap this closed**: export has been multi-mesh for a while — a

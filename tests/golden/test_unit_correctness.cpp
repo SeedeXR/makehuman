@@ -17,6 +17,7 @@
 #include "makehuman/io/SceneIO.h"
 #include "makehuman/io/UsdWriter.h"
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -268,4 +269,81 @@ TEST_CASE("all writers agree at the same unit", "[units][io]") {
         std::filesystem::remove(pg, ec);
         std::filesystem::remove(pu, ec);
     }
+}
+
+// --- The unit contract on IMPORT --------------------------------------------
+//
+// Import returns coordinates in the FILE's units and never converts them. That
+// is deliberate: `fbxHeight` above measures a file precisely because import
+// does not rescale. But a caller feeding an import into the app must convert,
+// and before `metersPerUnit` existed there was nothing to convert BY.
+//
+// The failure is concrete: our own GLB round-trips a 16.9455 dm human back as
+// 1.6946, because glTF is metres. Used as-is that is a 17 cm doll -- the same
+// 10x class of error recorded against the reference's FBX.
+TEST_CASE("import reports what a file unit is worth", "[units][io][import]") {
+    const core::Mesh m = baseMesh();
+    const auto rm      = core::RenderMesh::build(m);
+
+    double sourceHeight = 0.0;
+    {
+        double lo = std::numeric_limits<double>::infinity();
+        double hi = -lo;
+        for (const auto& v : m.coord()) {
+            lo = std::min(lo, static_cast<double>(v.y));
+            hi = std::max(hi, static_cast<double>(v.y));
+        }
+        sourceHeight = hi - lo;
+    }
+    INFO("source height " << sourceHeight << " dm");
+    REQUIRE(sourceHeight > 16.0);  // a real human in decimetres
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_unit_import.glb";
+    const std::vector<io::GltfSceneEntry> scene{{rm.view(), "body", nullptr}};
+    REQUIRE(io::writeGlbScene(out, scene).has_value());
+
+    const auto back = io::importScene(out);
+    REQUIRE(back.has_value());
+
+    // glTF is metres by specification and carries no unit metadata, so this is
+    // the only source of truth there is.
+    CHECK(back->metersPerUnit == Catch::Approx(1.0));
+
+    double imported = 0.0;
+    {
+        double lo = std::numeric_limits<double>::infinity();
+        double hi = -lo;
+        for (const auto& v : back->meshes[0].mesh.coord) {
+            lo = std::min(lo, static_cast<double>(v.y));
+            hi = std::max(hi, static_cast<double>(v.y));
+        }
+        imported = hi - lo;
+    }
+
+    // Raw, the numbers ARE ten times smaller -- that is the trap, pinned.
+    INFO("imported height " << imported << " file units");
+    CHECK(imported == Catch::Approx(sourceHeight / 10.0).epsilon(0.001));
+
+    // And the contract makes it recoverable: decimetres = units * m/unit * 10.
+    const double decimetres = imported * back->metersPerUnit * 10.0;
+    CHECK(decimetres == Catch::Approx(sourceHeight).epsilon(0.001));
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("an unitless format admits it", "[units][io][import]") {
+    // OBJ and STL genuinely carry no unit. Reporting a made-up 1.0 would let a
+    // caller convert confidently and wrongly; 0 says "you decide".
+    const core::Mesh m = baseMesh();
+    const auto rm      = core::RenderMesh::build(m);
+    const auto out     = std::filesystem::temp_directory_path() / "mh_unit_import.stl";
+    REQUIRE(io::exportScene(out, rm.view(), io::SceneFormat::StlBinary).has_value());
+
+    const auto back = io::importScene(out);
+    REQUIRE(back.has_value());
+    CHECK(back->metersPerUnit == 0.0);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
 }
