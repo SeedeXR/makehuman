@@ -146,9 +146,32 @@ struct ImportedMesh {
 /// importer machinery exists anywhere in the tree, and its only mesh reader is
 /// the OBJ loader used for its own assets. This is new capability, not a port.
 ///
-/// Only the first mesh is returned; a full scene graph belongs to a later
-/// milestone.
+/// Only the first mesh is returned; use importScene() for all of them.
 [[nodiscard]] std::expected<ImportedMesh, SceneIoError> importMesh(
+    const std::filesystem::path& path);
+
+struct ImportedSceneMesh {
+    std::string name;  ///< the file's own name for it, or "mesh<N>" if unnamed
+    foundation::MeshData mesh;
+};
+
+struct ImportedScene {
+    std::vector<ImportedSceneMesh> meshes;
+};
+
+/// Reads EVERY mesh from a file, not just the first.
+///
+/// This is what makes import symmetrical with export: a dressed character is
+/// written as body + one entry per worn proxy, so importing only `mMeshes[0]`
+/// silently drops everything the character was wearing.
+///
+/// Same trust-boundary handling as importMesh -- validation before any step
+/// that dereferences indices, and non-finite coordinates refused. A mesh with
+/// no triangles is **skipped rather than fatal**: assimp scenes legitimately
+/// carry empty or non-triangular helper meshes, and rejecting the whole file
+/// for one of them would make many real assets unopenable. The scene is an
+/// error only when NOTHING usable came back.
+[[nodiscard]] std::expected<ImportedScene, SceneIoError> importScene(
     const std::filesystem::path& path);
 
 }  // namespace mh::io

@@ -907,7 +907,25 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 
 - [ ] `mh::io::Scene` intermediate representation
 - [ ] One `UnitSystem`/`Transform` consumed by **every** reader and writer
-- [ ] **Import**: OBJ, glTF/GLB, FBX, USD, STL, DAE (assimp-backed where sensible)
+- [~] **Import: multi-mesh now works** (`io::importScene`). Formats come from
+      assimp, so FBX, glTF/GLB, DAE, STL and OBJ all read.
+      **The gap this closed**: export has been multi-mesh for a while — a
+      dressed character is body + one entry per worn proxy — while import read
+      only `mMeshes[0]`. A round trip therefore returned a **naked character**:
+      the clothes exported correctly and vanished coming back in.
+      Round-trip tested through a **third-party reader**, so agreement is not
+      self-confirming, and including our **hand-rolled GLB writer** — the same
+      reasoning that made `usdchecker` worth using.
+      Mutation-verified: restricting the loop to the first mesh fails 2 of the 3
+      cases.
+      A mesh with no triangles is **skipped, not fatal** — real scenes carry
+      empty or non-triangular helper meshes, and failing the whole file for one
+      would make many usable assets unopenable. The scene errors only when
+      nothing usable came back.
+      `importMesh` stays as the single-mesh entry point and still reports
+      `meshCount`, so callers can tell what they are dropping.
+      **Still open**: materials, skins and node transforms on import — geometry
+      and names only for now.
 - [x] **Export glTF 2.0 / GLB** — from spec, single self-contained `.glb`,
       metallic-roughness material, correct metre units, V flipped for glTF's
       top-left UV origin. Validated by spec conformance **and by assimp**, an

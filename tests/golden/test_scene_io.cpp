@@ -510,3 +510,82 @@ TEST_CASE("a one-entry scene carries the same geometry as the single-mesh writer
     std::filesystem::remove(viaOld, ec);
     std::filesystem::remove(viaNew, ec);
 }
+
+// --- Multi-mesh import ------------------------------------------------------
+//
+// Export has been multi-mesh for a while: a dressed character is written as the
+// body plus one entry per worn proxy. Import read only `mMeshes[0]`, so a
+// round trip silently returned a naked character -- the clothes exported fine
+// and vanished on the way back in.
+//
+// The round trip is the test worth having: it goes out through our writer and
+// back through a third-party library, so agreement is not self-confirming.
+TEST_CASE("every mesh in an exported scene imports back", "[io][import][scene]") {
+    const core::Mesh m = baseMeshOrSkip();
+    const auto rm      = core::RenderMesh::build(m);
+
+    // Two entries with distinct names, standing in for body + something worn.
+    const std::vector<io::SceneEntry> scene{{rm.view(), "body", nullptr},
+                                            {rm.view(), "worn", nullptr}};
+
+    for (const auto fmt : {io::SceneFormat::FbxBinary, io::SceneFormat::Collada}) {
+        const bool fbx = fmt == io::SceneFormat::FbxBinary;
+        const auto out = tempFile("multiimport", fbx ? ".fbx" : ".dae");
+        INFO((fbx ? "fbx" : "dae"));
+
+        const auto w = io::exportScene(out, scene, fmt);
+        REQUIRE(w.has_value());
+
+        const auto back = io::importScene(out);
+        REQUIRE(back.has_value());
+
+        // Both meshes come back, not just the first.
+        REQUIRE(back->meshes.size() == 2);
+        for (const auto& entry : back->meshes) {
+            INFO("mesh " << entry.name);
+            CHECK(entry.mesh.vertexCount() > 0);
+            CHECK(entry.mesh.faceCount() > 0);
+            // Each carries the full body geometry, so neither is a stub.
+            CHECK(entry.mesh.faceCount() == m.faceCount() * 2);  // quads -> triangles
+        }
+
+        // And importMesh still returns exactly one, reporting how many it saw.
+        const auto single = io::importMesh(out);
+        REQUIRE(single.has_value());
+        CHECK(single->meshCount == 2);
+
+        std::error_code ec;
+        std::filesystem::remove(out, ec);
+    }
+}
+
+// Our GLB writer is hand-rolled, not assimp's. Reading it back through assimp
+// is therefore a genuine cross-check rather than a library agreeing with
+// itself -- the same reason the USD work leaned on usdchecker.
+TEST_CASE("our own GLB imports back with every mesh", "[io][import][scene][gltf]") {
+    const core::Mesh m = baseMeshOrSkip();
+    const auto rm      = core::RenderMesh::build(m);
+
+    const std::vector<io::GltfSceneEntry> scene{{rm.view(), "body", nullptr},
+                                                {rm.view(), "worn", nullptr}};
+    const auto out = tempFile("multiimport", ".glb");
+    REQUIRE(io::writeGlbScene(out, scene).has_value());
+
+    const auto back = io::importScene(out);
+    REQUIRE(back.has_value());
+    REQUIRE(back->meshes.size() == 2);
+    for (const auto& entry : back->meshes) {
+        INFO("mesh " << entry.name);
+        CHECK(entry.mesh.vertexCount() > 0);
+        CHECK(entry.mesh.faceCount() == m.faceCount() * 2);
+    }
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("importScene reports a file it cannot read", "[io][import][scene]") {
+    const auto missing = io::importScene("/definitely/not/a/scene.glb");
+    REQUIRE_FALSE(missing.has_value());
+    CHECK(missing.error().kind == io::SceneIoErrorKind::NotFound);
+}

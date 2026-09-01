@@ -597,6 +597,51 @@ ctest **402/402** in debug, release, ASan; TSan separately. Format clean.
 
 ---
 
+## 2026-09-01 05:13:13 — Session 088 · **import returned a naked character**
+
+### CI recovered
+`fa50f20d` green, all jobs. The frame-budget assertion that went red three times
+is settled: measured and reported, never asserted in CI.
+
+### The asymmetry
+Export has been multi-mesh for a while — a dressed character is written as the
+body plus one entry per worn proxy. **Import read only `mMeshes[0]`.**
+
+So a round trip silently returned a naked character. The clothes exported
+correctly, the file was valid, and everything worn disappeared on the way back
+in. Nothing failed; the result was just wrong.
+
+`io::importScene` now reads every mesh, with its name. `importMesh` stays as the
+single-mesh entry point and still reports `meshCount`, so a caller can tell what
+it is dropping.
+
+### Testing it against something that is not us
+The round trip goes out through our writer and back through **assimp**, so
+agreement is not self-confirming — and one case exports through our
+**hand-rolled GLB writer**, which makes it a genuine cross-check rather than a
+library agreeing with itself. Same reasoning that made `usdchecker` worth using
+on the USD work.
+
+Mutation-verified: restricting the loop to the first mesh fails 2 of 3 cases.
+
+### A judgement call
+A mesh with no triangles is **skipped, not fatal**. Real scenes carry empty or
+non-triangular helper meshes, and rejecting a whole file for one of them would
+make many usable assets unopenable. The scene is an error only when nothing
+usable came back at all — so a genuinely broken file still fails loudly.
+
+The trust-boundary handling is unchanged and deliberate: validation before any
+step that dereferences indices (assimp segfaults otherwise — measured), and
+non-finite coordinates refused rather than carried into every consumer.
+
+### Verification
+ctest **405/405** in debug, release, ASan; TSan separately. Format clean.
+
+### Still open on import
+Materials, skins and node transforms. Geometry and names only for now.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

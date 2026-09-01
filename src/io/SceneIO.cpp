@@ -547,4 +547,94 @@ std::expected<ImportedMesh, SceneIoError> importMesh(const std::filesystem::path
     return out;
 }
 
+std::expected<ImportedScene, SceneIoError> importScene(const std::filesystem::path& path) {
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
+        return std::unexpected(SceneIoError{SceneIoErrorKind::NotFound, path.string(), {}});
+    }
+
+    // Same flags, and the same reason for them: ValidateDataStructure must run
+    // before JoinIdenticalVertices or a file with out-of-range indices segfaults
+    // inside the join. See importMesh above for the measurements.
+    Assimp::Importer importer;
+    const aiScene* scene =
+        importer.ReadFile(path.string(), aiProcess_Triangulate | aiProcess_ValidateDataStructure |
+                                             aiProcess_JoinIdenticalVertices);
+    if (scene == nullptr || scene->mNumMeshes == 0 || scene->mMeshes == nullptr) {
+        return std::unexpected(
+            SceneIoError{SceneIoErrorKind::ImportFailed, path.string(), importer.GetErrorString()});
+    }
+
+    ImportedScene out;
+    out.meshes.reserve(scene->mNumMeshes);
+
+    for (unsigned mi = 0; mi < scene->mNumMeshes; ++mi) {
+        const aiMesh* am = scene->mMeshes[mi];
+        if (am == nullptr || am->mNumVertices == 0 || am->mNumFaces == 0) continue;
+
+        ImportedSceneMesh entry;
+        entry.name =
+            (am->mName.length > 0) ? std::string(am->mName.C_Str()) : ("mesh" + std::to_string(mi));
+        entry.mesh.name              = entry.name;
+        entry.mesh.vertsPerPrimitive = 3;  // triangulated on import
+
+        // Non-finite coordinates survive assimp's validator and poison every
+        // consumer downstream, so they are refused here rather than carried.
+        entry.mesh.coord.resize(am->mNumVertices);
+        bool finite = true;
+        for (unsigned i = 0; i < am->mNumVertices && finite; ++i) {
+            const auto& v = am->mVertices[i];
+            if (!std::isfinite(v.x) || !std::isfinite(v.y) || !std::isfinite(v.z)) {
+                finite = false;
+                break;
+            }
+            entry.mesh.coord[i] = Vec3{v.x, v.y, v.z};
+        }
+        if (!finite) {
+            return std::unexpected(SceneIoError{SceneIoErrorKind::ImportFailed, path.string(),
+                                                "file contains a non-finite vertex coordinate"});
+        }
+
+        const bool hasUV = am->HasTextureCoords(0);
+        if (hasUV) {
+            entry.mesh.texco.resize(am->mNumVertices);
+            for (unsigned i = 0; i < am->mNumVertices; ++i) {
+                entry.mesh.texco[i] = Vec2{am->mTextureCoords[0][i].x, am->mTextureCoords[0][i].y};
+            }
+        }
+
+        entry.mesh.fvert.reserve(static_cast<size_t>(am->mNumFaces) * 3);
+        bool indicesOk = true;
+        for (unsigned f = 0; f < am->mNumFaces && indicesOk; ++f) {
+            const aiFace& face = am->mFaces[f];
+            if (face.mNumIndices != 3) continue;  // Triangulate should prevent this
+            for (unsigned c = 0; c < 3; ++c) {
+                if (face.mIndices[c] >= am->mNumVertices) {
+                    indicesOk = false;
+                    break;
+                }
+                entry.mesh.fvert.push_back(face.mIndices[c]);
+                if (hasUV) entry.mesh.fuvs.push_back(face.mIndices[c]);
+            }
+        }
+        if (!indicesOk) {
+            return std::unexpected(SceneIoError{SceneIoErrorKind::ImportFailed, path.string(),
+                                                "face index out of range"});
+        }
+
+        // A mesh with no triangles is skipped, not fatal: real scenes carry
+        // empty or non-triangular helper meshes, and failing the whole file for
+        // one of them would make many usable assets unopenable.
+        if (entry.mesh.fvert.empty()) continue;
+
+        out.meshes.push_back(std::move(entry));
+    }
+
+    if (out.meshes.empty()) {
+        return std::unexpected(SceneIoError{SceneIoErrorKind::ImportFailed, path.string(),
+                                            "no mesh in the file had triangular faces"});
+    }
+    return out;
+}
+
 }  // namespace mh::io
