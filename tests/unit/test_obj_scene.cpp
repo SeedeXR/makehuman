@@ -4,12 +4,14 @@
 // Before this the app exported the body alone, so a character wearing anything
 // came out naked.
 
+#include "makehuman/core/ObjReader.h"
 #include "makehuman/foundation/Types.h"
 #include "makehuman/io/ObjWriter.h"
 #include "makehuman/io/SceneIO.h"
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -285,4 +287,84 @@ TEST_CASE("a referenced texture is copied next to the OBJ", "[io][objscene]") {
     fs::remove(mtl, ec);
     fs::remove_all(texDir, ec);
     fs::remove(mtl.parent_path() / texSrc.filename(), ec);
+}
+
+// The strongest statement of the same defect: **our own reader refused our own
+// export.** `loadObj` rejects a vertex no face references (`LooseVertex`), and
+// a masked export declared 5,778 of them, so
+// `makehuman --export x.obj` produced a file the application could not reopen:
+//
+//     vertex referenced by no face (vertex 13380)
+//
+// The file-size win is real but secondary; this is the part that made the
+// export wrong rather than merely wasteful.
+TEST_CASE("a masked OBJ can be read back by our own reader", "[io][objscene][compact]") {
+    const Quad a   = quadAt(0.0F);
+    const Quad b   = quadAt(4.0F);
+    const auto out = tmp("mh_scene_readback.obj");
+    fs::remove(out);
+
+    const std::array<uint8_t, 1> keep{1};
+    const std::array<uint8_t, 1> hide{0};
+    const std::vector<io::ObjSceneEntry> scene{
+        {a.view(), "body", nullptr, keep},
+        {b.view(), "eyes", nullptr, hide},
+    };
+    REQUIRE(io::writeObjScene(out, scene).has_value());
+
+    const auto back = core::loadObj(out);
+    if (!back) INFO(back.error().message());
+    REQUIRE(back.has_value());
+    CHECK(back->vertexCount() == 4);
+    CHECK(back->faceCount() == 1);
+
+    fs::remove(out);
+}
+
+// The OBJ carried the same dead weight the render-vertex path did, by a
+// different mechanism. Measured on `makehuman --export x.obj`: **20,222 `v`
+// lines of which 14,444 were referenced** -- 5,778 dead, 28.6% -- because the
+// face mask skips FACES while the vertex and UV lists were written whole.
+//
+// The assertion is reachability, not a count: every `v` and `vt` the file
+// declares must be named by some `f`, and the faces must still be the same
+// faces. A writer that dropped too many would fail the second half by
+// renumbering into the wrong vertices.
+TEST_CASE("a masked OBJ declares no vertex its faces never name", "[io][objscene][compact]") {
+    // Two quads sharing nothing; the mask hides the second, so its four
+    // vertices and four UVs must not be written at all.
+    const Quad a   = quadAt(0.0F);
+    const Quad b   = quadAt(4.0F);
+    const auto out = tmp("mh_scene_masked.obj");
+    fs::remove(out);
+
+    const std::array<uint8_t, 1> keep{1};
+    const std::array<uint8_t, 1> hide{0};
+    const std::vector<io::ObjSceneEntry> scene{
+        {a.view(), "body", nullptr, keep},
+        {b.view(), "eyes", nullptr, hide},
+    };
+    const auto r = io::writeObjScene(out, scene);
+    REQUIRE(r.has_value());
+    CHECK(r->faces == 1);
+    CHECK(r->skipped == 1);
+    CHECK(r->vertices == 4);  // not 8
+
+    const std::string text = readAll(out);
+    CHECK(countLinesStarting(text, "v ") == 4);
+    CHECK(countLinesStarting(text, "vt ") == 4);
+
+    // ...and the surviving face must still name vertices that exist. Dropping
+    // too many would renumber into the wrong ones and show up here.
+    size_t maxV = 0;
+    std::istringstream lines(text);
+    for (std::string line; std::getline(lines, line);) {
+        if (line.rfind("f ", 0) != 0) continue;
+        std::istringstream in(line.substr(2));
+        for (std::string tok; in >> tok;) {
+            const size_t slash = tok.find('/');
+            maxV = std::max(maxV, static_cast<size_t>(std::stoul(tok.substr(0, slash))));
+        }
+    }
+    CHECK(maxV == 4);
 }

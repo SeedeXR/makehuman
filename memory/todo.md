@@ -1391,11 +1391,26 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       shift **1.2e-5**. (The FBX's vertex-group count drops 141 → 126: bones
       that only weighted helper vertices now weight nothing, so Blender makes no
       group for them. The bones are all still there.)
-- [ ] **OBJ carries the same dead weight, by a different mechanism.** Measured:
-      **20,222 `v` lines, 14,444 referenced** — 5,778 dead, 28.6% — plus
-      unreferenced `vt`. The OBJ writer works in mesh/UV index space rather than
-      render-vertex space, so `compactUnusedVertices` does not apply; it needs
-      the same remap done inside `writeObjScene` against its face mask.
+- [x] **OBJ was worse than wasteful: our own reader refused our own export.**
+      Same dead weight, different mechanism — **20,222 `v` lines of which 14,444
+      were referenced**, 5,778 dead (28.6%), plus 22,142 `vt` of which 15,325.
+      The face mask skips FACES while the vertex and UV lists were written whole.
+      The file-size half is real (**17.9% smaller**, `v` 20,222 → 14,444,
+      `vt` 22,142 → 15,325) but secondary. `loadObj` rejects a vertex no face
+      references (`ObjErrorKind::LooseVertex`), so `makehuman --export x.obj`
+      produced a file the application **could not reopen**:
+
+          vertex referenced by no face (vertex 13380)
+
+      Measured both ways: the pre-fix file fails to load, the post-fix one loads
+      with 14,444 vertices. That round trip is now a test, and it is the one
+      that turns "wasteful" into "wrong".
+      Compaction lives in `writeObjScene` rather than `io::compactUnusedVertices`
+      because OBJ indexes vertices and UVs separately, in mesh space, with its
+      own face mask — a different index space from the render-vertex path.
+      **Blender is unaffected either way**: its OBJ importer already discarded
+      the unreferenced vertices, reading 14,444 and identical dimensions before
+      and after. Only our own stricter reader noticed.
 - [ ] **The application still exports no morph targets.** `writeGlb` takes them
       and sparse accessors made a large set affordable, but `main.cpp` passes
       none. Open question the owner may want to settle: the 102 files under

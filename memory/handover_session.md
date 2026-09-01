@@ -1495,6 +1495,59 @@ fails the skin test; leaving indices unremapped fails the compaction test.
 
 ---
 
+## 2026-09-01 16:15:40 — Session 104 · **our own reader refused our own OBJ**
+
+### The chunk
+The OBJ half of last session's compaction — and it turned out to be a stronger
+defect than the size number suggested.
+
+### What I expected, and what I found
+I expected file size. Measured on `makehuman --export x.obj`: **20,222 `v`
+lines of which 14,444 were referenced** (5,778 dead, 28.6%) and **22,142 `vt`
+of which 15,325**. The face mask skips FACES while the vertex and UV lists were
+written whole.
+
+Then I checked the round trip, and `loadObj` **rejected the file the
+application had just written**:
+
+```
+vertex referenced by no face (vertex 13380)
+```
+
+`ObjErrorKind::LooseVertex` is a deliberate strictness in our reader — a loose
+vertex in an OBJ usually means a shifted index — and our own exporter tripped
+it on every masked export. Measured both directions: the pre-fix file fails to
+load, the post-fix one loads with 14,444 vertices. That round trip is a test
+now, and it is what turns "wasteful" into "wrong".
+
+**Blender never noticed.** Its OBJ importer already discards unreferenced
+vertices: 14,444 verts and identical dimensions to four decimals, before and
+after. Only our own stricter reader caught it — a case where the third party
+being lenient hid the bug rather than revealing it.
+
+### Where the fix lives, and why not with the other one
+Not in `io::compactUnusedVertices`. OBJ indexes vertices and UVs **separately**,
+in mesh space, against its own face mask — a different index space from the
+render-vertex path. So `writeObjScene` does its own two remaps.
+
+`v` 20,222 → 14,444, `vt` 22,142 → 15,325, file **17.9% smaller**.
+
+### Ponytail
+The two remap arrays were built by the same three steps twice. One `renumber`
+lambda now, so they cannot drift into different numbering rules. Verified
+byte-neutral — and my first check said "differ at char 65" because I had
+exported to `c2.obj` and the `mtllib` line names the file. Re-run with the same
+filename in a different directory: identical.
+
+### Verification
+ctest **440/440** in debug, release, ASan and TSan — TSan re-run on the final
+tree rather than trusting the pre-ponytail green, since a stale green is not a
+green. Format clean.
+Mutation-verified: emitting every vertex again fails 2 of the 10 `[objscene]`
+cases.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk
