@@ -2044,6 +2044,57 @@ the other 11 BVH tests green.
 
 ---
 
+## 2026-09-02 00:13:17 — Session 114 · **saving a dressed character saved nothing about the clothes**
+
+### The defect
+Measured, both directions:
+
+```
+--eyes low-poly --save x.mhm  ->  reopen  ->  wearing HighPolyEyes
+--eyes none     --save y.mhm  ->  reopen  ->  wearing HighPolyEyes
+```
+
+The choice is lost and the default is substituted **silently** — no warning, and
+the character looks fine, just not like the one that was saved.
+
+It was masked at first: my initial check saved with the DEFAULT selection and
+reloaded it correctly, because the default is what the chooser falls back to.
+Only a non-default choice exposes it.
+
+### Two causes, both the shape this run keeps finding
+1. **`--save` ran before the choosers.** It could not know what was worn, so it
+   wrote no proxy line whatever the selection.
+2. **Nothing wrote or read the line.** `AssetIndex::findByUuid` exists for
+   exactly this resolution and had **no caller in `src/`** — it was on the
+   uncalled-API list from session 112 and I had passed over it as an accessor.
+
+### Taken from the reference, not invented
+`apps/gui/proxychooser.py:554-556` writes `<slot> <name> <uuid>` from the save
+handler, after the modifiers. `:550-552` resolves the **UUID** and refuses a
+filename outright — "Loading proxies from filename is no longer supported" — so
+a two-token line is now reported the same way rather than guessed at.
+
+Carried in `MhmFile::unhandled` rather than a new typed field. The writer
+already emits those lines exactly where the reference's handlers run, so the
+byte-exact `.mhm` round-trip fixture is untouched — a new field would have
+risked it for nothing. `recordProxy` REPLACES rather than appends: a document
+loaded with one selection and saved with another would otherwise carry both
+lines, and the loader takes the first.
+
+### One thing that is NOT a gap
+A file with no `eyes` line still reopens with the default, so "wearing none"
+cannot be saved. That is reference behaviour: its chooser selects high-poly on
+reset and only overrides when a line exists, so the same asymmetry exists
+upstream. Recorded rather than "fixed" by inventing a line format.
+
+### Verification
+ctest **461/461** in debug, release, ASan and TSan — TSan run alone. Format clean. SonarQube gate OK.
+Mutation-verified: ignoring the document's line fails `app_reload_eyes`.
+Low-Poly is 96 verts against High-Poly's 1,064, so the fixture cannot pass by
+confusing them.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

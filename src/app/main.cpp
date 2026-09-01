@@ -3,6 +3,7 @@
 // The application. This is the AGPL side: it loads the mesh through mh::core
 // and hands the UI a plain view, which is what lets mh_ui and mh_render stay
 // Apache-2.0.
+#include "makehuman/core/AssetIndex.h"
 #include "makehuman/core/Material.h"
 #include "makehuman/core/Mesh.h"
 #include "makehuman/core/Mhm.h"
@@ -57,6 +58,7 @@
 #include <optional>
 #include <ranges>
 #include <span>
+#include <sstream>
 #include <string>
 #include <string_view>
 
@@ -514,6 +516,73 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(const std::string& curr
 ///        through unconditionally rewrote `camera -13.399999999999999 ...` as
 ///        `-13.399999618530273` on every headless save, for a framing nobody
 ///        had touched.
+/// The `.mhm` line a proxy chooser writes, and reads back.
+///
+/// Format from the reference's shared chooser
+/// (`apps/gui/proxychooser.py:554-556`): `<slot> <name> <uuid>`, and the loader
+/// resolves the **UUID** -- `:550-552` deliberately refuses a filename. The
+/// name is carried for humans and for the warning when a UUID is missing.
+constexpr const char* kEyesSaveName = "eyes";
+
+/// The proxy path a `.mhm` line names, resolved by UUID.
+///
+/// `AssetIndex::findByUuid` existed for exactly this and had no caller: a
+/// character saved wearing Low-Poly eyes reopened wearing High-Poly, and one
+/// saved wearing NONE reopened wearing eyes, because the file recorded nothing
+/// and the chooser fell back to its default. Silent substitution, not an error.
+std::optional<std::string> proxyFromDocument(const mh::core::MhmFile& doc,
+                                             const std::string& slot) {
+    for (const std::string& line : doc.unhandled) {
+        std::istringstream in(line);
+        std::string key;
+        std::string name;
+        std::string uuid;
+        if (!(in >> key) || key != slot) continue;
+        // `<slot> <name> <uuid>`; a name may contain spaces, so the UUID is the
+        // LAST token rather than the third.
+        std::vector<std::string> rest;
+        for (std::string tok; in >> tok;)
+            rest.push_back(tok);
+        if (rest.size() < 2) {
+            // A two-token line is the OLD by-filename form. The reference
+            // refuses it outright -- "Loading proxies from filename is no
+            // longer supported, they need to be referenced by UUID"
+            // (`proxychooser.py:550-552`) -- rather than guessing a path.
+            std::fprintf(stderr, "%s: proxies are referenced by UUID, not by filename; ignoring\n",
+                         line.c_str());
+            return std::nullopt;
+        }
+        uuid = rest.back();
+
+        const std::array<std::filesystem::path, 1> search{dataDir() / "eyes"};
+        const auto index = mh::core::AssetIndex::build(search);
+        // The STEM, because that is what the chooser matches on -- the same
+        // spelling `--eyes` takes.
+        if (const auto* entry = index.findByUuid(uuid)) return entry->path.stem().string();
+
+        std::fprintf(stderr, "%s: no %s proxy with UUID %s; using the default\n", line.c_str(),
+                     slot.c_str(), uuid.c_str());
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
+/// Rewrites @p doc's proxy line for @p slot to what is worn now.
+///
+/// Replaces rather than appends: a document loaded with one selection and saved
+/// with another would otherwise carry both lines, and the loader takes the
+/// first.
+void recordProxy(mh::core::MhmFile& doc, const std::string& slot, const std::string& name,
+                 const std::string& uuid) {
+    std::erase_if(doc.unhandled, [&slot](const std::string& line) {
+        std::istringstream in(line);
+        std::string key;
+        return (in >> key) && key == slot;
+    });
+    if (name.empty()) return;  // nothing worn: the absence of a line IS the record
+    doc.unhandled.push_back(slot + " " + name + " " + uuid);
+}
+
 mh::core::MhmFile documentFor(const mh::core::Human& human, const mh::core::MhmFile& base,
                               const std::filesystem::path& path,
                               const std::optional<mh::core::OrbitView>& view, bool subdivided) {
@@ -1171,25 +1240,23 @@ int main(int argc, char** argv) {
     // mask this mesh already knows, and half is what the worn proxies delete,
     // which is not decided until the choosers have run.
 
-    if (parser.isSet(saveOpt)) {
-        const std::filesystem::path file = parser.value(saveOpt).toStdString();
-        // No window, so no framing to record: the camera line stays as loaded.
-        const mh::core::MhmFile doc = documentFor(human, document, file, std::nullopt, subdivided);
-        if (const auto ok = mh::core::saveMhm(file, doc); !ok) {
-            std::fprintf(stderr, "cannot save %s: %s\n", file.string().c_str(),
-                         ok.error().message().c_str());
-            return 1;
-        }
-        std::printf("wrote %s (%zu modifiers)\n", file.string().c_str(), doc.modifiers.size());
-        return 0;  // --save means save and exit, as its help says
-    }
-
     // Built before the window so the initial litsphere is the one the picker
     // shows -- otherwise the panel and the viewport start out disagreeing --
-    // and before --export, which has to know what the character is wearing.
-    const auto assetGroups =
-        buildAssetGroups(parser.value(poseOpt).toStdString(), parser.value(skinOpt).toStdString(),
-                         parser.value(eyesOpt).toStdString());
+    // and before --export and --save, both of which have to know what the
+    // character is wearing.
+    //
+    // The loaded document's own selection wins over the chooser's default, and
+    // an explicit --eyes wins over both: a file that recorded Low-Poly must not
+    // reopen wearing the default, and a flag the user typed must not be
+    // overridden by the file.
+    std::string eyesChoice = parser.value(eyesOpt).toStdString();
+    if (!parser.isSet(eyesOpt)) {
+        if (const auto fromDoc = proxyFromDocument(document, kEyesSaveName)) {
+            eyesChoice = *fromDoc;
+        }
+    }
+    const auto assetGroups = buildAssetGroups(parser.value(poseOpt).toStdString(),
+                                              parser.value(skinOpt).toStdString(), eyesChoice);
 
     // The body's material and everything worn, read by every rebuild. Skin is
     // a path rather than a call to setLitsphere because the viewport now takes
@@ -1205,6 +1272,29 @@ int main(int argc, char** argv) {
         if (auto worn = wearProxy(eyes, *mesh, eyeLitsphere())) {
             wornProxies.insert_or_assign(QStringLiteral("Eyes"), std::move(*worn));
         }
+    }
+
+    // AFTER the choosers, deliberately. This used to run before them, so a save
+    // could not know what was worn and wrote no proxy line at all -- and a
+    // character saved wearing Low-Poly reopened wearing High-Poly, while one
+    // saved wearing NONE reopened wearing eyes.
+    if (parser.isSet(saveOpt)) {
+        const std::filesystem::path file = parser.value(saveOpt).toStdString();
+        // No window, so no framing to record: the camera line stays as loaded.
+        mh::core::MhmFile doc = documentFor(human, document, file, std::nullopt, subdivided);
+        const auto* eyesWorn  = wornProxies.count(QStringLiteral("Eyes")) != 0
+                                    ? &wornProxies.at(QStringLiteral("Eyes")).proxy
+                                    : nullptr;
+        recordProxy(doc, kEyesSaveName, eyesWorn != nullptr ? eyesWorn->name : std::string{},
+                    eyesWorn != nullptr ? eyesWorn->uuid : std::string{});
+        if (const auto ok = mh::core::saveMhm(file, doc); !ok) {
+            std::fprintf(stderr, "cannot save %s: %s\n", file.string().c_str(),
+                         ok.error().message().c_str());
+            return 1;
+        }
+        std::printf("wrote %s (%zu modifiers, eyes: %s)\n", file.string().c_str(),
+                    doc.modifiers.size(), eyesWorn != nullptr ? eyesWorn->name.c_str() : "none");
+        return 0;  // --save means save and exit, as its help says
     }
 
     // Which body faces exist. base.obj is 138 parts helper geometry to 1 part

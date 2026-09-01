@@ -1394,6 +1394,38 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 
 ## M8 — Application shell (`mh-app`, `mh-ui`)
 
+- [x] **What a character was WEARING was not saved.** Measured: saved wearing
+      **Low-Poly**, reopened wearing **HighPolyEyes**; saved wearing **none**,
+      reopened wearing eyes. Silent substitution by the chooser's default, not
+      an error.
+      Two causes, both the session's usual shape:
+      1. **`--save` ran BEFORE the choosers**, so it could not know what was
+         worn. Moved after them.
+      2. **Nothing wrote or read the proxy line.** `AssetIndex::findByUuid`
+         exists precisely to resolve it and had **no caller in `src/`**.
+      Format from the reference (`apps/gui/proxychooser.py:554-556`):
+      `<slot> <name> <uuid>`, saved after the modifiers where its save handlers
+      run. Resolution is by **UUID** — `:550-552` refuses a filename outright
+      ("Loading proxies from filename is no longer supported"), and a
+      two-token line is now reported the same way rather than guessed at.
+      Precedence, and each half is tested: an explicit `--eyes` beats the file,
+      the file beats the chooser's default.
+      Carried in `MhmFile::unhandled` rather than a new typed field: the
+      writer already emits those lines in the right place, so the byte-exact
+      `.mhm` round-trip fixture is untouched. `recordProxy` **replaces** rather
+      than appends, or a document loaded with one selection and saved with
+      another would carry both.
+      **A file with no `eyes` line still gets the default, and that is
+      reference behaviour**, not a gap: the reference's chooser selects
+      high-poly on reset and only overrides it when a line exists, so "wearing
+      none" is not expressible upstream either.
+      Mutation-verified: ignoring the document's line fails `app_reload_eyes`.
+      Low-Poly is 96 verts against High-Poly's 1,064, so the two cannot be
+      confused.
+- [ ] **The other six choosers are not saved**, for want of the choosers
+      themselves — `recordProxy`/`proxyFromDocument` take the slot name, so each
+      is one line once its asset group exists.
+
 - [x] **`--inspect <file>`: the application can finally read a mesh.**
       `io::importScene` is five sessions of work — multi-mesh, node transforms,
       materials, skins, a unit contract — and **nothing in the application ever

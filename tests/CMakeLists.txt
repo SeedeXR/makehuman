@@ -266,6 +266,48 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION "units: 1 = 0\\.01 m, so 1\\.6[0-9]+ m tall"
         FIXTURES_REQUIRED app_rig_fbx_file)
 
+    # What a character is WEARING was not saved, and reopening it silently
+    # substituted the default. Measured before the fix: saved wearing Low-Poly,
+    # reopened wearing HighPolyEyes.
+    #
+    # Two causes. `--save` ran BEFORE the choosers, so it could not know what
+    # was worn; and nothing wrote or read the reference's
+    # `<slot> <name> <uuid>` line (`proxychooser.py:554-556`), so
+    # `AssetIndex::findByUuid` -- built for exactly this -- had no caller.
+    add_test(NAME app_save_eyes COMMAND makehuman
+             --eyes low-poly
+             --save ${CMAKE_CURRENT_BINARY_DIR}/app_eyes.mhm)
+    set_tests_properties(app_save_eyes PROPERTIES
+        PASS_REGULAR_EXPRESSION "eyes: Low-Poly"
+        FIXTURES_SETUP app_eyes_mhm)
+    # The UUID, not the name, is what the loader resolves -- the reference
+    # refuses a filename outright.
+    add_test(NAME app_save_eyes_line COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_eyes.mhm
+             "-DKEYS=eyes Low-Poly 1cc97a30-85a1-42e6-a9f7-b3e753732baa"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_save_eyes_line PROPERTIES FIXTURES_REQUIRED app_eyes_mhm)
+
+    # ...and reopening it must wear what it says, not the chooser's default.
+    # Low-Poly is 96 verts against High-Poly's 1,064, so the two cannot be
+    # confused.
+    add_test(NAME app_reload_eyes COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/app_eyes.mhm
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_eyes_reload.obj)
+    set_tests_properties(app_reload_eyes PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Low-Poly \\(96 verts\\)"
+        FIXTURES_REQUIRED app_eyes_mhm)
+
+    # An explicit flag still beats the file: a user who typed --eyes must not be
+    # overridden by what the document happens to record.
+    add_test(NAME app_reload_eyes_override COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/app_eyes.mhm
+             --eyes high-poly
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_eyes_override.obj)
+    set_tests_properties(app_reload_eyes_override PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing HighPolyEyes"
+        FIXTURES_REQUIRED app_eyes_mhm)
+
     # BVH export: the app could READ a pose and never write the one it was
     # showing. `writeBvh` had no caller outside tests.
     #
