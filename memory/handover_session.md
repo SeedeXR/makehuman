@@ -2140,6 +2140,44 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-02 01:38:58 — Session 116 · **a fix I could not prove, stated as one**
+
+### The chunk
+Each preset's tests get their own temp directory.
+
+### The hazard
+The suite writes ~80 fixed names under `temp_directory_path()` --
+`mh_units_agree.obj`, `mh_fuzz_obj`, `mh_glb_*.glb` -- through a dozen little
+per-file helpers. Two ctest runs of the same binary share them, which is how an
+ASan run and a background TSan run collided two sessions ago.
+
+Renaming 80 call sites is the large fix. `TMPDIR` is the small one:
+`std::filesystem::temp_directory_path()` honours it, so one
+`catch_discover_tests(... ENVIRONMENT "TMPDIR=...")` per target makes every
+existing name unique per preset without touching a test.
+
+### What I verified, and what I did not
+**Verified, on the mechanism:** after a full debug run the system temp's `mh_*`
+count is unchanged (**15 before, 15 after** -- those are leftovers from earlier
+sessions) while **11** files land in `build/macos-arm64-debug/tests/tmp/`. The
+suite no longer writes to the shared location, so two presets cannot collide.
+
+**Not verified:** the flake itself. I ran the offending test in both presets
+concurrently, five rounds, with the fix — all passed. Then I stashed the fix and
+ran the same five rounds as a control — **those all passed too.** The collision
+needs a wider timing window than two short filtered runs give, so I have not
+reproduced it on demand.
+
+So this rests on the identified mechanism, not on a demonstrated failure, and
+the writeup says so. Running the control is what turned "this fixes the flake"
+into "this removes the shared state the flake needed" — the first claim would
+have been unearned.
+
+### Verification
+ctest **465/465** in debug, release, ASan and TSan — TSan run alone. Format clean. SonarQube gate OK.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

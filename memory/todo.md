@@ -1666,12 +1666,24 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `writeObjScene` computes its reachability pre-pass **before** the ground
       offset now, and the offset is taken only over vertices that will be
       written.
-- [ ] **Test temp filenames are not run-unique.** `mh_units_*.obj` and friends
-      live at fixed paths under `temp_directory_path()`, so two ctest runs of
-      the same binary — an ASan and a TSan preset at once, locally — fight over
-      them. Observed once: "all writers agree at the same unit" failed in a
-      concurrent run and passed 444/444 serially, twice. CI is unaffected (one
-      preset per runner), so this is a local-workflow hazard, not a product bug.
+- [x] **Each preset's tests now own their temp directory.** ~80 fixed names
+      (`mh_units_agree.obj`, `mh_fuzz_obj`, `mh_glb_*.glb`) live under
+      `temp_directory_path()` through a dozen per-file helpers, so two ctest
+      runs of the same binary share them — an ASan and a background TSan run
+      collided exactly that way.
+      Renaming 80 call sites is the large fix; `TMPDIR` is the small one.
+      `std::filesystem::temp_directory_path()` honours it, so one
+      `catch_discover_tests(... ENVIRONMENT "TMPDIR=...")` per target makes
+      every existing name unique per preset without touching a single test.
+      **Verified on the mechanism, not on a repro.** After a full debug run the
+      system temp's `mh_*` count is **unchanged (15 before, 15 after)** while
+      **11** files land in `build/macos-arm64-debug/tests/tmp/` — the suite no
+      longer writes to the shared location, so two presets cannot collide.
+      **The original flake was NOT reproduced.** Five rounds of the offending
+      test in both presets at once passed with the fix *and* passed without it
+      as a control, so this rests on the identified mechanism rather than a
+      demonstrated failure. The one observed failure remains a single
+      observation.
 - [ ] **The application still exports no morph targets.** `writeGlb` takes them
       and sparse accessors made a large set affordable, but `main.cpp` passes
       none. Open question the owner may want to settle: the 102 files under

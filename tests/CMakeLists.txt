@@ -76,7 +76,23 @@ endif()
 # is what turns that into a failure, so no property is set here -- and
 # set_tests_properties could not see these tests anyway, since
 # catch_discover_tests registers them at test time, not configure time.
-catch_discover_tests(mh_tests)
+# Every test process gets a temp directory belonging to ITS BUILD, not the
+# shared system one.
+#
+# The suite writes ~80 fixed names under `temp_directory_path()` --
+# `mh_units_agree.obj`, `mh_fuzz_obj`, `mh_glb_*.glb` and so on -- through a
+# dozen little per-file helpers. Two ctest runs of the same binary then fight
+# over the same files, which is exactly what happened when an ASan run and a
+# background TSan run overlapped: "all writers agree at the same unit" failed
+# once and passed 465/465 serially, twice.
+#
+# Renaming 80 call sites would be the large fix. `TMPDIR` is the small one:
+# `std::filesystem::temp_directory_path()` honours it, so every existing name
+# becomes unique per preset without touching a single test.
+set(MH_TEST_TMPDIR ${CMAKE_CURRENT_BINARY_DIR}/tmp)
+file(MAKE_DIRECTORY ${MH_TEST_TMPDIR})
+
+catch_discover_tests(mh_tests PROPERTIES ENVIRONMENT "TMPDIR=${MH_TEST_TMPDIR}")
 
 # Writes the base mesh through every exporter so tools/blender_validate.py can
 # check them in a third implementation. Not a test target: it produces files for
@@ -101,6 +117,7 @@ if(MH_HAVE_RENDER)
         CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
     add_dependencies(mh_render_tests mh_shaders)
     add_test(NAME render COMMAND mh_render_tests)
+    set_tests_properties(render PROPERTIES ENVIRONMENT "TMPDIR=${MH_TEST_TMPDIR}")
     # Offscreen platform: these must not try to open a window on a build box.
     set_tests_properties(render PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
@@ -399,5 +416,6 @@ if(MH_HAVE_RENDER)
         SKIP_REGULAR_EXPRESSION "cannot render"
         FAIL_REGULAR_EXPRESSION "nothing to draw;cannot write")
 
-    set_tests_properties(ui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    set_tests_properties(ui PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;TMPDIR=${MH_TEST_TMPDIR}")
 endif()
