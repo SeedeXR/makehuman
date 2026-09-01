@@ -939,7 +939,26 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 
 ## M7 — Interchange (`mh-io`)
 
-- [ ] `mh::io::Scene` intermediate representation
+- [~] **`mh::io::Scene` IR / shared export options — the type was the wrong
+      answer.** Four writers carry five identically-named, identically-meaning
+      settings (`unit`, `scale`, `feetOnGround`, `writeNormals`, `writeUVs`),
+      and this session found **six** defects that were exactly one writer
+      diverging: import units, skins, morph targets, `feetOnGround`, vertex
+      compaction and Collada's unit declaration.
+      A shared base looked like the fix and is not: it expresses the
+      relationship without enforcing it — a writer can inherit a field and
+      ignore it — and it costs the aggregate-init the per-format `unit` defaults
+      rely on. Only a test that reads the FILE catches a writer ignoring a
+      field.
+      So the mechanism is
+      `[units][io][options]`: every shared option toggled on all four writers,
+      checked in the output (`vn `/`vt `, `"NORMAL"`/`"TEXCOORD_0"`,
+      `normal3f[] normals`/`primvars:st`, and an assimp readback for FBX).
+      **All four already honoured all five** — a null result on the product, a
+      standing gate from here. Mutation-verified: dropping `options.scale` in
+      the USD writer, or `options.writeUVs` in the OBJ writer, each fails it.
+      The IR itself stays open, but its motivation is now smaller than it
+      looked: the drift it would prevent is prevented by these tests.
 - [x] **One unit system across every WRITER — verified, not assumed.**
       `unitScale()` is defined once (`src/io/ObjWriter.cpp:41`) and used by all
       four writers (OBJ, glTF, USD, assimp/SceneIO). USD's second switch is a

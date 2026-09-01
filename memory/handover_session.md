@@ -1709,6 +1709,58 @@ ctest **448/448** in debug, release, ASan and TSan — TSan run alone. Format cl
 
 ---
 
+## 2026-09-01 19:04:36 — Session 108 · **the shared-options type was the wrong answer; the test was the right one**
+
+### The chunk
+`[units][io][options]`: every setting the four writers claim to share, toggled
+on all four, checked in the file.
+
+### Why, and why not the refactor
+`ObjWriteOptions`, `GltfWriteOptions`, `UsdWriteOptions` and
+`SceneExportOptions` carry five identically-named, identically-meaning fields:
+`unit`, `scale`, `feetOnGround`, `writeNormals`, `writeUVs`. Nothing made that
+true except each writer happening to read the field — and this session found
+**six** defects that were exactly one writer diverging from the others: import
+units, skins, morph targets, `feetOnGround`, vertex compaction, and Collada's
+unit declaration.
+
+The obvious fix is a shared base, and ponytail pointed at it twice. I did not
+build it, and the reason is not effort:
+
+* it **expresses** the relationship without **enforcing** it — a writer can
+  inherit a field and ignore it, which is precisely what all six defects were;
+* the per-format `unit` defaults (dm for OBJ, m for glTF and USD, cm for FBX)
+  are format conventions that have to survive, and re-defaulting an inherited
+  member needs a user-declared constructor, which costs the aggregate
+  initialisation the option structs are used with.
+
+Only a test that reads the FILE catches a writer ignoring a field. So the
+mechanism is the test, not the type.
+
+### The result
+**All four writers already honoured all five options.** A null result on the
+product, reported as one; what it buys is that this stays true. Per format the
+marker differs — `vn `/`vt `, `"NORMAL"`/`"TEXCOORD_0"`,
+`normal3f[] normals`/`primvars:st`, and an assimp readback for binary FBX — but
+the property is one property.
+
+Mutation-verified in two writers: dropping `options.scale` from the USD writer,
+and `options.writeUVs` from the OBJ writer, each fails it.
+
+### Where the loop stands
+The export path is swept. What remains in M1-M8 is blocked on the owner
+(SonarQube credentials, skin textures, bone naming, which blendshape set),
+measured-and-deferred with reasons (GPU skinning at 0.11 ms, ID-buffer picking
+with no consumer, four asset-less features), or genuinely open but not
+defect-backed (PBR with no roughness maps to drive it, Draco/KTX2 needing new
+dependencies, FBX-from-spec against a working assimp path, the `mh::io::Scene`
+IR whose motivation this session just reduced).
+
+### Verification
+ctest **449/449** in debug, release, ASan and TSan — TSan run alone. Format clean.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

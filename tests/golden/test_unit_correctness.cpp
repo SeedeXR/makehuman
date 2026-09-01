@@ -453,3 +453,126 @@ TEST_CASE("an unitless format admits it", "[units][io][import]") {
     std::error_code ec;
     std::filesystem::remove(out, ec);
 }
+
+// Every option the four writers claim to share, exercised on all four.
+//
+// `unit`, `scale`, `feetOnGround`, `writeNormals` and `writeUVs` mean the same
+// thing in `ObjWriteOptions`, `GltfWriteOptions`, `UsdWriteOptions` and
+// `SceneExportOptions` -- but nothing made that true except each writer reading
+// the field, and this session found six defects that were exactly one writer
+// diverging from the others: units on import, skins, morph targets,
+// feetOnGround, vertex compaction and Collada's unit declaration.
+//
+// A shared base class would express the relationship without enforcing it: a
+// writer can inherit a field and ignore it. Only a test that looks at the FILE
+// can catch that, so this is the mechanism, not the type.
+//
+// `unit` and `feetOnGround` have their own cases above; this covers the rest.
+TEST_CASE("every writer honours every option it shares", "[units][io][options]") {
+    const core::Mesh mesh = baseMesh();
+    const auto rm         = core::RenderMesh::build(mesh);
+    const double plainDm  = static_cast<double>(mesh.heightCm()) / 10.0;
+
+    SECTION("scale doubles the geometry") {
+        {
+            const auto out = tmp("scale", ".obj");
+            io::ObjWriteOptions o;
+            o.scale = 2.0F;
+            REQUIRE(io::writeObj(out, mesh.view(), o).has_value());
+            CHECK(height(objSpan(out)) == Catch::Approx(plainDm * 2.0).epsilon(0.001));
+            std::filesystem::remove(out);
+        }
+        {
+            const auto out = tmp("scale", ".glb");
+            io::GltfWriteOptions o;
+            o.scale = 2.0F;
+            REQUIRE(io::writeGlb(out, rm.view(), o).has_value());
+            // glTF's default unit is the metre, so the plain height is dm/10.
+            CHECK(height(gltfSpan(out)) == Catch::Approx(plainDm * 0.1 * 2.0).epsilon(0.001));
+            std::filesystem::remove(out);
+        }
+        {
+            const auto out = tmp("scale", ".usda");
+            io::UsdWriteOptions o;
+            o.scale = 2.0F;
+            REQUIRE(io::writeUsda(out, rm.view(), o).has_value());
+            CHECK(height(usdSpan(out)) == Catch::Approx(plainDm * 0.1 * 2.0).epsilon(0.001));
+            std::filesystem::remove(out);
+        }
+        {
+            const auto out = tmp("scale", ".fbx");
+            io::SceneExportOptions o;
+            o.scale = 2.0F;
+            REQUIRE(io::exportScene(out, rm.view(), io::SceneFormat::FbxBinary, o).has_value());
+            // SceneExportOptions defaults to the centimetre.
+            CHECK(height(fbxSpan(out)) == Catch::Approx(plainDm * 10.0 * 2.0).epsilon(0.001));
+            std::filesystem::remove(out);
+        }
+    }
+
+    SECTION("writeNormals and writeUVs are obeyed") {
+        // Each format names them differently, so the marker is per format --
+        // but the property is one property.
+        const auto has = [](const std::filesystem::path& p, const char* marker) {
+            return readAll(p).find(marker) != std::string::npos;
+        };
+
+        {
+            const auto out = tmp("attrs", ".obj");
+            io::ObjWriteOptions on;
+            REQUIRE(io::writeObj(out, mesh.view(), on).has_value());
+            CHECK(has(out, "\nvn "));
+            CHECK(has(out, "\nvt "));
+            io::ObjWriteOptions off;
+            off.writeNormals = false;
+            off.writeUVs     = false;
+            REQUIRE(io::writeObj(out, mesh.view(), off).has_value());
+            CHECK_FALSE(has(out, "\nvn "));
+            CHECK_FALSE(has(out, "\nvt "));
+            std::filesystem::remove(out);
+        }
+        {
+            const auto out = tmp("attrs", ".glb");
+            REQUIRE(io::writeGlb(out, rm.view()).has_value());
+            CHECK(has(out, "\"NORMAL\""));
+            CHECK(has(out, "\"TEXCOORD_0\""));
+            io::GltfWriteOptions off;
+            off.writeNormals = false;
+            off.writeUVs     = false;
+            REQUIRE(io::writeGlb(out, rm.view(), off).has_value());
+            CHECK_FALSE(has(out, "\"NORMAL\""));
+            CHECK_FALSE(has(out, "\"TEXCOORD_0\""));
+            std::filesystem::remove(out);
+        }
+        {
+            const auto out = tmp("attrs", ".usda");
+            REQUIRE(io::writeUsda(out, rm.view()).has_value());
+            CHECK(has(out, "normal3f[] normals"));
+            CHECK(has(out, "texCoord2f[] primvars:st"));
+            io::UsdWriteOptions off;
+            off.writeNormals = false;
+            off.writeUVs     = false;
+            REQUIRE(io::writeUsda(out, rm.view(), off).has_value());
+            CHECK_FALSE(has(out, "normal3f[] normals"));
+            CHECK_FALSE(has(out, "texCoord2f[] primvars:st"));
+            std::filesystem::remove(out);
+        }
+        {
+            // FBX is binary, so it is read back rather than grepped.
+            const auto out = tmp("attrs", ".fbx");
+            REQUIRE(io::exportScene(out, rm.view(), io::SceneFormat::FbxBinary).has_value());
+            const auto withAttrs = io::importScene(out);
+            REQUIRE(withAttrs.has_value());
+            CHECK_FALSE(withAttrs->meshes[0].mesh.texco.empty());
+
+            io::SceneExportOptions off;
+            off.writeNormals = false;
+            off.writeUVs     = false;
+            REQUIRE(io::exportScene(out, rm.view(), io::SceneFormat::FbxBinary, off).has_value());
+            const auto without = io::importScene(out);
+            REQUIRE(without.has_value());
+            CHECK(without->meshes[0].mesh.texco.empty());
+            std::filesystem::remove(out);
+        }
+    }
+}
