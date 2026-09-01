@@ -567,6 +567,31 @@ std::optional<std::string> proxyFromDocument(const mh::core::MhmFile& doc,
     return std::nullopt;
 }
 
+/// The first value token of @p doc's `<key> ...` line, if it has one.
+std::optional<std::string> valueFromDocument(const mh::core::MhmFile& doc, std::string_view key) {
+    for (const std::string& line : doc.unhandled) {
+        std::istringstream in(line);
+        std::string k;
+        std::string v;
+        if ((in >> k) && k == key && (in >> v)) return v;
+    }
+    return std::nullopt;
+}
+
+/// Replaces @p doc's `<key> ...` line with `<key> <value>`, or removes it when
+/// @p value is empty.
+///
+/// Replace, not append: a document loaded with one value and saved with another
+/// would otherwise carry both lines, and every reader takes the first.
+void recordLine(mh::core::MhmFile& doc, std::string_view key, const std::string& value) {
+    std::erase_if(doc.unhandled, [key](const std::string& line) {
+        std::istringstream in(line);
+        std::string k;
+        return (in >> k) && k == key;
+    });
+    if (!value.empty()) doc.unhandled.push_back(std::string(key) + " " + value);
+}
+
 /// Rewrites @p doc's proxy line for @p slot to what is worn now.
 ///
 /// Replaces rather than appends: a document loaded with one selection and saved
@@ -574,13 +599,8 @@ std::optional<std::string> proxyFromDocument(const mh::core::MhmFile& doc,
 /// first.
 void recordProxy(mh::core::MhmFile& doc, const std::string& slot, const std::string& name,
                  const std::string& uuid) {
-    std::erase_if(doc.unhandled, [&slot](const std::string& line) {
-        std::istringstream in(line);
-        std::string key;
-        return (in >> key) && key == slot;
-    });
-    if (name.empty()) return;  // nothing worn: the absence of a line IS the record
-    doc.unhandled.push_back(slot + " " + name + " " + uuid);
+    // Empty name: nothing worn, and the absence of a line IS the record.
+    recordLine(doc, slot, name.empty() ? std::string{} : name + " " + uuid);
 }
 
 mh::core::MhmFile documentFor(const mh::core::Human& human, const mh::core::MhmFile& base,
@@ -1161,6 +1181,19 @@ int main(int argc, char** argv) {
         std::printf("loaded %s: %u modifiers applied", file.string().c_str(), applied);
         if (unknown > 0) std::printf(", %u unknown", unknown);
         std::printf("\n");
+
+        // The document's own rig, unless the user named one. `setRigName` ran
+        // before the load -- it has to, the flag is available first -- so this
+        // is where a file's choice gets its say.
+        //
+        // Format from the reference (`skeletonlibrary.py:336-339`):
+        // `skeleton <relative path>`, e.g. `default.mhskel`. We resolve by stem,
+        // which is also what `--rig` takes.
+        if (!parser.isSet(rigOpt)) {
+            if (const auto skel = valueFromDocument(document, "skeleton")) {
+                setRigName(std::filesystem::path(*skel).stem().string());
+            }
+        }
     }
 
     // --set runs after --load deliberately, so an explicit value on the command
@@ -1195,7 +1228,16 @@ int main(int argc, char** argv) {
     }
 
     PoseRig rig;
-    if (!loadPoseRig(*mesh, parser.value(poseOpt).toStdString(), rig)) return 1;
+    // `pose <relative path>` (`3_libraries_pose.py:265-268`). We write and read
+    // whatever `--pose` takes -- a stem like `tpose`, or a path -- so the value
+    // round-trips exactly. A reference-written path relative to ITS pose library
+    // will not resolve here; that is a real limit, not a silent one, because
+    // loadPoseRig reports what it could not open.
+    std::string poseChoice = parser.value(poseOpt).toStdString();
+    if (!parser.isSet(poseOpt)) {
+        if (const auto fromDoc = valueFromDocument(document, "pose")) poseChoice = *fromDoc;
+    }
+    if (!loadPoseRig(*mesh, poseChoice, rig)) return 1;
 
     // Adjacency is topology and survives both morphing and posing, so it is
     // built once. Normals are not, and are recomputed on every rebuild.
@@ -1287,6 +1329,11 @@ int main(int argc, char** argv) {
                                     : nullptr;
         recordProxy(doc, kEyesSaveName, eyesWorn != nullptr ? eyesWorn->name : std::string{},
                     eyesWorn != nullptr ? eyesWorn->uuid : std::string{});
+        // The rig and the pose, which a fresh save recorded not at all: saved
+        // with `--rig mixamo_superset --pose tpose`, the file named neither and
+        // reopened as the 163-bone default in the rest pose.
+        recordLine(doc, "skeleton", rig.loaded() ? rigNameRef() + ".mhskel" : std::string{});
+        recordLine(doc, "pose", rig.posed() ? poseChoice : std::string{});
         if (const auto ok = mh::core::saveMhm(file, doc); !ok) {
             std::fprintf(stderr, "cannot save %s: %s\n", file.string().c_str(),
                          ok.error().message().c_str());

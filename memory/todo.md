@@ -1422,6 +1422,23 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       Mutation-verified: ignoring the document's line fails `app_reload_eyes`.
       Low-Poly is 96 verts against High-Poly's 1,064, so the two cannot be
       confused.
+- [x] **The rig and the pose were lost the same way.** Saved with
+      `--rig mixamo_superset --pose tpose`, the file named **neither** and
+      reopened as the 163-bone default in the rest pose. Measured after the fix:
+      `skeleton mixamo_superset.mhskel` + `pose tpose` in the file, reload
+      reports **179 bones**, and the arm span goes **10.516 dm → 16.863 dm** —
+      the pose genuinely applies, not just the rig name.
+      Lines from the reference: `skeleton <relative path>`
+      (`skeletonlibrary.py:336-339`), `pose <relative path>`
+      (`3_libraries_pose.py:265-268`).
+      `setRigName` necessarily runs before the document loads — the flag is
+      available first — so the file's choice is applied right after the load,
+      and only when `--rig` was not given. Same precedence for `--pose`.
+      **`--skin` is deliberately NOT saved.** The reference's line is
+      `skinMaterial <path to a .mhmat>` (`3_libraries_material_chooser.py:304`),
+      and our `--skin` names a **litsphere PNG**, not a material — writing it as
+      `skinMaterial` would be a lie about what the value is. Blocked on the
+      `--skin`/`--litsphere` naming decision already raised for the owner.
 - [ ] **The other six choosers are not saved**, for want of the choosers
       themselves — `recordProxy`/`proxyFromDocument` take the slot name, so each
       is one line once its asset group exists.

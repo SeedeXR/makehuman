@@ -2095,6 +2095,51 @@ confusing them.
 
 ---
 
+## 2026-09-02 00:51:39 — Session 115 · **the rig and the pose were lost too**
+
+### The chunk
+Same defect as the clothes, two more fields. Having fixed the proxy line I asked
+what else a save drops, and measured it rather than assuming:
+
+```
+--rig mixamo_superset --pose tpose --skin african --eyes low-poly --save
+  file records:  eyes Low-Poly <uuid>          ... and nothing else
+  reload gives:  rig default (163 bones), rest pose
+```
+
+The 179-bone rig and the T-pose were both gone.
+
+### Fixed, with the reference's own lines
+`skeleton <relative path>` (`skeletonlibrary.py:336-339`) and
+`pose <relative path>` (`3_libraries_pose.py:265-268`). `setRigName` necessarily
+runs before the document loads — the flag has to be available first — so the
+file's choice is applied immediately after the load, and only when the flag was
+not given. Same precedence for the pose, and both halves are tested.
+
+Measured after: the file carries `skeleton mixamo_superset.mhskel` and
+`pose tpose`, the reload reports **179 bones**, and the arm span goes
+**10.516 dm → 16.863 dm**. That last number is the one that matters — it shows
+the pose actually applied rather than just the rig name being restored.
+
+### `--skin` deliberately left out
+The reference's line is `skinMaterial <path to a .mhmat>`
+(`3_libraries_material_chooser.py:304`). Our `--skin` names a **litsphere PNG**,
+not a material, so writing it as `skinMaterial` would be a lie about what the
+value is. It stays unsaved and recorded, blocked on the `--skin`/`--litsphere`
+naming decision already open for the owner.
+
+### Ponytail
+`recordProxy` and the new rig/pose writers were the same replace-or-append
+logic three times. One `recordLine(doc, key, value)` now, with `recordProxy` a
+one-line caller.
+
+### Verification
+ctest **465/465** in debug, release, ASan and TSan — TSan run alone. Format clean. SonarQube gate OK.
+The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
+`unhandled`, which the writer already emitted in the right place.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

@@ -308,6 +308,38 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION "wearing HighPolyEyes"
         FIXTURES_REQUIRED app_eyes_mhm)
 
+    # The rig and the pose were lost the same way the clothes were. Saved with
+    # `--rig mixamo_superset --pose tpose`, the file named neither and reopened
+    # as the 163-bone default in the rest pose.
+    #
+    # Lines from the reference: `skeleton <relative path>`
+    # (`skeletonlibrary.py:336-339`) and `pose <relative path>`
+    # (`3_libraries_pose.py:265-268`).
+    add_test(NAME app_save_rig COMMAND makehuman
+             --rig mixamo_superset --pose tpose
+             --save ${CMAKE_CURRENT_BINARY_DIR}/app_rig.mhm)
+    set_tests_properties(app_save_rig PROPERTIES FIXTURES_SETUP app_rig_mhm)
+    add_test(NAME app_save_rig_lines COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_rig.mhm
+             "-DKEYS=skeleton mixamo_superset.mhskel;pose tpose"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_save_rig_lines PROPERTIES FIXTURES_REQUIRED app_rig_mhm)
+
+    # 179 bones against the default's 163, so the two rigs cannot be confused.
+    add_test(NAME app_reload_rig COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/app_rig.mhm
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_rig_reload.obj)
+    set_tests_properties(app_reload_rig PROPERTIES
+        PASS_REGULAR_EXPRESSION "rig mixamo_superset \\(179 bones\\)"
+        FIXTURES_REQUIRED app_rig_mhm)
+
+    add_test(NAME app_reload_rig_override COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/app_rig.mhm --rig default
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_rig_override.obj)
+    set_tests_properties(app_reload_rig_override PROPERTIES
+        PASS_REGULAR_EXPRESSION "rig default \\(163 bones\\)"
+        FIXTURES_REQUIRED app_rig_mhm)
+
     # BVH export: the app could READ a pose and never write the one it was
     # showing. `writeBvh` had no caller outside tests.
     #
