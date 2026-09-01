@@ -12,8 +12,10 @@
 #include <cctype>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <memory>
+#include <sstream>
 #include <vector>
 
 namespace mh::io {
@@ -325,6 +327,40 @@ void addJointNodes(aiNode* root, const foundation::SkinView& skin, float scale,
     }
 }
 
+/// Rewrites a Collada file's `<unit>` element to the unit it was actually
+/// written in.
+///
+/// assimp's Collada exporter writes `<unit name="meter" meter="1"/>`
+/// unconditionally, whatever coordinates it is handed. Ours are centimetres by
+/// default, so the file declared a head vertex at `155.593674` to be **155
+/// metres** up: a spec-conforming consumer reads the character as 155 m tall.
+/// The same 100x class as the reference's FBX defect, in a file we produce, and
+/// worse than declaring nothing.
+///
+/// Done by rewriting the element rather than forcing the export to metres,
+/// because forcing it would make Collada the one format that ignores the
+/// caller's `unit` -- the per-format exception this milestone keeps paying for.
+void fixColladaUnit(const std::filesystem::path& path, Unit unit) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return;
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+
+    const auto at = text.find("<unit ");
+    if (at == std::string::npos) return;
+    const auto end = text.find("/>", at);
+    if (end == std::string::npos) return;
+
+    // metres per file unit: the inverse of decimetres -> unit, times 0.1.
+    std::ostringstream decl;
+    decl << "<unit name=\"" << unitName(unit) << "\" meter=\""
+         << (0.1 / static_cast<double>(unitScale(unit))) << "\" />";
+    text.replace(at, end + 2 - at, decl.str());
+
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out << text;
+}
+
 std::expected<SceneExportResult, SceneIoError> exportScene(const std::filesystem::path& path,
                                                            std::span<const SceneEntry> entries,
                                                            SceneFormat format,
@@ -431,6 +467,7 @@ std::expected<SceneExportResult, SceneIoError> exportScene(const std::filesystem
         return std::unexpected(
             SceneIoError{SceneIoErrorKind::ExportFailed, path.string(), exporter.GetErrorString()});
     }
+    if (format == SceneFormat::Collada) fixColladaUnit(path, options.unit);
 
     SceneExportResult result;
     result.vertices  = vertices;
@@ -544,6 +581,7 @@ std::expected<SceneExportResult, SceneIoError> exportScene(
         return std::unexpected(
             SceneIoError{SceneIoErrorKind::ExportFailed, path.string(), exporter.GetErrorString()});
     }
+    if (format == SceneFormat::Collada) fixColladaUnit(path, options.unit);
 
     SceneExportResult result;
     result.vertices  = rm.vertexCount();
@@ -707,6 +745,17 @@ std::expected<ImportedScene, SceneIoError> importScene(const std::filesystem::pa
         if (ext == ".glb" || ext == ".gltf") {
             // glTF defines metres and carries no unit metadata, so the spec is
             // the only source there is.
+            out.metersPerUnit = 1.0;
+        } else if (ext == ".dae") {
+            // Collada declares `<unit meter="..."/>` and assimp's reader APPLIES
+            // it, so what comes back is already metres whatever the file was
+            // written in. Measured: the same character exported at the metre,
+            // decimetre and centimetre all import at 1.69455.
+            //
+            // This only became true once our own export stopped lying about the
+            // unit -- assimp's Collada writer emits `meter="1"` unconditionally,
+            // so a centimetre file used to come back as raw centimetres with
+            // nothing saying so.
             out.metersPerUnit = 1.0;
         } else if (scene->mMetaData != nullptr) {
             // FBX's UnitScaleFactor is CENTIMETRES per unit.

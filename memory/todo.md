@@ -1281,6 +1281,32 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
          what the OBJ reader does to all 14 mutants.
       The codebase's own guard is fine: the mutation *is* caught by
       `test_obj_reader.cpp:109`. The sweep is defence in depth, not the gate.
+- [x] **Round-trip tests for every readable format — and Collada was lying about
+      its unit.** `tests/golden/test_roundtrip.cpp`: FBX, DAE, STL, 3MF, GLB and
+      OBJ exported and read back, asserting the CHARACTER survives — same
+      triangles, same real-world size. Vertex counts deliberately not compared:
+      importers weld and split differently, and demanding equality would pin
+      whichever behaviour assimp happens to have. USD has no reader here at all,
+      so `usdchecker` and Blender remain its check.
+      **The finding**: assimp's Collada exporter writes
+      `<unit name="meter" meter="1"/>` **unconditionally**, while we hand it
+      centimetre-scaled coordinates — so the file declared a head vertex at
+      `155.593674` to be **155 metres** up. A spec-conforming consumer reads the
+      character as 155 m tall. The same 100x class as the reference's FBX
+      defect, in a file we produce, and worse than declaring nothing.
+      Fixed by rewriting the element to the unit actually used, not by forcing
+      metres — forcing would make Collada the one format that ignores the
+      caller's `unit`, the per-format exception this milestone keeps paying for.
+      **And it made the import contract truer**: assimp's Collada reader APPLIES
+      the declaration, so a DAE now comes back in metres whatever it was written
+      in — measured at the metre, decimetre and centimetre, all importing at
+      1.69455 — and `importScene` reports `metersPerUnit = 1.0` for `.dae`
+      instead of 0.
+      **Two of my own claims corrected by checking**: I wrote that 3MF's
+      importer rejects what assimp writes (it round-trips fine, so it is in the
+      table) and that the masked OBJ should round-trip to `Mesh::heightCm`
+      (it round-trips to the VISIBLE height, 166.589 cm against 169.455 — the
+      helper cage again).
 
 ## M8 — Application shell (`mh-app`, `mh-ui`)
 

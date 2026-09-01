@@ -1662,6 +1662,53 @@ final tree, for the reason above. Format clean.
 
 ---
 
+## 2026-09-01 18:30:48 — Session 107 · **Collada was lying about its own unit**
+
+### The chunk
+`tests/golden/test_roundtrip.cpp` — every format we can write AND read, exported
+and read back in one table: FBX, DAE, STL, 3MF, GLB, OBJ. The property is that
+the CHARACTER survives: same triangles, same real-world size.
+
+Vertex counts are deliberately not compared. Importers weld and split
+differently, and demanding equality would pin whichever behaviour assimp happens
+to have rather than anything true about our files.
+
+### What it found immediately
+assimp's Collada exporter writes `<unit name="meter" meter="1"/>`
+**unconditionally**, whatever coordinates it is handed. Ours are centimetres by
+default, so the file declared a head vertex at `155.593674` to be **155 metres**
+up. A spec-conforming Collada consumer reads our character as 155 m tall — the
+same 100x class as the reference's FBX defect, in a file we produce, and worse
+than declaring no unit at all.
+
+Fixed by rewriting the element to the unit actually used, **not** by forcing the
+export to metres. Forcing would have made Collada the one format that ignores
+the caller's `unit`, which is the per-format exception this milestone keeps
+paying for.
+
+### It also made the import contract truer
+assimp's Collada reader **applies** the declaration. Measured: the same
+character written at the metre, decimetre and centimetre now all import at
+**1.69455** — so `importScene` reports `metersPerUnit = 1.0` for `.dae` instead
+of 0 ("you decide"). That only became true once the declaration stopped lying;
+before, the reader saw `meter="1"` and handed back raw centimetres with nothing
+saying so.
+
+### Two of my own claims, corrected by checking rather than shipped
+1. I wrote in a comment that 3MF's importer rejects what assimp writes, and that
+   it was "verified rather than assumed". It was neither — I had not tested it.
+   It round-trips fine, so it is a row in the table now.
+2. I expected the masked OBJ to round-trip to `Mesh::heightCm`. It round-trips
+   to the **visible** height: 166.589 cm against 169.455. The helper cage again.
+   The test asserts the visible height, computed from the mask.
+
+Both were caught because the test failed, not because I re-read the comment.
+
+### Verification
+ctest **448/448** in debug, release, ASan and TSan — TSan run alone. Format clean.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk
