@@ -371,6 +371,56 @@ CI green on `d03c23fb`.
 
 ---
 
+## 2026-09-01 03:15:59 — Session 083 · **AO, and materials finally reaching the viewport**
+
+### The chunk
+Ambient occlusion, and the wiring that lets a `.mhmat` actually drive what the
+viewport draws.
+
+AO is multiplied over the result **after** the additive term, matching
+`litsphere_fragment_shader.txt:103-105`. The ordering is load-bearing: folding
+it into `shading` earlier would also scale the additive contribution, which the
+reference does not do.
+
+**Roughness is not in this pipeline at all.** The `.mhmat` format has seven
+channels — Diffuse, BumpMap, NormalMap, DisplacementMap, SpecularMap,
+TransparencyMap, AoMap — and roughness is not among them. It belongs to the PBR
+path, not the litsphere one. Recorded rather than faked.
+
+### Testing AO directionally
+"The image changed" would pass on a map that made the model *brighter*, which is
+not what multiplying by an occlusion term does. So the test asserts the
+direction: **0 pixels got brighter**. That is the property; the pixel count is
+just corroboration.
+
+### Materials now drive the viewport
+`viewportMapsOf()` reads diffuse, normal, AO, intensity and `autoBlendSkin` in
+**one** pass. It replaces two separate `.mhmat` loads per rebuild — which ran on
+every slider drag. Body and each worn proxy read **their own** material, so
+clothing detail cannot inherit the body's.
+
+### The check that mattered
+With no maps shipping, all of this must be **inert**. Comparing against a stale
+screenshot showed 4.77% difference — but that baseline predated two intentional
+changes (the litsphere renormalize fix, and tone blending), so it proved
+nothing. The honest check is against the **previous commit**: stash, build,
+render, restore, render.
+
+Result: **0 differing pixels of 4,096,000**. The plumbing is genuinely dormant
+until a material supplies maps.
+
+### Verification
+ctest **401/401** in debug, release, ASan; TSan separately. Format clean.
+CI green on `91b110d4`. Stash list empty afterwards (checked — a previous session
+lost time to an unverified stash).
+
+### Still needed from the owner
+The texture files. I cannot fetch binaries, and `texturing.xyz` VFace cannot
+enter this repo at all (paid, redistribution forbidden). Everything downstream
+of "drop a PNG in `data/` and name it in a `.mhmat`" now works.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

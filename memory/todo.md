@@ -733,9 +733,26 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         check per asset.
       I also cannot fetch binaries (the fetch tool returns text), so the image
       files have to come from the owner.
-      **Next, in order**: (1) ~~normal~~ **done, see below**; roughness/AO still
-      to come through the same per-mesh path; (2) ~~`autoBlendSkin`~~ **done**;
-      (3) a real PBR metallic-roughness pipeline; (4) the skin `.mhmat` set.
+      **Next, in order**: (1) ~~normal~~ and ~~AO~~ **done**; (2)
+      ~~`autoBlendSkin`~~ **done**; (3) a real PBR metallic-roughness pipeline —
+      **roughness has no `.mhmat` channel at all** (the seven are Diffuse,
+      BumpMap, NormalMap, DisplacementMap, SpecularMap, TransparencyMap, AoMap),
+      so it belongs to that pipeline rather than this one; (4) the skin `.mhmat`
+      set, which is what the owner still has to supply.
+- [x] **AO maps** — multiplied over the result, and **after** the additive term,
+      matching `litsphere_fragment_shader.txt:103-105`. Folding it into
+      `shading` earlier would also scale the additive contribution, which the
+      reference does not do.
+      Tested directionally, not just "the image changed": AO may only **darken**,
+      so the test asserts **0 pixels got brighter**. A change-only check would
+      pass on a map that lit the model up.
+- [x] **Materials now drive the viewport.** One `viewportMapsOf()` read supplies
+      diffuse, normal, AO, intensity and `autoBlendSkin` — replacing two
+      separate `.mhmat` loads per rebuild, which ran on every slider drag.
+      Body and each worn proxy read **their own** material, so clothing detail
+      does not inherit the body's.
+      **Verified inert until assets exist**: with no maps shipping, the render
+      is **byte-identical (0 of 4,096,000 pixels)** to the previous commit.
 - [x] **Normal maps — where surface detail actually lives.** Pores, wrinkles and
       fine skin structure come from a tangent-space normal map, not the albedo,
       so this is the mechanism behind the "MetaHuman-level detail" request.

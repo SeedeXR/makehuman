@@ -90,6 +90,11 @@ struct MeshInstance {
     /// The reference's `normalmapIntensity` uniform, scaling the unpacked
     /// tangent-space vector.
     float normalMapIntensity{1.0F};
+
+    /// Ambient-occlusion map, multiplied over the shaded result. Empty means
+    /// none. This is what darkens creases and contact areas -- the `.mhmat`
+    /// `AoMap` channel.
+    std::filesystem::path aoMap{};
 };
 
 /// The buffers, textures and pipeline for drawing meshes with the litsphere

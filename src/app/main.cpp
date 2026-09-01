@@ -521,13 +521,34 @@ mh::core::MhmFile documentFor(const mh::core::Human& human, const mh::core::MhmF
 }
 
 /// Writes the mesh in whichever format @p path's extension names.
-/// True when the body skin asks for ethnic tone blending (`autoBlendSkin`).
-/// `MaterialDesc` carries no such flag -- it describes what an exporter writes,
-/// and this is a viewport shading decision -- so the `.mhmat` is read for it.
-bool bodyAutoBlendSkin() {
-    const auto path = dataDir() / "skins" / "default.mhmat";
-    if (auto mat = mh::core::loadMaterial(path)) return mat->autoBlendSkin;
-    return false;
+/// Everything the VIEWPORT needs from a `.mhmat`, in one read.
+///
+/// `MaterialDesc` is what an exporter writes: it carries no `autoBlendSkin` and
+/// no AO channel. Reading the material once for all four is also one file read
+/// per rebuild instead of one per question -- this runs on every slider drag.
+struct ViewportMaps {
+    std::filesystem::path diffuse;
+    std::filesystem::path normal;
+    std::filesystem::path ao;
+    bool autoBlendSkin{false};
+    float normalMapIntensity{1.0F};
+};
+
+ViewportMaps viewportMapsOf(const std::filesystem::path& mhmat) {
+    ViewportMaps maps;
+    const auto mat = mh::core::loadMaterial(mhmat);
+    if (!mat) return maps;
+    using mh::core::TextureChannel;
+    const auto slot = [&mat](TextureChannel c) {
+        return mat->textures[static_cast<size_t>(c)].path;
+    };
+    maps.diffuse       = slot(TextureChannel::Diffuse);
+    maps.normal        = slot(TextureChannel::NormalMap);
+    maps.ao            = slot(TextureChannel::AoMap);
+    maps.autoBlendSkin = mat->autoBlendSkin;
+    maps.normalMapIntensity =
+        mat->textures[static_cast<size_t>(TextureChannel::NormalMap)].intensity;
+    return maps;
 }
 
 /// The three ethnic litspheres as RGBA8, decoded once.
@@ -1015,17 +1036,20 @@ int main(int argc, char** argv) {
         // at all (`shaderConfig diffuse false`), so the body is pure matcap
         // until a skin with a real albedo map is installed.
         std::vector<mh::render::MeshInstance> scene;
-        const auto bodyMat = bodyMaterial();
+        const ViewportMaps bodyMaps = viewportMapsOf(dataDir() / "skins" / "default.mhmat");
         mh::render::MeshInstance body;
-        body.mesh      = rm.view();
-        body.litsphere = skin;
-        body.diffuse   = bodyMat ? bodyMat->diffuseTexture : std::filesystem::path{};
+        body.mesh               = rm.view();
+        body.litsphere          = skin;
+        body.diffuse            = bodyMaps.diffuse;
+        body.normalMap          = bodyMaps.normal;
+        body.normalMapIntensity = bodyMaps.normalMapIntensity;
+        body.aoMap              = bodyMaps.ao;
 
         // autoBlendSkin: the tone follows the ethnic sliders, so it is a blend
         // of the three ethnic litspheres and has no file behind it. `toneBuf`
         // owns the bytes because MeshInstance's span does not, and the render
         // outlives this scope.
-        if (bodyAutoBlendSkin()) {
+        if (bodyMaps.autoBlendSkin) {
             if (const auto size = blendedSkinTone(human, toneBuf)) {
                 body.litsphereRgba   = toneBuf;
                 body.litsphereWidth  = size->first;
@@ -1035,9 +1059,17 @@ int main(int argc, char** argv) {
         scene.push_back(std::move(body));
         for (auto& [group, worn] : wornProxies) {
             refitProxy(worn, *mesh);
-            scene.push_back(
-                {worn.rm.view(), worn.litsphere,
-                 worn.material ? worn.material->diffuseTexture : std::filesystem::path{}});
+            // Each worn thing carries its own maps, so clothing detail does
+            // not inherit the body's.
+            const ViewportMaps wornMaps = viewportMapsOf(worn.proxy.materialFile);
+            mh::render::MeshInstance inst;
+            inst.mesh               = worn.rm.view();
+            inst.litsphere          = worn.litsphere;
+            inst.diffuse            = wornMaps.diffuse;
+            inst.normalMap          = wornMaps.normal;
+            inst.normalMapIntensity = wornMaps.normalMapIntensity;
+            inst.aoMap              = wornMaps.ao;
+            scene.push_back(std::move(inst));
         }
         w.setMeshes(std::move(scene));
     };

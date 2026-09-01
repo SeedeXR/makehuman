@@ -14,7 +14,7 @@ namespace {
 /// built and where the litsphere texture is replaced, or the two disagree about
 /// which texture is at which slot.
 void bindAll(QRhiShaderResourceBindings* srb, QRhiBuffer* ubuf, QRhiTexture* lit,
-             QRhiTexture* diffuse, QRhiTexture* normalMap, QRhiSampler* sampler,
+             QRhiTexture* diffuse, QRhiTexture* normalMap, QRhiTexture* aoMap, QRhiSampler* sampler,
              QRhiBuffer* meshBuf) {
     srb->setBindings({
         QRhiShaderResourceBinding::uniformBuffer(
@@ -31,6 +31,8 @@ void bindAll(QRhiShaderResourceBindings* srb, QRhiBuffer* ubuf, QRhiTexture* lit
                                                   normalMap, sampler),
         QRhiShaderResourceBinding::uniformBuffer(4, QRhiShaderResourceBinding::FragmentStage,
                                                  meshBuf),
+        QRhiShaderResourceBinding::sampledTexture(5, QRhiShaderResourceBinding::FragmentStage,
+                                                  aoMap, sampler),
     });
 }
 
@@ -83,6 +85,8 @@ struct Drawable {
     /// Null when the instance named no normal map. The shader then takes the
     /// no-map branch and never samples whatever is bound in that slot.
     std::unique_ptr<QRhiTexture> normalTex;
+    /// Null when the instance named no AO map; the shader then skips it.
+    std::unique_ptr<QRhiTexture> aoTex;
     /// Per-mesh material parameters; `Buf` is per frame and cannot hold them.
     std::unique_ptr<QRhiBuffer> meshBuf;
     float normalMapIntensity{1.0F};
@@ -156,8 +160,8 @@ std::expected<std::unique_ptr<SceneResources>, RenderError> SceneResources::crea
         return std::unexpected(RenderError{RenderErrorKind::Failed, "material uniform buffer"});
     }
     bindAll(r->d_->layoutSrb.get(), r->d_->ubuf.get(), r->d_->diffuseTex.get(),
-            r->d_->diffuseTex.get(), r->d_->diffuseTex.get(), r->d_->sampler.get(),
-            r->d_->layoutMeshBuf.get());
+            r->d_->diffuseTex.get(), r->d_->diffuseTex.get(), r->d_->diffuseTex.get(),
+            r->d_->sampler.get(), r->d_->layoutMeshBuf.get());
     if (!r->d_->layoutSrb->create()) {
         return std::unexpected(RenderError{RenderErrorKind::Failed, "shader resource bindings"});
     }
@@ -211,6 +215,7 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
         QImage lit;
         QImage diffuse;    ///< null when the instance named no diffuse map
         QImage normalMap;  ///< null when the instance named no normal map
+        QImage aoMap;      ///< null when the instance named no AO map
     };
 
     std::vector<Pending> pending;
@@ -271,6 +276,16 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
             normalMap = normalMap.convertToFormat(QImage::Format_RGBA8888);
         }
 
+        QImage aoMap;
+        if (!instance.aoMap.empty()) {
+            aoMap = QImage(QString::fromStdString(instance.aoMap.string()));
+            if (aoMap.isNull()) {
+                return std::unexpected(
+                    RenderError{RenderErrorKind::TextureMissing, instance.aoMap.string()});
+            }
+            aoMap = aoMap.convertToFormat(QImage::Format_RGBA8888);
+        }
+
         // Interleaved, because that is what the vertex layout declares and one
         // buffer is one binding instead of three.
         std::vector<float> verts;
@@ -327,6 +342,13 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
                     RenderError{RenderErrorKind::TextureMissing, instance.normalMap.string()});
             }
         }
+        if (!aoMap.isNull()) {
+            dr.aoTex.reset(rhi->newTexture(QRhiTexture::RGBA8, aoMap.size()));
+            if (!dr.aoTex->create()) {
+                return std::unexpected(
+                    RenderError{RenderErrorKind::TextureMissing, instance.aoMap.string()});
+            }
+        }
         dr.normalMapIntensity = instance.normalMapIntensity;
         dr.meshBuf.reset(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 16));
         if (!dr.meshBuf->create()) {
@@ -334,7 +356,8 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
         }
         bindAll(dr.srb.get(), d_->ubuf.get(), dr.litTex.get(),
                 dr.diffuseTex ? dr.diffuseTex.get() : d_->diffuseTex.get(),
-                dr.normalTex ? dr.normalTex.get() : d_->diffuseTex.get(), d_->sampler.get(),
+                dr.normalTex ? dr.normalTex.get() : d_->diffuseTex.get(),
+                dr.aoTex ? dr.aoTex.get() : d_->diffuseTex.get(), d_->sampler.get(),
                 dr.meshBuf.get());
         if (!dr.srb->create()) {
             return std::unexpected(
@@ -343,7 +366,7 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
 
         dr.indexCount = static_cast<quint32>(mesh.indexCount());
         pending.push_back(Pending{std::move(dr), std::move(verts), std::move(lit),
-                                  std::move(diffuse), std::move(normalMap)});
+                                  std::move(diffuse), std::move(normalMap), std::move(aoMap)});
     }
 
     // Every mesh built, so it is now safe to queue: no early return remains.
@@ -362,10 +385,12 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
         batch->uploadTexture(p.drawable.litTex.get(), p.lit);
         if (p.drawable.diffuseTex) batch->uploadTexture(p.drawable.diffuseTex.get(), p.diffuse);
         if (p.drawable.normalTex) batch->uploadTexture(p.drawable.normalTex.get(), p.normalMap);
+        if (p.drawable.aoTex) batch->uploadTexture(p.drawable.aoTex.get(), p.aoMap);
         // x = intensity, y = 1 when a normal map is bound. Written per mesh
         // because whether one exists is a material property, not a frame one.
         const float material[4] = {p.drawable.normalMapIntensity,
-                                   p.drawable.normalTex ? 1.0F : 0.0F, 0.0F, 0.0F};
+                                   p.drawable.normalTex ? 1.0F : 0.0F,
+                                   p.drawable.aoTex ? 1.0F : 0.0F, 0.0F};
         batch->updateDynamicBuffer(p.drawable.meshBuf.get(), 0, 16, material);
         built.push_back(std::move(p.drawable));
     }

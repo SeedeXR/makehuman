@@ -56,9 +56,10 @@ ubuf;
 /// property of the material, so it cannot live in a buffer shared by every draw
 /// in the frame.
 layout(std140, binding = 4) uniform MeshBuf {
-    // x = normalmapIntensity, y = 1 when a normal map is bound. At 0 the map
-    // is NOT sampled: the slot holds a placeholder only because a declared
-    // binding must point at a live texture.
+    // x = normalmapIntensity, y = 1 when a normal map is bound, z = 1 when an
+    // AO map is bound. At 0 the corresponding map is NOT sampled: the slot
+    // holds a placeholder only because a declared binding must point at a live
+    // texture.
     vec4 material;
 }
 mbuf;
@@ -66,6 +67,7 @@ mbuf;
 layout(binding = 1) uniform sampler2D litsphereTexture;
 layout(binding = 2) uniform sampler2D diffuseTexture;
 layout(binding = 3) uniform sampler2D normalTexture;
+layout(binding = 5) uniform sampler2D aoTexture;
 
 void main() {
     // With a normal map: the reference's NORMALMAP path
@@ -116,6 +118,14 @@ void main() {
     outColor.rgb = (1.0 - additive) * shading * diffuse.rgb * vec3(brightnessComp);
     outColor.rgb += additive * (shading + diffuse.rgb);
     outColor.a = diffuse.a;
+
+    // Ambient occlusion, multiplied over the result -- litsphere_fragment_
+    // shader.txt:103-105, which applies it AFTER the additive term rather than
+    // to the shading alone. Order matters: folding it into `shading` earlier
+    // would also scale the additive contribution, which the reference does not.
+    if (mbuf.material.z > 0.5) {
+        outColor.rgb = outColor.rgb * texture(aoTexture, vTexCoord).rgb;
+    }
 
     fragColor = outColor;
 }

@@ -601,3 +601,69 @@ TEST_CASE("a normal map that will not load is reported", "[render][normalmap]") 
     REQUIRE_FALSE(img.has_value());
     CHECK(img.error().kind == render::RenderErrorKind::TextureMissing);
 }
+
+// --- Ambient occlusion ------------------------------------------------------
+//
+// The reference multiplies an AO map over the result AFTER the additive term
+// (litsphere_fragment_shader.txt:103-105), not into `shading`. That ordering is
+// preserved: folding it in earlier would also scale the additive contribution.
+TEST_CASE("an AO map darkens the render", "[render][aomap]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc  = bodyScene();
+    const auto s    = settings();
+    const auto path = std::filesystem::temp_directory_path() / "mh_test_ao.png";
+    QImage ao(32, 32, QImage::Format_RGBA8888);
+    ao.fill(QColor(60, 60, 60));  // heavy occlusion, so the effect is unambiguous
+    REQUIRE(ao.save(QString::fromStdString(path.string())));
+
+    render::MeshInstance occluded;
+    occluded.mesh      = sc.rm.view();
+    occluded.litsphere = s.litsphere;
+    occluded.aoMap     = path;
+
+    const std::vector<render::MeshInstance> plain{{sc.rm.view(), s.litsphere}};
+    const std::vector<render::MeshInstance> dark{occluded};
+    const auto a = (*r)->render(plain, s);
+    const auto b = (*r)->render(dark, s);
+    REQUIRE(a.has_value());
+    REQUIRE(b.has_value());
+    CHECK(differingPixels(*a, *b) > 1000);
+
+    // AO only ever DARKENS: every body pixel must be no brighter than before.
+    // A test that merely saw "the image changed" would pass on a map that lit
+    // the model up, which is not what multiplying by an occlusion term does.
+    size_t brighter = 0;
+    for (int y = 0; y < a->height(); ++y) {
+        for (int x = 0; x < a->width(); ++x) {
+            const QColor pa = a->pixelColor(x, y);
+            const QColor pb = b->pixelColor(x, y);
+            if (pb.red() > pa.red() + 1 || pb.green() > pa.green() + 1 ||
+                pb.blue() > pa.blue() + 1) {
+                ++brighter;
+            }
+        }
+    }
+    INFO("pixels that got brighter under AO: " << brighter);
+    CHECK(brighter == 0);
+
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("an AO map that will not load is reported", "[render][aomap]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    render::MeshInstance bad;
+    bad.mesh      = sc.rm.view();
+    bad.litsphere = settings().litsphere;
+    bad.aoMap     = "/definitely/not/an/ao.png";
+    const std::vector<render::MeshInstance> one{bad};
+    const auto img = (*r)->render(one, settings());
+    REQUIRE_FALSE(img.has_value());
+    CHECK(img.error().kind == render::RenderErrorKind::TextureMissing);
+}
