@@ -1548,6 +1548,62 @@ cases.
 
 ---
 
+## 2026-09-01 16:41:10 — Session 105 · **USD wrote a skeleton ten times the size of the body**
+
+### How it was found
+I was chasing something else. Every export puts the character half underground
+(feet at −0.82 m, origin at hip height) while the reference defaults "Feet on
+ground" to True for every exporter, so I went to add the option to USD — and
+found `UsdWriteOptions` has no `feetOnGround` field, then noticed while reading
+that `bindTransforms` emitted `globalRest` with no `* s` while `points` had one.
+
+### The defect
+`points` are multiplied by the unit scale. `bindTransforms` and
+`restTransforms` were not. At the default unit — metre, s = 0.1 — the mesh came
+out in **metres** and the rig in **decimetres**.
+
+Blender, on our own export:
+
+```
+before   MESH body z −0.8178..0.8416      ARM 179 bones z −8.0385..8.4481
+after    MESH body z −0.8178..0.8416      ARM 179 bones z −0.8038..0.8448
+```
+
+A skeleton ten times the size of the body. This is our own instance of the
+class recorded against the reference's FBX in project_context §8.
+
+### The uncomfortable part
+**`usdchecker --arkit` passed the whole time**, before and after. It validates
+the stage's structure, not whether the rig fits the mesh. That validator has
+been the trusted third-party oracle for USD across three earlier sessions —
+worth remembering what it does and does not check.
+
+**And the existing test was asserting the defect.** `test_usd_writer.cpp` pinned
+the root bind translation as the literal `(0, 0.5639, -0.7609, 1)` — the
+unscaled value. That test was itself written as a fix for a *vacuous* test in
+session 093, and it still encoded the bug. It derives the expectation from
+`unitScale(Unit::Meter)` now; a literal there is exactly how this hid.
+
+### The new check
+Containment, not a scale factor: every joint's bind translation must lie inside
+the mesh's own declared `extent`. **155 of 163 joints were outside** before the
+fix. A 10x rig fails it by an order of magnitude, and the property survives a
+change of unit — which a hard-coded 0.05639 would not.
+
+### Still open, and measured
+Feet-on-ground, the thing I set out to do. Every export leaves the origin at
+hip height: feet **−0.82 m**, head **+0.84 m**, in OBJ, GLB, FBX and USD alike.
+The reference defaults it on for every exporter
+(`legacy/python/core/export.py:58`); our app passes `{}` everywhere, and
+`UsdWriteOptions` has no such field, so USD could not be grounded even on
+request.
+
+### Verification
+ctest **441/441** in debug, release, ASan and TSan. Format clean.
+`usdchecker --arkit` still Success on a dressed, rigged USDZ.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

@@ -1411,6 +1411,34 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       **Blender is unaffected either way**: its OBJ importer already discarded
       the unreferenced vertices, reading 14,444 and identical dimensions before
       and after. Only our own stricter reader noticed.
+- [x] **USD wrote a skeleton TEN TIMES the size of the body.** `points` are
+      multiplied by the unit scale; `bindTransforms` and `restTransforms`
+      emitted `globalRest` verbatim. At the default unit — metre, s = 0.1 — the
+      mesh came out in metres and the rig in decimetres. Our own instance of the
+      defect class recorded against the reference's FBX (§8).
+      **Measured in Blender on our own export**: mesh z **−0.8178..0.8416**,
+      armature z **−8.0385..8.4481**. After: armature **−0.8038..0.8448**, inside
+      the body where it belongs.
+      **`usdchecker --arkit` passed the whole time**, before and after. It
+      validates the stage's structure, not whether the rig fits the mesh — worth
+      remembering, because that validator has been the trusted oracle for USD in
+      three earlier sessions.
+      **The existing test was asserting the defect.** `test_usd_writer.cpp`
+      pinned the root bind translation as the literal `(0, 0.5639, -0.7609, 1)`
+      — the *unscaled* value. It is derived from `unitScale(Unit::Meter)` now:
+      a literal there is precisely how the bug hid.
+      The new check is containment rather than a scale factor: every joint's
+      bind translation must lie inside the mesh's own declared `extent`. 155 of
+      163 were outside before; a 10x rig fails by an order of magnitude and the
+      property survives a change of unit.
+- [ ] **Every export puts the character half underground.** Measured: feet at
+      **−0.82 m**, head at **+0.84 m**, origin at hip height, in OBJ, GLB, FBX
+      and USD alike. The reference defaults **"Feet on ground" to True** for
+      every exporter (`legacy/python/core/export.py:58`); our app passes `{}` so
+      `feetOnGround` is false everywhere. `UsdWriteOptions` has no such field at
+      all, so USD could not be grounded even on request — the same "one exporter
+      that cannot be set like the rest" the header comment says M7 exists to
+      remove.
 - [ ] **The application still exports no morph targets.** `writeGlb` takes them
       and sparse accessors made a large set affordable, but `main.cpp` passes
       none. Open question the owner may want to settle: the 102 files under

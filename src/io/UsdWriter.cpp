@@ -158,9 +158,21 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
         }
         out << "]\n";
 
+        // Scaled like the points. `points` are multiplied by `s` while these
+        // used to emit globalRest verbatim, so at the default unit -- metre,
+        // s = 0.1 -- the mesh came out in metres and the rig in decimetres: a
+        // skeleton TEN TIMES the size of the body. usdchecker passes either
+        // way; it validates the stage's structure, not whether the rig fits.
+        const auto placed = [s](foundation::Mat4 m) {
+            m.m[0][3] *= s;
+            m.m[1][3] *= s;
+            m.m[2][3] *= s;
+            return m;
+        };
+
         out << "        uniform matrix4d[] bindTransforms = [";
         for (size_t j = 0; j < skin->globalRest.size(); ++j) {
-            out << (j != 0 ? ", " : "") << matrix4d(skin->globalRest[j]);
+            out << (j != 0 ? ", " : "") << matrix4d(placed(skin->globalRest[j]));
         }
         out << "]\n";
 
@@ -171,11 +183,16 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
         out << "        uniform matrix4d[] restTransforms = [";
         for (size_t j = 0; j < skin->globalRest.size(); ++j) {
             const int32_t parent = j < skin->jointParents.size() ? skin->jointParents[j] : -1;
+            // Both sides placed before the local is taken: scaling the local
+            // afterwards would be the same number here, but only because the
+            // rotation is rigid -- doing it on the globals is what the identity
+            // actually says.
             const foundation::Mat4 local =
                 (parent >= 0 && static_cast<size_t>(parent) < skin->globalRest.size())
-                    ? foundation::rigidInverse(skin->globalRest[static_cast<size_t>(parent)]) *
-                          skin->globalRest[j]
-                    : skin->globalRest[j];
+                    ? foundation::rigidInverse(
+                          placed(skin->globalRest[static_cast<size_t>(parent)])) *
+                          placed(skin->globalRest[j])
+                    : placed(skin->globalRest[j]);
             out << (j != 0 ? ", " : "") << matrix4d(local);
         }
         out << "]\n";

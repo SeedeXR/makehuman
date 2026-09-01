@@ -542,9 +542,14 @@ TEST_CASE("a skinned stage binds a UsdSkel skeleton", "[io][usd][usdskel]") {
     // appear somewhere is vacuous -- they appear either way, just in different
     // places -- and an earlier version of this test did exactly that and passed
     // with the transpose removed.
-    const auto t0 = skel->bones[0].matRestGlobal.translation();
+    // Scaled, like the points: the stage is written in metres and the rig is
+    // authored in decimetres. Derived from unitScale rather than written out as
+    // a second constant -- this assertion held the UNSCALED numbers until the
+    // 10x skeleton was found, so a literal here is exactly how the bug hid.
+    const float us = io::unitScale(io::Unit::Meter);
+    const auto t0  = skel->bones[0].matRestGlobal.translation();
     std::ostringstream lastRow;
-    lastRow << "(" << t0.x << ", " << t0.y << ", " << t0.z << ", 1)";
+    lastRow << "(" << t0.x * us << ", " << t0.y * us << ", " << t0.z * us << ", 1)";
     INFO("first bindTransform: " << firstMatrix);
     INFO("expecting last row " << lastRow.str());
     CHECK(firstMatrix.find(lastRow.str()) != std::string::npos);
@@ -555,6 +560,91 @@ TEST_CASE("a skinned stage binds a UsdSkel skeleton", "[io][usd][usdskel]") {
 
     std::error_code ec;
     std::filesystem::remove(out, ec);
+}
+
+// The skeleton has to be in the SAME SPACE as the mesh.
+//
+// It was not. `points` are multiplied by the unit scale; `bindTransforms` and
+// `restTransforms` emitted `globalRest` verbatim, so at the default unit
+// (metre, scale 0.1) the mesh came out in metres and the rig in decimetres --
+// **a skeleton ten times the size of the body**. Measured in Blender on our own
+// export: mesh z −0.8178..0.8416, armature z −8.0385..8.4481.
+//
+// `usdchecker` passes either way. It validates the stage's structure, not
+// whether the rig fits the mesh, which is why this needs its own check.
+//
+// Asserted as containment rather than against the scale factor: every joint's
+// bind translation must lie inside the mesh's own `extent`. A 10x rig fails by
+// an order of magnitude, and the property survives a change of unit.
+TEST_CASE("the skeleton is in the same space as the mesh", "[io][usd][usdskel][units]") {
+    const auto rigPath = std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel";
+    if (!std::filesystem::exists(rigPath)) return;
+
+    core::Mesh mesh = baseMesh();
+    auto skel       = rig::loadSkeleton(rigPath);
+    REQUIRE(skel.has_value());
+    REQUIRE(skel->updateJoints(mesh.coord()));
+    REQUIRE(skel->buildRestMatrices());
+    auto vw = rig::loadWeights(std::filesystem::path(MH_DATA_DIR) / "rigs" / "default_weights.mhw",
+                               mesh.vertexCount());
+    REQUIRE(vw.has_value());
+
+    const auto rm       = core::RenderMesh::build(mesh);
+    const auto compiled = vw->compile(*skel, 4);
+    const auto skin     = rig::buildSkinData(*skel, compiled, rm.vmap());
+    const auto view     = skin.view();
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_usdskel_space.usda";
+    const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr}};
+    REQUIRE(io::writeUsdaScene(out, scene, {}, &view).has_value());
+    const std::string t = readAll(out);
+
+    // The mesh's own declared bounds, straight out of the file.
+    const auto extentAt = t.find("float3[] extent = [(");
+    REQUIRE(extentAt != std::string::npos);
+    const auto extentEnd = t.find("]", extentAt + 20);
+    REQUIRE(extentEnd != std::string::npos);
+    std::string ext = t.substr(extentAt + 20, extentEnd - extentAt - 20);
+    for (char& c : ext)
+        if (c == '(' || c == ')' || c == ',') c = ' ';
+    std::istringstream es(ext);
+    double lox = 0;
+    double loy = 0;
+    double loz = 0;
+    double hix = 0;
+    double hiy = 0;
+    double hiz = 0;
+    es >> lox >> loy >> loz >> hix >> hiy >> hiz;
+    REQUIRE(hiy > loy);
+
+    // Every bindTransform's translation. A USD matrix4d is ROW-vector, so the
+    // translation is the LAST ROW -- elements 12,13,14 of the sixteen.
+    const std::string kKey = "uniform matrix4d[] bindTransforms = [";
+    const auto at          = t.find(kKey);
+    REQUIRE(at != std::string::npos);
+    const auto arrayAt = at + kKey.size();
+    const auto endAt   = t.find("]\n", arrayAt);
+    REQUIRE(endAt != std::string::npos);
+    std::string mats = t.substr(arrayAt, endAt - arrayAt);
+    for (char& c : mats)
+        if (c == '(' || c == ')' || c == ',') c = ' ';
+
+    std::istringstream ms(mats);
+    std::vector<double> nums;
+    for (double d = 0; ms >> d;)
+        nums.push_back(d);
+    REQUIRE(nums.size() == skin.globalRest.size() * 16);
+
+    // A little slack: joints sit inside the body, but the root can be at a foot.
+    const double padY = (hiy - loy) * 0.1;
+    size_t outside    = 0;
+    for (size_t j = 0; j < skin.globalRest.size(); ++j) {
+        const double ty = nums[j * 16 + 13];
+        if (ty < loy - padY || ty > hiy + padY) ++outside;
+    }
+    INFO("mesh y " << loy << ".." << hiy << ", joints outside " << outside << " of "
+                   << skin.globalRest.size());
+    CHECK(outside == 0);
 }
 
 TEST_CASE("an unskinned stage is unchanged", "[io][usd][usdskel]") {
