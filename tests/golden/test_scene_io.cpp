@@ -25,10 +25,12 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <algorithm>
+#include <catch2/catch_approx.hpp>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <set>
 #include <string>
 #include <vector>
@@ -588,4 +590,47 @@ TEST_CASE("importScene reports a file it cannot read", "[io][import][scene]") {
     const auto missing = io::importScene("/definitely/not/a/scene.glb");
     REQUIRE_FALSE(missing.has_value());
     CHECK(missing.error().kind == io::SceneIoErrorKind::NotFound);
+}
+
+// --- Node transforms --------------------------------------------------------
+//
+// A glTF/FBX/DAE scene places meshes with a NODE GRAPH: the mesh data is in
+// local space and the node carries the transform. Reading `mMeshes` directly
+// and never walking `mRootNode` returns every mesh at the origin -- silently,
+// with no error, so a whole imported scene collapses into one pile.
+//
+// tests/golden/scene/two_cubes.glb exists for exactly this: two IDENTICAL cubes
+// whose only difference is a node translation of x = -5 and x = +5. Before this
+// was fixed, both imported with x in [-1, 1].
+TEST_CASE("node transforms place imported meshes", "[io][import][scene][transform]") {
+    const auto file =
+        std::filesystem::path(MH_DATA_DIR) / ".." / "tests" / "golden" / "scene" / "two_cubes.glb";
+    if (!std::filesystem::exists(file)) SKIP("scene fixture not present");
+
+    const auto scene = io::importScene(file);
+    REQUIRE(scene.has_value());
+    REQUIRE(scene->meshes.size() == 2);
+
+    // Each cube is 2 units wide, so a correctly placed pair spans about
+    // [-6,-4] and [+4,+6]; a broken one gives [-1,1] twice.
+    std::vector<float> centres;
+    for (const auto& m : scene->meshes) {
+        REQUIRE_FALSE(m.mesh.coord.empty());
+        float lo = std::numeric_limits<float>::infinity();
+        float hi = -lo;
+        for (const auto& v : m.mesh.coord) {
+            lo = std::min(lo, v.x);
+            hi = std::max(hi, v.x);
+        }
+        INFO("mesh " << m.name << " x range [" << lo << ", " << hi << "]");
+        CHECK(hi - lo == Catch::Approx(2.0F).margin(0.01F));  // still a unit cube
+        centres.push_back((lo + hi) * 0.5F);
+    }
+
+    std::ranges::sort(centres);
+    INFO("centres " << centres[0] << " and " << centres[1]);
+    CHECK(centres[0] == Catch::Approx(-5.0F).margin(0.01F));
+    CHECK(centres[1] == Catch::Approx(5.0F).margin(0.01F));
+    // The whole point: they are NOT in the same place.
+    CHECK(centres[1] - centres[0] == Catch::Approx(10.0F).margin(0.02F));
 }

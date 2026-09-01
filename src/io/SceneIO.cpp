@@ -565,16 +565,54 @@ std::expected<ImportedScene, SceneIoError> importScene(const std::filesystem::pa
             SceneIoError{SceneIoErrorKind::ImportFailed, path.string(), importer.GetErrorString()});
     }
 
-    ImportedScene out;
-    out.meshes.reserve(scene->mNumMeshes);
+    // Walk the NODE GRAPH, not the mesh array. A scene places its meshes with
+    // node transforms -- the mesh data is local and the node carries where it
+    // goes -- so reading mMeshes directly returns every object stacked at the
+    // origin, silently. Verified with a two-cube fixture: both came back at
+    // x in [-1,1] when Blender had placed them at -5 and +5.
+    //
+    // Walking nodes also handles INSTANCING for free: one mesh referenced by
+    // two nodes is two placed objects, which a mesh-array loop cannot express.
+    struct Placement {
+        unsigned meshIndex;
+        aiMatrix4x4 world;
+        std::string nodeName;
+    };
 
-    for (unsigned mi = 0; mi < scene->mNumMeshes; ++mi) {
-        const aiMesh* am = scene->mMeshes[mi];
+    std::vector<Placement> placements;
+    const auto walk = [&placements](const aiNode* node, const aiMatrix4x4& parent,
+                                    auto&& self) -> void {
+        if (node == nullptr) return;
+        const aiMatrix4x4 world = parent * node->mTransformation;
+        for (unsigned i = 0; i < node->mNumMeshes; ++i) {
+            placements.push_back({node->mMeshes[i], world, std::string(node->mName.C_Str())});
+        }
+        for (unsigned c = 0; c < node->mNumChildren; ++c) {
+            self(node->mChildren[c], world, self);
+        }
+    };
+    walk(scene->mRootNode, aiMatrix4x4{}, walk);
+
+    // A file with no node graph at all still has meshes worth reading.
+    if (placements.empty()) {
+        for (unsigned mi = 0; mi < scene->mNumMeshes; ++mi) {
+            placements.push_back({mi, aiMatrix4x4{}, {}});
+        }
+    }
+
+    ImportedScene out;
+    out.meshes.reserve(placements.size());
+
+    for (const Placement& placed : placements) {
+        if (placed.meshIndex >= scene->mNumMeshes) continue;
+        const aiMesh* am = scene->mMeshes[placed.meshIndex];
         if (am == nullptr || am->mNumVertices == 0 || am->mNumFaces == 0) continue;
+        const unsigned mi = placed.meshIndex;
 
         ImportedSceneMesh entry;
-        entry.name =
-            (am->mName.length > 0) ? std::string(am->mName.C_Str()) : ("mesh" + std::to_string(mi));
+        entry.name                   = (am->mName.length > 0)     ? std::string(am->mName.C_Str())
+                                       : !placed.nodeName.empty() ? placed.nodeName
+                                                                  : ("mesh" + std::to_string(mi));
         entry.mesh.name              = entry.name;
         entry.mesh.vertsPerPrimitive = 3;  // triangulated on import
 
@@ -588,7 +626,8 @@ std::expected<ImportedScene, SceneIoError> importScene(const std::filesystem::pa
                 finite = false;
                 break;
             }
-            entry.mesh.coord[i] = Vec3{v.x, v.y, v.z};
+            const aiVector3D w  = placed.world * v;
+            entry.mesh.coord[i] = Vec3{w.x, w.y, w.z};
         }
         if (!finite) {
             return std::unexpected(SceneIoError{SceneIoErrorKind::ImportFailed, path.string(),

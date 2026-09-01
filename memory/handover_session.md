@@ -642,6 +642,52 @@ Materials, skins and node transforms. Geometry and names only for now.
 
 ---
 
+## 2026-09-01 05:35:36 — Session 089 · **every imported object was at the origin**
+
+### The bug
+A glTF/FBX/DAE scene places meshes with a **node graph**: the mesh data is in
+local space and the node carries the transform. `importScene` read
+`aiScene::mMeshes` directly and never walked `mRootNode`.
+
+So every imported object came back **stacked at the origin**. No error, no
+warning, valid file — a whole scene collapsed into one pile.
+
+The previous chunk fixed import returning only the first mesh. This is the same
+shape of bug one level down: the data was all there and quietly mis-assembled.
+
+### Caught with a fixture that is not ours
+Our own exports write meshes at identity, so a round trip through our writer
+could never have exposed this. `tools/make_scene_fixture.py` has **Blender**
+write two identical cubes whose only difference is a node translation of ±5.
+
+Before the fix both imported at x ∈ [-1, 1]. That is the whole test: geometry
+identical, placement the only variable.
+
+The fixture is two Blender primitives — no third-party asset — so it is CC0 like
+the rest of the tree, with provenance in `tests/golden/scene/README.md`.
+
+### What the fix buys beyond the bug
+Walking the graph gives **instancing** for free: one mesh referenced by two
+nodes is two placed objects, which a mesh-array loop cannot express at all.
+A file with no node graph still falls back to the mesh array.
+
+Only positions need transforming — normals and tangents are not imported yet, so
+there is no inverse-transpose to get wrong. Worth remembering when they are.
+
+### The assert-before-write rule paid again
+Two scripted edits failed their `count == 1` assertion because `clang-format`
+had reflowed the target (`entry.name` onto two lines, differently from how I
+wrote it). Nothing was written either time. That rule has now caught four
+silent no-op edits this session.
+
+### Verification
+ctest **406/406** in debug, release, ASan; TSan separately. Format clean.
+
+### Still open on import
+Materials and skins. Geometry, names and placement now — no shading or rigging.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk

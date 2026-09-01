@@ -924,8 +924,23 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       nothing usable came back.
       `importMesh` stays as the single-mesh entry point and still reports
       `meshCount`, so callers can tell what they are dropping.
-      **Still open**: materials, skins and node transforms on import — geometry
-      and names only for now.
+- [x] **Node transforms on import — meshes were all landing at the origin.**
+      A glTF/FBX/DAE scene places meshes with a **node graph**: the mesh data is
+      local and the node carries where it goes. `importScene` read
+      `aiScene::mMeshes` directly and never walked `mRootNode`, so **every
+      imported object stacked at the origin**, silently, with no error.
+      Caught with an independent fixture rather than our own output:
+      `tools/make_scene_fixture.py` has Blender write two identical cubes whose
+      **only** difference is a node translation of ±5. Before the fix both
+      imported at x ∈ [-1, 1].
+      Now walks the graph accumulating world transforms. That also gives
+      **instancing** for free — one mesh referenced by two nodes is two placed
+      objects, which a mesh-array loop cannot express at all.
+      A file with no node graph still falls back to reading the mesh array.
+      Only positions need transforming: normals and tangents are not imported
+      yet, so there is no inverse-transpose to get wrong.
+      **Still open**: materials and skins on import — geometry, names and
+      placement now, but no shading or rigging.
 - [x] **Export glTF 2.0 / GLB** — from spec, single self-contained `.glb`,
       metallic-roughness material, correct metre units, V flipped for glTF's
       top-left UV origin. Validated by spec conformance **and by assimp**, an
