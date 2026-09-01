@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "makehuman/io/SceneIO.h"
 
+#include <assimp/material.h>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 #include <assimp/Exporter.hpp>
@@ -135,6 +136,22 @@ void fillMaterial(aiMaterial* m, const foundation::MaterialDesc* material,
     m->AddProperty(&ambient, 1, AI_MATKEY_COLOR_AMBIENT);
     const float opacity = material->opacity;
     m->AddProperty(&opacity, 1, AI_MATKEY_OPACITY);
+
+    // Texture paths. Without these a character exported to FBX or DAE arrives
+    // in a DCC tool with its colours but NO skin -- the reference to the albedo
+    // is simply absent from the file, which reads as "the exporter is broken"
+    // rather than "the texture moved".
+    //
+    // Written as the material states them, so a relative path stays relative
+    // and keeps working beside the exported file.
+    if (!material->diffuseTexture.empty()) {
+        const aiString tex(material->diffuseTexture.string());
+        m->AddProperty(&tex, AI_MATKEY_TEXTURE_DIFFUSE(0));
+    }
+    if (!material->normalTexture.empty()) {
+        const aiString tex(material->normalTexture.string());
+        m->AddProperty(&tex, AI_MATKEY_TEXTURE_NORMALS(0));
+    }
 }
 
 }  // namespace
@@ -665,6 +682,45 @@ std::expected<ImportedScene, SceneIoError> importScene(const std::filesystem::pa
         // empty or non-triangular helper meshes, and failing the whole file for
         // one of them would make many usable assets unopenable.
         if (entry.mesh.fvert.empty()) continue;
+
+        // The material, when the file carried one. Absent means the file had
+        // none -- not that it had a default -- so a caller can tell those apart
+        // before substituting its own.
+        if (am->mMaterialIndex < scene->mNumMaterials && scene->mMaterials != nullptr) {
+            const aiMaterial* mat = scene->mMaterials[am->mMaterialIndex];
+            if (mat != nullptr) {
+                foundation::MaterialDesc desc;
+                aiString str;
+                if (mat->Get(AI_MATKEY_NAME, str) == AI_SUCCESS && str.length > 0) {
+                    desc.name = str.C_Str();
+                }
+                const auto colour = [&mat](const char* key, unsigned t, unsigned i, Vec3& into) {
+                    aiColor3D c;
+                    if (mat->Get(key, t, i, c) == AI_SUCCESS) into = Vec3{c.r, c.g, c.b};
+                };
+                colour(AI_MATKEY_COLOR_DIFFUSE, desc.diffuse);
+                colour(AI_MATKEY_COLOR_AMBIENT, desc.ambient);
+                colour(AI_MATKEY_COLOR_SPECULAR, desc.specular);
+                float f = 0.0F;
+                if (mat->Get(AI_MATKEY_SHININESS, f) == AI_SUCCESS) desc.shininess = f;
+                if (mat->Get(AI_MATKEY_OPACITY, f) == AI_SUCCESS) {
+                    desc.opacity = f;
+                    // Only opacity below 1 implies transparency. Deriving it
+                    // from the presence of an alpha channel instead would mark
+                    // every RGBA-textured material transparent.
+                    desc.transparent = f < 1.0F;
+                }
+                // Paths come back as the file states them -- usually relative.
+                // Resolving is the caller's job; only it knows the origin.
+                if (mat->GetTexture(aiTextureType_DIFFUSE, 0, &str) == AI_SUCCESS) {
+                    desc.diffuseTexture = str.C_Str();
+                }
+                if (mat->GetTexture(aiTextureType_NORMALS, 0, &str) == AI_SUCCESS) {
+                    desc.normalTexture = str.C_Str();
+                }
+                entry.material = std::move(desc);
+            }
+        }
 
         out.meshes.push_back(std::move(entry));
     }

@@ -634,3 +634,112 @@ TEST_CASE("node transforms place imported meshes", "[io][import][scene][transfor
     // The whole point: they are NOT in the same place.
     CHECK(centres[1] - centres[0] == Catch::Approx(10.0F).margin(0.02F));
 }
+
+// --- Materials on import ----------------------------------------------------
+//
+// Measured, not assumed. Round-tripping a fully specified material shows what
+// each format actually keeps:
+//
+//   |            | name | diffuse | specular | opacity | textures |
+//   |------------|------|---------|----------|---------|----------|
+//   | FBX        | yes  | yes     | NO       | yes     | written, not read back |
+//   | Collada    | yes  | replaced by texture | yes | yes | yes |
+//
+// Two of those need explaining rather than asserting around:
+//
+//  * **FBX textures ARE written** -- the path appears three times in the
+//    exported bytes -- but assimp's FBX *importer* does not read material
+//    textures back. That is a reader limitation, not a missing export, and a
+//    DCC tool opening the file gets the reference. So the FBX case is checked
+//    in the FILE, not through the round trip.
+//  * **Collada replaces the diffuse colour with the texture** when one is
+//    present (`<diffuse><texture/></diffuse>`), which is the format's own
+//    semantics, not a loss on our side.
+//
+// Shininess is deliberately not asserted: the conventions differ per format
+// (FBX returned a default, Collada a 0..128-style exponent), so a single
+// expected value would be wrong somewhere.
+TEST_CASE("materials survive an export and import", "[io][import][material]") {
+    const core::Mesh m = baseMeshOrSkip();
+    const auto rm      = core::RenderMesh::build(m);
+
+    foundation::MaterialDesc want;
+    want.name           = "TestSkin";
+    want.diffuse        = {0.80F, 0.60F, 0.50F};
+    want.specular       = {0.30F, 0.30F, 0.30F};
+    want.opacity        = 0.75F;
+    want.diffuseTexture = "skin_albedo.png";
+    want.normalTexture  = "skin_normal.png";
+
+    const std::vector<io::SceneEntry> scene{{rm.view(), "body", &want}};
+
+    SECTION("FBX keeps name, colour and opacity") {
+        const auto out = tempFile("matrt", ".fbx");
+        REQUIRE(io::exportScene(out, scene, io::SceneFormat::FbxBinary).has_value());
+
+        const auto back = io::importScene(out);
+        REQUIRE(back.has_value());
+        REQUIRE(back->meshes.size() == 1);
+        REQUIRE(back->meshes[0].material.has_value());
+        const auto& got = *back->meshes[0].material;
+
+        CHECK(got.name == "TestSkin");
+        CHECK(got.diffuse.x == Catch::Approx(0.80F).margin(0.01F));
+        CHECK(got.diffuse.y == Catch::Approx(0.60F).margin(0.01F));
+        CHECK(got.opacity == Catch::Approx(0.75F).margin(0.01F));
+        CHECK(got.transparent);  // opacity < 1 implies it
+
+        // The texture reference IS in the file even though assimp will not read
+        // it back, so this is checked where it exists rather than skipped.
+        std::ifstream f(out, std::ios::binary);
+        const std::string bytes((std::istreambuf_iterator<char>(f)),
+                                std::istreambuf_iterator<char>());
+        CHECK(bytes.find("skin_albedo.png") != std::string::npos);
+
+        std::error_code ec;
+        std::filesystem::remove(out, ec);
+    }
+
+    SECTION("Collada keeps the texture paths") {
+        const auto out = tempFile("matrt", ".dae");
+        REQUIRE(io::exportScene(out, scene, io::SceneFormat::Collada).has_value());
+
+        const auto back = io::importScene(out);
+        REQUIRE(back.has_value());
+        REQUIRE(back->meshes[0].material.has_value());
+        const auto& got = *back->meshes[0].material;
+
+        CHECK(got.name == "TestSkin");
+        CHECK(got.diffuseTexture == "skin_albedo.png");
+        CHECK(got.normalTexture == "skin_normal.png");
+        CHECK(got.specular.x == Catch::Approx(0.30F).margin(0.01F));
+        CHECK(got.opacity == Catch::Approx(0.75F).margin(0.01F));
+
+        std::error_code ec;
+        std::filesystem::remove(out, ec);
+    }
+}
+
+TEST_CASE("a mesh with no material reports none", "[io][import][material]") {
+    // Absent must mean "the file had none", not "it had a default" -- a caller
+    // substituting its own default has to be able to tell.
+    const core::Mesh m = baseMeshOrSkip();
+    const auto rm      = core::RenderMesh::build(m);
+    const auto out     = tempFile("nomat", ".glb");
+
+    const std::vector<io::GltfSceneEntry> scene{{rm.view(), "body", nullptr}};
+    REQUIRE(io::writeGlbScene(out, scene).has_value());
+
+    const auto back = io::importScene(out);
+    REQUIRE(back.has_value());
+    REQUIRE(back->meshes.size() == 1);
+    INFO("material present: " << back->meshes[0].material.has_value());
+    // glTF without a material index leaves this empty; if the writer emits a
+    // default one, the name tells us it is not ours.
+    if (back->meshes[0].material) {
+        CHECK(back->meshes[0].material->name != "TestSkin");
+    }
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}

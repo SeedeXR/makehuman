@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -153,6 +154,16 @@ struct ImportedMesh {
 struct ImportedSceneMesh {
     std::string name;  ///< the file's own name for it, or "mesh<N>" if unnamed
     foundation::MeshData mesh;
+
+    /// The mesh's material, when the file carried one.
+    ///
+    /// Absent means the file had no material for this mesh -- NOT that it had a
+    /// default one. A caller applying its own default needs to tell those apart.
+    ///
+    /// Texture paths come back exactly as the file states them, which is
+    /// usually relative to the file. Resolving them is the caller's job,
+    /// because only the caller knows where the file came from.
+    std::optional<foundation::MaterialDesc> material;
 };
 
 struct ImportedScene {

@@ -939,8 +939,33 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       A file with no node graph still falls back to reading the mesh array.
       Only positions need transforming: normals and tangents are not imported
       yet, so there is no inverse-transpose to get wrong.
-      **Still open**: materials and skins on import — geometry, names and
-      placement now, but no shading or rigging.
+- [x] **Materials on import — and a missing half of EXPORT found doing it.**
+      `ImportedSceneMesh::material` carries name, colours, opacity/transparency
+      and texture paths. **Absent means the file had none**, not that it had a
+      default, so a caller can tell before substituting its own.
+      **The export gap**: chasing why no texture survived showed our exporter
+      **never wrote texture paths at all** to the assimp formats. A character
+      exported to FBX/DAE reached a DCC tool with colours but **no skin**, which
+      reads as a broken exporter rather than a moved file. `fillMaterial` now
+      writes `AI_MATKEY_TEXTURE_DIFFUSE` and `..._NORMALS`.
+      **What each format actually keeps, measured rather than assumed**:
+
+      | | name | diffuse | specular | opacity | textures |
+      |---|---|---|---|---|---|
+      | FBX | yes | yes | **no** | yes | **written, not read back** |
+      | Collada | yes | replaced by texture | yes | yes | yes |
+
+      Two need explaining, not asserting around:
+      - **FBX textures ARE written** — the path is in the exported bytes three
+        times — but assimp's FBX *importer* does not read material textures.
+        A reader limitation, not a missing export, so the test checks the FILE.
+      - **Collada replaces the diffuse colour with the texture**
+        (`<diffuse><texture/></diffuse>`) — the format's own semantics.
+      Shininess is deliberately **not** asserted: FBX returned a default and
+      Collada a 0..128-style exponent, so one expected value would be wrong
+      somewhere.
+      **Still open**: skins on import — geometry, names, placement and materials
+      now, but no rigging.
 - [x] **Export glTF 2.0 / GLB** — from spec, single self-contained `.glb`,
       metallic-roughness material, correct metre units, V flipped for glTF's
       top-left UV origin. Validated by spec conformance **and by assimp**, an

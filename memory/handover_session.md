@@ -688,6 +688,58 @@ Materials and skins. Geometry, names and placement now — no shading or rigging
 
 ---
 
+## 2026-09-01 06:03:40 — Session 090 · **exported characters had no skin, and nobody knew**
+
+### The chunk
+Materials on import. Which turned up a missing half of **export**.
+
+### The find
+Chasing why no texture path survived a round trip, I checked whether the
+exported file contained the name at all. It did not. **Our exporter never wrote
+texture paths to the assimp-backed formats.**
+
+So a character exported to FBX or DAE arrived in a DCC tool with its colours and
+**no skin** — the albedo reference simply absent from the file. That reads as a
+broken exporter, not a moved texture, and it had been true the whole time.
+
+Fixed in `fillMaterial`: `AI_MATKEY_TEXTURE_DIFFUSE` and `..._NORMALS`.
+
+### Measuring instead of assuming
+Round-tripping a fully specified material, then reading the exported bytes:
+
+| | name | diffuse | specular | opacity | textures |
+|---|---|---|---|---|---|
+| FBX | yes | yes | **no** | yes | **written, not read back** |
+| Collada | yes | replaced by texture | yes | yes | yes |
+
+Two results needed understanding rather than working around:
+
+- **FBX textures ARE written** — the path appears three times in the exported
+  bytes — but assimp's FBX *importer* does not read material textures back.
+  That is a reader limitation; a DCC tool opening the file gets the reference.
+  So the test checks the **file**, not the round trip. Without looking at the
+  bytes I would have recorded "FBX loses textures", which is false and would
+  have sent someone hunting a non-existent exporter bug.
+- **Collada replaces the diffuse colour with the texture** when one is present.
+  That is the format's own semantics, not a loss on our side.
+
+Shininess is deliberately **not** asserted: FBX returned a default and Collada a
+0..128-style exponent. A single expected value would be wrong somewhere, and a
+test that encodes a wrong expectation is worse than no test.
+
+### A deliberate API choice
+`material` is `optional`. **Absent means the file carried none** — not that it
+carried a default — because a caller substituting its own default has to be able
+to tell those apart.
+
+### Verification
+ctest **408/408** in debug, release, ASan; TSan separately. Format clean.
+
+### Still open on import
+Skins. Geometry, names, placement and materials now; no rigging.
+
+---
+
 ## 2026-08-31 22:57:12 — Session 075 · **mixPoses, and a mutation that mutated nothing**
 
 ### The chunk
