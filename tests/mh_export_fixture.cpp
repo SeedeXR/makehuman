@@ -140,6 +140,21 @@ int main(int argc, char** argv) {
     }
     std::printf("expressions.glb: %zu blendshapes\n", units.size());
 
+    // The same set through the assimp SCENE path -- two entries, only the first
+    // carrying morphs. That is the shape `--blendshapes --export x.fbx` writes
+    // for a dressed character, and the field io::SceneEntry did not have until
+    // this session.
+    const std::vector<mh::io::SceneEntry> exprScene{
+        {rm.view(), "body", nullptr, nullptr, units},
+    };
+    if (const auto r =
+            mh::io::exportScene(out / "expressions.fbx", exprScene, mh::io::SceneFormat::FbxBinary);
+        !r) {
+        std::fprintf(stderr, "expressions fbx: %s\n", r.error().message().c_str());
+        return 1;
+    }
+    std::printf("expressions.fbx: %zu blendshapes\n", units.size());
+
     // The same rig and morphs through FBX. assimp's FBX writer was verified to
     // carry both, and Blender to read them back, before this was written.
     if (const auto r =

@@ -1715,11 +1715,25 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       the shipped mesh, where every dropped vertex sits at the END -- caught
       only by a synthetic mesh dropping from the middle; (b) a sort I added was
       dead code, because `groupNames()` already sorts (`TargetIndex.cpp:121`).
-- [ ] **The other formats still carry no blendshapes.** `io::SceneEntry` has no
-      `morphTargets` field, so FBX and USD drop them. The single-mesh
-      `exportScene` overload does take them (`SceneIO.h:142`) and
-      `tests/mh_export_fixture.cpp` proves assimp's FBX carries morphs, so this
-      is a field on `SceneEntry` plus its plumbing, not new capability.
+- [x] **FBX and Collada carry blendshapes too** (2026-09-02). `io::SceneEntry`
+      gained a `morphTargets` span and the multi-mesh `exportScene` attaches
+      them, so `--blendshapes --export x.fbx` works for a **dressed** character
+      -- previously the scene overload had no morph field at all, and the
+      single-mesh overload that did was unreachable the moment anything was worn.
+      One entry may carry morphs, exactly as one may carry the skin: a worn
+      proxy is re-fitted to the body, not blended. A second set is refused, and
+      so is a delta array that is not parallel to its entry's mesh.
+      The `aiAnimMesh` writer was extracted from the single-mesh path into
+      `attachMorphs`, so both paths share it rather than diverging.
+      **Blender, independently: 9/9 exports agree.** `expressions.fbx` matches
+      `expressions.glb` **key-for-key on all 34** -- our glTF writer and
+      assimp's FBX writer are independent implementations, so their agreeing is
+      a stronger statement than either matching an expectation. The body carries
+      34 deforming keys and the worn eyes carry none.
+- [ ] **USD still carries no blendshapes.** `writeUsdaScene` takes no morph
+      targets at all; UsdSkel `BlendShape` + `skel:blendShapeTargets` is a real
+      gap in the writer, not plumbing. `--blendshapes --export x.usda` says so
+      rather than writing an expressionless mesh.
 
 - [~] `QMainWindow` + `QDockWidget` — two docks, left/right areas, object names
       set so `saveState` actually restores. Nested and tabbed docking not yet.

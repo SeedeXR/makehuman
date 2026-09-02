@@ -1034,3 +1034,120 @@ TEST_CASE("an unrigged mesh reports no skin", "[io][import][skin]") {
     std::error_code ec;
     std::filesystem::remove(out, ec);
 }
+
+// --- Blendshapes in a multi-mesh scene --------------------------------------
+//
+// The scene overload carried no morph targets at all, so a dressed character's
+// FBX and Collada lost every expression: `--blendshapes` reached the file only
+// through GLB, and the moment the character wore anything even the single-mesh
+// FBX path was unreachable. The same shape as the skin gap fixed earlier -- a
+// field the scene struct simply did not have.
+//
+// One entry may carry morphs, exactly as one entry may carry a skin. A worn
+// proxy is re-fitted to the body rather than blended, so a second morph set is
+// a scene shape nothing needs and nothing tests.
+TEST_CASE("a multi-mesh scene carries morph targets on the right mesh",
+          "[io][scene][multimesh][morph]") {
+    const core::Mesh body  = quadAt(0.0F, "body");
+    const core::Mesh shirt = quadAt(3.0F, "shirt");
+    const auto rmBody      = core::RenderMesh::build(body);
+    const auto rmShirt     = core::RenderMesh::build(shirt);
+
+    // A delta big enough that a dropped or zeroed morph cannot look like this.
+    std::vector<foundation::Vec3> deltas(rmBody.view().vertexCount(),
+                                         foundation::Vec3{0.0F, 2.0F, 0.0F});
+    const std::vector<foundation::MorphTarget> morphs{{"smile", deltas}};
+
+    std::vector<io::SceneEntry> scene{{rmBody.view(), "body", nullptr, nullptr, morphs},
+                                      {rmShirt.view(), "shirt", nullptr, nullptr, {}}};
+
+    const auto out = tempFile("scene_morph", ".fbx");
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+    REQUIRE(io::exportScene(out, scene, io::SceneFormat::FbxBinary).has_value());
+
+#if defined(MH_HAVE_ASSIMP)
+    Assimp::Importer importer;
+    const aiScene* sc = importer.ReadFile(out.string(), 0);
+    REQUIRE(sc != nullptr);
+    REQUIRE(sc->mNumMeshes == 2);
+
+    const aiMesh* withMorph = nullptr;
+    const aiMesh* without   = nullptr;
+    for (unsigned i = 0; i < sc->mNumMeshes; ++i) {
+        (sc->mMeshes[i]->mNumAnimMeshes > 0 ? withMorph : without) = sc->mMeshes[i];
+    }
+    REQUIRE(withMorph != nullptr);
+    REQUIRE(without != nullptr);  // the morph did NOT leak onto the other mesh
+
+    REQUIRE(withMorph->mNumAnimMeshes == 1);
+    // "smile.smile", not "smile": assimp's FBX round trip names the channel
+    // after the deformer that holds it, so the name comes back prefixed. Ours
+    // is the part before the dot -- matched as a prefix, the same way the mesh
+    // names are matched above, rather than pinning assimp's naming.
+    CHECK(std::string(withMorph->mAnimMeshes[0]->mName.C_Str()).rfind("smile", 0) == 0);
+    REQUIRE(withMorph->mAnimMeshes[0]->mNumVertices == withMorph->mNumVertices);
+
+    // The export scale is derived, not assumed: the source quad is 2 units
+    // wide, so whatever `SceneExportOptions::unit` defaults to (centimetres
+    // today, hence x10) this still reads the delta correctly.
+    float minX = withMorph->mVertices[0].x;
+    float maxX = minX;
+    for (unsigned v = 0; v < withMorph->mNumVertices; ++v) {
+        minX = std::min(minX, withMorph->mVertices[v].x);
+        maxX = std::max(maxX, withMorph->mVertices[v].x);
+    }
+    const float scale = (maxX - minX) / 2.0F;
+    REQUIRE(scale > 0.0F);
+
+    // aiAnimMesh holds ABSOLUTE positions, so the key must sit 2 scaled units
+    // above the base -- not at the base (delta dropped) and not at 2*scale
+    // (delta written as if it were the position).
+    const aiVector3D base = withMorph->mVertices[0];
+    const aiVector3D key  = withMorph->mAnimMeshes[0]->mVertices[0];
+    INFO("scale " << scale << ", base.y " << base.y << ", key.y " << key.y);
+    CHECK(key.y == Catch::Approx(base.y + 2.0F * scale).margin(1e-3));
+    CHECK(key.x == Catch::Approx(base.x).margin(1e-3));
+#endif
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("a scene refuses a second morph set, and a mismatched one",
+          "[io][scene][multimesh][morph]") {
+    const core::Mesh body  = quadAt(0.0F, "body");
+    const core::Mesh shirt = quadAt(3.0F, "shirt");
+    const auto rmBody      = core::RenderMesh::build(body);
+    const auto rmShirt     = core::RenderMesh::build(shirt);
+
+    const std::vector<foundation::Vec3> ok(rmBody.view().vertexCount(),
+                                           foundation::Vec3{0.0F, 1.0F, 0.0F});
+    const std::vector<foundation::MorphTarget> a{{"a", ok}};
+
+    SECTION("two entries with morphs") {
+        const std::vector<foundation::Vec3> ok2(rmShirt.view().vertexCount(),
+                                                foundation::Vec3{0.0F, 1.0F, 0.0F});
+        const std::vector<foundation::MorphTarget> b{{"b", ok2}};
+        const std::vector<io::SceneEntry> scene{{rmBody.view(), "body", nullptr, nullptr, a},
+                                                {rmShirt.view(), "shirt", nullptr, nullptr, b}};
+        const auto out = tempFile("scene_two_morph", ".fbx");
+        const auto r   = io::exportScene(out, scene, io::SceneFormat::FbxBinary);
+        REQUIRE_FALSE(r.has_value());
+        CHECK(r.error().kind == io::SceneIoErrorKind::InvalidSkinOrMorph);
+        std::error_code ec;
+        std::filesystem::remove(out, ec);
+    }
+
+    SECTION("deltas that do not describe the entry's mesh") {
+        // Refused rather than written: a short delta array read past its end,
+        // and a long one silently moves the wrong vertices.
+        const std::vector<foundation::Vec3> tooShort(2, foundation::Vec3{});
+        const std::vector<foundation::MorphTarget> bad{{"bad", tooShort}};
+        const std::vector<io::SceneEntry> scene{{rmBody.view(), "body", nullptr, nullptr, bad}};
+        const auto out = tempFile("scene_bad_morph", ".fbx");
+        const auto r   = io::exportScene(out, scene, io::SceneFormat::FbxBinary);
+        REQUIRE_FALSE(r.has_value());
+        CHECK(r.error().kind == io::SceneIoErrorKind::InvalidSkinOrMorph);
+        std::error_code ec;
+        std::filesystem::remove(out, ec);
+    }
+}

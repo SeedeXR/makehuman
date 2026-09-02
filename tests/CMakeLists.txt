@@ -225,13 +225,36 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
     set_tests_properties(app_blendshapes_named PROPERTIES FIXTURES_REQUIRED app_bs_file)
 
-    # Every other format says what it is dropping rather than writing an
-    # expressionless mesh in silence: only GltfSceneEntry has a morphTargets
-    # field.
+    # FBX too, through the assimp scene path. Verified in Blender: the body
+    # carries 34 deforming shape keys and the worn eyes carry NONE -- one entry
+    # may hold morphs, exactly as one entry may hold the skin.
+    add_test(NAME app_blendshapes_fbx COMMAND makehuman
+             --blendshapes
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_bs.fbx)
+    set_tests_properties(app_blendshapes_fbx PROPERTIES
+        PASS_REGULAR_EXPRESSION "34 blendshapes"
+        FIXTURES_SETUP app_bs_fbx_file)
+    add_test(NAME app_blendshapes_fbx_named COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_bs.fbx
+             # FBX stores a blend shape as a deformer named after the target.
+             "-DKEYS=eye-left-closure;mouth-compression;BlendShape"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_blendshapes_fbx_named PROPERTIES
+        FIXTURES_REQUIRED app_bs_fbx_file)
+
+    # The formats that genuinely cannot carry them say so rather than writing an
+    # expressionless mesh in silence. OBJ has no blendshape channel at all, and
+    # writeUsdaScene takes no morphs -- UsdSkel BlendShape is a real gap.
     add_test(NAME app_blendshapes_obj_warns COMMAND makehuman
              --blendshapes
              --export ${CMAKE_CURRENT_BINARY_DIR}/app_bs.obj)
     set_tests_properties(app_blendshapes_obj_warns PROPERTIES
+        PASS_REGULAR_EXPRESSION "carries no blendshapes")
+
+    add_test(NAME app_blendshapes_usda_warns COMMAND makehuman
+             --blendshapes
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_bs.usda)
+    set_tests_properties(app_blendshapes_usda_warns PROPERTIES
         PASS_REGULAR_EXPRESSION "carries no blendshapes")
 
     add_test(NAME app_rig_glb COMMAND makehuman

@@ -864,9 +864,14 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     std::transform(ext.begin(), ext.end(), ext.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
-    if (!morphs.empty() && ext != ".glb") {
+    // OBJ and USD have no blendshape channel here: OBJ's format has none at
+    // all, and `writeUsdaScene` takes no morphs (UsdSkel BlendShape is a real
+    // gap, not a plumbing one). glTF and the assimp formats carry them.
+    static constexpr std::array kMorphCapable{".glb", ".fbx", ".dae"};
+    if (!morphs.empty() && std::ranges::find(kMorphCapable, ext) == kMorphCapable.end()) {
         std::fprintf(stderr,
-                     "%s carries no blendshapes; writing %zu expression targets needs .glb\n",
+                     "%s carries no blendshapes; writing %zu expression targets needs "
+                     ".glb, .fbx or .dae\n",
                      ext.c_str(), morphs.size());
     }
 
@@ -955,8 +960,9 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     // everything worn travel together.
     const auto sceneEntries = [&] {
         std::vector<mh::io::SceneEntry> scene;
-        // Only the body is rigged; exactly one entry may carry a skin.
-        scene.push_back({body, "body", allDressed ? &*bodyMat : nullptr, skin});
+        // Only the body is rigged and only the body has expressions; exactly
+        // one entry may carry each.
+        scene.push_back({body, "body", allDressed ? &*bodyMat : nullptr, skin, morphs});
         for (const auto& [group, proxy] : worn) {
             scene.push_back({proxy.rm.view(), group.toLower().toStdString(),
                              allDressed ? &*proxy.material : nullptr, nullptr});

@@ -260,6 +260,38 @@ void attachSkin(aiMesh* am, const foundation::SkinView& skin, float scale, float
     }
 }
 
+/// Writes @p morphTargets onto @p am as aiAnimMeshes.
+///
+/// aiAnimMesh holds ABSOLUTE positions, not deltas, so the base is added back.
+/// Sending deltas produces a shape key that collapses the model to near the
+/// origin when it is enabled.
+void attachMorphs(aiMesh* am, const foundation::RenderView& rm,
+                  std::span<const foundation::MorphTarget> morphTargets, float scale,
+                  float groundOffset) {
+    if (morphTargets.empty()) return;
+    am->mNumAnimMeshes = static_cast<unsigned>(morphTargets.size());
+    am->mAnimMeshes    = allocArray<aiAnimMesh*>(morphTargets.size());
+    am->mMethod        = aiMorphingMethod_MORPH_NORMALIZED;
+
+    for (size_t t = 0; t < morphTargets.size(); ++t) {
+        auto* anim = new aiAnimMesh();
+        anim->mName.Set(morphTargets[t].name);
+        anim->mWeight      = 0.0F;
+        anim->mNumVertices = static_cast<unsigned>(rm.vertexCount());
+        anim->mVertices    = allocArray<aiVector3D>(rm.vertexCount());
+        for (size_t v = 0; v < rm.vertexCount(); ++v) {
+            const Vec3& base = rm.coord[v];
+            const Vec3& d    = morphTargets[t].deltas[v];
+            // The delta takes the unit scale but not the ground offset -- that
+            // is already in the base position.
+            anim->mVertices[v] =
+                aiVector3D((base.x + d.x) * scale, (base.y + d.y) * scale + groundOffset,
+                           (base.z + d.z) * scale);
+        }
+        am->mAnimMeshes[t] = anim;
+    }
+}
+
 /// Adds @p skin's joint hierarchy under @p root, KEEPING the children it
 /// already has.
 ///
@@ -380,10 +412,28 @@ std::expected<SceneExportResult, SceneIoError> exportScene(const std::filesystem
         return std::unexpected(SceneIoError{SceneIoErrorKind::EmptyMesh, path.string(), {}});
     }
     size_t skinned = entries.size();
+    size_t morphed = entries.size();
     for (size_t i = 0; i < entries.size(); ++i) {
         const SceneEntry& e = entries[i];
         if (e.mesh.vertexCount() == 0 || e.mesh.indexCount() == 0) {
             return std::unexpected(SceneIoError{SceneIoErrorKind::EmptyMesh, path.string(), {}});
+        }
+        if (!e.morphTargets.empty()) {
+            if (morphed != entries.size()) {
+                return std::unexpected(SceneIoError{SceneIoErrorKind::InvalidSkinOrMorph,
+                                                    path.string(),
+                                                    "more than one entry carries morph targets"});
+            }
+            // Same check the single-mesh path makes: a delta array that is not
+            // parallel to its mesh reads past its end or moves wrong vertices.
+            for (const auto& t : e.morphTargets) {
+                if (t.deltas.size() != e.mesh.vertexCount()) {
+                    return std::unexpected(
+                        SceneIoError{SceneIoErrorKind::InvalidSkinOrMorph, path.string(),
+                                     t.name + ": wrong delta count in " + e.name});
+                }
+            }
+            morphed = i;
         }
         if (e.skin == nullptr) continue;
         if (skinned != entries.size()) {
@@ -443,6 +493,8 @@ std::expected<SceneExportResult, SceneIoError> exportScene(const std::filesystem
         if (entries[i].skin != nullptr) {
             attachSkin(scene->mMeshes[i], *entries[i].skin, scale, groundOffset);
         }
+        attachMorphs(scene->mMeshes[i], entries[i].mesh, entries[i].morphTargets, scale,
+                     groundOffset);
         vertices += entries[i].mesh.vertexCount();
         triangles += entries[i].mesh.indexCount() / 3;
     }
@@ -553,33 +605,7 @@ std::expected<SceneExportResult, SceneIoError> exportScene(
 
     if (skin != nullptr) attachSkin(am, *skin, scale, groundOffset);
 
-    // ---- morph targets -----------------------------------------------------
-    // aiAnimMesh holds ABSOLUTE positions, not deltas, so the base is added
-    // back. Sending deltas produces a shape key that collapses the model to
-    // near the origin when enabled.
-    if (!morphTargets.empty()) {
-        am->mNumAnimMeshes = static_cast<unsigned>(morphTargets.size());
-        am->mAnimMeshes    = allocArray<aiAnimMesh*>(morphTargets.size());
-        am->mMethod        = aiMorphingMethod_MORPH_NORMALIZED;
-
-        for (size_t t = 0; t < morphTargets.size(); ++t) {
-            auto* anim = new aiAnimMesh();
-            anim->mName.Set(morphTargets[t].name);
-            anim->mWeight      = 0.0F;
-            anim->mNumVertices = static_cast<unsigned>(rm.vertexCount());
-            anim->mVertices    = allocArray<aiVector3D>(rm.vertexCount());
-            for (size_t v = 0; v < rm.vertexCount(); ++v) {
-                const Vec3& base = rm.coord[v];
-                const Vec3& d    = morphTargets[t].deltas[v];
-                // The delta takes the unit scale but not the ground offset --
-                // that is already in the base position.
-                anim->mVertices[v] =
-                    aiVector3D((base.x + d.x) * scale, (base.y + d.y) * scale + groundOffset,
-                               (base.z + d.z) * scale);
-            }
-            am->mAnimMeshes[t] = anim;
-        }
-    }
+    attachMorphs(am, rm, morphTargets, scale, groundOffset);
 
     scene->mRootNode->mNumMeshes = 1;
     scene->mRootNode->mMeshes    = allocArray<unsigned>(1);

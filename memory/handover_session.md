@@ -2140,6 +2140,86 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-02 03:56:04 — Session 119 · **the dressed character was the one that lost its expressions**
+
+### The chunk
+Blendshapes through FBX and Collada. Session 118 shipped `--blendshapes` for
+GLB only, because `GltfSceneEntry` had a `morphTargets` field and
+`io::SceneEntry` did not.
+
+### The gap was worse than "FBX is missing a feature"
+The single-mesh `exportScene` overload has taken morph targets all along
+(`SceneIO.h:142`), and `mh_export_fixture` has proved since session 029 that
+assimp's FBX writer carries them and Blender reads them back. But `main.cpp`
+routes through `sceneEntries()` the moment the character wears anything -- and
+the default character wears eyes. So the working single-mesh path was
+unreachable in practice: every FBX the app could actually produce was
+expressionless.
+
+Same shape as the skin gap fixed earlier: `writeUsdaScene` took a skin all
+along and `main.cpp` passed none.
+
+### What shipped
+- `SceneEntry::morphTargets`, and the `aiAnimMesh` writer extracted out of the
+  single-mesh path into `attachMorphs` so both share one implementation rather
+  than diverging.
+- One entry may carry morphs, exactly as one may carry the skin -- a worn proxy
+  is re-fitted to the body, not blended. A second set is refused, and so is a
+  delta array not parallel to its entry's mesh (the same check the single-mesh
+  path already made).
+- `main.cpp` names the formats that genuinely cannot carry them. USD is now the
+  only one: `writeUsdaScene` takes no morphs, and UsdSkel `BlendShape` is a real
+  writer gap, not plumbing.
+
+### Two things the tests caught that I had wrong
+1. **My arithmetic, not the code.** I asserted the shape key sits `base.y + 2`
+   above the base and got 20. `SceneExportOptions::unit` defaults to
+   **centimetres**, so everything is scaled x10 and the right answer is
+   `base.y + 2*scale`. The test now DERIVES scale from the exported quad's known
+   2-unit width, so it survives a change to the default instead of pinning it.
+2. **assimp round-trips the channel name as `"smile.smile"`** -- FBX names the
+   channel after the deformer holding it. Matched as a prefix, the way the mesh
+   names already are, rather than pinning assimp's naming as if it were ours.
+
+### Read the output, not the tail of it
+I concluded `--export x.usda --blendshapes` printed no warning. It did: stderr
+is unbuffered, so the line appeared near the TOP of the interleaved output and
+`tail -5` cut it. **Third time this session** that truncating output produced a
+false conclusion (sessions 106 and 111 have the other two). Rule for next time:
+`grep` for the line, never `tail` for it.
+
+### Verification
+- Blender, third-party: **9/9 exports agree** (was 8/8). `expressions.fbx`
+  matches `expressions.glb` **key-for-key on all 34** -- two independent writers
+  agreeing is stronger than either matching an expectation, which is why the
+  expectation table is now defined ONCE and shared by both entries rather than
+  written twice where it could drift.
+- Body carries 34 deforming keys; the worn eyes carry **none**.
+- Three mutations, all caught: scene never attaches morphs; morphs attached to
+  every entry from `entries[0]`; delta-count validation removed.
+- 479/479 in debug, release, ASan and TSan. Benchmarks unchanged.
+- SonarQube: the first scan **failed** on `new_duplicated_lines_density` at
+  **35%** -- the two 34-key expectation dicts were byte-identical. A real
+  finding, and the fix made the intent explicit rather than suppressing it:
+  one table, referenced twice, because the two formats MUST agree. Now 0.0%,
+  gate OK.
+- CI green at `62a01c76`.
+
+### Files changed
+`include/makehuman/io/SceneIO.h`, `src/io/SceneIO.cpp`, `src/app/main.cpp`,
+`tests/golden/test_scene_io.cpp`, `tests/CMakeLists.txt`,
+`tests/mh_export_fixture.cpp`, `tools/blender_check.py`,
+`tools/run_blender_validation.sh`, `memory/todo.md`,
+`memory/handover_session.md`.
+
+### Next
+USD blendshapes are a real writer gap (UsdSkel `BlendShape` +
+`skel:blendShapeTargets`), not plumbing. Everything else open in M8 needs the
+owner: skin textures, the `mixamorig:*` naming decision, the `--skin` ->
+`--litsphere` rename, and the two accessibility items.
+
+---
+
 ## 2026-09-02 03:29:12 — Session 118 · **the app exported no expressions, and 102 files that are really 34**
 
 ### The chunk

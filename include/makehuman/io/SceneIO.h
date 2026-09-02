@@ -110,6 +110,10 @@ struct SceneEntry {
     /// worn proxies follow it by being re-fitted, not skinned -- and a second
     /// skeleton in the graph is a scene shape nothing needs and nothing tests.
     const foundation::SkinView* skin{nullptr};
+    /// Only ONE entry may carry morph targets, for the same reason as the skin:
+    /// a worn proxy is re-fitted to the body rather than blended, so a second
+    /// set is a scene shape nothing needs and nothing tests.
+    std::span<const foundation::MorphTarget> morphTargets{};
 };
 
 /// Writes every entry as its own mesh in one scene.
