@@ -944,3 +944,84 @@ TEST_CASE("a transparent mesh blends with what is behind it", "[render][blend]")
 
     std::filesystem::remove(texPath);
 }
+
+// Pan has to reach the IMAGE, not just the Camera struct.
+//
+// This test exists because a mutation proved it was needed: making
+// `updateCamera` ignore `panX`/`panY` entirely left all 493 tests green. The
+// viewport tests check that dragging changes the camera, and nothing checked
+// that the camera changes the picture -- the same "built, never connected" gap
+// that has bitten this port repeatedly.
+TEST_CASE("panning moves the model in the rendered image", "[render][pan]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    const std::vector<render::MeshInstance> one{{sc.rm.view(), settings().litsphere}};
+
+    auto s             = settings();
+    const auto centred = (*r)->render(one, s);
+    REQUIRE(centred.has_value());
+
+    // Positive panX must move the model to the RIGHT: coverage shifts out of
+    // the left half and into the right. A test that only asked "the image
+    // changed" would pass on a pan that moved it the wrong way.
+    s.camera.panX     = 6.0F;
+    const auto panned = (*r)->render(one, s);
+    REQUIRE(panned.has_value());
+
+    const int mid            = centred->width() / 2;
+    const double leftBefore  = coverage(*centred, s, 0, mid);
+    const double leftAfter   = coverage(*panned, s, 0, mid);
+    const double rightBefore = coverage(*centred, s, mid, centred->width());
+    const double rightAfter  = coverage(*panned, s, mid, panned->width());
+    INFO("left " << leftBefore << " -> " << leftAfter << ", right " << rightBefore << " -> "
+                 << rightAfter);
+    CHECK(leftAfter < leftBefore);
+    CHECK(rightAfter > rightBefore);
+
+    // And panning UP must not move it sideways, which catches a pan wired into
+    // the wrong matrix column.
+    auto up           = settings();
+    up.camera.panY    = 6.0F;
+    const auto lifted = (*r)->render(one, up);
+    REQUIRE(lifted.has_value());
+    const double liftedLeft  = coverage(*lifted, up, 0, mid);
+    const double liftedRight = coverage(*lifted, up, mid, lifted->width());
+    INFO("lifted left " << liftedLeft << " right " << liftedRight);
+    CHECK(std::abs(liftedLeft - liftedRight) < 0.02);
+}
+
+// Pan is EYE-space, not model-space, and only a rotated camera can tell.
+//
+// At the default yaw the two are the same axis, so a pan wired into the model
+// matrix instead of the view passes every check above -- measured: that
+// mutation survived until this test existed. Turn the model 90 degrees and a
+// model-space pan pushes it away from the camera instead of across the screen.
+TEST_CASE("pan follows the screen, not the model's own axes", "[render][pan]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    const std::vector<render::MeshInstance> one{{sc.rm.view(), settings().litsphere}};
+
+    auto s              = settings();
+    s.camera.yawDegrees = 90.0F;
+    const auto turned   = (*r)->render(one, s);
+    REQUIRE(turned.has_value());
+
+    s.camera.panX     = 6.0F;
+    const auto panned = (*r)->render(one, s);
+    REQUIRE(panned.has_value());
+
+    // Still to the right, exactly as at yaw 0.
+    const int mid           = turned->width() / 2;
+    const double leftBefore = coverage(*turned, s, 0, mid);
+    const double leftAfter  = coverage(*panned, s, 0, mid);
+    const double rightAfter = coverage(*panned, s, mid, panned->width());
+    INFO("yawed: left " << leftBefore << " -> " << leftAfter << ", right " << rightAfter);
+    CHECK(leftAfter < leftBefore);
+    CHECK(rightAfter > coverage(*turned, s, mid, turned->width()));
+}

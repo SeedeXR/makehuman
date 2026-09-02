@@ -336,3 +336,78 @@ TEST_CASE("a refused preset pushes no undo entry", "[ui][workspace][undo]") {
     CHECK_FALSE(w.applyWorkspacePreset(QStringLiteral("no such preset")));
     CHECK(stack->count() == 0);
 }
+
+// --- Camera pan ---------------------------------------------------------------
+//
+// The `.mhm` camera line holds a translation in slots 2..4 that this port wrote
+// as zeros, and the viewport had no pan at all: a model could only be orbited
+// and zoomed, never moved off centre.
+//
+// Middle drag pans, left drag still orbits. The reference binds pan to the
+// arrow keys (`core/mhmain.py:178-181`), but those already orbit here -- taking
+// them back would remove a working control to match a convention -- so pan went
+// on the button every DCC uses and nothing was lost.
+TEST_CASE("middle drag pans, left drag orbits", "[ui][viewport][pan]") {
+    mh::ui::ViewportWidget v(MH_SHADER_DIR);
+    v.resize(400, 300);
+    const mh::render::Camera start = v.camera();
+
+    const auto drag = [&v](Qt::MouseButton button, QPoint from, QPoint to) {
+        QMouseEvent press(QEvent::MouseButtonPress, QPointF(from), QPointF(from), QPointF(from),
+                          button, button, Qt::NoModifier);
+        QApplication::sendEvent(&v, &press);
+        QMouseEvent move(QEvent::MouseMove, QPointF(to), QPointF(to), QPointF(to), Qt::NoButton,
+                         button, Qt::NoModifier);
+        QApplication::sendEvent(&v, &move);
+    };
+
+    SECTION("middle drag moves the camera and leaves the angles alone") {
+        drag(Qt::MiddleButton, {100, 100}, {160, 140});
+        const mh::render::Camera c = v.camera();
+        CHECK(c.panX > start.panX);
+        // Screen y grows downward and the camera's does not, so dragging DOWN
+        // must decrease panY. Getting this backwards makes the model run away
+        // from the cursor.
+        CHECK(c.panY < start.panY);
+        CHECK(c.yawDegrees == start.yawDegrees);
+        CHECK(c.pitchDegrees == start.pitchDegrees);
+    }
+
+    SECTION("left drag still orbits and does not pan") {
+        drag(Qt::LeftButton, {100, 100}, {160, 140});
+        const mh::render::Camera c = v.camera();
+        CHECK(c.yawDegrees != start.yawDegrees);
+        CHECK(c.pitchDegrees != start.pitchDegrees);
+        CHECK(c.panX == start.panX);
+        CHECK(c.panY == start.panY);
+    }
+}
+
+TEST_CASE("panning scales with distance", "[ui][viewport][pan]") {
+    // Pan is a world-space offset seen through a perspective projection, so a
+    // fixed step per pixel crawls when far away and leaps when close. The same
+    // drag must cover the same fraction of the screen at any zoom.
+    const auto panFor = [](float distance) {
+        mh::ui::ViewportWidget v(MH_SHADER_DIR);
+        v.resize(400, 300);
+        mh::render::Camera c = v.camera();
+        c.distance           = distance;
+        v.setCamera(c);
+
+        const QPoint from(100, 100);
+        const QPoint to(200, 100);
+        QMouseEvent press(QEvent::MouseButtonPress, QPointF(from), QPointF(from), QPointF(from),
+                          Qt::MiddleButton, Qt::MiddleButton, Qt::NoModifier);
+        QApplication::sendEvent(&v, &press);
+        QMouseEvent move(QEvent::MouseMove, QPointF(to), QPointF(to), QPointF(to), Qt::NoButton,
+                         Qt::MiddleButton, Qt::NoModifier);
+        QApplication::sendEvent(&v, &move);
+        return v.camera().panX;
+    };
+
+    const float near = panFor(10.0F);
+    const float far  = panFor(100.0F);
+    REQUIRE(near > 0.0F);
+    INFO("near " << near << ", far " << far);
+    CHECK(far > near * 5.0F);  // 10x the distance, so nearly 10x the pan
+}

@@ -279,20 +279,41 @@ float narrowOr(double v, float fallback) {
 
 }  // namespace
 
+namespace {
+
+/// The reference clamps every pan to [-1, 1] (`lib/camera.py:608-610`).
+/// A non-finite value becomes 0: it is not a direction, so there is no edge to
+/// clamp it to.
+float clampTranslation(float v) noexcept {
+    if (!std::isfinite(v)) return 0.0F;
+    return std::clamp(v, -1.0F, 1.0F);
+}
+
+}  // namespace
+
 std::array<double, 6> mhmCameraFrom(const OrbitView& view) {
     const bool usable     = std::isfinite(view.distance) && view.distance > 0.0F;
     const double distance = static_cast<double>(usable ? view.distance : kDefaultOrbitDistance);
     const double pitch =
         static_cast<double>(narrowOr(static_cast<double>(view.pitchDegrees), 0.0F));
     const double yaw = static_cast<double>(narrowOr(static_cast<double>(view.yawDegrees), 0.0F));
-    return {pitch, yaw, 0.0, 0.0, 0.0, static_cast<double>(kDefaultOrbitDistance) / distance};
+    const auto pan   = [&view](size_t i) {
+        return static_cast<double>(clampTranslation(view.translation[i]));
+    };
+    return {pitch,  yaw,    pan(0),
+            pan(1), pan(2), static_cast<double>(kDefaultOrbitDistance) / distance};
 }
 
 OrbitView orbitFromMhmCamera(const std::array<double, 6>& camera) {
     OrbitView view;
     view.pitchDegrees = narrowOr(camera[0], 0.0F);
     view.yawDegrees   = narrowOr(camera[1], 0.0F);
-    // camera[2..4] is translation, which this renderer has no equivalent for.
+    // camera[2..4] is the pan, in fractions of the model's half-extents.
+    // narrowOr first, so a value that does not survive the double -> float
+    // narrowing becomes 0 rather than clamping to a hard +-1 it never meant.
+    for (size_t i = 0; i < 3; ++i) {
+        view.translation[i] = clampTranslation(narrowOr(camera[i + 2], 0.0F));
+    }
 
     // A tiny zoom makes the quotient overflow float long before it divides by
     // zero: 1e-38 already yields `inf`, and an infinite orbit distance renders

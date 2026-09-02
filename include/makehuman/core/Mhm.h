@@ -111,12 +111,23 @@ struct OrbitView {
     float pitchDegrees{0.0F};
     float yawDegrees{0.0F};
     float distance{kDefaultOrbitDistance};
+    /// Camera pan, in the FORMAT's units -- a fraction of the model's
+    /// half-extents, not decimetres.
+    ///
+    /// `lib/camera.py:544-546` multiplies the stored translation by the human's
+    /// half-width, half-height and half-depth, so 0.5 means "half a body-width
+    /// across" whatever size that body is. Storing world units here would write
+    /// a file MakeHuman 1.x reads as a pan of many body-widths.
+    ///
+    /// Clamped to [-1, 1], as `camera.py:608-610` does on every pan.
+    std::array<float, 3> translation{0.0F, 0.0F, 0.0F};
 };
 
 /// Packs an orbit view into the six numbers the format stores.
 ///
-/// Translation is written as zeros: this renderer has no camera pan, and
-/// inventing values would be worse than recording that there is none.
+/// Translation is clamped to the reference's [-1, 1] on the way out; a value
+/// outside it puts the model many body-widths off screen with no way back, in
+/// this viewer and in MakeHuman 1.x alike.
 ///
 /// A non-finite or non-positive distance falls back to the default rather than
 /// writing `inf`, which neither this loader nor MakeHuman 1.x can read back.

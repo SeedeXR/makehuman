@@ -2140,6 +2140,77 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-02 19:09:26 — Session 125 · **two pan mutations survived, and that was the finding**
+
+### The chunk
+Camera pan. The viewport could orbit and zoom but never move the model off
+centre, and the `.mhm` camera line's translation was written as zeros and read
+as nothing.
+
+### The binding was a real choice, made from the reference
+The reference binds pan to the **arrow keys** (`core/mhmain.py:178-181`). Those
+already orbit here -- a control added deliberately in an earlier session. Taking
+them back would remove something that works to match a convention, so pan went
+on **middle drag**, which was free and is what every DCC uses. Nothing was lost
+either way, and the reasoning is in the code.
+
+### The format's units are not ours
+`lib/camera.py:544-546` multiplies the stored translation by the human's
+half-extents, so the file holds a **fraction of the model's size**, clamped to
+[-1, 1] (`camera.py:608-610`). `OrbitView::translation` stores it that way and
+the app converts using the mesh bbox. Storing decimetres would have written a
+file MakeHuman 1.x reads as a pan of many body-widths -- a bug invisible from
+inside this port, since our own round trip would have been perfect.
+
+Slot 4 (z) is still carried from the loaded file rather than zeroed: the
+viewport pans in x and y only, so writing a zero would discard a depth offset
+the file legitimately holds.
+
+The **sign is negated on purpose** -- the reference pans by moving the camera's
+CENTRE, so +x aims right and the model appears to move left, while our pan
+translates the view. Reasoned from `camera.py:544`, **not measured against a
+running MakeHuman 1.x**, and labelled as such: the same standing as the zoom
+mapping, which is anchored on defaults and documented as "a sensible framing,
+not the identical one".
+
+### Two mutations survived, and both exposed the same gap
+This is the part worth remembering.
+
+1. **Making the renderer ignore `panX`/`panY` entirely left all 493 tests
+   green.** The viewport tests checked that dragging changes the *camera*;
+   nothing checked that the camera changes the *picture*. That is precisely the
+   "built, never connected" class this port has hit again and again -- and this
+   time the seam was inside a feature I was actively writing.
+2. **Wiring pan into the model matrix instead of the view passed too.** At the
+   default yaw the two axes coincide, so every check agreed. A model-space pan
+   would move the body along its own axes -- dragging a turned model would push
+   it away from the camera instead of across the screen.
+
+Both are now covered by render tests that compare left/right coverage of the
+actual image, the second with the camera turned 90 degrees. Five mutations
+total, all five now caught.
+
+### Verification
+- 493/493 in debug, release, ASan and TSan.
+- Render tests assert the IMAGE moves, and in the right direction: positive
+  panX shifts coverage out of the left half into the right.
+- App-level save/reload ctests still green; benchmarks unchanged.
+- Sonar gate OK, 0 open issues. CI green at `f378ddd4` before pushing.
+
+### Files changed
+`include/makehuman/core/Mhm.h`, `src/core/Mhm.cpp`,
+`include/makehuman/render/SceneResources.h`, `src/render/SceneResources.cpp`,
+`include/makehuman/ui/ViewportWidget.h`, `src/ui/ViewportWidget.cpp`,
+`src/app/main.cpp`, `tests/golden/test_mhm_parity.cpp`,
+`tests/render/test_offscreen_render.cpp`, `tests/ui/test_ui.cpp`,
+`memory/todo.md`, `memory/handover_session.md`.
+
+### Next
+This was the last M1-M8 item actionable without the owner. Everything still
+open needs a decision, an asset, or hardware -- see the report.
+
+---
+
 ## 2026-09-02 18:44:18 — Session 124 · **the same eight lines, in five places**
 
 ### The chunk

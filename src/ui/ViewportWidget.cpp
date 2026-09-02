@@ -147,10 +147,28 @@ void ViewportWidget::mousePressEvent(QMouseEvent* e) {
 }
 
 void ViewportWidget::mouseMoveEvent(QMouseEvent* e) {
-    if ((e->buttons() & Qt::LeftButton) == 0) return;
+    const Qt::MouseButtons held = e->buttons();
+    if ((held & (Qt::LeftButton | Qt::MiddleButton)) == 0) return;
 
     const QPoint delta = e->pos() - d_->lastMouse;
     d_->lastMouse      = e->pos();
+
+    // MIDDLE drag pans, LEFT drags orbits. The reference binds pan to the arrow
+    // keys (`core/mhmain.py:178-181`), but those already orbit here -- taking
+    // them back would remove a working control to match a convention. Middle
+    // drag was free, and is what every DCC uses.
+    if ((held & Qt::MiddleButton) != 0) {
+        // Scaled by distance so a drag moves the model the same fraction of the
+        // screen at every zoom: pan is a world-space offset seen through a
+        // perspective projection, so a fixed step crawls when far and leaps
+        // when close -- the same reason the wheel is multiplicative.
+        const float perPixel = d_->camera.distance * kPanPerPixel;
+        d_->camera.panX += static_cast<float>(delta.x()) * perPixel;
+        // Screen y grows downward; the camera's does not.
+        d_->camera.panY -= static_cast<float>(delta.y()) * perPixel;
+        update();
+        return;
+    }
 
     d_->camera.yawDegrees += static_cast<float>(delta.x()) * 0.5F;
     d_->camera.pitchDegrees += static_cast<float>(delta.y()) * 0.5F;

@@ -604,6 +604,45 @@ void recordProxy(mh::core::MhmFile& doc, const std::string& slot, const std::str
     recordLine(doc, slot, name.empty() ? std::string{} : name + " " + uuid);
 }
 
+/// The model's half-extents, which is what the `.mhm` camera translation is
+/// measured in (`lib/camera.py:544-546`).
+///
+/// Zero on any axis for a degenerate mesh, and callers must treat that as "no
+/// pan expressible" rather than dividing by it.
+mh::foundation::Vec3 halfExtents(const mh::core::Mesh& mesh) {
+    if (mesh.coord().empty()) return {0.0F, 0.0F, 0.0F};
+    mh::foundation::Vec3 lo = mesh.coord().front();
+    mh::foundation::Vec3 hi = lo;
+    for (const mh::foundation::Vec3& v : mesh.coord()) {
+        lo = {std::min(lo.x, v.x), std::min(lo.y, v.y), std::min(lo.z, v.z)};
+        hi = {std::max(hi.x, v.x), std::max(hi.y, v.y), std::max(hi.z, v.z)};
+    }
+    return {(hi.x - lo.x) * 0.5F, (hi.y - lo.y) * 0.5F, (hi.z - lo.z) * 0.5F};
+}
+
+/// `.mhm` pan (fractions of half-extent) -> camera pan (mesh units).
+///
+/// **Negated on purpose.** The reference pans by moving the camera's CENTRE
+/// (`lib/camera.py:544`): pushing the centre +x aims further right, so the model
+/// appears to move LEFT. Our pan translates the VIEW, which moves the model
+/// +x on screen. Matching the reference's on-screen direction therefore means
+/// flipping the sign.
+///
+/// Reasoned from `camera.py:544`, not measured against a running MakeHuman 1.x
+/// -- the same standing as the zoom mapping, which is anchored on the defaults
+/// and documented as "a sensible framing, not the identical one".
+void applyPan(mh::render::Camera& c, const mh::core::OrbitView& view,
+              const mh::foundation::Vec3& half) {
+    c.panX = -view.translation[0] * half.x;
+    c.panY = -view.translation[1] * half.y;
+}
+
+/// The inverse. A zero half-extent yields zero rather than a division by it.
+std::array<float, 3> panToTranslation(const mh::render::Camera& c,
+                                      const mh::foundation::Vec3& half) {
+    return {half.x > 0.0F ? -c.panX / half.x : 0.0F, half.y > 0.0F ? -c.panY / half.y : 0.0F, 0.0F};
+}
+
 mh::core::MhmFile documentFor(const mh::core::Human& human, const mh::core::MhmFile& base,
                               const std::filesystem::path& path,
                               const std::optional<mh::core::OrbitView>& view, bool subdivided) {
@@ -623,10 +662,10 @@ mh::core::MhmFile documentFor(const mh::core::Human& human, const mh::core::MhmF
 
     out.camera    = mh::core::mhmCameraFrom(*view);
     out.hasCamera = true;
-    // This renderer has no camera pan, so mhmCameraFrom writes zeros there.
-    // Carrying the loaded translation forward keeps a value we cannot represent
-    // rather than silently flattening it to the origin.
-    if (base.hasCamera) std::copy_n(base.camera.begin() + 2, 3, out.camera.begin() + 2);
+    // Z is carried from the loaded file: the viewport pans in x and y only, so
+    // writing a zero there would discard a depth offset the file legitimately
+    // holds rather than record one we measured.
+    if (base.hasCamera) out.camera[4] = base.camera[4];
     return out;
 }
 
@@ -1775,6 +1814,7 @@ int main(int argc, char** argv) {
             c.yawDegrees = view.yawDegrees;
             c.distance   = std::clamp(view.distance, mh::ui::ViewportWidget::kMinDistance,
                                       mh::ui::ViewportWidget::kMaxDistance);
+            applyPan(c, view, halfExtents(*mesh));
             window.viewport()->setCamera(c);
         }
         subdivided = loaded->subdivide;
@@ -1794,7 +1834,9 @@ int main(int argc, char** argv) {
         const mh::render::Camera c = window.viewport()->camera();
         const mh::core::MhmFile doc =
             documentFor(human, document, std::filesystem::path(file.toStdString()),
-                        mh::core::OrbitView{c.pitchDegrees, c.yawDegrees, c.distance}, subdivided);
+                        mh::core::OrbitView{c.pitchDegrees, c.yawDegrees, c.distance,
+                                            panToTranslation(c, halfExtents(*mesh))},
+                        subdivided);
 
         if (const auto ok = mh::core::saveMhm(file.toStdString(), doc); !ok) {
             QMessageBox::warning(&window, QObject::tr("Cannot save"),

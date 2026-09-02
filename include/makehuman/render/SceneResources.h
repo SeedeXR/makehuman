@@ -43,6 +43,12 @@ struct Camera {
     float distance{45.0F};  ///< in mesh units; the base mesh is ~17 dm tall
     float yawDegrees{0.0F};
     float pitchDegrees{0.0F};
+    /// Pan, in MESH units, applied in eye space so it tracks the screen rather
+    /// than the model. The `.mhm` format stores this as a fraction of the
+    /// model's half-extents instead -- see `core::OrbitView::translation`; the
+    /// conversion belongs to whoever knows the model's size, not here.
+    float panX{0.0F};
+    float panY{0.0F};
 };
 
 enum class RenderErrorKind {

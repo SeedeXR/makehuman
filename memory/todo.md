@@ -1845,8 +1845,35 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       format holds doubles and this camera is float, so passing a view through
       unconditionally rewrote `-13.399999999999999` as `-13.399999618530273` on
       every save, for a framing nobody touched.
-- [ ] Camera *pan* has no equivalent here; the loaded translation is carried
-      forward untouched rather than flattened to the origin.
+- [x] **Camera pan** (2026-09-02). The viewport could orbit and zoom but never
+      move the model off centre, and the `.mhm` camera line's translation (slots
+      2..4) was written as zeros and read as nothing.
+      **Middle drag pans, left drag still orbits.** The reference binds pan to
+      the arrow keys (`core/mhmain.py:178-181`), but those already orbit here —
+      taking them back would remove a working control to match a convention, so
+      pan went on the button every DCC uses and nothing was lost.
+      Scaled by camera distance, so a drag covers the same fraction of the
+      screen at any zoom — the same reason the wheel is multiplicative.
+      **The format's units are not ours.** `lib/camera.py:544-546` multiplies
+      the stored translation by the human's half-extents, so the file holds a
+      FRACTION of the model's size, clamped to [-1, 1] (`camera.py:608-610`).
+      `OrbitView::translation` stores it that way and the app converts using the
+      mesh bbox; storing decimetres would write a file MakeHuman 1.x reads as a
+      pan of many body-widths. Slot 4 (z) is still carried from the loaded file
+      rather than zeroed — the viewport pans in x and y only.
+      The sign is **negated on purpose**: the reference pans by moving the
+      camera's centre, so +x aims right and the model appears to move left,
+      while our pan translates the view. Reasoned from `camera.py:544`, **not
+      measured against a running MakeHuman 1.x** — the same standing as the zoom
+      mapping.
+      **Five mutations, and two of them initially survived** — recorded because
+      the gap they exposed is this project's recurring one:
+      (a) making the renderer ignore `panX`/`panY` entirely left all 493 tests
+      green, because the viewport tests checked that dragging changes the
+      *camera* and nothing checked that the camera changes the *picture*;
+      (b) wiring pan into the model matrix instead of the view passed too, since
+      at the default yaw the two axes coincide. Both are now covered by render
+      tests, the second with the camera turned 90°.
 - [x] **Nested and tabbed docking with drop indicators** — `setDockNestingEnabled`
       plus `AllowNestedDocks | AllowTabbedDocks | GroupedDragging`. Without
       nesting a dock can only sit in one of the four areas, so there is nothing

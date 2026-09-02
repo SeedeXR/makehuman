@@ -39,6 +39,10 @@ public:
     /// Beyond this the model rolls past vertical, which is disorienting and has
     /// no use for a standing figure.
     static constexpr float kMaxPitchDegrees = 89.0F;
+    /// Pan per pixel, per unit of camera distance. Scaled by distance so a drag
+    /// covers the same fraction of the screen at every zoom; the constant is
+    /// roughly `tan(fovY/2) / viewportHeight` for the default 30 degree field.
+    static constexpr float kPanPerPixel = 0.002F;
 
     explicit ViewportWidget(std::filesystem::path shaderDir, QWidget* parent = nullptr);
     ~ViewportWidget() override;

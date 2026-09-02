@@ -361,7 +361,7 @@ TEST_CASE("the camera mapping round-trips and anchors on the reference's default
     const OrbitView defaultView{0.0F, 0.0F, kDefaultOrbitDistance};
     const auto packed = mhmCameraFrom(defaultView);
     CHECK_THAT(packed[5], WithinAbs(1.0, 1e-9));
-    // Translation is written as zeros: there is no camera pan to record.
+    // An unpanned view still writes zero translation.
     CHECK_THAT(packed[2], WithinAbs(0.0, 1e-12));
     CHECK_THAT(packed[3], WithinAbs(0.0, 1e-12));
     CHECK_THAT(packed[4], WithinAbs(0.0, 1e-12));
@@ -373,7 +373,8 @@ TEST_CASE("the camera mapping round-trips and anchors on the reference's default
 
     for (const OrbitView& view :
          {OrbitView{0.0F, 0.0F, kDefaultOrbitDistance}, OrbitView{-30.0F, 125.0F, 12.0F},
-          OrbitView{89.0F, -359.0F, 300.0F}}) {
+          OrbitView{89.0F, -359.0F, 300.0F},
+          OrbitView{10.0F, 20.0F, 30.0F, {0.25F, -0.5F, 0.75F}}}) {
         INFO("pitch " << view.pitchDegrees << " yaw " << view.yawDegrees << " distance "
                       << view.distance);
         const OrbitView back = orbitFromMhmCamera(mhmCameraFrom(view));
@@ -383,7 +384,55 @@ TEST_CASE("the camera mapping round-trips and anchors on the reference's default
                    WithinAbs(static_cast<double>(view.yawDegrees), 1e-4));
         CHECK_THAT(static_cast<double>(back.distance),
                    WithinAbs(static_cast<double>(view.distance), 1e-3));
+        for (size_t i = 0; i < 3; ++i) {
+            CHECK_THAT(static_cast<double>(back.translation[i]),
+                       WithinAbs(static_cast<double>(view.translation[i]), 1e-6));
+        }
     }
+}
+
+// --- Camera pan -------------------------------------------------------------
+//
+// The format's camera line holds a TRANSLATION in slots 2..4 that this port
+// wrote as zeros and read as nothing, so panning a loaded character and saving
+// it silently discarded the pan.
+//
+// The units are the reference's, not ours: `lib/camera.py:544-546` multiplies
+// the stored translation by the human's half-extents, so the value on disk is a
+// FRACTION of the model's size, clamped to [-1, 1] (`camera.py:608-610`).
+// Storing world decimetres here would write a file MakeHuman 1.x reads as a pan
+// of many body-widths.
+TEST_CASE("the camera translation survives a round trip, in the format's units", "[mhm]") {
+    const OrbitView panned{0.0F, 0.0F, kDefaultOrbitDistance, {0.5F, -0.25F, 0.125F}};
+    const auto packed = mhmCameraFrom(panned);
+    CHECK_THAT(packed[2], WithinAbs(0.5, 1e-9));
+    CHECK_THAT(packed[3], WithinAbs(-0.25, 1e-9));
+    CHECK_THAT(packed[4], WithinAbs(0.125, 1e-9));
+
+    const OrbitView back = orbitFromMhmCamera(packed);
+    CHECK_THAT(static_cast<double>(back.translation[0]), WithinAbs(0.5, 1e-6));
+    CHECK_THAT(static_cast<double>(back.translation[1]), WithinAbs(-0.25, 1e-6));
+    CHECK_THAT(static_cast<double>(back.translation[2]), WithinAbs(0.125, 1e-6));
+}
+
+TEST_CASE("an out-of-range translation is clamped, not written raw", "[mhm]") {
+    // `camera.py:608-610` clamps to [-1, 1] on every pan. A file holding 40
+    // would otherwise put the model forty body-widths off screen with no way
+    // back, in this viewer and in MakeHuman 1.x alike.
+    const auto packed = mhmCameraFrom({0.0F, 0.0F, kDefaultOrbitDistance, {40.0F, -40.0F, 0.0F}});
+    CHECK_THAT(packed[2], WithinAbs(1.0, 1e-9));
+    CHECK_THAT(packed[3], WithinAbs(-1.0, 1e-9));
+
+    const OrbitView back = orbitFromMhmCamera({0.0, 0.0, 40.0, -40.0, 0.0, 1.0});
+    CHECK(back.translation[0] == 1.0F);
+    CHECK(back.translation[1] == -1.0F);
+
+    // And a non-finite one falls back to zero rather than poisoning the view,
+    // the same rule the rotations already follow.
+    const OrbitView bad =
+        orbitFromMhmCamera({0.0, 0.0, std::numeric_limits<double>::infinity(), 1e300, 0.0, 1.0});
+    CHECK(bad.translation[0] == 0.0F);
+    CHECK(bad.translation[1] == 0.0F);
 }
 
 TEST_CASE("pitch and yaw go in the slots the format uses", "[mhm]") {

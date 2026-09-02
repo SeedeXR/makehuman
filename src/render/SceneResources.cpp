@@ -453,8 +453,10 @@ void SceneResources::updateCamera(QRhiResourceUpdateBatch* batch, const Camera& 
     QMatrix4x4 model;
     model.rotate(camera.pitchDegrees, 1.0F, 0.0F, 0.0F);
     model.rotate(camera.yawDegrees, 0.0F, 1.0F, 0.0F);
+    // Pan is applied in EYE space, after the model rotation, so dragging moves
+    // the model across the screen rather than along its own axes.
     QMatrix4x4 view;
-    view.translate(0.0F, 0.0F, -camera.distance);
+    view.translate(camera.panX, camera.panY, -camera.distance);
 
     const QMatrix4x4 modelView = view * model;
     const QMatrix4x4 mvp       = proj * modelView;
