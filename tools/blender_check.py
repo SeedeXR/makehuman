@@ -80,6 +80,23 @@ EXPECT = {
             "nose-base-up": 294,
         },
     },
+    # A POSED export, written by the application: T-pose, geometry baked and the
+    # skeleton re-fitted so the posed state IS the bind pose. Blender applies
+    # the armature itself and must move nothing -- checked generically by the
+    # armature_shift rule below, which is the real assertion here.
+    #
+    # `tallest` is the arm SPAN (1.6863), not the height (1.6630): a T-pose is
+    # wider than it is tall, and `tallest_extent` is max(extents). Reading it as
+    # a height here would look like a 1.4% error that is not there.
+    #
+    # Counts are the compacted, masked export the app writes -- 15,593 vertices
+    # across body + eyes, of which 14,517 are skinned -- not the fixture's raw
+    # 21,833.
+    "posed.glb": {
+        "vertices": 15593, "triangles": 28796, "tallest": 1.686274, "uv_layers": 1,
+        "bones": 163, "armatures": 1, "skinned": 14517, "vertex_groups": 163,
+    },
+
     # The SHIPPED blendshape set -- what `makehuman --blendshapes` writes: the
     # 34 expression units, each blended across african/asian/caucasian by the
     # character's macro factors. NOT the 102 `.target` files on disk, which are
@@ -156,6 +173,22 @@ for line in sys.stdin:
             f"vertex groups {d.get('vertex_groups')} != {want['vertex_groups']}")
     if "skinned" in want and d.get("skinned_vertices") != want["skinned"]:
         problems.append(f"skinned vertices {d.get('skinned_vertices')} != {want['skinned']}")
+    # Applying the armature must not move the mesh -- posed or not.
+    #
+    # GltfWriter derives BOTH the joint node transforms and the inverse-bind
+    # matrices from one scaled-global array (GltfWriter.cpp:330-374) precisely so
+    # they cannot disagree, which makes the armature a no-op by construction.
+    # Measured 9e-06 on posed.glb and rigged.glb. Break that single source --
+    # unscaled IBMs against scaled nodes -- and the shift is 8.38, so this has
+    # teeth rather than passing by default.
+    #
+    # A file that fails here is double-deformed in every DCC while our own tests,
+    # which never apply an armature, all stay green.
+    if "armature_shift" in d and d["armature_shift"] > 1e-4:
+        problems.append(
+            f"applying the armature moves the mesh by {d['armature_shift']} "
+            f"-- the joint node transforms and the inverse-bind matrices disagree")
+
     if "shape_keys" in want:
         got = {k["name"]: k["moved"] for k in d.get("shape_keys", [])}
         for key, moved in want["shape_keys"].items():

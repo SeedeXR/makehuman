@@ -35,6 +35,28 @@ mkdir -p "$out"
 echo "exporting to $out"
 "$fixture" "$out"
 
+# A POSED export, through the application rather than the fixture: posing is an
+# app-level sequence and the point is to check the file a user actually gets.
+#
+# Measured, not assumed: the geometry is baked into the pose (POSITION bounds go
+# from +-0.526 to +-0.843 in x) AND the exported skeleton follows it (41 of 163
+# joint node matrices differ from the rest export, by up to 0.62). Blender then
+# applies the armature itself and moves the mesh by 9e-06 -- a no-op. So the
+# file is self-consistent: the posed state IS its bind pose.
+#
+# The corollary matters for what this harness can and cannot check: because a
+# DCC's own skinning is a no-op on our exports, Blender CANNOT independently
+# verify LBS from them. That needs an export carrying rest geometry with a posed
+# armature, which is an interchange-semantics decision, not a validation gap.
+app="$repo/build/macos-arm64-release/src/app/makehuman"
+if [ -x "$app" ]; then
+    "$app" --pose tpose --export "$out/posed.glb" >/dev/null 2>&1 \
+        && echo "posed.glb: T-pose, baked and re-bound" \
+        || echo "warn: posed.glb export failed"
+else
+    echo "skip posed.glb: $app not built"
+fi
+
 # Pixar's own validator, on the stages we generate. It is the tool that caught
 # the SkelRoot requirement for blend shapes -- Blender imports the
 # non-conformant version without complaint, so it cannot be the one that tells
@@ -55,6 +77,6 @@ else
 fi
 
 "$BLENDER" --background --python "$repo/tools/blender_validate.py" -- \
-    "$out/base.obj" "$out/base.glb" "$out/expressions.glb" "$out/expressions.fbx" "$out/expressions.usda" "$out/base.fbx" "$out/rigged.glb" "$out/morphed.glb" "$out/rigged.fbx" "$out/base.usda" 2>/dev/null |
+    "$out/base.obj" "$out/posed.glb" "$out/base.glb" "$out/expressions.glb" "$out/expressions.fbx" "$out/expressions.usda" "$out/base.fbx" "$out/rigged.glb" "$out/morphed.glb" "$out/rigged.fbx" "$out/base.usda" 2>/dev/null |
     grep '^BLENDER_VALIDATE:' | sed 's/^BLENDER_VALIDATE://' |
     python3 "$repo/tools/blender_check.py"

@@ -2140,6 +2140,84 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-02 04:36:59 — Session 121 · **the check I set out to write turned out to be impossible**
+
+### The chunk
+"Extend Blender validation to a posed mesh, so LBS output is checked by a third
+party rather than only against the reference." The last M8 item actionable
+without the owner.
+
+### It cannot be done from our exports, and that is the finding
+I set out to have Blender skin our rig and compare its answer to our CPU LBS.
+Measured instead that **Blender's skinning is a no-op on every file we write**:
+applying the armature moves the mesh by **9e-06**.
+
+That is not a bug -- it is correct, and by design. `GltfWriter` derives the
+joint node transforms AND the inverse-bind matrices from one scaled-global array
+(`GltfWriter.cpp:330-374`) *"so they cannot disagree"*. A posed export bakes the
+pose into the vertices and exports the skeleton in the same state, so the posed
+state IS the bind pose and the skinning matrix is identity.
+
+Confirmed three ways: the posed GLB's evaluated mesh equals its raw mesh; its
+bbox matches the same pose exported to OBJ exactly (1.6863 x 0.3009 x 1.6630 m
+against 16.8628 x 3.0088 x 16.6301 dm -- the 10x is dm vs m); and 41 of 163
+joint node matrices differ from the rest export, so the skeleton genuinely
+followed the pose rather than being written at rest.
+
+**Consequence:** third-party LBS validation needs an export carrying **rest
+geometry with a posed armature**. That is an interchange-semantics decision --
+do exports bake, or ship a live rig? -- and belongs to the owner, not to me.
+
+### What shipped instead
+`posed.glb` in the harness (written by the **application**, since posing is an
+app-level sequence and the point is the file a user actually gets), plus a
+generic `armature_shift` check applied to **every** file: applying the armature
+must not move the mesh.
+
+**I verified it has teeth rather than assuming so.** My first mutation --
+deleting the re-fit in `poseInPlace` -- changed the output not at all, so the
+check looked like it might pass by default. The mutation that does break it is
+the one the design guards against: unscaled inverse-bind matrices against scaled
+node transforms. That yields a shift of **8.38** and two FAILs. A file failing
+this is double-deformed in every DCC while our own tests, which never apply an
+armature, all stay green.
+
+Harness: **11/11 exports agree** (was 10/10).
+
+### A comment I wrote and then had to correct
+My first version of the check said the failure meant *"the skeleton was not
+re-fitted to the posed geometry"* -- a mechanism I never confirmed and which my
+own mutation contradicted. Rewritten to say what was actually measured: the node
+transforms and the inverse-bind matrices disagree. The same correction went into
+the harness and validator comments.
+
+### Left explicitly unexplained
+The exported joint nodes follow the pose, but the only re-fit in the export path
+(`main.cpp:265`) fits the skeleton to the mesh *before* posing it -- and deleting
+it changes the exported file not at all. So `skin->globalRest` differs between a
+rest run and a posed run for a reason I did not locate. **Not a defect** -- the
+output is verified correct -- but recorded in `todo.md` as a thing to understand
+before anyone edits the pose path, rather than papered over with a plausible
+story.
+
+### Verification
+- 484/484 in debug, release and ASan. **No C++ changed** in this chunk (tools
+  only), so the previous TSan run covers identical code.
+- Sonar gate OK, duplication 0.0%.
+- `t-pose` note: `tallest_extent` for a T-pose is the arm SPAN (1.6863), not the
+  height (1.6630) -- recorded in the expectation, because reading it as a height
+  looks like a 1.4% error that is not there.
+
+### Files changed
+`tools/blender_validate.py`, `tools/blender_check.py`,
+`tools/run_blender_validation.sh`, `memory/todo.md`,
+`memory/handover_session.md`.
+
+### Next
+Nothing in M1-M8 is now actionable without the owner. See the report.
+
+---
+
 ## 2026-09-02 04:11:16 — Session 120 · **the validator and the DCC disagreed, and the DCC was wrong**
 
 ### The chunk

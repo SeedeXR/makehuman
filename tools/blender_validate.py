@@ -121,9 +121,36 @@ def describe(path: str) -> dict:
     extents = [round(hi[i] - lo[i], 6) for i in range(3)] if meshes else None
     tallest = max(extents) if extents else None
 
+    # Does applying the armature CHANGE the mesh?
+    #
+    # For every export we write, it must not: the exported skeleton is in the
+    # same state as the exported geometry, so skinning = global * inverse(bind)
+    # = identity. GltfWriter derives the node transforms and the inverse-bind
+    # matrices from ONE array to guarantee it (GltfWriter.cpp:330-374).
+    #
+    # A file that fails here is double-deformed in every DCC, while our own
+    # tests -- which never apply an armature -- all stay green.
+    #
+    # Measured as the largest vertex displacement between the evaluated mesh
+    # (modifiers applied, armature included) and the raw one.
+    armature_shift = 0.0
+    if armatures:
+        dg = bpy.context.evaluated_depsgraph_get()
+        for o in meshes:
+            raw = o.data.vertices
+            ev = o.evaluated_get(dg)
+            me = ev.to_mesh()
+            if len(me.vertices) == len(raw):
+                for a, b in zip(me.vertices, raw):
+                    d = (a.co - b.co).length
+                    if d > armature_shift:
+                        armature_shift = d
+            ev.to_mesh_clear()
+
     return {
         "file": path,
         "ok": True,
+        "armature_shift": round(armature_shift, 6),
         "meshes": len(meshes),
         "vertices": verts,
         "triangles": tris,

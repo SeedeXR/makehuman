@@ -2132,8 +2132,36 @@ agree today (geometry, UVs, and 169.5 cm under three unit conventions).
 - [x] Extended to **rigged** exports. Blender confirms 163 bones, 1 armature
       and **all 21,833 vertices skinned** — independently of our code and of the
       Python reference. 4/4 exports agree.
-- [ ] Extend it to a **posed** mesh, so LBS output is checked by a third party
-      rather than only against the reference.
+- [x] **Extended to a posed mesh** (2026-09-02) -- and the investigation
+      reframed the item. `posed.glb` (`--pose tpose`, written by the app, not the
+      fixture) now goes through the harness: **11/11 exports agree**.
+      **Measured:** the geometry IS baked into the pose (POSITION bounds go from
+      +-0.526 to +-0.843 in x) and the exported skeleton follows it (**41 of 163
+      joint node matrices differ** from the rest export, by up to 0.62). Blender
+      applying the armature moves the mesh by **9e-06** -- a no-op. The file is
+      self-consistent: the posed state IS its bind pose, and the posed geometry
+      matches the same pose exported to OBJ exactly (1.6863 x 0.3009 x 1.6630 m
+      against 16.8628 x 3.0088 x 16.6301 dm).
+      New generic check `armature_shift` in `blender_validate.py`, asserted for
+      every file. It has teeth: `GltfWriter` derives node transforms and
+      inverse-bind matrices from ONE scaled-global array
+      (`GltfWriter.cpp:330-374`) so they cannot disagree, and breaking that
+      single source (unscaled IBMs against scaled nodes) produces a shift of
+      **8.38** and two FAILs. A file that fails it is double-deformed in every
+      DCC while our own tests, which never apply an armature, all stay green.
+      **The original goal is NOT reachable from these files.** Because a DCC's
+      own skinning is a no-op on our exports, Blender cannot independently
+      compute LBS from them. That needs an export carrying **rest geometry with
+      a posed armature** -- an interchange-semantics decision (do exports bake,
+      or ship a live rig?), not a validation gap. **Owner question.**
+- [ ] **Unexplained, recorded rather than guessed:** the exported joint nodes
+      follow the pose (41 of 163 differ), but the only re-fit in the export path
+      is `poseInPlace` (`main.cpp:265`), which fits the skeleton to the mesh
+      *before* posing it -- and deleting that re-fit changes the exported file
+      not at all. So `skin->globalRest` differs between a rest and a posed run
+      for a reason not yet located. **Not a defect**: the output is verified
+      correct and self-consistent by Blender. But the mechanism should be
+      understood before anyone edits the pose path.
 
 ## Research notes (2026-08-29) — owner asked for modern approaches
 
