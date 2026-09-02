@@ -3,9 +3,11 @@
 // Writes the base mesh out through every exporter, for tools/blender_validate.py
 // to check independently. Separate from the test binary because it produces
 // files for another process rather than asserting anything itself.
+#include "makehuman/core/Blendshape.h"
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/core/RenderMesh.h"
 #include "makehuman/core/Target.h"
+#include "makehuman/core/TargetIndex.h"
 #include "makehuman/io/GltfWriter.h"
 #include "makehuman/io/ObjWriter.h"
 #include "makehuman/io/SceneIO.h"
@@ -115,6 +117,28 @@ int main(int argc, char** argv) {
         return 1;
     }
     std::printf("morphed.glb: %zu morph targets\n", morphs.size());
+
+    // The SHIPPED blendshape set, as `--blendshapes` writes it: the 34
+    // expression units, each blended across the three ethnicities. Separate
+    // from morphed.glb, which carries three hand-picked shape targets -- this
+    // one exists so Blender checks the path the app actually takes.
+    const mh::core::TargetIndex index =
+        mh::core::TargetIndex::build(std::filesystem::path(MH_DATA_DIR) / "targets");
+    const mh::core::MacroFactors factors;
+    const auto shapes =
+        mh::core::buildExpressionBlendshapes(index, factors, rm.vmap(), mesh->vertexCount());
+    std::vector<mh::foundation::MorphTarget> units;
+    units.reserve(shapes.size());
+    for (const auto& sh : shapes)
+        units.push_back({sh.name, sh.deltas});
+
+    if (const auto r =
+            mh::io::writeGlb(out / "expressions.glb", rm.view(), {}, nullptr, nullptr, units);
+        !r) {
+        std::fprintf(stderr, "expressions glb: %s\n", r.error().message().c_str());
+        return 1;
+    }
+    std::printf("expressions.glb: %zu blendshapes\n", units.size());
 
     // The same rig and morphs through FBX. assimp's FBX writer was verified to
     // carry both, and Blender to read them back, before this was written.

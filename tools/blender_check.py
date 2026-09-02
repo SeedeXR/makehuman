@@ -39,6 +39,55 @@ EXPECT = {
             "nose-base-up": 294,
         },
     },
+    # The SHIPPED blendshape set -- what `makehuman --blendshapes` writes: the
+    # 34 expression units, each blended across african/asian/caucasian by the
+    # character's macro factors. NOT the 102 `.target` files on disk, which are
+    # 34 units x 3 ethnicities; exporting those would give a DCC three
+    # near-duplicate keys per expression.
+    #
+    # The counts are Blender's own, measured 2026-09-02. Left/right pairs agree
+    # where the data is symmetric (eye closure 186/186) and differ where it is
+    # not (eyebrows-extern-up 72 left, 79 right) -- so a symmetry bug in the
+    # blend would show here rather than hide behind a total.
+    "expressions.glb": {
+        "vertices": 21833, "triangles": 36972, "tallest": 1.69455, "uv_layers": 1,
+        "shape_keys": {
+            "eye-left-closure": 186,
+            "eye-left-opened-up": 200,
+            "eye-left-slit": 284,
+            "eye-right-closure": 186,
+            "eye-right-opened-up": 200,
+            "eye-right-slit": 284,
+            "eyebrows-left-down": 54,
+            "eyebrows-left-extern-up": 72,
+            "eyebrows-left-inner-up": 40,
+            "eyebrows-left-up": 52,
+            "eyebrows-right-down": 54,
+            "eyebrows-right-extern-up": 79,
+            "eyebrows-right-inner-up": 40,
+            "eyebrows-right-up": 54,
+            "mouth-compression": 704,
+            "mouth-corner-puller": 738,
+            "mouth-depression": 631,
+            "mouth-depression-retraction": 584,
+            "mouth-elevation": 657,
+            "mouth-eversion": 392,
+            "mouth-open": 1445,
+            "mouth-parling": 237,
+            "mouth-part-later": 971,
+            "mouth-protusion": 732,
+            "mouth-pursing": 906,
+            "mouth-retraction": 646,
+            "mouth-upward-retraction": 778,
+            "neck-platysma": 854,
+            "nose-compression": 50,
+            "nose-depression": 269,
+            "nose-left-dilatation": 78,
+            "nose-left-elevation": 180,
+            "nose-right-dilatation": 78,
+            "nose-right-elevation": 180,
+        },
+    },
     "morphed.glb": {
         "vertices": 21833, "triangles": 36972, "tallest": 1.69455, "uv_layers": 1,
         "shape_keys": {

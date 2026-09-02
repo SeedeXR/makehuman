@@ -2140,6 +2140,108 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-02 03:29:12 — Session 118 · **the app exported no expressions, and 102 files that are really 34**
+
+### The chunk
+`--blendshapes`. `writeGlb` has taken morph targets since session 029 and
+`main.cpp` passed none -- the same built-and-never-wired pattern as
+`visibleVertexMask`, `writeUsdzScene`, `importScene` and `findByUuid`.
+
+### The part that was a decision, and why it wasn't
+`todo.md` parked this as "an open question the owner may want to settle": are
+there 34 blendshapes or 102? It is not a preference. `data/targets/expression/
+units/` holds 102 `.target` files as **34 units x 3 ethnicities** (african,
+asian, caucasian), confirmed three ways -- `ls` per directory (34/34/34), and
+`tests/golden/target_groups.txt`, which already recorded **34
+`expression-units-*` groups with 3 components each**, written long before this
+session. A character IS a blend of the three, so exporting 102 would hand a DCC
+three near-duplicate keys per expression, none of them the character's shape.
+
+Each key is therefore
+
+    delta = SUM over race of factors.value(race) * delta(race)
+
+which is `targetWeight`'s ordinary rule (`humanmodifier.py:644-652`) applied to
+a group whose only macro dependency is race. The three weights sum to 1, so it
+is a convex combination and needs no renormalisation. No new rule was invented.
+
+### What shipped
+- `core::buildExpressionBlendshapes` (`include/makehuman/core/Blendshape.h`) --
+  group discovery is data-driven, so a unit added to `data/` appears with no
+  code change and the count is asserted against the golden fixture, not
+  hardcoded.
+- `io::compactDeltas`. `Compact.h` had explicitly deferred it: *"nothing exports
+  morph targets yet, so there is no compactDeltas here. Adding one now would be
+  another capability built and never wired."* It now has a caller.
+- **GLB only.** `GltfSceneEntry` has a `morphTargets` field; `io::SceneEntry`
+  does not. FBX/USD/OBJ print what they are dropping rather than writing an
+  expressionless mesh in silence -- the pattern already used for the rig.
+- **Refused with `--subdivided`**, and not only by the caller: a subdivided vmap
+  names vertices past the base mesh's count, which `expandTargetToRenderVertices`
+  rejects (`Target.cpp:203`), so the function returns empty rather than deltas
+  on the wrong vertices. Tested directly, not just documented.
+
+### Two tests that passed on their own mutation
+Both found by mutating, not by reading.
+
+1. **An identity remap in `compactDeltas` was undetectable on the shipped
+   mesh.** Every vertex compaction drops sits at the END of the base mesh's
+   buffer, so `remap` IS the identity on survivors and `out[old]` equals
+   `out[new]` for every one of them. Even distinct per-vertex deltas could not
+   separate them. Caught only by the four-vertex synthetic mesh in
+   `test_compact.cpp` that drops from the MIDDLE. The real-data test that
+   proved nothing was deleted rather than kept for comfort.
+2. **A `std::ranges::sort` I added was dead code** -- `groupNames()` already
+   sorts (`TargetIndex.cpp:121`). Worse, the comment I wrote to justify it said
+   groupNames walks an unordered_map unsorted, which is false. Both removed; the
+   `is_sorted` assertion stays, since the guarantee matters wherever it comes
+   from.
+
+A third mutation (dropping `compactDeltas`'s bounds clamp) is invisible in
+debug and caught by **ASan** as a heap-buffer-overflow. Recorded because it
+means the clamp's test only has teeth under the sanitizer preset.
+
+### The amplitude scare, resolved by measurement
+Blender read `eye-left-closure` in the exported GLB as **0.0102** at 1 unit =
+1 m, where the `.target` files say **0.15915 dm**. That is 64%, and it looked
+like a silent loss -- 34 correctly-named keys that barely move.
+
+It is not. The builder produces exactly 0.15915 dm (asserted). The gap is the
+body face mask: the largest-moving eyelid vertices sit on helper geometry the
+mask hides, so compaction drops them with the faces that named them. The
+**visible** mesh's maximum is 0.102 dm -- exactly Blender's number x10. Both are
+now asserted, so a real loss would fail instead of shipping quietly.
+
+### Verification
+- Blender, third-party: **8/8 exports agree** (was 7/7). `expressions.glb` is
+  new and pinned per key -- all 34 present, all 34 deforming, left/right pairs
+  agreeing where the data is symmetric (186/186) and differing where it is not
+  (72/79), so a symmetry bug shows rather than hiding behind a total.
+- 474/474 in debug, release and ASan. TSan 474/474 -- run before the
+  `mh_export_fixture` edit, which touches a standalone tool binary that is not
+  in ctest and no library source.
+- Benchmarks unchanged (4.2x-59.5x over the Python baseline).
+- `--blendshapes` costs **+10 ms and +210 KB**. Dense would be 5.9 MB; the
+  sparse accessors from session 029 are what make 34 targets affordable.
+- SonarQube gate **OK**. CI green at `c2fae127`.
+
+### Files changed
+`include/makehuman/core/Blendshape.h`, `src/core/Blendshape.cpp`,
+`include/makehuman/io/Compact.h`, `src/io/Compact.cpp`, `src/app/main.cpp`,
+`src/core/CMakeLists.txt`, `tests/golden/test_blendshapes.cpp`,
+`tests/unit/test_compact.cpp`, `tests/mh_export_fixture.cpp`,
+`tests/CMakeLists.txt`, `tools/blender_check.py`,
+`tools/run_blender_validation.sh`, `memory/todo.md`,
+`memory/handover_session.md`.
+
+### Next
+Blendshapes through FBX and USD is now a `SceneEntry` field plus plumbing, not
+new capability -- `exportScene`'s single-mesh overload already takes them and
+the fixture proves assimp carries them. Everything else open in M8 needs the
+owner.
+
+---
+
 ## 2026-09-02 02:41:59 — Session 117 · **the slider announced 500 for a value of 0.00**
 
 ### The chunk

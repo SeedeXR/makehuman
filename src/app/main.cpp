@@ -4,6 +4,7 @@
 // and hands the UI a plain view, which is what lets mh_ui and mh_render stay
 // Apache-2.0.
 #include "makehuman/core/AssetIndex.h"
+#include "makehuman/core/Blendshape.h"
 #include "makehuman/core/Material.h"
 #include "makehuman/core/Mesh.h"
 #include "makehuman/core/Mhm.h"
@@ -851,13 +852,23 @@ std::optional<mh::rig::SkinData> exportSkin(const PoseRig& rig, const mh::core::
 ///        rather than writing a statue in silence.
 /// @param body the body's render geometry, already compacted. Every format
 ///        except OBJ writes from this.
+/// @param morphs blendshapes for the body. **Only GLB carries them**:
+///        `GltfSceneEntry` has a morphTargets field and `io::SceneEntry` does
+///        not, so the assimp and USD paths say what they are dropping rather
+///        than writing an expressionless mesh in silence.
 bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
                 const mh::foundation::RenderView& body, const std::map<QString, WornProxy>& worn,
                 std::span<const uint8_t> bodyMask, const mh::foundation::SkinView* skin,
-                const PoseRig& rig) {
+                const PoseRig& rig, std::span<const mh::foundation::MorphTarget> morphs = {}) {
     std::string ext = path.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    if (!morphs.empty() && ext != ".glb") {
+        std::fprintf(stderr,
+                     "%s carries no blendshapes; writing %zu expression targets needs .glb\n",
+                     ext.c_str(), morphs.size());
+    }
 
     const auto report = [&](const std::string& err) {
         if (err.empty()) {
@@ -977,7 +988,7 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
         std::vector<mh::io::GltfSceneEntry> scene;
         // Only the body is rigged, and writeGlbScene allows exactly one skinned
         // entry -- worn proxies follow the body by being re-fitted, not skinned.
-        scene.push_back({body, "body", allDressed ? &*bodyMat : nullptr, skin});
+        scene.push_back({body, "body", allDressed ? &*bodyMat : nullptr, skin, morphs});
         for (const auto& [group, proxy] : worn) {
             scene.push_back({proxy.rm.view(), group.toLower().toStdString(),
                              allDressed ? &*proxy.material : nullptr});
@@ -1087,6 +1098,10 @@ int main(int argc, char** argv) {
         QStringLiteral("Set a modifier before rendering or exporting, as "
                        "<full/name>=<value>. Repeatable."),
         QStringLiteral("modifier=value"));
+    const QCommandLineOption blendshapesOpt(
+        QStringLiteral("blendshapes"),
+        QStringLiteral("Export the 34 expression units as glTF morph targets (.glb only)."));
+
     const QCommandLineOption skinOpt(
         QStringLiteral("skin"),
         QStringLiteral("Litsphere to shade with: african, asian or caucasian (default)."),
@@ -1122,6 +1137,7 @@ int main(int argc, char** argv) {
     parser.addOption(rigOpt);
     parser.addOption(poseOpt);
     parser.addOption(exportOpt);
+    parser.addOption(blendshapesOpt);
     parser.addOption(inspectOpt);
     parser.addOption(shaderOpt);
     parser.addOption(shotOpt);
@@ -1410,8 +1426,40 @@ int main(int argc, char** argv) {
                 skinData->influences};
         }
 
+        // Blendshapes: 34 expression units, each blended across the three
+        // ethnicities by the character's own macro factors -- NOT the 102 files
+        // on disk, which would give a DCC three near-duplicate keys per unit.
+        std::vector<mh::core::Blendshape> shapes;
+        std::vector<std::vector<mh::foundation::Vec3>> shapeDeltas;
+        std::vector<mh::foundation::MorphTarget> morphs;
+        if (parser.isSet(blendshapesOpt)) {
+            if (subdivided) {
+                // Targets index the BASE mesh; a subdivided vmap indexes
+                // subdivided vertices, so expanding them would move the wrong
+                // vertices. Same reason the rig is refused above.
+                std::fprintf(stderr,
+                             "a subdivided mesh cannot carry blendshapes; "
+                             "exporting without them\n");
+            } else {
+                shapes = mh::core::buildExpressionBlendshapes(index, human.factors(), rm.vmap(),
+                                                              mesh->vertexCount());
+                shapeDeltas.reserve(shapes.size());
+                morphs.reserve(shapes.size());
+                for (auto& sh : shapes) {
+                    // Deltas are per render vertex, so they move with the
+                    // compaction or every one past the first dropped vertex
+                    // lands on the wrong vertex.
+                    shapeDeltas.push_back(
+                        mh::io::compactDeltas(sh.deltas, compact.remap, compact.coord.size()));
+                    morphs.push_back({sh.name, shapeDeltas.back()});
+                }
+                std::printf("%zu blendshapes (34 expression units, ethnicity-blended)\n",
+                            morphs.size());
+            }
+        }
+
         return exportMesh(parser.value(exportOpt).toStdString(), displayMesh(), compact.view(),
-                          wornProxies, bodyMask, skinView ? &*skinView : nullptr, rig)
+                          wornProxies, bodyMask, skinView ? &*skinView : nullptr, rig, morphs)
                    ? 0
                    : 1;
     }

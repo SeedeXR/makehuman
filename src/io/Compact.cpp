@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "makehuman/io/Compact.h"
 
+#include <algorithm>
+
 namespace mh::io {
 
 CompactedMesh compactUnusedVertices(const foundation::RenderView& mesh) {
@@ -59,6 +61,19 @@ std::pair<std::vector<uint32_t>, std::vector<float>> compactSkinAttributes(
         }
     }
     return {std::move(joints), std::move(weights)};
+}
+
+std::vector<foundation::Vec3> compactDeltas(std::span<const foundation::Vec3> deltas,
+                                            std::span<const uint32_t> remap,
+                                            size_t newVertexCount) {
+    std::vector<foundation::Vec3> out(newVertexCount, foundation::Vec3{});
+    const size_t n = std::min(deltas.size(), remap.size());
+    for (size_t old = 0; old < n; ++old) {
+        const uint32_t nu = remap[old];
+        if (nu == CompactedMesh::kDropped) continue;
+        if (nu < newVertexCount) out[nu] = deltas[old];
+    }
+    return out;
 }
 
 }  // namespace mh::io

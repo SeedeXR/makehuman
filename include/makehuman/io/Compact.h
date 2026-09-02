@@ -4,6 +4,7 @@
 #include "makehuman/foundation/Geometry.h"
 
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace mh::io {
@@ -64,9 +65,17 @@ struct CompactedMesh {
 [[nodiscard]] std::pair<std::vector<uint32_t>, std::vector<float>> compactSkinAttributes(
     const foundation::SkinView& skin, std::span<const uint32_t> remap, size_t newVertexCount);
 
-// A morph target's deltas are per render vertex too and will need the same
-// remap -- but nothing exports morph targets yet, so there is no compactDeltas
-// here. Adding one now would be another capability built and never wired,
-// which is the bug class this whole change belongs to.
+/// Applies @p remap to a morph target's per-render-vertex deltas.
+///
+/// Same remap, same reason as `compactSkinAttributes`: a delta array that is
+/// not renumbered alongside the vertex buffer moves the wrong vertices from the
+/// first dropped index onward. Written only once the app actually exported
+/// blendshapes -- until then it would have been another capability with no
+/// caller.
+///
+/// @param deltas one entry per OLD render vertex.
+[[nodiscard]] std::vector<foundation::Vec3> compactDeltas(std::span<const foundation::Vec3> deltas,
+                                                          std::span<const uint32_t> remap,
+                                                          size_t newVertexCount);
 
 }  // namespace mh::io

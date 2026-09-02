@@ -128,3 +128,42 @@ TEST_CASE("skin attributes follow the vertices they belong to", "[io][compact][s
     // ...and the dropped vertex's (9,9) must appear nowhere.
     CHECK(std::find(j.begin(), j.end(), 9U) == j.end());
 }
+
+TEST_CASE("a morph target's deltas follow the vertices they belong to", "[io][compact]") {
+    // The same four-vertex mesh: vertex 2 is unreachable, so the survivors are
+    // 0,1,3 -> 0,1,2. A vertex is dropped from the MIDDLE deliberately. On the
+    // shipped base mesh every dropped vertex happens to sit at the end, so the
+    // remap is the identity on survivors there and an `out[old]` bug is
+    // indistinguishable from `out[new]` -- measured: that mutation survived the
+    // real-data test and is caught only here.
+    const std::vector<foundation::Vec3> coord{{0, 0, 0}, {1, 0, 0}, {9, 9, 9}, {0, 1, 0}};
+    const std::vector<uint32_t> index{0, 1, 3};
+    const auto out = io::compactUnusedVertices(foundation::RenderView{coord, {}, {}, {}, index});
+    REQUIRE(out.coord.size() == 3);
+
+    // Distinct and non-zero per vertex, so a misplaced delta cannot coincide
+    // with the right one and a zeroed array cannot pass.
+    const std::vector<foundation::Vec3> deltas{{1, -1, 1}, {2, -2, 2}, {3, -3, 3}, {4, -4, 4}};
+
+    const auto moved = io::compactDeltas(deltas, out.remap, out.coord.size());
+    REQUIRE(moved.size() == 3);
+    CHECK(moved[0].x == 1.0F);
+    CHECK(moved[1].x == 2.0F);
+    CHECK(moved[2].x == 4.0F);  // vertex 3's delta, NOT vertex 2's
+    CHECK(moved[2].y == -4.0F);
+    CHECK(moved[2].z == 4.0F);
+}
+
+TEST_CASE("compactDeltas survives a short or oversized delta array", "[io][compact]") {
+    // Not speculative: `buildExpressionBlendshapes` sizes its deltas from
+    // `vmap()` while the remap comes from a RenderView, and a caller that mixed
+    // a subdivided mesh with a base-mesh target would otherwise read past the
+    // end.
+    const std::vector<uint32_t> remap{0, io::CompactedMesh::kDropped, 1};
+    const std::vector<foundation::Vec3> shortDeltas{{5, 5, 5}};
+
+    const auto out = io::compactDeltas(shortDeltas, remap, 2);
+    REQUIRE(out.size() == 2);
+    CHECK(out[0].x == 5.0F);
+    CHECK(out[1].x == 0.0F);  // no delta supplied, so no movement
+}

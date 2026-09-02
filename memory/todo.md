@@ -1684,12 +1684,42 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       as a control, so this rests on the identified mechanism rather than a
       demonstrated failure. The one observed failure remains a single
       observation.
-- [ ] **The application still exports no morph targets.** `writeGlb` takes them
-      and sparse accessors made a large set affordable, but `main.cpp` passes
-      none. Open question the owner may want to settle: the 102 files under
-      `data/targets/expression/units/` are **34 units x 3 ethnicities**
-      (african/asian/caucasian), so a correct blendshape export is 34 targets
-      blended by `Human::factors()`, not 102.
+- [x] **The application exports blendshapes** (`--blendshapes`, 2026-09-02).
+      `writeGlb` had taken morph targets all along and `main.cpp` passed none --
+      the same built-and-never-wired pattern as `visibleVertexMask`,
+      `writeUsdzScene` and the rest.
+      **34, not the 102 files on disk.** The files under
+      `data/targets/expression/units/` are **34 units x 3 ethnicities**, so each
+      shape key is the ethnic blend
+      `SUM over race of factors.value(race) * delta(race)` -- ordinary
+      `targetWeight` (`humanmodifier.py:644-652`) on a group whose only macro
+      dependency is race. The three weights sum to 1, so no renormalisation.
+      Verified independently: `tests/golden/target_groups.txt` already recorded
+      34 `expression-units-*` groups of 3 components each.
+      `core::buildExpressionBlendshapes` (`include/makehuman/core/Blendshape.h`)
+      + `io::compactDeltas`, which `Compact.h` had explicitly deferred until
+      something exported morph targets. It now has a caller.
+      **GLB only.** `GltfSceneEntry` has a `morphTargets` field and
+      `io::SceneEntry` does not, so FBX/USD/OBJ print what they are dropping
+      rather than writing an expressionless mesh in silence.
+      **Refused with `--subdivided`**: targets index the base mesh, and a
+      subdivided vmap names vertices past its end (`Target.cpp:203` rejects it,
+      so the result is empty rather than wrong). Tested both ways.
+      Cost: **+10 ms, +210 KB** for 34 targets (dense would be 5.9 MB -- the
+      sparse accessors are what make the set affordable).
+      Blender, independently: **34 shape keys, all 34 deforming**, left/right
+      pairs agreeing where the data is symmetric. Pinned per key in
+      `tools/blender_check.py`; validation now **8/8**.
+      **Two tests passed on their own mutation before this shipped**, both
+      fixed: (a) an identity remap in `compactDeltas` is indistinguishable on
+      the shipped mesh, where every dropped vertex sits at the END -- caught
+      only by a synthetic mesh dropping from the middle; (b) a sort I added was
+      dead code, because `groupNames()` already sorts (`TargetIndex.cpp:121`).
+- [ ] **The other formats still carry no blendshapes.** `io::SceneEntry` has no
+      `morphTargets` field, so FBX and USD drop them. The single-mesh
+      `exportScene` overload does take them (`SceneIO.h:142`) and
+      `tests/mh_export_fixture.cpp` proves assimp's FBX carries morphs, so this
+      is a field on `SceneEntry` plus its plumbing, not new capability.
 
 - [~] `QMainWindow` + `QDockWidget` — two docks, left/right areas, object names
       set so `saveState` actually restores. Nested and tabbed docking not yet.

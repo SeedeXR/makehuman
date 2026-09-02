@@ -39,6 +39,7 @@ add_executable(mh_tests
     golden/test_body_pose.cpp
     golden/test_slider_layout.cpp
     golden/test_obj_writer_parity.cpp
+    golden/test_blendshapes.cpp
     golden/test_gltf_writer.cpp
     golden/test_scene_io.cpp
     golden/test_roundtrip.cpp
@@ -208,6 +209,31 @@ if(MH_HAVE_RENDER)
     # A rigged export must actually be rigged. The app built the whole rig and
     # then wrote none of it -- 0 skins, 2 nodes, POSITION/NORMAL/TEXCOORD_0 and
     # nothing else -- while app_rig_superset passed on the announcement alone.
+    # Blendshapes reach the file. 34, not the 102 `.target` files on disk: they
+    # are 34 units x 3 ethnicities, and a character is a blend of the three.
+    add_test(NAME app_blendshapes COMMAND makehuman
+             --blendshapes
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_bs.glb)
+    set_tests_properties(app_blendshapes PROPERTIES
+        PASS_REGULAR_EXPRESSION "34 blendshapes"
+        FIXTURES_SETUP app_bs_file)
+    add_test(NAME app_blendshapes_named COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_bs.glb
+             # targetNames is what a DCC labels its shape keys with; without it
+             # they import as "Key 1", "Key 2" and are unusable.
+             "-DKEYS=targets;targetNames;eye-left-closure;mouth-compression"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_blendshapes_named PROPERTIES FIXTURES_REQUIRED app_bs_file)
+
+    # Every other format says what it is dropping rather than writing an
+    # expressionless mesh in silence: only GltfSceneEntry has a morphTargets
+    # field.
+    add_test(NAME app_blendshapes_obj_warns COMMAND makehuman
+             --blendshapes
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_bs.obj)
+    set_tests_properties(app_blendshapes_obj_warns PROPERTIES
+        PASS_REGULAR_EXPRESSION "carries no blendshapes")
+
     add_test(NAME app_rig_glb COMMAND makehuman
              --rig mixamo_superset
              --export ${CMAKE_CURRENT_BINARY_DIR}/app_rig.glb)
