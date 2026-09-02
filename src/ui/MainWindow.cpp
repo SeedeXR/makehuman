@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "makehuman/ui/MainWindow.h"
 
+#include "makehuman/ui/UndoCommands.h"
+
 #include "makehuman/ui/PanelTitleBar.h"
 #include "makehuman/ui/Theme.h"
 #include "makehuman/ui/ViewportWidget.h"
@@ -302,6 +304,12 @@ bool MainWindow::applyWorkspacePreset(const QString& name) {
     // bar and no way back except Reset Workspace.
     if (!shown.isEmpty() && visible.isEmpty()) return false;
 
+    // Captured before anything moves, so undo has somewhere to go back to.
+    // Everything above this line is a REFUSAL path: a preset that resolves to
+    // nothing must not leave an undo entry that does nothing, the same rule the
+    // pose commands follow.
+    const QByteArray before = saveState();
+
     // From the shipped layout each time, so switching preset to preset does not
     // accumulate whatever the previous one moved.
     restoreState(d_->defaultState);
@@ -314,6 +322,14 @@ bool MainWindow::applyWorkspacePreset(const QString& name) {
             resizeDocks({dock}, {380}, Qt::Horizontal);
         }
     }
+    // One undo step for the whole layout change. Without this, Cmd+1 followed by
+    // Cmd+Z left the new layout in place and undid whatever slider the user had
+    // touched before it -- the wrong thing, silently.
+    if (const QByteArray after = saveState(); after != before) {
+        d_->undo->push(new LayoutChangeCommand(name, before, after,
+                                               [this](const QByteArray& st) { restoreState(st); }));
+    }
+
     statusBar()->showMessage(tr("Workspace: %1").arg(name), 3000);
     return true;
 }

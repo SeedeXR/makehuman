@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <QByteArray>
 #include <QString>
 #include <QUndoCommand>
 
@@ -82,6 +83,37 @@ private:
     QString to_;
     int mergeId_{};
     std::function<void(const QString&, const QString&)> apply_;
+};
+
+/// A whole window layout, undoable.
+///
+/// The payload is `QMainWindow::saveState()`: one opaque QByteArray that
+/// carries dock positions, sizes AND visibility (asserted in the UI tests --
+/// if it carried only geometry, an undo would restore positions and leave docks
+/// hidden). So the command is two blobs and a restore, with no knowledge of what
+/// a dock or a preset is.
+///
+/// **`saveWorkspaceAs` is deliberately NOT undoable.** It writes a file and
+/// changes no window state; "undoing" it would mean deleting a file the user
+/// asked to save, which is not what an undo stack is for.
+class LayoutChangeCommand : public QUndoCommand {
+public:
+    /// @param apply called with a state blob for both undo and redo. It must not
+    ///        push further commands; see MainWindow::undoStack().
+    LayoutChangeCommand(const QString& name, QByteArray from, QByteArray to,
+                        std::function<void(const QByteArray&)> apply);
+
+    void undo() override;
+    /// Also called once by `QUndoStack::push`, when the layout is already in
+    /// `to_`. No guard for that: `restoreState` is idempotent, so the first
+    /// call is a no-op. A flag to skip it was measured to change nothing and
+    /// removed rather than kept as unverifiable cleverness.
+    void redo() override;
+
+private:
+    QByteArray from_;
+    QByteArray to_;
+    std::function<void(const QByteArray&)> apply_;
 };
 
 }  // namespace mh::ui

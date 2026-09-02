@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "makehuman/ui/UndoCommands.h"
 
+#include <QObject>
+
+#include <stdexcept>
+
 namespace mh::ui {
 
 ValueChangeCommand::ValueChangeCommand(QString key, float from, float to, int mergeId,
@@ -66,6 +70,23 @@ void ChoiceChangeCommand::undo() {
 
 void ChoiceChangeCommand::redo() {
     apply_(key_, to_);
+}
+
+LayoutChangeCommand::LayoutChangeCommand(const QString& name, QByteArray from, QByteArray to,
+                                         std::function<void(const QByteArray&)> apply)
+    : QUndoCommand(QObject::tr("Workspace: %1").arg(name)),
+      from_(std::move(from)),
+      to_(std::move(to)),
+      apply_(std::move(apply)) {
+    if (!apply_) throw std::invalid_argument("LayoutChangeCommand needs an apply callback");
+}
+
+void LayoutChangeCommand::undo() {
+    apply_(from_);
+}
+
+void LayoutChangeCommand::redo() {
+    apply_(to_);
 }
 
 }  // namespace mh::ui

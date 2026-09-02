@@ -2065,7 +2065,26 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       started costs three undo steps and three full skeleton reloads.
       A pose that fails to load is now probed *before* the command is pushed, so
       it never becomes an undo entry that does nothing.
-- [ ] Undo for workspace changes — presets and Save As bypass the stack.
+- [x] **Undo for workspace presets** (2026-09-02). `applyWorkspacePreset`
+      rewrote the layout and pushed nothing, so ⌘1 then ⌘Z left the new layout
+      in place and undid whatever slider the user had touched before it — the
+      wrong thing, silently.
+      `ui::LayoutChangeCommand` holds two `saveState()` blobs and a restore
+      callback, knowing nothing about docks or presets. That rests on one fact
+      asserted rather than assumed: **`saveState()` carries dock VISIBILITY, not
+      just geometry** — if it did not, an undo would restore positions and leave
+      docks hidden.
+      Captured *after* every refusal path, so a preset resolving to no live dock
+      still pushes nothing — the rule the pose commands already follow.
+      **`saveWorkspaceAs` is deliberately NOT undoable**, and the todo item's
+      framing was wrong to group them: it writes a file and changes no window
+      state. "Undo" for it would mean deleting a file the user asked to save.
+      Test trap recorded: `isVisible()` is false for every child of a window
+      that was never shown, so the visibility assertions use `isHidden()`, which
+      is the flag `setVisible` actually writes.
+      Three mutations; two caught. The third — dropping a first-call guard in
+      `redo()` — changed nothing, because `restoreState` is idempotent, so the
+      guard was **deleted** rather than kept as unverifiable cleverness.
 - [x] **Workspace presets derived from the registry.** A preset names
       *categories*, not dock object names, and `std::nullopt` means "every
       registered category" — so the first preset (Modelling) shows a category

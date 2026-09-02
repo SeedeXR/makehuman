@@ -2140,6 +2140,73 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-02 04:57:19 — Session 122 · **Cmd+Z after Cmd+1 undid the wrong thing**
+
+### The chunk
+Undo for workspace changes. `applyWorkspacePreset` rewrote the whole layout and
+pushed nothing, so ⌘1 followed by ⌘Z left the new layout in place and undid
+whatever slider the user had touched before it -- silently, and the wrong thing.
+
+### The todo item's framing was half wrong
+It read *"presets and Save As bypass the stack"*. Only the preset half is a bug.
+`saveWorkspaceAs` writes a file and changes **no window state**; "undoing" it
+would mean deleting a file the user asked to save, which is not what an undo
+stack is for. Fixed the preset, and recorded why the other half is correct as it
+stands rather than quietly implementing it.
+
+### What shipped
+`ui::LayoutChangeCommand` -- two `saveState()` blobs and a restore callback,
+knowing nothing about docks or presets, so it stays in the Apache-2.0 module.
+
+That design rests on one fact I asserted rather than assumed: **`saveState()`
+carries dock VISIBILITY, not just geometry.** If it carried only geometry, an
+undo would restore positions and leave docks hidden -- a plausible-looking bug
+nobody would trace back to the undo command. There is now a test whose only job
+is that property.
+
+The state is captured *after* every refusal path, so a preset resolving to no
+live dock still pushes nothing -- the rule the pose commands already follow
+("probed before the command is pushed").
+
+### A test trap worth remembering
+`isVisible()` is **false for every child of a window that was never shown**, so
+the first version of the visibility test failed on its own setup. `isHidden()`
+is the flag `setVisible` actually writes and `restoreState` restores, and is
+what the assertions use.
+
+### A guard I deleted rather than kept
+Three mutations, two caught (never pushing the command; capturing `before` after
+the layout already moved). The third -- removing a first-call guard in `redo()`,
+there because `QUndoStack::push` calls `redo()` when the layout is already
+applied -- changed **nothing**, because `restoreState` is idempotent. The
+comment I had written to justify it ("keeps a push from stealing focus or
+resizing a dock the user is mid-drag on") was a claim I had not verified. Guard
+and claim both removed.
+
+### CI: two runs were cancelled, and it was my doing
+`b4b4f890` and `aa2f9d32` both show **cancelled**, not green. The workflow sets
+`concurrency: cancel-in-progress: true` on `${{ github.workflow }}-${{ github.ref }}`,
+so pushing three commits inside 40 minutes cancelled each in-progress run. Not a
+failure, but it means those two commits were never CI-validated on their own;
+`87cff591` is the cumulative head and covers them. **Push spacing matters here**
+-- wait for the previous run before pushing again, or the evidence is destroyed
+rather than gathered.
+
+### Verification
+- 484/484 in debug, release, ASan and TSan.
+- Sonar gate OK, duplication 0.0%.
+- Benchmarks untouched (UI-only chunk).
+
+### Files changed
+`include/makehuman/ui/UndoCommands.h`, `src/ui/UndoCommands.cpp`,
+`src/ui/MainWindow.cpp`, `tests/ui/test_ui.cpp`, `memory/todo.md`,
+`memory/handover_session.md`.
+
+### Next
+See the report: what remains in M1-M8 needs the owner.
+
+---
+
 ## 2026-09-02 04:36:59 — Session 121 · **the check I set out to write turned out to be impossible**
 
 ### The chunk

@@ -10,6 +10,7 @@
 #include "makehuman/ui/ModifierPanel.h"
 #include "makehuman/ui/TaskRegistry.h"
 #include "makehuman/ui/ViewportWidget.h"
+#include "makehuman/ui/Workspace.h"
 
 #include <catch2/catch_session.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -26,6 +27,7 @@
 #include <QSettings>
 #include <QSlider>
 #include <QTemporaryDir>
+#include <QUndoStack>
 #include <QWheelEvent>
 
 using Catch::Matchers::WithinAbs;
@@ -270,4 +272,67 @@ TEST_CASE("a slider announces its value, not its tick", "[ui][a11y]") {
                                   << readout->text().toStdString() << ", tick " << slider->value());
     CHECK(after->text(QAccessible::Value) == readout->text());
     CHECK(after->text(QAccessible::Value) != QString::number(slider->value()));
+}
+
+// --- Workspace changes and the undo stack ------------------------------------
+//
+// `applyWorkspacePreset` rewrote the layout and pushed nothing, so Cmd+1
+// followed by Cmd+Z left the new layout in place and undid whatever slider the
+// user had touched before it -- the wrong thing, silently.
+//
+// `saveWorkspaceAs` is deliberately NOT undoable and is not covered here: it
+// writes a file and changes no window state. "Undo" for it would mean deleting
+// a file the user asked to save, which is not what an undo stack is for.
+TEST_CASE("saveState round-trips dock visibility", "[ui][workspace]") {
+    // The whole undo design below rests on this: one QByteArray must carry
+    // enough to restore a layout, visibility included. Asserted rather than
+    // assumed, because if it only carried geometry the undo would silently
+    // restore positions and leave docks hidden.
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
+    const auto docks = w.findChildren<QDockWidget*>();
+    REQUIRE(docks.size() >= 2);
+
+    // isHidden(), not isVisible(): this window is never shown, so every child
+    // reports isVisible() == false regardless of what was asked for. isHidden()
+    // is the flag setVisible() actually writes and restoreState() restores.
+    docks.front()->setVisible(false);
+    const QByteArray hidden = w.saveState();
+    docks.front()->setVisible(true);
+    REQUIRE(docks.front()->isHidden() == false);
+
+    REQUIRE(w.restoreState(hidden));
+    CHECK(docks.front()->isHidden() == true);
+}
+
+TEST_CASE("applying a workspace preset is one undo step", "[ui][workspace][undo]") {
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
+    auto* stack = w.undoStack();
+    REQUIRE(stack != nullptr);
+    REQUIRE(stack->count() == 0);
+
+    const QByteArray before = w.saveState();
+    const auto& presets     = mh::ui::workspacePresets();
+    REQUIRE(presets.size() >= 2);
+
+    REQUIRE(w.applyWorkspacePreset(presets[1].name));
+    const QByteArray after = w.saveState();
+    // The preset must actually change something, or nothing below is a test.
+    REQUIRE(after != before);
+    CHECK(stack->count() == 1);
+
+    stack->undo();
+    CHECK(w.saveState() == before);
+    stack->redo();
+    CHECK(w.saveState() == after);
+}
+
+// A preset that resolves to nothing is refused, and a refusal must not leave an
+// undo entry that does nothing -- the same rule the pose commands already
+// follow ("probed before the command is pushed").
+TEST_CASE("a refused preset pushes no undo entry", "[ui][workspace][undo]") {
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
+    auto* stack = w.undoStack();
+    REQUIRE(stack != nullptr);
+    CHECK_FALSE(w.applyWorkspacePreset(QStringLiteral("no such preset")));
+    CHECK(stack->count() == 0);
 }
