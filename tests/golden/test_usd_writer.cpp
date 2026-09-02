@@ -666,3 +666,129 @@ TEST_CASE("an unskinned stage is unchanged", "[io][usd][usdskel]") {
     std::error_code ec;
     std::filesystem::remove(out, ec);
 }
+
+// --- UsdSkel BlendShape -----------------------------------------------------
+//
+// The one format left carrying no expressions after glTF and FBX. Not a
+// plumbing gap like `SceneEntry::morphTargets` was: the writer had no
+// BlendShape output at all.
+//
+// The syntax was settled against `usdchecker` and Blender on a hand-written
+// three-vertex stage BEFORE any of this was generated, and the two disagreed in
+// a way that mattered:
+//
+//   * `usdchecker` REJECTS `SkelBindingAPI` on a prim not rooted at a SkelRoot
+//     -- "as required by the UsdSkel schema" -- even when there is no skeleton
+//     at all and only blend shapes.
+//   * Blender imports that same invalid stage happily, shape key and all.
+//
+// So the root becomes a SkelRoot whenever anything is bound, skeleton or not.
+// Blender alone would have shipped a stage Apple's validator rejects -- the
+// same lenience that once hid the loose-vertex bug in its OBJ importer.
+TEST_CASE("a stage with blend shapes is rooted at a SkelRoot, with no skeleton",
+          "[io][usd][usdskel][morph]") {
+    core::Mesh mesh = baseMesh();
+    const auto rm   = core::RenderMesh::build(mesh);
+
+    // One vertex moves. Sparse on purpose: `pointIndices` is what keeps a
+    // 34-target stage from being 34 dense copies of the vertex buffer.
+    std::vector<foundation::Vec3> deltas(rm.view().vertexCount(), foundation::Vec3{});
+    deltas[7] = foundation::Vec3{0.0F, 0.5F, 0.0F};
+    const std::vector<foundation::MorphTarget> morphs{{"smile", deltas}};
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_usd_blendshape.usda";
+    const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr, morphs}};
+    REQUIRE(io::writeUsdaScene(out, scene).has_value());
+
+    std::ifstream in(out);
+    const std::string t((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+
+    // No skin was passed, so the SkelRoot exists purely for the blend shapes.
+    CHECK(t.find("def SkelRoot ") != std::string::npos);
+    CHECK(t.find("def Skeleton ") == std::string::npos);
+    CHECK(t.find("prepend apiSchemas = [\"SkelBindingAPI\"]") != std::string::npos);
+    CHECK(t.find("uniform token[] skel:blendShapes = [\"smile\"]") != std::string::npos);
+    CHECK(t.find("rel skel:blendShapeTargets = [</") != std::string::npos);
+    CHECK(t.find("def BlendShape \"smile\"") != std::string::npos);
+
+    // Sparse: ONE offset and ONE index, not 21,833 of each. A dense write would
+    // still be valid USD and would still animate -- and would make the file
+    // unusable at 34 targets.
+    //
+    // The index is asserted exactly; the offset only by SHAPE. Its value takes
+    // the unit scale (`UsdWriteOptions::unit` defaults to metres, so 0.5 dm
+    // becomes 0.05) and pinning the scaled literal here would pin the default
+    // rather than the sparsity this test is about.
+    CHECK(t.find("uniform int[] pointIndices = [7]") != std::string::npos);
+
+    // From the OPENING bracket of the ARRAY, not from the key: the key itself
+    // contains "vector3f[]", so searching for ']' from the key finds the type's
+    // own bracket and yields an empty slice that passes nothing. The joints
+    // assertion above hits the same trap.
+    const std::string kOffsetsKey = "uniform vector3f[] offsets = [";
+    const auto keyAt              = t.find(kOffsetsKey);
+    REQUIRE(keyAt != std::string::npos);
+    const auto offAt  = keyAt + kOffsetsKey.size() - 1;
+    const auto offEnd = t.find(']', offAt);
+    REQUIRE(offEnd != std::string::npos);
+    const std::string offsets = t.substr(offAt, offEnd - offAt);
+    INFO(offsets);
+    CHECK(std::count(offsets.begin(), offsets.end(), '(') == 1);  // exactly one moved vertex
+    CHECK(offsets.find(", 0)") != std::string::npos);             // z stayed put
+    CHECK(offsets.find("(0, ") != std::string::npos);             // x stayed put
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("a stage refuses a second blend shape set, and a mismatched one",
+          "[io][usd][usdskel][morph]") {
+    core::Mesh mesh = baseMesh();
+    const auto rm   = core::RenderMesh::build(mesh);
+    const std::vector<foundation::Vec3> ok(rm.view().vertexCount(), foundation::Vec3{});
+    const std::vector<foundation::MorphTarget> a{{"a", ok}};
+    const auto out = std::filesystem::temp_directory_path() / "mh_usd_bs_bad.usda";
+    std::error_code ec;
+
+    SECTION("two entries carrying blend shapes") {
+        const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr, a},
+                                                   {rm.view(), "shirt", nullptr, a}};
+        const auto r = io::writeUsdaScene(out, scene);
+        REQUIRE_FALSE(r.has_value());
+        CHECK(r.error().kind == io::UsdWriteErrorKind::InvalidMorphTarget);
+    }
+
+    SECTION("deltas that do not describe the entry's mesh") {
+        const std::vector<foundation::Vec3> tooShort(3, foundation::Vec3{});
+        const std::vector<foundation::MorphTarget> bad{{"bad", tooShort}};
+        const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr, bad}};
+        const auto r = io::writeUsdaScene(out, scene);
+        REQUIRE_FALSE(r.has_value());
+        CHECK(r.error().kind == io::UsdWriteErrorKind::InvalidMorphTarget);
+    }
+    std::filesystem::remove(out, ec);
+}
+
+// A target that moves nothing is still written, with empty arrays. Emitting a
+// BlendShape prim whose name is listed in `skel:blendShapes` but which does not
+// exist would make the stage inconsistent; dropping the name instead would
+// renumber every target after it, and glTF/FBX keep theirs.
+TEST_CASE("a blend shape that moves nothing is still a valid target", "[io][usd][usdskel][morph]") {
+    core::Mesh mesh = baseMesh();
+    const auto rm   = core::RenderMesh::build(mesh);
+    const std::vector<foundation::Vec3> none(rm.view().vertexCount(), foundation::Vec3{});
+    const std::vector<foundation::MorphTarget> morphs{{"still", none}};
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_usd_bs_empty.usda";
+    const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr, morphs}};
+    REQUIRE(io::writeUsdaScene(out, scene).has_value());
+
+    std::ifstream in(out);
+    const std::string t((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    CHECK(t.find("def BlendShape \"still\"") != std::string::npos);
+    CHECK(t.find("uniform vector3f[] offsets = []") != std::string::npos);
+    CHECK(t.find("uniform int[] pointIndices = []") != std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}

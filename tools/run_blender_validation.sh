@@ -35,7 +35,26 @@ mkdir -p "$out"
 echo "exporting to $out"
 "$fixture" "$out"
 
+# Pixar's own validator, on the stages we generate. It is the tool that caught
+# the SkelRoot requirement for blend shapes -- Blender imports the
+# non-conformant version without complaint, so it cannot be the one that tells
+# you. expressions.usda deliberately has NO skeleton, which is the case the
+# application cannot produce because it always builds a rig.
+if command -v usdchecker >/dev/null 2>&1; then
+    for stage in "$out/base.usda" "$out/expressions.usda"; do
+        if usdchecker "$stage" >/dev/null 2>&1; then
+            echo "ok   $(basename "$stage"): usdchecker validates"
+        else
+            echo "FAIL $(basename "$stage"): usdchecker rejects the stage"
+            usdchecker "$stage" 2>&1 | grep -v "Coding Error" | head -5
+            exit 1
+        fi
+    done
+else
+    echo "skip usdchecker: not installed"
+fi
+
 "$BLENDER" --background --python "$repo/tools/blender_validate.py" -- \
-    "$out/base.obj" "$out/base.glb" "$out/expressions.glb" "$out/expressions.fbx" "$out/base.fbx" "$out/rigged.glb" "$out/morphed.glb" "$out/rigged.fbx" "$out/base.usda" 2>/dev/null |
+    "$out/base.obj" "$out/base.glb" "$out/expressions.glb" "$out/expressions.fbx" "$out/expressions.usda" "$out/base.fbx" "$out/rigged.glb" "$out/morphed.glb" "$out/rigged.fbx" "$out/base.usda" 2>/dev/null |
     grep '^BLENDER_VALIDATE:' | sed 's/^BLENDER_VALIDATE://' |
     python3 "$repo/tools/blender_check.py"

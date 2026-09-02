@@ -2140,6 +2140,95 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-02 04:11:16 — Session 120 · **the validator and the DCC disagreed, and the DCC was wrong**
+
+### The chunk
+UsdSkel `BlendShape`. The last format carrying no expressions, and unlike FBX
+last session this was a real writer gap rather than a missing struct field.
+
+### The finding, and why probing first mattered
+Before generating anything I hand-wrote a three-vertex stage and ran it past
+two independent tools. They disagreed:
+
+* **`usdchecker` REJECTS** `SkelBindingAPI` on a prim not rooted at a
+  `SkelRoot` -- *"as required by the UsdSkel schema"* -- **even when there is no
+  skeleton at all and only blend shapes**.
+* **Blender imports that same invalid stage happily**, shape key and all.
+
+Our writer emitted `SkelRoot` only when a skin was present. Had I validated with
+Blender alone -- the habit this repo has built -- I would have shipped a stage
+Apple's own validator rejects, and every check would have been green. This is
+the **second** time Blender's lenience has hidden a defect; the first was loose
+vertices sailing through its OBJ importer.
+
+The root is now a `SkelRoot` whenever anything is bound, skeleton or not.
+
+### What shipped
+- `UsdSceneEntry::morphTargets`; `BlendShape` child prims with
+  `uniform token[] skel:blendShapes` and `rel skel:blendShapeTargets`.
+- **Sparse** via `pointIndices` -- the same reason glTF uses sparse accessors. A
+  dense `offsets` array is equally valid USD and animates identically, and would
+  make a 34-target body 34 copies of the vertex buffer.
+- Same one-entry rule as the skin and the other two writers; a second set and a
+  mismatched delta count are both refused (`InvalidMorphTarget`).
+- Prim names take the one substitution USD forces: an identifier cannot hold a
+  hyphen, so `eye-left-closure` becomes `eye_left_closure`.
+- **OBJ is now the only format that says it drops blendshapes.**
+
+### A gap my own mutation testing exposed
+Mutating `needsSkelRoot` back to `skin != nullptr` was caught by the unit test
+but **NOT** by the app-level `usdchecker` ctest -- because the application always
+builds a rig, so its USD export has a skin and is a SkelRoot regardless. The
+automated check did not cover the case the finding was about.
+
+Closed by giving `mh_export_fixture` an `expressions.usda` with **no skeleton**
+and having `run_blender_validation.sh` run `usdchecker` on it. Verified by
+re-applying the mutation: the harness now fails.
+
+### Three counts that looked wrong and were not
+Blender read `eye_left_closure` as moving **115** vertices where the fixture's
+GLB says **186**. I measured instead of assuming: the app's own GLB reports
+**115** too. 186 is the uncompacted fixture mesh; 115 is the compacted export.
+All three formats agree exactly, on all 34 keys, once the `-`/`_` substitution
+is applied -- which is how the expectation is now written, derived from one
+table rather than a third copy of 34 literals.
+
+### Also
+I made the same unit-scale mistake as last session in a first draft of the USD
+test -- asserting an unscaled literal offset. Caught by the test, fixed by
+asserting the SHAPE (exactly one offset tuple, exact `pointIndices`) rather than
+a scaled value that would pin the default unit. And I hit the file's own
+documented trap: searching for `']'` from `"uniform vector3f[] offsets = ["`
+finds the type's bracket, not the array's.
+
+### Verification
+- `usdchecker`: **Success** on `.usda` and `.usdz`, and `usdchecker --arkit`
+  passes on the `.usdz` -- Apple's own profile. Now a ctest
+  (`app_blendshapes_usda_valid`, guarded on `find_program`).
+- Blender: **10/10 exports agree** (was 9/9). 34 keys on the body, **0 on the
+  worn eyes**, all 34 deforming.
+- Three mutations caught: Xform root; dense offsets; omitted
+  `blendShapeTargets`.
+- 484/484 in debug, release and ASan. Benchmarks unchanged.
+- Sonar gate OK, duplication 0.0%.
+- Cost: 0.21 s and 3.2 MB (text; the GLB is 2.3 MB).
+
+### Files changed
+`include/makehuman/io/UsdWriter.h`, `src/io/UsdWriter.cpp`, `src/app/main.cpp`,
+`tests/golden/test_usd_writer.cpp`, `tests/CMakeLists.txt`,
+`tests/mh_export_fixture.cpp`, `tools/blender_check.py`,
+`tools/run_blender_validation.sh`, `memory/todo.md`,
+`memory/handover_session.md`.
+
+### Next
+Blendshapes are complete across every format that can carry them. Everything
+still open in M8 needs the owner: skin texture files, the `mixamorig:*` naming
+decision, the `--skin` -> `--litsphere` rename, and the two accessibility items
+(`reduceMotion()`'s true branch and the duplicate readout announcement), both of
+which need hardware this session cannot drive.
+
+---
+
 ## 2026-09-02 03:56:04 — Session 119 · **the dressed character was the one that lost its expressions**
 
 ### The chunk

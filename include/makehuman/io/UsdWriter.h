@@ -57,7 +57,14 @@ struct UsdWriteOptions {
     std::string primName{"MakeHuman"};
 };
 
-enum class UsdWriteErrorKind { CannotOpen, EmptyMesh, NonFiniteValue };
+enum class UsdWriteErrorKind {
+    CannotOpen,
+    EmptyMesh,
+    NonFiniteValue,
+    /// A blend shape's deltas are not parallel to its mesh, or more than one
+    /// entry carries a set.
+    InvalidMorphTarget,
+};
 
 struct UsdWriteError {
     UsdWriteErrorKind kind{};
@@ -79,6 +86,15 @@ struct UsdSceneEntry {
     foundation::RenderView mesh;
     std::string name{"mesh"};
     const foundation::MaterialDesc* material{nullptr};
+    /// UsdSkel blend shapes for this entry. Only ONE entry may carry a set, the
+    /// same rule the skin and the glTF/FBX writers follow: a worn proxy is
+    /// re-fitted to the body rather than blended.
+    ///
+    /// **Any set at all makes the root a `SkelRoot`**, skeleton or not.
+    /// `usdchecker` rejects `SkelBindingAPI` on a prim not rooted at one -- and
+    /// Blender imports that invalid stage without complaint, so it cannot be
+    /// the thing that tells you.
+    std::span<const foundation::MorphTarget> morphTargets{};
 };
 
 /// Writes every entry as its own `Mesh` prim under one `Xform`.

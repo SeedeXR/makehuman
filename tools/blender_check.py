@@ -97,6 +97,16 @@ EXPECT = {
     # the numbers twice would let them drift apart silently.
     "expressions.glb": dict(_EXPRESSION_MESH, shape_keys=_EXPRESSION_KEYS),
     "expressions.fbx": dict(_EXPRESSION_MESH, shape_keys=_EXPRESSION_KEYS),
+    # The same set again through UsdSkel BlendShape, with NO skeleton --
+    # the case the application cannot produce, because it always builds a rig.
+    # Key names carry the ONE substitution USD forces: a prim name is an
+    # identifier, so `eye-left-closure` becomes `eye_left_closure`. Derived
+    # rather than retyped, so the counts cannot drift from the other two and
+    # the renaming rule is stated in code instead of buried in 34 literals.
+    "expressions.usda": dict(
+        _EXPRESSION_MESH,
+        shape_keys={k.replace("-", "_"): v for k, v in _EXPRESSION_KEYS.items()},
+    ),
     "morphed.glb": {
         "vertices": 21833, "triangles": 36972, "tallest": 1.69455, "uv_layers": 1,
         "shape_keys": {

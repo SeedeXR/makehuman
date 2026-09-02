@@ -88,6 +88,7 @@ std::string UsdWriteError::message() const {
         case UsdWriteErrorKind::CannotOpen: k = "cannot open for writing"; break;
         case UsdWriteErrorKind::EmptyMesh: k = "mesh has no geometry"; break;
         case UsdWriteErrorKind::NonFiniteValue: k = "non-finite value"; break;
+        case UsdWriteErrorKind::InvalidMorphTarget: k = "invalid blend shape"; break;
     }
     std::string m = file + ": " + k;
     if (!detail.empty()) m += " (" + detail + ")";
@@ -111,6 +112,25 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
                                                      path.string(), "vertex position"});
             }
         }
+    }
+
+    // Blend shapes, under the same one-entry rule as the skin.
+    size_t morphed = entries.size();
+    for (size_t i = 0; i < entries.size(); ++i) {
+        if (entries[i].morphTargets.empty()) continue;
+        if (morphed != entries.size()) {
+            return std::unexpected(UsdWriteError{UsdWriteErrorKind::InvalidMorphTarget,
+                                                 path.string(),
+                                                 "more than one entry carries blend shapes"});
+        }
+        for (const auto& t : entries[i].morphTargets) {
+            if (t.deltas.size() != entries[i].mesh.vertexCount()) {
+                return std::unexpected(
+                    UsdWriteError{UsdWriteErrorKind::InvalidMorphTarget, path.string(),
+                                  t.name + ": wrong delta count in " + entries[i].name});
+            }
+        }
+        morphed = i;
     }
 
     std::ofstream out(path);
@@ -143,10 +163,14 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
     out << "    upAxis = \"" << (options.yUp ? "Y" : "Z") << "\"\n";
     out << ")\n\n";
 
-    // A skinned stage MUST be rooted at a SkelRoot: UsdSkel requires the
-    // skeleton and everything bound to it to live under one, and usdchecker
-    // reports the stage as non-conformant otherwise.
-    out << "def " << (skin != nullptr ? "SkelRoot" : "Xform") << " \"" << options.primName
+    // A stage that binds ANYTHING through UsdSkel -- a skeleton or only blend
+    // shapes -- MUST be rooted at a SkelRoot. usdchecker rejects SkelBindingAPI
+    // on a prim not rooted at one, "as required by the UsdSkel schema", even
+    // with no skeleton present. Verified on a hand-written three-vertex stage
+    // before this was generated -- and Blender imports the invalid Xform
+    // version happily, so it is not the tool that tells you.
+    const bool needsSkelRoot = skin != nullptr || morphed != entries.size();
+    out << "def " << (needsSkelRoot ? "SkelRoot" : "Xform") << " \"" << options.primName
         << "\"\n{\n";
 
     // ---- skeleton --------------------------------------------------------
@@ -320,16 +344,37 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
         // Only the FIRST entry is skinned -- the body. Clothing follows the
         // body through its own fit, not through the skeleton.
         const bool skinned = skin != nullptr && !jointPaths.empty() && &entry == entries.data();
+        const bool morphs  = !entry.morphTargets.empty();
+        // One API schema entry covers both: SkelBindingAPI carries the skeleton
+        // binding AND the blend shapes, so listing it twice would be invalid.
+        const bool skelBound = skinned || morphs;
 
         out << "    def Mesh \"" << entry.name << "\"\n";
-        if (entry.material != nullptr || skinned) {
+        if (entry.material != nullptr || skelBound) {
             out << "    (\n        prepend apiSchemas = [";
             if (entry.material != nullptr) out << "\"MaterialBindingAPI\"";
-            if (entry.material != nullptr && skinned) out << ", ";
-            if (skinned) out << "\"SkelBindingAPI\"";
+            if (entry.material != nullptr && skelBound) out << ", ";
+            if (skelBound) out << "\"SkelBindingAPI\"";
             out << "]\n    )\n";
         }
         out << "    {\n";
+        if (morphs) {
+            // The names a DCC shows, and the prims holding the offsets. Both
+            // are required and must agree: a name with no prim, or a prim not
+            // listed, makes the stage inconsistent.
+            out << "        uniform token[] skel:blendShapes = [";
+            for (size_t t = 0; t < entry.morphTargets.size(); ++t) {
+                out << (t != 0 ? ", " : "") << '"' << usdIdentifier(entry.morphTargets[t].name)
+                    << '"';
+            }
+            out << "]\n";
+            out << "        rel skel:blendShapeTargets = [";
+            for (size_t t = 0; t < entry.morphTargets.size(); ++t) {
+                out << (t != 0 ? ", " : "") << "</" << options.primName << "/" << entry.name << "/"
+                    << usdIdentifier(entry.morphTargets[t].name) << ">";
+            }
+            out << "]\n";
+        }
         if (skinned) {
             out << "        rel skel:skeleton = </" << options.primName << "/Skel>\n";
             const size_t infl = skin->influences != 0 ? skin->influences : 1;
@@ -397,6 +442,37 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
         // Without this a consumer may treat the mesh as a subdivision cage and
         // render a smoothed, shrunken body.
         out << "        uniform token subdivisionScheme = \"none\"\n";
+
+        // ---- blend shapes, as CHILD prims of the mesh --------------------
+        // Sparse via `pointIndices`: a dense `offsets` array would be valid and
+        // would animate identically, and would make a 34-target body 34 copies
+        // of the vertex buffer. The offsets take the unit scale but NOT the
+        // ground offset -- that is already in the points they are added to.
+        for (const auto& target : entry.morphTargets) {
+            out << "\n        def BlendShape \"" << usdIdentifier(target.name) << "\"\n";
+            out << "        {\n";
+            out << "            uniform vector3f[] offsets = [";
+            bool first = true;
+            for (size_t v = 0; v < target.deltas.size(); ++v) {
+                const Vec3& d = target.deltas[v];
+                if (d.x == 0.0F && d.y == 0.0F && d.z == 0.0F) continue;
+                out << (first ? "" : ", ") << "(" << num(d.x * s) << ", " << num(d.y * s) << ", "
+                    << num(d.z * s) << ")";
+                first = false;
+            }
+            out << "]\n";
+            out << "            uniform int[] pointIndices = [";
+            first = true;
+            for (size_t v = 0; v < target.deltas.size(); ++v) {
+                const Vec3& d = target.deltas[v];
+                if (d.x == 0.0F && d.y == 0.0F && d.z == 0.0F) continue;
+                out << (first ? "" : ", ") << v;
+                first = false;
+            }
+            out << "]\n";
+            out << "        }\n";
+        }
+
         out << "    }\n";
 
         vertices += mesh.vertexCount();

@@ -1730,10 +1730,31 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       assimp's FBX writer are independent implementations, so their agreeing is
       a stronger statement than either matching an expectation. The body carries
       34 deforming keys and the worn eyes carry none.
-- [ ] **USD still carries no blendshapes.** `writeUsdaScene` takes no morph
-      targets at all; UsdSkel `BlendShape` + `skel:blendShapeTargets` is a real
-      gap in the writer, not plumbing. `--blendshapes --export x.usda` says so
-      rather than writing an expressionless mesh.
+- [x] **USD carries blendshapes too** (2026-09-02) -- UsdSkel `BlendShape`
+      child prims, `uniform token[] skel:blendShapes` and
+      `rel skel:blendShapeTargets`. Sparse via `pointIndices`, the same reason
+      glTF uses sparse accessors. `.usda`, `.usd` and `.usdz` all carry them;
+      **OBJ is now the only format that says it drops them**, and its format has
+      no blendshape channel at all.
+      **The trap, found by probing before writing anything:** `usdchecker`
+      REJECTS `SkelBindingAPI` on a prim not rooted at a `SkelRoot` -- *"as
+      required by the UsdSkel schema"* -- **even with no skeleton and only blend
+      shapes**. Blender imports that same invalid stage happily, shape key and
+      all. So the root becomes a `SkelRoot` whenever anything is bound. Blender
+      alone would have shipped a stage Apple's validator rejects; this is the
+      second time its lenience has hidden a defect (the first was loose vertices
+      in its OBJ importer).
+      Prim names take the one substitution USD forces -- an identifier cannot
+      hold a hyphen, so `eye-left-closure` becomes `eye_left_closure`.
+      **`usdchecker` is now in the automated gate** (`app_blendshapes_usda_valid`,
+      guarded on `find_program`), and `run_blender_validation.sh` runs it on both
+      stages. The **no-skeleton** case -- which the app cannot produce, because
+      it always builds a rig -- is covered by `expressions.usda` in
+      `mh_export_fixture`; verified that the harness fails when the SkelRoot
+      decision is mutated back.
+      Blender: **10/10 exports agree**, and all three formats match **key for
+      key on all 34** once the `-`/`_` substitution is applied. Cost: 0.21 s,
+      3.2 MB (text; the GLB is 2.3 MB).
 
 - [~] `QMainWindow` + `QDockWidget` — two docks, left/right areas, object names
       set so `saveState` actually restores. Nested and tabbed docking not yet.

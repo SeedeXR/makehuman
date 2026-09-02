@@ -155,6 +155,20 @@ int main(int argc, char** argv) {
     }
     std::printf("expressions.fbx: %zu blendshapes\n", units.size());
 
+    // And through UsdSkel, with NO skeleton -- the case the application cannot
+    // produce (it always builds a rig) and the one that matters: usdchecker
+    // rejects SkelBindingAPI on a prim not rooted at a SkelRoot even when there
+    // is no skeleton at all, and Blender imports that invalid stage without
+    // complaint. run_blender_validation.sh runs usdchecker on this.
+    const std::vector<mh::io::UsdSceneEntry> exprStage{
+        {rm.view(), "body", nullptr, units},
+    };
+    if (const auto r = mh::io::writeUsdaScene(out / "expressions.usda", exprStage); !r) {
+        std::fprintf(stderr, "expressions usda: %s\n", r.error().message().c_str());
+        return 1;
+    }
+    std::printf("expressions.usda: %zu blendshapes, no skeleton\n", units.size());
+
     // The same rig and morphs through FBX. assimp's FBX writer was verified to
     // carry both, and Blender to read them back, before this was written.
     if (const auto r =

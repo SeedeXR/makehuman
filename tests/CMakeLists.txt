@@ -242,19 +242,41 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_blendshapes_fbx_named PROPERTIES
         FIXTURES_REQUIRED app_bs_fbx_file)
 
-    # The formats that genuinely cannot carry them say so rather than writing an
-    # expressionless mesh in silence. OBJ has no blendshape channel at all, and
-    # writeUsdaScene takes no morphs -- UsdSkel BlendShape is a real gap.
+    # ...and USD, through UsdSkel BlendShape.
+    add_test(NAME app_blendshapes_usda COMMAND makehuman
+             --blendshapes
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_bs.usda)
+    set_tests_properties(app_blendshapes_usda PROPERTIES
+        PASS_REGULAR_EXPRESSION "34 blendshapes"
+        FIXTURES_SETUP app_bs_usda_file)
+    add_test(NAME app_blendshapes_usda_bound COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_bs.usda
+             # SkelRoot is the one that matters: usdchecker rejects
+             # SkelBindingAPI on a prim not rooted at one, even with no
+             # skeleton, and there is no skeleton in this export.
+             "-DKEYS=def SkelRoot;SkelBindingAPI;skel:blendShapes;def BlendShape;pointIndices"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_blendshapes_usda_bound PROPERTIES
+        FIXTURES_REQUIRED app_bs_usda_file)
+
+    # Pixar's own validator on the stage we generate. It is the tool that caught
+    # the SkelRoot requirement -- Blender imports the non-conformant version
+    # without complaint -- so it earns a place in the automated gate rather than
+    # staying a thing someone remembers to run.
+    find_program(MH_USDCHECKER usdchecker)
+    if(MH_USDCHECKER)
+        add_test(NAME app_blendshapes_usda_valid
+                 COMMAND ${MH_USDCHECKER} ${CMAKE_CURRENT_BINARY_DIR}/app_bs.usda)
+        set_tests_properties(app_blendshapes_usda_valid PROPERTIES
+            FIXTURES_REQUIRED app_bs_usda_file)
+    endif()
+
+    # OBJ is the only format left with no blendshape channel, and it says so
+    # rather than writing an expressionless mesh in silence.
     add_test(NAME app_blendshapes_obj_warns COMMAND makehuman
              --blendshapes
              --export ${CMAKE_CURRENT_BINARY_DIR}/app_bs.obj)
     set_tests_properties(app_blendshapes_obj_warns PROPERTIES
-        PASS_REGULAR_EXPRESSION "carries no blendshapes")
-
-    add_test(NAME app_blendshapes_usda_warns COMMAND makehuman
-             --blendshapes
-             --export ${CMAKE_CURRENT_BINARY_DIR}/app_bs.usda)
-    set_tests_properties(app_blendshapes_usda_warns PROPERTIES
         PASS_REGULAR_EXPRESSION "carries no blendshapes")
 
     add_test(NAME app_rig_glb COMMAND makehuman

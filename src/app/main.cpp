@@ -864,14 +864,13 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     std::transform(ext.begin(), ext.end(), ext.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
-    // OBJ and USD have no blendshape channel here: OBJ's format has none at
-    // all, and `writeUsdaScene` takes no morphs (UsdSkel BlendShape is a real
-    // gap, not a plumbing one). glTF and the assimp formats carry them.
-    static constexpr std::array kMorphCapable{".glb", ".fbx", ".dae"};
+    // OBJ is the only format left with no blendshape channel -- its format
+    // simply has none. glTF, the assimp formats and UsdSkel all carry them.
+    static constexpr std::array kMorphCapable{".glb", ".fbx", ".dae", ".usd", ".usda", ".usdz"};
     if (!morphs.empty() && std::ranges::find(kMorphCapable, ext) == kMorphCapable.end()) {
         std::fprintf(stderr,
-                     "%s carries no blendshapes; writing %zu expression targets needs "
-                     ".glb, .fbx or .dae\n",
+                     "%s carries no blendshapes; writing %zu expression targets needs .glb, .fbx, "
+                     ".dae or .usd\n",
                      ext.c_str(), morphs.size());
     }
 
@@ -978,7 +977,7 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     // format an AR or Apple pipeline actually takes.
     if (ext == ".usda" || ext == ".usd" || ext == ".usdz") {
         std::vector<mh::io::UsdSceneEntry> scene;
-        scene.push_back({body, "body", allDressed ? &*bodyMat : nullptr});
+        scene.push_back({body, "body", allDressed ? &*bodyMat : nullptr, morphs});
         for (const auto& [group, proxy] : worn) {
             scene.push_back({proxy.rm.view(), group.toLower().toStdString(),
                              allDressed ? &*proxy.material : nullptr});
