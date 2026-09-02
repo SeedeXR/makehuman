@@ -83,6 +83,34 @@ BUCKETS = {
 }
 
 
+def _collect_class(node, bases) -> None:
+    """Merge, never overwrite: 14 class names are reused across the reference,
+    and last-parsed-wins could erase a view's bases."""
+    bases.setdefault(node.name, []).extend(
+        b.id if isinstance(b, ast.Name) else b.attr
+        for b in node.bases if isinstance(b, (ast.Name, ast.Attribute)))
+
+
+def _collect_call(node, constructed, dynamic_only, sliders) -> None:
+    # `X(...)` and `pkg.X(...)` construct; `X.__init__(...)` does not -- its
+    # callee name is `__init__`.
+    if isinstance(node.func, ast.Name):
+        constructed.add(node.func.id)
+    elif isinstance(node.func, ast.Attribute):
+        constructed.add(node.func.attr)
+
+    if (getattr(node.func, "attr", None) == "loadModifierTaskViews"
+            or getattr(node.func, "id", None) == "loadModifierTaskViews"):
+        # first arg is getpath.getSysDataPath('modifiers/x_sliders.json')
+        sliders.update(a.value for a in ast.walk(node.args[0])
+                       if isinstance(a, ast.Constant)
+                       and str(a.value).endswith(".json"))
+
+    for kw in node.keywords:
+        if kw.arg == "taskviewClass" and isinstance(kw.value, ast.Name):
+            dynamic_only.add(kw.value.id)
+
+
 def parse_reference():
     """(class -> base names, constructed names, taskviewClass= names, slider files).
 
@@ -99,27 +127,9 @@ def parse_reference():
         tree = ast.parse(path.read_text(errors="replace"))
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef):
-                # Merge, never overwrite: 14 class names are reused across the
-                # reference, and last-parsed-wins could erase a view's bases.
-                bases.setdefault(node.name, []).extend(
-                    b.id if isinstance(b, ast.Name) else b.attr
-                    for b in node.bases if isinstance(b, (ast.Name, ast.Attribute)))
+                _collect_class(node, bases)
             elif isinstance(node, ast.Call):
-                # `X(...)` and `pkg.X(...)` construct; `X.__init__(...)` does not
-                # -- its callee name is `__init__`.
-                if isinstance(node.func, ast.Name):
-                    constructed.add(node.func.id)
-                elif isinstance(node.func, ast.Attribute):
-                    constructed.add(node.func.attr)
-                if (getattr(node.func, "attr", None) == "loadModifierTaskViews"
-                        or getattr(node.func, "id", None) == "loadModifierTaskViews"):
-                    # first arg is getpath.getSysDataPath('modifiers/x_sliders.json')
-                    sliders.update(a.value for a in ast.walk(node.args[0])
-                                   if isinstance(a, ast.Constant)
-                                   and str(a.value).endswith(".json"))
-                for kw in node.keywords:
-                    if kw.arg == "taskviewClass" and isinstance(kw.value, ast.Name):
-                        dynamic_only.add(kw.value.id)
+                _collect_call(node, constructed, dynamic_only, sliders)
     return bases, constructed, dynamic_only, sliders
 
 

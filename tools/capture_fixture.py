@@ -623,6 +623,58 @@ def capture_mhm_save() -> None:
     })
 
 
+def _guess_label(mod_name, group_name):
+    """modifierslider.py:46-56, verbatim."""
+    tlabel = mod_name.split('-')
+    if "|" in tlabel[len(tlabel) - 1]:
+        tlabel = tlabel[:-1]
+    if len(tlabel) > 1 and tlabel[0] == group_name:
+        label = tlabel[1:]
+    else:
+        label = tlabel
+    return ' '.join([word.capitalize() for word in label])
+
+
+def _slider_entry(d, mods):
+    """One slider row: what the file says, plus what the modifier itself says.
+
+    `known` is False when the layout names a modifier the registry does not
+    have -- recorded rather than dropped, so a stale layout is visible in the
+    fixture instead of silently shrinking it.
+    """
+    from collections import OrderedDict
+
+    full = d["mod"]
+    m = mods.get(full)
+    label = d.get("label", None)
+    if label is None and m is not None:
+        label = _guess_label(m.name, m.groupName)
+    return OrderedDict([
+        ("mod", full),
+        ("label", label),
+        ("cam", d.get("cam", None)),
+        ("known", m is not None),
+        ("min", float(m.getMin()) if m is not None else None),
+        ("max", float(m.getMax()) if m is not None else None),
+        ("default", float(m.getDefaultValue()) if m is not None else None),
+    ])
+
+
+def _slider_view(fname, props, mods):
+    """One task view: its properties plus its sections, in file order."""
+    from collections import OrderedDict
+
+    view = OrderedDict()
+    view["file"] = fname
+    view["sortOrder"] = props.get("sortOrder", None)
+    view["cameraView"] = props.get("cameraView", None)
+    view["saveName"] = props.get("saveName", None)
+    view["sections"] = OrderedDict(
+        (section_name, [_slider_entry(d, mods) for d in defs])
+        for section_name, defs in props["modifiers"].items())
+    return view
+
+
 def capture_slider_layout() -> None:
     """The slider task-view registry: views, sections, order and every label.
 
@@ -639,17 +691,6 @@ def capture_slider_layout() -> None:
 
     print("capturing: slider_layout")
 
-    def guess_label(mod_name, group_name):
-        """modifierslider.py:46-56, verbatim."""
-        tlabel = mod_name.split('-')
-        if "|" in tlabel[len(tlabel) - 1]:
-            tlabel = tlabel[:-1]
-        if len(tlabel) > 1 and tlabel[0] == group_name:
-            label = tlabel[1:]
-        else:
-            label = tlabel
-        return ' '.join([word.capitalize() for word in label])
-
     # Modifiers keyed by fullName, so the layout can be resolved against them.
     mods = {}
     for name in (MODELING_MODIFIERS, BODYSHAPES_MODIFIERS,
@@ -663,32 +704,7 @@ def capture_slider_layout() -> None:
         data = _json.load(open(MODIFIER_DIR + fname, encoding="utf-8"),
                           object_pairs_hook=OrderedDict)
         for task_name, props in data.items():
-            view = OrderedDict()
-            view["file"] = fname
-            view["sortOrder"] = props.get("sortOrder", None)
-            view["cameraView"] = props.get("cameraView", None)
-            view["saveName"] = props.get("saveName", None)
-            sections = OrderedDict()
-            for section_name, defs in props["modifiers"].items():
-                entries = []
-                for d in defs:
-                    full = d["mod"]
-                    m = mods.get(full)
-                    label = d.get("label", None)
-                    if label is None and m is not None:
-                        label = guess_label(m.name, m.groupName)
-                    entries.append(OrderedDict([
-                        ("mod", full),
-                        ("label", label),
-                        ("cam", d.get("cam", None)),
-                        ("known", m is not None),
-                        ("min", float(m.getMin()) if m is not None else None),
-                        ("max", float(m.getMax()) if m is not None else None),
-                        ("default", float(m.getDefaultValue()) if m is not None else None),
-                    ]))
-                sections[section_name] = entries
-            view["sections"] = sections
-            out_views[task_name] = view
+            out_views[task_name] = _slider_view(fname, props, mods)
 
     out = GOLDEN / "slider_layout"
     out.mkdir(parents=True, exist_ok=True)

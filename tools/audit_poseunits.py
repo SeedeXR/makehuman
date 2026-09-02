@@ -26,6 +26,44 @@ BASELINE_FULLY_RESOLVABLE = 29
 BASELINE_TOTAL_POSES = 61
 
 
+def _report_rig(rig_name, rig_path, poses, referenced) -> int:
+    """Prints one rig's resolvability line and returns how many poses it
+    resolves FULLY."""
+    bones = set(json.loads(rig_path.read_text())["bones"])
+    fully = partial = dead = 0
+    dead_names: list[str] = []
+    for name, mapping in poses.items():
+        have = sum(1 for b in mapping if b in bones)
+        if have == len(mapping):
+            fully += 1
+        elif have == 0:
+            dead += 1
+            dead_names.append(name)
+        else:
+            partial += 1
+    missing = sorted(referenced - bones)
+    print(f"  {rig_name:<16} fully {fully:2d}  partial {partial:2d}  "
+          f"dead {dead:2d}   bones missing from rig: {len(missing)}")
+    if dead_names:
+        print(f"      poses that would do NOTHING: {', '.join(sorted(dead_names))}")
+    if missing:
+        print(f"      missing bones: {', '.join(missing)}")
+    return fully
+
+
+def _mouth_driving_problems(poses) -> list[str]:
+    """Two poses drive MOUTH bones. Raising an arm must not move the lips; this
+    is an authoring error in the reference asset, recorded so a future reader
+    does not treat it as our bug. Pinned so we notice if the data changes."""
+    mouth = {"oris01", "oris02", "oris03", "oris04", "oris05", "oris06", "oris07"}
+    suspect = sorted(p for p, m in poses.items()
+                     if set(m) & mouth and not p.lower().startswith(("mouth", "lip", "jaw")))
+    print(f"  poses driving mouth bones despite a body name: {len(suspect)} {suspect}")
+    if suspect != ["UpperArmUpLeft1", "UpperArmUpLeft2"]:
+        return [f"the set of mouth-driving body poses changed: {suspect}"]
+    return []
+
+
 def main() -> int:
     poses = json.loads(UNITS.read_text())["poses"]
     referenced: set[str] = set()
@@ -39,42 +77,16 @@ def main() -> int:
     if len(poses) != BASELINE_TOTAL_POSES:
         problems.append(f"expected {BASELINE_TOTAL_POSES} poses, found {len(poses)}")
 
-    best_fully = 0
-    for rig_name, rig_path in RIGS.items():
-        bones = set(json.loads(rig_path.read_text())["bones"])
-        fully = partial = dead = 0
-        dead_names: list[str] = []
-        for name, mapping in poses.items():
-            have = sum(1 for b in mapping if b in bones)
-            if have == len(mapping):
-                fully += 1
-            elif have == 0:
-                dead += 1
-                dead_names.append(name)
-            else:
-                partial += 1
-        missing = sorted(referenced - bones)
-        best_fully = max(best_fully, fully)
-        print(f"  {rig_name:<16} fully {fully:2d}  partial {partial:2d}  "
-              f"dead {dead:2d}   bones missing from rig: {len(missing)}")
-        if dead_names:
-            print(f"      poses that would do NOTHING: {', '.join(sorted(dead_names))}")
-        if missing:
-            print(f"      missing bones: {', '.join(missing)}")
+    # default=0 preserves the original behaviour if RIGS is ever empty; max()
+    # on an empty generator raises where the old accumulator stayed at zero.
+    best_fully = max((_report_rig(name, path, poses, referenced)
+                      for name, path in RIGS.items()), default=0)
 
     if best_fully < BASELINE_FULLY_RESOLVABLE:
         problems.append(f"resolvability regressed: best rig resolves {best_fully} poses "
                         f"fully, baseline is {BASELINE_FULLY_RESOLVABLE}")
 
-    # Two poses drive MOUTH bones. Raising an arm must not move the lips; this
-    # is an authoring error in the reference asset, recorded so a future reader
-    # does not treat it as our bug. Pinned so we notice if the data changes.
-    mouth = {"oris01", "oris02", "oris03", "oris04", "oris05", "oris06", "oris07"}
-    suspect = sorted(p for p, m in poses.items()
-                     if set(m) & mouth and not p.lower().startswith(("mouth", "lip", "jaw")))
-    print(f"  poses driving mouth bones despite a body name: {len(suspect)} {suspect}")
-    if suspect != ["UpperArmUpLeft1", "UpperArmUpLeft2"]:
-        problems.append(f"the set of mouth-driving body poses changed: {suspect}")
+    problems += _mouth_driving_problems(poses)
 
     if problems:
         print("\nPROBLEMS", file=sys.stderr)

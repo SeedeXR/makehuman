@@ -2140,6 +2140,85 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-02 18:19:28 — Session 123 · **the last 8 Sonar findings, each proved by output diff**
+
+### The chunk
+The 8 `python:S3776` cognitive-complexity findings across 7 developer tools.
+SonarQube now reports **0 open issues** on the project.
+
+### Docker was down first
+SonarQube was unreachable (`http=000`) because the Docker daemon had stopped --
+also why `MCP_DOCKER` failed to connect at session start. Started Docker
+Desktop, restarted the `m2m-sonarqube` container, waited for `status: UP`.
+Worth knowing: the container does **not** come back on its own.
+
+### The method, which is the point
+Every refactor is a behaviour-preserving extraction into named helpers, one per
+independent responsibility. None of it was verified by reading:
+
+| tool | was | proof |
+|---|---|---|
+| `blender_validate.py` | 32 | 11 files, byte-identical JSON |
+| `mixamo_mapping.py` | 55, 22 | identical stdout; `--check` still clean |
+| `audit_taskviews.py` | 32 | identical stdout |
+| `audit_poseunits.py` | 20 | identical stdout |
+| `build_mixamo_superset.py` | 16 | identical stdout; regenerated `.mhskel` byte-identical in git |
+| `baseline_python_core.py` | 17 | all 12 sections identical in name, order, every non-timing field |
+| `capture_fixture.py` | 40 | `layout.json` byte-identical |
+
+`baseline_python_core.py` rewrites the committed `baseline_python.json`, so the
+original was backed up and restored; timings vary by nature, so that one diff is
+structural and the note says so rather than pretending it is a byte diff.
+
+### capture_fixture.py, with the proof this item demanded
+`todo.md` had deliberately excluded it -- *"it generates the oracle fixtures, so
+refactoring it trades a style metric for risk to every parity test. Reopen with
+the re-capture-and-diff proof."*
+
+Measured the baseline FIRST: re-capturing `slider_layout` with **no code change
+at all** already rewrites `MANIFEST.json`. Not a defect -- the only fields that
+move are `captured_at` and `reference_commit`, which are provenance by design.
+Knowing that, the proof is exact: after the refactor, `layout.json` is
+byte-identical and `MANIFEST.json` shows *that same two-field delta and nothing
+else*. Without measuring the baseline first I would have had a diff I could not
+interpret.
+
+### Three things the re-scan caught in my own work
+1. **An unused parameter** (`python:S1172`): my `_chain_root_problems(mixamo,
+   makehuman)` never used `mixamo`. Removed.
+2. **A function still over the limit**: `_mapping_problems` came out at 27, so
+   it split again into coverage / injectivity / laterality / ancestry.
+3. **A lost edge case**, found by reading my own diff rather than by a tool:
+   `max(generator)` raises on an empty `RIGS` where the old accumulator stayed
+   at 0. Restored with `default=0` and a comment saying why.
+
+### And a measurement bug of mine, not a code bug
+`for c in "tools/x.py --check"; do python3 $c; done` reported **exit 2** for both
+`--check` tools. **zsh does not word-split unquoted parameters**, so the whole
+string was passed as one filename. Run directly, both exit 0. Checked before
+reporting a CI failure that did not exist.
+
+### Verification
+- SonarQube: **8 open issues -> 0**. Gate OK, duplication 0.0%.
+- 484/484 in debug, release and ASan. **No C++ changed**, so the previous TSan
+  run covers identical code.
+- Blender harness still **11/11**.
+- All five tools CI runs re-run with **system `python3`**, not the venv: all
+  exit 0, and no generated file drifted in git.
+
+### Files changed
+`tools/blender_validate.py`, `tools/mixamo_mapping.py`,
+`tools/audit_taskviews.py`, `tools/audit_poseunits.py`,
+`tools/build_mixamo_superset.py`, `tools/capture_fixture.py`,
+`benchmarks/baseline_python_core.py`, `memory/todo.md`,
+`memory/handover_session.md`.
+
+### Next
+M5's remaining items need the owner or assets. Still unattended-actionable:
+camera pan (M8) and the shared `Transform` refactor (M7).
+
+---
+
 ## 2026-09-02 04:57:19 — Session 122 · **Cmd+Z after Cmd+1 undid the wrong thing**
 
 ### The chunk

@@ -54,26 +54,20 @@ def _import(path: str) -> None:
         raise RuntimeError("unsupported extension: " + path)
 
 
-def describe(path: str) -> dict:
-    _clear()
-    _import(path)
+def _is_helper(obj) -> bool:
+    """Blender's glTF importer creates its own helper geometry -- an Icosphere
+    used as the custom bone shape for every bone -- and parks it in a collection
+    named "glTF_not_exported". Counting it makes a correct rigged export look
+    like it has 42 stray vertices and a second mesh."""
+    return any(c.name == "glTF_not_exported" for c in obj.users_collection)
 
-    # Blender's glTF importer creates its own helper geometry -- an Icosphere
-    # used as the custom bone shape for every bone -- and parks it in a
-    # collection named "glTF_not_exported". Counting it makes a correct rigged
-    # export look like it has 42 stray vertices and a second mesh. Skip
-    # anything Blender has marked as not-for-export.
-    def _is_helper(obj) -> bool:
-        return any(c.name == "glTF_not_exported" for c in obj.users_collection)
 
-    meshes = [o for o in bpy.data.objects if o.type == "MESH" and not _is_helper(o)]
-    armatures = [o for o in bpy.data.objects if o.type == "ARMATURE" and not _is_helper(o)]
-
+def _geometry(meshes):
+    """Vertex/triangle counts, UV layer count and the world-space bounds."""
     verts = tris = 0
     uv_layers = 0
     lo = [1e30, 1e30, 1e30]
     hi = [-1e30, -1e30, -1e30]
-
     for o in meshes:
         m = o.data
         m.calc_loop_triangles()
@@ -85,19 +79,15 @@ def describe(path: str) -> dict:
             for i in range(3):
                 lo[i] = min(lo[i], w[i])
                 hi[i] = max(hi[i], w[i])
+    return verts, tris, uv_layers, lo, hi
 
-    bones = sum(len(a.data.bones) for a in armatures)
 
-    # Vertex groups are how Blender represents skin weights. A rigged mesh with
-    # an armature but no groups is bound to nothing and will not deform -- which
-    # looks fine in a static screenshot.
-    vertex_groups = sum(len(o.vertex_groups) for o in meshes)
-
-    # Shape keys are Blender's morph targets. key_blocks[0] is the Basis, so a
-    # file with N morph targets reports N+1. Also count how many vertices each
-    # key actually MOVES: a shape key that exists but displaces nothing is the
-    # failure mode a name-only check cannot see.
-    shape_keys = []
+def _shape_keys(meshes):
+    """Blender's morph targets. key_blocks[0] is the Basis, so a file with N
+    morph targets reports N+1 -- hence the [1:]. Also counts how many vertices
+    each key actually MOVES: a shape key that exists but displaces nothing is
+    the failure a name-only check cannot see."""
+    out = []
     for o in meshes:
         sk = o.data.shape_keys
         if not sk:
@@ -109,7 +99,51 @@ def describe(path: str) -> dict:
                 for i, pt in enumerate(kb.data)
                 if (pt.co - basis.data[i].co).length > 1e-6
             )
-            shape_keys.append({"name": kb.name, "value": round(kb.value, 6), "moved": moved})
+            out.append({"name": kb.name, "value": round(kb.value, 6), "moved": moved})
+    return out
+
+
+def _armature_shift(meshes, armatures) -> float:
+    """Does applying the armature CHANGE the mesh?
+
+    For every export we write, it must not: the exported skeleton is in the same
+    state as the exported geometry, so skinning = global * inverse(bind) =
+    identity. GltfWriter derives the node transforms and the inverse-bind
+    matrices from ONE array to guarantee it (GltfWriter.cpp:330-374).
+
+    A file that fails here is double-deformed in every DCC, while our own tests
+    -- which never apply an armature -- all stay green.
+
+    Measured as the largest vertex displacement between the evaluated mesh
+    (modifiers applied, armature included) and the raw one.
+    """
+    if not armatures:
+        return 0.0
+    worst = 0.0
+    dg = bpy.context.evaluated_depsgraph_get()
+    for o in meshes:
+        raw = o.data.vertices
+        ev = o.evaluated_get(dg)
+        me = ev.to_mesh()
+        if len(me.vertices) == len(raw):
+            worst = max(worst, max((a.co - b.co).length for a, b in zip(me.vertices, raw)))
+        ev.to_mesh_clear()
+    return worst
+
+
+def describe(path: str) -> dict:
+    _clear()
+    _import(path)
+
+    meshes = [o for o in bpy.data.objects if o.type == "MESH" and not _is_helper(o)]
+    armatures = [o for o in bpy.data.objects if o.type == "ARMATURE" and not _is_helper(o)]
+
+    verts, tris, uv_layers, lo, hi = _geometry(meshes)
+
+    # Vertex groups are how Blender represents skin weights. A rigged mesh with
+    # an armature but no groups is bound to nothing and will not deform -- which
+    # looks fine in a static screenshot.
+    vertex_groups = sum(len(o.vertex_groups) for o in meshes)
     skinned_verts = sum(
         1 for o in meshes for v in o.data.vertices if len(v.groups) > 0
     )
@@ -121,44 +155,18 @@ def describe(path: str) -> dict:
     extents = [round(hi[i] - lo[i], 6) for i in range(3)] if meshes else None
     tallest = max(extents) if extents else None
 
-    # Does applying the armature CHANGE the mesh?
-    #
-    # For every export we write, it must not: the exported skeleton is in the
-    # same state as the exported geometry, so skinning = global * inverse(bind)
-    # = identity. GltfWriter derives the node transforms and the inverse-bind
-    # matrices from ONE array to guarantee it (GltfWriter.cpp:330-374).
-    #
-    # A file that fails here is double-deformed in every DCC, while our own
-    # tests -- which never apply an armature -- all stay green.
-    #
-    # Measured as the largest vertex displacement between the evaluated mesh
-    # (modifiers applied, armature included) and the raw one.
-    armature_shift = 0.0
-    if armatures:
-        dg = bpy.context.evaluated_depsgraph_get()
-        for o in meshes:
-            raw = o.data.vertices
-            ev = o.evaluated_get(dg)
-            me = ev.to_mesh()
-            if len(me.vertices) == len(raw):
-                for a, b in zip(me.vertices, raw):
-                    d = (a.co - b.co).length
-                    if d > armature_shift:
-                        armature_shift = d
-            ev.to_mesh_clear()
-
     return {
         "file": path,
         "ok": True,
-        "armature_shift": round(armature_shift, 6),
+        "armature_shift": round(_armature_shift(meshes, armatures), 6),
         "meshes": len(meshes),
         "vertices": verts,
         "triangles": tris,
         "uv_layers": uv_layers,
         "armatures": len(armatures),
-        "bones": bones,
+        "bones": sum(len(a.data.bones) for a in armatures),
         "vertex_groups": vertex_groups,
-        "shape_keys": shape_keys,
+        "shape_keys": _shape_keys(meshes),
         "skinned_vertices": skinned_verts,
         "bbox_min": [round(v, 6) for v in lo] if meshes else None,
         "bbox_max": [round(v, 6) for v in hi] if meshes else None,

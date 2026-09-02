@@ -464,15 +464,29 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       the 449 C++ tests are invisible to it, so the condition would read 0%
       forever and make the gate uninformative rather than informative. Python
       coverage really is 0 and that is recorded here rather than hidden.
-- [ ] **8 remaining findings, all `python:S3776` (cognitive complexity)** in
-      developer tools: `capture_fixture.py:624` (40), `mixamo_mapping.py:290`
-      (55) and `:229` (22), `audit_taskviews.py:86` (32),
-      `audit_poseunits.py:29` (20), `blender_validate.py:57` (17),
-      `baseline_python_core.py:46` (17), `build_mixamo_superset.py:64` (16).
-      Real, and deliberately not fixed in the same pass: `capture_fixture.py`
-      *generates the oracle fixtures*, so refactoring it trades a style metric
-      for risk to every parity test. Reopen with the re-capture-and-diff proof
-      the constant extraction used.
+- [x] **All 8 `python:S3776` findings cleared** (2026-09-02) — SonarQube now
+      reports **0 open issues** on the project.
+      Each tool was refactored into named helpers, one per independent
+      responsibility, and each proved by **output diff**, not by reading:
+      `blender_validate.py` (32) — 11 files, byte-identical JSON;
+      `mixamo_mapping.py` (55 and 22) — identical stdout and `--check` still
+      clean; `audit_taskviews.py` (32), `audit_poseunits.py` (20),
+      `build_mixamo_superset.py` (16) — identical stdout, and the regenerated
+      `mixamo_superset.mhskel` stayed byte-identical in git;
+      `baseline_python_core.py` (17) — all **12** benchmark sections identical
+      in name, order and every non-timing field (timings vary by nature, so the
+      diff is structural and says so).
+      **`capture_fixture.py` (40) included**, with the re-capture-and-diff proof
+      this item demanded: `tests/golden/slider_layout/layout.json` is
+      byte-identical, and `MANIFEST.json` differs only in `captured_at` and
+      `reference_commit` — **exactly the delta a re-capture with no code change
+      produces**, which was measured first so the baseline was known.
+      Two findings I *introduced* were caught by the re-scan and fixed: an
+      unused `mixamo` parameter (`python:S1172`) and one extracted function
+      still at 27. Also restored an edge case my own refactor lost —
+      `max(..., default=0)`, because `max()` on an empty `RIGS` raises where the
+      old accumulator stayed at zero.
+      All five tools CI runs verified with **system `python3`**, not the venv.
 - [ ] **The `character` fixture is not reproducible, and it is not my change.**
       Re-running `capture_fixture.py character` rewrites `cases.json`'s stack
       keys from `../../data/targets/...` to `../../../data/...`. Verified

@@ -43,22 +43,8 @@ def bench(label, fn, repeat=5, warmup=1):
     }
 
 
-def main():
-    results = {
-        "harness": "legacy python core",
-        "python": sys.version.split()[0],
-        "numpy": np.__version__,
-        "platform": sys.platform,
-        "results": [],
-    }
-
-    import files3d  # noqa: E402
-    import module3d  # noqa: E402
-    import algos3d  # noqa: E402
-
-    obj_path = "data/3dobjs/base.obj"
-
-    # --- 1. cold OBJ parse (no npz cache) -------------------------------
+def _bench_obj_parse(results, files3d, obj_path):
+    """Cold OBJ parse, with the npz cache moved aside so the text path runs."""
     npz = Path("data/3dobjs/base.npz")
     had_npz = npz.exists()
     if had_npz:
@@ -69,7 +55,8 @@ def main():
         def load_text():
             mesh_holder["m"] = files3d.loadMesh(obj_path, maxFaces=8)
 
-        results["results"].append(bench("load base.obj (text parse + _update_faces)", load_text, repeat=3))
+        results["results"].append(
+            bench("load base.obj (text parse + _update_faces)", load_text, repeat=3))
     finally:
         if had_npz:
             npz.with_suffix(".npz.bak").rename(npz)
@@ -82,8 +69,10 @@ def main():
         "verts_per_primitive": int(mesh.vertsPerPrimitive),
         "max_faces": int(mesh.MAX_FACES),
     }
+    return mesh
 
-    # --- 2. normals ------------------------------------------------------
+
+def _bench_normals(results, mesh):
     results["results"].append(
         bench("calcNormals full mesh (face+vertex)", lambda: mesh.calcNormals(1, 1), repeat=10)
     )
@@ -94,16 +83,15 @@ def main():
         bench("calcVertexNormals only", lambda: mesh.calcVertexNormals(), repeat=10)
     )
 
-    # --- 3. index buffer rebuild ----------------------------------------
+
+def _bench_index_buffer(results, mesh):
     results["results"].append(
         bench("updateIndexBuffer (unweld + group sort)", lambda: mesh.updateIndexBuffer(), repeat=10)
     )
 
     # Face hiding: the reference reapplies the mask by rebuilding only the
     # index array and draw ranges, never the unweld (guicommon.py:555-556).
-    import numpy as _np
-
-    _verts = _np.argwhere((_np.arange(len(mesh.coord)) % 7) != 0)[..., 0]
+    _verts = np.argwhere((np.arange(len(mesh.coord)) % 7) != 0)[..., 0]
 
     def _mask_and_rebuild():
         mesh.changeFaceMask(mesh.getFaceMaskForVertices(_verts))
@@ -112,10 +100,11 @@ def main():
     results["results"].append(
         bench("face mask -> index rebuild (hide, no unweld)", _mask_and_rebuild, repeat=10)
     )
-    mesh.changeFaceMask(_np.ones(len(mesh.fvert), dtype=bool))
+    mesh.changeFaceMask(np.ones(len(mesh.fvert), dtype=bool))
     mesh.updateIndexBufferFaces()
 
-    # --- 4. target load + apply ------------------------------------------
+
+def _bench_targets(results, mesh, algos3d):
     tdir = Path("data/targets")
     target_files = sorted(str(p) for p in tdir.rglob("*.target"))
     results["targets_on_disk"] = len(target_files)
@@ -127,38 +116,40 @@ def main():
     # written, discarding the sections that had already succeeded.
     if not sample:
         results["targets_error"] = "no .target files found under data/targets"
-    else:
-        def load_targets():
-            algos3d._targetBuffer.clear()
-            for t in sample:
-                algos3d.getTarget(mesh, t)
+        return
 
-        results["results"].append(
-            bench(f"load {len(sample)} targets (text parse)", load_targets, repeat=3)
-        )
+    def load_targets():
+        algos3d._targetBuffer.clear()
+        for t in sample:
+            algos3d.getTarget(mesh, t)
 
-        loaded = [algos3d.getTarget(mesh, t) for t in sample]
-        results["target_stats"] = {
-            "sampled": len(loaded),
-            "mean_affected_verts": round(statistics.mean(len(t.verts) for t in loaded), 1),
-            "max_affected_verts": max(len(t.verts) for t in loaded),
-        }
+    results["results"].append(
+        bench(f"load {len(sample)} targets (text parse)", load_targets, repeat=3)
+    )
 
-        def apply_targets():
-            mesh.coord[...] = mesh.orig_coord
-            for t in loaded:
-                t.apply(mesh, 0.5, update=False, calcNormals=False)
+    loaded = [algos3d.getTarget(mesh, t) for t in sample]
+    results["target_stats"] = {
+        "sampled": len(loaded),
+        "mean_affected_verts": round(statistics.mean(len(t.verts) for t in loaded), 1),
+        "max_affected_verts": max(len(t.verts) for t in loaded),
+    }
 
-        results["results"].append(
-            bench(f"apply {len(loaded)} targets @0.5 (full stack rebuild)", apply_targets, repeat=10)
-        )
+    def apply_targets():
+        mesh.coord[...] = mesh.orig_coord
+        for t in loaded:
+            t.apply(mesh, 0.5, update=False, calcNormals=False)
 
-        def apply_one():
-            loaded[0].apply(mesh, 0.5, update=False, calcNormals=False)
+    results["results"].append(
+        bench(f"apply {len(loaded)} targets @0.5 (full stack rebuild)", apply_targets, repeat=10)
+    )
 
-        results["results"].append(bench("apply 1 target (slider delta)", apply_one, repeat=200))
+    def apply_one():
+        loaded[0].apply(mesh, 0.5, update=False, calcNormals=False)
 
-    # --- 5. subdivision ---------------------------------------------------
+    results["results"].append(bench("apply 1 target (slider delta)", apply_one, repeat=200))
+
+
+def _bench_subdivision(results, mesh):
     try:
         import catmull_clark_subdivision as cks
 
@@ -196,7 +187,8 @@ def main():
     except Exception as e:  # pragma: no cover - diagnostic path
         results["subdiv_error"] = f"{type(e).__name__}: {e}"
 
-    # --- 6. skeleton build + skinning -------------------------------------
+
+def _bench_skeleton(results, mesh):
     try:
         import skeleton as mhskeleton
         import animation
@@ -238,6 +230,27 @@ def main():
         )
     except Exception as e:
         results["skeleton_error"] = f"{type(e).__name__}: {e}"
+
+
+def main():
+    results = {
+        "harness": "legacy python core",
+        "python": sys.version.split()[0],
+        "numpy": np.__version__,
+        "platform": sys.platform,
+        "results": [],
+    }
+
+    import files3d  # noqa: E402
+    import module3d  # noqa: E402
+    import algos3d  # noqa: E402
+
+    mesh = _bench_obj_parse(results, files3d, "data/3dobjs/base.obj")
+    _bench_normals(results, mesh)
+    _bench_index_buffer(results, mesh)
+    _bench_targets(results, mesh, algos3d)
+    _bench_subdivision(results, mesh)
+    _bench_skeleton(results, mesh)
 
     out = REPO / "benchmarks" / "baseline_python.json"
     out.write_text(json.dumps(results, indent=2))

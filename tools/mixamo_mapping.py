@@ -226,25 +226,13 @@ def arc_fractions(chain: list[str],
     return {} if total == 0 else {b: c / total for b, c in zip(chain, cumulative)}
 
 
-def geometric_problems() -> list[str]:
-    """Where a mapped bone sits nowhere near its counterpart along the chain.
-
-    This is the check that would have caught `Hips -> root` without a reviewer,
-    and the one that settled `Arm -> shoulder01` with a number instead of an
-    argument.
-    """
-    if not MIXAMO_REST.exists():
-        return ["no measured Mixamo rest pose; geometric check skipped"]
-    mixamo = {k: tuple(v) for k, v in json.loads(MIXAMO_REST.read_text())["bones"].items()}
-    makehuman = makehuman_joint_positions()
-
+def _chain_root_problems(makehuman) -> list[str]:
+    """A chain ROOT is at 0% by definition on both sides, so the arc check can
+    never fault it -- it was blind to exactly the error it was built for
+    (`Hips -> root`, whose head is 0.92 dm from where the legs and spine
+    actually meet). Chain roots are therefore checked by POSITION against the
+    MakeHuman chain's own start, scaled by that chain's length."""
     out = []
-
-    # A chain ROOT is at 0% by definition on both sides, so the arc check above
-    # can never fault it -- it was blind to exactly the error it was built for
-    # (`Hips -> root`, whose head is 0.92 dm from where the legs and spine
-    # actually meet). Chain roots are therefore checked by POSITION against the
-    # MakeHuman chain's own start, scaled by that chain's length.
     for mixamo_chain, mh_chain in CHAINS:
         target = MAPPING.get(mixamo_chain[0])
         if target is None or target not in makehuman or mh_chain[0] not in makehuman:
@@ -257,7 +245,13 @@ def geometric_problems() -> list[str]:
                 f"{mixamo_chain[0]} maps to {target}, which sits {offset:.3f} dm "
                 f"({offset / span * 100:.1f}% of the chain) from {mh_chain[0]}, where that "
                 f"chain actually starts")
+    return out
 
+
+def _arc_position_problems(mixamo, makehuman) -> list[str]:
+    """Where a mapped bone sits at a different fraction along its chain than its
+    counterpart does along the MakeHuman chain."""
+    out = []
     for mixamo_chain, mh_chain in CHAINS:
         mf, hf = arc_fractions(mixamo_chain, mixamo), arc_fractions(mh_chain, makehuman)
         if not mf or not hf:
@@ -277,6 +271,20 @@ def geometric_problems() -> list[str]:
     return out
 
 
+def geometric_problems() -> list[str]:
+    """Where a mapped bone sits nowhere near its counterpart along the chain.
+
+    This is the check that would have caught `Hips -> root` without a reviewer,
+    and the one that settled `Arm -> shoulder01` with a number instead of an
+    argument.
+    """
+    if not MIXAMO_REST.exists():
+        return ["no measured Mixamo rest pose; geometric check skipped"]
+    mixamo = {k: tuple(v) for k, v in json.loads(MIXAMO_REST.read_text())["bones"].items()}
+    makehuman = makehuman_joint_positions()
+    return _chain_root_problems(makehuman) + _arc_position_problems(mixamo, makehuman)
+
+
 def ancestors(bone: str, parents: dict[str, str | None]) -> list[str]:
     out, seen = [], set()
     while bone and bone not in seen:
@@ -287,11 +295,8 @@ def ancestors(bone: str, parents: dict[str, str | None]) -> list[str]:
     return out
 
 
-def main() -> int:
-    mixamo = mixamo_hierarchy()
-    mh = makehuman_parents()
+def _coverage_problems(mixamo, mh) -> list[str]:
     problems: list[str] = []
-
     if len(mixamo) != 65:
         problems.append(f"expected 65 Mixamo bones in the doc, parsed {len(mixamo)}")
 
@@ -302,33 +307,42 @@ def main() -> int:
     unknown = [f"{k}->{v}" for k, v in MAPPING.items() if v is not None and v not in mh]
     if unknown:
         problems.append("mapped to a MakeHuman bone that does not exist: " + ", ".join(unknown))
+    return problems
 
-    # Injectivity. Ancestry alone happily accepts two Mixamo bones landing on
-    # one MakeHuman bone -- mapping the index finger onto the pinky passed until
-    # this existed, silently, while the coverage count still read 50.
+
+def _injectivity_problems() -> list[str]:
+    """Ancestry alone happily accepts two Mixamo bones landing on one MakeHuman
+    bone -- mapping the index finger onto the pinky passed until this existed,
+    silently, while the coverage count still read 50."""
     targets = [v for v in MAPPING.values() if v is not None]
-    if len(set(targets)) != len(targets):
-        seen, dupes = set(), set()
-        for t in targets:
-            (dupes if t in seen else seen).add(t)
-        problems.append("two Mixamo bones mapped onto one MakeHuman bone: "
-                        + ", ".join(sorted(dupes)))
+    if len(set(targets)) == len(targets):
+        return []
+    seen, dupes = set(), set()
+    for t in targets:
+        (dupes if t in seen else seen).add(t)
+    return ["two Mixamo bones mapped onto one MakeHuman bone: " + ", ".join(sorted(dupes))]
 
-    # Laterality. Ancestry is blind to a MIRRORED rig: swapping every left and
-    # right bone at once preserves every parent relationship, so the check
-    # passed a fully mirrored mapping. A single swapped bone is caught by its
-    # children; a whole-side swap is not, and that is the mirror bug that
-    # actually happens.
+
+def _laterality_problems() -> list[str]:
+    """Ancestry is blind to a MIRRORED rig: swapping every left and right bone at
+    once preserves every parent relationship, so the check passed a fully
+    mirrored mapping. A single swapped bone is caught by its children; a
+    whole-side swap is not, and that is the mirror bug that actually happens."""
+    problems: list[str] = []
     for bone, target in MAPPING.items():
         if target is None:
             continue
         for prefix, suffix in (("Left", ".L"), ("Right", ".R")):
             if bone.startswith(prefix) and not target.endswith(suffix):
                 problems.append(f"{bone} is a {prefix.lower()} bone but maps to {target}")
+    return problems
 
-    # The real check: a mapping must preserve ancestry. If Mixamo says A is
-    # above B, the bone A maps to must be an ancestor of the bone B maps to.
-    # Necessary, and on its own nowhere near sufficient -- see above.
+
+def _ancestry_problems(mixamo, mh) -> list[str]:
+    """The real check: a mapping must preserve ancestry. If Mixamo says A is
+    above B, the bone A maps to must be an ancestor of the bone B maps to.
+    Necessary, and on its own nowhere near sufficient -- see above."""
+    problems: list[str] = []
     for bone, parent in mixamo.items():
         target, parent_target = MAPPING.get(bone), MAPPING.get(parent) if parent else None
         if target is None or parent_target is None:
@@ -337,14 +351,22 @@ def main() -> int:
             problems.append(
                 f"{bone} -> {target}, but its parent {parent} -> {parent_target} "
                 f"is not an ancestor of {target}")
+    return problems
 
-    problems += geometric_problems()
 
-    # The full table, against the superset rig. This is the check that makes the
-    # additions a mapping rather than a name match: each target's ancestry in
-    # the 179-bone rig must contain the target of its Mixamo parent.
-    full = full_mapping()
-    sup = superset_parents()
+def _mapping_problems(mixamo, mh) -> list[str]:
+    """Everything checkable from MAPPING and the two hierarchies."""
+    return (_coverage_problems(mixamo, mh)
+            + _injectivity_problems()
+            + _laterality_problems()
+            + _ancestry_problems(mixamo, mh))
+
+
+def _superset_problems(mixamo, full, sup) -> list[str]:
+    """The full table, against the superset rig. This is the check that makes
+    the additions a mapping rather than a name match: each target's ancestry in
+    the 179-bone rig must contain the target of its Mixamo parent."""
+    problems: list[str] = []
 
     absent = sorted({v for v in full.values() if v not in sup})
     if absent:
@@ -368,33 +390,40 @@ def main() -> int:
         if parent_target not in superset_ancestors(target):
             problems.append(f"{bone}->{target} does not descend from "
                             f"{parent}->{parent_target} in the superset rig")
+    return problems
 
-    if not problems and ("--emit" in sys.argv or "--check" in sys.argv):
-        payload = {
-            "_provenance": {
-                "generated_by": "tools/mixamo_mapping.py --emit",
-                "rig": "data/rigs/mixamo_superset.mhskel",
-                "mixamo_bones": len(mixamo),
-                "note": "Mixamo bone -> superset bone. Total: all 65 have a "
-                        "counterpart, because the superset adds the 16 MakeHuman "
-                        "lacks. Verified injective, and each target descends from "
-                        "its Mixamo parent's target in the superset hierarchy.",
-            },
-            "mapping": dict(sorted(full.items())),
-        }
-        text = json.dumps(payload, indent=2, sort_keys=False) + "\n"
-        if "--check" in sys.argv:
-            if not RETARGET.exists():
-                print(f"{RETARGET} does not exist; run with --emit", file=sys.stderr)
-                return 1
-            if RETARGET.read_text() != text:
-                print(f"{RETARGET} is stale; re-run with --emit", file=sys.stderr)
-                return 1
-            print(f"{RETARGET} is up to date")
-        else:
-            RETARGET.write_text(text)
-            print(f"wrote {RETARGET} ({len(full)} bones)")
 
+def _emit_retarget(mixamo, full) -> int:
+    """Writes or checks data/rigs/mixamo_retarget.json. Returns a process exit
+    code: non-zero only when --check finds the file missing or stale."""
+    payload = {
+        "_provenance": {
+            "generated_by": "tools/mixamo_mapping.py --emit",
+            "rig": "data/rigs/mixamo_superset.mhskel",
+            "mixamo_bones": len(mixamo),
+            "note": "Mixamo bone -> superset bone. Total: all 65 have a "
+                    "counterpart, because the superset adds the 16 MakeHuman "
+                    "lacks. Verified injective, and each target descends from "
+                    "its Mixamo parent's target in the superset hierarchy.",
+        },
+        "mapping": dict(sorted(full.items())),
+    }
+    text = json.dumps(payload, indent=2, sort_keys=False) + "\n"
+    if "--check" in sys.argv:
+        if not RETARGET.exists():
+            print(f"{RETARGET} does not exist; run with --emit", file=sys.stderr)
+            return 1
+        if RETARGET.read_text() != text:
+            print(f"{RETARGET} is stale; re-run with --emit", file=sys.stderr)
+            return 1
+        print(f"{RETARGET} is up to date")
+        return 0
+    RETARGET.write_text(text)
+    print(f"wrote {RETARGET} ({len(full)} bones)")
+    return 0
+
+
+def _report(mixamo, mh) -> None:
     mapped = {k: v for k, v in MAPPING.items() if v is not None}
     to_add = sorted(k for k, v in MAPPING.items() if v is None)
 
@@ -408,6 +437,23 @@ def main() -> int:
     print("bones the superset must add:")
     for b in to_add:
         print(f"    {b}")
+
+
+def main() -> int:
+    mixamo = mixamo_hierarchy()
+    mh = makehuman_parents()
+
+    full = full_mapping()
+
+    problems = _mapping_problems(mixamo, mh)
+    problems += geometric_problems()
+    problems += _superset_problems(mixamo, full, superset_parents())
+
+    if not problems and ("--emit" in sys.argv or "--check" in sys.argv):
+        if _emit_retarget(mixamo, full) != 0:
+            return 1
+
+    _report(mixamo, mh)
 
     if problems:
         print("\nPROBLEMS", file=sys.stderr)

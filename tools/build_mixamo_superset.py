@@ -61,11 +61,7 @@ for _sfx in (".L", ".R"):
         REPARENT[f"toe{_toe}-1{_sfx}"] = f"ball{_sfx}"
 
 
-def build() -> dict:
-    skeleton = json.loads(SOURCE.read_text())
-    bones = dict(skeleton["bones"])
-    joints = skeleton["joints"]
-
+def _add_bones(bones: dict, joints: dict) -> None:
     for name, parent, head, tail in ADDED:
         if name in bones:
             raise SystemExit(f"{name} already exists in {SOURCE.name}")
@@ -75,12 +71,16 @@ def build() -> dict:
         bones[name] = {"head": head, "parent": parent, "reference": None,
                        "rotation_plane": None, "tail": tail}
 
+
+def _reparent(bones: dict) -> None:
     for child, parent in REPARENT.items():
         if child not in bones:
             raise SystemExit(f"cannot reparent {child}: no such bone")
         bones[child] = dict(bones[child], parent=parent)
 
-    # loadSkeleton() requires every parent to precede its child.
+
+def _parents_first(bones: dict) -> dict[str, dict]:
+    """loadSkeleton() requires every parent to precede its child."""
     ordered: dict[str, dict] = {}
 
     def emit(name: str) -> None:
@@ -93,8 +93,17 @@ def build() -> dict:
 
     for name in bones:
         emit(name)
+    return ordered
 
-    skeleton["bones"] = ordered
+
+def build() -> dict:
+    skeleton = json.loads(SOURCE.read_text())
+    bones = dict(skeleton["bones"])
+
+    _add_bones(bones, skeleton["joints"])
+    _reparent(bones)
+
+    skeleton["bones"] = _parents_first(bones)
     skeleton["name"] = "Mixamo superset"
     skeleton["description"] = (
         "MakeHuman's default rig plus the 16 bones Mixamo names and it lacks. "
