@@ -2,7 +2,7 @@
 #pragma once
 
 #include "makehuman/foundation/Geometry.h"
-#include "makehuman/io/ObjWriter.h"  // Unit, unitScale
+#include "makehuman/io/Transform.h"  // Unit, unitScale, Transform
 
 #include <expected>
 #include <filesystem>

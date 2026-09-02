@@ -38,27 +38,6 @@ std::string fixed(float v, int decimals) {
 
 }  // namespace
 
-float unitScale(Unit u) noexcept {
-    // apps/gui/guiexport.py:124-129
-    switch (u) {
-        case Unit::Decimeter: return 1.0F;
-        case Unit::Meter: return 0.1F;
-        case Unit::Centimeter: return 10.0F;
-        case Unit::Inch: return 1.0F / 0.254F;
-    }
-    return 1.0F;
-}
-
-std::string_view unitName(Unit u) noexcept {
-    switch (u) {
-        case Unit::Decimeter: return "decimeter";
-        case Unit::Meter: return "meter";
-        case Unit::Centimeter: return "centimeter";
-        case Unit::Inch: return "inch";
-    }
-    return "decimeter";
-}
-
 std::string ObjWriteError::message() const {
     const char* k = "unknown error";
     switch (kind) {
@@ -170,6 +149,12 @@ std::expected<ObjWriteResult, ObjWriteError> writeObjScene(const std::filesystem
     // One ground offset for the whole scene, taken from the lowest point that is
     // WRITTEN: levelling each mesh independently would drop the clothes to the
     // floor beside the body.
+    //
+    // **Deliberately NOT io::sceneTransform.** Every other writer levels by the
+    // lowest vertex in the buffer; OBJ writes only the vertices its kept faces
+    // reference, so it must skip the ones it drops. Levelling by a vertex that
+    // never reaches the file lifts the model off the floor by however far the
+    // hidden helper cage hangs below it.
     float groundOffset = 0.0F;
     if (options.feetOnGround) {
         float lowest = std::numeric_limits<float>::infinity();

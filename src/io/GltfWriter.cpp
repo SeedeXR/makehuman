@@ -524,19 +524,10 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
             "the default and could collide with a real one"});
     }
 
-    const float scale = unitScale(options.unit) * options.scale;
-
-    // One ground offset for the whole scene: levelling each mesh on its own
-    // would drop the clothes to the floor beside the body.
-    float groundOffset = 0.0F;
-    if (options.feetOnGround) {
-        float lowest = std::numeric_limits<float>::infinity();
-        for (const GltfSceneEntry& e : entries) {
-            for (const Vec3& v : e.mesh.coord)
-                lowest = std::min(lowest, v.y * scale);
-        }
-        if (std::isfinite(lowest)) groundOffset = -lowest;
-    }
+    const Transform xf =
+        sceneTransform(unitScale(options.unit) * options.scale, options.feetOnGround, entries);
+    const float scale        = xf.scale;
+    const float groundOffset = xf.groundOffset;
 
     // ---- binary buffer ----------------------------------------------------
     std::vector<uint8_t> bin;

@@ -138,21 +138,11 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
         return std::unexpected(UsdWriteError{UsdWriteErrorKind::CannotOpen, path.string(), {}});
     }
 
-    const float s = unitScale(options.unit) * options.scale;
-
-    // One offset for the whole stage: levelling each mesh alone would drop the
-    // clothes to the floor beside the body.
-    float groundOffset = 0.0F;
-    if (options.feetOnGround) {
-        float lowest = std::numeric_limits<float>::infinity();
-        for (const UsdSceneEntry& e : entries) {
-            for (const foundation::Vec3& v : e.mesh.coord)
-                lowest = std::min(lowest, v.y * s);
-        }
-        if (std::isfinite(lowest)) groundOffset = -lowest;
-    }
+    const Transform xf =
+        sceneTransform(unitScale(options.unit) * options.scale, options.feetOnGround, entries);
+    const float s = xf.scale;
     /// A point placed in the stage: unit-scaled, then lifted onto the ground.
-    const auto placedY = [s, groundOffset](float y) { return y * s + groundOffset; };
+    const auto placedY = [&xf](float y) { return xf.placedY(y); };
 
     out << "#usda 1.0\n(\n";
     out << "    defaultPrim = \"" << options.primName << "\"\n";

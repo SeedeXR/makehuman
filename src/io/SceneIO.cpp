@@ -457,19 +457,10 @@ std::expected<SceneExportResult, SceneIoError> exportScene(const std::filesystem
         skinned = i;
     }
 
-    const float scale = unitScale(options.unit) * options.scale;
-
-    // One offset for the whole scene: levelling each mesh alone would drop the
-    // clothes to the floor beside the body.
-    float groundOffset = 0.0F;
-    if (options.feetOnGround) {
-        float lowest = std::numeric_limits<float>::infinity();
-        for (const SceneEntry& e : entries) {
-            for (const Vec3& v : e.mesh.coord)
-                lowest = std::min(lowest, v.y * scale);
-        }
-        if (std::isfinite(lowest)) groundOffset = -lowest;
-    }
+    const Transform xf =
+        sceneTransform(unitScale(options.unit) * options.scale, options.feetOnGround, entries);
+    const float scale        = xf.scale;
+    const float groundOffset = xf.groundOffset;
 
     auto scene       = std::make_unique<aiScene>();
     scene->mRootNode = new aiNode();
@@ -573,15 +564,10 @@ std::expected<SceneExportResult, SceneIoError> exportScene(
         }
     }
 
-    const float scale = unitScale(options.unit) * options.scale;
-
-    float groundOffset = 0.0F;
-    if (options.feetOnGround) {
-        float lowest = std::numeric_limits<float>::infinity();
-        for (const Vec3& v : rm.coord)
-            lowest = std::min(lowest, v.y * scale);
-        if (std::isfinite(lowest)) groundOffset = -lowest;
-    }
+    const Transform xf =
+        meshTransform(unitScale(options.unit) * options.scale, options.feetOnGround, rm);
+    const float scale        = xf.scale;
+    const float groundOffset = xf.groundOffset;
 
     // aiScene owns everything below; it is released by the unique_ptr on any
     // early return and handed to the exporter otherwise.

@@ -2140,6 +2140,75 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-02 18:44:18 — Session 124 · **the same eight lines, in five places**
+
+### The chunk
+`io::Transform`, the last M7 item that did not need the owner.
+
+### The duplication was real, and I checked before building the abstraction
+`scale = unitScale(options.unit) * options.scale` plus a "lowest scaled y,
+negated" loop appeared in **five** places: `GltfWriter`, `SceneIO` (twice),
+`UsdWriter`, `ObjWriter`. Four were character-for-character identical. Net
+**-56 lines** across the writers once shared.
+
+That count is why this was worth doing rather than a speculative abstraction --
+the ladder's first rung is "does this need to exist at all", and five copies
+answer it.
+
+### What shipped
+`include/makehuman/io/Transform.h`: `Unit`, `unitScale`, and a
+`Transform{scale, groundOffset}` with `place()` / `placedY()`, plus
+`sceneTransform()` and `meshTransform()`.
+
+A **template** over the entry type, because `GltfSceneEntry`, `SceneEntry` and
+`UsdSceneEntry` agree only on having a `.mesh`. Converting them to a common
+span would allocate on every export purely to satisfy a signature.
+
+### The smell that made it obvious
+`UsdWriter.h` was including `ObjWriter.h` **purely for `Unit`/`unitScale`** --
+a unit type living in one format's header because there was nowhere shared to
+put it. Both moved to `Transform.h`, which `ObjWriter.h` now includes, so every
+existing includer still sees `Unit` and nothing downstream changed.
+
+### ObjWriter is the deliberate exception
+It keeps its own loop, now with a comment saying why: every other writer levels
+by the lowest vertex in the buffer, but OBJ writes only the vertices its kept
+faces reference, so it must skip the dropped ones. Levelling by a vertex that
+never reaches the file lifts the model off the floor by however far the hidden
+helper cage hangs below it.
+
+Recording the exception matters more than sharing the code -- the next person to
+see four callers and one hold-out will otherwise "finish the job".
+
+### Mutations, all three caught
+- Take the minimum BEFORE scaling. This is the dangerous one: it looks correct
+  at the default scale of 1 and is wrong at every other.
+- Drop the `isfinite` guard. `lowest` starts at +infinity, so an empty scene
+  would be lifted by -inf and write a file of NaNs rather than an empty one.
+- Offset x and z as well as y.
+
+### Verification
+- 491/491 in debug, release, ASan and TSan.
+- Blender **11/11** -- the end-to-end check that matters here, since a scale or
+  offset that shifted anywhere would move a bounding box.
+- Benchmarks unchanged. Sonar gate OK, 0 open issues.
+- CI green at `f78e5aca` before this was pushed. **Waited for it deliberately**:
+  `cancel-in-progress` means an early push destroys the evidence.
+
+### Files changed
+`include/makehuman/io/Transform.h` (new), `src/io/Transform.cpp` (new),
+`tests/unit/test_transform.cpp` (new), `include/makehuman/io/ObjWriter.h`,
+`include/makehuman/io/UsdWriter.h`, `src/io/GltfWriter.cpp`,
+`src/io/SceneIO.cpp`, `src/io/UsdWriter.cpp`, `src/io/ObjWriter.cpp`,
+`src/io/CMakeLists.txt`, `tests/CMakeLists.txt`, `memory/todo.md`,
+`memory/handover_session.md`.
+
+### Next
+Camera pan (M8) is the last unattended-actionable item I know of. Everything
+else in M1-M8 needs the owner.
+
+---
+
 ## 2026-09-02 18:19:28 — Session 123 · **the last 8 Sonar findings, each proved by output diff**
 
 ### The chunk

@@ -8,6 +8,7 @@
 add_library(mh_io STATIC
     Compact.cpp
     ObjWriter.cpp
+    Transform.cpp
     BvhReader.cpp
     BvhWriter.cpp
     UsdWriter.cpp

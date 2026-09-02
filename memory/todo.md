@@ -1065,8 +1065,31 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       would let a caller convert confidently and wrongly.
       **Our FBX export is fine for real tools**: Blender reads it at
       **1.694 m**, a correct human.
-- [ ] `Transform` shared by every reader and writer (the unit half is done
-      above; a common transform type is not)
+- [x] **`io::Transform`, shared by every writer** (2026-09-02).
+      `include/makehuman/io/Transform.h` holds `Unit`, `unitScale`, and a
+      `Transform{scale, groundOffset}` with `place()` / `placedY()`, plus
+      `sceneTransform()` and `meshTransform()`.
+      **The duplication was real, not speculative**: the same eight lines
+      appeared in **five** places — `GltfWriter`, `SceneIO` (twice), `UsdWriter`
+      and `ObjWriter` — four of them character-for-character identical. Net
+      **-56 lines** across the writers.
+      Also fixed the smell that made this obvious: `UsdWriter.h` was including
+      `ObjWriter.h` purely for `Unit`/`unitScale`. Both now live in
+      `Transform.h`; `ObjWriter.h` includes it, so every existing includer still
+      sees `Unit` and nothing downstream changed.
+      **`ObjWriter` deliberately keeps its own**, now with a comment saying why:
+      every other writer levels by the lowest vertex in the buffer, but OBJ
+      writes only the vertices its kept faces reference, so it must skip the
+      dropped ones. Levelling by a vertex that never reaches the file lifts the
+      model off the floor by however far the hidden helper cage hangs below it.
+      A template over the entry type, because the three writers' entry structs
+      agree only on having a `.mesh`; a common span would allocate on every
+      export to satisfy a signature.
+      Three mutations, all caught: take the minimum before scaling (looks
+      correct at the default scale of 1); drop the `isfinite` guard (an empty
+      scene would be lifted by -inf and write a file of NaNs); offset x and z as
+      well as y.
+      Verified end to end: Blender still **11/11**, so no export geometry moved.
 - [~] **Import: multi-mesh now works** (`io::importScene`). Formats come from
       assimp, so FBX, glTF/GLB, DAE, STL and OBJ all read.
       **The gap this closed**: export has been multi-mesh for a while — a
