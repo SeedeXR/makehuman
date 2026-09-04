@@ -329,3 +329,202 @@ TEST_CASE("bodyFaceMask refuses a mesh that is neither the base nor its subdivis
     REQUIRE_FALSE(mask.has_value());
     CHECK(mask.error() == MeshError::MaskSizeMismatch);
 }
+
+// --- Proxy-on-proxy masking -------------------------------------------------
+//
+// Clothes hiding CLOTHES, not just clothes hiding body. A jacket's
+// `delete_verts` must reach the shirt underneath it as well as the skin, or the
+// shirt pokes through wherever the jacket cut a hole.
+//
+// `transferVertexMaskToProxy` (shared/proxy.py:960-983) remaps a BASE-mesh
+// vertex mask onto a proxy through the proxy's own fit. Two rules, and they are
+// not the same rule:
+//
+//   * a proxy vertex fitted to ONE base vertex (weights[1] and [2] both zero)
+//     simply copies that vertex's visibility;
+//   * an interpolated one is hidden only when at least TWO of its three
+//     references are hidden -- `< 2` visible in the reference's arithmetic.
+//
+// The second rule is the one worth pinning: the natural guess (hide if any
+// reference is hidden) erodes a much larger area around every hole.
+TEST_CASE("a base-mesh mask transfers onto a proxy by its own fit", "[mask][proxy]") {
+    Proxy p;
+    // Four proxy vertices over a 10-vertex base:
+    //   0: exact, on base vertex 0
+    //   1: exact, on base vertex 3
+    //   2: interpolated over 0,1,2
+    //   3: interpolated over 3,4,5
+    p.refVerts = {{0, 0, 0}, {3, 0, 0}, {0, 1, 2}, {3, 4, 5}};
+    p.weights  = {{1.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F}, {0.5F, 0.3F, 0.2F}, {0.5F, 0.3F, 0.2F}};
+
+    std::vector<uint8_t> base(10, 1U);
+
+    SECTION("an exact vertex copies its reference") {
+        base[0]      = 0U;
+        const auto m = transferVertexMaskToProxy(base, p);
+        REQUIRE(m.size() == 4);
+        CHECK(m[0] == 0U);  // followed base vertex 0
+        CHECK(m[1] == 1U);  // base vertex 3 still visible
+    }
+
+    SECTION("one hidden reference of three is not enough") {
+        base[0]      = 0U;  // only one of {0,1,2}
+        const auto m = transferVertexMaskToProxy(base, p);
+        CHECK(m[2] == 1U);  // two references still visible, so it stays
+    }
+
+    SECTION("two hidden references of three hide it") {
+        base[0]      = 0U;
+        base[1]      = 0U;
+        const auto m = transferVertexMaskToProxy(base, p);
+        CHECK(m[2] == 0U);
+        CHECK(m[3] == 1U);  // the other interpolated vertex is untouched
+    }
+
+    SECTION("an all-visible base hides nothing") {
+        const auto m = transferVertexMaskToProxy(base, p);
+        CHECK(std::count(m.begin(), m.end(), uint8_t{1}) == 4);
+    }
+
+    SECTION("a reference past the end of the base mask is treated as visible") {
+        // Not hypothetical: a proxy fitted to a different base mesh would
+        // otherwise read out of bounds. Refusing to hide is the safe answer --
+        // showing a vertex that should be hidden is a cosmetic bug; reading
+        // past the array is not a bug we get to observe.
+        Proxy far;
+        far.refVerts = {{999, 0, 0}};
+        far.weights  = {{1.0F, 0.0F, 0.0F}};
+        const auto m = transferVertexMaskToProxy(base, far);
+        REQUIRE(m.size() == 1);
+        CHECK(m[0] == 1U);
+    }
+}
+
+// The ORDER is the whole feature. A proxy is masked by the layers ABOVE it and
+// never by itself, so the stack must be walked outermost first -- which is
+// `reversed(sorted by z_depth)` in the reference
+// (3_libraries_clothes_chooser.py:92-99, 125).
+TEST_CASE("worn proxies mask the layers below them, outermost first", "[mask][proxy][layers]") {
+    constexpr size_t kBase = 10;
+
+    // An outer jacket (high z_depth) that deletes base vertices 0 and 1.
+    Proxy jacket;
+    jacket.zDepth = 80;
+    jacket.deleteVerts.assign(kBase, 0U);
+    jacket.deleteVerts[0] = 1U;
+    jacket.deleteVerts[1] = 1U;
+    jacket.refVerts       = {{5, 0, 0}};
+    jacket.weights        = {{1.0F, 0.0F, 0.0F}};
+
+    // An inner shirt (low z_depth) whose single vertex sits on base vertex 0 --
+    // exactly where the jacket cut its hole.
+    Proxy shirt;
+    shirt.zDepth = 10;
+    shirt.deleteVerts.assign(kBase, 0U);
+    shirt.refVerts = {{0, 0, 0}};
+    shirt.weights  = {{1.0F, 0.0F, 0.0F}};
+
+    const std::array<const Proxy*, 2> worn{&shirt, &jacket};  // NOT in render order
+    const WornMasks masks = wornVertexMasks(worn, kBase);
+
+    REQUIRE(masks.perProxy.size() == 2);
+    // Results are parallel to the INPUT span, whatever order that was in.
+    CHECK(masks.perProxy[0].size() == 1);  // shirt
+    CHECK(masks.perProxy[1].size() == 1);  // jacket
+
+    // The shirt is hidden where the jacket deleted the body under it.
+    CHECK(masks.perProxy[0][0] == 0U);
+    // The jacket is NOT masked by itself, and nothing is above it.
+    CHECK(masks.perProxy[1][0] == 1U);
+
+    // And the body still gets the union, exactly as visibleVertexMask says.
+    CHECK(masks.body[0] == 0U);
+    CHECK(masks.body[1] == 0U);
+    CHECK(masks.body[2] == 1U);
+    CHECK(masks.body == visibleVertexMask(worn, kBase));
+}
+
+// A garment cuts a hole in what is UNDER it, never in itself. The reference
+// takes each proxy's mask before folding that proxy's own `delete_verts` into
+// the accumulator (3_libraries_clothes_chooser.py:130-141) -- swap those two
+// steps and every garment erases itself wherever it deletes body.
+//
+// Measured: with the jacket's own vertex sitting away from its deletions, that
+// swap was invisible to every other test here.
+TEST_CASE("a garment never masks itself", "[mask][proxy][layers]") {
+    constexpr size_t kBase = 10;
+
+    Proxy jacket;
+    jacket.zDepth = 80;
+    jacket.deleteVerts.assign(kBase, 0U);
+    jacket.deleteVerts[0] = 1U;
+    // Its own vertex sits EXACTLY on the body vertex it deletes.
+    jacket.refVerts = {{0, 0, 0}};
+    jacket.weights  = {{1.0F, 0.0F, 0.0F}};
+
+    const std::array<const Proxy*, 1> worn{&jacket};
+    const WornMasks masks = wornVertexMasks(worn, kBase);
+
+    REQUIRE(masks.perProxy[0].size() == 1);
+    CHECK(masks.perProxy[0][0] == 1U);  // visible: nothing is above it
+    CHECK(masks.body[0] == 0U);         // but the body still loses that vertex
+}
+
+TEST_CASE("a lower layer does not mask a higher one", "[mask][proxy][layers]") {
+    constexpr size_t kBase = 10;
+
+    // Same two garments, but now the INNER one deletes the body vertex the
+    // OUTER one sits on. The jacket must be untouched: it is rendered above.
+    Proxy shirt;
+    shirt.zDepth = 10;
+    shirt.deleteVerts.assign(kBase, 0U);
+    shirt.deleteVerts[5] = 1U;
+    shirt.refVerts       = {{0, 0, 0}};
+    shirt.weights        = {{1.0F, 0.0F, 0.0F}};
+
+    Proxy jacket;
+    jacket.zDepth = 80;
+    jacket.deleteVerts.assign(kBase, 0U);
+    jacket.refVerts = {{5, 0, 0}};
+    jacket.weights  = {{1.0F, 0.0F, 0.0F}};
+
+    const std::array<const Proxy*, 2> worn{&shirt, &jacket};
+    const WornMasks masks = wornVertexMasks(worn, kBase);
+
+    CHECK(masks.perProxy[1][0] == 1U);  // jacket unmasked by the shirt below it
+    CHECK(masks.body[5] == 0U);         // the body still loses that vertex
+}
+
+TEST_CASE("equal z_depth is broken deterministically, not by input order",
+          "[mask][proxy][layers]") {
+    // The reference sorts (z_depth, uuid) pairs, so ties fall to the uuid and
+    // the result does not depend on the order the chooser happened to hand
+    // them over. Two runs with the inputs swapped must agree.
+    constexpr size_t kBase = 6;
+
+    Proxy a;
+    a.zDepth = 50;
+    a.uuid   = "aaa";
+    a.deleteVerts.assign(kBase, 0U);
+    a.deleteVerts[0] = 1U;
+    a.refVerts       = {{1, 0, 0}};
+    a.weights        = {{1.0F, 0.0F, 0.0F}};
+
+    Proxy b;
+    b.zDepth = 50;
+    b.uuid   = "bbb";
+    b.deleteVerts.assign(kBase, 0U);
+    b.deleteVerts[1] = 1U;
+    b.refVerts       = {{0, 0, 0}};
+    b.weights        = {{1.0F, 0.0F, 0.0F}};
+
+    const std::array<const Proxy*, 2> ab{&a, &b};
+    const std::array<const Proxy*, 2> ba{&b, &a};
+    const WornMasks first  = wornVertexMasks(ab, kBase);
+    const WornMasks second = wornVertexMasks(ba, kBase);
+
+    // Same proxy, same answer, whichever slot it arrived in.
+    CHECK(first.perProxy[0] == second.perProxy[1]);  // a
+    CHECK(first.perProxy[1] == second.perProxy[0]);  // b
+    CHECK(first.body == second.body);
+}

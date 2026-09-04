@@ -147,6 +147,58 @@ bool fitProxy(const Proxy& proxy, std::span<const Vec3> humanCoords, std::vector
 [[nodiscard]] std::vector<uint8_t> visibleVertexMask(std::span<const Proxy* const> proxies,
                                                      size_t bodyVertexCount);
 
+/// Remaps a BASE-mesh vertex mask onto @p proxy through the proxy's own fit.
+///
+/// A port of `transferVertexMaskToProxy` (shared/proxy.py:960-983). Two rules,
+/// and they are deliberately not the same rule:
+///
+///   * a proxy vertex fitted to ONE base vertex -- `weights[1]` and `weights[2]`
+///     both zero -- copies that vertex's visibility;
+///   * an interpolated one is hidden only when at least **two** of its three
+///     references are hidden (`< 2` visible in the reference's arithmetic).
+///
+/// The second is the one that matters. The natural guess -- hide as soon as any
+/// reference is hidden -- erodes a much wider band around every hole than the
+/// reference produces.
+///
+/// A reference index past the end of @p baseVisible counts as visible: a proxy
+/// fitted to a different base mesh would otherwise read out of bounds, and
+/// showing a vertex that should be hidden is a cosmetic bug where reading past
+/// the array is not one we get to observe.
+///
+/// @param baseVisible one byte per BASE vertex, nonzero = visible.
+/// @return one byte per PROXY vertex, nonzero = visible.
+[[nodiscard]] std::vector<uint8_t> transferVertexMaskToProxy(std::span<const uint8_t> baseVisible,
+                                                             const Proxy& proxy);
+
+/// Every worn proxy's vertex mask, plus the body's, in one ordered pass.
+struct WornMasks {
+    /// Parallel to the `worn` span the caller passed, whatever order that was
+    /// in -- the render order is used internally and not imposed on the caller.
+    std::vector<std::vector<uint8_t>> perProxy;
+    /// The same union `visibleVertexMask` returns.
+    std::vector<uint8_t> body;
+};
+
+/// Clothes hiding clothes, not just clothes hiding body.
+///
+/// `updateFaceMasks` (3_libraries_clothes_chooser.py:101-143) walks the stack
+/// **outermost first** -- `reversed(sorted by z_depth)` -- handing each garment
+/// the mask accumulated by the layers above it and only then folding in its own
+/// `delete_verts`. So a garment is masked by what is over it and never by
+/// itself, which is why the order is the feature rather than a detail.
+///
+/// Ties on `z_depth` fall to the uuid, as the reference's `(z_depth, uuid)`
+/// sort does, so the answer does not depend on the order the caller collected
+/// the proxies in.
+///
+/// The body half is a plain union and order cannot affect it; `body` therefore
+/// equals `visibleVertexMask(worn, bodyVertexCount)` and is asserted to.
+///
+/// **No shipped asset exercises this**: all four shipped `.mhclo`/`.proxy`
+/// files declare zero `delete_verts`, so the coverage is synthetic.
+[[nodiscard]] WornMasks wornVertexMasks(std::span<const Proxy* const> worn, size_t bodyVertexCount);
+
 /// The body's drawn-and-exported face mask: group visibility AND everything the
 /// worn proxies delete.
 ///

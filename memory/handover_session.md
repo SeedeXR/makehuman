@@ -2140,6 +2140,77 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-05 00:13:14 — Session 126 · **the blocker in the note had already been removed**
+
+### The chunk
+Proxy-on-proxy masking — clothes hiding clothes. The last open M4 item.
+
+### The recorded blocker was stale, and checking cost one grep
+`todo.md` said *"Needs the render-order stack"*. But `z_depth` has been parsed
+since the proxy reader landed (`Proxy.h:73`, `Proxy.cpp:202-203, 336-339`), so
+the ordering data was already there and the item had been implementable for
+some time. Memory is point-in-time; state is truth.
+
+### Two rules that are not the same rule
+`shared/proxy.py:960-983`:
+
+* a proxy vertex fitted to ONE base vertex (`weights[1]` and `[2]` both zero)
+  copies that vertex's visibility;
+* an interpolated one is hidden only when at least **two** of its three
+  references are hidden.
+
+The second is the one worth pinning. The natural guess — hide as soon as any
+reference is hidden — erodes a much wider band around every hole than the
+reference produces, and would look like a fitting bug rather than a mask bug.
+
+### The order IS the feature
+`3_libraries_clothes_chooser.py:92-99, 125` walks `reversed(sorted by z_depth)`
+— outermost first — handing each garment the mask accumulated by the layers
+**above** it and folding in its own `delete_verts` only afterwards. So a garment
+is masked by what is over it and never by itself.
+
+Ties fall to the uuid, as the reference's `(z_depth, uuid)` sort does, so the
+answer does not depend on the order the caller happened to collect the proxies
+in — asserted by running the same two garments through in both orders.
+
+### The mutation that survived
+Four of five mutations were caught at once. The fifth — folding a proxy's own
+deletions in **before** taking its mask, so every garment erases itself wherever
+it cuts the body — passed everything, because my jacket's own vertex sat away
+from its own deletions. Fixed by a test that puts a garment's vertex exactly on
+a body vertex it deletes. That is the second session running where the surviving
+mutation pointed at a case the tests had merely not arranged.
+
+### A performance finding in my own first draft
+I put the per-garment loop **above** `applyBodyMask`'s early-out, so it ran on
+every slider drag — allocating a mask per garment per frame for a result that
+only changes when something is put on or taken off. Moved below the early-out,
+where the body mask already sits for exactly that reason.
+
+Also: my first version discarded `setFaceMask`'s failure with `(void)`. Now
+announced — a garment that silently keeps rendering through a hole reads as a
+modelling problem rather than a bug.
+
+### Verification
+- 498/498 in debug, release, ASan and TSan.
+- Blender **11/11**; the shipped eye proxy declares zero `delete_verts`, so the
+  exports are byte-for-byte what they were, which is the correct outcome.
+- SonarQube gate OK, **0 open issues**. Benchmarks unchanged.
+- Still **no shipped asset exercises this** — all four `.mhclo`/`.proxy` files
+  declare zero `delete_verts`, so coverage is synthetic, as `visibleVertexMask`'s
+  already was.
+
+### Files changed
+`include/makehuman/core/Proxy.h`, `src/core/Proxy.cpp`, `src/app/main.cpp`,
+`tests/golden/test_face_mask_parity.cpp`, `memory/todo.md`,
+`memory/handover_session.md`.
+
+### Next
+M4 is now closed. M5's remaining items need the owner or assets, except the
+skin normals/tangents w=0 path.
+
+---
+
 ## 2026-09-02 19:09:26 — Session 125 · **two pan mutations survived, and that was the finding**
 
 ### The chunk

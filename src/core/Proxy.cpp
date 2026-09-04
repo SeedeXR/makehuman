@@ -405,4 +405,65 @@ std::expected<std::vector<uint8_t>, MeshError> bodyFaceMask(const Mesh& base, co
     return expanded;
 }
 
+std::vector<uint8_t> transferVertexMaskToProxy(std::span<const uint8_t> baseVisible,
+                                               const Proxy& proxy) {
+    std::vector<uint8_t> out(proxy.vertexCount(), 1U);
+
+    const auto visible = [baseVisible](uint32_t idx) {
+        // Out of range counts as visible -- see the header for why.
+        return idx < baseVisible.size() ? baseVisible[idx] != 0U : true;
+    };
+
+    for (size_t i = 0; i < proxy.vertexCount(); ++i) {
+        const std::array<uint32_t, 3>& ref = proxy.refVerts[i];
+        // `exactFitOnly` is the compiled form's flag for "every vertex is
+        // exact"; the per-vertex test is still needed for the ascii form, where
+        // the two kinds are mixed.
+        const bool exact =
+            proxy.exactFitOnly || (proxy.weights[i][1] == 0.0F && proxy.weights[i][2] == 0.0F);
+        if (exact) {
+            out[i] = visible(ref[0]) ? 1U : 0U;
+            continue;
+        }
+        const int seen = static_cast<int>(visible(ref[0])) + static_cast<int>(visible(ref[1])) +
+                         static_cast<int>(visible(ref[2]));
+        if (seen < 2) out[i] = 0U;
+    }
+    return out;
+}
+
+WornMasks wornVertexMasks(std::span<const Proxy* const> worn, size_t bodyVertexCount) {
+    WornMasks masks;
+    masks.perProxy.assign(worn.size(), {});
+    masks.body.assign(bodyVertexCount, 1U);
+
+    // Outermost first: sort ascending by (z_depth, uuid) as the reference does,
+    // then walk it backwards.
+    std::vector<size_t> order;
+    order.reserve(worn.size());
+    for (size_t i = 0; i < worn.size(); ++i) {
+        if (worn[i] != nullptr) order.push_back(i);
+    }
+    std::ranges::sort(order, [&worn](size_t a, size_t b) {
+        const Proxy& pa = *worn[a];
+        const Proxy& pb = *worn[b];
+        if (pa.zDepth != pb.zDepth) return pa.zDepth < pb.zDepth;
+        return pa.uuid < pb.uuid;
+    });
+
+    for (size_t k = order.size(); k-- > 0;) {
+        const size_t i     = order[k];
+        const Proxy& proxy = *worn[i];
+        // The mask ACCUMULATED SO FAR, i.e. from the layers above this one.
+        // Taken before this proxy's own deletions, so it never masks itself.
+        masks.perProxy[i] = transferVertexMaskToProxy(masks.body, proxy);
+
+        const size_t n = std::min(proxy.deleteVerts.size(), masks.body.size());
+        for (size_t v = 0; v < n; ++v) {
+            if (proxy.deleteVerts[v] != 0U) masks.body[v] = 0U;
+        }
+    }
+    return masks;
+}
+
 }  // namespace mh::core

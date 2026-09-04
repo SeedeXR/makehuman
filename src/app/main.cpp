@@ -1421,10 +1421,41 @@ int main(int argc, char** argv) {
         auto mask = mh::core::bodyFaceMask(*mesh, shown, worn);
         if (!mask) return false;
         // The mask only changes when something is put on or taken off, so
-        // everything below this line -- including the announcement -- would
-        // otherwise repeat on every slider drag.
+        // everything below this line -- including the announcement and the
+        // per-garment masks -- would otherwise repeat on every slider drag.
         if (*mask == bodyMask) return true;
         bodyMask = std::move(*mask);
+
+        // Clothes hiding clothes. Each garment is masked by the layers above it
+        // (`wornVertexMasks` walks the z_depth stack outermost first); without
+        // this a jacket's delete_verts cut a hole in the BODY and the shirt
+        // underneath went on rendering straight through it.
+        //
+        // Below the early-out on purpose: this depends on WHAT IS WORN, exactly
+        // as the body mask does, and nothing here changes when a slider moves.
+        const mh::core::WornMasks masks = mh::core::wornVertexMasks(worn, mesh->vertexCount());
+        size_t slot                     = 0;
+        for (auto& [group, w] : wornProxies) {
+            const std::vector<uint8_t>& visible = masks.perProxy[slot++];
+            // Nothing above it, or nothing above it deletes anything -- the
+            // common case, and the one where re-uploading an index buffer would
+            // buy nothing.
+            if (std::ranges::all_of(visible, [](uint8_t v) { return v != 0U; })) continue;
+            const auto faces = w.mesh.faceMaskForVisibleVertices(visible);
+            // Announced rather than swallowed: `visible` is built from this
+            // proxy's own vertex count, so a mismatch here means the fit and
+            // the mesh disagree -- a garment that silently keeps rendering
+            // through a hole looks like a modelling problem, not a bug.
+            if (!faces || !w.rm.setFaceMask(w.mesh, *faces)) {
+                std::fprintf(stderr, "cannot mask %s against the layers above it\n",
+                             group.toLocal8Bit().constData());
+                continue;
+            }
+            std::printf("%s: %zu of %zu faces visible under the layers above\n",
+                        group.toLocal8Bit().constData(),
+                        static_cast<size_t>(std::count(faces->begin(), faces->end(), uint8_t{1})),
+                        faces->size());
+        }
         // Announced, because a mask that silently stopped being applied still
         // renders a plausible picture and still writes a valid file -- it just
         // has the helper cages in it. app_smoke asserts on this line.

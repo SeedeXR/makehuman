@@ -264,10 +264,37 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       hides zero of 18,486 faces. No shipped asset declares `delete_verts`
       (0 across all four), so the fixtures are synthetic but run through the
       reference's own code.
-- [ ] Proxy-on-proxy masking (`transferVertexMaskToProxy`) — clothes hiding
-      clothes. Needs the render-order stack; the body mask does not.
-      The body half is wired up as of session 032 — see the `delete_verts` entry
-      in M8. Each worn proxy still exports with an empty face mask.
+- [x] **Proxy-on-proxy masking** (2026-09-05) — clothes hiding clothes, not just
+      clothes hiding body.
+      **The recorded blocker was stale.** "Needs the render-order stack" — but
+      `z_depth` has been parsed since the proxy reader landed (`Proxy.h:73`,
+      `Proxy.cpp:202-203, 336-339`), so the ordering data was already there.
+      Checked before believing the note.
+      `core::transferVertexMaskToProxy` ports `shared/proxy.py:960-983`, whose
+      two rules are **not** the same rule: a proxy vertex fitted to ONE base
+      vertex copies its visibility, while an interpolated one is hidden only
+      when at least **two** of its three references are hidden. The natural
+      guess — hide if any reference is hidden — erodes a much wider band around
+      every hole.
+      `core::wornVertexMasks` walks the stack **outermost first**
+      (`reversed(sorted by (z_depth, uuid))`, matching
+      `3_libraries_clothes_chooser.py:92-99, 125`), handing each garment the
+      mask accumulated by the layers above it and folding in its own
+      `delete_verts` only afterwards — so a garment is never masked by itself.
+      Ties break on uuid, so the answer does not depend on the order the caller
+      collected the proxies in. `body` is the same union `visibleVertexMask`
+      returns, and that equality is asserted.
+      Wired into `main.cpp`'s `applyBodyMask`, **below the early-out**: the
+      per-garment masks depend on what is WORN, exactly as the body mask does,
+      and nothing there changes when a slider moves. A failure is announced
+      rather than swallowed — a garment still rendering through a hole looks
+      like a modelling problem, not a bug.
+      Five mutations; four caught immediately. The fifth — folding a proxy's own
+      deletions in **before** taking its mask, so every garment erases itself —
+      survived until a test put a garment's own vertex on a body vertex it
+      deletes. Still no shipped asset exercises any of this (all four shipped
+      `.mhclo`/`.proxy` files declare zero `delete_verts`), so coverage is
+      synthetic, as `visibleVertexMask`'s already was.
 - [x] `.mhmat` **parser** — all keys, 7 texture channels, shader config
 - [x] `.mhmat` **writer** — lossless round-trip on all 3 shipped materials,
       plus a fixed-point check (a second save must reproduce the first).
