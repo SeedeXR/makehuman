@@ -36,6 +36,28 @@ public:
 
     void setMesh(const foundation::RenderView& mesh);
 
+    /// Switches the interface language and the layout direction.
+    ///
+    /// An empty @p name removes any translation and returns to the source
+    /// strings. A file that fails to load leaves the current language in place
+    /// and returns false, rather than dropping the user into raw English.
+    [[nodiscard]] bool setLanguage(const std::filesystem::path& dataDir, const QString& name);
+
+    /// The language set by setLanguage, or empty for the untranslated source.
+    [[nodiscard]] QString language() const;
+
+    /// Fills the Language menu, which stays hidden until this is called.
+    ///
+    /// `mh_ui` has no data path of its own and must not invent one, so the
+    /// directory and the list both come from the application. The menu always
+    /// offers "English" first -- the untranslated source every shipped file is
+    /// a translation of, and the way back from a language you cannot read.
+    void setLanguageChoices(const std::filesystem::path& dataDir, const QStringList& names);
+
+    /// Re-applies every registered label from the installed translator. Called
+    /// for you on `QEvent::LanguageChange`; public so a test can force it.
+    void retranslateUi();
+
     /// The body plus everything worn, each with its own material. See
     /// ViewportWidget::setMeshes for the lifetime rule: the views are
     /// non-owning and the caller keeps the geometry alive.
@@ -104,7 +126,16 @@ signals:
     void saveRequested();
     void saveAsRequested();
 
+protected:
+    void changeEvent(QEvent* e) override;
+
 private:
+    /// Registers @p source against @p target and applies it now. `target` may
+    /// be a QAction, a QMenu or any QWidget; see applyText.
+    void buildLanguageMenu();
+    void registerText(QObject* target, const char* source);
+    static void applyText(QObject* target, const QString& text);
+
     struct Impl;
     std::unique_ptr<Impl> d_;
 };

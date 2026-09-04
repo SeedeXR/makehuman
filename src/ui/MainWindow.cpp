@@ -3,12 +3,15 @@
 
 #include "makehuman/ui/UndoCommands.h"
 
+#include "makehuman/ui/Language.h"
 #include "makehuman/ui/PanelTitleBar.h"
 #include "makehuman/ui/Theme.h"
 #include "makehuman/ui/ViewportWidget.h"
 #include "makehuman/ui/Workspace.h"
 
 #include <QAction>
+#include <QActionGroup>
+#include <QApplication>
 #include <QDir>
 #include <QDockWidget>
 #include <QFile>
@@ -20,6 +23,7 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QMenuBar>
+#include <QPointer>
 #include <QSaveFile>
 #include <QSettings>
 #include <QStandardPaths>
@@ -64,10 +68,24 @@ QSettings workspaceSettings() {
                      QStringLiteral("MakeHumanCpp"));
 }
 
+/// One retranslatable label: what to set, and the ENGLISH source to look up.
+///
+/// The alternative is `findChild` by object name at retranslate time, which
+/// only reaches things that were given a name and silently skips the rest.
+struct Translatable {
+    QPointer<QObject> target;
+    QByteArray source;
+};
+
 }  // namespace
 
 struct MainWindow::Impl {
     ViewportWidget* viewport{};
+    std::vector<Translatable> texts;
+    std::unique_ptr<JsonTranslator> translator;
+    QString language;
+    QMenu* languageMenu{};
+    std::filesystem::path languageDir;
     /// Categories, so a preset can resolve "everything" at apply time rather
     /// than naming docks literally. Only categories() was ever read from the
     /// registry, so the list is what is kept.
@@ -111,7 +129,18 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     bool first = true;
     for (const QString& category : tasks.categories()) {
         const Qt::DockWidgetArea area = first ? Qt::LeftDockWidgetArea : Qt::RightDockWidgetArea;
-        addDockWidget(area, makeDock(category, dockObjectName(category), area, this));
+        // The category name is a DATA string -- it comes from the task
+        // registry, not from tr() -- and the shipped dictionaries do carry
+        // these: Materials, Modelling, Skeleton, Files, Settings and Pose all
+        // have entries. Registered so it re-translates on a live switch.
+        // The title is passed in as well as registered: makeDock derives the
+        // dock's accessibleName and its placeholder body from it, and neither
+        // follows a later setWindowTitle. registerText then keeps the visible
+        // title live across a language switch.
+        QDockWidget* dock = makeDock(QCoreApplication::translate("", category.toUtf8().constData()),
+                                     dockObjectName(category), area, this);
+        registerText(dock, category.toUtf8().constData());
+        addDockWidget(area, dock);
         first = false;
     }
 
@@ -127,27 +156,30 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     setDockNestingEnabled(true);
     setDockOptions(dockOptionsFor(theme::reduceMotion()));
 
-    QMenu* file              = menuBar()->addMenu(tr("&File"));
-    const auto addFileAction = [&](const QString& objectName, const QString& text,
+    QMenu* file = menuBar()->addMenu(tr("&File"));
+    registerText(file, QT_TR_NOOP("&File"));
+    const auto addFileAction = [&](const QString& objectName, const char* source,
                                    QKeySequence::StandardKey key, const char* iconName,
                                    void (MainWindow::*signal)()) {
-        QAction* a = file->addAction(text);
+        QAction* a = file->addAction(QCoreApplication::translate("", source));
+        registerText(a, source);
         a->setObjectName(objectName);
         a->setShortcut(key);
         a->setIcon(theme::icon(iconName, theme::palette().textSecondary, 16));
         connect(a, &QAction::triggered, this, signal);
     };
-    addFileAction(QStringLiteral("file.open"), tr("Open…"), QKeySequence::Open, "folder-open",
-                  &MainWindow::openRequested);
-    addFileAction(QStringLiteral("file.save"), tr("Save"), QKeySequence::Save, "save",
+    addFileAction(QStringLiteral("file.open"), QT_TR_NOOP("Open…"), QKeySequence::Open,
+                  "folder-open", &MainWindow::openRequested);
+    addFileAction(QStringLiteral("file.save"), QT_TR_NOOP("Save"), QKeySequence::Save, "save",
                   &MainWindow::saveRequested);
-    addFileAction(QStringLiteral("file.saveAs"), tr("Save As…"), QKeySequence::SaveAs, "upload",
-                  &MainWindow::saveAsRequested);
+    addFileAction(QStringLiteral("file.saveAs"), QT_TR_NOOP("Save As…"), QKeySequence::SaveAs,
+                  "upload", &MainWindow::saveAsRequested);
 
     // Qt builds the actions, so the text follows the command ("Undo Change
     // head/head-oval") and they enable and disable themselves with the stack.
-    d_->undo            = new QUndoStack(this);
-    QMenu* edit         = menuBar()->addMenu(tr("&Edit"));
+    d_->undo    = new QUndoStack(this);
+    QMenu* edit = menuBar()->addMenu(tr("&Edit"));
+    registerText(edit, QT_TR_NOOP("&Edit"));
     QAction* undoAction = d_->undo->createUndoAction(this, tr("Undo"));
     undoAction->setObjectName(QStringLiteral("edit.undo"));
     undoAction->setShortcut(QKeySequence::Undo);
@@ -158,7 +190,8 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     edit->addAction(redoAction);
 
     QMenu* workspace = menuBar()->addMenu(tr("&Workspace"));
-    int index        = 0;
+    registerText(workspace, QT_TR_NOOP("&Workspace"));
+    int index = 0;
     for (const WorkspacePreset& preset : workspacePresets()) {
         const QString name = preset.name;
         QAction* a         = workspace->addAction(name);
@@ -171,6 +204,7 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     // gain files between openings, including from another window.
     workspace->addSeparator();
     d_->savedMenu = workspace->addMenu(tr("Saved Layouts"));
+    registerText(d_->savedMenu, QT_TR_NOOP("Saved Layouts"));
     d_->savedMenu->menuAction()->setObjectName(QStringLiteral("workspace.saved"));
     connect(d_->savedMenu, &QMenu::aboutToShow, this, [this] {
         d_->savedMenu->clear();
@@ -182,6 +216,7 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     });
 
     QAction* saveAsAction = workspace->addAction(tr("Save Workspace As…"));
+    registerText(saveAsAction, QT_TR_NOOP("Save Workspace As…"));
     saveAsAction->setObjectName(QStringLiteral("workspace.saveAs"));
     connect(saveAsAction, &QAction::triggered, this, [this] {
         bool accepted      = false;
@@ -197,8 +232,11 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
 
     workspace->addSeparator();
     QAction* resetAction = workspace->addAction(tr("Reset Workspace"));
+    registerText(resetAction, QT_TR_NOOP("Reset Workspace"));
     resetAction->setObjectName(QStringLiteral("workspace.reset"));
     connect(resetAction, &QAction::triggered, this, &MainWindow::resetWorkspace);
+
+    buildLanguageMenu();
 
     statusBar()->showMessage(QStringLiteral("Ready"));
     resize(1280, 800);
@@ -269,6 +307,104 @@ QMainWindow::DockOptions MainWindow::dockOptionsFor(bool reduceMotion) {
                                        QMainWindow::AllowTabbedDocks | QMainWindow::GroupedDragging;
     if (!reduceMotion) options |= QMainWindow::AnimatedDocks;
     return options;
+}
+
+void MainWindow::buildLanguageMenu() {
+    // The data directory is not known to this module -- `mh_ui` has no data
+    // path of its own and must not invent one -- so the menu is built from
+    // whatever setLanguageChoices() was given. Empty until then, and hidden
+    // rather than shown empty.
+    d_->languageMenu = menuBar()->addMenu(tr("&Language"));
+    registerText(d_->languageMenu, QT_TR_NOOP("&Language"));
+    d_->languageMenu->menuAction()->setVisible(false);
+}
+
+void MainWindow::setLanguageChoices(const std::filesystem::path& dataDir,
+                                    const QStringList& names) {
+    d_->languageMenu->clear();
+    d_->languageDir = dataDir;
+
+    auto* group = new QActionGroup(d_->languageMenu);
+    group->setExclusive(true);
+
+    // "English" is the untranslated source, not a file: every shipped .json is
+    // a translation OF it, so it is the way back rather than another choice.
+    const auto add = [&](const QString& label, const QString& file) {
+        QAction* a = d_->languageMenu->addAction(label);
+        a->setCheckable(true);
+        a->setChecked(file == d_->language);
+        a->setObjectName(QStringLiteral("language.") + (file.isEmpty() ? "english" : file));
+        group->addAction(a);
+        connect(a, &QAction::triggered, this, [this, file] {
+            if (!setLanguage(d_->languageDir, file)) {
+                statusBar()->showMessage(tr("Could not load that language"), 3000);
+            }
+        });
+    };
+    add(QStringLiteral("English"), QString{});
+    for (const QString& n : names)
+        add(n, n);
+
+    d_->languageMenu->menuAction()->setVisible(!names.isEmpty());
+}
+
+void MainWindow::applyText(QObject* target, const QString& text) {
+    // QAction, QMenu and QWidget each spell "the label" differently; there is
+    // no common setter to call.
+    if (auto* a = qobject_cast<QAction*>(target)) {
+        a->setText(text);
+    } else if (auto* m = qobject_cast<QMenu*>(target)) {
+        m->setTitle(text);
+    } else if (auto* w = qobject_cast<QWidget*>(target)) {
+        w->setWindowTitle(text);
+    }
+}
+
+void MainWindow::registerText(QObject* target, const char* source) {
+    d_->texts.push_back(Translatable{target, QByteArray(source)});
+    applyText(target, QCoreApplication::translate("", source));
+}
+
+void MainWindow::retranslateUi() {
+    for (const Translatable& t : d_->texts) {
+        // QPointer, so a dock closed and destroyed since registration is
+        // skipped rather than followed into freed memory.
+        if (t.target) applyText(t.target, QCoreApplication::translate("", t.source.constData()));
+    }
+}
+
+void MainWindow::changeEvent(QEvent* e) {
+    // Qt posts this to every top-level widget when a translator is installed or
+    // removed -- including by someone other than setLanguage(), which is why
+    // the work hangs off the event rather than off the setter.
+    if (e != nullptr && e->type() == QEvent::LanguageChange) retranslateUi();
+    QMainWindow::changeEvent(e);
+}
+
+bool MainWindow::setLanguage(const std::filesystem::path& dataDir, const QString& name) {
+    auto next = std::make_unique<JsonTranslator>();
+    // Loaded BEFORE the old one is removed: a failed load must leave the
+    // running language alone rather than drop the user into raw source strings.
+    if (!name.isEmpty() && !next->load(dataDir, name)) return false;
+
+    if (d_->translator) QCoreApplication::removeTranslator(d_->translator.get());
+    d_->translator = std::move(next);
+    d_->language   = name;
+
+    if (!name.isEmpty()) QCoreApplication::installTranslator(d_->translator.get());
+    // Direction is application-wide in Qt and the file is the only thing that
+    // knows: `__options__.rtl`, set on Arabic alone of the twenty shipped.
+    QApplication::setLayoutDirection(d_->translator->isRightToLeft() ? Qt::RightToLeft
+                                                                     : Qt::LeftToRight);
+    // installTranslator posts LanguageChange, but removeTranslator on the way
+    // to NO language posts it too -- and if neither ran (same empty name twice)
+    // nothing would repaint. Cheap, and idempotent.
+    retranslateUi();
+    return true;
+}
+
+QString MainWindow::language() const {
+    return d_->language;
 }
 
 QUndoStack* MainWindow::undoStack() const {

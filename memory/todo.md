@@ -2218,7 +2218,40 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       false instead of hiding everything and reporting success: renaming a
       registered category used to give a blank window, a "Workspace: Materials"
       status message, and that empty layout saved on quit.
-- [ ] Live language switching; **working** RTL
+- [x] **Live language switching and working RTL** (2026-09-05).
+      Twenty `data/languages/*.json` files have shipped all along and **nothing
+      in `src/` read any of them** — no `QTranslator`, no layout direction, no
+      way to switch.
+      `ui::JsonTranslator` is a `QTranslator` over those files. A QTranslator
+      rather than a lookup helper **because Qt already owns live switching**:
+      `installTranslator` posts `QEvent::LanguageChange` to every top-level
+      widget, and every `tr()` call routes there unchanged. Writing our own
+      lookup would have meant touching all 38 call sites and reimplementing the
+      event.
+      **Context is ignored on purpose.** Qt keys translations by (class,
+      source); the shipped files are one flat map. That flatness is what lets
+      **data** strings translate too — and measured, that is where the text
+      actually is: **135 of 192 slider labels**, 5 of 7 task views and 15 of 49
+      sections have German entries, against **5 of our 38 `tr()` strings**
+      (`Close`, `Redo`, `Reset`, `Save`, `Undo`). So slider captions, section
+      headings, tab names and dock titles all go through
+      `QCoreApplication::translate("", …)`.
+      `MainWindow::setLanguage` loads the new file **before** removing the old
+      one, so a failed switch leaves the running language alone instead of
+      dropping the user into raw source strings. RTL comes from
+      `__options__.rtl` (Arabic alone of the twenty) and is applied with
+      `QApplication::setLayoutDirection` — **and reset when switching away**,
+      which is what "working RTL" means rather than just "RTL".
+      A Language menu lists all 19 (master is excluded — it is the English
+      source list the rest are generated against), plus "English" first as the
+      way back from a script you cannot read. `--language <name>` on the CLI.
+      Five mutations, all caught: honour Qt's context; skip the clear on a
+      failed load; let `__options__` into the string map; never reset the layout
+      direction; make `retranslateUi` a no-op.
+      **Recorded, not hidden**: our own menu vocabulary (`&File`, `Open…`,
+      `Save As…`) is largely absent from the shipped dictionaries, which carry
+      the reference's strings. Those menus stay English until someone adds
+      entries — the mechanism is done, the vocabulary is data.
 - [~] **Accessibility pass** (`design.md` §9) — accessible names on every control
       (a sweep test fails if a new one arrives unnamed; 14 controls covered),
       keyboard operability including **arrow-key orbiting in the viewport**

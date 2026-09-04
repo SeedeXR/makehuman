@@ -2140,6 +2140,86 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-05 01:09:52 — Session 128 · **twenty language files shipped, and nothing read them**
+
+### The chunk
+Live language switching and working RTL. The last M8 item that needed neither an
+owner decision nor hardware.
+
+### The starting state
+`data/languages/` has shipped **20 JSON dictionaries** since the data import,
+one of them RTL (Arabic). Grepping `src/` and `include/` for `QTranslator`,
+`setLayoutDirection` or `LayoutDirection` returned **nothing**. The assets were
+there; the code was not.
+
+### QTranslator, not a lookup helper
+Qt already owns live switching: `installTranslator` posts
+`QEvent::LanguageChange` to every top-level widget, and every `tr()` call routes
+through the installed translator with no change at the call site. A bespoke
+lookup would have meant editing all 38 call sites and reimplementing the event.
+
+**Context is ignored deliberately.** Qt keys translations by (class, source);
+these files are one flat map keyed by source alone. Honouring context would make
+every single entry miss.
+
+### The measurement that decided where the work went
+That flatness is also what lets **data** strings translate — and the data is
+where the text actually is:
+
+| surface | translated (German) |
+|---|---|
+| slider labels | **135 / 192** |
+| task views | 5 / 7 |
+| sections | 15 / 49 |
+| our own `tr()` strings | **5 / 38** |
+
+So the wiring went to slider captions, section headings, tab names and dock
+titles, all through `QCoreApplication::translate("", …)`. Had I only wired
+`tr()`, a language switch would have changed five words.
+
+The five that do exist are `Close`, `Redo`, `Reset`, `Save`, `Undo`. Our menu
+vocabulary (`&File`, `Open…`, `Save As…`) is absent, because these dictionaries
+carry the REFERENCE's strings. **Recorded rather than hidden**: the mechanism is
+done, the vocabulary is data someone can add.
+
+### Two details that are the difference between working and demo-working
+- `setLanguage` loads the new file **before** removing the old one. A failed
+  switch leaves the running language alone instead of dropping the user into raw
+  English — which, mid-switch in a script you cannot read, is unrecoverable.
+- RTL is **reset** when switching away. Leaving the application right-to-left
+  after leaving Arabic is exactly why the item said "**working** RTL".
+
+The menu offers "English" first — the untranslated source every file is a
+translation of, and the way back.
+
+### Mutations, all five caught
+Honour Qt's context; skip the clear on a failed load; let `__options__` into the
+string map; never reset the layout direction; make `retranslateUi` a no-op.
+
+### A regression I caused and caught
+Routing dock titles through `registerText` alone broke two accessibility
+assertions: `makeDock` derives `accessibleName` and the placeholder body from
+the title it is CONSTRUCTED with, and neither follows a later
+`setWindowTitle`. The title is now passed in as well as registered, with the
+reason written down.
+
+Also moved `Translatable` inside the anonymous namespace — I had left it with
+external linkage in `mh::ui`, a collision waiting for a second definition.
+
+### Verification
+- 499/499 in debug, release, ASan and TSan.
+- SonarQube gate OK, **0 open issues**.
+- CI green at `1f125d49` before pushing.
+
+### Files changed
+`include/makehuman/ui/Language.h` (new), `src/ui/Language.cpp` (new),
+`tests/ui/test_language.cpp` (new), `include/makehuman/ui/MainWindow.h`,
+`src/ui/MainWindow.cpp`, `src/ui/ModifierPanel.cpp`, `src/ui/CMakeLists.txt`,
+`src/app/main.cpp`, `tests/CMakeLists.txt`, `memory/todo.md`,
+`memory/handover_session.md`.
+
+---
+
 ## 2026-09-05 00:35:07 — Session 127 · **two items closed by deciding, one by sharing**
 
 ### The chunk

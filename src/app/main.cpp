@@ -30,6 +30,7 @@
 #include "makehuman/rig/Skinning.h"
 #include "makehuman/rig/VertexWeights.h"
 #include "makehuman/ui/AssetPanel.h"
+#include "makehuman/ui/Language.h"
 #include "makehuman/ui/MainWindow.h"
 #include "makehuman/ui/ModifierPanel.h"
 #include "makehuman/ui/TaskRegistry.h"
@@ -1142,6 +1143,12 @@ int main(int argc, char** argv) {
         QStringLiteral("Set a modifier before rendering or exporting, as "
                        "<full/name>=<value>. Repeatable."),
         QStringLiteral("modifier=value"));
+    const QCommandLineOption languageOpt(
+        QStringLiteral("language"),
+        QStringLiteral("Interface language: a stem under data/languages "
+                       "(german_generic, arabic_generic, …). Default is English."),
+        QStringLiteral("name"));
+
     const QCommandLineOption blendshapesOpt(
         QStringLiteral("blendshapes"),
         QStringLiteral("Export the 34 expression units as glTF morph targets (.glb only)."));
@@ -1181,6 +1188,7 @@ int main(int argc, char** argv) {
     parser.addOption(rigOpt);
     parser.addOption(poseOpt);
     parser.addOption(exportOpt);
+    parser.addOption(languageOpt);
     parser.addOption(blendshapesOpt);
     parser.addOption(inspectOpt);
     parser.addOption(shaderOpt);
@@ -1724,6 +1732,19 @@ int main(int argc, char** argv) {
     }
 
     mh::ui::MainWindow window(parser.value(shaderOpt).toStdString(), tasks);
+
+    // The 20 shipped `data/languages/*.json` files, offered live. `mh_ui` has
+    // no data path of its own, so the directory comes from here.
+    window.setLanguageChoices(dataDir(), mh::ui::availableLanguages(dataDir()));
+    if (parser.isSet(languageOpt)) {
+        const QString lang = parser.value(languageOpt);
+        if (!window.setLanguage(dataDir(), lang)) {
+            std::fprintf(
+                stderr, "unknown --language %s; available: %s\n", lang.toLocal8Bit().constData(),
+                mh::ui::availableLanguages(dataDir()).join(", ").toLocal8Bit().constData());
+            return 1;
+        }
+    }
 
     // rm outlives the window, so the non-owning view stays valid.
     window.setMesh(rm.view());

@@ -6,6 +6,7 @@
 #include <QAbstractSlider>
 #include <QAccessible>
 #include <QAccessibleWidget>
+#include <QCoreApplication>
 #include <QHBoxLayout>
 #include <QHash>
 #include <QLabel>
@@ -44,6 +45,20 @@ float fromTick(const foundation::SliderSpec& s, int tick) {
 /// context, and these two floats are the whole of what it needs.
 constexpr auto kMinProperty = "mh.sliderMin";
 constexpr auto kMaxProperty = "mh.sliderMax";
+
+/// A DATA string as the user should read it.
+///
+/// Slider captions, section headings and tab names come from
+/// `data/modifiers/*.json`, so they never pass through `tr()` -- yet they are
+/// the bulk of the visible text, and the shipped dictionaries do carry them:
+/// **135 of the 192 shipped labels** have a German entry, against 5 of our 38
+/// `tr()` strings. `JsonTranslator` ignores context precisely so this works.
+///
+/// Falls through to the source when there is no entry, which is what Qt does
+/// for an untranslated `tr()`.
+QString translated(const std::string& source) {
+    return QCoreApplication::translate("", source.c_str());
+}
 
 /// What a screen reader is told a slider's value IS.
 ///
@@ -134,7 +149,7 @@ ModifierPanel::ModifierPanel(std::span<const foundation::TaskViewSpec> views, QW
             boxColumn->setContentsMargins(0, 0, 0, 0);
             boxColumn->setSpacing(4);
 
-            auto* heading = new QLabel(QString::fromStdString(section.name), box);
+            auto* heading = new QLabel(translated(section.name), box);
             heading->setObjectName(QStringLiteral("modifiers.section"));
             boxColumn->addWidget(heading);
 
@@ -146,7 +161,7 @@ ModifierPanel::ModifierPanel(std::span<const foundation::TaskViewSpec> views, QW
 
                 auto* caption = new QLabel(rowWidget);
                 caption->setObjectName(QStringLiteral("modifiers.caption"));
-                caption->setText(QString::fromStdString(spec.label));
+                caption->setText(translated(spec.label));
                 // Measured at 200% text: the longest shipped caption wants
                 // 263 px and the dock is 380, so this is not fixing a clipping
                 // bug. It drops that label's MINIMUM from 263 px to 72, so a
@@ -228,7 +243,7 @@ ModifierPanel::ModifierPanel(std::span<const foundation::TaskViewSpec> views, QW
         scroll->setWidgetResizable(true);
         scroll->setWidget(page);
         scroll->setFrameShape(QFrame::NoFrame);
-        tabs_->addTab(scroll, QString::fromStdString(view.name));
+        tabs_->addTab(scroll, translated(view.name));
     }
 }
 

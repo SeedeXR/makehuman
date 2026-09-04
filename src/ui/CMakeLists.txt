@@ -12,6 +12,7 @@ set(CMAKE_AUTOMOC ON)
 # with "undefined vtable" rather than anything pointing at moc.
 add_library(mh_ui STATIC
     ViewportWidget.cpp
+    Language.cpp
     MainWindow.cpp
     Theme.cpp
     PanelTitleBar.cpp
