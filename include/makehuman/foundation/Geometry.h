@@ -201,4 +201,29 @@ inline constexpr float kMaxSpecularExponent = 128.0F;
     return std::clamp(exponent / kMaxSpecularExponent, 0.0F, 1.0F);
 }
 
+/// A Blinn-Phong material as metallic-roughness, which is what glTF and
+/// UsdPreviewSurface want.
+struct MetallicRoughness {
+    float metallic{0.0F};
+    float roughness{1.0F};
+};
+
+/// The one Blinn-Phong -> metallic-roughness conversion, shared by every writer.
+///
+/// **Metallic is always 0, and that is a modelling statement, not a stub.**
+/// Everything this application produces -- skin, cloth, hair, eyes -- is
+/// dielectric. A metal would need a value the `.mhmat` format has no field for,
+/// so inventing one per writer is how two exporters end up disagreeing about
+/// the same character.
+///
+/// **Roughness is `1 - shininess`, and the clamp is load-bearing.** `.mhmat`
+/// guarantees 0..1 for shininess (`Material.cpp:242`), but an imported material
+/// need not: assimp's Collada exporter emits a fixed specular exponent of 10
+/// when none is supplied, and 10 read into a 0..1 field asks for roughness -9.
+/// `shininessFromExponent` clamps on the way in and this clamps again, because
+/// a `MaterialDesc` can also be built by hand.
+[[nodiscard]] constexpr MetallicRoughness metallicRoughnessOf(const MaterialDesc& m) noexcept {
+    return {0.0F, std::clamp(1.0F - m.shininess, 0.0F, 1.0F)};
+}
+
 }  // namespace mh::foundation

@@ -274,10 +274,11 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
                     << ", " << num(material->diffuse.y) << ", " << num(material->diffuse.z)
                     << ")\n";
             }
-            // The same Blinn-Phong to PBR conversion every other writer uses.
-            out << "                float inputs:roughness = "
-                << num(std::clamp(1.0F - material->shininess, 0.0F, 1.0F)) << "\n";
-            out << "                float inputs:metallic = 0\n";
+            // The one shared Blinn-Phong to metallic-roughness conversion; see
+            // foundation::metallicRoughnessOf for why metallic is always 0.
+            const auto mr = foundation::metallicRoughnessOf(*material);
+            out << "                float inputs:roughness = " << num(mr.roughness) << "\n";
+            out << "                float inputs:metallic = " << num(mr.metallic) << "\n";
             out << "                float inputs:opacity = " << num(material->opacity) << "\n";
             out << "                token outputs:surface\n";
             out << "            }\n";

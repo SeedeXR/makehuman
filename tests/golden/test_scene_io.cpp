@@ -879,6 +879,41 @@ TEST_CASE("shininess and the specular exponent are inverses", "[io][material]") 
     CHECK(foundation::shininessFromExponent(-5.0F) == 0.0F);
 }
 
+// The Blinn-Phong -> metallic-roughness conversion, in ONE place.
+//
+// It was written out twice -- `GltfWriter.cpp` and `UsdWriter.cpp` -- with the
+// reasoning for `metallic = 0` living in only one of the two comments and the
+// other deferring to it by reference. Two writers computing the same thing
+// separately is how they end up disagreeing about one character.
+TEST_CASE("Blinn-Phong converts to metallic-roughness the same way everywhere",
+          "[io][material][pbr]") {
+    foundation::MaterialDesc m;
+
+    // Roughness is the complement of shininess.
+    m.shininess = 0.96F;  // the shipped skin
+    CHECK(foundation::metallicRoughnessOf(m).roughness == Catch::Approx(0.04F).margin(1e-5F));
+    m.shininess = 0.0F;
+    CHECK(foundation::metallicRoughnessOf(m).roughness == 1.0F);
+    m.shininess = 1.0F;
+    CHECK(foundation::metallicRoughnessOf(m).roughness == 0.0F);
+
+    // Metallic is always zero, and that is a modelling statement: skin, cloth,
+    // hair and eyes are all dielectric, and `.mhmat` has no field that could
+    // say otherwise. A writer inventing its own value is the bug this prevents.
+    for (const float s : {0.0F, 0.5F, 1.0F, 42.0F, -3.0F}) {
+        m.shininess = s;
+        CHECK(foundation::metallicRoughnessOf(m).metallic == 0.0F);
+    }
+
+    // Clamped, because a MaterialDesc can be built by hand as well as parsed.
+    // An unscaled Collada exponent of 10 lands here as shininess 10 and would
+    // otherwise ask for roughness -9.
+    m.shininess = 10.0F;
+    CHECK(foundation::metallicRoughnessOf(m).roughness == 0.0F);
+    m.shininess = -5.0F;
+    CHECK(foundation::metallicRoughnessOf(m).roughness == 1.0F);
+}
+
 // The compounding failure, end to end: import a Collada file and re-export it
 // as glTF. glTF roughness is `1 - shininess`, so an unscaled exponent arriving
 // from the importer does not merely look wrong -- it asks for a NEGATIVE

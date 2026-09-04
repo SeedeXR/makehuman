@@ -2140,6 +2140,70 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-05 00:35:07 — Session 127 · **two items closed by deciding, one by sharing**
+
+### The chunk
+Two M5/M6 items, and only one of them wanted code.
+
+### Skin normals/tangents (w=0): deliberately NOT built, with the evidence
+`skinMesh` uses the homogeneous coordinate as a switch -- **w=1 for positions,
+w=0 for directions** (normals, tangents, targets), so translation never moves a
+direction (`shared/animation.py:1129-1145`).
+
+Building `skinDirections` today would give it **zero callers**. Checked, not
+assumed: every `poseInPlace` site recomputes normals and tangents from the
+DEFORMED geometry immediately afterwards (`main.cpp:1305-1306`, `1556-1557`),
+`refitProxy` does the same for every worn proxy (`422-423`), and `skinPositions`
+has exactly one caller in `src/`.
+
+And recomputing is the **better** answer: it is exact for the deformed surface
+where skinning the rest normals only blends them. A deliberate divergence from
+the reference, not an omission. Reopen when GPU skinning lands -- a vertex
+shader has no adjacency to recompute from, and that is the first real consumer.
+
+Same call as the cached bounding box and `findFaceGroup` before it.
+
+### Blinn-Phong -> PBR: it already existed, twice
+`GltfWriter.cpp` and `UsdWriter.cpp` each computed `clamp(1 - shininess, 0, 1)`
+independently, and `SceneIO.cpp` commented about it a third time. Worse than the
+duplication: the REASONING for `metallic = 0` lived in only one of the two
+comments, and the other said "the same conversion every other writer uses" --
+pointing at a rule the reader then has to go find.
+
+`foundation::metallicRoughnessOf` is now the one conversion, and it states the
+thing that was implicit: **metallic is 0 because everything this application
+produces is dielectric** -- skin, cloth, hair, eyes -- and `.mhmat` has no field
+that could say otherwise. A writer inventing its own value is how two exporters
+disagree about one character.
+
+glTF's `"metallicFactor":0` was a hardcoded literal in the JSON string; it now
+comes from the same struct as the roughness beside it. Verified the output is
+unchanged: skin roughness 0.04000002, eye 0, metallic 0, in both `.glb` and
+`.usda`.
+
+Two mutations, both caught: metallic 1 (5 failures), unclamped roughness (2).
+
+### The viewport half is an owner decision, and is now recorded as one
+"PBR metallic-roughness path" also implies the VIEWPORT, and that is not an
+addition to what is there -- it is a different lighting model. The viewport
+shades with a litsphere/matcap, which is what the reference does and what makes
+every shipped skin look the way it does. Metallic-roughness needs light rigs, an
+environment or IBL, and it retires the litsphere as the thing that defines a
+material. Nothing downstream is blocked: the export side is already PBR.
+
+### Verification
+- 499/499 in debug, release, ASan and TSan.
+- Exported material numbers unchanged in both formats, read back from the files.
+- SonarQube gate OK, **0 open issues**.
+- CI green at `84ddadca` before this was pushed.
+
+### Files changed
+`include/makehuman/foundation/Geometry.h`, `src/io/GltfWriter.cpp`,
+`src/io/UsdWriter.cpp`, `tests/golden/test_scene_io.cpp`, `memory/todo.md`,
+`memory/handover_session.md`.
+
+---
+
 ## 2026-09-05 00:13:14 — Session 126 · **the blocker in the note had already been removed**
 
 ### The chunk

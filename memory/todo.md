@@ -635,8 +635,23 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       0.01 ms. Both comfortably per-frame.
       It is *accumulated matrix skinning*: blend the MATRICES, apply once —
       one matrix-vector multiply per vertex rather than one per influence.
-- [ ] Skin normals/tangents (the w=0 direction path) — needs the renderer to
-      have something to shade; positions are the parity target today.
+- [~] **Skin normals/tangents (the w=0 direction path) — deliberately NOT built**
+      (decided 2026-09-05, with the evidence, not deferred again).
+      `skinMesh` takes `coords[n,4]` and uses the homogeneous coordinate to
+      switch: **w=1 for positions, w=0 for directions** — normals, tangents and
+      targets — so translation does not move a direction
+      (`shared/animation.py:1129-1145`).
+      **It would have no caller.** Every `poseInPlace` site recomputes normals
+      and tangents from the DEFORMED geometry immediately afterwards
+      (`main.cpp:1305-1306` and `1556-1557`), and `refitProxy` does the same for
+      every worn proxy (`main.cpp:422-423`). `skinPositions` has exactly one
+      caller in `src/`. Adding `skinDirections` today is precisely the
+      built-and-never-wired pattern this port has had to undo repeatedly.
+      **And recomputing is the better answer here**: it is exact for the
+      deformed surface, where skinning the rest normals only blends them. A
+      deliberate divergence from the reference, not an omission.
+      **Reopen when GPU skinning lands** (M6): a vertex shader has no adjacency
+      to recompute from, so that is the first real consumer of the w=0 path.
 - [ ] GPU LBS (matrix palette UBO/SSBO) — M6
 - [x] Pose units + slerp-composition blend — **parity on all 60 units x 163
       bones (9,780 transforms)** and on a five-unit weighted blend, in both
@@ -979,7 +994,26 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `[core][macro][ethnic]`.
       A size-mismatched in-memory litsphere is refused rather than trusted —
       reading past the buffer would be a heap overflow.
-- [ ] PBR metallic-roughness path + Blinn-Phong→PBR conversion
+- [~] **Blinn-Phong→PBR conversion: done and shared** (2026-09-05).
+      `foundation::metallicRoughnessOf` is the one conversion every writer uses.
+      It already existed in effect — `GltfWriter.cpp` and `UsdWriter.cpp` each
+      computed `clamp(1 - shininess, 0, 1)` separately, with the reasoning for
+      `metallic = 0` living in only ONE of the two comments and the other
+      deferring to it by reference. Two writers computing the same thing apart
+      is how they end up disagreeing about one character.
+      **`metallic = 0` is a modelling statement, not a stub**: skin, cloth, hair
+      and eyes are all dielectric, and `.mhmat` has no field that could say
+      otherwise. Now stated once, where a writer has to read it.
+      Verified the exported numbers are unchanged: skin roughness 0.04000002,
+      eye 0, metallic 0, in both `.glb` and `.usda`.
+- [ ] **PBR metallic-roughness in the VIEWPORT — owner decision, not a task.**
+      The viewport shades with a **litsphere/matcap**, which is what the
+      reference does and what makes the shipped skins look the way they do. A
+      metallic-roughness path is not an addition to that, it is a different
+      lighting model and a different look: it needs light rigs, an environment
+      or IBL, and every shipped litsphere stops being the thing that defines the
+      material. **Ask before building** — the export side is already PBR, so
+      nothing downstream is blocked on it.
 - [ ] GPU skinning (matrix palette UBO/SSBO)
 - [ ] ID-buffer picking with async readback (replaces the full-window sync readback)
 - [x] **Cached bounding box: measured, deliberately NOT built.**

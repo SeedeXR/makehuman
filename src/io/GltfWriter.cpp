@@ -901,18 +901,24 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
     j += R"("materials":[)";
     for (size_t i = 0; i < mats.size(); ++i) {
         float baseR = 0.8F, baseG = 0.8F, baseB = 0.8F, alpha = 1.0F, roughness = 0.7F;
+        // Zero for a described material too -- see foundation::metallicRoughnessOf
+        // for why -- but taken from there rather than written twice.
+        float metallic = 0.0F;
         if (mats[i].desc != nullptr) {
-            baseR     = mats[i].desc->diffuse.x;
-            baseG     = mats[i].desc->diffuse.y;
-            baseB     = mats[i].desc->diffuse.z;
-            alpha     = mats[i].desc->opacity;
-            roughness = std::clamp(1.0F - mats[i].desc->shininess, 0.0F, 1.0F);
+            baseR         = mats[i].desc->diffuse.x;
+            baseG         = mats[i].desc->diffuse.y;
+            baseB         = mats[i].desc->diffuse.z;
+            alpha         = mats[i].desc->opacity;
+            const auto mr = foundation::metallicRoughnessOf(*mats[i].desc);
+            roughness     = mr.roughness;
+            metallic      = mr.metallic;
         }
         if (i != 0) j += ",";
         j += R"({"name":")" + jsonEscape(mats[i].name) +
              R"(","pbrMetallicRoughness":{"baseColorFactor":[)" + fmtFloat(baseR) + "," +
              fmtFloat(baseG) + "," + fmtFloat(baseB) + "," + fmtFloat(alpha) +
-             R"(],"metallicFactor":0,"roughnessFactor":)" + fmtFloat(roughness);
+             R"(],"metallicFactor":)" + fmtFloat(metallic) + R"(,"roughnessFactor":)" +
+             fmtFloat(roughness);
         if (baseColorImage[i] >= 0) {
             j += R"(,"baseColorTexture":{"index":)" + std::to_string(baseColorImage[i]) + "}";
         }
