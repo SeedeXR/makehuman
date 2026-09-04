@@ -500,3 +500,47 @@ TEST_CASE("a tip marker inherits its parent's rest basis", "[rig][mixamo][supers
     }
     CHECK(checked == 13);
 }
+
+// Is fitting the skeleton twice to the SAME mesh idempotent?
+//
+// This is not academic. `poseInPlace` (main.cpp) re-fits before skinning, and
+// the rig has already been fitted once at load. If the second fit moves
+// anything, every posed export carries a different skeleton from an unposed one
+// for a reason that has nothing to do with the pose.
+TEST_CASE("fitting the rig twice to one mesh changes nothing", "[rig][skeleton]") {
+    const auto rigPath = std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel";
+    if (!std::filesystem::exists(rigPath)) return;
+
+    const auto mesh = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+    auto skel = rig::loadSkeleton(rigPath);
+    REQUIRE(skel.has_value());
+
+    REQUIRE(skel->updateJoints(mesh->coord()));
+    REQUIRE(skel->buildRestMatrices());
+    std::vector<foundation::Mat4> first;
+    for (const auto& b : skel->bones)
+        first.push_back(b.matRestGlobal);
+
+    // Exactly what poseInPlace does before it skins.
+    REQUIRE(skel->updateJoints(mesh->coord()));
+    REQUIRE(skel->buildRestMatrices());
+
+    double worst = 0.0;
+    size_t bone  = 0;
+    for (size_t i = 0; i < skel->bones.size(); ++i) {
+        for (size_t r = 0; r < 4; ++r) {
+            for (size_t c = 0; c < 4; ++c) {
+                const double d =
+                    std::abs(static_cast<double>(skel->bones[i].matRestGlobal.m[r][c]) -
+                             static_cast<double>(first[i].m[r][c]));
+                if (d > worst) {
+                    worst = d;
+                    bone  = i;
+                }
+            }
+        }
+    }
+    INFO("largest change " << worst << " on bone " << skel->bones[bone].name);
+    CHECK(worst < 1e-6);
+}

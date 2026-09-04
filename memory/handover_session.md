@@ -2140,6 +2140,69 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-05 01:41:57 — Session 129 · **my probe was one statement too early**
+
+### The chunk
+Closing the "unexplained" note session 121 left behind: why do exported joint
+nodes follow the pose when the only re-fit in the export path runs BEFORE
+posing?
+
+### The answer was in the function's own doc comment
+`exportSkin` composes the pose into the bind globals
+(`main.cpp:874-875`):
+
+    skin.globalRest[b] = skinning[b] * skin.globalRest[b];
+
+and its doc comment says exactly why: *"The exported mesh is the POSED one, so
+the bind pose is the pose … handing over the REST globals instead would let a
+DCC apply the pose twice."*
+
+So there was never a defect and never a mystery. Session 121's note was wrong to
+call it unexplained, and that record is now corrected rather than left standing.
+
+### Four wrong theories before the measurement that mattered
+1. **The ground offset.** Killed by splitting the file comparison into rotation
+   and translation parts: the rotation differed by 0.62, which a translation
+   cannot cause.
+2. **Something mutating the skeleton.** Killed by grep: every rig function takes
+   `const Skeleton&`.
+3. **Re-fitting not being idempotent.** Killed by writing the test — and the
+   test is worth keeping, so it stayed: *"fitting the rig twice to one mesh
+   changes nothing"* in `test_skeleton_parity.cpp`.
+4. **Stale or mismatched files.** Killed by re-comparing freshly written pairs
+   and matching nodes by NAME rather than position.
+
+### The mistake that cost the most
+My first probe printed `skin.globalRest` immediately after `buildSkinData` --
+**one statement before the line that changes it**. It showed all 163 matrices
+byte-identical between a rest and a posed export, which is true and completely
+misleading. Three sessions of confident reasoning rested on it.
+
+A second probe at the handover point, a few lines later, showed the values
+differing in the same run. That single before/after pair located the composition
+immediately.
+
+**Rule taken from this**: when a measurement contradicts the code, suspect the
+measurement's POSITION before suspecting the code. A probe proves something only
+about the point it sits at.
+
+There was also a false negative on the way: a probe build failed on
+`-Wsign-conversion`, both output files came back empty, and `diff` cheerfully
+reported them identical. Caught by counting the lines rather than trusting the
+diff.
+
+### Verification
+- 500/500 in debug, release, ASan and TSan (the new idempotence test is the
+  500th).
+- Every probe reverted; `grep -c PROBE` is 0 in both touched files.
+- SonarQube gate OK, 0 open issues. CI green at `181dfb36`.
+
+### Files changed
+`tests/golden/test_skeleton_parity.cpp`, `memory/todo.md`,
+`memory/handover_session.md`.
+
+---
+
 ## 2026-09-05 01:09:52 — Session 128 · **twenty language files shipped, and nothing read them**
 
 ### The chunk

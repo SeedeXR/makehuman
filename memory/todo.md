@@ -2331,25 +2331,26 @@ agree today (geometry, UVs, and 169.5 cm under three unit conventions).
       compute LBS from them. That needs an export carrying **rest geometry with
       a posed armature** -- an interchange-semantics decision (do exports bake,
       or ship a live rig?), not a validation gap. **Owner question.**
-- [ ] **Unexplained, recorded rather than guessed:** the exported joint nodes
-      follow the pose (41 of 163 differ), but the only re-fit in the export path
-      is `poseInPlace` (`main.cpp:265`), which fits the skeleton to the mesh
-      *before* posing it -- and deleting that re-fit changes the exported file
-      not at all. So `skin->globalRest` differs between a rest and a posed run
-      for a reason not yet located. **Not a defect**: the output is verified
-      correct and self-consistent by Blender. But the mechanism should be
-      understood before anyone edits the pose path.
-
-## Research notes (2026-08-29) — owner asked for modern approaches
-
-**Skinning: offer dual-quaternion alongside LBS.** LBS is notorious for the
-"candy-wrapper" collapse on twisted joints, because it interpolates positions
-linearly and loses volume. DQS removes that and preserves volume, but is *not*
-a drop-in: it introduces joint bulging on bends. Disney shipped an enhanced DQS
-on *Frozen* specifically to make it production-viable.
-Plan: keep LBS as the parity path (it is what the reference does, and what glTF
-and every DCC expect), and add DQS as a *display* option in M6, with the
-bulging caveat measured rather than assumed.
+- [x] **Explained (2026-09-05): the exported joint nodes follow the pose because
+      `exportSkin` composes them.** Session 121 recorded this as unexplained;
+      that note was wrong, and the mechanism was in the function's own doc
+      comment the whole time.
+      `main.cpp:874-875` does `skin.globalRest[b] = skinning[b] * skin.globalRest[b]`
+      after `buildSkinData`, turning REST globals into POSED ones — because
+      *"the exported mesh is the POSED one, so the bind pose is the pose …
+      handing over the REST globals instead would let a DCC apply the pose
+      twice."*
+      Confirmed by measurement, after four wrong theories (ground offset,
+      skeleton mutation, non-idempotent re-fitting, stale files): all **163**
+      `globalRest` matrices are byte-identical between a rest and a posed export
+      *at `buildSkinData` time*, and differ at the handover a few lines later.
+      This also explains why deleting `poseInPlace`'s re-fit changed nothing:
+      that re-fit is to the same coordinates and is idempotent — now asserted by
+      `"fitting the rig twice to one mesh changes nothing"` in
+      `test_skeleton_parity.cpp`.
+      **Lesson recorded**: a probe placed before the line that does the work
+      proves nothing. My first probe sat one statement too early and produced
+      three sessions' worth of confident wrong reasoning.
 - [ ] DQS skinning path (M6), with a side-by-side against LBS on a twisted limb
 
 **SMPL / SMPL-X is licence-blocked for us** — see `LICENSING.md` §5.2. The full
