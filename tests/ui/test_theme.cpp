@@ -1312,6 +1312,61 @@ TEST_CASE("reduce motion is read from the system and drops the dock animation", 
     (void)mh::ui::theme::reduceMotion();
 }
 
+// The ON branch, actually exercised.
+//
+// Everything above tests `dockOptionsFor` in isolation and then asserts the
+// window agrees with `reduceMotion()` -- which on a machine with the setting
+// OFF passes even if the ON path is broken, because nothing ever produces a
+// true. `MH_REDUCE_MOTION` is what makes the true reachable without changing a
+// real System Setting, on a build box or here.
+TEST_CASE("a window built with reduce-motion on really stops animating", "[theme][a11y][motion]") {
+    const QByteArray had = qgetenv("MH_REDUCE_MOTION");
+    const bool wasSet    = qEnvironmentVariableIsSet("MH_REDUCE_MOTION");
+    const auto restore   = [&] {
+        if (wasSet) {
+            qputenv("MH_REDUCE_MOTION", had);
+        } else {
+            qunsetenv("MH_REDUCE_MOTION");
+        }
+    };
+
+    useShippedIcons();
+
+    qputenv("MH_REDUCE_MOTION", "1");
+    CHECK(mh::ui::theme::reduceMotion());
+    {
+        // Read once at construction, so the variable must be set BEFORE this.
+        mh::ui::MainWindow on(MH_SHADER_DIR, shippedTasks());
+        CHECK((on.dockOptions() & QMainWindow::AnimatedDocks) == 0);
+        CHECK(on.dockOptions() == mh::ui::MainWindow::dockOptionsFor(true));
+    }
+
+    qputenv("MH_REDUCE_MOTION", "0");
+    CHECK_FALSE(mh::ui::theme::reduceMotion());
+    {
+        mh::ui::MainWindow off(MH_SHADER_DIR, shippedTasks());
+        CHECK((off.dockOptions() & QMainWindow::AnimatedDocks) != 0);
+    }
+
+    // Anything that is not an affirmative is off, rather than "any value means
+    // on" -- MH_REDUCE_MOTION=0 must not enable it.
+    for (const char* v : {"0", "no", "false", "off"}) {
+        qputenv("MH_REDUCE_MOTION", v);
+        INFO(v);
+        CHECK_FALSE(mh::ui::theme::reduceMotion());
+    }
+    for (const char* v : {"1", "true", "yes", "T", "Y"}) {
+        qputenv("MH_REDUCE_MOTION", v);
+        INFO(v);
+        CHECK(mh::ui::theme::reduceMotion());
+    }
+
+    // Unset falls back to asking macOS, which is the shipped default.
+    qunsetenv("MH_REDUCE_MOTION");
+    (void)mh::ui::theme::reduceMotion();
+    restore();
+}
+
 TEST_CASE("a choice undoes and redoes, and choices never merge", "[undo]") {
     QStringList applied;
     const auto apply = [&](const QString& key, const QString& id) {

@@ -58,6 +58,13 @@ struct Palette {
 ///
 /// Implemented in `Motion.mm`, the project's only Objective-C++ file; the
 /// rationale lives there.
+/// Whether the user has asked for reduced motion.
+///
+/// `MH_REDUCE_MOTION` overrides it when set (`1`/`t`/`y` for on, anything else
+/// for off); unset asks macOS. The override exists because the system answer
+/// cannot be changed from a test or a build box without changing a real user
+/// preference, so it is the only way the ON branch is ever exercised -- and it
+/// is a useful escape hatch in its own right.
 [[nodiscard]] bool reduceMotion();
 
 /// Registers the bundled typefaces.

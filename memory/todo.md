@@ -2314,10 +2314,19 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       lack it, and `QSettings` cannot read another app's preference domain.
       Read once at construction, deliberately.
       Still open: VoiceOver on a real device.
-- [ ] **Unverified:** `reduceMotion()` returning **true** has never been
-      exercised — the setting is off on this machine and on CI, so only the
-      false branch runs. `dockOptionsFor(true)` is tested, but the AppKit read
-      itself is not. Needs one manual toggle in System Settings before shipping.
+- [x] **`reduceMotion()`'s true branch is now exercised** (2026-09-05, owner:
+      "give it a go"). `MH_REDUCE_MOTION` overrides the AppKit read
+      (`1`/`t`/`y` on, anything else off; unset asks macOS).
+      **Why an override rather than a mock**: the ON branch was unreachable
+      without changing a real System Setting, on this machine or a build box.
+      `dockOptionsFor(true)` was already tested in isolation, but the assertion
+      that mattered — *a window actually built with reduce-motion on stops
+      animating* — could never run, and on a machine with the setting OFF it
+      passed even if the ON path were broken.
+      It is also a real escape hatch: someone who wants quieter docking without
+      turning it on system-wide now can.
+      Two mutations caught: window ignores `reduceMotion()`; any non-empty value
+      means ON (so `MH_REDUCE_MOTION=0` would have enabled it).
 - [x] **A slider announced its tick, not its value** (2026-09-02). Measured, not
       assumed: the first shipped slider reported `text(QAccessible::Value)` ==
       **"500"** while its readout showed **"0.00"**. Qt's default for a QSlider

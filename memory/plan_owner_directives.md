@@ -37,8 +37,8 @@ and it must be asked before any such code is written.
 
 | # | Directive | Status |
 |---|---|---|
-| 1 | Bone naming/order: use the **179-bone superset** (richer) | pending |
-| 5 | `reduceMotion()` true branch — "give it a go" | pending |
+| 1 | Bone naming/order: use the **179-bone superset** (richer) | **done** (0832e3be) |
+| 5 | `reduceMotion()` true branch — "give it a go" | **done** (0832e3be+) |
 | 3 | Exports ship a **live rig** (rest geometry + posed armature) | pending |
 | 2+6 | Skin textures: research, CC0 sources, **African skins**, procedural generation; must not block `.mhm` save or export | pending |
 | 4 | **Viewport PBR** (metallic-roughness) | pending |
