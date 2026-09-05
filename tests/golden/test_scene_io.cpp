@@ -28,6 +28,8 @@
 
 #include <algorithm>
 #include <catch2/catch_approx.hpp>
+
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>

@@ -273,9 +273,26 @@ subsetting or re-hinting it must rename.
 The `stroke-width` normalisation applied to the Lucide SVGs (2 -> 1.5, per
 `design.md` §4) is a modification, which ISC expressly permits.
 
-**`resources/shaders/` is different and is NOT permissive.** Those files are
-ports of the reference's GLSL, so they are **AGPL-3.0 derivative works** and may
-never be moved into a permissive module. See §4.
+**`resources/shaders/` is mixed, and the split is per FILE, not per directory.**
+Check the SPDX header before moving or reusing any of them.
+
+| File | Licence | Why |
+|---|---|---|
+| `litsphere.vert`, `litsphere.frag` | **AGPL-3.0-or-later** | Ports of the reference's `data/shaders/glsl/litsphere_*_shader.txt`. Derivative works; may never be moved into a permissive module. See §4. |
+| `pbr.vert`, `pbr.frag` | **Apache-2.0** | Original work. The reference has **no PBR path at all** — it shades exclusively with the litsphere matcap — so there was nothing to translate. The equations are the published microfacet model (Cook-Torrance/GGX, height-correlated Smith, Schlick's Fresnel) as written up in Karis, *Real Shading in Unreal Engine 4* (2013) and Lagarde & de Rousiers, *Moving Frostbite to PBR* (2014). |
+
+**Verified, not assumed** (2026-09-05): `legacy/python/data/shaders/glsl/`
+holds twelve files — litsphere, normalmap, phong, skin, toon and xray, vertex
+and fragment each. A case-insensitive grep across all of them for
+`pbr|metallic|roughness|cook|ggx|microfacet` matches **nothing**. There is no
+PBR shader in the reference to derive from.
+
+`pbr.*` shares a uniform block layout and a vertex attribute layout with
+`litsphere.*` so one `SceneResources` can serve both. **Layout compatibility is
+not derivation**: the layouts are dictated by our own C++ (`SceneResources.cpp`,
+Apache-2.0) and by the vertex data we build, not by anything in the reference.
+Loading an AGPL `.qsb` and an Apache-2.0 `.qsb` in the same process is the same
+runtime pairing §4 already covers.
 
 ### 5.5 Mixamo reference rigs (`references/human_based_fbx_mixamo_animations/`)
 

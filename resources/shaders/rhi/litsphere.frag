@@ -61,6 +61,12 @@ layout(std140, binding = 4) uniform MeshBuf {
     // holds a placeholder only because a declared binding must point at a live
     // texture.
     vec4 material;
+    // x = metallic, y = roughness. DECLARED BUT NEVER READ here: a matcap has
+    // no material response to apply them to. It is declared so this block has
+    // the same size and layout as pbr.frag's, which is what lets one uniform
+    // buffer and one SRB layout serve both pipelines -- and therefore what lets
+    // the viewport switch shading models without re-uploading a mesh.
+    vec4 pbr;
 }
 mbuf;
 

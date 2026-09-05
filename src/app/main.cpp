@@ -707,6 +707,11 @@ struct ViewportMaps {
     /// the mesh is drawn blended.
     bool transparent{false};
     float normalMapIntensity{1.0F};
+    /// Read only by the PBR shading model. Derived by the SAME function the
+    /// glTF and USD writers call, so the viewport and the exported file cannot
+    /// disagree about the material they are both describing.
+    float metallic{0.0F};
+    float roughness{0.6F};
 };
 
 ViewportMaps viewportMapsOf(const std::filesystem::path& mhmat) {
@@ -723,6 +728,9 @@ ViewportMaps viewportMapsOf(const std::filesystem::path& mhmat) {
     maps.autoBlendSkin = mat->autoBlendSkin;
     maps.normalMapIntensity =
         mat->textures[static_cast<size_t>(TextureChannel::NormalMap)].intensity;
+    const auto mr  = mh::foundation::metallicRoughnessOf(mat->desc());
+    maps.metallic  = mr.metallic;
+    maps.roughness = mr.roughness;
     return maps;
 }
 
@@ -791,8 +799,10 @@ std::optional<std::pair<int, int>> blendedSkinTone(const mh::core::Human& human,
     return std::pair{e.width, e.height};
 }
 
-/// The body's own material, for export. The viewport shades with a litsphere,
-/// which carries no PBR data at all, so a `.mhmat` is what a DCC tool gets.
+/// The body's own material, for export. Under the default litsphere shading the
+/// viewport shows none of this -- a matcap has no material response -- which is
+/// what `--shading pbr` exists to fix; either way a `.mhmat` is what a DCC tool
+/// gets.
 /// The chosen skin material's stem under `data/skins`, e.g. `african_deep`.
 ///
 /// Not a litsphere. `--skin` picks a viewport MATCAP and always has; this picks
@@ -1221,6 +1231,11 @@ int main(int argc, char** argv) {
     const QCommandLineOption transparentOpt(
         QStringLiteral("transparent"),
         QStringLiteral("Render --render's background transparent, for compositing."));
+    const QCommandLineOption shadingOpt(
+        QStringLiteral("shading"),
+        QStringLiteral("litsphere (the reference matcap, default) or pbr (metallic-roughness). "
+                       "Applies to the viewport and to --render."),
+        QStringLiteral("model"), QStringLiteral("litsphere"));
     // The 179-bone superset is the default rig (owner decision, 2026-09-05:
     // "use the 179-bone set, it's more rich"). It is MakeHuman's own 163-bone
     // rig plus the 16 bones Mixamo names and it lacks, so every bone of the
@@ -1298,6 +1313,7 @@ int main(int argc, char** argv) {
     parser.addOption(setOpt);
     parser.addOption(renderOpt);
     parser.addOption(transparentOpt);
+    parser.addOption(shadingOpt);
     parser.addOption(rigOpt);
     parser.addOption(poseOpt);
     parser.addOption(exportOpt);
@@ -1307,6 +1323,19 @@ int main(int argc, char** argv) {
     parser.addOption(shaderOpt);
     parser.addOption(shotOpt);
     parser.process(app);
+
+    // An unrecognised model is refused rather than defaulted: silently falling
+    // back to the litsphere would make `--shading pbrr` produce a plausible
+    // image that is not what was asked for.
+    const QString shadingName        = parser.value(shadingOpt);
+    mh::render::ShadingModel shading = mh::render::ShadingModel::Litsphere;
+    if (shadingName == QLatin1String("pbr")) {
+        shading = mh::render::ShadingModel::Pbr;
+    } else if (shadingName != QLatin1String("litsphere")) {
+        std::fprintf(stderr, "unknown --shading %s; expected litsphere or pbr\n",
+                     shadingName.toStdString().c_str());
+        return 1;
+    }
 
     // Before anything else, because it is about the file it is given rather
     // than about a character: no base mesh, no rig, no assets.
@@ -1770,7 +1799,11 @@ int main(int argc, char** argv) {
         // at all (`shaderConfig diffuse false`), so the body is pure matcap
         // until a skin with a real albedo map is installed.
         std::vector<mh::render::MeshInstance> scene;
-        const ViewportMaps bodyMaps = viewportMapsOf(dataDir() / "skins" / "default.mhmat");
+        // skinMaterialPath(), NOT a hard-coded default.mhmat: the picker and
+        // --skin-material chose the material the EXPORTERS wrote and nothing
+        // else, so every one of the eight shipped tones rendered as the same
+        // untextured body while the .mhm and the .glb said otherwise.
+        const ViewportMaps bodyMaps = viewportMapsOf(skinMaterialPath());
         mh::render::MeshInstance body;
         body.mesh               = rm.view();
         body.litsphere          = skin;
@@ -1779,6 +1812,8 @@ int main(int argc, char** argv) {
         body.normalMapIntensity = bodyMaps.normalMapIntensity;
         body.aoMap              = bodyMaps.ao;
         body.transparent        = bodyMaps.transparent;
+        body.metallic           = bodyMaps.metallic;
+        body.roughness          = bodyMaps.roughness;
 
         // autoBlendSkin: the tone follows the ethnic sliders, so it is a blend
         // of the three ethnic litspheres and has no file behind it. `toneBuf`
@@ -1805,6 +1840,8 @@ int main(int argc, char** argv) {
             inst.normalMapIntensity = wornMaps.normalMapIntensity;
             inst.aoMap              = wornMaps.ao;
             inst.transparent        = wornMaps.transparent;
+            inst.metallic           = wornMaps.metallic;
+            inst.roughness          = wornMaps.roughness;
             scene.push_back(std::move(inst));
         }
         return scene;
@@ -1930,6 +1967,11 @@ int main(int argc, char** argv) {
     // rm outlives the window, so the non-owning view stays valid.
     window.setMesh(rm.view());
 
+    // The directive is about the VIEWPORT, so the window honours --shading as
+    // well as --render does; the two share buildScene() and now share the
+    // shading model, which is what stops the on-screen image and a production
+    // render disagreeing.
+    window.viewport()->setShadingModel(shading);
     shell = &window;
     panel = new mh::ui::ModifierPanel(views);
     for (const auto& [id, v] : presets)
@@ -2127,6 +2169,7 @@ int main(int argc, char** argv) {
         rs.height                = 1024;
         rs.litsphere             = skin;
         rs.transparentBackground = parser.isSet(transparentOpt);
+        rs.shading               = shading;
 
         const auto scene = buildScene();
         if (scene.empty()) {
@@ -2142,8 +2185,9 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "cannot write %s\n", out.string().c_str());
             return 1;
         }
-        std::printf("rendered %s (%dx%d%s)\n", out.string().c_str(), img->width(), img->height(),
-                    rs.transparentBackground ? ", transparent" : "");
+        std::printf("rendered %s (%dx%d%s, %s)\n", out.string().c_str(), img->width(),
+                    img->height(), rs.transparentBackground ? ", transparent" : "",
+                    shadingName.toStdString().c_str());
         return 0;
     }
 

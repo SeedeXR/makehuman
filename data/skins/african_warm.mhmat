@@ -7,13 +7,20 @@ name AfricanWarm
 tag skin
 tag procedural
 
-// Blinn-Phong terms. shininess 0.65 converts to roughness 0.35 for the glTF and
-// USD writers (foundation::metallicRoughnessOf); the roughness MAP refines it
-// per texel.
+// Blinn-Phong terms. shininess 0.42 converts to roughness 0.58 for the glTF and
+// USD writers (foundation::metallicRoughnessOf) and for the PBR viewport; the
+// roughness MAP refines it per texel.
+//
+// 0.58, not the 0.35 this shipped with first. Nothing in the exported file
+// looked wrong at 0.35 -- it took rendering the same material through a real
+// microfacet BRDF to see it, and every tone came out reading as oiled skin
+// rather than skin. Measured photographic skin sits around 0.5-0.7 for a
+// single-lobe GGX; the wet look below 0.4 is what a specular lobe does when it
+// is the only lobe and there is no subsurface term under it.
 ambientColor 0.11 0.11 0.11
 diffuseColor 1.0 1.0 1.0
 specularColor 0.28 0.28 0.28
-shininess 0.65
+shininess 0.42
 emissiveColor 0.0 0.0 0.0
 opacity 1.0
 translucency 0.0

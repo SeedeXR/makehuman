@@ -41,7 +41,7 @@ and it must be asked before any such code is written.
 | 5 | `reduceMotion()` true branch — "give it a go" | **done** (0832e3be+) |
 | 3 | Exports ship a **live rig** (rest geometry + posed armature) | **done** — glTF + USD verified; FBX/DAE still bake |
 | 2+6 | Skin textures: 8 generated tones, 4 African; saves in .mhm and exports | **done** |
-| 4 | **Viewport PBR** (metallic-roughness) | pending |
+| 4 | **Viewport PBR** (metallic-roughness) | **done** — second shading model, litsphere still default |
 | 7 | FBX from spec, validated with FBX SDK + Maya + Blender | pending |
 | 8 | **Complete the UI** to match the reference screenshot; all lucide icons | pending |
 | 9 | **App icon + .app bundle + DMG** (logo supplied 2026-09-05) | **done**, but the bundle is not relocatable yet |

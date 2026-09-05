@@ -13,6 +13,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -101,6 +102,18 @@ TEST_CASE("joints and planes are read", "[skeleton][parity]") {
     CHECK(skel->planes.size() == 163);
     CHECK(skel->version == 110);  // the value in default.mhskel
     CHECK_FALSE(skel->weightsFile.empty());
+
+    // Counts alone cannot tell a correctly parsed triple from a shuffled one,
+    // so pin one plane's contents against the file (default.mhskel "planes").
+    const auto plane = skel->planes.find("breast.L____plane");
+    REQUIRE(plane != skel->planes.end());
+    CHECK(plane->second ==
+          std::array<std::string, 3>{"special01____tail", "spine01____head", "spine01____tail"});
+
+    // Same for a joint: 326 entries says nothing about which verts each holds.
+    const auto joint = skel->jointVerts.find(skel->bones.front().headJoint);
+    REQUIRE(joint != skel->jointVerts.end());
+    CHECK_FALSE(joint->second.empty());
 
     // Every bone's joints must resolve, or updateJoints cannot place it.
     size_t unresolved = 0;

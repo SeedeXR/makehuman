@@ -51,6 +51,27 @@ struct Camera {
     float panY{0.0F};
 };
 
+/// Which shader shades the frame.
+///
+/// Both are always built, because the viewport toggles between them at runtime
+/// and a QRhi pipeline's state is baked at create() -- there is no way to swap
+/// a shader stage on a live pipeline.
+///
+/// `Litsphere` stays the default and stays byte-for-byte what it was: it is the
+/// parity path M6 compares against the reference, and every golden render test
+/// is written against it.
+enum class ShadingModel {
+    /// The reference's matcap. Lighting is baked into a texture, so there is no
+    /// light rig, no material response, and no notion of metal or roughness.
+    Litsphere,
+    /// Cook-Torrance metallic-roughness against a fixed three-light rig. This
+    /// is what makes `MeshInstance::metallic` and `roughness` mean anything,
+    /// and it is what agrees with the glTF/USD material the exporters write --
+    /// under the litsphere the viewport and the exported file disagreed about
+    /// the same material by construction.
+    Pbr,
+};
+
 enum class RenderErrorKind {
     NoDevice,
     ShaderMissing,
@@ -126,6 +147,16 @@ struct MeshInstance {
     /// none. This is what darkens creases and contact areas -- the `.mhmat`
     /// `AoMap` channel.
     std::filesystem::path aoMap{};
+
+    /// Metallic-roughness, read ONLY by `ShadingModel::Pbr`; the litsphere has
+    /// no concept of either.
+    ///
+    /// These are the same two numbers `foundation::metallicRoughnessOf()`
+    /// derives from a `.mhmat` for the glTF and USD writers, so filling them
+    /// from that function is what makes the viewport and the exported file
+    /// agree. The defaults describe skin: a dielectric, fairly matte.
+    float metallic{0.0F};
+    float roughness{0.6F};
 };
 
 /// The buffers, textures and pipeline for drawing meshes with the litsphere
@@ -161,6 +192,10 @@ public:
 
     /// Queues the per-frame matrices. Cheap; call every frame.
     void updateCamera(QRhiResourceUpdateBatch* batch, const Camera& camera, float aspect);
+
+    /// Picks which shader the next `draw` uses. Free: both pipelines already
+    /// exist, so this only chooses between them and needs no re-upload.
+    void setShadingModel(ShadingModel model);
 
     /// Records one draw per uploaded mesh. `upload` must have run in an earlier
     /// or the same batch.

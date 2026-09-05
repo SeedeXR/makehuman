@@ -570,9 +570,48 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_render COMMAND makehuman
              --render ${CMAKE_CURRENT_BINARY_DIR}/app_render.png --transparent)
     set_tests_properties(app_render PROPERTIES
-        PASS_REGULAR_EXPRESSION "rendered .*app_render\\.png \\(1024x1024, transparent\\)"
+        PASS_REGULAR_EXPRESSION
+            "rendered .*app_render\\.png \\(1024x1024, transparent, litsphere\\)"
         SKIP_REGULAR_EXPRESSION "cannot render"
         FAIL_REGULAR_EXPRESSION "nothing to draw;cannot write")
+
+    # Owner directive 4: the viewport shades with metallic-roughness as well as
+    # with the reference matcap. --render goes through the SAME buildScene() and
+    # the same SceneResources as the window, so this covers both.
+    add_test(NAME app_render_pbr COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_render_pbr.png --shading pbr)
+    set_tests_properties(app_render_pbr PROPERTIES
+        PASS_REGULAR_EXPRESSION "rendered .*app_render_pbr\\.png \\(1024x1024, pbr\\)"
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FAIL_REGULAR_EXPRESSION "nothing to draw;cannot write"
+        FIXTURES_SETUP app_pbr_default_png)
+
+    # An unrecognised model must be REFUSED. Defaulting to the litsphere would
+    # make a typo produce a plausible image that is not what was asked for, and
+    # nothing downstream could tell.
+    add_test(NAME app_shading_unknown COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_shading_unknown.png --shading pbrr)
+    set_tests_properties(app_shading_unknown PROPERTIES
+        PASS_REGULAR_EXPRESSION "unknown --shading")
+
+    # --skin-material picked the material the EXPORTERS wrote and nothing else:
+    # buildScene() read skins/default.mhmat by NAME, so all eight shipped tones
+    # rendered as the same untextured body. Two renders that differ only in the
+    # skin must not come out byte-identical.
+    add_test(NAME app_render_pbr_skin COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_render_pbr_skin.png
+             --shading pbr --skin-material african_deep)
+    set_tests_properties(app_render_pbr_skin PROPERTIES
+        PASS_REGULAR_EXPRESSION "rendered .*app_render_pbr_skin\\.png \\(1024x1024, pbr\\)"
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_SETUP app_pbr_skin_png)
+
+    add_test(NAME app_skin_material_reaches_the_viewport COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/app_render_pbr.png
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/app_render_pbr_skin.png
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_skin_material_reaches_the_viewport PROPERTIES
+        FIXTURES_REQUIRED "app_pbr_default_png;app_pbr_skin_png")
 
     set_tests_properties(ui PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen;TMPDIR=${MH_TEST_TMPDIR}")

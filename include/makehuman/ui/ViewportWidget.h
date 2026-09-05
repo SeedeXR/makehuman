@@ -71,6 +71,17 @@ public:
     [[nodiscard]] render::Camera camera() const;
     void setCamera(const render::Camera& c);
 
+    /// Switches the viewport between the reference matcap and metallic-
+    /// roughness PBR.
+    ///
+    /// Cheap and safe at any time: both pipelines are built when the scene is
+    /// created, so this changes which one the next frame binds and nothing
+    /// else. The choice SURVIVES a device or render-pass rebuild -- resizing
+    /// the window re-creates SceneResources, and a toggle that silently reset
+    /// itself on resize is the defect this remembers past.
+    void setShadingModel(render::ShadingModel model);
+    [[nodiscard]] render::ShadingModel shadingModel() const;
+
     /// Empty until a frame has been drawn; holds the reason if setup failed.
     [[nodiscard]] QString lastError() const;
 

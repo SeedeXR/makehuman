@@ -7,6 +7,41 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 
 ---
 
+## BLOCKED — the hourly cloud loop cannot push (owner action required)
+
+Added 2026-09-05 17:20. **The routine is firing correctly and doing real work.**
+`trig_01Q73g2iWMsqUe9T6kzoKo4a`, cron `27 * * * *`; the 16:27 run finished
+`SUCCEEDED` at 17:10 after 43 minutes with two commits ready. It could not push
+them:
+
+| Path | Result |
+|---|---|
+| `git push origin master` | **403** — "Claude doesn't have GitHub access to SeedeXR/makehuman for your organization" |
+| GitHub API `POST /git/refs` (MCP `create_branch`) | **403** — "Resource not accessible by integration" |
+| `git ls-remote`, `git pull --rebase`, all MCP reads | succeed |
+
+Reads work and the API authenticates as `genie360s`, so this is not the relay
+and not a bad credential: **the Claude GitHub App holds read-only permissions
+on this repository.** The fix is an org admin granting the App `Contents: write`
+for `SeedeXR` at https://github.com/apps/claude/installations/select_target.
+Only the owner can do that.
+
+Until then every cloud run is wasted: it spends ~43 minutes on a cold Linux
+build, finds real defects, and loses them when the container is torn down. The
+16:27 run attached its work as an mbox patch (`makehuman-session-131.patch`,
+two commits, verified to reproduce its tree exactly) rather than lose it.
+
+**Still owed from that run, and NOT yet verified locally** — its third finding:
+- [ ] **Four JSON readers crash on a directory.** `exists()` is true for a
+      directory and `ifstream` opens one, so all four reach `json::parse`,
+      whose first read throws `std::ios_base::failure` on libstdc++ —
+      uncaught. `tests/unit/test_malformed_input.cpp` has handed every reader a
+      directory since it was written and passed only because libc++ does not
+      throw. Fix: reject a directory explicitly and assert the error **kind**
+      is `Unreadable`, which has teeth on both standard libraries.
+
+---
+
 ## M0 — Grounding and scaffolding ✅ COMPLETE
 
 - [x] Build knowledge graph of the codebase (graphify) — 5,392 nodes / 9,319 edges / 358 communities
@@ -1033,14 +1068,32 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       otherwise. Now stated once, where a writer has to read it.
       Verified the exported numbers are unchanged: skin roughness 0.04000002,
       eye 0, metallic 0, in both `.glb` and `.usda`.
-- [ ] **PBR metallic-roughness in the VIEWPORT — owner decision, not a task.**
-      The viewport shades with a **litsphere/matcap**, which is what the
-      reference does and what makes the shipped skins look the way they do. A
-      metallic-roughness path is not an addition to that, it is a different
-      lighting model and a different look: it needs light rigs, an environment
-      or IBL, and every shipped litsphere stops being the thing that defines the
-      material. **Ask before building** — the export side is already PBR, so
-      nothing downstream is blocked on it.
+- [x] **PBR metallic-roughness in the VIEWPORT.** Owner answered the question
+      ("number 4, let's make view port also PBR"), so it was built as a SECOND
+      shading model rather than a replacement: `render::ShadingModel` picks
+      between `Litsphere` (still the default, still the M6 parity path, still
+      byte-identical) and `Pbr`. `--shading pbr` drives both the window and
+      `--render`; `ViewportWidget::setShadingModel` survives a resize.
+      - `resources/shaders/rhi/pbr.{vert,frag}` — **Apache-2.0, original**, not
+        a port: the reference has no PBR path to translate. GGX + height-
+        correlated Smith + Schlick, ACES tonemap, sRGB decode/encode (the target
+        is plain RGBA8, `OffscreenRenderer.cpp:66`).
+      - **No IBL, deliberately**: every usable HDRI is CC-BY (attribution we
+        cannot honour inside a binary asset) or non-commercial. Ambient is an
+        analytic hemisphere; the light rig is three fixed directional lights in
+        VIEW space, matching the camera-locked convention the matcap already
+        implies. Written up in the shader header.
+      - Metallic/roughness come from `foundation::metallicRoughnessOf()`, the
+        SAME call the glTF and USD writers make, so the viewport and the
+        exported file cannot disagree.
+- [ ] **Follow-up from the PBR work: the eyeballs blow out to white.** Visible
+      only under PBR (the matcap flattened it). The eye geometry in the base
+      mesh takes the BODY albedo, and its UV island lands on a bright region of
+      the generated skin texture. Pre-existing asset/UV issue, not a shader one.
+- [ ] **Follow-up: `default.mhmat` has no albedo at all**, so `--shading pbr`
+      with the default skin renders a near-white body — correct for albedo 1.0,
+      but it is not a good default. Either give `default` a neutral map or make
+      a toned skin the default.
 - [ ] GPU skinning (matrix palette UBO/SSBO)
 - [ ] ID-buffer picking with async readback (replaces the full-window sync readback)
 - [x] **Cached bounding box: measured, deliberately NOT built.**

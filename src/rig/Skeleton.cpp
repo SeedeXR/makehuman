@@ -215,7 +215,11 @@ std::expected<Skeleton, SkeletonError> loadSkeleton(const std::filesystem::path&
         skel.weightsFile = path.parent_path() / root["weights_file"].get<std::string>();
     }
 
-    for (const auto& [jointName, idxs] : root.value("joints", json::object()).items()) {
+    // `root.value(...)` returns by VALUE, and `.items()` only borrows it. Naming
+    // the object keeps it alive for the loop: relying on P2718R0's extension to
+    // the whole range expression dangles on toolchains that have not shipped it.
+    const json joints = root.value("joints", json::object());
+    for (const auto& [jointName, idxs] : joints.items()) {
         if (!idxs.is_array() || idxs.empty()) continue;  // skeleton.py:105-107
         std::vector<uint32_t> v;
         v.reserve(idxs.size());
@@ -225,16 +229,17 @@ std::expected<Skeleton, SkeletonError> loadSkeleton(const std::filesystem::path&
         if (!v.empty()) skel.jointVerts.emplace(jointName, std::move(v));
     }
 
-    for (const auto& [planeName, joints] : root.value("planes", json::object()).items()) {
-        if (!joints.is_array() || joints.size() != 3) continue;
+    const json planes = root.value("planes", json::object());
+    for (const auto& [planeName, planeJoints] : planes.items()) {
+        if (!planeJoints.is_array() || planeJoints.size() != 3) continue;
         std::array<std::string, 3> p;
         bool ok = true;
         for (size_t i = 0; i < 3; ++i) {
-            if (!joints[i].is_string()) {
+            if (!planeJoints[i].is_string()) {
                 ok = false;
                 break;
             }
-            p[i] = joints[i].get<std::string>();
+            p[i] = planeJoints[i].get<std::string>();
         }
         if (ok) skel.planes.emplace(planeName, std::move(p));
     }

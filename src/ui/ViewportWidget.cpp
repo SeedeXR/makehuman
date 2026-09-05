@@ -20,6 +20,9 @@ struct ViewportWidget::Impl {
 
     std::unique_ptr<render::SceneResources> scene;
     render::Camera camera;
+    /// Held here rather than only in `scene`, which is destroyed and rebuilt
+    /// whenever the device or render pass changes.
+    render::ShadingModel shading{render::ShadingModel::Litsphere};
     QString error;
 
     /// What `scene` was built against. initialize() runs on every resize, but
@@ -66,6 +69,18 @@ void ViewportWidget::setLitsphere(std::filesystem::path path) {
     update();
 }
 
+void ViewportWidget::setShadingModel(render::ShadingModel model) {
+    d_->shading = model;
+    // The scene may not exist yet: the widget is constructed long before it is
+    // first shown, and initialize() applies the remembered value.
+    if (d_->scene) d_->scene->setShadingModel(model);
+    update();
+}
+
+render::ShadingModel ViewportWidget::shadingModel() const {
+    return d_->shading;
+}
+
 render::Camera ViewportWidget::camera() const {
     return d_->camera;
 }
@@ -97,7 +112,14 @@ void ViewportWidget::initialize(QRhiCommandBuffer* cb) {
         emit statusChanged(d_->error);
         return;
     }
-    d_->scene            = std::move(*scene);
+    d_->scene = std::move(*scene);
+    // A fresh SceneResources defaults to the litsphere, so without this a
+    // rebuild would quietly throw away the user's shading choice.
+    //
+    // NOT covered by a test: reaching this line needs a real device and a live
+    // render target, which the offscreen UI tests do not have. The widget-side
+    // memory below it IS covered; this line is reviewed, not proven.
+    d_->scene->setShadingModel(d_->shading);
     d_->builtAgainstRhi  = rhi();
     d_->builtAgainstPass = pass;
     d_->needsUpload      = true;

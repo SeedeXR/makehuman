@@ -28,7 +28,7 @@ set_target_properties(mh_render PROPERTIES
 set(MH_SHADER_OUT "${CMAKE_BINARY_DIR}/shaders")
 file(MAKE_DIRECTORY "${MH_SHADER_OUT}")
 set(_qsb_outputs)
-foreach(stage litsphere.vert litsphere.frag)
+foreach(stage litsphere.vert litsphere.frag pbr.vert pbr.frag)
     set(_src "${CMAKE_SOURCE_DIR}/resources/shaders/rhi/${stage}")
     set(_dst "${MH_SHADER_OUT}/${stage}.qsb")
     add_custom_command(

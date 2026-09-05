@@ -2140,6 +2140,89 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-05 17:20:00 — Session 131 · **viewport PBR, and a skin picker that never reached the screen**
+
+### The chunk
+Owner directive 4 ("number 4, let's make view port also PBR"), plus the two
+portability bugs the cloud loop kept rediscovering every hour.
+
+### PBR as a second model, not a replacement
+`render::ShadingModel` picks between `Litsphere` and `Pbr`. The litsphere stays
+the default and stays byte-identical: it is the M6 parity path, and a test
+asserts that setting `metallic`/`roughness` on a mesh moves **zero** pixels
+under it.
+
+`resources/shaders/rhi/pbr.{vert,frag}` are **Apache-2.0 original work**, not
+ports — the reference has no PBR path to translate, so there was nothing to
+derive from. GGX + height-correlated Smith + Schlick, ACES tonemap, sRGB decode
+on the way in and encode on the way out (the target is plain RGBA8,
+`OffscreenRenderer.cpp:66`, so nothing linearizes for us).
+
+Two decisions worth keeping:
+- **No IBL.** Every usable HDRI is CC-BY (attribution we cannot honour inside a
+  binary asset) or non-commercial. The ambient is an analytic hemisphere. It is
+  not energy-accurate and the shader header says so; it exists so surfaces
+  facing away from all three lights are shaded rather than black.
+- **Lights in VIEW space.** The camera is fixed and the model rotates, so a rig
+  bolted to the camera is what a modelling viewport wants — and it is what the
+  matcap already implies, a matcap being lighting locked to the eye.
+
+Metallic and roughness come from `foundation::metallicRoughnessOf()`, the same
+call the glTF and USD writers make, so the viewport and the exported file
+cannot disagree about the same material.
+
+### The bug PBR exposed: `--skin-material` never reached the viewport
+`main.cpp:1803` read `skins/default.mhmat` **by name**. So the picker, the
+`.mhm` field and the exporters all honoured the choice, and the screen never
+did: all eight shipped tones rendered as the same untextured body. Both renders
+printed "rendered ... (1024x1024, pbr)" and exited 0.
+
+Nothing catches this except comparing the two images, which is what
+`tests/files_differ.cmake` now does. I wrote the test first, watched it fail
+with the two PNGs byte-identical, then changed the line to `skinMaterialPath()`.
+
+This had been true since the skins landed in `a8436474`. The litsphere hid it —
+an untextured matcap body and a textured one shaded by a matcap look similar
+enough that nothing looked wrong.
+
+### A tuning value I had got wrong, visible only once it was rendered
+The generated skins shipped `shininess 0.65` → roughness 0.35. Nothing in the
+exported file looked wrong at 0.35. Putting the same material through a real
+microfacet BRDF made it obvious: every tone read as **oiled skin**. Retuned to
+`shininess 0.42` → roughness 0.58, in `tools/make_skins.py` and all eight
+`.mhmat` files. Measured photographic skin sits around 0.5–0.7 for a
+single-lobe GGX; below 0.4 is what a specular lobe does when it is the only
+lobe and there is no subsurface term under it.
+
+### The two portability bugs, fixed here rather than in the cloud
+Both were found independently by the hourly cloud runs, which cannot verify a
+fix as fast as I can locally.
+- `src/rig/Skeleton.cpp:218,228` iterated `.items()` on the temporary returned
+  by `root.value(...)`. Apple clang implements P2718R0 so it works here; clang-18
+  with libstdc++ segfaults — 54 Linux failures. Both loops now name the object.
+- Nine test files used `std::sqrt`/`std::isfinite`/`std::abs` without
+  `<cmath>`. libc++ pulls it in transitively through Catch2; libstdc++ does not.
+
+### Verification
+- ctest **516/516** in debug, release, ASan **and** TSan. (The new
+  ViewportWidget case runs inside the single `ui` ctest entry rather than as
+  its own row, so the total moves by the four app-level tests only.)
+- Mutations killed: reversing the plane triple, dropping the joint map,
+  hard-coding roughness, hard-coding metallic, making `setShadingModel` a no-op.
+  Each was killed by the test written for it, not incidentally.
+- Rendered and **looked at** three images rather than trusting pixel counts.
+  That is how the oiled-skin roughness was caught; no assertion would have.
+- clang-format gate run with CI's exact command.
+
+### Follow-ups recorded in todo.md, not fixed here
+- The eyeballs blow out to white under PBR: the eye geometry takes the body
+  albedo and its UV island lands on a bright region. Pre-existing asset/UV
+  issue that the matcap was flattening.
+- `default.mhmat` names no albedo at all, so `--shading pbr` with the default
+  skin renders a near-white body. Correct for albedo 1.0, but a poor default.
+
+---
+
 ## 2026-09-05 16:44:29 — Session 130 · **the logo, and what "looks like a macOS app" actually means**
 
 ### The chunk

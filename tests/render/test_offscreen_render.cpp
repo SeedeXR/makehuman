@@ -1025,3 +1025,156 @@ TEST_CASE("pan follows the screen, not the model's own axes", "[render][pan]") {
     CHECK(leftAfter < leftBefore);
     CHECK(rightAfter > coverage(*turned, s, mid, turned->width()));
 }
+
+// ---------------------------------------------------------------------------
+// PBR (owner directive 4: "let's make view port also PBR")
+//
+// The litsphere bakes lighting into a texture, so a mesh has no material
+// response at all: the glTF and USD writers emit a metallic-roughness material
+// that the viewport was structurally incapable of showing. These check that the
+// second shading model exists, that it is genuinely a different shader, and --
+// the part that matters -- that its two material uniforms actually reach it.
+// A PBR path that ignored metallic and roughness would still draw a plausible
+// lit body, which is exactly the failure that looks like success.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Mean luminance over the pixels the model covers. Whole-image means are
+/// dominated by the background, which no material change moves.
+double meanSubjectLuma(const QImage& img, const render::RenderSettings& s) {
+    const QColor bg = QColor::fromRgbF(s.background.x, s.background.y, s.background.z);
+    double sum      = 0.0;
+    size_t hit      = 0;
+    for (int y = 0; y < img.height(); ++y) {
+        for (int x = 0; x < img.width(); ++x) {
+            const QColor c = img.pixelColor(x, y);
+            if (std::abs(c.red() - bg.red()) <= 6 && std::abs(c.green() - bg.green()) <= 6 &&
+                std::abs(c.blue() - bg.blue()) <= 6) {
+                continue;
+            }
+            sum += 0.2126 * c.red() + 0.7152 * c.green() + 0.0722 * c.blue();
+            ++hit;
+        }
+    }
+    return hit == 0 ? 0.0 : sum / static_cast<double>(hit);
+}
+
+}  // namespace
+
+TEST_CASE("the PBR model shades the same geometry differently", "[render][pbr]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    const std::vector<render::MeshInstance> one{{sc.rm.view(), settings().litsphere}};
+
+    auto s         = settings();
+    const auto lit = (*r)->render(one, s);
+    REQUIRE(lit.has_value());
+
+    s.shading      = render::ShadingModel::Pbr;
+    const auto pbr = (*r)->render(one, s);
+    REQUIRE(pbr.has_value());
+
+    // Different lighting model, so the shaded pixels must differ -- but the
+    // SILHOUETTE must not, because only the fragment stage changed. Coverage
+    // catches a PBR path that broke the geometry, culling or depth state; a
+    // large pixel difference catches one that silently fell back to litsphere.
+    const double covLit = coverage(*lit, s);
+    const double covPbr = coverage(*pbr, s);
+    INFO("coverage litsphere " << covLit << " pbr " << covPbr);
+    CHECK(covPbr > 0.03);
+    CHECK(covPbr < 0.30);
+    CHECK(std::abs(covPbr - covLit) < 0.01);
+
+    const size_t moved = differingPixels(*lit, *pbr);
+    const auto subject = static_cast<size_t>(covPbr * lit->width() * lit->height());
+    INFO("differing pixels " << moved << " over a subject of ~" << subject);
+    CHECK(moved > subject / 2);
+}
+
+// Roughness is the control that decides whether skin reads as skin or as wet
+// plastic, so a shader that dropped the uniform would be a real defect and not
+// a cosmetic one. Two renders that differ only in `MeshInstance::roughness`
+// must differ on screen.
+TEST_CASE("roughness reaches the PBR shader", "[render][pbr]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    auto s         = settings();
+    s.shading      = render::ShadingModel::Pbr;
+
+    render::MeshInstance mi{sc.rm.view(), s.litsphere};
+    mi.roughness      = 0.15F;  // near-specular
+    const auto glossy = (*r)->render(std::vector{mi}, s);
+    REQUIRE(glossy.has_value());
+
+    mi.roughness     = 1.0F;  // fully diffuse
+    const auto matte = (*r)->render(std::vector{mi}, s);
+    REQUIRE(matte.has_value());
+
+    const size_t moved = differingPixels(*glossy, *matte);
+    INFO("roughness 0.15 vs 1.0 moved " << moved << " pixels");
+    CHECK(moved > 1000);
+}
+
+// Metallic is the other half of the metallic-roughness pair. A metal has no
+// diffuse lobe and tints its reflection with the albedo, so the same body must
+// come out markedly DARKER under these lights -- three small directional
+// sources give a metal almost nothing to reflect. Direction is asserted, not
+// just difference: a shader that swapped the two uniforms would still "differ".
+TEST_CASE("metallic reaches the PBR shader and removes the diffuse lobe", "[render][pbr]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    auto s         = settings();
+    s.shading      = render::ShadingModel::Pbr;
+
+    render::MeshInstance mi{sc.rm.view(), s.litsphere};
+    mi.roughness          = 0.6F;
+    mi.metallic           = 0.0F;
+    const auto dielectric = (*r)->render(std::vector{mi}, s);
+    REQUIRE(dielectric.has_value());
+
+    mi.metallic      = 1.0F;
+    const auto metal = (*r)->render(std::vector{mi}, s);
+    REQUIRE(metal.has_value());
+
+    const double lumaDielectric = meanSubjectLuma(*dielectric, s);
+    const double lumaMetal      = meanSubjectLuma(*metal, s);
+    INFO("mean subject luma: dielectric " << lumaDielectric << " metal " << lumaMetal);
+    CHECK(lumaDielectric > 0.0);
+    CHECK(lumaMetal < lumaDielectric);
+}
+
+// The litsphere must be untouched by all of the above: it is the path M6
+// compares against the reference pixel for pixel, and it now shares a uniform
+// buffer and an SRB layout with the PBR shader. Growing `MeshBuf` by a vec4 the
+// litsphere declares and never reads must change nothing on screen.
+TEST_CASE("the litsphere is the default and is unaffected by the PBR uniforms",
+          "[render][pbr][litsphere]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    const auto s   = settings();
+    CHECK(s.shading == render::ShadingModel::Litsphere);
+
+    render::MeshInstance mi{sc.rm.view(), s.litsphere};
+    const auto plain = (*r)->render(std::vector{mi}, s);
+    REQUIRE(plain.has_value());
+
+    mi.metallic       = 1.0F;
+    mi.roughness      = 0.02F;
+    const auto loaded = (*r)->render(std::vector{mi}, s);
+    REQUIRE(loaded.has_value());
+
+    CHECK(differingPixels(*plain, *loaded) == 0);
+}

@@ -100,6 +100,7 @@ std::expected<QImage, RenderError> OffscreenRenderer::render(std::span<const Mes
 
     auto scene = SceneResources::create(rhi, rp.get(), d_->shaderDir, samples);
     if (!scene) return std::unexpected(scene.error());
+    (*scene)->setShadingModel(s.shading);
 
     QRhiCommandBuffer* cb = nullptr;
     if (rhi->beginOffscreenFrame(&cb) != QRhi::FrameOpSuccess) {

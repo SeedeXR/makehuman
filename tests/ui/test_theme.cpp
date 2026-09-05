@@ -19,6 +19,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <cmath>
+
 #include <QAbstractButton>
 #include <QAbstractSlider>
 #include <QAction>
@@ -1559,4 +1561,29 @@ TEST_CASE("the full preset is the first one, and refuses to resolve to nothing",
     // Export names nothing on purpose, so hiding everything IS the outcome.
     CHECK(w.applyWorkspacePreset(QStringLiteral("Export")));
     CHECK(dock->isHidden());
+}
+
+// Owner directive 4: the viewport shades with PBR as well as with the matcap.
+// The widget outlives its SceneResources -- initialize() destroys and rebuilds
+// it whenever the device or render pass changes -- so the choice has to be
+// remembered by the WIDGET rather than only by the scene.
+//
+// WHAT THIS DOES NOT COVER, stated plainly because I nearly claimed otherwise:
+// re-applying the model to a REBUILT SceneResources
+// (`ViewportWidget.cpp`'s initialize()) needs a real device and a live render
+// target, which these offscreen tests do not have. Deleting that line leaves
+// this test green -- measured, not assumed. What is covered is the widget-side
+// memory, which is the half that exists without a GPU.
+TEST_CASE("the viewport remembers its shading model", "[viewport][pbr]") {
+    mh::ui::ViewportWidget v(MH_SHADER_DIR);
+    CHECK(v.shadingModel() == mh::render::ShadingModel::Litsphere);  // the parity default
+
+    v.setShadingModel(mh::render::ShadingModel::Pbr);
+    CHECK(v.shadingModel() == mh::render::ShadingModel::Pbr);
+
+    v.resize(320, 240);
+    CHECK(v.shadingModel() == mh::render::ShadingModel::Pbr);
+
+    v.setShadingModel(mh::render::ShadingModel::Litsphere);
+    CHECK(v.shadingModel() == mh::render::ShadingModel::Litsphere);
 }

@@ -4,6 +4,7 @@
 #include <rhi/qrhi.h>
 #include <QFile>
 
+#include <array>
 #include <cstring>
 #include <vector>
 
@@ -38,6 +39,10 @@ void bindAll(QRhiShaderResourceBindings* srb, QRhiBuffer* ubuf, QRhiTexture* lit
 
 /// Three mat4 plus a vec4, matching the `Buf` block in litsphere.vert.
 constexpr quint32 kUboSize = 64 * 3 + 16;
+/// Two vec4, matching the `MeshBuf` block: `material` then `pbr`. Both shaders
+/// declare both, so one size serves both pipelines and the SRB layout that the
+/// two share stays identical.
+constexpr quint32 kMeshUboSize = 32;
 /// Interleaved position (3) + normal (3) + uv (2) + tangent (4).
 ///
 /// The tangent is always present rather than switching layouts per mesh: 4
@@ -92,8 +97,18 @@ struct Drawable {
     /// Per-mesh material parameters; `Buf` is per frame and cannot hold them.
     std::unique_ptr<QRhiBuffer> meshBuf;
     float normalMapIntensity{1.0F};
+    /// Read only by the PBR shader; see MeshInstance.
+    float metallic{0.0F};
+    float roughness{0.6F};
     std::unique_ptr<QRhiShaderResourceBindings> srb;
     quint32 indexCount{};
+};
+
+/// One opaque and one blended pipeline for a single shading model.
+struct Pipelines {
+    std::unique_ptr<QRhiGraphicsPipeline> opaque;
+    /// The same pipeline with alpha blending on and depth WRITE off.
+    std::unique_ptr<QRhiGraphicsPipeline> blend;
 };
 
 struct SceneResources::Impl {
@@ -107,13 +122,65 @@ struct SceneResources::Impl {
     std::unique_ptr<QRhiBuffer> layoutMeshBuf;
     std::unique_ptr<QRhiSampler> sampler;
     std::unique_ptr<QRhiShaderResourceBindings> layoutSrb;
-    std::unique_ptr<QRhiGraphicsPipeline> pipeline;
-    /// The same pipeline with alpha blending on and depth WRITE off. Kept as a
-    /// second object rather than mutated per draw: a QRhi pipeline's state is
-    /// baked at create().
-    std::unique_ptr<QRhiGraphicsPipeline> blendPipeline;
+    /// Indexed by `ShadingModel`. All four pipelines are built up front because
+    /// a QRhi pipeline's state -- including its shader stages -- is baked at
+    /// create(), so the viewport's shading toggle cannot mutate one in place.
+    std::array<Pipelines, 2> pipelines;
+    ShadingModel model{ShadingModel::Litsphere};
     std::vector<Drawable> drawables;
+
+    [[nodiscard]] const Pipelines& active() const { return pipelines[static_cast<size_t>(model)]; }
 };
+
+/// Builds the opaque/blend pair for one shading model. Everything but the
+/// shader stages is identical between the two models -- same vertex layout,
+/// same bindings, same depth and cull state -- so the differences are the
+/// arguments and the rest is written once.
+[[nodiscard]] bool buildPipelines(QRhi* rhi, Pipelines& out, const QShader& vs, const QShader& fs,
+                                  const QRhiVertexInputLayout& layout,
+                                  QRhiShaderResourceBindings* layoutSrb,
+                                  QRhiRenderPassDescriptor* rp, int sampleCount) {
+    const auto configure = [&](QRhiGraphicsPipeline* p) {
+        p->setShaderStages({{QRhiShaderStage::Vertex, vs}, {QRhiShaderStage::Fragment, fs}});
+        p->setVertexInputLayout(layout);
+        p->setShaderResourceBindings(layoutSrb);
+        p->setRenderPassDescriptor(rp);
+        p->setDepthTest(true);
+        // Winding IS consistent after fan triangulation -- verified by
+        // rendering with culling on and off and getting byte-identical pixel
+        // statistics.
+        p->setCullMode(QRhiGraphicsPipeline::Back);
+        // Must match the target, or pipeline creation fails.
+        p->setSampleCount(sampleCount);
+    };
+
+    out.opaque.reset(rhi->newGraphicsPipeline());
+    configure(out.opaque.get());
+    out.opaque->setDepthWrite(true);
+    if (!out.opaque->create()) return false;
+
+    // The blended variant differs in exactly two things:
+    //
+    //  * source-alpha / one-minus-source-alpha blending, which is what makes
+    //    the shader's `outColor.a = diffuse.a` mean anything. Without it the
+    //    alpha reached the framebuffer and was discarded, so the shipped
+    //    `transparent True` eye material rendered solid while its GLB export
+    //    said `alphaMode: BLEND`.
+    //  * depth WRITE off, test still on. A blended surface must not occlude
+    //    what is drawn after it, but it must still be hidden by opaque
+    //    geometry already in front of it.
+    out.blend.reset(rhi->newGraphicsPipeline());
+    configure(out.blend.get());
+    out.blend->setDepthWrite(false);
+    QRhiGraphicsPipeline::TargetBlend blend;
+    blend.enable   = true;
+    blend.srcColor = QRhiGraphicsPipeline::SrcAlpha;
+    blend.dstColor = QRhiGraphicsPipeline::OneMinusSrcAlpha;
+    blend.srcAlpha = QRhiGraphicsPipeline::One;
+    blend.dstAlpha = QRhiGraphicsPipeline::OneMinusSrcAlpha;
+    out.blend->setTargetBlends({blend});
+    return out.blend->create();
+}
 
 SceneResources::SceneResources() : d_(std::make_unique<Impl>()) {}
 
@@ -130,6 +197,10 @@ std::expected<std::unique_ptr<SceneResources>, RenderError> SceneResources::crea
     if (!vs) return std::unexpected(vs.error());
     auto fs = loadShader(shaderDir / "litsphere.frag.qsb");
     if (!fs) return std::unexpected(fs.error());
+    auto pbrVs = loadShader(shaderDir / "pbr.vert.qsb");
+    if (!pbrVs) return std::unexpected(pbrVs.error());
+    auto pbrFs = loadShader(shaderDir / "pbr.frag.qsb");
+    if (!pbrFs) return std::unexpected(pbrFs.error());
 
     auto r     = std::unique_ptr<SceneResources>(new SceneResources());
     r->d_->rhi = rhi;
@@ -161,7 +232,8 @@ std::expected<std::unique_ptr<SceneResources>, RenderError> SceneResources::crea
     // cares that the slot is a sampled texture; a throwaway texture created
     // here would be destroyed while the SRB still pointed at it.
     r->d_->layoutSrb.reset(rhi->newShaderResourceBindings());
-    r->d_->layoutMeshBuf.reset(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 16));
+    r->d_->layoutMeshBuf.reset(
+        rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, kMeshUboSize));
     if (!r->d_->layoutMeshBuf->create()) {
         return std::unexpected(RenderError{RenderErrorKind::Failed, "material uniform buffer"});
     }
@@ -172,10 +244,6 @@ std::expected<std::unique_ptr<SceneResources>, RenderError> SceneResources::crea
         return std::unexpected(RenderError{RenderErrorKind::Failed, "shader resource bindings"});
     }
 
-    r->d_->pipeline.reset(rhi->newGraphicsPipeline());
-    r->d_->pipeline->setShaderStages(
-        {{QRhiShaderStage::Vertex, *vs}, {QRhiShaderStage::Fragment, *fs}});
-
     QRhiVertexInputLayout layout;
     layout.setBindings({{kStride}});
     layout.setAttributes({
@@ -184,49 +252,18 @@ std::expected<std::unique_ptr<SceneResources>, RenderError> SceneResources::crea
         {0, 2, QRhiVertexInputAttribute::Float2, 6 * sizeof(float)},
         {0, 3, QRhiVertexInputAttribute::Float4, 8 * sizeof(float)},
     });
-    r->d_->pipeline->setVertexInputLayout(layout);
-    r->d_->pipeline->setShaderResourceBindings(r->d_->layoutSrb.get());
-    r->d_->pipeline->setRenderPassDescriptor(rp);
-    r->d_->pipeline->setDepthTest(true);
-    r->d_->pipeline->setDepthWrite(true);
-    // Winding IS consistent after fan triangulation -- verified by rendering
-    // with culling on and off and getting byte-identical pixel statistics.
-    r->d_->pipeline->setCullMode(QRhiGraphicsPipeline::Back);
-    // Must match the target, or pipeline creation fails.
-    r->d_->pipeline->setSampleCount(sampleCount);
-    if (!r->d_->pipeline->create()) {
-        return std::unexpected(RenderError{RenderErrorKind::Failed, "graphics pipeline"});
-    }
 
-    // The blended variant. Identical but for two things:
-    //
-    //  * source-alpha / one-minus-source-alpha blending, which is what makes
-    //    the shader's `outColor.a = diffuse.a` mean anything. Without it the
-    //    alpha reached the framebuffer and was discarded, so the shipped
-    //    `transparent True` eye material rendered solid while its GLB export
-    //    said `alphaMode: BLEND`.
-    //  * depth WRITE off, test still on. A blended surface must not occlude
-    //    what is drawn after it, but it must still be hidden by opaque
-    //    geometry already in front of it.
-    r->d_->blendPipeline.reset(rhi->newGraphicsPipeline());
-    r->d_->blendPipeline->setShaderStages(
-        {{QRhiShaderStage::Vertex, *vs}, {QRhiShaderStage::Fragment, *fs}});
-    r->d_->blendPipeline->setVertexInputLayout(layout);
-    r->d_->blendPipeline->setShaderResourceBindings(r->d_->layoutSrb.get());
-    r->d_->blendPipeline->setRenderPassDescriptor(rp);
-    r->d_->blendPipeline->setDepthTest(true);
-    r->d_->blendPipeline->setDepthWrite(false);
-    r->d_->blendPipeline->setCullMode(QRhiGraphicsPipeline::Back);
-    r->d_->blendPipeline->setSampleCount(sampleCount);
-    QRhiGraphicsPipeline::TargetBlend blend;
-    blend.enable   = true;
-    blend.srcColor = QRhiGraphicsPipeline::SrcAlpha;
-    blend.dstColor = QRhiGraphicsPipeline::OneMinusSrcAlpha;
-    blend.srcAlpha = QRhiGraphicsPipeline::One;
-    blend.dstAlpha = QRhiGraphicsPipeline::OneMinusSrcAlpha;
-    r->d_->blendPipeline->setTargetBlends({blend});
-    if (!r->d_->blendPipeline->create()) {
-        return std::unexpected(RenderError{RenderErrorKind::Failed, "blend pipeline"});
+    // Both models share this layout and this SRB layout deliberately: the PBR
+    // shader reads the same vertex attributes and the same bindings, differing
+    // only in what it does with them. That is what lets `upload` run once and
+    // `setShadingModel` be free.
+    if (!buildPipelines(rhi, r->d_->pipelines[static_cast<size_t>(ShadingModel::Litsphere)], *vs,
+                        *fs, layout, r->d_->layoutSrb.get(), rp, sampleCount)) {
+        return std::unexpected(RenderError{RenderErrorKind::Failed, "litsphere pipelines"});
+    }
+    if (!buildPipelines(rhi, r->d_->pipelines[static_cast<size_t>(ShadingModel::Pbr)], *pbrVs,
+                        *pbrFs, layout, r->d_->layoutSrb.get(), rp, sampleCount)) {
+        return std::unexpected(RenderError{RenderErrorKind::Failed, "pbr pipelines"});
     }
 
     return r;
@@ -388,7 +425,10 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
             }
         }
         dr.normalMapIntensity = instance.normalMapIntensity;
-        dr.meshBuf.reset(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 16));
+        dr.metallic           = instance.metallic;
+        dr.roughness          = instance.roughness;
+        dr.meshBuf.reset(
+            rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, kMeshUboSize));
         if (!dr.meshBuf->create()) {
             return std::unexpected(RenderError{RenderErrorKind::Failed, "material uniform buffer"});
         }
@@ -426,10 +466,15 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
         if (p.drawable.aoTex) batch->uploadTexture(p.drawable.aoTex.get(), p.aoMap);
         // x = intensity, y = 1 when a normal map is bound. Written per mesh
         // because whether one exists is a material property, not a frame one.
-        const float material[4] = {p.drawable.normalMapIntensity,
+        const float material[8] = {p.drawable.normalMapIntensity,
                                    p.drawable.normalTex ? 1.0F : 0.0F,
-                                   p.drawable.aoTex ? 1.0F : 0.0F, 0.0F};
-        batch->updateDynamicBuffer(p.drawable.meshBuf.get(), 0, 16, material);
+                                   p.drawable.aoTex ? 1.0F : 0.0F, 0.0F,
+                                   // The second vec4 is `pbr`: metallic, then
+                                   // roughness. The litsphere shader declares
+                                   // it and never reads it, which keeps one
+                                   // buffer size and one SRB layout for both.
+                                   p.drawable.metallic, p.drawable.roughness, 0.0F, 0.0F};
+        batch->updateDynamicBuffer(p.drawable.meshBuf.get(), 0, kMeshUboSize, material);
         built.push_back(std::move(p.drawable));
     }
     // Index data comes from the caller's mesh, which outlives this call.
@@ -471,6 +516,10 @@ void SceneResources::updateCamera(QRhiResourceUpdateBatch* batch, const Camera& 
     batch->updateDynamicBuffer(d_->ubuf.get(), 192, 16, params);
 }
 
+void SceneResources::setShadingModel(ShadingModel model) {
+    d_->model = model;
+}
+
 void SceneResources::draw(QRhiCommandBuffer* cb, const QSize& pixelSize) {
     if (d_->drawables.empty()) return;
 
@@ -491,7 +540,8 @@ void SceneResources::draw(QRhiCommandBuffer* cb, const QSize& pixelSize) {
         for (const Drawable& dr : d_->drawables) {
             if (dr.transparent != transparent) continue;
             if (!bound) {
-                cb->setGraphicsPipeline(transparent ? d_->blendPipeline.get() : d_->pipeline.get());
+                const Pipelines& pl = d_->active();
+                cb->setGraphicsPipeline(transparent ? pl.blend.get() : pl.opaque.get());
                 bound = true;
             }
             cb->setShaderResources(dr.srb.get());

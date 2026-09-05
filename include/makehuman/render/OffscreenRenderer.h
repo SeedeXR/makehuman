@@ -44,6 +44,10 @@ struct RenderSettings {
     bool transparentBackground{false};
 
     std::filesystem::path litsphere;
+
+    /// Which shader shades the frame. Defaults to the litsphere so every
+    /// existing render -- including the golden parity images -- is unchanged.
+    ShadingModel shading{ShadingModel::Litsphere};
 };
 
 class OffscreenRenderer {
