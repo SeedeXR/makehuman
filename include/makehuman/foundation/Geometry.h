@@ -147,8 +147,8 @@ struct SkinView {
     [[nodiscard]] bool valid() const noexcept {
         return influences > 0 && !globalRest.empty() &&
                (globalPose.empty() || globalPose.size() == globalRest.size()) &&
-               jointParents.size() == globalRest.size() &&
-               jointNames.size() == globalRest.size() && joints.size() == weights.size();
+               jointParents.size() == globalRest.size() && jointNames.size() == globalRest.size() &&
+               joints.size() == weights.size();
     }
 };
 
