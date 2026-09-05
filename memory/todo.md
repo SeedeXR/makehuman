@@ -523,11 +523,27 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       content depends on where the repo sits is a fragile one, and it makes
       "re-capture and diff" noisier than it should be.
 
-- [ ] **Bone naming/order: Mixamo standard** (owner decision, 2026-08-29).
-      Measured and documented in `docs/rig/mixamo_bone_order.md` — 65 bones,
-      `mixamorig:` prefix, identical across all 7 reference clips.
-      Watch the `$AssimpFbx$` decomposition trap documented there: a naive
-      assimp node walk gives ~190 nodes and wrong parents.
+- [x] **ANSWERED (owner, 2026-09-05): the 179-bone superset is the default rig**
+      — *"use the 179-bone set, it's more rich"*. `--rig` now defaults to
+      `mixamo_superset` instead of `default`.
+      Nothing is given up: the superset is MakeHuman's own 163-bone rig **plus**
+      the 16 bones Mixamo names and it lacks, so every default bone survives and
+      every Mixamo bone gets a home — which is what makes the retarget table
+      total rather than lossy.
+      `--rig default` still selects the reference's 163-bone rig, and the parity
+      fixtures are captured against that one, so both counts appear in the test
+      suite deliberately.
+      **Nothing asserted the default before this**: every other rig test passes
+      `--rig` explicitly, so a change here would have moved every export's
+      skeleton silently. `app_default_rig` now pins it, and reverting the
+      default fails it.
+      Measured: 179 bones, 3,725 of 19,158 vertices clamped to 4 influences (the
+      rig uses up to 12), Blender still 11/11 with `posed.glb` re-pinned to 179.
+      The `mixamorig:` PREFIX is a separate question and stays open — the
+      retarget table already maps our names to Mixamo's, so renaming our bones
+      would be a second, redundant translation. See
+      `docs/rig/mixamo_bone_order.md` and mind the `$AssimpFbx$` decomposition
+      trap documented there.
 - [x] **Retarget table shipped: `data/rigs/mixamo_retarget.json`.** And it is
       **not lossy** — that assumption was wrong once the superset existed.
       Against the 179-bone rig the table is **TOTAL**: all 65 Mixamo bones have
@@ -1981,6 +1997,30 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `setPanel` returns `[[nodiscard]] bool` and does **not** take ownership on
       failure: a mistyped category used to delete the panel while the caller
       went on connecting signals to it.
+- [ ] **OWNER REQUEST (2026-09-05): complete the UI to match the reference.**
+      Screenshot supplied of MakeHuman Community 1.2.1. **Use lucide icons**
+      (already vendored) and learn the structure from `legacy/python/`.
+      **Measured starting state**: `resources/icons/lucide/` holds **57** icons
+      and `src/ui/` has only **3** `theme::icon()` call sites — the set is
+      vendored and almost unused. `resources/icons/custom/` is empty.
+      What the reference has and we do not:
+      - **Top toolbar**, ~20 icon buttons in groups: file (new/load/save/save
+        as), edit (undo/redo/reset), mesh display (smooth, wireframe, subdivide),
+        symmetry (3), body-part camera views (~8: head, torso, arms, legs, …),
+        grab screen, help.
+      - **Two-level tab bar**: 10 top tabs (Files, Modelling, Geometries,
+        Materials, Pose/Animate, Rendering, Settings, Utilities, Help,
+        Community) each with its own sub-tabs (Modelling → Main, Body shapes,
+        Gender, Face, Torso, Arms and legs, Random, Custom, Measure, …).
+        `memory/taskviews.md` already inventories **51** views, 7 done.
+      - **Left panel**: titled group boxes around slider sets ("Macro").
+      - **Right panel**: a "Category" group of radio buttons.
+      - **Bottom**: a wide message bar, plus a live stats line
+        (`Gender: male  Age: 25  Muscle: 72.10 %  Weight: 86.10 %
+        Height: 174.39 cm`) — every number already computable from
+        `Human::factors()` and the mesh bounds.
+      Icons must be **complete**: audit every toolbar/menu action against the
+      vendored set and add the missing lucide SVGs rather than shipping blanks.
 - [ ] Symbolic shortcut/mouse persistence (not raw Qt enum ints)
 - [~] **Task views inventoried and classified** — `memory/taskviews.md`,
       re-derived by `tools/audit_taskviews.py` in CI. **51, not 50**: an AST

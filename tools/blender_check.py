@@ -94,7 +94,11 @@ EXPECT = {
     # 21,833.
     "posed.glb": {
         "vertices": 15593, "triangles": 28796, "tallest": 1.686274, "uv_layers": 1,
-        "bones": 163, "armatures": 1, "skinned": 14517, "vertex_groups": 163,
+        # 179, not 163: the application defaults to the mixamo_superset rig
+        # (owner decision, 2026-09-05). The fixture's own rigged.glb still uses
+        # the reference's 163-bone rig, which is what the parity fixtures were
+        # captured against -- so both numbers appear in this file on purpose.
+        "bones": 179, "armatures": 1, "skinned": 14517, "vertex_groups": 179,
     },
 
     # The SHIPPED blendshape set -- what `makehuman --blendshapes` writes: the

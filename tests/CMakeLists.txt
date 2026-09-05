@@ -399,6 +399,18 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION "wearing HighPolyEyes"
         FIXTURES_REQUIRED app_eyes_mhm)
 
+    # The DEFAULT rig, asserted because nothing else does: every other rig test
+    # passes --rig explicitly, so a change to the default would move every
+    # export's skeleton and no test would notice.
+    #
+    # 179 = MakeHuman's own 163 plus the 16 bones Mixamo names and it lacks, so
+    # defaulting here gives up nothing and makes a Mixamo retarget total rather
+    # than lossy (owner decision, 2026-09-05).
+    add_test(NAME app_default_rig COMMAND makehuman
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_default_rig.glb)
+    set_tests_properties(app_default_rig PROPERTIES
+        PASS_REGULAR_EXPRESSION "rig mixamo_superset \\(179 bones\\)")
+
     # The rig and the pose were lost the same way the clothes were. Saved with
     # `--rig mixamo_superset --pose tpose`, the file named neither and reopened
     # as the 163-bone default in the rest pose.

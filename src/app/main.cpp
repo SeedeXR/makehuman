@@ -1123,11 +1123,18 @@ int main(int argc, char** argv) {
     const QCommandLineOption transparentOpt(
         QStringLiteral("transparent"),
         QStringLiteral("Render --render's background transparent, for compositing."));
+    // The 179-bone superset is the default rig (owner decision, 2026-09-05:
+    // "use the 179-bone set, it's more rich"). It is MakeHuman's own 163-bone
+    // rig plus the 16 bones Mixamo names and it lacks, so every bone of the
+    // default survives and every Mixamo bone has a home -- nothing is given up
+    // by defaulting to it, and a retarget to Mixamo becomes total rather than
+    // lossy. `--rig default` still selects the reference's 163-bone rig, which
+    // is what the parity fixtures are captured against.
     const QCommandLineOption rigOpt(
         QStringLiteral("rig"),
         QStringLiteral("Skeleton to pose and skin with: a stem under data/rigs "
-                       "(default, mixamo_superset) or a path to a .mhskel."),
-        QStringLiteral("name"), QStringLiteral("default"));
+                       "(mixamo_superset, default) or a path to a .mhskel."),
+        QStringLiteral("name"), QStringLiteral("mixamo_superset"));
     const QCommandLineOption exportOpt(
         QStringLiteral("export"),
         QStringLiteral("Write the posed mesh here and exit. Format from the extension: "
