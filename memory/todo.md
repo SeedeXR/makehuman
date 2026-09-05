@@ -2152,6 +2152,19 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `tongue`, `eyebrows`, `eyelashes` and `proxymeshes` contain ZERO `.mhclo`
       files** — three of them hold a single `clear.thumb` placeholder and
       nothing else. Only `data/eyes/` has any (2).
+- [x] **File > Render.** `OpenGLTaskView` — the reference's Render tab, whose
+      label is literally "Render"
+      (`plugins/4_rendering_opengl/__init__.py:53`) — was `todo`. Same shape as
+      Export: `OffscreenRenderer` has been in the tree since M6, `--render` has
+      worked for as long, and the window reached neither. Added `RenderDialog`
+      (width, height, transparent, shading) and one `renderTo` both `--render`
+      and the menu call. **No AA toggle**, unlike the reference: MSAA is not
+      optional here — `render::kSampleCount` is requested for every target and
+      the backend may clamp it, so the checkbox would sometimes do nothing.
+      The shading model takes its place, which the reference could not offer.
+- [ ] **`ViewerTaskView` still todo.** The reference sends a finished render to
+      an in-app viewer (`mh2opengl.py:122-123`); ours writes a PNG and says so
+      in the status bar. Worth doing, not blocking.
 - [ ] **OWNER DECISION: the seven empty proxy choosers.** They are blocked on
       CONTENT, not code. Upstream ships these as separate downloadable asset
       packs. Either (a) an asset-pack decision, or (b) generate proxies

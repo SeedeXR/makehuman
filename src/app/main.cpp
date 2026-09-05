@@ -34,6 +34,7 @@
 #include "makehuman/ui/MacroStatus.h"
 #include "makehuman/ui/MainWindow.h"
 #include "makehuman/ui/ModifierPanel.h"
+#include "makehuman/ui/RenderDialog.h"
 #include "makehuman/ui/TaskRegistry.h"
 #include "makehuman/ui/Theme.h"
 #include "makehuman/ui/UndoCommands.h"
@@ -1907,6 +1908,36 @@ int main(int argc, char** argv) {
         return scene;
     };
 
+    // ONE render path, two triggers: `--render` and File > Render. Same reason
+    // exportTo is shared -- a menu and a command line that build the scene
+    // separately quietly stop producing the same picture.
+    //
+    // @return an empty string on success, or the reason it failed.
+    const auto renderTo = [&](const std::filesystem::path& out,
+                              const mh::ui::RenderRequest& req) -> std::string {
+        auto renderer = mh::render::OffscreenRenderer::create(MH_SHADER_DIR);
+        if (!renderer) return renderer.error().message();
+
+        mh::render::RenderSettings rs;
+        rs.width                 = req.width;
+        rs.height                = req.height;
+        rs.litsphere             = skin;
+        rs.transparentBackground = req.transparent;
+        rs.shading               = req.shading;
+
+        const auto scene = buildScene();
+        if (scene.empty()) return "nothing to draw";
+        const auto img = (*renderer)->render(scene, rs);
+        if (!img) return img.error().message();
+        if (!img->save(QString::fromStdString(out.string()))) {
+            return "cannot write " + out.string();
+        }
+        std::printf("rendered %s (%dx%d%s, %s)\n", out.string().c_str(), img->width(),
+                    img->height(), rs.transparentBackground ? ", transparent" : "",
+                    req.shading == mh::render::ShadingModel::Pbr ? "pbr" : "litsphere");
+        return {};
+    };
+
     // The window path and the headless production render assemble the SAME
     // scene; only the destination differs. Sharing it is what stops a
     // production render quietly disagreeing with what the viewport shows.
@@ -2258,6 +2289,25 @@ int main(int argc, char** argv) {
             window.statusBar()->showMessage(QObject::tr("Could not export %1").arg(file), 4000);
         }
     });
+    // The SAME renderTo the command line uses. The dialog's defaults are
+    // --render's defaults, so pressing Enter twice produces exactly what the
+    // command line would.
+    QObject::connect(&window, &mh::ui::MainWindow::renderRequested, [&] {
+        mh::ui::RenderRequest req;
+        req.shading = shading;  // whatever the viewport is currently showing
+        mh::ui::RenderDialog dlg(req, &window);
+        if (dlg.exec() != QDialog::Accepted) return;
+
+        const QString file = QFileDialog::getSaveFileName(&window, QObject::tr("Render to"), {},
+                                                          QObject::tr("PNG image (*.png)"));
+        if (file.isEmpty()) return;
+        if (const std::string err = renderTo(file.toStdString(), dlg.request()); !err.empty()) {
+            window.statusBar()->showMessage(
+                QObject::tr("Cannot render: %1").arg(QString::fromStdString(err)), 4000);
+            return;
+        }
+        window.statusBar()->showMessage(QObject::tr("Rendered %1").arg(file), 3000);
+    });
     QObject::connect(&window, &mh::ui::MainWindow::saveRequested, [&] {
         // Save with no path yet is Save As -- silently writing somewhere the
         // user did not choose is worse than asking.
@@ -2282,37 +2332,19 @@ int main(int argc, char** argv) {
     // Headless production render. Deliberately BEFORE the window path: it needs
     // a GPU but no surface, so it works where --screenshot cannot -- and it
     // renders the same scene the viewport would, via buildScene().
-    if (parser.isSet(renderOpt)) {
-        const std::filesystem::path out = parser.value(renderOpt).toStdString();
-        auto renderer                   = mh::render::OffscreenRenderer::create(MH_SHADER_DIR);
-        if (!renderer) {
-            std::fprintf(stderr, "cannot render: %s\n", renderer.error().message().c_str());
-            return 1;
-        }
-        mh::render::RenderSettings rs;
-        rs.width                 = 1024;
-        rs.height                = 1024;
-        rs.litsphere             = skin;
-        rs.transparentBackground = parser.isSet(transparentOpt);
-        rs.shading               = shading;
 
-        const auto scene = buildScene();
-        if (scene.empty()) {
-            std::fprintf(stderr, "cannot render: nothing to draw\n");
+    if (parser.isSet(renderOpt)) {
+        // The CLI's own defaults, unchanged: 1024 square, and whatever
+        // --transparent and --shading said.
+        const mh::ui::RenderRequest req{.width       = 1024,
+                                        .height      = 1024,
+                                        .transparent = parser.isSet(transparentOpt),
+                                        .shading     = shading};
+        if (const std::string err = renderTo(parser.value(renderOpt).toStdString(), req);
+            !err.empty()) {
+            std::fprintf(stderr, "cannot render: %s\n", err.c_str());
             return 1;
         }
-        const auto img = (*renderer)->render(scene, rs);
-        if (!img) {
-            std::fprintf(stderr, "cannot render: %s\n", img.error().message().c_str());
-            return 1;
-        }
-        if (!img->save(QString::fromStdString(out.string()))) {
-            std::fprintf(stderr, "cannot write %s\n", out.string().c_str());
-            return 1;
-        }
-        std::printf("rendered %s (%dx%d%s, %s)\n", out.string().c_str(), img->width(),
-                    img->height(), rs.transparentBackground ? ", transparent" : "",
-                    shadingName.toStdString().c_str());
         return 0;
     }
 

@@ -2140,6 +2140,57 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-05 21:00:00 — Session 136 · **the renderer had no user interface, and a test that proved nothing**
+
+### The chunk
+`OpenGLTaskView` — the reference's Render tab, whose label is literally
+"Render" (`plugins/4_rendering_opengl/__init__.py:53`). Same shape as the
+Export gap closed two commits back: `OffscreenRenderer` has been in the tree
+since M6, `--render` has worked for as long, and **nothing in the window
+reached either**.
+
+`RenderDialog` (width, height, transparent background, shading model) plus one
+`renderTo` lambda that `--render` and File > Render both call. The dialog's
+defaults ARE the CLI's defaults — 1024 square, opaque — so pressing Enter twice
+produces exactly what the command line would. Asserted.
+
+**No anti-aliasing toggle**, which the reference has. MSAA is not optional here:
+`render::kSampleCount` is requested for every target in the application and the
+backend may clamp it, so a checkbox would be a control that sometimes silently
+does nothing — the same reason the toolbar has no wireframe button. The shading
+model takes its place, which the reference could not offer because it has no
+PBR path.
+
+### A test of mine that proved nothing, caught by mutation
+I wrote that driving the shading combo "proves the mapping" between its index
+and `ShadingModel`. It does not. `request()` casts the *index*, and the
+constructor sets the index from the enum — so the two are consistent no matter
+what the labels say. Reversing the two `addItem` calls left the test **green**
+while the dialog would show "PBR" and render a litsphere.
+
+Mutation testing found it. The fix pins the LABELS to their positions:
+`itemText(static_cast<int>(ShadingModel::Litsphere))` must contain "Litsphere".
+Re-ran the same mutation afterwards and it fails now.
+
+This is the same family as the earlier "test asserted the printed message, not
+the effect" — an assertion that restates the implementation rather than
+checking it. The comment claiming the coverage was as wrong as the test.
+
+### Also caught: two icons for two different things
+Render and Grab Screen are different — one draws the character offscreen at a
+chosen resolution, the other captures the window — and the obvious glyph for
+both is a camera. Render uses `image`; a test asserts the two icons differ. It
+caught nothing when written, which is why it says so.
+
+### Verification
+- ctest 521/521 in debug, release, ASan and TSan.
+- `--render` output is byte-identical in wording to before the extraction:
+  "rendered ... (1024x1024, litsphere)" and "(1024x1024, transparent, pbr)".
+- Mutations killed: reversed combo (after the fix), removed spin-box floor,
+  render action not added to a menu.
+
+---
+
 ## 2026-09-05 20:15:00 — Session 135 · **eight skin materials nobody could pick, and seven choosers with nothing to choose**
 
 ### Where I started, and why I changed direction

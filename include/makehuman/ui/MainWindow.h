@@ -139,6 +139,11 @@ signals:
     /// `mh_ui` is Apache-2.0 and knows nothing about glTF, USD or FBX.
     void exportRequested();
 
+    /// File > Render. Like Export, this is the capability that existed with no
+    /// way to reach it: `OffscreenRenderer` has been in the tree since M6 and
+    /// `--render` has worked for as long, and the window reached neither.
+    void renderRequested();
+
     /// The toolbar's "grab screen". Same reasoning as the three above: this
     /// module can render a frame but must not decide where a PNG goes.
     void screenshotRequested();

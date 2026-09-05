@@ -11,6 +11,7 @@
 #include "makehuman/ui/MainWindow.h"
 #include "makehuman/ui/ModifierPanel.h"
 #include "makehuman/ui/PanelTitleBar.h"
+#include "makehuman/ui/RenderDialog.h"
 #include "makehuman/ui/TaskRegistry.h"
 #include "makehuman/ui/Theme.h"
 #include "makehuman/ui/UndoCommands.h"
@@ -46,6 +47,7 @@
 #include <QScrollArea>
 #include <QSet>
 #include <QSlider>
+#include <QSpinBox>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QStyle>
@@ -1906,4 +1908,95 @@ TEST_CASE("an asset label is readable, not a file stem", "[ui][assets]") {
     // Degenerate input must not crash or index an empty string.
     CHECK(prettyAssetName("", "") == QString{});
     CHECK(prettyAssetName("skinmat_", "skinmat_") == QString{});
+}
+
+// The renderer has had NO user interface at all. `OffscreenRenderer` has been
+// in the tree since M6 and `--render` has worked for as long; nothing in the
+// window reached either, so a production render was command-line only -- the
+// same shape as the Export gap closed one commit earlier.
+TEST_CASE("the render dialog reports what its controls say", "[ui][render]") {
+    mh::ui::RenderRequest initial;
+    initial.width       = 1920;
+    initial.height      = 1080;
+    initial.transparent = true;
+    initial.shading     = mh::render::ShadingModel::Pbr;
+
+    mh::ui::RenderDialog dlg(initial);
+    const mh::ui::RenderRequest got = dlg.request();
+    CHECK(got.width == 1920);
+    CHECK(got.height == 1080);
+    CHECK(got.transparent);
+    CHECK(got.shading == mh::render::ShadingModel::Pbr);
+
+    // The combo's INDEX is the enum value -- the constructor sets the index from
+    // it and request() casts the index back -- so the two are consistent no
+    // matter what the labels say. That means a reordered combo would show
+    // "PBR" and render a litsphere, and casting alone cannot see it: verified
+    // by mutation, reversing the addItem calls left an earlier version of this
+    // test green. So the LABELS are pinned to their positions too.
+    auto* shading = dlg.findChild<QComboBox*>(QStringLiteral("render.shading"));
+    REQUIRE(shading != nullptr);
+    REQUIRE(shading->count() == 2);
+    CHECK(shading->itemText(static_cast<int>(mh::render::ShadingModel::Litsphere))
+              .contains(QStringLiteral("Litsphere")));
+    CHECK(shading->itemText(static_cast<int>(mh::render::ShadingModel::Pbr))
+              .contains(QStringLiteral("PBR")));
+
+    shading->setCurrentIndex(0);
+    CHECK(dlg.request().shading == mh::render::ShadingModel::Litsphere);
+
+    auto* width = dlg.findChild<QSpinBox*>(QStringLiteral("render.width"));
+    REQUIRE(width != nullptr);
+    width->setValue(512);
+    CHECK(dlg.request().width == 512);
+
+    // A stray keystroke must not produce a 1x1 image that still "succeeds",
+    // and 100000 must not ask the GPU for 40 GB.
+    width->setValue(1);
+    CHECK(dlg.request().width == 64);
+    width->setValue(100000);
+    CHECK(dlg.request().width == 8192);
+}
+
+// Defaults matter: this is what a user gets by pressing Enter. 1024 square and
+// opaque is exactly what `--render` has always produced, so the two paths agree
+// unless the user says otherwise.
+TEST_CASE("the render dialog defaults match --render", "[ui][render]") {
+    const mh::ui::RenderRequest d;
+    CHECK(d.width == 1024);
+    CHECK(d.height == 1024);
+    CHECK_FALSE(d.transparent);
+    CHECK(d.shading == mh::render::ShadingModel::Litsphere);
+}
+
+// Same shape as the Export gap: the capability existed and nothing reached it.
+// The action must be IN a menu, not merely parented to the window -- an action
+// nobody added to a menu or toolbar is unreachable however well it is wired.
+TEST_CASE("the File menu can render", "[ui][render]") {
+    theme::setIconDir(std::filesystem::path(MH_RESOURCE_DIR) / "icons" / "lucide");
+    mh::ui::MainWindow w(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+
+    const auto found = w.findChildren<QAction*>(QStringLiteral("file.render"));
+    REQUIRE(found.size() == 1);
+    QAction* act = found.front();
+    CHECK_FALSE(act->icon().isNull());
+
+    bool inFileMenu = false;
+    for (const QMenu* m : w.menuBar()->findChildren<QMenu*>()) {
+        if (m->actions().contains(act)) inFileMenu = true;
+    }
+    CHECK(inFileMenu);
+
+    // Render and Grab Screen are DIFFERENT things -- one draws the character
+    // offscreen at a chosen resolution, the other captures the window -- so
+    // they must not share a glyph. This caught nothing when written; it is here
+    // because the obvious icon for both is a camera.
+    const auto shot = w.findChildren<QAction*>(QStringLiteral("view.screenshot"));
+    REQUIRE(shot.size() == 1);
+    CHECK(act->icon().cacheKey() != shot.front()->icon().cacheKey());
+
+    int emitted = 0;
+    QObject::connect(&w, &mh::ui::MainWindow::renderRequested, [&emitted] { ++emitted; });
+    act->trigger();
+    CHECK(emitted == 1);
 }

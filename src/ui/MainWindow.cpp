@@ -184,6 +184,12 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     // to another tool and cannot be read back the same way.
     addFileAction(QStringLiteral("file.export"), QT_TR_NOOP("Export…"), QKeySequence::UnknownKey,
                   "download", &MainWindow::exportRequested);
+    // A production render is a third kind of output: not a `.mhm` to reopen and
+    // not a model for another tool, but a picture. `image` rather than `camera`
+    // -- the toolbar's camera is Grab Screen, which captures the WINDOW, and
+    // one glyph for two different things would be worse than two.
+    addFileAction(QStringLiteral("file.render"), QT_TR_NOOP("Render…"), QKeySequence::UnknownKey,
+                  "image", &MainWindow::renderRequested);
 
     // Qt builds the actions, so the text follows the command ("Undo Change
     // head/head-oval") and they enable and disable themselves with the stack.
