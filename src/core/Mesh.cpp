@@ -367,9 +367,28 @@ std::expected<std::vector<uint8_t>, MeshError> Mesh::faceMaskForVisibleVertices(
 }
 
 float Mesh::heightCm() const {
-    const auto bb = boundingBox();
-    if (!bb) return 0.0F;
-    return (bb->second.y - bb->first.y) * kDecimetresToCentimetres;
+    if (coord_.empty() || fvert_.empty()) return 0.0F;
+
+    // Only the vertices of VISIBLE faces, matching the reference's
+    // calcBBox(fixedFaceMask = staticFaceMask). See the header for the 2.87 cm
+    // this is worth on the shipped mesh.
+    const std::vector<uint8_t> visible = staticFaceMask();
+    const size_t vpp                   = vertsPerPrimitive_;
+    if (vpp == 0) return 0.0F;
+
+    float lo = std::numeric_limits<float>::infinity();
+    float hi = -lo;
+    for (size_t f = 0; f < visible.size(); ++f) {
+        if (visible[f] == 0U) continue;
+        for (size_t c = 0; c < vpp; ++c) {
+            const float y = coord_[fvert_[f * vpp + c]].y;
+            lo            = std::min(lo, y);
+            hi            = std::max(hi, y);
+        }
+    }
+    // A mesh whose every face is a helper has no body to measure.
+    if (lo > hi) return 0.0F;
+    return (hi - lo) * kDecimetresToCentimetres;
 }
 
 std::expected<Mesh, MeshError> Mesh::fromData(foundation::MeshData data) {

@@ -2112,8 +2112,27 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
             a painted no-op. They need the behaviour first. The body-part views
             additionally need CUSTOM icons — lucide has no anatomy glyphs, which
             is what the empty `resources/icons/custom/` is for.
-      - [ ] Two-level tab bar, left group boxes, right Category radios, bottom
-            stats line — still to do.
+      - [x] **Bottom stats line**, as a permanent status-bar widget (a transient
+            `showMessage` would be wiped by the next "Saved workspace"). Format
+            copied from `guimodifier.py:152-185`. Two rules there are NOT what a
+            guess produces and are pinned by test: **weight shows 50 + 100*w**,
+            so a default character reads 100 %, not 50 %; and the **gender
+            endpoints are compared exactly**, so 0.999 is a split, not "male".
+            `mh_ui` stays Apache-only — `macroStatusLine` takes plain floats,
+            never a `core::Human`.
+      - [ ] Two-level tab bar, left group boxes, right Category radios — still
+            to do.
+
+- [x] **`Mesh::heightCm()` was measuring the helper cages** — found while
+      wiring the stats line above. The reference documents `getHeightCm` as
+      "the bounding box of the basemesh **without** the helpers" and passes
+      `fixedFaceMask = staticFaceMask` (`legacy/python/apps/human.py:701-706`);
+      ours iterated every vertex. **Measured: 169.455 cm with helpers against
+      166.589 cm without — 2.87 cm.** `boundingBox()` stays deliberately
+      unmasked, because the exporters ground the model on it and every vertex
+      they write has to be inside it; four round-trip tests were comparing an
+      unmasked EXPORT against `heightCm()` and now say `boundingBox()`
+      explicitly, asserting the same values as before.
 - [ ] Symbolic shortcut/mouse persistence (not raw Qt enum ints)
 - [~] **Task views inventoried and classified** — `memory/taskviews.md`,
       re-derived by `tools/audit_taskviews.py` in CI. **51, not 50**: an AST

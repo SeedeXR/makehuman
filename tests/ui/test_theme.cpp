@@ -7,6 +7,7 @@
 #include "makehuman/core/Modifier.h"
 #include "makehuman/core/SliderLayout.h"
 #include "makehuman/ui/AssetPanel.h"
+#include "makehuman/ui/MacroStatus.h"
 #include "makehuman/ui/MainWindow.h"
 #include "makehuman/ui/ModifierPanel.h"
 #include "makehuman/ui/PanelTitleBar.h"
@@ -45,6 +46,7 @@
 #include <QSet>
 #include <QSlider>
 #include <QStandardPaths>
+#include <QStatusBar>
 #include <QStyle>
 #include <QStyleOptionSlider>
 #include <QTabWidget>
@@ -1771,4 +1773,79 @@ TEST_CASE("a rendered icon is centred, not clipped to a corner", "[ui][icons]") 
         CHECK(cy > 0.38);
         CHECK(cy < 0.62);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Owner directive 8: the reference's persistent status line
+//   "Gender: male  Age: 25  Muscle: 72.10 %  Weight: 86.10 %  Height: 174.39 cm"
+// Every number was already computable; the line simply did not exist.
+//
+// Two of its rules are NOT what a reasonable guess produces, which is why they
+// are pinned here rather than eyeballed:
+//   * weight displays 50 + 100*w, so a default character reads 100 %, not 50 %
+//     (legacy/python/apps/gui/guimodifier.py:168);
+//   * the gender endpoints are compared EXACTLY, so 0.999 is a split and not
+//     "male" (guimodifier.py:155-163).
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the gender label has all four of the reference's branches", "[ui][status]") {
+    // Exact endpoints. A tolerance here would swallow the two cases below them.
+    CHECK(mh::ui::genderLabel(0.0F) == QStringLiteral("female"));
+    CHECK(mh::ui::genderLabel(1.0F) == QStringLiteral("male"));
+
+    // Within 0.01 of centre, inclusive of the default.
+    CHECK(mh::ui::genderLabel(0.5F) == QStringLiteral("neutral"));
+    CHECK(mh::ui::genderLabel(0.505F) == QStringLiteral("neutral"));
+
+    // Just outside the neutral band, and just inside the endpoints. Both are
+    // splits: 0.999 is NOT "male", which is the trap.
+    CHECK(mh::ui::genderLabel(0.52F) == QStringLiteral("48.00 % female, 52.00 % male"));
+    CHECK(mh::ui::genderLabel(0.999F) == QStringLiteral("0.10 % female, 99.90 % male"));
+}
+
+TEST_CASE("the status line matches the reference's format", "[ui][status]") {
+    mh::ui::MacroStats s;
+    s.gender   = 1.0F;
+    s.ageYears = 25.0F;
+    s.muscle   = 0.7210F;
+    s.weight   = 0.3610F;  // 50 + 36.10 = 86.10 %
+    s.heightCm = 174.39F;
+
+    CHECK(mh::ui::macroStatusLine(s) == QStringLiteral("Gender: male  Age: 25  Muscle: 72.10 %  "
+                                                       "Weight: 86.10 %  Height: 174.39 cm"));
+
+    // The default character. 100 %, not 50 % -- the whole reason the offset is
+    // pinned rather than assumed.
+    const mh::ui::MacroStats d;
+    INFO(mh::ui::macroStatusLine(d).toStdString());
+    CHECK(mh::ui::macroStatusLine(d).contains(QStringLiteral("Weight: 100.00 %")));
+    CHECK(mh::ui::macroStatusLine(d).contains(QStringLiteral("Gender: neutral")));
+
+    // Age truncates toward zero rather than rounding: the reference formats it
+    // with %d.
+    mh::ui::MacroStats old = d;
+    old.ageYears           = 25.9F;
+    CHECK(mh::ui::macroStatusLine(old).contains(QStringLiteral("Age: 25")));
+}
+
+// The formatter is tested above; this is the WIRING. Building the label and
+// forgetting `addPermanentWidget` leaves an orphan that holds the right text
+// and is never shown, which no formatter test can see.
+TEST_CASE("the stats line is a permanent widget in the status bar", "[ui][status]") {
+    theme::setIconDir(std::filesystem::path(MH_RESOURCE_DIR) / "icons" / "lucide");
+    mh::ui::MainWindow w(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+
+    w.setMacroStatus(QStringLiteral("Gender: neutral  Age: 25"));
+    CHECK(w.macroStatus() == QStringLiteral("Gender: neutral  Age: 25"));
+
+    // Parented to the status bar, so it is actually on screen.
+    QLabel* label = w.findChild<QLabel*>(QStringLiteral("status.macro"));
+    REQUIRE(label != nullptr);
+    CHECK(label->text() == QStringLiteral("Gender: neutral  Age: 25"));
+    CHECK(w.statusBar()->isAncestorOf(label));
+
+    // A transient message must NOT replace it -- that is the whole reason it is
+    // a permanent widget and not showMessage.
+    w.statusBar()->showMessage(QStringLiteral("Saved workspace"), 1000);
+    CHECK(w.macroStatus() == QStringLiteral("Gender: neutral  Age: 25"));
 }

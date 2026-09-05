@@ -66,13 +66,26 @@ size_t importedTriangles(const io::ImportedScene& s) {
     return n;
 }
 
+/// The FULL Y extent in decimetres, helpers included.
+///
+/// NOT `Mesh::heightCm()`, which measures the body and masks the helper cages
+/// exactly as the reference's `getHeightCm` does. These cases export the whole
+/// mesh, so what comes back spans the whole bounding box -- 16.9455 dm, against
+/// the body's 16.6589 -- and comparing the export against a body measurement
+/// would be comparing two different things that happened to be equal before
+/// `heightCm` was corrected.
+double fullExtentDm(const core::Mesh& m) {
+    const auto bb = m.boundingBox();
+    REQUIRE(bb.has_value());
+    return static_cast<double>(bb->second.y - bb->first.y);
+}
+
 }  // namespace
 
 TEST_CASE("a character survives a round trip through every readable format", "[io][roundtrip]") {
-    const core::Mesh mesh = baseMesh();
-    const auto rm         = core::RenderMesh::build(mesh);
-    const double wantHeightDm =
-        static_cast<double>(mesh.heightCm()) / 10.0;  // heightCm is 10x decimetres
+    const core::Mesh mesh      = baseMesh();
+    const auto rm              = core::RenderMesh::build(mesh);
+    const double wantHeightDm  = fullExtentDm(mesh);
     const size_t wantTriangles = rm.view().triangleCount();
     REQUIRE(wantTriangles > 1000);
     REQUIRE(wantHeightDm > 1.0);
@@ -188,8 +201,7 @@ TEST_CASE("a Collada file declares the unit it was written in", "[io][roundtrip]
             REQUIRE(back.has_value());
             const double metres = importedHeight(*back);
             INFO("imported height " << metres << " m, metersPerUnit " << back->metersPerUnit);
-            CHECK(metres ==
-                  Catch::Approx(static_cast<double>(mesh.heightCm()) / 100.0).epsilon(0.001));
+            CHECK(metres == Catch::Approx(fullExtentDm(mesh) / 10.0).epsilon(0.001));
 
             std::filesystem::remove(out, ec);
         }
@@ -216,7 +228,7 @@ TEST_CASE("a character survives a GLB round trip", "[io][roundtrip][gltf]") {
     CHECK(back->metersPerUnit == 1.0);
     const double gotDm = importedHeight(*back) * 10.0;
     INFO("height " << gotDm << " dm");
-    CHECK(gotDm == Catch::Approx(static_cast<double>(mesh.heightCm()) / 10.0).epsilon(0.001));
+    CHECK(gotDm == Catch::Approx(fullExtentDm(mesh)).epsilon(0.001));
 
     std::filesystem::remove(out, ec);
 }

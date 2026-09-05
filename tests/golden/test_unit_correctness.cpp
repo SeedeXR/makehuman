@@ -471,7 +471,11 @@ TEST_CASE("an unitless format admits it", "[units][io][import]") {
 TEST_CASE("every writer honours every option it shares", "[units][io][options]") {
     const core::Mesh mesh = baseMesh();
     const auto rm         = core::RenderMesh::build(mesh);
-    const double plainDm  = static_cast<double>(mesh.heightCm()) / 10.0;
+    // The full bounding extent, not Mesh::heightCm(): these export the whole
+    // mesh, and heightCm masks the helper cages the way the reference does.
+    const auto plainBb = mesh.boundingBox();
+    REQUIRE(plainBb.has_value());
+    const double plainDm = static_cast<double>(plainBb->second.y - plainBb->first.y);
 
     SECTION("scale doubles the geometry") {
         {

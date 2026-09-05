@@ -253,8 +253,18 @@ public:
     /// Axis-aligned bounds over all vertices. Returns nullopt for an empty mesh.
     [[nodiscard]] std::optional<std::pair<Vec3, Vec3>> boundingBox() const;
 
-    /// Height in centimetres, i.e. the Y extent scaled by 10.
-    /// Reference: legacy/python/apps/human.py:694-699.
+    /// Height in centimetres: the Y extent of the BODY, scaled by 10.
+    ///
+    /// "Body" is load-bearing and is why this is not just `boundingBox()`. The
+    /// reference measures `calcBBox(fixedFaceMask = staticFaceMask)` and
+    /// documents it as "the bounding box of the basemesh **without the
+    /// helpers**" (`legacy/python/apps/human.py:701-706`). The helper cages --
+    /// the skirt, the tights, the joint cubes -- stick out past the body, so
+    /// including them overstates the figure: measured on the shipped base mesh,
+    /// 169.455 cm with helpers against 166.589 cm without, an error of 2.87 cm.
+    ///
+    /// `boundingBox()` deliberately stays unmasked: the exporters ground the
+    /// model on it, and every vertex they write has to be inside it.
     [[nodiscard]] float heightCm() const;
 
 private:

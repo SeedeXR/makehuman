@@ -94,6 +94,15 @@ public:
     /// Shown in the title bar after a load or save.
     void setDocumentPath(const QString& path);
 
+    /// The reference's persistent macro line, on the right of the status bar.
+    ///
+    /// A permanent widget rather than `showMessage`, which is transient: every
+    /// "Saved workspace" or viewport error would wipe the stats and they would
+    /// never come back. The reference calls its equivalent `statusPersist` for
+    /// the same reason.
+    void setMacroStatus(const QString& line);
+    [[nodiscard]] QString macroStatus() const;
+
     /// Restores docks and geometry from QSettings, or lays out the defaults.
     void restoreWorkspace();
     void saveWorkspace() const;

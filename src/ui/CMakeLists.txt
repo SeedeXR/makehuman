@@ -14,6 +14,7 @@ add_library(mh_ui STATIC
     ViewportWidget.cpp
     Language.cpp
     MainWindow.cpp
+    MacroStatus.cpp
     Theme.cpp
     PanelTitleBar.cpp
     ModifierPanel.cpp

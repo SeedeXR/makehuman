@@ -134,3 +134,30 @@ TEST_CASE("all face indices are in range", "[golden][parity][core]") {
         if (t >= nUVs) ++badT;
     CHECK(badT == 0);
 }
+
+// `heightCm` measures the BODY, not the bounding box.
+//
+// The reference documents its `getHeightCm` as "the bounding box of the
+// basemesh without the helpers" and passes `fixedFaceMask = staticFaceMask`
+// (legacy/python/apps/human.py:694-706). Ours measured every vertex, helper
+// cages included, and the status line therefore reported a figure 2.87 cm too
+// tall. Both numbers below are MEASURED from the shipped mesh, so the gap
+// itself is asserted -- a heightCm that quietly went back to the full bounding
+// box would reproduce the larger one exactly.
+TEST_CASE("height excludes the helper geometry, as the reference does", "[mesh][golden][parity]") {
+    auto mesh = mh::core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+    mesh->buildAdjacency();
+
+    const auto bb = mesh->boundingBox();
+    REQUIRE(bb.has_value());
+    const float withHelpers = (bb->second.y - bb->first.y) * 10.0F;
+
+    // boundingBox() stays unmasked -- the exporters ground the model on it.
+    CHECK_THAT(withHelpers, Catch::Matchers::WithinAbs(169.455, 0.01));
+    CHECK_THAT(mesh->heightCm(), Catch::Matchers::WithinAbs(166.589, 0.01));
+
+    // Stated as a relationship too: the helpers are OUTSIDE the body, so
+    // masking them can only ever shrink the measurement.
+    CHECK(mesh->heightCm() < withHelpers);
+}

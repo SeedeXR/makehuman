@@ -93,6 +93,9 @@ struct MainWindow::Impl {
     QStringList categories;
     QMenu* savedMenu{};
     QUndoStack* undo{};
+    /// The reference's persistent macro line. A permanent status-bar widget,
+    /// because showMessage is transient and every other message would wipe it.
+    QLabel* macroStatus{};
     /// The shipped layout, captured before any saved one is restored. Resetting
     /// is then just restoring it, which also covers docks added later -- the
     /// manual re-dock it replaces did not.
@@ -288,6 +291,12 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     shot->setObjectName(QStringLiteral("view.screenshot"));
     connect(shot, &QAction::triggered, this, &MainWindow::screenshotRequested);
 
+    // Permanent, so a transient showMessage cannot wipe it. addPermanentWidget
+    // right-aligns it, which is where the reference puts the same numbers.
+    d_->macroStatus = new QLabel(this);
+    d_->macroStatus->setObjectName(QStringLiteral("status.macro"));
+    statusBar()->addPermanentWidget(d_->macroStatus);
+
     statusBar()->showMessage(QStringLiteral("Ready"));
     resize(1280, 800);
     // Captured AFTER every dock exists, so a preset restoring it gets them all.
@@ -295,6 +304,14 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
 }
 
 MainWindow::~MainWindow() = default;
+
+void MainWindow::setMacroStatus(const QString& line) {
+    d_->macroStatus->setText(line);
+}
+
+QString MainWindow::macroStatus() const {
+    return d_->macroStatus->text();
+}
 
 ViewportWidget* MainWindow::viewport() const {
     return d_->viewport;

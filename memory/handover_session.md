@@ -2140,6 +2140,72 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-05 18:50:00 — Session 133 · **the status line, and a height that measured the helper cages**
+
+### The chunk
+Owner directive 8: the reference's persistent bottom stats line
+`Gender: … Age: … Muscle: … % Weight: … % Height: … cm`.
+
+### Two format rules a guess would have got wrong
+Read out of `legacy/python/apps/gui/guimodifier.py:152-185` rather than
+invented, and both are pinned by test:
+
+- **Weight displays `50 + 100 * w`, not `100 * w`.** The 0..1 slider maps onto a
+  50 %..150 % display range, so a default character reads "100.00 %". I would
+  have written 50.00 %.
+- **The gender endpoints are compared EXACTLY** — 0.0 is "female", 1.0 is
+  "male", within 0.01 of 0.5 is "neutral", everything else is the split
+  percentage. So 0.999 reads "0.10 % female, 99.90 % male" and not "male". A
+  tolerance on the endpoints would swallow that.
+
+### Licence boundary held
+`src/ui` links only `mh::render` and Qt — it does NOT depend on `core`, and
+must not (CLAUDE.md hard rule 4: Apache may never depend on AGPL). So
+`macroStatusLine` takes a `MacroStats` of plain floats and the app, which owns
+the `Human`, fills it in. Same shape as the File-menu signals.
+
+It is a PERMANENT status-bar widget, not `showMessage`: the latter is transient
+and the next "Saved workspace" or viewport error would wipe the stats forever.
+The reference calls its own equivalent `statusPersist` for the same reason.
+
+### The bug the stats line exposed: heightCm measured the helper cages
+I first wrote `10 * (bbox.max.y - bbox.min.y)` in `main.cpp`, then checked what
+the reference actually does before trusting it. `getHeightCm` calls
+`calcBBox(fixedFaceMask = self.staticFaceMask)` and the docstring says "the
+bounding box of the basemesh **without the helpers**"
+(`legacy/python/apps/human.py:701-706`).
+
+Ours iterated every vertex. **Measured, not reasoned about**: 169.455 cm with
+helpers, 166.589 cm without — the skirt and tights cages stick out past the
+body by 2.87 cm. I ran a throwaway probe to get both numbers before changing
+anything, and the parity test now asserts both so a silent revert to the full
+bounding box reproduces the larger figure and fails.
+
+`boundingBox()` stays deliberately unmasked: the exporters ground the model on
+it and every vertex they write has to be inside it.
+
+### Four tests broke, and they were right to
+`test_roundtrip.cpp` (×3) and `test_unit_correctness.cpp` compared an unmasked
+EXPORT against `mesh.heightCm()`. They passed only because heightCm used to be
+the full bounding box too. They mean "the exported geometry's extent", so they
+now say `boundingBox()` explicitly, via a `fullExtentDm` helper that spells out
+why. **The asserted values are unchanged** — this is not a weakened test, it is
+the same assertion against the thing it was always about.
+
+Worth noting `test_roundtrip.cpp:255-263` had already hand-rolled the masked
+extent, so someone had met this distinction before without generalising it.
+
+### Verification
+- ctest 518/518 in debug, release, ASan and TSan.
+- Mutation: dropping `if (visible[f] == 0U) continue;` from `heightCm` fails the
+  new parity test on both of its measured numbers.
+- Screenshotted the window and read the line: `Gender: neutral  Age: 25
+  Muscle: 50.00 %  Weight: 100.00 %  Height: 165.94 cm`. 165.94 rather than the
+  raw mesh's 166.589 because the app has applied the default macro stack — the
+  two are consistent, not contradictory.
+
+---
+
 ## 2026-09-05 18:05:00 — Session 132 · **every icon in the app was clipped, and no test could see it**
 
 ### The chunk

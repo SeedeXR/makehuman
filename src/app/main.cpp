@@ -31,6 +31,7 @@
 #include "makehuman/rig/VertexWeights.h"
 #include "makehuman/ui/AssetPanel.h"
 #include "makehuman/ui/Language.h"
+#include "makehuman/ui/MacroStatus.h"
 #include "makehuman/ui/MainWindow.h"
 #include "makehuman/ui/ModifierPanel.h"
 #include "makehuman/ui/TaskRegistry.h"
@@ -1851,7 +1852,25 @@ int main(int argc, char** argv) {
     // The window path and the headless production render assemble the SAME
     // scene; only the destination differs. Sharing it is what stops a
     // production render quietly disagreeing with what the viewport shows.
-    const auto rebuildInto = [&](mh::ui::MainWindow& w) { w.setMeshes(buildScene()); };
+    // The macro numbers travel with the geometry, so they are refreshed at the
+    // one place every slider drag already funnels through. Height in particular
+    // has to be: it is the MESH's Y extent, not a slider value, so it moves when
+    // any modifier does -- including ones that are not "Height".
+    const auto rebuildInto = [&](mh::ui::MainWindow& w) {
+        w.setMeshes(buildScene());
+
+        mh::ui::MacroStats stats;
+        const auto& f  = human.factors();
+        stats.gender   = f.gender();
+        stats.ageYears = f.ageYears();
+        stats.muscle   = f.muscle();
+        stats.weight   = f.weight();
+        // Mesh::heightCm(), not a bounding box computed here: it masks the
+        // helper cages exactly as the reference does, which is worth 2.87 cm on
+        // the shipped mesh. Recomputing it here is how the two drift apart.
+        stats.heightCm = mesh->heightCm();
+        w.setMacroStatus(mh::ui::macroStatusLine(stats));
+    };
 
     // Above `window` for the same reason rebuildInto is: the File-menu
     // connections are owned by the window and reference this, so it has to
