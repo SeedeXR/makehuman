@@ -20,9 +20,13 @@
 #include "makehuman/core/ObjReader.h"
 
 #include <catch2/catch_test_macros.hpp>
+
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -1536,4 +1540,130 @@ TEST_CASE("a GLB carries the tangent basis when the mesh has one", "[gltf][tange
 
     std::error_code ec;
     std::filesystem::remove(out, ec);
+}
+
+// --- A live rig: rest geometry, posed armature ------------------------------
+//
+// The file must carry BOTH poses, and they must land in different places:
+// inverse-bind matrices from `globalRest`, joint node transforms from
+// `globalPose`. A consumer then computes `node * inverseBind` and deforms the
+// rest vertices itself.
+//
+// These were deliberately derived from ONE array so they could not disagree,
+// which made the bind pose equal the pose and every DCC's skinning a no-op --
+// self-consistent, and impossible for anyone else to check our LBS against.
+TEST_CASE("a live rig writes posed nodes and rest bind matrices", "[gltf][skin][liverig]") {
+    const auto mesh = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+    const auto rm = core::RenderMesh::build(*mesh);
+
+    // Two joints, the second offset from the first, and a POSE that moves the
+    // child 5 units in x. Rest and pose therefore differ by a known amount.
+    const std::vector<std::string> names{"root", "child"};
+    const std::vector<int32_t> parents{-1, 0};
+    auto rest         = foundation::Mat4::identity();
+    auto childRest    = foundation::Mat4::identity();
+    childRest.m[1][3] = 2.0F;
+    const std::vector<foundation::Mat4> globalRest{rest, childRest};
+
+    auto childPose    = childRest;
+    childPose.m[0][3] = 5.0F;  // moved in x by the pose
+    const std::vector<foundation::Mat4> globalPose{rest, childPose};
+
+    const size_t n = rm.view().vertexCount();
+    const std::vector<uint32_t> joints(n * 4, 0);
+    std::vector<float> weights(n * 4, 0.0F);
+    for (size_t i = 0; i < n; ++i)
+        weights[i * 4] = 1.0F;
+
+    const foundation::SkinView skin{.jointNames   = names,
+                                    .jointParents = parents,
+                                    .globalRest   = globalRest,
+                                    .globalPose   = globalPose,
+                                    .joints       = joints,
+                                    .weights      = weights,
+                                    .influences   = 4};
+    REQUIRE(skin.valid());
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_liverig.glb";
+    io::GltfWriteOptions opts;
+    opts.unit = io::Unit::Decimeter;  // scale 1, so the numbers below are ours
+    REQUIRE(io::writeGlb(out, rm.view(), opts, nullptr, &skin).has_value());
+
+    const std::string j = glbJson(out);
+
+    // The child's NODE carries the pose: local = inverse(parentPose) * childPose,
+    // and with an identity parent that is childPose itself -- x = 5.
+    const auto childNode = j.find("\"name\":\"child\"");
+    REQUIRE(childNode != std::string::npos);
+    const auto matAt = j.find("\"matrix\":[", childNode);
+    REQUIRE(matAt != std::string::npos);
+    const std::string childMatrix = j.substr(matAt, j.find(']', matAt) - matAt);
+    INFO(childMatrix);
+    // glTF matrices are column-major, so translation is elements 12..14.
+    CHECK(childMatrix.find(",5,") != std::string::npos);
+
+    // ...and the inverse-bind matrices describe the REST pose, so the pose must
+    // NOT appear in them. Decoded from the binary chunk rather than asserted
+    // structurally: "a skin exists" passes just as happily when the bind pose
+    // has been set to the pose, which is the exact bug this replaces.
+    //
+    // The child's rest global translates y by 2, so its INVERSE translates y by
+    // -2. If the pose had leaked in, x would be -5 instead of 0.
+    // Located through the accessor and its bufferView, not by guessing an
+    // offset: a first attempt assumed the IBM block was last in the chunk and
+    // read uninitialised floats that happened to look plausible.
+    const nlohmann::json doc = nlohmann::json::parse(j);
+    const size_t ibmAcc      = doc["skins"][0]["inverseBindMatrices"].get<size_t>();
+    const auto& acc          = doc["accessors"][ibmAcc];
+    REQUIRE(acc["type"] == "MAT4");
+    REQUIRE(acc["count"].get<size_t>() == 2);
+    const auto& bv       = doc["bufferViews"][acc["bufferView"].get<size_t>()];
+    const size_t byteOff = bv.value("byteOffset", size_t{0}) + acc.value("byteOffset", size_t{0});
+
+    const auto bin = glbBin(out);
+    REQUIRE(bin.size() >= byteOff + 32 * sizeof(float));
+    std::array<float, 32> ibm{};
+    std::memcpy(ibm.data(), bin.data() + byteOff, sizeof(ibm));
+    const float childTx = ibm[16 + 12];
+    const float childTy = ibm[16 + 13];
+    INFO("child inverse-bind translation: " << childTx << ", " << childTy);
+    CHECK(std::abs(childTy + 2.0F) < 1e-4F);
+    CHECK(std::abs(childTx) < 1e-4F);
+
+    // An unposed write of the SAME rig must differ: if it did not, globalPose
+    // is being ignored and this whole feature is inert.
+    const foundation::SkinView unposed{.jointNames   = names,
+                                       .jointParents = parents,
+                                       .globalRest   = globalRest,
+                                       .joints       = joints,
+                                       .weights      = weights,
+                                       .influences   = 4};
+    const auto out2 = std::filesystem::temp_directory_path() / "mh_liverig_rest.glb";
+    REQUIRE(io::writeGlb(out2, rm.view(), opts, nullptr, &unposed).has_value());
+    CHECK(glbJson(out2) != j);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+    std::filesystem::remove(out2, ec);
+}
+
+TEST_CASE("a pose array that does not describe the rig is refused", "[gltf][skin][liverig]") {
+    // Same rule as the rest of the skin: an array that is not parallel to the
+    // joints would read past its end or pose the wrong bones.
+    const std::vector<std::string> names{"root", "child"};
+    const std::vector<int32_t> parents{-1, 0};
+    const std::vector<foundation::Mat4> rest(2, foundation::Mat4::identity());
+    const std::vector<foundation::Mat4> shortPose(1, foundation::Mat4::identity());
+    const std::vector<uint32_t> joints(8, 0);
+    const std::vector<float> weights(8, 0.25F);
+
+    const foundation::SkinView bad{.jointNames   = names,
+                                   .jointParents = parents,
+                                   .globalRest   = rest,
+                                   .globalPose   = shortPose,
+                                   .joints       = joints,
+                                   .weights      = weights,
+                                   .influences   = 4};
+    CHECK_FALSE(bad.valid());
 }

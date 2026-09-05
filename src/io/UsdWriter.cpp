@@ -208,6 +208,14 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
         // Emitting the world matrices for both leaves every joint's rest pose
         // compounded by its ancestors -- a stage that validates and poses
         // wrongly, which is the whole class of bug this milestone keeps hitting.
+        //
+        // They also carry the POSE when there is one: bindTransforms above stay
+        // the bind pose, so UsdSkel deforms rest geometry by
+        // `rest * inverse(bind)` and arrives at what we would have baked. With
+        // no pose the two arrays coincide and this is the plain rest rig.
+        const auto nodeGlobal = [&skin](size_t j) {
+            return skin->globalPose.empty() ? skin->globalRest[j] : skin->globalPose[j];
+        };
         out << "        uniform matrix4d[] restTransforms = [";
         for (size_t j = 0; j < skin->globalRest.size(); ++j) {
             const int32_t parent = j < skin->jointParents.size() ? skin->jointParents[j] : -1;
@@ -217,10 +225,9 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
             // actually says.
             const foundation::Mat4 local =
                 (parent >= 0 && static_cast<size_t>(parent) < skin->globalRest.size())
-                    ? foundation::rigidInverse(
-                          placed(skin->globalRest[static_cast<size_t>(parent)])) *
-                          placed(skin->globalRest[j])
-                    : placed(skin->globalRest[j]);
+                    ? foundation::rigidInverse(placed(nodeGlobal(static_cast<size_t>(parent)))) *
+                          placed(nodeGlobal(j))
+                    : placed(nodeGlobal(j));
             out << (j != 0 ? ", " : "") << matrix4d(local);
         }
         out << "]\n";

@@ -184,6 +184,16 @@ struct PoseRig {
     mh::rig::CompiledWeights weights;
     std::vector<mh::foundation::Mat4> localPose;
 
+    /// The mesh as it was BEFORE posing, and where the joints ended up after.
+    /// Both empty unless `poseInPlace` ran.
+    ///
+    /// A **live rig** export needs exactly this pair: rest vertices with bind
+    /// matrices from the rest skeleton, and joint nodes at `globalPose`. The
+    /// consumer then computes the deformation itself instead of receiving it
+    /// pre-applied.
+    std::vector<mh::foundation::Vec3> restCoords;
+    std::vector<mh::foundation::Mat4> globalPose;
+
     /// The skeleton and weights are loaded. Independent of `posed()`: a rig
     /// with no pose is still a rig, and it is exactly what an export wants --
     /// the bind pose plus a usable skeleton.
@@ -269,6 +279,17 @@ bool poseInPlace(mh::core::Mesh& mesh, PoseRig& rig) {
         return false;
     }
     const auto skinning = mh::rig::computeSkinningMatrices(rig.skeleton, rig.localPose);
+
+    // Kept for a live-rig export, which ships THESE vertices and lets the
+    // consumer pose them. Captured before skinning, because afterwards the
+    // rest positions are gone.
+    rig.restCoords.assign(mesh.coord().begin(), mesh.coord().end());
+    rig.globalPose.clear();
+    rig.globalPose.reserve(rig.skeleton.bones.size());
+    for (size_t b = 0; b < rig.skeleton.bones.size(); ++b) {
+        const mh::foundation::Mat4& rest = rig.skeleton.bones[b].matRestGlobal;
+        rig.globalPose.push_back(b < skinning.size() ? skinning[b] * rest : rest);
+    }
 
     std::vector<mh::foundation::Vec3> posed;
     if (!mh::rig::skinPositions(mesh.coord(), rig.weights, skinning, posed)) {
@@ -841,16 +862,56 @@ bool inspectFile(const std::filesystem::path& path) {
     return true;
 }
 
+/// Lower-cased extension of @p path, so every format test spells it one way.
+std::string lowerExtension(const std::filesystem::path& path) {
+    std::string ext = path.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return ext;
+}
+
+/// Whether a format is **verified** to carry a live rig.
+///
+/// Only these get rest geometry with a posed armature. Everything else keeps
+/// the baked posed mesh, which is the safe answer: a format that cannot apply
+/// the pose would otherwise export a character standing in a pose nobody asked
+/// for.
+///
+/// **Measured in Blender, 2026-09-05, not assumed from the format's spec:**
+///   * `.glb`  — rest 1.0516 m wide, evaluated **1.6863** — matches our own
+///     baked answer (16.8628 dm) exactly. The rig deforms.
+///   * `.usda` — same, 1.6863. `usdchecker` clean.
+///   * `.fbx`  — **fails**: evaluated equals raw, so the armature does not
+///     deform and the file would ship a rest-pose statue. assimp's FBX writer
+///     does not carry what a consumer needs to pose it. This is the concrete
+///     motivation for writing FBX from the spec (M7).
+///   * `.dae`  — **unverified**: Blender 5.2 removed its Collada importer, so
+///     there is no third party here to check it with. Same assimp writer as
+///     FBX, which fails, so it is excluded rather than assumed to work.
+///
+/// FBX and Collada therefore keep BAKING the pose. That is a real limitation,
+/// not a preference, and it is recorded rather than hidden.
+bool formatCarriesRig(std::string_view ext) {
+    return ext == ".glb" || ext == ".usd" || ext == ".usda" || ext == ".usdz";
+}
+
 /// The body's skin for export, or nothing when there is no rig to export.
 ///
 /// The application built a complete rig -- loaded the skeleton, fitted the
 /// joints to the morphed body, compiled the weights and posed with them -- and
 /// then handed none of it to a writer. Every export was a statue.
 ///
-/// The exported mesh is the POSED one, so the bind pose is the pose: joint b's
-/// bind global is `skinning[b] * restGlobal[b]`, which makes the skinning
-/// matrices identity in the file and the mesh arrive exactly as it looks here.
-/// Handing over the REST globals instead would let a DCC apply the pose twice.
+/// **A live rig**: `globalRest` is the bind pose and `globalPose` carries where
+/// the joints actually sit, so a rigged export ships REST geometry with a POSED
+/// armature and the consumer computes the deformation itself.
+///
+/// It used to bake instead -- the bind pose was set to the pose, so the mesh
+/// arrived exactly as it looked here and every DCC's skinning was a no-op. That
+/// was self-consistent, and it made our LBS unverifiable by anyone else. Owner
+/// decision, 2026-09-05.
+///
+/// Formats with no skeleton (OBJ, STL, 3MF) still get the baked posed mesh:
+/// there is nothing in the file to apply a pose with.
 std::optional<mh::rig::SkinData> exportSkin(const PoseRig& rig, const mh::core::RenderMesh& rm,
                                             bool subdivided) {
     if (!rig.loaded()) return std::nullopt;
@@ -870,11 +931,11 @@ std::optional<mh::rig::SkinData> exportSkin(const PoseRig& rig, const mh::core::
                      "exporting without a skeleton\n");
         return std::nullopt;
     }
-    if (rig.posed()) {
-        const auto skinning = mh::rig::computeSkinningMatrices(rig.skeleton, rig.localPose);
-        for (size_t b = 0; b < skin.globalRest.size() && b < skinning.size(); ++b)
-            skin.globalRest[b] = skinning[b] * skin.globalRest[b];
-    }
+    // `globalRest` stays the BIND pose; the posed globals ride alongside it.
+    // Overwriting globalRest here -- which this did until 2026-09-05 -- made the
+    // bind pose equal the pose, so the mesh arrived exactly as it looked on
+    // screen and every consumer's skinning was a no-op.
+    if (rig.posed()) skin.globalPose = rig.globalPose;
     std::printf("skin: %zu joints, %u influences/vertex\n", skin.globalRest.size(),
                 static_cast<unsigned>(skin.influences));
     return skin;
@@ -901,9 +962,7 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
                 const mh::foundation::RenderView& body, const std::map<QString, WornProxy>& worn,
                 std::span<const uint8_t> bodyMask, const mh::foundation::SkinView* skin,
                 const PoseRig& rig, std::span<const mh::foundation::MorphTarget> morphs = {}) {
-    std::string ext = path.extension().string();
-    std::transform(ext.begin(), ext.end(), ext.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    const std::string ext = lowerExtension(path);
 
     // OBJ is the only format left with no blendshape channel -- its format
     // simply has none. glTF, the assimp formats and UsdSkel all carry them.
@@ -1496,8 +1555,35 @@ int main(int argc, char** argv) {
     }
 
     if (parser.isSet(exportOpt)) {
+        const std::filesystem::path outPath = parser.value(exportOpt).toStdString();
+
+        // A LIVE RIG ships REST geometry with a POSED armature, so for the
+        // formats that carry a skeleton the mesh goes back to its unposed
+        // positions before it is written. Normals and tangents are recomputed
+        // with it: they belong to the geometry in the file, and the posed ones
+        // would light a rest mesh as though it were still bent.
+        //
+        // Only for those formats. An OBJ has nothing to apply a pose with, so
+        // it keeps the baked posed mesh -- see formatCarriesRig.
+        const bool liveRig =
+            rig.posed() && !rig.restCoords.empty() && formatCarriesRig(lowerExtension(outPath));
+        if (liveRig) {
+            if (!mesh->setCoords(std::vector<mh::foundation::Vec3>(rig.restCoords))) {
+                std::fprintf(stderr, "cannot restore the rest mesh for a live rig\n");
+                return 1;
+            }
+            mesh->calcNormals();
+            mesh->calcVertexTangents();
+            std::printf("live rig: rest geometry + posed armature (%zu joints)\n",
+                        rig.globalPose.size());
+        }
+
         for (auto& [group, worn] : wornProxies)
             refitProxy(worn, *mesh);
+
+        // After the restore, so the render mesh carries the vertices that will
+        // be written rather than the ones that were on screen.
+        if (liveRig) rm.refreshPositions(displayMesh());
 
         const auto skinData = exportSkin(rig, rm, subdivided);
 
@@ -1522,9 +1608,13 @@ int main(int argc, char** argv) {
         if (skinData) {
             std::tie(joints, weights) = mh::io::compactSkinAttributes(
                 skinData->view(), compact.remap, compact.coord.size());
-            skinView = mh::foundation::SkinView{
-                skinData->jointNames, skinData->jointParents, skinData->globalRest, joints, weights,
-                skinData->influences};
+            skinView = mh::foundation::SkinView{.jointNames   = skinData->jointNames,
+                                                .jointParents = skinData->jointParents,
+                                                .globalRest   = skinData->globalRest,
+                                                .globalPose   = skinData->globalPose,
+                                                .joints       = joints,
+                                                .weights      = weights,
+                                                .influences   = skinData->influences};
         }
 
         // Blendshapes: 34 expression units, each blended across the three
@@ -1559,8 +1649,8 @@ int main(int argc, char** argv) {
             }
         }
 
-        return exportMesh(parser.value(exportOpt).toStdString(), displayMesh(), compact.view(),
-                          wornProxies, bodyMask, skinView ? &*skinView : nullptr, rig, morphs)
+        return exportMesh(outPath, displayMesh(), compact.view(), wornProxies, bodyMask,
+                          skinView ? &*skinView : nullptr, rig, morphs)
                    ? 0
                    : 1;
     }

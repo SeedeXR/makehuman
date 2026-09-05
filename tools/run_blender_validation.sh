@@ -54,7 +54,7 @@ app="$repo/build/macos-arm64-release/src/app/makehuman.app/Contents/MacOS/makehu
 [ -x "$app" ] || app="$repo/build/macos-arm64-release/src/app/makehuman"
 if [ -x "$app" ]; then
     "$app" --pose tpose --export "$out/posed.glb" >/dev/null 2>&1 \
-        && echo "posed.glb: T-pose, baked and re-bound" \
+        && echo "posed.glb: T-pose, live rig (rest geometry + posed armature)" \
         || echo "warn: posed.glb export failed"
 else
     echo "skip posed.glb: $app not built"

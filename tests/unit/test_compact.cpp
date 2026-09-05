@@ -113,7 +113,12 @@ TEST_CASE("skin attributes follow the vertices they belong to", "[io][compact][s
     // Four vertices, 2 influences each. Vertex 2 will be dropped.
     const std::vector<uint32_t> joints{0, 1, 1, 0, 9, 9, 0, 1};
     const std::vector<float> weights{1.0F, 0.0F, 0.5F, 0.5F, 0.7F, 0.3F, 0.25F, 0.75F};
-    const foundation::SkinView skin{names, parents, rest, joints, weights, 2};
+    const foundation::SkinView skin{.jointNames   = names,
+                                    .jointParents = parents,
+                                    .globalRest   = rest,
+                                    .joints       = joints,
+                                    .weights      = weights,
+                                    .influences   = 2};
 
     const std::vector<uint32_t> remap{0, 1, io::CompactedMesh::kDropped, 2};
     const auto [j, w] = io::compactSkinAttributes(skin, remap, 3);

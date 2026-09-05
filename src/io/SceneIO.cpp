@@ -323,11 +323,19 @@ void addJointNodes(aiNode* root, const foundation::SkinView& skin, float scale,
 
         // Node transforms are LOCAL to the parent, and scaled with the mesh
         // so the rig cannot drift from the body.
-        const foundation::Mat4 g = placedRest(skin.globalRest[b], scale, groundOffset);
+        //
+        // Taken from the POSED globals when there are any: the offset matrices
+        // above stay the BIND pose, so a consumer computing `node * offset`
+        // reproduces the deformation instead of receiving it pre-applied.
+        // Without a pose the two arrays are the same and this is the rest rig.
+        const auto nodeGlobal = [&skin](size_t j) {
+            return skin.globalPose.empty() ? skin.globalRest[j] : skin.globalPose[j];
+        };
+        const foundation::Mat4 g = placedRest(nodeGlobal(b), scale, groundOffset);
         foundation::Mat4 local   = g;
         if (skin.jointParents[b] >= 0) {
             const foundation::Mat4 pg = placedRest(
-                skin.globalRest[static_cast<size_t>(skin.jointParents[b])], scale, groundOffset);
+                nodeGlobal(static_cast<size_t>(skin.jointParents[b])), scale, groundOffset);
             local = foundation::rigidInverse(pg) * g;
         }
         node->mTransformation =

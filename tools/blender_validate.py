@@ -103,6 +103,30 @@ def _shape_keys(meshes):
     return out
 
 
+def _evaluated_extents(meshes, armatures):
+    """The bounds of the mesh AFTER the armature is applied, or None.
+
+    For a LIVE RIG this is the whole point: the file ships rest geometry and the
+    consumer deforms it, so these numbers are a third party independently
+    computing our skinning. Compare them against what we would have baked.
+    """
+    if not armatures or not meshes:
+        return None
+    dg = bpy.context.evaluated_depsgraph_get()
+    lo = [1e30, 1e30, 1e30]
+    hi = [-1e30, -1e30, -1e30]
+    for o in meshes:
+        ev = o.evaluated_get(dg)
+        me = ev.to_mesh()
+        for v in me.vertices:
+            w = o.matrix_world @ v.co
+            for i in range(3):
+                lo[i] = min(lo[i], w[i])
+                hi[i] = max(hi[i], w[i])
+        ev.to_mesh_clear()
+    return [round(hi[i] - lo[i], 4) for i in range(3)]
+
+
 def _armature_shift(meshes, armatures) -> float:
     """Does applying the armature CHANGE the mesh?
 
@@ -159,6 +183,7 @@ def describe(path: str) -> dict:
         "file": path,
         "ok": True,
         "armature_shift": round(_armature_shift(meshes, armatures), 6),
+        "evaluated_extents": _evaluated_extents(meshes, armatures),
         "meshes": len(meshes),
         "vertices": verts,
         "triangles": tris,

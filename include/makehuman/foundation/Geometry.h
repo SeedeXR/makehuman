@@ -112,8 +112,21 @@ struct SkinView {
     std::span<const std::string> jointNames;
     /// Parent index per joint, -1 for a root. Parents must precede children.
     std::span<const int32_t> jointParents;
-    /// Each joint's rest transform in model space, unscaled.
+    /// Each joint's rest transform in model space, unscaled. This is the BIND
+    /// pose: inverse-bind matrices come from here.
     std::span<const Mat4> globalRest;
+
+    /// Each joint's POSED transform in model space, or empty for none.
+    ///
+    /// This is what makes a **live rig**: the file carries rest geometry, bind
+    /// matrices from `globalRest`, and joint nodes placed here, so the consumer
+    /// computes `pose * inverse(bind)` itself and reproduces our skinning
+    /// rather than receiving a mesh with the pose already baked in.
+    ///
+    /// Empty means the two coincide -- an unposed export, where a consumer's
+    /// skinning is the identity. A writer that ignores this field still emits a
+    /// valid file; it just emits a statue.
+    std::span<const Mat4> globalPose;
 
     /// `influences` entries per RENDER vertex (i.e. after the unweld), not per
     /// mesh vertex. glTF's JOINTS_0/WEIGHTS_0 are attributes, so they are
@@ -132,7 +145,9 @@ struct SkinView {
     /// format's business, not this type's -- glTF wants exactly 4, other
     /// formats differ -- so the writer checks that separately.
     [[nodiscard]] bool valid() const noexcept {
-        return influences > 0 && !globalRest.empty() && jointParents.size() == globalRest.size() &&
+        return influences > 0 && !globalRest.empty() &&
+               (globalPose.empty() || globalPose.size() == globalRest.size()) &&
+               jointParents.size() == globalRest.size() &&
                jointNames.size() == globalRest.size() && joints.size() == weights.size();
     }
 };

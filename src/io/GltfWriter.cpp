@@ -327,24 +327,42 @@ Packed packEntry(std::vector<uint8_t>& bin, const GltfSceneEntry& entry,
         // translation through the same scale and ground offset. Doing this here
         // rather than trusting the caller is what keeps the rig and the mesh in
         // the same space.
-        std::vector<foundation::Mat4> scaledGlobal(skin->globalRest.begin(),
-                                                   skin->globalRest.end());
-        for (auto& m : scaledGlobal) {
-            m.m[0][3] *= scale;
-            m.m[1][3] = m.m[1][3] * scale + groundOffset;
-            m.m[2][3] *= scale;
-        }
+        const auto place = [scale, groundOffset](std::span<const foundation::Mat4> src) {
+            std::vector<foundation::Mat4> out(src.begin(), src.end());
+            for (auto& m : out) {
+                m.m[0][3] *= scale;
+                m.m[1][3] = m.m[1][3] * scale + groundOffset;
+                m.m[2][3] *= scale;
+            }
+            return out;
+        };
+
+        // The BIND pose. Inverse-bind matrices come from here and nowhere else.
+        std::vector<foundation::Mat4> scaledGlobal = place(skin->globalRest);
+
+        // Where the joints actually SIT in the file.
+        //
+        // With a live rig these are the POSED globals, so the consumer computes
+        // `pose * inverse(bind)` and reproduces our skinning from rest
+        // geometry. With no pose the two arrays are the same and the skinning
+        // matrices come out identity, which is the unposed export.
+        //
+        // The two must be allowed to differ here -- that is the whole feature.
+        // They were deliberately derived from ONE array before, so they could
+        // not disagree; the guarantee that replaces it is that the IBMs are
+        // always `scaledGlobal` and the nodes are always `scaledNode`.
+        const std::vector<foundation::Mat4> scaledNode =
+            skin->globalPose.empty() ? scaledGlobal : place(skin->globalPose);
 
         // Node transforms are LOCAL to the parent; inverse-bind matrices are
-        // global. Deriving both from one scaled global array means they cannot
-        // disagree.
-        pk.localRest.resize(scaledGlobal.size());
-        for (size_t i = 0; i < scaledGlobal.size(); ++i) {
+        // global.
+        pk.localRest.resize(scaledNode.size());
+        for (size_t i = 0; i < scaledNode.size(); ++i) {
             const int32_t par = skin->jointParents[i];
-            pk.localRest[i] =
-                (par < 0) ? scaledGlobal[i]
-                          : foundation::rigidInverse(scaledGlobal[static_cast<size_t>(par)]) *
-                                scaledGlobal[i];
+            pk.localRest[i]   = (par < 0)
+                                    ? scaledNode[i]
+                                    : foundation::rigidInverse(scaledNode[static_cast<size_t>(par)]) *
+                                        scaledNode[i];
         }
 
         padTo4(bin);

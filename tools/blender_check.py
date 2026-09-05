@@ -92,13 +92,23 @@ EXPECT = {
     # Counts are the compacted, masked export the app writes -- 15,593 vertices
     # across body + eyes, of which 14,517 are skinned -- not the fixture's raw
     # 21,833.
+    # A LIVE RIG (owner decision, 2026-09-05): the file ships REST geometry with
+    # a POSED armature, so Blender computes the deformation itself.
+    #
+    # `tallest` is the REST mesh, 1.6594 -- arms down. `evaluated` is what
+    # Blender's own skinning produces from it, and it is our CPU LBS answer to
+    # four decimals: we export the same T-pose baked to OBJ as
+    # 16.8628 x 3.0088 x 16.6301 dm. That agreement is a third party
+    # independently reproducing our skinning, which was impossible while we
+    # baked -- the armature was a no-op by construction.
+    #
+    # 179 bones, not 163: the app defaults to mixamo_superset. The fixture's own
+    # rigged.glb still uses the reference's 163-bone rig, so both numbers appear
+    # in this file on purpose.
     "posed.glb": {
-        "vertices": 15593, "triangles": 28796, "tallest": 1.686274, "uv_layers": 1,
-        # 179, not 163: the application defaults to the mixamo_superset rig
-        # (owner decision, 2026-09-05). The fixture's own rigged.glb still uses
-        # the reference's 163-bone rig, which is what the parity fixtures were
-        # captured against -- so both numbers appear in this file on purpose.
+        "vertices": 15593, "triangles": 28796, "tallest": 1.659377, "uv_layers": 1,
         "bones": 179, "armatures": 1, "skinned": 14517, "vertex_groups": 179,
+        "live_rig": True, "evaluated": [1.6863, 0.3009, 1.663],
     },
 
     # The SHIPPED blendshape set -- what `makehuman --blendshapes` writes: the
@@ -188,7 +198,23 @@ for line in sys.stdin:
     #
     # A file that fails here is double-deformed in every DCC while our own tests,
     # which never apply an armature, all stay green.
-    if "armature_shift" in d and d["armature_shift"] > 1e-4:
+    if want.get("live_rig"):
+        # A LIVE RIG must deform: the file ships REST geometry and the consumer
+        # applies the pose. A shift of ~0 here means the armature is doing
+        # nothing and the file is a rest-pose statue -- which is exactly what
+        # assimp's FBX writer produces, and why FBX still bakes.
+        if d.get("armature_shift", 0.0) < 1e-3:
+            problems.append("live rig does not deform: applying the armature moves nothing")
+        # And it must deform to the RIGHT place. These extents are our own CPU
+        # LBS answer, so agreement means Blender independently reproduced it.
+        if "evaluated" in want and d.get("evaluated_extents") != want["evaluated"]:
+            problems.append(
+                f"evaluated extents {d.get('evaluated_extents')} != {want['evaluated']} "
+                f"-- Blender's skinning disagrees with ours")
+    elif "armature_shift" in d and d["armature_shift"] > 1e-4:
+        # Everything else BAKES, so its armature must be a no-op: a non-zero
+        # shift means the joint nodes and the inverse-bind matrices disagree and
+        # the file is double-deformed in every DCC.
         problems.append(
             f"applying the armature moves the mesh by {d['armature_shift']} "
             f"-- the joint node transforms and the inverse-bind matrices disagree")

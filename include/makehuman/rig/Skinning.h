@@ -83,14 +83,26 @@ bool skinPositions(std::span<const foundation::Vec3> rest, const CompiledWeights
 struct SkinData {
     std::vector<std::string> jointNames;
     std::vector<int32_t> jointParents;
+    /// The BIND pose: inverse-bind matrices are derived from these.
     std::vector<Mat4> globalRest;
+    /// The POSED globals, or empty. See `foundation::SkinView::globalPose` --
+    /// non-empty is what makes an export a live rig rather than a baked statue.
+    std::vector<Mat4> globalPose;
     std::vector<uint32_t> joints;
     std::vector<float> weights;
     uint8_t influences{4};
 
+    /// Designated initialisers on purpose: this was positional, and inserting
+    /// `globalPose` in the middle silently bound three unrelated fields to the
+    /// wrong members. It compiled far enough to be confusing.
     [[nodiscard]] foundation::SkinView view() const {
-        return foundation::SkinView{jointNames, jointParents, globalRest,
-                                    joints,     weights,      influences};
+        return foundation::SkinView{.jointNames   = jointNames,
+                                    .jointParents = jointParents,
+                                    .globalRest   = globalRest,
+                                    .globalPose   = globalPose,
+                                    .joints       = joints,
+                                    .weights      = weights,
+                                    .influences   = influences};
     }
 };
 
