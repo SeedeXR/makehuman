@@ -2165,6 +2165,18 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 - [ ] **`ViewerTaskView` still todo.** The reference sends a finished render to
       an in-app viewer (`mh2opengl.py:122-123`); ours writes a PNG and says so
       in the status bar. Worth doing, not blocking.
+- [x] **The rig had no picker.** Two ship (`default` 163-bone, `mixamo_superset`
+      179-bone), `--rig` has always chosen between them, and the `.mhm` already
+      round-trips the choice (`skeleton <name>.mhskel`, written AND read — I
+      checked both before assuming a gap). Only the window could not select
+      one. Added a "Skeleton" group; switching re-applies the CURRENT pose,
+      because a user changing rig mid-pose expects to keep it, and puts the
+      picker back if the rig will not load.
+- [ ] **The "Materials" dock is misnamed and I made it worse.** It now holds
+      Skin, Pose, Eyes, Skin material and Skeleton — three of which are not
+      materials. Renaming is not free: `dockObjectName()` lower-cases the
+      category and `saveState` keys on it, so a rename invalidates every saved
+      workspace. Tied to the docks-vs-tabs decision; do them together.
 - [ ] **OWNER DECISION: the seven empty proxy choosers.** They are blocked on
       CONTENT, not code. Upstream ships these as separate downloadable asset
       packs. Either (a) an asset-pack decision, or (b) generate proxies

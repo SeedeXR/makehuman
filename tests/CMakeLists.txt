@@ -220,7 +220,22 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_skin_material_picker COMMAND makehuman
              --render ${CMAKE_CURRENT_BINARY_DIR}/app_picker.png)
     set_tests_properties(app_skin_material_picker PROPERTIES
-        PASS_REGULAR_EXPRESSION "asset groups: 4 \\(skin materials: 9\\)"
+        PASS_REGULAR_EXPRESSION "asset groups: 5 \\(skin materials: 9, rigs: 2\\)"
+        SKIP_REGULAR_EXPRESSION "cannot render")
+
+    # The rig had no picker either: two ship, --rig has always chosen between
+    # them, the .mhm already round-trips the choice (`skeleton <name>.mhskel`,
+    # written AND read), and the window could not select one.
+    #
+    # The picker must start on the rig actually in use, so this asserts the app
+    # reports the superset rather than the default. Built from rigNameRef(),
+    # which by then carries --rig or the loaded .mhm.
+    add_test(NAME app_rig_picker COMMAND makehuman
+             --rig mixamo_superset
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_rig_picker.png)
+    set_tests_properties(app_rig_picker PROPERTIES
+        PASS_REGULAR_EXPRESSION "rig mixamo_superset \\(179 bones\\)"
+        FAIL_REGULAR_EXPRESSION "cannot load the rig;unknown --rig"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # The picker must START on the material actually in use, not on `default`.

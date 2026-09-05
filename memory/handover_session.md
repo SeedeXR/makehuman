@@ -2140,6 +2140,49 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-06 00:10:00 — Session 137 · **the rig had no picker, and two assumptions I checked before acting on**
+
+### The chunk
+`SkeletonLibrary`, from taskviews' `todo` list. Two rigs ship — the reference's
+163-bone `default` and our 179-bone `mixamo_superset` — `--rig` has always
+chosen between them, and the window could not.
+
+### Two things I assumed were broken and were not
+Worth recording because in both cases acting on the assumption would have
+produced pointless work:
+
+1. **"The `.mhm` doesn't record the skeleton."** It does — written at
+   `main.cpp:1619` and read back at `:1445-1449`, resolved by stem, with
+   `--rig` taking precedence over the file. The round trip was already
+   complete; the picker was the only missing piece.
+2. **"`availableRigs()` gives me the list."** It returns a comma-joined STRING
+   for the `--rig` error message. Splitting that would have been silly, so it
+   is now `rigStems()` returning the vector, with `availableRigs()` joining it
+   — one source of truth, where otherwise the error message and the picker
+   would have scanned the directory separately.
+
+### Switching rig keeps the pose
+`loadPoseRig` reads the rig from `rigNameRef()`, so the branch sets the name,
+reloads with the CURRENT pose, and puts both the name and the picker back if
+the load fails — the same "try it first, do not create an undo entry that does
+nothing" shape the Pose branch already had. A user changing rig mid-pose
+expects to keep the pose, not be reset to rest.
+
+### Something I made worse, and left
+The dock is titled **Materials** and now holds Skin, Pose, Eyes, Skin material
+and Skeleton — three of which are not materials. I did not rename it:
+`dockObjectName()` lower-cases the category and `saveState` keys on it, so a
+rename silently invalidates every saved workspace. Recorded in todo.md to be
+done alongside the docks-vs-tabs decision, since that may move these controls
+anyway.
+
+### Verification
+ctest 522/522 in debug, release, ASan and TSan. Format clean. Sonar OK.
+Screenshotted the window: five pickers, "Mixamo superset" selected, PBR body in
+`african_warm`.
+
+---
+
 ## 2026-09-05 21:00:00 — Session 136 · **the renderer had no user interface, and a test that proved nothing**
 
 ### The chunk

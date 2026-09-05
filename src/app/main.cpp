@@ -120,15 +120,22 @@ std::filesystem::path rigFile(std::string_view suffix) {
 
 /// Every rig that is actually installed, so an unknown --rig can say what IS
 /// available instead of making the user guess.
-std::string availableRigs() {
+/// The rigs on disk, by stem, sorted. One source of truth for the `--rig` error
+/// message and for the Skeleton picker -- they listed different things when
+/// this was a string-joining function and the picker did its own scan.
+std::vector<std::string> rigStems() {
     std::vector<std::string> stems;
     std::error_code ec;
     for (const auto& e : std::filesystem::directory_iterator(dataDir() / "rigs", ec)) {
         if (e.path().extension() == ".mhskel") stems.push_back(e.path().stem().string());
     }
     std::ranges::sort(stems);
+    return stems;
+}
+
+std::string availableRigs() {
     std::string out;
-    for (const auto& st : stems) {
+    for (const auto& st : rigStems()) {
         if (!out.empty()) out += ", ";
         out += st;
     }
@@ -473,7 +480,8 @@ std::vector<std::string> availableSkinMaterials();
 std::vector<mh::foundation::AssetGroup> buildAssetGroups(const std::string& currentPose,
                                                          const std::string& currentSkin,
                                                          const std::string& currentEyes,
-                                                         const std::string& currentMaterial) {
+                                                         const std::string& currentMaterial,
+                                                         const std::string& currentRig) {
     namespace fs = std::filesystem;
     std::vector<mh::foundation::AssetGroup> groups;
 
@@ -549,6 +557,22 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(const std::string& curr
         materials.selected = 0;  // availableSkinMaterials() puts `default` first
     }
     groups.push_back(std::move(materials));
+
+    // The rig. Two ship -- the reference's 163-bone `default` and our 179-bone
+    // `mixamo_superset` -- `--rig` has always chosen between them, and the
+    // window could not. The `.mhm` already round-trips the choice
+    // (`skeleton <name>.mhskel`, written and read), so this was the only piece
+    // missing.
+    mh::foundation::AssetGroup skeletons;
+    skeletons.name = "Skeleton";
+    for (const std::string& stem : rigStems()) {
+        skeletons.choices.push_back({stem, prettyName(fs::path(stem), "")});
+        if (stem == currentRig) {
+            skeletons.selected = static_cast<int>(skeletons.choices.size()) - 1;
+        }
+    }
+    if (skeletons.selected < 0 && !skeletons.choices.empty()) skeletons.selected = 0;
+    groups.push_back(std::move(skeletons));
     return groups;
 }
 
@@ -1574,11 +1598,11 @@ int main(int argc, char** argv) {
     // on the material actually in use instead of on `default`.
     const auto assetGroups =
         buildAssetGroups(parser.value(poseOpt).toStdString(), parser.value(skinOpt).toStdString(),
-                         eyesChoice, skinMaterialRef());
+                         eyesChoice, skinMaterialRef(), rigNameRef());
     // Announced so a test can see the picker was built at all -- a group that
     // silently ends up empty renders as a disabled combo box nobody notices.
-    std::printf("asset groups: %zu (skin materials: %zu)\n", assetGroups.size(),
-                availableSkinMaterials().size());
+    std::printf("asset groups: %zu (skin materials: %zu, rigs: %zu)\n", assetGroups.size(),
+                availableSkinMaterials().size(), rigStems().size());
 
     // The body's material and everything worn, read by every rebuild. Skin is
     // a path rather than a call to setLitsphere because the viewport now takes
@@ -2002,6 +2026,27 @@ int main(int argc, char** argv) {
             // normal and roughness maps the PBR viewport and every exporter
             // read. Rebuild so the body's MeshInstance picks up the new maps.
             skinMaterialRef() = id.toStdString();
+            rebuildInto(*shell);
+            return;
+        }
+        if (group == QLatin1String("Skeleton")) {
+            // Same shape as the Pose branch below: try it first, and put the
+            // picker back if it fails, so a rig that will not load does not
+            // become an undo entry that does nothing.
+            //
+            // The CURRENT pose is re-applied, not dropped: a user switching rig
+            // mid-pose expects to keep the pose. loadPoseRig reads the rig from
+            // rigNameRef(), so the name has to be set before the call and put
+            // back if it fails.
+            const std::string previous = rigNameRef();
+            setRigName(id.toStdString());
+            PoseRig next;
+            if (!loadPoseRig(*mesh, poseChoice, next)) {
+                setRigName(previous);
+                assets->setChoice(group, QString::fromStdString(previous));
+                return;
+            }
+            rig = std::move(next);
             rebuildInto(*shell);
             return;
         }
