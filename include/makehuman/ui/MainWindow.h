@@ -134,6 +134,11 @@ signals:
     void openRequested();
     void saveRequested();
     void saveAsRequested();
+    /// File > Export. The writers have existed since M7 and nothing in the
+    /// window reached them; this is what makes them reachable. Intent only --
+    /// `mh_ui` is Apache-2.0 and knows nothing about glTF, USD or FBX.
+    void exportRequested();
+
     /// The toolbar's "grab screen". Same reasoning as the three above: this
     /// module can render a frame but must not decide where a PNG goes.
     void screenshotRequested();

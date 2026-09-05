@@ -2140,6 +2140,63 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-05 19:35:00 — Session 134 · **the roadmap said Export was covered; the menu had no Export**
+
+### The chunk
+Owner directive 8, continued. `memory/taskviews.md` files `ExportTaskView` in
+its "covered (2)" bucket — "the reference makes these tabs; we make them File
+menu actions". For Load and Save that is true. For Export it was not: the File
+menu had Open, Save and Save As and **no Export at all**, so every writer we
+have shipped since M7 was reachable only from the command line.
+
+The file itself already says this is "the worst kind of error in a roadmap: it
+labelled missing work as done" — about Export specifically — and had moved it
+to `todo`. It had stayed there. The new test asserts the action exists rather
+than trusting any of that.
+
+### One export path, two triggers
+The CLI block was ~90 lines: live-rig rest restore, proxy refit, vertex
+compaction, skin remapping, blendshape building, then `exportMesh`. It is now a
+single `exportTo(path, wantBlendshapes)` lambda that `--export` and
+`MainWindow::exportRequested` both call. Duplicating it would guarantee the
+menu and the command line drift into producing different files.
+
+The extraction is verified by what did NOT change: every existing `app_*` export
+test passes untouched, and those cover OBJ face counts, GLB rig contents, USD
+units and the `.mhm` round trip.
+
+### The one thing the interactive path needed that the CLI never did
+`exportTo` swaps the mesh to its REST positions before writing a format that
+carries a rig. The CLI exits immediately afterwards, so nothing noticed. With
+the window open, leaving the body un-posed after an export would look like the
+export had broken the model. So the posed vertices are backed up and restored,
+and the viewport is rebuilt because it holds spans over them.
+
+**Stated rather than glossed**: `app_live_rig_export` proves that branch RUNS —
+and under ASan and TSan, so a bad size or a use-after-move in the restore is
+caught — but nothing asserts the right vertices came back. The CLI has nothing
+left to observe after it exports. That needs the window, and it is in todo.md.
+`.obj` cannot carry a rig, so the pre-existing posed tests never reached this
+branch at all; the new test uses `.glb` deliberately.
+
+### Two roadmap corrections, both recorded not fixed
+- **`taskviews.md` is stale on its biggest claim.** Eight proxy choosers are
+  filed as "blocked on the viewport drawing exactly one mesh". Multi-mesh
+  rendering is done — `ViewportWidget::setMeshes`, `render::MeshInstance`, and
+  `test_proxy_render.cpp` draws a body and a worn proxy together. Those eight
+  are `todo`.
+- **An owner question, not a blocker.** The reference screenshot is a two-level
+  TAB bar; this port deliberately uses a dockable layout with workspace presets
+  (`design.md` §6.4). Matching the screenshot literally means discarding
+  docking. The task-view CONTENT is needed under either chrome, so that is what
+  I am building; the chrome is worth an explicit decision first. I did not stop
+  for it, because there is plenty of work that is right either way.
+
+### Verification
+ctest 519/519 in debug, release, ASan and TSan. Format clean. Sonar OK.
+
+---
+
 ## 2026-09-05 18:50:00 — Session 133 · **the status line, and a height that measured the helper cages**
 
 ### The chunk

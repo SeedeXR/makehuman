@@ -2120,8 +2120,37 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
             endpoints are compared exactly**, so 0.999 is a split, not "male".
             `mh_ui` stays Apache-only — `macroStatusLine` takes plain floats,
             never a `core::Human`.
+      - [x] **File > Export.** `memory/taskviews.md` had `ExportTaskView` filed
+            as "covered" on the strength of the File menu — wrong: the menu had
+            Open, Save and Save As and **no Export at all**, so the writers
+            (`io/ObjWriter.h`, `GltfWriter.h`, `UsdWriter.h`, the assimp path)
+            were reachable only from the command line. The ~90-line CLI export
+            block is now ONE `exportTo` lambda both triggers call; duplicating
+            it is how the menu and the CLI would quietly produce different
+            files.
       - [ ] Two-level tab bar, left group boxes, right Category radios — still
-            to do.
+            to do. **Open question for the owner** (does not block): the
+            reference's screenshot is a two-level TAB bar, but this port
+            deliberately uses a dockable layout with workspace presets
+            (`design.md` §6.4). Matching the screenshot literally would mean
+            throwing docking away. The task-view CONTENT is needed under either
+            chrome, so that is what is being built; the chrome itself is worth
+            an explicit decision before anyone builds it.
+
+- [ ] **Not covered by a test: the live-rig export restore.** `exportTo` swaps
+      the mesh to its REST positions before writing a rig-carrying format and
+      restores the posed ones afterwards. `app_live_rig_export` proves the
+      branch runs, under ASan and TSan, so a bad size or use-after-move is
+      caught — but the CLI exits immediately after exporting and has nothing
+      left to observe, so nothing asserts the RIGHT vertices came back.
+      Verifying it needs the window.
+
+- [ ] **`memory/taskviews.md` is stale on its biggest claim.** It files eight
+      proxy choosers as "blocked on the viewport drawing exactly one mesh".
+      Multi-mesh rendering is **done** — `ViewportWidget::setMeshes`,
+      `render::MeshInstance`, and `tests/render/test_proxy_render.cpp` draws a
+      body and a worn proxy together. Those eight are `todo`, not `blocked`.
+      Re-run `tools/audit_taskviews.py` and correct the buckets.
 
 - [x] **`Mesh::heightCm()` was measuring the helper cages** — found while
       wiring the stats line above. The reference documents `getHeightCm` as

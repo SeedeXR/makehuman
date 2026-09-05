@@ -178,6 +178,12 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
                   &MainWindow::saveRequested);
     addFileAction(QStringLiteral("file.saveAs"), QT_TR_NOOP("Save As…"), QKeySequence::SaveAs,
                   "upload", &MainWindow::saveAsRequested);
+    file->addSeparator();
+    // Separated from the three above because it writes a DIFFERENT kind of
+    // file: Open/Save/Save As round-trip a `.mhm`, and this hands the character
+    // to another tool and cannot be read back the same way.
+    addFileAction(QStringLiteral("file.export"), QT_TR_NOOP("Export…"), QKeySequence::UnknownKey,
+                  "download", &MainWindow::exportRequested);
 
     // Qt builds the actions, so the text follows the command ("Undo Change
     // head/head-oval") and they enable and disable themselves with the stack.

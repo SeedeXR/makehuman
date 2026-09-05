@@ -208,6 +208,24 @@ if(MH_HAVE_RENDER)
     # nothing in the application had ever loaded it. A test that only checked
     # the export succeeded would have passed throughout that, so this asserts
     # the app announced which rig it actually posed with.
+    # The LIVE RIG path, which is the one File > Export shares with --export and
+    # the only one that mutates the character on its way out: the mesh goes back
+    # to its rest positions before writing, and is restored afterwards. `.obj`
+    # cannot carry a rig, so app_rig_superset below does NOT reach this branch
+    # and .glb is needed to exercise it at all.
+    #
+    # HONEST LIMIT: this proves the branch RUNS -- and under ASan and TSan, so a
+    # bad size or a use-after-move in the restore is caught. It does NOT prove
+    # the restore puts the right vertices back, because the CLI exits
+    # immediately after exporting and has nothing left to observe. Verifying
+    # that needs the window; recorded in memory/todo.md.
+    add_test(NAME app_live_rig_export COMMAND makehuman
+             --rig mixamo_superset --pose tpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_live_rig.glb)
+    set_tests_properties(app_live_rig_export PROPERTIES
+        PASS_REGULAR_EXPRESSION "live rig: rest geometry \\+ posed armature"
+        FAIL_REGULAR_EXPRESSION "cannot restore the rest mesh;export failed")
+
     add_test(NAME app_rig_superset COMMAND makehuman
              --rig mixamo_superset
              --pose tpose

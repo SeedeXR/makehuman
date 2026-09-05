@@ -1658,9 +1658,11 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    if (parser.isSet(exportOpt)) {
-        const std::filesystem::path outPath = parser.value(exportOpt).toStdString();
-
+    // ONE export path, two triggers: `--export` and File > Export. Duplicating
+    // it is how the menu and the command line quietly stop producing the same
+    // file, and there are ~90 lines of live-rig restore, vertex compaction,
+    // skin remapping and blendshape building to disagree about.
+    const auto exportTo = [&](const std::filesystem::path& outPath, bool wantBlendshapes) -> bool {
         // A LIVE RIG ships REST geometry with a POSED armature, so for the
         // formats that carry a skeleton the mesh goes back to its unposed
         // positions before it is written. Normals and tangents are recomputed
@@ -1671,10 +1673,13 @@ int main(int argc, char** argv) {
         // it keeps the baked posed mesh -- see formatCarriesRig.
         const bool liveRig =
             rig.posed() && !rig.restCoords.empty() && formatCarriesRig(lowerExtension(outPath));
+        std::vector<mh::foundation::Vec3> posedBackup;
         if (liveRig) {
+            // Kept so the interactive path can undo this; see the restore below.
+            posedBackup.assign(mesh->coord().begin(), mesh->coord().end());
             if (!mesh->setCoords(std::vector<mh::foundation::Vec3>(rig.restCoords))) {
                 std::fprintf(stderr, "cannot restore the rest mesh for a live rig\n");
-                return 1;
+                return false;
             }
             mesh->calcNormals();
             mesh->calcVertexTangents();
@@ -1727,7 +1732,7 @@ int main(int argc, char** argv) {
         std::vector<mh::core::Blendshape> shapes;
         std::vector<std::vector<mh::foundation::Vec3>> shapeDeltas;
         std::vector<mh::foundation::MorphTarget> morphs;
-        if (parser.isSet(blendshapesOpt)) {
+        if (wantBlendshapes) {
             if (subdivided) {
                 // Targets index the BASE mesh; a subdivided vmap indexes
                 // subdivided vertices, so expanding them would move the wrong
@@ -1753,10 +1758,29 @@ int main(int argc, char** argv) {
             }
         }
 
-        return exportMesh(outPath, displayMesh(), compact.view(), wornProxies, bodyMask,
-                          skinView ? &*skinView : nullptr, rig, morphs)
-                   ? 0
-                   : 1;
+        const bool ok = exportMesh(outPath, displayMesh(), compact.view(), wornProxies, bodyMask,
+                                   skinView ? &*skinView : nullptr, rig, morphs);
+
+        // Put the character back the way it was. The CLI exits straight after
+        // this so it never noticed, but File > Export happens with the window
+        // open: leaving the body in its REST pose after exporting a live rig
+        // would look like the export had un-posed the model.
+        if (!posedBackup.empty()) {
+            // Cannot fail: it is the vertex array this mesh was carrying a
+            // moment ago, so the size already matches.
+            (void)mesh->setCoords(std::move(posedBackup));
+            mesh->calcNormals();
+            mesh->calcVertexTangents();
+            for (auto& [group, worn] : wornProxies)
+                refitProxy(worn, *mesh);
+            rm.refreshPositions(displayMesh());
+        }
+        return ok;
+    };
+
+    if (parser.isSet(exportOpt)) {
+        return exportTo(parser.value(exportOpt).toStdString(), parser.isSet(blendshapesOpt)) ? 0
+                                                                                             : 1;
     }
 
     // The one rebuild path: sliders, pose and skin all go through it, so the
@@ -2172,6 +2196,25 @@ int main(int argc, char** argv) {
             return;
         }
         window.statusBar()->showMessage(QObject::tr("Wrote %1").arg(file), 3000);
+    });
+    // The SAME exportTo the command line uses. The filter lists exactly the
+    // extensions exportMesh dispatches on, so a user cannot pick a format the
+    // writer will then refuse.
+    QObject::connect(&window, &mh::ui::MainWindow::exportRequested, [&] {
+        const QString file = QFileDialog::getSaveFileName(
+            &window, QObject::tr("Export character"), {},
+            QObject::tr("glTF binary (*.glb);;Wavefront OBJ (*.obj);;"
+                        "USD (*.usd *.usda *.usdz);;FBX (*.fbx);;Collada (*.dae)"));
+        if (file.isEmpty()) return;
+        const std::filesystem::path out = file.toStdString();
+        if (exportTo(out, parser.isSet(blendshapesOpt))) {
+            window.statusBar()->showMessage(QObject::tr("Exported %1").arg(file), 3000);
+            // The live rig restore inside exportTo moved the mesh back, so the
+            // viewport has to be told: it holds spans over those vertices.
+            rebuildInto(window);
+        } else {
+            window.statusBar()->showMessage(QObject::tr("Could not export %1").arg(file), 4000);
+        }
     });
     QObject::connect(&window, &mh::ui::MainWindow::saveRequested, [&] {
         // Save with no path yet is Save As -- silently writing somewhere the

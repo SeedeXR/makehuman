@@ -39,6 +39,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMenuBar>
 #include <QPainter>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -1848,4 +1849,35 @@ TEST_CASE("the stats line is a permanent widget in the status bar", "[ui][status
     // a permanent widget and not showMessage.
     w.statusBar()->showMessage(QStringLiteral("Saved workspace"), 1000);
     CHECK(w.macroStatus() == QStringLiteral("Gender: neutral  Age: 25"));
+}
+
+// The writers have existed since M7 -- io/ObjWriter.h, io/GltfWriter.h,
+// io/UsdWriter.h and the assimp path -- and until now NOTHING in the window
+// reached them. Export was reachable only from the command line, and
+// `memory/taskviews.md` had it filed as "covered" on the strength of the File
+// menu, which was simply wrong: the menu has Open, Save and Save As and had no
+// Export at all. That is why the audit below checks the action exists rather
+// than trusting the roadmap.
+TEST_CASE("the File menu can export", "[ui][export]") {
+    theme::setIconDir(std::filesystem::path(MH_RESOURCE_DIR) / "icons" / "lucide");
+    mh::ui::MainWindow w(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+
+    const auto found = w.findChildren<QAction*>(QStringLiteral("file.export"));
+    REQUIRE(found.size() == 1);
+    QAction* act = found.front();
+    CHECK_FALSE(act->icon().isNull());
+
+    // In the File menu, not merely parented to the window. An action nobody
+    // added to a menu or a toolbar is unreachable however well it is wired.
+    bool inFileMenu = false;
+    for (const QMenu* m : w.menuBar()->findChildren<QMenu*>()) {
+        if (m->actions().contains(act)) inFileMenu = true;
+    }
+    CHECK(inFileMenu);
+
+    // It asks rather than acts: this module must not decide what a .glb is.
+    int emitted = 0;
+    QObject::connect(&w, &mh::ui::MainWindow::exportRequested, [&emitted] { ++emitted; });
+    act->trigger();
+    CHECK(emitted == 1);
 }
