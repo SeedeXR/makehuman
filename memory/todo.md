@@ -2380,6 +2380,33 @@ agree today (geometry, UVs, and 169.5 cm under three unit conventions).
       compute LBS from them. That needs an export carrying **rest geometry with
       a posed armature** -- an interchange-semantics decision (do exports bake,
       or ship a live rig?), not a validation gap. **Owner question.**
+- [x] **LIVE RIG exports** (2026-09-05, owner: *"let's do a live rig
+      approach"*). A rigged export now ships **rest geometry with a posed
+      armature**: `globalRest` is the bind pose, `globalPose` carries where the
+      joints sit, and the consumer computes the deformation.
+      **This delivers the third-party LBS check that was impossible before.**
+      Blender applied our rig to our rest geometry with its OWN skinning and
+      produced **1.6863 x 0.3009 x 1.6630 m** — our CPU LBS answer for the same
+      T-pose, baked to OBJ, is **16.8628 x 3.0088 x 16.6301 dm**. Identical to
+      four decimals. Session 121 said this needed "rest geometry with a posed
+      armature"; it now exists and `blender_check.py` pins it, including a rule
+      that a live rig MUST deform (`armature_shift` non-zero) while every baked
+      export must not.
+      **Only the formats VERIFIED to carry it**: `.glb` and `.usd*`, measured in
+      Blender. `.fbx` **fails** — evaluated equals raw, so assimp's writer emits
+      an armature that does not deform and a live-rig FBX would be a rest-pose
+      statue. `.dae` is unverifiable here (Blender 5.2 removed its Collada
+      importer) and uses the same failing writer. **Both keep baking**, which is
+      the safe answer, and this is the concrete motivation for FBX from spec.
+      OBJ/STL/3MF keep the baked mesh too: nothing in them can apply a pose.
+      The writers had derived node transforms and inverse-bind matrices from ONE
+      array so they could not disagree; a live rig requires that they do. The
+      replacement guarantee: IBMs always from `globalRest`, nodes always from
+      `globalPose` when present.
+      Four mutations; two survived at first and were closed by strengthening the
+      test — one needed the inverse-bind matrices DECODED from the binary chunk,
+      and a first attempt at that guessed the block was last in the file and read
+      uninitialised floats that looked plausible.
 - [x] **Explained (2026-09-05): the exported joint nodes follow the pose because
       `exportSkin` composes them.** Session 121 recorded this as unexplained;
       that note was wrong, and the mechanism was in the function's own doc
