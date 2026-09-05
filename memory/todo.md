@@ -901,29 +901,40 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       Tests generate their texture in-process — no skin texture ships, and this
       also keeps the suite free of any third-party asset licence.
       Mutation-verified: forcing the shared white back fails 2 of the 3.
-- [ ] **OWNER REQUEST (2026-09-01): varied human skin tones, MetaHuman-level
-      detail.** Sources given: freepbr.com/product/human-skin1, texturecan.com
-      /details/574, 3dtextures.me/tag/skin, texturing.xyz/collections/vface.
-      **Current state**: `data/skins/` holds exactly ONE material,
-      `default.mhmat`, which names **no texture** (`shaderConfig diffuse false`)
-      and sets `autoBlendSkin true`; `data/textures/` holds only
-      `texture_notfound.png`. The three "Skin" choices in the UI are
-      **litspheres (matcaps)** — lighting captures, not skin colour. So there is
-      no albedo, normal, roughness or cavity map anywhere in the tree.
-      **Licence triage before anything lands in `data/`** (hard rule 6):
-      - `texturing.xyz` VFace — **paid commercial, redistribution forbidden.
-        Cannot go in this AGPL repo.** Usable only as a private local asset.
-      - `3dtextures.me`, `texturecan.com` — CC0, fine, record in `LICENSING.md`.
-      - `freepbr.com` — free to use but restricts redistributing the raw files;
-        check per asset.
-      I also cannot fetch binaries (the fetch tool returns text), so the image
-      files have to come from the owner.
-      **Next, in order**: (1) ~~normal~~ and ~~AO~~ **done**; (2)
-      ~~`autoBlendSkin`~~ **done**; (3) a real PBR metallic-roughness pipeline —
-      **roughness has no `.mhmat` channel at all** (the seven are Diffuse,
-      BumpMap, NormalMap, DisplacementMap, SpecularMap, TransparencyMap, AoMap),
-      so it belongs to that pipeline rather than this one; (4) the skin `.mhmat`
-      set, which is what the owner still has to supply.
+- [~] **Skin tones: eight textured materials, generated** (2026-09-05, owner:
+      *"use the available textures and you can learn from the ones forbidden and
+      we can generate ours procedurally"*).
+      **Licence triage decided it.** `texturing.xyz` VFace is paid and forbids
+      redistribution — it can never enter this AGPL repo. `3dtextures.me` and
+      `texturecan.com` are CC0 but are photographic TILING swatches, not the
+      MakeHuman body UV **atlas**, so they cannot be dropped on this mesh without
+      a reprojection step that does not exist. Generating our own sidesteps both
+      and leaves the result unambiguously ours.
+      `tools/make_skins.py` borrows the STRUCTURE of real skin, never a pixel:
+      tone varies mostly in luminance and slightly in hue, so **microstructure is
+      shared** — one normal map and one roughness map for all eight tones, which
+      is both physically right and what keeps this to 5.9 MB instead of tens;
+      blotching is multiplicative, because melanin scales reflectance and an
+      additive noise range washes the deep tones grey; roughness 0.52–0.72,
+      because skin is matte-to-satin and uniform colour reads as plastic.
+      **Eight tones, four of them African** — deep Nilotic browns through light
+      West/North African — because "African skin" is not one colour and
+      collapsing it to a single swatch is the failure this set exists to avoid.
+      `--skin-material <stem>` selects one, an unknown name is refused with the
+      list, and the choice is written to `.mhm` as
+      `skinMaterial skins/<stem>.mhmat` (the reference's own line,
+      `3_libraries_material_chooser.py:305`), restored on load, and reaches the
+      export with both its albedo and the shared normal map.
+      **Bug found and fixed in my own assets**: `.mhmat` `name` is ONE token —
+      the reference reads `words[1]` and stops (`material.py:368`), ours matches
+      (`Material.cpp:213`) — so "African (rich)" arrived everywhere as "African"
+      and all four African tones collided on one name in every export. Names are
+      now single-token.
+      **A mutation survived and exposed a weak test**: ignoring the file's choice
+      on load still passed, because the test asserted the printed MESSAGE rather
+      than the effect. It now checks the exported material name.
+      Still open: the `--skin` (matcap) versus `--skin-material` naming collision
+      — the `--skin` → `--litsphere` rename is still an owner decision.
 - [x] **AO maps** — multiplied over the result, and **after** the additive term,
       matching `litsphere_fragment_shader.txt:103-105`. Folding it into
       `shading` earlier would also scale the additive contribution, which the

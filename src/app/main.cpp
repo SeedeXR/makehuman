@@ -793,12 +793,40 @@ std::optional<std::pair<int, int>> blendedSkinTone(const mh::core::Human& human,
 
 /// The body's own material, for export. The viewport shades with a litsphere,
 /// which carries no PBR data at all, so a `.mhmat` is what a DCC tool gets.
+/// The chosen skin material's stem under `data/skins`, e.g. `african_deep`.
+///
+/// Not a litsphere. `--skin` picks a viewport MATCAP and always has; this picks
+/// the material that is textured, shaded and exported. The two names are
+/// uncomfortably close and the `--skin` -> `--litsphere` rename is still an open
+/// owner question, so this one is spelled out in full rather than competing.
+std::string& skinMaterialRef() {
+    static std::string name{"default"};
+    return name;
+}
+
+std::filesystem::path skinMaterialPath() {
+    return dataDir() / "skins" / (skinMaterialRef() + ".mhmat");
+}
+
 std::optional<mh::foundation::MaterialDesc> bodyMaterial() {
-    const auto path = dataDir() / "skins" / "default.mhmat";
+    const auto path = skinMaterialPath();
     if (auto mat = mh::core::loadMaterial(path)) return mat->desc();
     std::fprintf(stderr, "cannot load %s; exporting without a body material\n",
                  path.string().c_str());
     return std::nullopt;
+}
+
+/// The skin materials on disk, by stem, sorted. `default` first: it is the
+/// untextured litsphere-shaded original and the way back from a textured one.
+std::vector<std::string> availableSkinMaterials() {
+    std::vector<std::string> out;
+    for (const auto& p : filesWithExtension(dataDir() / "skins", ".mhmat"))
+        out.push_back(p.stem().string());
+    std::ranges::sort(out);
+    if (const auto it = std::ranges::find(out, "default"); it != out.end()) {
+        std::rotate(out.begin(), it, it + 1);
+    }
+    return out;
 }
 
 /// @param worn proxies to include. OBJ writes them as extra groups; the other
@@ -1230,6 +1258,13 @@ int main(int argc, char** argv) {
         QStringLiteral("blendshapes"),
         QStringLiteral("Export the 34 expression units as glTF morph targets (.glb only)."));
 
+    const QCommandLineOption skinMaterialOpt(
+        QStringLiteral("skin-material"),
+        QStringLiteral("Skin MATERIAL under data/skins: default, or one of the eight "
+                       "generated tones (fair_rose … african_rich). This is the textured, "
+                       "exported material -- unlike --skin, which is a viewport matcap."),
+        QStringLiteral("name"), QStringLiteral("default"));
+
     const QCommandLineOption skinOpt(
         QStringLiteral("skin"),
         QStringLiteral("Litsphere to shade with: african, asian or caucasian (default)."),
@@ -1258,6 +1293,7 @@ int main(int argc, char** argv) {
     parser.addOption(loadOpt);
     parser.addOption(saveOpt);
     parser.addOption(skinOpt);
+    parser.addOption(skinMaterialOpt);
     parser.addOption(eyesOpt);
     parser.addOption(setOpt);
     parser.addOption(renderOpt);
@@ -1297,6 +1333,20 @@ int main(int argc, char** argv) {
         return 1;
     }
     const std::vector<mh::foundation::TaskViewSpec>& views = standard->views;
+
+    if (parser.isSet(skinMaterialOpt)) {
+        const std::string want = parser.value(skinMaterialOpt).toStdString();
+        const auto available   = availableSkinMaterials();
+        if (std::ranges::find(available, want) == available.end()) {
+            std::string list;
+            for (const auto& n : available)
+                list += (list.empty() ? "" : ", ") + n;
+            std::fprintf(stderr, "unknown --skin-material %s; available: %s\n", want.c_str(),
+                         list.c_str());
+            return 1;
+        }
+        skinMaterialRef() = want;
+    }
 
     const mh::core::TargetIndex index = mh::core::TargetIndex::build(dataDir() / "targets");
     mh::core::Human human(&index, standard->modifiers);
@@ -1381,6 +1431,25 @@ int main(int argc, char** argv) {
     std::string poseChoice = parser.value(poseOpt).toStdString();
     if (!parser.isSet(poseOpt)) {
         if (const auto fromDoc = valueFromDocument(document, "pose")) poseChoice = *fromDoc;
+    }
+
+    // The skin material the file names, unless the command line overrode it --
+    // same precedence as the rig and the pose. The line holds a relative path
+    // (`skins/african_deep.mhmat`); we select by stem, so take the stem and
+    // ignore a material from a directory we do not ship rather than failing the
+    // load over it.
+    if (!parser.isSet(skinMaterialOpt)) {
+        if (const auto fromDoc = valueFromDocument(document, "skinMaterial")) {
+            const std::string stem = std::filesystem::path(*fromDoc).stem().string();
+            const auto available   = availableSkinMaterials();
+            if (std::ranges::find(available, stem) != available.end()) {
+                skinMaterialRef() = stem;
+                std::printf("skin material %s (from the file)\n", stem.c_str());
+            } else {
+                std::fprintf(stderr, "the file names skin material %s, which is not installed\n",
+                             fromDoc->c_str());
+            }
+        }
     }
     if (!loadPoseRig(*mesh, poseChoice, rig)) return 1;
 
@@ -1477,6 +1546,10 @@ int main(int argc, char** argv) {
         // The rig and the pose, which a fresh save recorded not at all: saved
         // with `--rig mixamo_superset --pose tpose`, the file named neither and
         // reopened as the 163-bone default in the rest pose.
+        // `skinMaterial <relative path>`, the line the reference writes
+        // (3_libraries_material_chooser.py:305). Without it a textured
+        // character reopened as the untextured default and the choice was gone.
+        recordLine(doc, "skinMaterial", "skins/" + skinMaterialRef() + ".mhmat");
         recordLine(doc, "skeleton", rig.loaded() ? rigNameRef() + ".mhskel" : std::string{});
         recordLine(doc, "pose", rig.posed() ? poseChoice : std::string{});
         if (const auto ok = mh::core::saveMhm(file, doc); !ok) {

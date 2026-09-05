@@ -416,6 +416,61 @@ if(MH_HAVE_RENDER)
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
     endif()
 
+    # Skin MATERIALS. Eight generated tones plus the untextured default; before
+    # them data/skins held one material naming no texture at all, and the three
+    # "Skin" choices in the UI were litspheres (matcaps), not skin colour.
+    add_test(NAME app_skin_material COMMAND makehuman
+             --skin-material african_deep
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_skin.glb)
+    set_tests_properties(app_skin_material PROPERTIES FIXTURES_SETUP app_skin_glb)
+    add_test(NAME app_skin_material_textured COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_skin.glb
+             # The albedo AND the shared normal map must both reach the file;
+             # naming a texture the writer never embeds is the failure that
+             # renders as untextured grey with no error.
+             "-DKEYS=baseColorTexture;normalTexture;AfricanDeep"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_skin_material_textured PROPERTIES FIXTURES_REQUIRED app_skin_glb)
+
+    # An unknown name is refused with the list, not silently ignored.
+    add_test(NAME app_skin_material_unknown COMMAND makehuman
+             --skin-material no_such_tone
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_skin_bad.glb)
+    set_tests_properties(app_skin_material_unknown PROPERTIES
+        PASS_REGULAR_EXPRESSION "unknown --skin-material no_such_tone")
+
+    # The choice survives a save/reload round trip. The reference writes
+    # `skinMaterial <relative path>` (3_libraries_material_chooser.py:305);
+    # without it a textured character reopened as the untextured default.
+    add_test(NAME app_skin_material_save COMMAND makehuman
+             --skin-material african_rich
+             --save ${CMAKE_CURRENT_BINARY_DIR}/app_skin.mhm)
+    set_tests_properties(app_skin_material_save PROPERTIES FIXTURES_SETUP app_skin_mhm)
+    add_test(NAME app_skin_material_line COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_skin.mhm
+             "-DKEYS=skinMaterial skins/african_rich.mhmat"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_skin_material_line PROPERTIES FIXTURES_REQUIRED app_skin_mhm)
+
+    add_test(NAME app_skin_material_reload COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/app_skin.mhm
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_skin_reload.glb)
+    set_tests_properties(app_skin_material_reload PROPERTIES
+        PASS_REGULAR_EXPRESSION "skin material african_rich \\(from the file\\)"
+        FIXTURES_SETUP app_skin_reload_glb
+        FIXTURES_REQUIRED app_skin_mhm)
+
+    # The EFFECT, not the announcement. Checking only the printed line let a
+    # mutation that printed the message and never applied the material pass --
+    # measured. The exported material name is the thing that proves it landed,
+    # and it is distinct per tone because .mhmat `name` is one token.
+    add_test(NAME app_skin_material_reload_applied COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_skin_reload.glb
+             "-DKEYS=AfricanRich;baseColorTexture"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_skin_material_reload_applied PROPERTIES
+        FIXTURES_REQUIRED app_skin_reload_glb)
+
     # The DEFAULT rig, asserted because nothing else does: every other rig test
     # passes --rig explicitly, so a change to the default would move every
     # export's skeleton and no test would notice.
