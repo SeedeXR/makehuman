@@ -2140,6 +2140,74 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-06 01:05:00 — Session 138 · **a randomiser, a reference bug not ported, and a test that could not tell reflect from clamp**
+
+### What I did not build, and why
+I went for `ExpressionTaskView` first and stopped after measuring. **Zero
+`.mhpose` files ship**, so the chooser has no content — the same wall as the
+seven proxy choosers. Worse, the two expression views are different systems:
+the mixer drives a FACE RIG (`data/poseunits/face-poseunits.bvh` + `.json`, 60
+framemappings) while `buildExpressionBlendshapes` uses MORPH TARGETS
+(`data/targets/expression/units/`, 34 units × 3 ethnicities). Choosing which
+the port should offer is design work, not a chunk. Recorded.
+
+`RandomTaskView` instead: pure logic over the modifiers that already exist, no
+assets, no chrome decision.
+
+### A reference bug, deliberately not ported
+`0_modeling_8_random.py:172-174`:
+
+    if Gender > 0.5 or Age < 0.2 or Age < 0.75:
+        # No pregnancy for male, too young or TOO OLD subjects
+
+The third clause is `<` where the comment says "too old". It is therefore true
+for every age below 0.75 — the guard fires on nearly every character, and the
+second clause (`Age < 0.2`) is entirely dead because it implies the third.
+Pregnancy is effectively always zeroed.
+
+CLAUDE.md hard rule 3 says never port a known-broken behaviour and exclude it
+explicitly with a comment. Implemented the stated intent (`Age > 0.75`), with
+the divergence written up in the header, the `.cpp` and a `[divergence]`-tagged
+test that pins it.
+
+### The test that could not tell reflection from clamping
+The reference draws Gaussian and **reflects** at each bound rather than
+clamping. My first test only asserted the result was in range — which the
+clamp alone guarantees. Mutation confirmed it: deleting the reflection left
+every assertion green, while my comment claimed reflection mattered.
+
+The fix measures WHERE the probability goes, and getting the threshold right
+took a measurement rather than a guess. At sigmaFactor 2.0 the two converge
+(45% vs 80% on a bound) because a draw more than a full range out reflects past
+the *other* bound and gets clamped anyway. At 0.3 — the real macro spread —
+they separate cleanly: **0.00% reflecting, 9.50% clamping**. The test uses 0.3,
+and the comment records why the wide-sigma loop cannot do this job.
+
+Second time this session an assertion of mine restated the implementation
+instead of checking it. Both were caught by mutation, neither by review.
+
+### Shipped as core + CLI, not the button
+Wiring it to the UI is a separate design problem I did not want to rush: one
+randomisation changes **245 modifiers**, so the undo entry has to be a
+`beginMacro` group and 245 `ValueChangeCommand`s must not each trigger a mesh
+rebuild. `--random <seed>` is useful on its own (crowds, test fixtures) and
+fully testable; the button is next, in todo.md with the constraint written down.
+
+### Verification
+- ctest 536/536 in debug, release, ASan and TSan.
+- Same seed → byte-identical export; different seed → different export. Both
+  ctest entries. The first version of the reproducibility test compared
+  `app_random_a.obj` against `app_random_b.obj` and failed on the `mtllib`
+  line, which names the output file — the geometry was identical all along.
+  Now both write `person.obj` into different directories.
+- Mutations killed: clamp instead of reflect (after the fix), seed ignored
+  (`-Werror` on the unused parameter), symmetry never mirrors, pregnancy guard
+  restored to the reference bug, side test by prefix instead of component.
+- Rendered two random characters and looked at them: coherent, distinct people
+  rather than caricatures, which is what the per-group sigmas are for.
+
+---
+
 ## 2026-09-06 00:10:00 — Session 137 · **the rig had no picker, and two assumptions I checked before acting on**
 
 ### The chunk

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 add_executable(mh_tests
     unit/test_mesh.cpp
+    unit/test_random.cpp
     unit/test_obj_reader.cpp
     unit/test_tangents.cpp
     unit/test_render_mesh.cpp
@@ -208,6 +209,50 @@ if(MH_HAVE_RENDER)
     # nothing in the application had ever loaded it. A test that only checked
     # the export succeeded would have passed throughout that, so this asserts
     # the app announced which rig it actually posed with.
+    # Randomisation is seeded, so it is reproducible -- which is what makes it
+    # testable at all, and what lets a user keep a character they liked. Two
+    # runs with the same seed must write byte-identical geometry.
+    # SAME BASENAME, different directories. An OBJ's `mtllib` line names its own
+    # output file, so exporting to app_random_a.obj and app_random_b.obj differs
+    # on that line alone and the comparison fails on the filename rather than on
+    # the geometry -- which is exactly what happened when this was first written.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/rand_a
+                        ${CMAKE_CURRENT_BINARY_DIR}/rand_b
+                        ${CMAKE_CURRENT_BINARY_DIR}/rand_c)
+    add_test(NAME app_random_a COMMAND makehuman
+             --random 42 --export ${CMAKE_CURRENT_BINARY_DIR}/rand_a/person.obj)
+    set_tests_properties(app_random_a PROPERTIES
+        PASS_REGULAR_EXPRESSION "randomised [0-9]+ modifiers \\(seed 42\\)"
+        FIXTURES_SETUP app_random_a_obj)
+    add_test(NAME app_random_b COMMAND makehuman
+             --random 42 --export ${CMAKE_CURRENT_BINARY_DIR}/rand_b/person.obj)
+    set_tests_properties(app_random_b PROPERTIES FIXTURES_SETUP app_random_b_obj)
+    add_test(NAME app_random_is_reproducible COMMAND ${CMAKE_COMMAND} -E compare_files
+             ${CMAKE_CURRENT_BINARY_DIR}/rand_a/person.obj
+             ${CMAKE_CURRENT_BINARY_DIR}/rand_b/person.obj)
+    set_tests_properties(app_random_is_reproducible PROPERTIES
+        FIXTURES_REQUIRED "app_random_a_obj;app_random_b_obj")
+
+    # ...and a different seed must give a different person, or the seed is not
+    # reaching the generator. files_differ.cmake rather than WILL_FAIL, for the
+    # reason app_rig_unknown records: WILL_FAIL passes on the wrong failure.
+    add_test(NAME app_random_c COMMAND makehuman
+             --random 43 --export ${CMAKE_CURRENT_BINARY_DIR}/rand_c/person.obj)
+    set_tests_properties(app_random_c PROPERTIES FIXTURES_SETUP app_random_c_obj)
+    add_test(NAME app_random_seed_matters COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/rand_a/person.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/rand_c/person.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_random_seed_matters PROPERTIES
+        FIXTURES_REQUIRED "app_random_a_obj;app_random_c_obj")
+
+    # A non-numeric seed is refused rather than silently treated as 0, which
+    # would make `--random abc` and `--random 0` the same person.
+    add_test(NAME app_random_bad_seed COMMAND makehuman
+             --random notanumber --export ${CMAKE_CURRENT_BINARY_DIR}/app_random_bad.obj)
+    set_tests_properties(app_random_bad_seed PROPERTIES
+        PASS_REGULAR_EXPRESSION "--random wants a number")
+
     # The eight generated skin materials had NO picker: --skin-material set them,
     # the .mhm saved them and the exporters wrote them, and the window could not
     # choose one -- so four shipped African tones were unreachable to anyone not

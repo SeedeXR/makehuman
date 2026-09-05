@@ -10,6 +10,7 @@
 #include "makehuman/core/Mhm.h"
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/core/Proxy.h"
+#include "makehuman/core/Random.h"
 #include "makehuman/core/RenderMesh.h"
 #include "makehuman/core/SkinTone.h"
 #include "makehuman/core/SliderLayout.h"
@@ -1284,6 +1285,11 @@ int main(int argc, char** argv) {
     const QCommandLineOption transparentOpt(
         QStringLiteral("transparent"),
         QStringLiteral("Render --render's background transparent, for compositing."));
+    const QCommandLineOption randomOpt(
+        QStringLiteral("random"),
+        QStringLiteral("Randomise the character with this seed. Deterministic: the same seed "
+                       "always gives the same person."),
+        QStringLiteral("seed"));
     const QCommandLineOption shadingOpt(
         QStringLiteral("shading"),
         QStringLiteral("litsphere (the reference matcap, default) or pbr (metallic-roughness). "
@@ -1366,6 +1372,7 @@ int main(int argc, char** argv) {
     parser.addOption(setOpt);
     parser.addOption(renderOpt);
     parser.addOption(transparentOpt);
+    parser.addOption(randomOpt);
     parser.addOption(shadingOpt);
     parser.addOption(rigOpt);
     parser.addOption(poseOpt);
@@ -1471,6 +1478,23 @@ int main(int argc, char** argv) {
                 setRigName(std::filesystem::path(*skel).stem().string());
             }
         }
+    }
+
+    // Before --set, so an explicit value on the command line still wins -- the
+    // same precedence --set already has over a loaded file. After --load for
+    // the same reason: randomising is an edit, and an edit applies to whatever
+    // was opened.
+    if (parser.isSet(randomOpt)) {
+        bool ok               = false;
+        const qulonglong seed = parser.value(randomOpt).toULongLong(&ok);
+        if (!ok) {
+            std::fprintf(stderr, "--random wants a number, got \"%s\"\n",
+                         parser.value(randomOpt).toStdString().c_str());
+            return 1;
+        }
+        const auto changed = mh::core::randomize(human, mh::core::RandomOptions{}, seed);
+        std::printf("randomised %zu modifiers (seed %llu)\n", changed.size(),
+                    static_cast<unsigned long long>(seed));
     }
 
     // --set runs after --load deliberately, so an explicit value on the command

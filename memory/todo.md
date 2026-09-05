@@ -2177,6 +2177,28 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       materials. Renaming is not free: `dockObjectName()` lower-cases the
       category and `saveState` keys on it, so a rename invalidates every saved
       workspace. Tied to the docks-vs-tabs decision; do them together.
+- [x] **`RandomTaskView` core + `--random <seed>`.** Ported from
+      `0_modeling_8_random.py`, seeded and deterministic. Per-group sigmas as
+      the reference has them (macro 0.3, face 0.1, two forehead modifiers 0.02),
+      Gaussian **reflected** at the bounds rather than clamped, symmetric pairs
+      mirrored under full symmetry, lateral translations pinned to default.
+      **One deliberate divergence** (CLAUDE.md hard rule 3): the reference's
+      pregnancy guard reads `Age < 0.75` where its own comment says "too old",
+      so it fires on nearly every character and its second clause is dead. We
+      implement the stated intent, `Age > 0.75`, and a test pins it.
+- [ ] **Randomise in the UI — the remaining half.** Needs a design decision I
+      did not want to rush: one randomisation changes ~245 modifiers, so the
+      undo entry has to be a `beginMacro`/`endMacro` group AND the ~245
+      `ValueChangeCommand`s must not each trigger a full mesh rebuild. Wire it
+      with a single batched apply, not 245 individual ones.
+- [ ] **`ExpressionTaskView` / `ExpressionMixerTaskView` — NOT buildable as
+      filed.** Measured: **zero `.mhpose` files ship**, so the chooser has no
+      content (same as the seven proxy choosers). And the two are different
+      systems: the mixer drives a FACE RIG (`data/poseunits/face-poseunits.bvh`
+      + `.json`, 60 framemappings) while `buildExpressionBlendshapes` uses
+      MORPH TARGETS (`data/targets/expression/units/`, 34 units × 3
+      ethnicities). Deciding which the port should offer is real design work,
+      not a chunk.
 - [ ] **OWNER DECISION: the seven empty proxy choosers.** They are blocked on
       CONTENT, not code. Upstream ships these as separate downloadable asset
       packs. Either (a) an asset-pack decision, or (b) generate proxies
