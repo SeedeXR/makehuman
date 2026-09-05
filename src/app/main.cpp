@@ -334,13 +334,12 @@ std::vector<std::filesystem::path> filesWithExtension(const std::filesystem::pat
 ///
 /// The assets are named by convention rather than carrying a label, so one is
 /// derived from the filename.
+/// The stem of @p file, made readable. Thin wrapper over the UI's own
+/// `prettyAssetName` -- the picker labels and this must agree, and they did not
+/// when this had its own copy: underscores went untouched and the first
+/// generated skin material showed up as "African_rich".
 std::string prettyName(const std::filesystem::path& file, std::string_view prefix) {
-    std::string stem = file.stem().string();
-    if (stem.starts_with(prefix)) stem = stem.substr(prefix.size());
-    if (!stem.empty()) {
-        stem[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(stem[0])));
-    }
-    return stem;
+    return mh::ui::prettyAssetName(file.stem().string(), prefix).toStdString();
 }
 
 /// True when @p spelling names @p file -- the id itself, or any of the short
@@ -466,9 +465,14 @@ std::string selectedChoice(std::span<const mh::foundation::AssetGroup> groups,
 /// Scanned rather than hard-coded so a litsphere or pose dropped into the data
 /// directory appears without a code change -- and so this does not claim assets
 /// that are not there.
+/// Defined further down, next to the rest of the skin-material helpers; needed
+/// here so the picker can list them.
+std::vector<std::string> availableSkinMaterials();
+
 std::vector<mh::foundation::AssetGroup> buildAssetGroups(const std::string& currentPose,
                                                          const std::string& currentSkin,
-                                                         const std::string& currentEyes) {
+                                                         const std::string& currentEyes,
+                                                         const std::string& currentMaterial) {
     namespace fs = std::filesystem;
     std::vector<mh::foundation::AssetGroup> groups;
 
@@ -522,6 +526,28 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(const std::string& curr
         std::fprintf(stderr, "unknown --eyes \"%s\"; wearing none\n", currentEyes.c_str());
     }
     groups.push_back(std::move(eyes));
+
+    // The eight generated skin MATERIALS, which until now had no picker at all:
+    // `--skin-material` set them, the `.mhm` saved them and the exporters wrote
+    // them, and the window could not choose one. That made four of the shipped
+    // African tones unreachable to anyone not using the command line.
+    //
+    // NOT the same thing as the "Skin" group above, which lists LITSPHERES --
+    // viewport matcaps with no PBR data. Having both named "Skin" is exactly
+    // the collision the pending `--skin` -> `--litsphere` rename is about; this
+    // one is spelled out in full rather than competing for the short name.
+    mh::foundation::AssetGroup materials;
+    materials.name = "Skin material";
+    for (const std::string& stem : availableSkinMaterials()) {
+        materials.choices.push_back({stem, prettyName(fs::path(stem), "")});
+        if (stem == currentMaterial) {
+            materials.selected = static_cast<int>(materials.choices.size()) - 1;
+        }
+    }
+    if (materials.selected < 0 && !materials.choices.empty()) {
+        materials.selected = 0;  // availableSkinMaterials() puts `default` first
+    }
+    groups.push_back(std::move(materials));
     return groups;
 }
 
@@ -1542,8 +1568,16 @@ int main(int argc, char** argv) {
             eyesChoice = *fromDoc;
         }
     }
-    const auto assetGroups = buildAssetGroups(parser.value(poseOpt).toStdString(),
-                                              parser.value(skinOpt).toStdString(), eyesChoice);
+    // skinMaterialRef() rather than the raw option: by here it already carries
+    // whatever --skin-material or the loaded .mhm chose, so the picker starts
+    // on the material actually in use instead of on `default`.
+    const auto assetGroups =
+        buildAssetGroups(parser.value(poseOpt).toStdString(), parser.value(skinOpt).toStdString(),
+                         eyesChoice, skinMaterialRef());
+    // Announced so a test can see the picker was built at all -- a group that
+    // silently ends up empty renders as a disabled combo box nobody notices.
+    std::printf("asset groups: %zu (skin materials: %zu)\n", assetGroups.size(),
+                availableSkinMaterials().size());
 
     // The body's material and everything worn, read by every rebuild. Skin is
     // a path rather than a call to setLitsphere because the viewport now takes
@@ -1929,6 +1963,14 @@ int main(int argc, char** argv) {
             // by its MeshInstance now, so changing it without rebuilding would
             // re-upload the old one and render an unchanged picture.
             skin = id.toStdString();
+            rebuildInto(*shell);
+            return;
+        }
+        if (group == QLatin1String("Skin material")) {
+            // The material, not the matcap: this is what carries the albedo,
+            // normal and roughness maps the PBR viewport and every exporter
+            // read. Rebuild so the body's MeshInstance picks up the new maps.
+            skinMaterialRef() = id.toStdString();
             rebuildInto(*shell);
             return;
         }

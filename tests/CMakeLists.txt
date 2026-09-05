@@ -208,6 +208,33 @@ if(MH_HAVE_RENDER)
     # nothing in the application had ever loaded it. A test that only checked
     # the export succeeded would have passed throughout that, so this asserts
     # the app announced which rig it actually posed with.
+    # The eight generated skin materials had NO picker: --skin-material set them,
+    # the .mhm saved them and the exporters wrote them, and the window could not
+    # choose one -- so four shipped African tones were unreachable to anyone not
+    # using the command line. A group that silently ends up empty renders as a
+    # disabled combo box nobody notices, so the app announces what it built.
+    #
+    # 9 = the eight generated tones plus `default`. The number is asserted, not
+    # just ">0": adding a skin material and forgetting to ship it would leave
+    # this passing on a smaller set.
+    add_test(NAME app_skin_material_picker COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_picker.png)
+    set_tests_properties(app_skin_material_picker PROPERTIES
+        PASS_REGULAR_EXPRESSION "asset groups: 4 \\(skin materials: 9\\)"
+        SKIP_REGULAR_EXPRESSION "cannot render")
+
+    # The picker must START on the material actually in use, not on `default`.
+    # It is built from skinMaterialRef(), which by then carries whatever
+    # --skin-material or the loaded .mhm chose; building it from the raw option
+    # instead would show `default` for a character loaded from a file.
+    add_test(NAME app_skin_material_from_mhm COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/app_skin.mhm
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_picker_mhm.png)
+    set_tests_properties(app_skin_material_from_mhm PROPERTIES
+        PASS_REGULAR_EXPRESSION "skin material african_rich \\(from the file\\)"
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_REQUIRED app_skin_mhm)
+
     # The LIVE RIG path, which is the one File > Export shares with --export and
     # the only one that mutates the character on its way out: the mesh goes back
     # to its rest positions before writing, and is restored afterwards. `.obj`

@@ -1881,3 +1881,29 @@ TEST_CASE("the File menu can export", "[ui][export]") {
     act->trigger();
     CHECK(emitted == 1);
 }
+
+// Asset picker labels come from file stems, and until the generated skin
+// materials arrived no shipped stem had an underscore in it: the litspheres are
+// `skinmat_caucasian`, and the prefix strip left "caucasian" with nothing
+// internal to convert. `african_rich` then rendered in the picker as
+// "African_rich" -- visible in a screenshot, invisible to every test, because
+// nothing asserted a label anywhere.
+TEST_CASE("an asset label is readable, not a file stem", "[ui][assets]") {
+    using mh::ui::prettyAssetName;
+
+    // The case that shipped wrong.
+    CHECK(prettyAssetName("african_rich", "") == QStringLiteral("African rich"));
+    CHECK(prettyAssetName("medium_amber", "") == QStringLiteral("Medium amber"));
+
+    // The prefix strip the litspheres rely on still works, and still capitalises.
+    CHECK(prettyAssetName("skinmat_caucasian", "skinmat_") == QStringLiteral("Caucasian"));
+
+    // HYPHENS ARE LEFT ALONE. "High-poly" and "A-pose" are how those names are
+    // written; turning them into "High poly" would be a regression, so this is
+    // asserted rather than left to chance.
+    CHECK(prettyAssetName("high-poly", "") == QStringLiteral("High-poly"));
+
+    // Degenerate input must not crash or index an empty string.
+    CHECK(prettyAssetName("", "") == QString{});
+    CHECK(prettyAssetName("skinmat_", "skinmat_") == QString{});
+}

@@ -1,11 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "makehuman/ui/AssetPanel.h"
+#include <algorithm>
+#include <cctype>
+#include <string>
 
 #include <QComboBox>
 #include <QLabel>
 #include <QVBoxLayout>
 
 namespace mh::ui {
+
+QString prettyAssetName(std::string_view stem, std::string_view prefix) {
+    std::string out(stem);
+    if (out.starts_with(prefix)) out = out.substr(prefix.size());
+    std::ranges::replace(out, '_', ' ');
+    if (!out.empty()) {
+        out[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(out[0])));
+    }
+    return QString::fromStdString(out);
+}
+
 namespace {
 
 /// Each picker is found by object name rather than kept in a side table --

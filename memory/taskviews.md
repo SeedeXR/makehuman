@@ -96,9 +96,29 @@ Eight proxy choosers — `ClothesTaskView`, `EyesTaskView`, `EyebrowsTaskView`,
 `EyelashesTaskView`, `HairTaskView`, `TeethTaskView`, `TongueTaskView`,
 `ProxyTaskView` — plus `SceneLibraryTaskView`.
 
-All eight choosers are blocked on the same thing: **the viewport draws exactly
-one mesh.** Multi-mesh rendering is the single largest unblocker on the roadmap:
-it clears eight of these nine in one change.
+~~All eight choosers are blocked on the same thing: **the viewport draws exactly
+one mesh.**~~ **CORRECTED 2026-09-05 (session 135).** Multi-mesh rendering is
+**done** — `ViewportWidget::setMeshes`, `render::MeshInstance`, and
+`tests/render/test_proxy_render.cpp` draws a body and a worn proxy together.
+`Eyes` is a live chooser over `data/eyes/*.mhclo` and works.
+
+**But they are still not buildable, for a different reason: the assets do not
+ship.** Measured, per directory:
+
+| Directory | `.mhclo` files |
+|---|---|
+| `data/eyes/` | **2** |
+| `data/clothes/`, `data/hair/`, `data/teeth/`, `data/tongue/`, `data/eyebrows/`, `data/eyelashes/`, `data/proxymeshes/` | **0** |
+
+`data/hair/`, `data/eyebrows/` and `data/proxymeshes/` contain exactly one file
+each — `clear.thumb`, a placeholder. Upstream MakeHuman ships these as separate
+downloadable asset packs, not in the base data.
+
+So the seven remaining choosers are blocked on **content, not code**: building
+them now would ship seven empty dropdowns, which is the "painted no-op" this
+project has refused elsewhere. What they need is either an asset pack decision
+from the owner or procedurally generated proxies of our own — the same route
+taken for the skin textures.
 
 `SceneLibraryTaskView` is blocked on something different and should not be
 lumped in with them — a `Scene` is `self.lights = []` plus an `Environment`

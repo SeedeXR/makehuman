@@ -2145,12 +2145,29 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       left to observe, so nothing asserts the RIGHT vertices came back.
       Verifying it needs the window.
 
-- [ ] **`memory/taskviews.md` is stale on its biggest claim.** It files eight
-      proxy choosers as "blocked on the viewport drawing exactly one mesh".
-      Multi-mesh rendering is **done** — `ViewportWidget::setMeshes`,
-      `render::MeshInstance`, and `tests/render/test_proxy_render.cpp` draws a
-      body and a worn proxy together. Those eight are `todo`, not `blocked`.
-      Re-run `tools/audit_taskviews.py` and correct the buckets.
+- [x] **`memory/taskviews.md` corrected**: it filed eight proxy choosers as
+      "blocked on the viewport drawing exactly one mesh". Multi-mesh rendering
+      is **done**. But they are still not buildable for a *different* reason,
+      now measured and recorded there: **`data/clothes`, `hair`, `teeth`,
+      `tongue`, `eyebrows`, `eyelashes` and `proxymeshes` contain ZERO `.mhclo`
+      files** — three of them hold a single `clear.thumb` placeholder and
+      nothing else. Only `data/eyes/` has any (2).
+- [ ] **OWNER DECISION: the seven empty proxy choosers.** They are blocked on
+      CONTENT, not code. Upstream ships these as separate downloadable asset
+      packs. Either (a) an asset-pack decision, or (b) generate proxies
+      procedurally as we did the skin textures. Building the choosers before
+      either would ship seven empty dropdowns.
+- [x] **The eight skin materials had no picker.** `--skin-material` set them,
+      the `.mhm` saved them, the exporters wrote them, and the window could not
+      choose one — four shipped African tones were unreachable without the CLI.
+      Added as a "Skin material" group. Deliberately NOT called "Skin": that
+      group lists LITSPHERES, and the collision is exactly what the pending
+      `--skin` → `--litsphere` rename is about.
+- [x] **Picker labels showed raw file stems.** `african_rich` rendered as
+      "African_rich" — no shipped stem had ever contained an underscore, so
+      nothing had exercised it. `prettyName` now routes through the tested
+      `ui::prettyAssetName`. Underscores become spaces; **hyphens do not**,
+      because "High-poly" and "A-pose" are how those assets are written.
 
 - [x] **`Mesh::heightCm()` was measuring the helper cages** — found while
       wiring the stats line above. The reference documents `getHeightCm` as

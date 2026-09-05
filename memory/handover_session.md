@@ -2140,6 +2140,65 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-05 20:15:00 — Session 135 · **eight skin materials nobody could pick, and seven choosers with nothing to choose**
+
+### Where I started, and why I changed direction
+`taskviews.md` files eight proxy choosers as "blocked on the viewport drawing
+exactly one mesh". Multi-mesh rendering IS done, so I set out to build them —
+then counted the assets before writing anything:
+
+| Directory | `.mhclo` files |
+|---|---|
+| `data/eyes/` | 2 |
+| `clothes`, `hair`, `teeth`, `tongue`, `eyebrows`, `eyelashes`, `proxymeshes` | **0** |
+
+Three of those hold exactly one file: `clear.thumb`, a placeholder. Upstream
+ships them as separate downloadable asset packs. So seven of the eight are
+blocked on **content, not code** — building them would ship seven empty
+dropdowns, the same painted no-op I refused for the toolbar's mesh-display
+group. `taskviews.md` is corrected in place; the audit still reports 51 and the
+same buckets, because I added the measurement rather than reclassifying.
+
+That is an owner decision now in todo.md: asset packs, or generate proxies
+procedurally as we did the skin textures.
+
+### What was actually reachable and broken
+The eight skin materials I generated two sessions ago had **no picker**.
+`--skin-material` set them, the `.mhm` saved them, the exporters wrote them, and
+the window could not choose one — so four shipped African tones were
+unreachable to anyone not using the command line.
+
+Added as a "Skin material" group. Deliberately NOT "Skin": that group lists
+LITSPHERES, viewport matcaps with no PBR data, and having two groups called
+Skin is precisely the collision the pending `--skin` → `--litsphere` rename is
+about. Spelled out in full rather than competing for the short name.
+
+It is built from `skinMaterialRef()`, not the raw option, so the picker starts
+on the material actually in use — including one restored from a loaded `.mhm`.
+Both are asserted.
+
+### Then I looked at it, and the label was wrong
+The picker read **"African_rich"**. `prettyName` capitalised the first letter
+and never touched underscores, because no shipped stem had ever contained one —
+the litspheres are `skinmat_caucasian`, and stripping the prefix leaves nothing
+internal to convert. Nothing asserted a label anywhere in the codebase.
+
+Fixed by moving it to `ui::prettyAssetName`, which is tested: `main.cpp` has no
+test seam for a display string, and this is presentation logic that belongs
+beside the widget that shows it. Underscores become spaces; **hyphens do not**,
+and that is asserted — "High-poly" and "A-pose" are how those assets are
+written, and "High poly" would be a regression.
+
+This is the fifth visual defect this session that a green suite did not see. I
+have written it up as a memory rather than rediscovering it a sixth time.
+
+### Verification
+ctest 521/521 in debug, release, ASan and TSan. Format clean. Sonar OK, 0 open
+issues. `tools/audit_taskviews.py` still reports 51 with unchanged buckets, so
+the inventory CI job stays green.
+
+---
+
 ## 2026-09-05 19:35:00 — Session 134 · **the roadmap said Export was covered; the menu had no Export**
 
 ### The chunk
