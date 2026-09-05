@@ -30,6 +30,7 @@
 #include <QUndoStack>
 
 #include <QStatusBar>
+#include <QToolBar>
 #include <algorithm>
 
 namespace mh::ui {
@@ -183,9 +184,15 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     QAction* undoAction = d_->undo->createUndoAction(this, tr("Undo"));
     undoAction->setObjectName(QStringLiteral("edit.undo"));
     undoAction->setShortcut(QKeySequence::Undo);
+    // Qt builds these two, so they are the pair most easily forgotten: they
+    // shipped with no icon at all until the icon audit walked every action and
+    // named them. `theme::icon` returns a null QIcon for a missing file, so
+    // there was nothing to see and nothing to log.
+    undoAction->setIcon(theme::icon("undo-2", theme::palette().textSecondary, 16));
     QAction* redoAction = d_->undo->createRedoAction(this, tr("Redo"));
     redoAction->setObjectName(QStringLiteral("edit.redo"));
     redoAction->setShortcut(QKeySequence::Redo);
+    redoAction->setIcon(theme::icon("redo-2", theme::palette().textSecondary, 16));
     edit->addAction(undoAction);
     edit->addAction(redoAction);
 
@@ -218,6 +225,7 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     QAction* saveAsAction = workspace->addAction(tr("Save Workspace As…"));
     registerText(saveAsAction, QT_TR_NOOP("Save Workspace As…"));
     saveAsAction->setObjectName(QStringLiteral("workspace.saveAs"));
+    saveAsAction->setIcon(theme::icon("save", theme::palette().textSecondary, 16));
     connect(saveAsAction, &QAction::triggered, this, [this] {
         bool accepted      = false;
         const QString name = QInputDialog::getText(this, tr("Save Workspace"), tr("Name:"),
@@ -234,9 +242,51 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     QAction* resetAction = workspace->addAction(tr("Reset Workspace"));
     registerText(resetAction, QT_TR_NOOP("Reset Workspace"));
     resetAction->setObjectName(QStringLiteral("workspace.reset"));
+    // Without this the toolbar fell back to the action's TEXT and shipped a
+    // "Reset Workspace" word button between the icons -- visible in a
+    // screenshot, invisible to the audit, because the audit exempted the whole
+    // `workspace.` prefix rather than just the named layouts.
+    resetAction->setIcon(theme::icon("refresh-cw", theme::palette().textSecondary, 16));
     connect(resetAction, &QAction::triggered, this, &MainWindow::resetWorkspace);
 
     buildLanguageMenu();
+
+    // The top toolbar (owner directive 8; the reference has one and we had
+    // none). It re-uses the QActions the menus already own rather than building
+    // parallel ones -- two actions for one command is how a button drifts out
+    // of step with its menu item, each keeping its own enabled state, shortcut
+    // and translation registration. Undo and redo make that concrete: they
+    // grey out with the stack only because there is exactly one of each.
+    //
+    // The mesh-display, symmetry and body-part-camera groups in the reference
+    // screenshot are NOT here: nothing in this module can smooth, wireframe,
+    // subdivide or mirror anything yet, so those buttons would be painted
+    // no-ops. They arrive with the behaviour they need.
+    auto* bar = new QToolBar(tr("Main"), this);
+    registerText(bar, QT_TR_NOOP("Main"));
+    bar->setObjectName(QStringLiteral("toolbar.main"));
+    bar->setMovable(false);
+    bar->setIconSize(QSize(18, 18));
+    addToolBar(Qt::TopToolBarArea, bar);
+
+    for (const QString& name : {QStringLiteral("file.open"), QStringLiteral("file.save"),
+                                QStringLiteral("file.saveAs")}) {
+        // findChild rather than a captured pointer: the actions are built above
+        // by a lambda that does not hand them back, and looking them up by the
+        // objectName the tests also use keeps one source of truth for the name.
+        if (QAction* a = findChild<QAction*>(name)) bar->addAction(a);
+    }
+    bar->addSeparator();
+    bar->addAction(undoAction);
+    bar->addAction(redoAction);
+    bar->addAction(resetAction);
+    bar->addSeparator();
+
+    QAction* shot = bar->addAction(theme::icon("camera", theme::palette().textSecondary, 16),
+                                   tr("Grab Screen"));
+    registerText(shot, QT_TR_NOOP("Grab Screen"));
+    shot->setObjectName(QStringLiteral("view.screenshot"));
+    connect(shot, &QAction::triggered, this, &MainWindow::screenshotRequested);
 
     statusBar()->showMessage(QStringLiteral("Ready"));
     resize(1280, 800);

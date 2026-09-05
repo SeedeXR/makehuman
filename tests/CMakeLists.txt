@@ -140,6 +140,15 @@ if(MH_HAVE_RENDER)
     endif()
     add_test(NAME ui COMMAND mh_ui_tests)
 
+    # The icon tests AGAIN at device pixel ratio 2. Not redundancy: `theme::icon`
+    # rasterised every glyph against the painter's device-pixel viewport while
+    # the painter's transform already carried the DPR, so on a retina display
+    # every icon in the application was a cropped fragment -- and at DPR 1 the
+    # wrong and the right code are byte-identical, so the whole suite was green
+    # throughout. A second run under QT_SCALE_FACTOR=2 is the only thing that
+    # can see it.
+    add_test(NAME ui_icons_hidpi COMMAND mh_ui_tests "[icons]")
+
     # The application binary itself. Nothing else covers main.cpp's wiring: a
     # scripted edit once deleted the entire Materials-dock setup -- including
     # setLitsphere -- and every one of the 328 tests still passed. Only running
@@ -615,4 +624,6 @@ if(MH_HAVE_RENDER)
 
     set_tests_properties(ui PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen;TMPDIR=${MH_TEST_TMPDIR}")
+    set_tests_properties(ui_icons_hidpi PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=2;TMPDIR=${MH_TEST_TMPDIR}")
 endif()

@@ -43,7 +43,7 @@ and it must be asked before any such code is written.
 | 2+6 | Skin textures: 8 generated tones, 4 African; saves in .mhm and exports | **done** |
 | 4 | **Viewport PBR** (metallic-roughness) | **done** — second shading model, litsphere still default |
 | 7 | FBX from spec, validated with FBX SDK + Maya + Blender | pending |
-| 8 | **Complete the UI** to match the reference screenshot; all lucide icons | pending |
+| 8 | **Complete the UI** to match the reference screenshot; all lucide icons | **in progress** — icon audit + retina fix + top toolbar done |
 | 9 | **App icon + .app bundle + DMG** (logo supplied 2026-09-05) | **done**, but the bundle is not relocatable yet |
 
 Order is by dependency and risk: 2+6 produces the maps that 4 consumes, so those

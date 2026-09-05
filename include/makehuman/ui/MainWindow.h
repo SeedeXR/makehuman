@@ -125,6 +125,9 @@ signals:
     void openRequested();
     void saveRequested();
     void saveAsRequested();
+    /// The toolbar's "grab screen". Same reasoning as the three above: this
+    /// module can render a frame but must not decide where a PNG goes.
+    void screenshotRequested();
 
 protected:
     void changeEvent(QEvent* e) override;

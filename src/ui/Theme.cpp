@@ -84,7 +84,16 @@ QIcon icon(std::string_view name, const QColor& colour, int px) {
     pm.fill(Qt::transparent);
     QPainter painter(&pm);
     painter.setRenderHint(QPainter::Antialiasing, true);
-    renderer.render(&painter);
+    // The target rect is NOT optional. `render(&painter)` alone uses the
+    // painter's VIEWPORT, which is in device pixels, while the painter's
+    // transform already carries the device pixel ratio -- so on a retina
+    // display every icon was rasterised against a box twice the intended size
+    // and came out a cropped fragment. Measured: at DPR 2 the centre of mass of
+    // a symmetric `x` sat at (0.72, 0.72) of the pixmap instead of (0.5, 0.5).
+    //
+    // It is invisible at DPR 1, where the two rects coincide, which is why the
+    // ctest suite runs the icon tests a second time under QT_SCALE_FACTOR=2.
+    renderer.render(&painter, QRectF(0, 0, px, px));
     painter.end();
     return QIcon(pm);
 }

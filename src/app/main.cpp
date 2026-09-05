@@ -45,6 +45,7 @@
 #include <QIcon>
 #include <QMessageBox>
 #include <QPixmap>
+#include <QStatusBar>
 #include <QTimer>
 #include <QUndoStack>
 #include "makehuman/ui/ViewportWidget.h"
@@ -2132,6 +2133,26 @@ int main(int argc, char** argv) {
         const QString file =
             QFileDialog::getSaveFileName(&window, QObject::tr("Save character"), {}, filter);
         if (!file.isEmpty()) writeTo(file);
+    });
+    // The toolbar's "grab screen". window.grab() rather than the viewport's own
+    // framebuffer, for the same reason --screenshot saves that one: the chrome
+    // is half of what a screenshot is for. The viewport's error is checked
+    // first, because saving a blank PNG and reporting success is worse than
+    // saying nothing.
+    QObject::connect(&window, &mh::ui::MainWindow::screenshotRequested, [&] {
+        const QString file = QFileDialog::getSaveFileName(&window, QObject::tr("Grab screen"), {},
+                                                          QObject::tr("PNG image (*.png)"));
+        if (file.isEmpty()) return;
+        const QString err = window.viewport()->lastError();
+        if (!err.isEmpty()) {
+            window.statusBar()->showMessage(QObject::tr("Cannot grab: %1").arg(err), 4000);
+            return;
+        }
+        if (!window.grab().save(file)) {
+            window.statusBar()->showMessage(QObject::tr("Could not write %1").arg(file), 4000);
+            return;
+        }
+        window.statusBar()->showMessage(QObject::tr("Wrote %1").arg(file), 3000);
     });
     QObject::connect(&window, &mh::ui::MainWindow::saveRequested, [&] {
         // Save with no path yet is Save As -- silently writing somewhere the

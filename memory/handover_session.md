@@ -2140,6 +2140,82 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-05 18:05:00 — Session 132 · **every icon in the app was clipped, and no test could see it**
+
+### The chunk
+Owner directive 8, first structural piece: the icon audit the directive asks
+for, and the top toolbar.
+
+### The audit, written first, found three blanks immediately
+`theme::icon()` returns a NULL QIcon for a name it cannot find — deliberate, so
+a missing file shows nothing rather than a black square. The cost is that a
+typo, or an action nobody gave an icon, ships a blank and logs nothing.
+
+`[ui][icons]` now walks every named QAction in the real window. First run:
+`edit.undo`, `edit.redo` (Qt builds those two, so they are the easiest pair to
+forget) and — after I fixed an exclusion that was too broad — `workspace.reset`,
+which had been shipping as bare TEXT between the toolbar icons.
+
+That exclusion is worth remembering: I wrote `if (name.startsWith("workspace."))
+continue;` meaning "skip the named layouts", and it silently also skipped two
+real commands. The test was green and the screenshot showed the word "Reset
+Workspace" sitting in the toolbar.
+
+### The real find: every icon in the application was clipped on retina
+Looking at the screenshot, the glyphs were fragments — `undo-2` rendered as a
+bare `←`, `save` as a corner bracket. Not a toolbar problem: the panel title
+bars had it too.
+
+`theme::icon` called `QSvgRenderer::render(&painter)` with **no target rect**.
+That uses the painter's viewport, which is in DEVICE pixels, while the
+painter's transform already carries the device pixel ratio. Fix is one
+argument: `render(&painter, QRectF(0, 0, px, px))`.
+
+**It is invisible at DPR 1**, where the two rects coincide. The entire suite was
+green, and had been for as long as the icons have existed. So the test had to
+create the condition: `ui_icons_hidpi` runs the icon cases a second time under
+`QT_SCALE_FACTOR=2`. Mutation-verified — reverting the fix fails
+`ui_icons_hidpi` and leaves `ui` passing.
+
+The assertion that catches it is a centre-of-mass check, not a pixel count: a
+clipped icon is still mostly opaque, so "did it draw anything?" cannot see this.
+A lucide glyph sits centred in a 24x24 viewBox; at DPR 2 the centre of mass of a
+symmetric `x` measured (0.72, 0.72) of the pixmap instead of (0.5, 0.5).
+
+**A correction I should record**: I predicted the clipping would push the ink to
+the TOP-LEFT and wrote that reasoning out before measuring. The measurement said
+bottom-right. The fix is the same either way, and the comment in `Theme.cpp` now
+states only what was measured.
+
+### The toolbar
+`toolbar.main`: open, save, save-as | undo, redo, reset workspace | grab screen.
+It re-uses the menus' QActions rather than building parallel ones — two actions
+for one command is how a button drifts out of step with its menu item, each
+keeping its own enabled state, shortcut and translation registration. Asserted
+by looking up each objectName and requiring exactly ONE match, plus checking
+undo starts disabled and the toolbar holds that same object.
+
+`screenshotRequested()` is new and wired in `main.cpp`, so the camera button
+does something. Every other group from the reference screenshot is deliberately
+absent — see below.
+
+### What I did NOT build, and why
+The reference's mesh-display (smooth, wireframe, subdivide), symmetry (3) and
+body-part camera views (~8) are not here. `src/ui/` has no wireframe, smooth,
+subdivide or mirror anything, so all of those would be painted no-ops. A button
+that looks live and does nothing is worse than an absent one. The body-part
+views additionally need CUSTOM icons — lucide ships no anatomy glyphs, which is
+what the empty `resources/icons/custom/` is for. Recorded in todo.md.
+
+### Verification
+- ctest green in debug, release, ASan and TSan, including the new
+  `ui_icons_hidpi` entry.
+- All 56 vendored SVGs asserted to rasterise to a non-empty, centred pixmap.
+- Looked at three screenshots of the real window. The clipping was only ever
+  visible that way; no assertion I had would have found it.
+
+---
+
 ## 2026-09-05 17:20:00 — Session 131 · **viewport PBR, and a skin picker that never reached the screen**
 
 ### The chunk

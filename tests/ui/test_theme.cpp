@@ -19,7 +19,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <algorithm>
 #include <cmath>
+#include <vector>
 
 #include <QAbstractButton>
 #include <QAbstractSlider>
@@ -47,6 +49,7 @@
 #include <QStyleOptionSlider>
 #include <QTabWidget>
 #include <QTemporaryDir>
+#include <QToolBar>
 #include <QToolButton>
 #include <QUndoStack>
 
@@ -1586,4 +1589,186 @@ TEST_CASE("the viewport remembers its shading model", "[viewport][pbr]") {
 
     v.setShadingModel(mh::render::ShadingModel::Litsphere);
     CHECK(v.shadingModel() == mh::render::ShadingModel::Litsphere);
+}
+
+// ---------------------------------------------------------------------------
+// Owner directive 8: "ensure you have all icons since we are using lucide
+// icons". `theme::icon()` returns a NULL QIcon for a name it cannot find --
+// deliberately, so a missing file shows nothing rather than a black square.
+// The cost of that choice is that a typo, or an action added with an icon name
+// nobody vendored, ships a blank button and no error anywhere.
+//
+// This walks the real window and refuses both. It is the audit the directive
+// asks for, run on every build rather than done once by hand.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("every action in the window has a real icon", "[ui][icons]") {
+    theme::setIconDir(std::filesystem::path(MH_RESOURCE_DIR) / "icons" / "lucide");
+    mh::ui::MainWindow w(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+
+    // Separators carry no icon by design, and neither do the workspace presets,
+    // which are named layouts rather than commands. Everything a user can click
+    // that ISN'T one of those is a toolbar or menu command and needs a glyph.
+    QStringList blank;
+    for (const QAction* a : w.findChildren<QAction*>()) {
+        if (a->isSeparator()) continue;
+        const QString name = a->objectName();
+        if (name.isEmpty()) continue;  // Qt-internal actions we did not name
+        // Only the named LAYOUTS are exempt -- a workspace preset is a saved
+        // arrangement, not a command, and the reference gives those no glyph.
+        // `workspace.reset` and `workspace.saveAs` are commands and are NOT
+        // exempt: excluding the whole `workspace.` prefix is what let Reset
+        // Workspace ship as bare text in the toolbar while this test was green.
+        if (name.startsWith(QLatin1String("workspace.saved"))) continue;
+        if (name.startsWith(QLatin1String("workspace.")) &&
+            name != QLatin1String("workspace.reset") && name != QLatin1String("workspace.saveAs")) {
+            continue;
+        }
+        if (a->icon().isNull()) blank << name;
+    }
+
+    blank.sort();
+    INFO("actions with no icon: " << blank.join(QStringLiteral(", ")).toStdString());
+    CHECK(blank.empty());
+}
+
+// The other half of the same audit, from the opposite direction: an icon that
+// renders as an empty pixmap is just as blank as a missing file, and
+// `QIcon::isNull()` does not catch it -- a QIcon built from an SVG that failed
+// to parse is non-null and paints nothing.
+TEST_CASE("a vendored icon actually renders pixels", "[ui][icons]") {
+    theme::setIconDir(std::filesystem::path(MH_RESOURCE_DIR) / "icons" / "lucide");
+
+    // Every vendored SVG, not a sample: one that fails to parse yields a
+    // non-null QIcon that paints nothing, so `isNull()` cannot see it and the
+    // action audit above would call it fine.
+    const std::filesystem::path dir = std::filesystem::path(MH_RESOURCE_DIR) / "icons" / "lucide";
+    QStringList empty;
+    size_t checked = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+        if (entry.path().extension() != ".svg") continue;
+        const std::string stem = entry.path().stem().string();
+        ++checked;
+        const QIcon i = theme::icon(stem, QColor(255, 255, 255), 32);
+        size_t opaque = 0;
+        if (!i.isNull()) {
+            const QImage img = i.pixmap(32, 32).toImage();
+            for (int y = 0; y < img.height(); ++y)
+                for (int x = 0; x < img.width(); ++x)
+                    if (qAlpha(img.pixel(x, y)) > 8) ++opaque;
+        }
+        // 32 of 1024 pixels is a low bar on purpose -- `minus` is a single
+        // stroke. It separates "drew something" from "drew nothing".
+        if (opaque <= 32) empty << QString::fromStdString(stem);
+    }
+    INFO("vendored icons checked: " << checked);
+    INFO("icons that rendered blank: " << empty.join(QStringLiteral(", ")).toStdString());
+    CHECK(checked >= 56);  // the vendored set as of directive 8
+    CHECK(empty.empty());
+
+    // A name nobody vendored must stay null rather than throw or fall back to
+    // some other glyph -- the audit above depends on exactly that.
+    CHECK(theme::icon("no-such-icon-anywhere", QColor(255, 255, 255), 32).isNull());
+}
+
+// ---------------------------------------------------------------------------
+// Owner directive 8, first structural piece: the reference has a top toolbar
+// and we had none. What it does NOT have yet is the mesh-display, symmetry and
+// body-part-camera groups from the screenshot -- `src/ui/` has no wireframe,
+// smooth, subdivide or symmetry anything, so those buttons would be painted
+// no-ops. A button that looks live and does nothing is worse than an absent
+// one, so they wait for the behaviour they need. Recorded in todo.md.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the window has a top toolbar", "[ui][toolbar]") {
+    theme::setIconDir(std::filesystem::path(MH_RESOURCE_DIR) / "icons" / "lucide");
+    mh::ui::MainWindow w(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+
+    QToolBar* bar = w.findChild<QToolBar*>(QStringLiteral("toolbar.main"));
+    REQUIRE(bar != nullptr);
+    CHECK(w.toolBarArea(bar) == Qt::TopToolBarArea);
+
+    QStringList names;
+    for (const QAction* a : bar->actions()) {
+        if (!a->isSeparator()) names << a->objectName();
+    }
+    INFO("toolbar: " << names.join(QStringLiteral(", ")).toStdString());
+    CHECK(names.contains(QStringLiteral("file.open")));
+    CHECK(names.contains(QStringLiteral("file.save")));
+    CHECK(names.contains(QStringLiteral("edit.undo")));
+    CHECK(names.contains(QStringLiteral("edit.redo")));
+    CHECK(names.contains(QStringLiteral("view.screenshot")));
+}
+
+// The toolbar must SHARE its actions with the menus rather than construct
+// parallel ones. Two QActions for one command is how a toolbar button drifts
+// out of step with its menu item: it keeps its own enabled state, its own
+// shortcut and its own translation registration, and undo/redo in particular
+// would stop greying out with the stack.
+TEST_CASE("toolbar and menu are the same actions, not copies", "[ui][toolbar]") {
+    theme::setIconDir(std::filesystem::path(MH_RESOURCE_DIR) / "icons" / "lucide");
+    mh::ui::MainWindow w(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+
+    QToolBar* bar = w.findChild<QToolBar*>(QStringLiteral("toolbar.main"));
+    REQUIRE(bar != nullptr);
+
+    // Every named action in the window, by objectName. A duplicate name means
+    // two objects for one command, which is exactly what this forbids.
+    for (const QString& shared : {QStringLiteral("file.open"), QStringLiteral("file.save"),
+                                  QStringLiteral("edit.undo"), QStringLiteral("edit.redo")}) {
+        CAPTURE(shared.toStdString());
+        const auto all = w.findChildren<QAction*>(shared);
+        CHECK(all.size() == 1);
+    }
+
+    // Undo starts disabled because the stack is empty. If the toolbar held its
+    // own copy this would be true of the menu action and false of the button.
+    const auto undo = w.findChildren<QAction*>(QStringLiteral("edit.undo"));
+    REQUIRE(undo.size() == 1);
+    CHECK_FALSE(undo.front()->isEnabled());
+    CHECK(bar->actions().contains(undo.front()));
+}
+
+// A lucide glyph is drawn in a centred 24x24 viewBox, so a correctly rendered
+// icon has its ink centred in the pixmap. This catches the class of bug that
+// "did it draw any pixels?" cannot: an icon rasterised at the wrong scale is
+// CLIPPED rather than blank, and a clipped icon is still mostly opaque.
+//
+// It bites only at devicePixelRatio > 1, which is why the ctest suite runs the
+// icon tests a second time under QT_SCALE_FACTOR=2 -- at DPR 1 the wrong and
+// the right code produce identical output, and every test here was green while
+// every icon in the shipped window was a corner fragment.
+TEST_CASE("a rendered icon is centred, not clipped to a corner", "[ui][icons]") {
+    theme::setIconDir(std::filesystem::path(MH_RESOURCE_DIR) / "icons" / "lucide");
+
+    // `plus` is a symmetric cross: its centre of mass is the middle of the box
+    // under any correct rasterisation, and lands up and left of it when the
+    // glyph is drawn too large and cropped.
+    for (const char* name : {"plus", "x", "circle-help"}) {
+        CAPTURE(name);
+        const QIcon i = theme::icon(name, QColor(255, 255, 255), 64);
+        REQUIRE_FALSE(i.isNull());
+        const QImage img = i.pixmap(64, 64).toImage();
+        REQUIRE(img.width() > 0);
+
+        double sx = 0.0;
+        double sy = 0.0;
+        double n  = 0.0;
+        for (int y = 0; y < img.height(); ++y) {
+            for (int x = 0; x < img.width(); ++x) {
+                const double a = qAlpha(img.pixel(x, y)) / 255.0;
+                sx += a * x;
+                sy += a * y;
+                n += a;
+            }
+        }
+        REQUIRE(n > 0.0);
+        const double cx = sx / n / img.width();
+        const double cy = sy / n / img.height();
+        INFO("centre of mass: " << cx << ", " << cy);
+        CHECK(cx > 0.38);
+        CHECK(cx < 0.62);
+        CHECK(cy > 0.38);
+        CHECK(cy < 0.62);
+    }
 }

@@ -2085,6 +2085,35 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         `Human::factors()` and the mesh bounds.
       Icons must be **complete**: audit every toolbar/menu action against the
       vendored set and add the missing lucide SVGs rather than shipping blanks.
+      - [x] **The audit exists and runs on every build** (`[ui][icons]`): every
+            named QAction in the real window must carry a non-null icon, and
+            every vendored SVG must rasterise to a centred, non-empty pixmap.
+            It found three blanks on its first run — `edit.undo`, `edit.redo`
+            (Qt builds those, so they were the easiest pair to forget) and
+            `workspace.reset`, which shipped as bare TEXT in the toolbar.
+      - [x] **Every icon in the application was clipped on retina.**
+            `theme::icon` called `QSvgRenderer::render(&painter)` with no target
+            rect, so it rasterised against the painter's DEVICE-pixel viewport
+            while the transform already carried the DPR. Measured: at DPR 2 the
+            centre of mass of a symmetric `x` sat at (0.72, 0.72) instead of
+            (0.5, 0.5). **Invisible at DPR 1**, where the two rects coincide —
+            which is why the whole suite was green while every glyph in the
+            shipped window was a fragment. `ui_icons_hidpi` runs the icon tests
+            a second time under `QT_SCALE_FACTOR=2`; it is the only thing that
+            can see this class of defect.
+      - [x] **Top toolbar** (`toolbar.main`): open, save, save-as | undo, redo,
+            reset workspace | grab screen. It SHARES the menus' QActions rather
+            than building parallel ones, so there is one shortcut, one enabled
+            state and one translation registration per command — asserted.
+      - [ ] **Toolbar groups still missing, and why.** The reference's mesh
+            display (smooth, wireframe, subdivide), symmetry (3) and body-part
+            camera views (~8) are NOT built: `src/ui/` has no wireframe, smooth,
+            subdivide or mirror anything, so every one of those buttons would be
+            a painted no-op. They need the behaviour first. The body-part views
+            additionally need CUSTOM icons — lucide has no anatomy glyphs, which
+            is what the empty `resources/icons/custom/` is for.
+      - [ ] Two-level tab bar, left group boxes, right Category radios, bottom
+            stats line — still to do.
 - [ ] Symbolic shortcut/mouse persistence (not raw Qt enum ints)
 - [~] **Task views inventoried and classified** — `memory/taskviews.md`,
       re-derived by `tools/audit_taskviews.py` in CI. **51, not 50**: an AST
