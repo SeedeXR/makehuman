@@ -42,6 +42,7 @@
 #include <QFileDialog>
 #include <QFont>
 #include <QHash>
+#include <QIcon>
 #include <QMessageBox>
 #include <QPixmap>
 #include <QTimer>
@@ -1093,6 +1094,16 @@ int main(int argc, char** argv) {
     // first layout was measured with.
     const std::filesystem::path resources(MH_RESOURCE_DIR);
     mh::ui::theme::setIconDir(resources / "icons" / "lucide");
+
+    // The Dock and window icon. A BUNDLED app takes its Dock icon from
+    // Info.plist's CFBundleIconFile instead, but a bare build-tree run has no
+    // Info.plist -- and that is the binary a developer actually looks at all
+    // day. Setting it here covers both: harmless when the bundle already
+    // supplied one, and the only source when it did not.
+    const std::filesystem::path appIcon = resources / "branding" / "AppIcon-1024.png";
+    if (std::filesystem::exists(appIcon)) {
+        QApplication::setWindowIcon(QIcon(QString::fromStdString(appIcon.string())));
+    }
     const QString family = mh::ui::theme::installFonts(resources / "fonts");
     if (!family.isEmpty()) {
         QApplication::setFont(QFont(family, 13));

@@ -399,6 +399,23 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION "wearing HighPolyEyes"
         FIXTURES_REQUIRED app_eyes_mhm)
 
+    # The app icon has to BE in the bundle, not merely named in Info.plist.
+    # Naming it and forgetting to install it is the failure that shows a
+    # generic icon with no error anywhere -- and "AppIcon.icns" in
+    # CFBundleIconFile resolves to AppIcon.icns.icns and does the same.
+    if(APPLE)
+        add_test(NAME app_bundle_icon COMMAND ${CMAKE_COMMAND}
+                 -DFILE=$<TARGET_BUNDLE_CONTENT_DIR:makehuman>/Resources/AppIcon.icns
+                 "-DKEYS=icns"
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+
+        add_test(NAME app_bundle_plist COMMAND ${CMAKE_COMMAND}
+                 -DFILE=$<TARGET_BUNDLE_CONTENT_DIR:makehuman>/Info.plist
+                 # No trailing .icns on the value -- see Info.plist.in.
+                 "-DKEYS=<key>CFBundleIconFile</key>;<string>AppIcon</string>;org.makehuman.makehuman"
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    endif()
+
     # The DEFAULT rig, asserted because nothing else does: every other rig test
     # passes --rig explicitly, so a change to the default would move every
     # export's skeleton and no test would notice.

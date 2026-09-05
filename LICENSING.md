@@ -164,7 +164,16 @@ because dropping the notice is the single way to actually breach BSD.
 | Lucide | 1.37.0 (bundled) | ISC | `ISC` | Icons — see §5.4 |
 | 42dot Sans | bundled, OFL text included | SIL OFL 1.1 | `OFL-1.1` | Typeface — see §5.4 |
 
-All are compatible with AGPL-3.0 distribution.
+**Developer tooling only — not linked, not redistributed:**
+
+| Tool | Version | Licence | SPDX | Use |
+|---|---|---|---|---|
+| Pillow | 12.3.0 | HPND (MIT-like) | `HPND` | `tools/make_appicon.py` — masks the brand logo into Apple's squircle geometry and emits the `.iconset`. Runs once when the logo changes; the committed `AppIcon.icns` is what the build consumes, so a machine without Pillow builds fine. Installed in `.venv-mh`, never in the application. |
+| **Autodesk FBX SDK** | 2020.3.9 | Autodesk proprietary | — | **VALIDATOR ONLY**, out-of-process, exactly like Blender. Never linked, never a build dependency, never redistributed. `CLAUDE.md` hard rule 6 forbids it as a *dependency* and that stands: reading our own output with a separate tool is not one. **Linking it would require this file and hard rule 6 to be changed first.** |
+| **Maya** | 2027 (`mayapy`) | Autodesk proprietary | — | Same standing: an external reader used to check that what we write imports correctly. |
+| Blender | 5.2 | GPL-3.0 | `GPL-3.0` | Same standing — the precedent. A separate process reading our files; no Blender code is linked or copied. |
+
+All redistributed dependencies are compatible with AGPL-3.0 distribution.
 
 **MIT (nlohmann/json)** is permissive and imposes only attribution; the licence
 text ships in the fetched archive (`LICENSE.MIT`). It is fetched as a pinned

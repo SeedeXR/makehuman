@@ -2140,6 +2140,77 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-05 16:44:29 — Session 130 · **the logo, and what "looks like a macOS app" actually means**
+
+### The chunk
+Owner supplied a 3966x3966 brand logo mid-turn: put it somewhere sensible and
+make sure both the DMG-packaged app and the dev app carry it, *"properly warped
+just like how other apps look like in macos"*.
+
+### The geometry IS the request
+A macOS app icon is not a full-bleed square. Since Big Sur every system icon is
+a squircle occupying **824 of a 1024pt canvas**, centred, with a 100pt
+transparent margin all round and a corner radius of 185.4. Shipping the raw
+square would render visibly larger than every neighbour in the Dock and square
+where they are round — which is exactly the complaint.
+
+`tools/make_appicon.py` masks the logo into that geometry and emits the iconset
+plus `AppIcon.icns`. The mask is supersampled 4x and downsampled, because PIL's
+rounded rectangle is aliased at 1x and the corners come out visibly stepped at
+512pt.
+
+### Both apps, for different reasons
+- **The bundle** takes its icon from `Info.plist`'s `CFBundleIconFile`.
+- **A bare build-tree run has no Info.plist** — and that is the binary a
+  developer looks at all day — so `QApplication::setWindowIcon` covers it.
+
+There was no `.app` bundle at all before this, so M11's first item came with it:
+`MACOSX_BUNDLE`, a generated `Info.plist`, and the icns installed into
+`Contents/Resources`.
+
+**Trap, pinned by a test**: `CFBundleIconFile` must be `AppIcon` **without** the
+extension. `AppIcon.icns` there resolves to `AppIcon.icns.icns` and falls back to
+the generic icon with no error anywhere. `app_bundle_icon` and
+`app_bundle_plist` assert both the file's presence and the plist's value.
+
+### The `.gitignore` trap that nearly shipped a blank icon
+`*.png` is ignored repo-wide with only `!data/**` re-included, so **both** the
+master logo and the runtime `AppIcon-1024.png` were silently excluded from the
+commit — `git add -A` reported success and staged only the `.icns`. A clone
+would have had no Dock icon and no error to explain it. Caught by reading
+`git status` rather than trusting the add; fixed with `!resources/**`.
+
+The `AppIcon.iconset/` intermediate stays ignored: it regenerates byte-identically
+(verified) and only the `.icns` and the 1024 PNG are consumed.
+
+### DMG
+`cmake --build … --target dmg` produces `MakeHuman.dmg` (41 MB) with the usual
+drag-to-Applications layout. **Verified by mounting it and running the packaged
+binary**, which exported correctly and carried the icon.
+
+**Two caveats recorded rather than hidden:**
+- `macdeployqt` reports `Cannot resolve rpath` for QtVirtualKeyboard. Non-fatal
+  — nothing uses it — but the deploy is not clean.
+- **The bundle is not relocatable.** `MH_DATA_DIR`, `MH_SHADER_DIR` and
+  `MH_RESOURCE_DIR` are compile-time absolute paths into the source tree, so the
+  DMG runs on THIS machine only. That is M11's open "runtime data location"
+  question and must be settled before the DMG is given to anyone.
+
+### Licensing
+Pillow (HPND) recorded as **developer tooling** — it runs once when the logo
+changes; the committed `.icns` is what the build consumes, so a machine without
+it builds fine. The same table now records the **FBX SDK and Maya as validators
+only**, out-of-process like Blender, never linked, with a note that linking
+either would require hard rule 6 to be amended first.
+
+### Verification
+- 503/503 in debug, release, ASan and TSan.
+- Sonar gate OK, 0 open issues. Blender harness 11/11 (its hardcoded app path
+  updated for the bundle, with the bare path still tried as a fallback).
+- Master PNG losslessly recompressed 7.09 -> 4.92 MB, pixels verified identical.
+
+---
+
 ## 2026-09-05 01:41:57 — Session 129 · **my probe was one statement too early**
 
 ### The chunk

@@ -48,7 +48,10 @@ echo "exporting to $out"
 # DCC's own skinning is a no-op on our exports, Blender CANNOT independently
 # verify LBS from them. That needs an export carrying rest geometry with a posed
 # armature, which is an interchange-semantics decision, not a validation gap.
-app="$repo/build/macos-arm64-release/src/app/makehuman"
+# The app is a macOS .app bundle, so the executable is inside it. The bare path
+# is still tried first: a build configured before the bundle landed has it there.
+app="$repo/build/macos-arm64-release/src/app/makehuman.app/Contents/MacOS/makehuman"
+[ -x "$app" ] || app="$repo/build/macos-arm64-release/src/app/makehuman"
 if [ -x "$app" ]; then
     "$app" --pose tpose --export "$out/posed.glb" >/dev/null 2>&1 \
         && echo "posed.glb: T-pose, baked and re-bound" \

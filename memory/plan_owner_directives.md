@@ -44,6 +44,7 @@ and it must be asked before any such code is written.
 | 4 | **Viewport PBR** (metallic-roughness) | pending |
 | 7 | FBX from spec, validated with FBX SDK + Maya + Blender | pending |
 | 8 | **Complete the UI** to match the reference screenshot; all lucide icons | pending |
+| 9 | **App icon + .app bundle + DMG** (logo supplied 2026-09-05) | **done**, but the bundle is not relocatable yet |
 
 Order is by dependency and risk: 2+6 produces the maps that 4 consumes, so those
 are adjacent; 7 is last because it is the largest.

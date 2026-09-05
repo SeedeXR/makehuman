@@ -2430,7 +2430,39 @@ base for M10. The papers are fair to learn from; the models are not.
 
 ## M11 — Packaging and release
 
-- [ ] `MakeHuman.app` bundle, `Info.plist`, Resources
+- [x] **`MakeHuman.app` bundle, `Info.plist`, Resources, and the app icon**
+      (2026-09-05, owner supplied the logo).
+      `resources/branding/makehuman-logo.png` is the source;
+      `tools/make_appicon.py` masks it into **Apple's icon geometry** and emits
+      the iconset and `AppIcon.icns`.
+      **The geometry is the point.** A macOS icon is not a full-bleed square:
+      since Big Sur every system icon is a squircle occupying **824 of a 1024pt
+      canvas**, centred, 100pt transparent margin all round, corner radius
+      185.4. Shipping the raw 3966x3966 square would render visibly larger than
+      every neighbour in the Dock and square where they are round — the "doesn't
+      look like other macOS apps" complaint exactly. The mask is supersampled 4x
+      and downsampled, because PIL's rounded rectangle is aliased at 1x and the
+      corners come out stepped at 512pt.
+      **Both the dev app and the bundle get it**: `CFBundleIconFile` for the
+      packaged app, and `QApplication::setWindowIcon` for a bare build-tree run,
+      which has no Info.plist and is the binary a developer looks at all day.
+      Trap recorded: `CFBundleIconFile` must be `AppIcon` **without** the
+      extension — `AppIcon.icns` there resolves to `AppIcon.icns.icns` and falls
+      back to the generic icon with no error anywhere. Both facts are pinned by
+      `app_bundle_icon` and `app_bundle_plist`.
+- [x] **`macdeployqt` + a `dmg` target.** `cmake --build … --target dmg`
+      produces `MakeHuman.dmg` (41 MB) with the usual drag-to-Applications
+      layout. Verified by mounting it and running the packaged binary: it
+      exports correctly and carries `AppIcon.icns`.
+      **Two honest caveats, not yet fixed:**
+      - `macdeployqt` reports `Cannot resolve rpath` for
+        `QtVirtualKeyboard`/`QtVirtualKeyboardQml`. Non-fatal — nothing here
+        uses it, and the DMG builds and runs — but the deploy is not clean.
+      - **The bundle is NOT relocatable.** `MH_DATA_DIR`, `MH_SHADER_DIR` and
+        `MH_RESOURCE_DIR` are compile-time absolute paths into the source tree,
+        so the DMG runs on THIS machine only. That is the open
+        "runtime data location" question below, and it must be settled before
+        the DMG is given to anyone.
 - [ ] `macdeployqt` + CMake install
 - [ ] Codesign, hardened runtime, notarize, staple
 - [ ] DMG with background and layout

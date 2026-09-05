@@ -43,6 +43,11 @@ __pycache__/
 # because the file was never committed. The tracked assets only survive because
 # they were added before the rules. Everything under data/ is repo content.
 !data/**
+# Same reason for resources/: it is curated repo content -- icons, fonts,
+# shaders and the branding assets -- and the blanket `*.png` above would
+# otherwise silently drop the app icon, leaving a clone with no Dock icon and
+# no error to explain it.
+!resources/**
 base_1-1_contents.txt
 
 # Pydev Eclipse#
@@ -127,3 +132,7 @@ references/**/*.abc
 # Local SonarQube secrets -- never commit.
 .sonar-token
 .scannerwork/
+
+# Regenerable from resources/branding/makehuman-logo.png by
+# tools/make_appicon.py; only the .icns and the 1024 PNG are consumed.
+resources/branding/AppIcon.iconset/
