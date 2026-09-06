@@ -1197,6 +1197,16 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         instance was opaque: that draw goes through the pipeline which discards
         alpha. Same class as clamp-vs-reflect — a test that exercises the wrong
         pipeline cannot see what it asserts about.
+- [x] **The MaterialDesc -> viewport audit is closed.** Four properties in a row
+      were built for export and never connected to the screen; the remaining two
+      stop deliberately. `ambient` and `specular` ARE exported
+      (`SceneIO.cpp:882-883`, and `.mtl`'s Ka/Ks) but a metallic-roughness BRDF
+      has no input for either: dielectric F0 is fixed at 0.04 without
+      KHR_materials_specular, and the ambient term is what an IBL replaces --
+      which this renderer deliberately does not have (licence-constrained).
+      Adding a slot would invent shading the exported file does not describe.
+      Recorded as a commented exclusion in `viewportMapsOf`, so a fifth
+      "unplumbed property" cannot be reported as a new discovery.
 - [ ] GPU skinning (matrix palette UBO/SSBO)
 - [ ] ID-buffer picking with async readback (replaces the full-window sync readback)
 - [x] **Cached bounding box: measured, deliberately NOT built.**

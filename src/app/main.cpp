@@ -834,6 +834,18 @@ ViewportMaps viewportMapsOf(const std::filesystem::path& mhmat) {
     const auto mr   = mh::foundation::metallicRoughnessOf(mat->desc());
     maps.metallic   = mr.metallic;
     maps.roughness  = mr.roughness;
+    // That is every field of `MaterialDesc` the viewport can honour, and the
+    // audit is deliberately closed here: four properties in a row turned out to
+    // be built for export and never connected to the screen (metallic/roughness,
+    // `transparent`, `diffuse`, `opacity`), because the writers were written
+    // against `MaterialDesc` and the renderer against `MeshInstance`.
+    //
+    // The two that stop here stop on purpose, not by omission. `ambient` and
+    // `specular` are exported (`SceneIO.cpp:882-883`, and `.mtl`'s Ka/Ks) but a
+    // metallic-roughness BRDF has no input for either: dielectric F0 is fixed at
+    // 0.04 without KHR_materials_specular, and the ambient term is what an IBL
+    // replaces -- which this renderer deliberately does not have. Adding a slot
+    // for them would be inventing shading the exported file does not describe.
     return maps;
 }
 
