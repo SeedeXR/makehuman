@@ -1372,3 +1372,90 @@ TEST_CASE("the base colour does not reach the litsphere", "[render][basecolour][
 
     CHECK(differingPixels(*before, *after) == 0);
 }
+
+// ---------------------------------------------------------------------------
+// A material's OPACITY reaches the PBR alpha.
+//
+// The fourth property built for export and not for the screen, after
+// metallic/roughness, `transparent` and the base colour. The glTF writer emits
+// it as `baseColorFactor`'s alpha (`GltfWriter.cpp:200,929`); the renderer used
+// it only to DECIDE the blend pass and then wrote the texture's own alpha, so a
+// translucent material came out solid.
+//
+// Not hypothetical: `data/materials/xray.mhmat` ships `opacity 0.1` and
+// rendered fully opaque.
+//
+// PBR only, again. The reference's litsphere writes `outColor.a = diffuse.a`
+// with no opacity term anywhere (`litsphere_fragment_shader.txt:93`), and that
+// path is the M6 parity oracle.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("opacity reaches the PBR alpha", "[render][opacity]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    auto s         = settings();
+    s.shading      = render::ShadingModel::Pbr;
+
+    const auto coverageOf = [&s](const QImage& img) {
+        const QColor bg = QColor::fromRgbF(s.background.x, s.background.y, s.background.z);
+        size_t solid    = 0;
+        for (int y = 0; y < img.height(); ++y) {
+            for (int x = 0; x < img.width(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (std::abs(c.red() - bg.red()) > 40 || std::abs(c.green() - bg.green()) > 40 ||
+                    std::abs(c.blue() - bg.blue()) > 40) {
+                    ++solid;
+                }
+            }
+        }
+        return solid;
+    };
+
+    render::MeshInstance solidBody{sc.rm.view(), s.litsphere};
+    const auto opaque = (*r)->render(std::vector{solidBody}, s);
+    REQUIRE(opaque.has_value());
+
+    // A translucent material must be BLENDED as well as flagged: `transparent`
+    // picks the pipeline, `opacity` is what that pipeline then has to honour.
+    render::MeshInstance ghost{sc.rm.view(), s.litsphere};
+    ghost.opacity     = 0.15F;
+    ghost.transparent = true;
+    const auto faint  = (*r)->render(std::vector{ghost}, s);
+    REQUIRE(faint.has_value());
+
+    const size_t solidPixels = coverageOf(*opaque);
+    const size_t faintPixels = coverageOf(*faint);
+    INFO("pixels far from the background: opaque " << solidPixels << ", 15% " << faintPixels);
+    REQUIRE(solidPixels > 1000);
+    // Most of the body should now sit close to the background rather than over
+    // it. "Differs" would pass on an opacity applied to the colour instead of
+    // the alpha, which would darken rather than reveal.
+    CHECK(faintPixels < solidPixels / 2);
+}
+
+// And it must NOT reach the litsphere, which has no opacity term at all.
+TEST_CASE("opacity does not reach the litsphere", "[render][opacity][litsphere]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    const auto s   = settings();
+    REQUIRE(s.shading == render::ShadingModel::Litsphere);
+
+    // Blended in both renders: in the opaque pass the alpha channel is
+    // discarded, so an opacity term added to the litsphere would be invisible
+    // there and this test would prove nothing.
+    render::MeshInstance plain{sc.rm.view(), s.litsphere};
+    plain.transparent = true;
+    const auto before = (*r)->render(std::vector{plain}, s);
+    REQUIRE(before.has_value());
+
+    plain.opacity    = 0.15F;
+    const auto after = (*r)->render(std::vector{plain}, s);
+    REQUIRE(after.has_value());
+    CHECK(differingPixels(*before, *after) == 0);
+}

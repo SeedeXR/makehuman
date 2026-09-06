@@ -801,6 +801,7 @@ struct ViewportMaps {
     /// `MaterialDesc::diffuse`, which the glTF writer emits as
     /// `baseColorFactor`. Read only by the PBR shading model.
     mh::foundation::Vec3 baseColour{1.0F, 1.0F, 1.0F};
+    float opacity{1.0F};
 };
 
 ViewportMaps viewportMapsOf(const std::filesystem::path& mhmat) {
@@ -829,6 +830,7 @@ ViewportMaps viewportMapsOf(const std::filesystem::path& mhmat) {
     maps.normalMapIntensity =
         mat->textures[static_cast<size_t>(TextureChannel::NormalMap)].intensity;
     maps.baseColour = mat->desc().diffuse;
+    maps.opacity    = mat->desc().opacity;
     const auto mr   = mh::foundation::metallicRoughnessOf(mat->desc());
     maps.metallic   = mr.metallic;
     maps.roughness  = mr.roughness;
@@ -2036,6 +2038,7 @@ int main(int argc, char** argv) {
         body.transparent        = bodyMaps.transparent;
         body.metallic           = bodyMaps.metallic;
         body.baseColour         = bodyMaps.baseColour;
+        body.opacity            = bodyMaps.opacity;
         body.roughness          = bodyMaps.roughness;
 
         // autoBlendSkin: the tone follows the ethnic sliders, so it is a blend
@@ -2065,6 +2068,7 @@ int main(int argc, char** argv) {
             inst.transparent        = wornMaps.transparent;
             inst.metallic           = wornMaps.metallic;
             inst.baseColour         = wornMaps.baseColour;
+            inst.opacity            = wornMaps.opacity;
             inst.roughness          = wornMaps.roughness;
             scene.push_back(std::move(inst));
         }

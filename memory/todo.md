@@ -1179,6 +1179,24 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         green base colour moves **zero** pixels under the litsphere.
       - `default.mhmat` now carries `diffuseColor 0.76 0.62 0.53`, a neutral mid
         skin tone, read only by PBR and the exporters.
+- [x] **And the FOURTH: `MaterialDesc::opacity` now reaches the PBR alpha.**
+      The glTF writer emits it as `baseColorFactor`'s alpha
+      (`GltfWriter.cpp:200,929`); the renderer used it only as a BOOLEAN to pick
+      the blend pass (`maps.transparent = ... || opacity < 1.0F`) and then wrote
+      the texture's own alpha, so a uniformly translucent material with no alpha
+      channel came out solid. `data/materials/xray.mhmat` ships `opacity 0.1`
+      and rendered fully opaque; it is now a faint ghost (85,743 non-background
+      pixels solid, 529 at 10%).
+      - No new uniform space: `MeshBuf`'s `base.w` was already written as a
+        constant `1.0F`. `pbr.frag` multiplies `texel.a * mbuf.base.w` — the
+        texture's alpha for cut-outs, the material's opacity for a flat one.
+      - PBR only. The reference's litsphere writes `outColor.a = diffuse.a` with
+        no opacity term (`litsphere_fragment_shader.txt:93`).
+      - **The parity test proved nothing until both renders were blended.**
+        Mutating the litsphere to honour opacity did not fail it while the
+        instance was opaque: that draw goes through the pipeline which discards
+        alpha. Same class as clamp-vs-reflect — a test that exercises the wrong
+        pipeline cannot see what it asserts about.
 - [ ] GPU skinning (matrix palette UBO/SSBO)
 - [ ] ID-buffer picking with async readback (replaces the full-window sync readback)
 - [x] **Cached bounding box: measured, deliberately NOT built.**

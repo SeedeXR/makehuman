@@ -2140,6 +2140,51 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-06 17:30:00 — Session 149 · **the fourth one: opacity, and a test that could not see it**
+
+### The chunk
+`MaterialDesc::opacity` now reaches the PBR alpha. It is the FOURTH material
+property built for export and never connected to the renderer, after
+metallic/roughness, `transparent` and the base colour — the pattern named in
+Session 148 held on the very next look.
+
+The glTF writer emits it as `baseColorFactor`'s alpha (`GltfWriter.cpp:200,929`).
+The renderer used it only in `maps.transparent = ... || opacity < 1.0F` — as a
+BOOLEAN to pick the blend pass — and then wrote the texture's own alpha, so a
+uniformly translucent material with no alpha channel came out solid.
+
+Not hypothetical: `data/materials/xray.mhmat` ships `opacity 0.1` and rendered
+fully opaque. Rendered through the release app it is now a faint ghost — 85,743
+non-background pixels solid, **529** at 10% opacity — and I looked at the image.
+
+### No new uniform space
+`MeshBuf`'s third vec4 is `base`, whose `w` was already being written as a
+constant `1.0F`. The opacity goes there. `pbr.frag` multiplies:
+`texel.a * mbuf.base.w` — the texture's alpha for cut-outs AND the material's
+opacity for a flat translucent one.
+
+### The litsphere test proved nothing until it was blended
+The parity test asserts opacity moves zero pixels under the litsphere (the
+reference writes `outColor.a = diffuse.a`, `litsphere_fragment_shader.txt:93`).
+Mutating the litsphere to honour opacity did **not** fail it: the instance was
+opaque, so the draw went through the pipeline that discards alpha, and the
+mutation was invisible. Setting `transparent = true` on BOTH renders kills it.
+Same failure class as the earlier clamp-vs-reflect test — a test that exercises
+the wrong pipeline cannot see the thing it asserts about.
+
+### One slip
+My first edit to the uniform initialiser did not match the formatted source, so
+`1.0F` stayed hardcoded and the test failed with **identical** pixel counts on
+both renders. Identical, not merely different, is the signature of "the change
+never reached the GPU" — worth recognising on sight.
+
+### Verification
+ctest 551/551 in debug, release, ASan and TSan. Release `.app` run and its
+render inspected. Format clean. Sonar OK. Mutations killed: shader ignores
+opacity, opacity not uploaded, litsphere honours opacity.
+
+---
+
 ## 2026-09-06 16:20:00 — Session 148 · **the third material property plumbed for export and not for the screen**
 
 ### The chunk

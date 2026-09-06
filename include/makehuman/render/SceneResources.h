@@ -168,6 +168,15 @@ struct MeshInstance {
     /// (`litsphere_fragment_shader.txt:90-91`), so applying it there would be a
     /// divergence rather than a fix.
     foundation::Vec3 baseColour{1.0F, 1.0F, 1.0F};
+
+    /// `MaterialDesc::opacity`, multiplied into the output alpha. `transparent`
+    /// picks the blend pipeline; this is what that pipeline then honours -- in
+    /// the opaque pass the alpha is discarded and setting it does nothing.
+    ///
+    /// Read only by the PBR shading model: the reference's litsphere writes
+    /// `outColor.a = diffuse.a` with no opacity term
+    /// (`litsphere_fragment_shader.txt:93`).
+    float opacity{1.0F};
 };
 
 /// The buffers, textures and pipeline for drawing meshes with the litsphere

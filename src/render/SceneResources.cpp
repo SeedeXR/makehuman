@@ -124,6 +124,7 @@ struct Drawable {
     float metallic{0.0F};
     float roughness{0.6F};
     foundation::Vec3 baseColour{1.0F, 1.0F, 1.0F};
+    float opacity{1.0F};
     std::unique_ptr<QRhiShaderResourceBindings> srb;
     quint32 indexCount{};
 };
@@ -452,6 +453,7 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
         dr.metallic           = instance.metallic;
         dr.roughness          = instance.roughness;
         dr.baseColour         = instance.baseColour;
+        dr.opacity            = instance.opacity;
         dr.meshBuf.reset(
             rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, kMeshUboSize));
         if (!dr.meshBuf->create()) {
@@ -491,18 +493,20 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
         if (p.drawable.aoTex) batch->uploadTexture(p.drawable.aoTex.get(), p.aoMap);
         // x = intensity, y = 1 when a normal map is bound. Written per mesh
         // because whether one exists is a material property, not a frame one.
-        const float material[12] = {
-            p.drawable.normalMapIntensity, p.drawable.normalTex ? 1.0F : 0.0F,
-            p.drawable.aoTex ? 1.0F : 0.0F, 0.0F,
-            // The second vec4 is `pbr`: metallic, then
-            // roughness. The litsphere shader declares
-            // it and never reads it, which keeps one
-            // buffer size and one SRB layout for both.
-            p.drawable.metallic, p.drawable.roughness, 0.0F, 0.0F,
-            // The third vec4 is `base`: the material's
-            // diffuse colour, glTF's baseColorFactor.
-            // Also declared-and-ignored by the litsphere.
-            p.drawable.baseColour.x, p.drawable.baseColour.y, p.drawable.baseColour.z, 1.0F};
+        const float material[12] = {p.drawable.normalMapIntensity,
+                                    p.drawable.normalTex ? 1.0F : 0.0F,
+                                    p.drawable.aoTex ? 1.0F : 0.0F, 0.0F,
+                                    // The second vec4 is `pbr`: metallic, then
+                                    // roughness. The litsphere shader declares
+                                    // it and never reads it, which keeps one
+                                    // buffer size and one SRB layout for both.
+                                    p.drawable.metallic, p.drawable.roughness, 0.0F, 0.0F,
+                                    // The third vec4 is `base`: the material's
+                                    // diffuse colour, glTF's baseColorFactor, and
+                                    // in w its opacity, that factor's alpha. Also
+                                    // declared-and-ignored by the litsphere.
+                                    p.drawable.baseColour.x, p.drawable.baseColour.y,
+                                    p.drawable.baseColour.z, p.drawable.opacity};
         batch->updateDynamicBuffer(p.drawable.meshBuf.get(), 0, kMeshUboSize, material);
         built.push_back(std::move(p.drawable));
     }

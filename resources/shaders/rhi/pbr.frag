@@ -62,7 +62,8 @@ layout(std140, binding = 4) uniform MeshBuf {
     vec4 material;
     // x = metallic, y = roughness, zw unused.
     vec4 pbr;
-    // rgb = the material's diffuse colour, glTF's baseColorFactor. w unused.
+    // rgb = the material's diffuse colour, glTF's baseColorFactor;
+    // w = its opacity, the alpha of that same factor.
     vec4 base;
 }
 mbuf;
@@ -197,5 +198,8 @@ void main() {
         color *= texture(aoTexture, vTexCoord).rgb;
     }
 
-    fragColor = vec4(pow(tonemapAces(color), vec3(1.0 / 2.2)), texel.a);
+    // The texture's alpha AND the material's opacity. A cut-out needs the
+    // first; a uniformly translucent material like the shipped xray skin
+    // (`opacity 0.1`) has no alpha channel at all and needs the second.
+    fragColor = vec4(pow(tonemapAces(color), vec3(1.0 / 2.2)), texel.a * mbuf.base.w);
 }
