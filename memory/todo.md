@@ -1658,7 +1658,34 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         dependency check now covers `find_package` as well as `FetchContent` —
         it previously checked only the latter, so anything found on the system
         could be linked with nothing recorded about its licence.
-- [ ] **Export** FBX 7.4/7.5 — from spec, **not** by translating the GPL Blender code
+- [~] **Export FBX — measured before writing anything, and the item's premise
+      has moved.** assimp already writes **FBX 7500** (verified from the file
+      header: `Kaydara FBX Binary`, version field 7500), it is BSD-3-Clause, and
+      Blender validates the result. So "write our own from spec to get 7.4/7.5"
+      is answered; a hand-written binary FBX would duplicate a working,
+      licence-compatible writer.
+      What is NOT answered is the one property assimp's writer loses, now
+      confirmed by **Autodesk's own importer** rather than inferred from
+      Blender:
+      | | rest extent | deformed extent | live rig |
+      |---|---|---|---|
+      | `posed.glb` | 1.6594 (arms down) | 1.6863 x 0.3009 x 1.663 | **yes** |
+      | `posed.fbx` | 168.63 x 166.30 x 30.09 cm | 168.63 x 166.30 x 30.09 | **no** |
+      The FBX's *input* geometry — the skinCluster's Orig shape, which is what
+      the deformer reads — already has the posed silhouette. We hand assimp REST
+      vertices with posed node transforms (`SceneIO.cpp:320-345`, the same
+      construction glTF uses); assimp's FBX writer bakes them.
+      **The rig itself is fine**: 179 influences, envelope 1, and turning a limb
+      joint moves the mesh. So the file is a working rig over already-posed
+      geometry — re-posable, but its rest pose is the T-pose rather than the
+      character's.
+      Gated by `tools/run_maya_validation.sh`, which pins `live_rig: False` as
+      CURRENT behaviour so an assimp upgrade that fixes it fails loudly.
+      **Owner decision, stated plainly:** writing a binary FBX writer from spec
+      is weeks of work (node records, property types, connections, deflate,
+      footer) to recover ONE property. The cheaper alternatives are to leave FBX
+      baked and document it, or to ship the rest-pose FBX unposed and let the
+      user pose in their DCC. I have not picked one.
 - [x] **Export USD (`.usda`)** — written from the published format, **not** by
       linking OpenUSD. Checked first: assimp has **no USD support at all**,
       neither import nor export (verified against the linked build's format

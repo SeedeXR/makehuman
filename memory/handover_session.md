@@ -2140,6 +2140,65 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-07 02:45:00 — Session 159 · **Maya as a second oracle, and the FBX item's premise had moved**
+
+### The chunk
+Next open M7 item: "Export FBX 7.4/7.5 — from spec, not by translating the GPL
+Blender code." Measured before writing a line of it, and the premise has moved.
+
+**assimp already writes FBX 7500.** Read from the file header: `Kaydara FBX
+Binary`, version field **7500**. It is BSD-3-Clause and Blender validates the
+output. So the version half of the item is answered, and a hand-written binary
+FBX would duplicate a working, licence-compatible writer.
+
+### What assimp does lose, confirmed by Autodesk's own importer
+`tools/maya_validate.py` runs in `mayapy`. For FBX, Maya is the reference
+implementation of the format — when it and Blender disagree about an FBX, it is
+Blender that has to justify itself.
+
+It answers what Blender could only infer: a skinCluster's **input (Orig) shape**
+is the geometry *before* the deformer runs.
+
+    posed.fbx  rest 168.63 x 166.30 x 30.09    deformed 168.63 x 166.30 x 30.09
+    posed.glb  rest 1.6594 (arms down)         deformed 1.6863 x 0.3009 x 1.663
+
+The FBX's input geometry already has the posed silhouette. We hand assimp REST
+vertices with posed node transforms (`SceneIO.cpp:320-345`) — the same
+construction glTF uses — and its FBX writer bakes them.
+
+The rig itself is FINE: 179 influences, envelope 1, and turning a limb joint
+moves the mesh. So the file is a working rig over already-posed geometry.
+
+### The positive control earned its place immediately
+`deforms_when_posed` exists so that `live_rig: false` cannot be confused with a
+broken skin. Its first version picked "some joint with a parent" and landed on
+`orbicularis04.L`, an eyelid muscle: 45 degrees moved a few face vertices, far
+under the centimetre threshold on a 168 cm figure, and it reported the rig as
+dead. It now picks the joint with the most descendants — a limb or spine root.
+
+Second trap in the same function: batch Maya does not push the dependency graph
+on its own, so reading vertices after `setAttr` returns the values from BEFORE
+the rotation. `dgdirty` + `dgeval` first. Both failure modes look exactly like
+"the rig does not deform", which is the finding under test.
+
+### The gate pins current behaviour, not an aspiration
+`maya_check.py` asserts `live_rig: False`. That is not a pass recorded as
+success — it is today's behaviour written down so an assimp upgrade that fixes
+it FAILS and we notice. Mutations killed: expecting `live_rig: True`; an export
+that loses its skin (joints 0, skinClusters 0).
+
+### Blocked, and saying so
+Writing a binary FBX writer from spec is weeks of work to recover ONE property.
+The alternatives — leave FBX baked and document it, or ship the FBX unposed —
+are cheaper. That is the owner's call, not mine, and it is recorded in
+`todo.md` rather than guessed at.
+
+### Verification
+ctest green in debug, release, ASan and TSan (no C++ changed). Maya harness
+1/1. Blender harness 11/11. Format clean. Sonar OK.
+
+---
+
 ## 2026-09-07 01:45:00 — Session 158 · **Draco reaches the file, and my own harness cried wolf again**
 
 ### The chunk
