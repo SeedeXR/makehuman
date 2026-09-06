@@ -2000,3 +2000,76 @@ TEST_CASE("the File menu can render", "[ui][render]") {
     act->trigger();
     CHECK(emitted == 1);
 }
+
+// Randomising changes ~245 modifiers. A QUndoStack macro over 245
+// ValueChangeCommands would be correct and unusable: each one triggers a full
+// mesh rebuild, so undo would rebuild 245 times.
+//
+// The call COUNT is the property under test, not just the values. "It worked"
+// and "it worked 245 times too slowly" look identical from the outside, which
+// is exactly the kind of defect that ships.
+TEST_CASE("a batched change applies once, not once per value", "[ui][undo]") {
+    std::vector<mh::ui::MultiValueChangeCommand::Change> changes;
+    for (int i = 0; i < 245; ++i) {
+        changes.push_back({QStringLiteral("mod/%1").arg(i), 0.0F, static_cast<float>(i) / 245.0F});
+    }
+
+    int calls = 0;
+    std::vector<std::pair<QString, float>> lastSeen;
+    mh::ui::MultiValueChangeCommand cmd(QStringLiteral("Randomise"), changes,
+                                        [&](const std::vector<std::pair<QString, float>>& values) {
+                                            ++calls;
+                                            lastSeen = values;
+                                        });
+
+    cmd.redo();
+    CHECK(calls == 1);
+    REQUIRE(lastSeen.size() == 245);
+    CHECK(lastSeen.front().first == QStringLiteral("mod/0"));
+    CHECK_THAT(static_cast<double>(lastSeen.back().second), WithinAbs(244.0 / 245.0, 1e-6));
+
+    cmd.undo();
+    CHECK(calls == 2);  // still one call per direction, not 246
+    REQUIRE(lastSeen.size() == 245);
+    // Undo restores the FROM values, all of which are 0 here.
+    CHECK_THAT(static_cast<double>(lastSeen.back().second), WithinAbs(0.0, 1e-6));
+
+    cmd.redo();
+    CHECK(calls == 3);
+    CHECK_THAT(static_cast<double>(lastSeen.back().second), WithinAbs(244.0 / 245.0, 1e-6));
+
+    CHECK(cmd.text() == QStringLiteral("Randomise"));
+}
+
+// A command with no callback must not crash. It is reachable: the caller builds
+// the command before it knows whether the change list is worth pushing.
+TEST_CASE("a batched change with no callback is harmless", "[ui][undo]") {
+    mh::ui::MultiValueChangeCommand cmd(QStringLiteral("Nothing"), {}, nullptr);
+    CHECK_NOTHROW(cmd.redo());
+    CHECK_NOTHROW(cmd.undo());
+}
+
+// Randomise lives in EDIT, not File: it changes the character rather than
+// producing a file, and Cmd+Z has to mean the same thing for it as for a
+// slider drag.
+TEST_CASE("the Edit menu can randomise", "[ui][undo]") {
+    theme::setIconDir(std::filesystem::path(MH_RESOURCE_DIR) / "icons" / "lucide");
+    mh::ui::MainWindow w(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+
+    const auto found = w.findChildren<QAction*>(QStringLiteral("edit.randomise"));
+    REQUIRE(found.size() == 1);
+    QAction* act = found.front();
+    CHECK_FALSE(act->icon().isNull());
+    CHECK(act->shortcut() == QKeySequence(QStringLiteral("Ctrl+R")));
+
+    bool inAMenu = false;
+    for (const QMenu* m : w.menuBar()->findChildren<QMenu*>()) {
+        if (m->actions().contains(act)) inAMenu = true;
+    }
+    CHECK(inAMenu);
+
+    int emitted = 0;
+    QObject::connect(&w, &mh::ui::MainWindow::randomiseRequested, [&emitted] { ++emitted; });
+    act->trigger();
+    CHECK(emitted == 1);
+}

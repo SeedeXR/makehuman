@@ -6,6 +6,8 @@
 #include <QUndoCommand>
 
 #include <functional>
+#include <utility>
+#include <vector>
 
 namespace mh::ui {
 
@@ -45,6 +47,41 @@ private:
     float to_{};
     int mergeId_{};
     std::function<void(const QString&, float)> apply_;
+};
+
+/// MANY named value changes as ONE undo step, applied in a single batch.
+///
+/// Not a `QUndoStack` macro over N `ValueChangeCommand`s, and the reason is
+/// performance rather than tidiness. Randomising a character changes **245**
+/// modifiers; each `ValueChangeCommand` triggers a full mesh rebuild, so a
+/// macro would rebuild the mesh 245 times per undo and per redo. This hands
+/// the whole set to the caller at once so it rebuilds exactly once — a
+/// property the tests assert by counting calls, because "it worked" and "it
+/// worked 245 times too slowly" look identical from the outside.
+class MultiValueChangeCommand : public QUndoCommand {
+public:
+    struct Change {
+        QString key;
+        float from{};
+        float to{};
+    };
+
+    /// @param apply called ONCE per undo or redo with every key and the value
+    ///        it should take. It must not push further commands.
+    MultiValueChangeCommand(
+        QString text, std::vector<Change> changes,
+        std::function<void(const std::vector<std::pair<QString, float>>&)> apply);
+
+    void undo() override;
+    void redo() override;
+
+    [[nodiscard]] const std::vector<Change>& changes() const { return changes_; }
+
+private:
+    void applyDirection(bool forward);
+
+    std::vector<Change> changes_;
+    std::function<void(const std::vector<std::pair<QString, float>>&)> apply_;
 };
 
 /// One named choice, undoable -- a skin, a pose, later a garment.

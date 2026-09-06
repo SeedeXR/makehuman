@@ -58,6 +58,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -2033,6 +2034,18 @@ int main(int argc, char** argv) {
         rebuildInto(*shell);
     };
 
+    // The BATCHED form, for randomisation. Every slider is moved and every
+    // modifier set BEFORE the single rebuild at the end -- calling
+    // applyModifier 245 times instead would rebuild the mesh 245 times, which
+    // is the whole reason MultiValueChangeCommand exists.
+    const auto applyModifiers = [&](const std::vector<std::pair<QString, float>>& values) {
+        for (const auto& [id, value] : values) {
+            panel->setValue(id, value);  // blocks the slider's signals; see applyModifier
+            human.setModifierValue(id.toStdString(), value);
+        }
+        rebuildInto(*shell);
+    };
+
     // Skin and pose go through the undo stack too, so Cmd+Z means the same
     // thing whichever panel the user last touched.
     const auto applyChoice = [&](const QString& group, const QString& id) {
@@ -2361,6 +2374,35 @@ int main(int argc, char** argv) {
     // The SAME renderTo the command line uses. The dialog's defaults are
     // --render's defaults, so pressing Enter twice produces exactly what the
     // command line would.
+    // Randomise. A fresh seed each time, from the same clock the user's other
+    // non-repeatable choices come from -- `--random <seed>` is where
+    // reproducibility lives, and a button that always produced the same person
+    // would be useless.
+    QObject::connect(&window, &mh::ui::MainWindow::randomiseRequested, [&] {
+        const uint64_t seed =
+            static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+
+        // Read the BEFORE values first: randomize() mutates `human` in place,
+        // so asking afterwards would record the new value as the old one and
+        // undo would do nothing.
+        const auto changed = mh::core::randomize(human, mh::core::RandomOptions{}, seed);
+        std::vector<mh::ui::MultiValueChangeCommand::Change> changes;
+        changes.reserve(changed.size());
+        for (const auto& [name, value] : changed) {
+            const QString key = QString::fromStdString(name);
+            changes.push_back({key, panel->value(key), value});
+        }
+        if (changes.empty()) return;
+
+        // push() runs redo() synchronously, which applies the whole batch and
+        // rebuilds once. `human` is already randomised, so redo re-setting the
+        // same values is a no-op on it -- and the panel and the mesh need it.
+        window.undoStack()->push(new mh::ui::MultiValueChangeCommand(
+            QObject::tr("Randomise"), std::move(changes), applyModifiers));
+        window.statusBar()->showMessage(QObject::tr("Randomised %1 modifiers").arg(changed.size()),
+                                        3000);
+    });
+
     QObject::connect(&window, &mh::ui::MainWindow::renderRequested, [&] {
         mh::ui::RenderRequest req;
         req.shading = shading;  // whatever the viewport is currently showing

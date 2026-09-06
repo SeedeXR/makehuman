@@ -2186,11 +2186,13 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       pregnancy guard reads `Age < 0.75` where its own comment says "too old",
       so it fires on nearly every character and its second clause is dead. We
       implement the stated intent, `Age > 0.75`, and a test pins it.
-- [ ] **Randomise in the UI — the remaining half.** Needs a design decision I
-      did not want to rush: one randomisation changes ~245 modifiers, so the
-      undo entry has to be a `beginMacro`/`endMacro` group AND the ~245
-      `ValueChangeCommand`s must not each trigger a full mesh rebuild. Wire it
-      with a single batched apply, not 245 individual ones.
+- [x] **Randomise in the UI** (Edit > Randomise, Ctrl+R). Solved with
+      `MultiValueChangeCommand`, NOT a `QUndoStack` macro: a macro over 245
+      `ValueChangeCommand`s would rebuild the mesh 245 times per undo. The
+      batched command hands the whole set to one callback, which sets every
+      slider and modifier and then rebuilds once. **The call COUNT is asserted**
+      — "it worked" and "it worked 245 times too slowly" look identical from
+      outside, and a mutation applying one-at-a-time fails the test.
 - [ ] **`ExpressionTaskView` / `ExpressionMixerTaskView` — NOT buildable as
       filed.** Measured: **zero `.mhpose` files ship**, so the chooser has no
       content (same as the seven proxy choosers). And the two are different

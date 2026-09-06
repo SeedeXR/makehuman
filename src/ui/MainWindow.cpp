@@ -210,6 +210,14 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     redoAction->setIcon(theme::icon("redo-2", theme::palette().textSecondary, 16));
     edit->addAction(undoAction);
     edit->addAction(redoAction);
+    edit->addSeparator();
+    QAction* randomise =
+        edit->addAction(theme::icon("refresh-cw", theme::palette().textSecondary, 16),
+                        QCoreApplication::translate("", QT_TR_NOOP("Randomise")));
+    registerText(randomise, QT_TR_NOOP("Randomise"));
+    randomise->setObjectName(QStringLiteral("edit.randomise"));
+    randomise->setShortcut(QKeySequence(QStringLiteral("Ctrl+R")));
+    connect(randomise, &QAction::triggered, this, &MainWindow::randomiseRequested);
 
     QMenu* workspace = menuBar()->addMenu(tr("&Workspace"));
     registerText(workspace, QT_TR_NOOP("&Workspace"));

@@ -2140,6 +2140,49 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-06 01:50:00 — Session 139 · **245 changes as one undo step, and counting the calls**
+
+### The chunk
+The half of Randomise I deliberately deferred last session: the button.
+
+### Why not a QUndoStack macro
+The obvious wiring is `beginMacro` over 245 `ValueChangeCommand`s. It would be
+correct and unusable — each of those triggers a full mesh rebuild, so one undo
+would rebuild the mesh 245 times.
+
+`MultiValueChangeCommand` instead: it holds the whole change list and hands it
+to ONE callback, which moves every slider, sets every modifier, and then
+rebuilds once.
+
+### The property worth testing is the call COUNT
+"It worked" and "it worked 245 times too slowly" look identical from outside,
+so the test counts invocations rather than only checking values: one call per
+undo and one per redo, never 245. Mutation-verified — changing the
+implementation to `for (v : values) apply_({v})` keeps every value correct and
+fails the test.
+
+That is the third assertion this session where the interesting property was
+*how* something happened rather than *what* it produced. The first two I got
+wrong and mutation caught; this one I wrote that way from the start.
+
+### One ordering trap
+`randomize()` mutates `human` in place, so the BEFORE values have to be read
+from the panel before the call — asking `human` afterwards would record the new
+value as the old one and undo would silently do nothing.
+
+The button seeds from the clock rather than a fixed value: `--random <seed>` is
+where reproducibility lives, and a button that always produced the same person
+would be pointless.
+
+### Verification
+ctest 536/536 in debug, release, ASan and TSan — unchanged from the last
+session, because the three new cases run inside the single `ui` ctest entry
+rather than as their own rows. Format clean. Sonar OK.
+Mutation: apply one-at-a-time fails; the action test pins Ctrl+R, the icon, and
+that it sits in a real menu.
+
+---
+
 ## 2026-09-06 01:05:00 — Session 138 · **a randomiser, a reference bug not ported, and a test that could not tell reflect from clamp**
 
 ### What I did not build, and why

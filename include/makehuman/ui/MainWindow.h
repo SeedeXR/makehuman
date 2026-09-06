@@ -139,6 +139,11 @@ signals:
     /// `mh_ui` is Apache-2.0 and knows nothing about glTF, USD or FBX.
     void exportRequested();
 
+    /// Edit > Randomise. Belongs with Undo rather than in File: it edits the
+    /// character rather than producing a file, and it is the one command in the
+    /// application that changes hundreds of values at once.
+    void randomiseRequested();
+
     /// File > Render. Like Export, this is the capability that existed with no
     /// way to reach it: `OffscreenRenderer` has been in the tree since M6 and
     /// `--render` has worked for as long, and the window reached neither.

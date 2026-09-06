@@ -7,6 +7,33 @@
 
 namespace mh::ui {
 
+MultiValueChangeCommand::MultiValueChangeCommand(
+    QString text, std::vector<Change> changes,
+    std::function<void(const std::vector<std::pair<QString, float>>&)> apply)
+    : changes_(std::move(changes)), apply_(std::move(apply)) {
+    setText(text);
+}
+
+void MultiValueChangeCommand::applyDirection(bool forward) {
+    if (!apply_) return;
+    std::vector<std::pair<QString, float>> values;
+    values.reserve(changes_.size());
+    for (const Change& c : changes_) {
+        values.emplace_back(c.key, forward ? c.to : c.from);
+    }
+    // ONE call. See the header: the whole point of this command is that the
+    // caller rebuilds once rather than once per change.
+    apply_(values);
+}
+
+void MultiValueChangeCommand::undo() {
+    applyDirection(false);
+}
+
+void MultiValueChangeCommand::redo() {
+    applyDirection(true);
+}
+
 ValueChangeCommand::ValueChangeCommand(QString key, float from, float to, int mergeId,
                                        std::function<void(const QString&, float)> apply)
     : key_(std::move(key)), from_(from), to_(to), mergeId_(mergeId), apply_(std::move(apply)) {
