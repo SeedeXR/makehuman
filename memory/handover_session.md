@@ -2140,6 +2140,59 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-06 18:30:00 — Session 150 · **the exporters get V right, and nothing was checking**
+
+### The chunk
+The open M6 item asked whether the EXPORTERS get the UV V origin right, and
+said our writers "pass the OBJ's V through unchanged". That premise was stale:
+true of OBJ and USD, never of glTF. `GltfWriter.cpp:300-302` has always emitted
+`1 - v`, with a comment explaining why.
+
+Nothing held the comment up. Dropping the `1.0F -` passed **114 other `[io]`
+test cases and their 401,956 assertions** — the only quad they export has UVs of
+0 and 1, which is its own mirror in V, and the vertex order matches too. So the
+one convention an exporter actually gets wrong was invisible to the entire
+suite.
+
+### Two independent checks now
+- A unit test exports a **0.25/0.75** quad and reads TEXCOORD_0 back out of the
+  BIN chunk, comparing against the RenderMesh's own UVs (not the Mesh's — the
+  writer walks the RenderMesh, whose vertex order is the packed key).
+- `tools/blender_validate.py` reports the UV of the topmost vertex, and
+  `blender_check.py` requires `base.obj`, `base.glb`, `base.fbx` and
+  `base.usda` to agree. Blender is a third implementation with two independent
+  importers; agreement across four formats is a much stronger statement than
+  any one of them matching a number we wrote down.
+
+All four put the top-of-head vertex at **(0.911166, 0.881046)**. Dropping the
+glTF flip moves the GLB to **0.118954** — exactly `1 - v`. Adding a flip to USD
+moves the USDA to the same place. Both mutations fail the harness.
+
+### The anchor needed the whole sort key
+First version anchored on max world Z alone and immediately reported base.fbx at
+u **0.9205** against base.obj's **0.9112**, mirrored about the seam, v identical
+to 1e-6. Not a convention bug: the crown of the head carries a left/right pair
+at the same height (and both feet sit flat at z=0), so "whichever tied vertex
+the importer listed first" is not comparable across formats. Anchoring on
+`(-z, x, y)` fixes it. A near-miss worth naming — that finding, believed, would
+have been a false FBX bug report.
+
+### Rendering it proved nothing, and that is the lesson
+I exported the correct and the V-mirrored body, rendered both in Blender and
+looked. **Indistinguishable** — the shipped skin textures are smooth tone maps
+with no vertical structure, so a mirror moves nothing the eye can catch. The
+eyes gave it away only at a 30 px crop: iris and pupil in one, blank white
+ovals in the other, which is the session-145 defect reproduced through the
+exporter. The standing rule is "render it and look", and I did; here the numbers
+were the decisive evidence and the image was not. Both are worth having.
+
+### Verification
+ctest 549/549 in debug, release, ASan and TSan. Blender harness 11/11 with the
+new UV rule. Format clean. Sonar OK. Mutations killed: glTF stops flipping
+(unit test AND harness), USD starts flipping (harness).
+
+---
+
 ## 2026-09-06 17:30:00 — Session 149 · **the fourth one: opacity, and a test that could not see it**
 
 ### The chunk

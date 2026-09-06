@@ -148,8 +148,21 @@ EXPECT = {
     },
 }
 
+#: Exports of the SAME base mesh. Their UVs must survive every format
+#: identically, and that is a real question rather than a tautology: glTF's UV
+#: origin is the image's UPPER-left while OBJ, USD, FBX and Blender all use the
+#: LOWER-left, so GltfWriter flips V (GltfWriter.cpp:300-302) and the others
+#: must not. A writer on the wrong side of that ships every texture mirrored,
+#: and no vertex/triangle/bounds check can see it -- the geometry is identical
+#: either way.
+#:
+#: Anchored on the highest vertex in world space, not a vertex index: the
+#: importers renumber, but the top of the head is the top of the head.
+_UV_FORMATS = ("base.obj", "base.glb", "base.fbx", "base.usda")
+
 failures = 0
 seen = set()
+uv_top = {}
 for line in sys.stdin:
     line = line.strip()
     if not line:
@@ -162,6 +175,10 @@ for line in sys.stdin:
         print(f"FAIL {name}: {d.get('error')}")
         failures += 1
         continue
+
+    top = (d.get("uv_extremes") or {}).get("highest")
+    if top:
+        uv_top[name] = top["uv"]
 
     want = EXPECT.get(name)
     if want is None:
@@ -242,6 +259,27 @@ for line in sys.stdin:
         print(f"ok   {name}: {d['vertices']} verts, {d['triangles']} tris, "
               f"tallest {d['tallest_extent']}, {d['uv_layers']} uv layer(s){extra}")
 
+# The cross-format UV comparison, once every file has reported.
+uv_failed = False
+present = [n for n in _UV_FORMATS if n in uv_top]
+if len(present) < 2:
+    print(f"skip UV convention: only {len(present)} of the base exports reported a UV")
+else:
+    reference = uv_top[present[0]]
+    disagree = [n for n in present[1:]
+                if max(abs(a - b) for a, b in zip(uv_top[n], reference)) > 1e-4]
+    if disagree:
+        print(f"FAIL UV convention: {present[0]} puts the top vertex at {reference}, but "
+              + "; ".join(f"{n} at {uv_top[n]}" for n in disagree)
+              + " -- one of these writers is on the wrong side of the V origin")
+        # Counted apart from `failures`: this is a disagreement BETWEEN exports,
+        # not one export failing its own expectation, and folding it in would
+        # make the tally below claim an export disagreed when none did.
+        uv_failed = True
+    else:
+        print(f"ok   UV convention: {len(present)} formats agree the top vertex is at "
+              f"{reference}")
+
 missing = set(EXPECT) - seen
 for m in sorted(missing):
     print(f"FAIL {m}: never reported")
@@ -249,4 +287,4 @@ for m in sorted(missing):
 
 agreed = len(EXPECT) - failures
 print(f"\n{agreed}/{len(EXPECT)} exports agree with Blender")
-sys.exit(1 if failures else 0)
+sys.exit(1 if (failures or uv_failed) else 0)

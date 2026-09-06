@@ -1100,8 +1100,8 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       - Metallic/roughness come from `foundation::metallicRoughnessOf()`, the
         SAME call the glTF and USD writers make, so the viewport and the
         exported file cannot disagree.
-- [ ] **The eyes render as flat pale ovals — MEASURED, and my earlier note was
-      wrong on every count.** It said "the eye geometry takes the BODY albedo
+- [x] **The eyes render as flat pale ovals — RESOLVED (session 145). MEASURED,
+      and my earlier note was wrong on every count.** It said "the eye geometry takes the BODY albedo
       and its UV island lands on a bright region", and blamed PBR. All three
       parts are false. Findings, each measured 2026-09-06:
       - It is the **eye PROXY**, not body geometry: `--eyes none` removes the
@@ -1157,11 +1157,32 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         (0.30 and 0.55 both unchanged), render resolution, eyeball orientation
         (the iris IS at the front, Z 1.417 of a 1.221–1.463 mesh), a missing
         material, and missing UVs.
-- [ ] **Still worth checking separately: do the EXPORTERS get V right?** glTF
-      specifies a top-left UV origin and our writers pass the OBJ's V through
-      unchanged. That is a different question from the viewport, which is now
-      settled, and it wants a Blender cross-check of an exported GLB rather
-      than more spec-reading.
+- [x] **The EXPORTERS get V right — cross-checked in Blender, and the premise
+      of this item was stale.** "Our writers pass the OBJ's V through unchanged"
+      was true of OBJ and USD and never of glTF: `GltfWriter.cpp:300-302` has
+      always emitted `1 - v`. What was missing was anything holding that up.
+      - **The comment was load-bearing and untested.** Dropping the `1.0F -`
+        passed all 114 other `[io]` cases and their 401,956 assertions, because
+        the only quad they export has UVs of 0 and 1 — its own mirror in V. A
+        new test exports a 0.25/0.75 quad and reads TEXCOORD_0 back out of the
+        BIN chunk.
+      - **Blender agrees, as a third implementation.** `base.obj`, `base.glb`,
+        `base.fbx` and `base.usda` all put the top-of-head vertex at UV
+        `(0.911166, 0.881046)`. Dropping the glTF flip moves the GLB to
+        `0.118954` — exactly `1 - v`; adding a flip to USD moves the USDA to
+        the same place. Both mutations fail the harness.
+      - The check is anchored on the full sort key `(-z, x, y)`, not `z` alone.
+        Ties are the norm — the crown has a left/right pair, both feet sit at
+        z=0 — and "whichever tied vertex the importer listed first" reported
+        base.fbx u 0.9205 against base.obj u 0.9112, mirrored about the seam
+        with v identical. That reads as a convention bug and is not one.
+      - **Rendering it proved nothing, and that is worth recording.** Side by
+        side, the correct and V-mirrored bodies are indistinguishable: the
+        shipped skin textures are smooth tone maps with no vertical structure.
+        The eyes gave it away at 30 px — iris and pupil present in one, blank
+        white ovals in the other, which is the session-145 defect reproduced
+        through the exporter. Numbers were the decisive evidence here, not the
+        image.
 - [x] **`default.mhmat` rendered a pure white body under PBR — fixed, and the
       cause was a third unplumbed material property.** The material names no
       diffuse texture (`shaderConfig diffuse false`) because it is the

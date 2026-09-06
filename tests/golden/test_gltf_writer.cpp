@@ -77,6 +77,23 @@ core::Mesh quadAt(float x, const char* name) {
     return m;
 }
 
+/// A quad whose V is deliberately ASYMMETRIC, so a lost flip is visible.
+///
+/// `{0,0},{1,0},{1,1},{0,1}` -- the quad above -- is its own mirror in V: the
+/// set of emitted values is identical whether or not the writer flips, and the
+/// per-vertex order matches too because the winding walks the quad in the same
+/// direction either way. 0.25/0.75 does not have that symmetry.
+core::Mesh vAsymmetricQuad() {
+    core::Mesh m("vquad", 4);
+    REQUIRE(m.setCoords({{0, 0, 0}, {2, 0, 0}, {2, 0, 3}, {0, 0, 3}}).has_value());
+    REQUIRE(m.setUVs({{0.0F, 0.25F}, {1.0F, 0.25F}, {1.0F, 0.75F}, {0.0F, 0.75F}}).has_value());
+    m.addFaceGroup("g");
+    REQUIRE(m.setFaces({0, 1, 2, 3}, {0, 1, 2, 3}, {0}).has_value());
+    m.buildAdjacency();
+    m.calcNormals();
+    return m;
+}
+
 core::Mesh quad() {
     core::Mesh m("quad", 4);
     REQUIRE(m.setCoords({{0, 0, 0}, {2, 0, 0}, {2, 0, 3}, {0, 0, 3}}).has_value());
@@ -1666,4 +1683,67 @@ TEST_CASE("a pose array that does not describe the rig is refused", "[gltf][skin
                                    .weights      = weights,
                                    .influences   = 4};
     CHECK_FALSE(bad.valid());
+}
+
+// ---------------------------------------------------------------------------
+// V ORIGIN. glTF puts (0,0) at the image's UPPER-LEFT corner (glTF 2.0 spec,
+// 3.7.2.1: "the origin of the UV coordinates ... corresponds to the upper left
+// corner of a texture image"). OBJ -- and therefore every UV in this port,
+// which reads its base mesh from OBJ -- puts it at the LOWER-LEFT. So the
+// writer must emit `1 - v`, and it does (`GltfWriter.cpp:300-302`).
+//
+// That was a comment with nothing holding it up: dropping the `1.0F -` passed
+// every existing test, because the only quad they export has UVs 0 and 1, which
+// are their own mirror in V. This reads the bytes back.
+//
+// The other two writers must NOT flip, and for the same reason: OBJ's `vt` is
+// the source convention itself, and USD's `primvars:st` is also lower-left
+// (`UsdPreviewSurface` is specified with (0,0) at the bottom-left of the
+// texture). Flipping there would mirror the very files that agree with us.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("glTF flips V, because its origin is the other corner", "[io][gltf][uv]") {
+    const auto out = tempGlb("vflip");
+    const auto m   = vAsymmetricQuad();
+    // The RenderMesh is kept: it, not the Mesh, is what the writer walks, and
+    // its vertex order is the packed (vertex, uv) key rather than the mesh's.
+    // Comparing against it makes this an assertion about the flip alone.
+    const auto rm = core::RenderMesh::build(m);
+    REQUIRE(io::writeGlb(out, rm.view()).has_value());
+
+    const auto b           = readFile(out);
+    const uint32_t jsonLen = readU32(b, 12);
+    const auto doc =
+        nlohmann::json::parse(std::string(reinterpret_cast<const char*>(b.data()) + 20, jsonLen));
+
+    const size_t uvAcc = doc["meshes"][0]["primitives"][0]["attributes"]["TEXCOORD_0"];
+    const auto& acc    = doc["accessors"][uvAcc];
+    REQUIRE(acc["type"] == "VEC2");
+    REQUIRE(acc["componentType"] == 5126);  // FLOAT
+    REQUIRE(acc["count"] == 4);
+
+    const auto& view      = doc["bufferViews"][acc["bufferView"].get<size_t>()];
+    const size_t binStart = 20 + jsonLen + 8;
+    const size_t at =
+        binStart + view.value("byteOffset", size_t{0}) + acc.value("byteOffset", size_t{0});
+
+    std::array<float, 8> uv{};
+    std::memcpy(uv.data(), b.data() + at, sizeof(uv));
+
+    const auto src = rm.view().texco;
+    REQUIRE(src.size() == 4);
+    for (size_t i = 0; i < 4; ++i) {
+        INFO("vertex " << i << " source uv " << src[i].x << ", " << src[i].y);
+        // U passes through untouched -- only the V axis differs between the two
+        // conventions.
+        CHECK_THAT(static_cast<double>(uv[i * 2]), WithinAbs(static_cast<double>(src[i].x), 1e-6));
+        // ... and V comes out mirrored. An equality against the source value,
+        // not merely "not 0.25": a writer that emitted a constant, or scaled,
+        // or reordered the vertices would pass a looser check.
+        CHECK_THAT(static_cast<double>(uv[(i * 2) + 1]),
+                   WithinAbs(1.0 - static_cast<double>(src[i].y), 1e-6));
+    }
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
 }

@@ -82,6 +82,62 @@ def _geometry(meshes):
     return verts, tris, uv_layers, lo, hi
 
 
+def _first_loop_per_vertex(m):
+    """Vertex index -> the loop where it first appears.
+
+    A seam vertex carries several UVs, one per loop. Taking the first
+    occurrence in polygon order is deterministic; taking "the last one seen"
+    depends on iteration order and would differ between importers.
+    """
+    out = {}
+    for poly in m.polygons:
+        for li in poly.loop_indices:
+            out.setdefault(m.loops[li].vertex_index, li)
+    return out
+
+
+def _uv_anchor(w):
+    """Sort key picking one vertex out of a world-space extreme, unambiguously.
+
+    `-z` first, then x and y, because ties are the norm rather than the
+    exception: the crown of the head carries a left/right pair at the same
+    height and both feet sit flat at z=0. Taking whichever tied vertex an
+    importer happened to list first reported base.fbx at u 0.9205 against
+    base.obj at u 0.9112 -- mirrored about the seam, v identical to 1e-6. That
+    reads as a convention bug and is not one.
+    """
+    return (-round(w[2], 5), round(w[0], 5), round(w[1], 5))
+
+
+def _uv_extremes(meshes):
+    """The UV of the highest vertex in world space.
+
+    `uv_layers` only counts layers. It cannot see a mirrored V, which is the
+    one UV mistake an exporter actually makes: glTF puts (0,0) at the image's
+    UPPER-left while OBJ, USD, FBX and Blender itself put it at the lower-left,
+    so a writer either flips V or ships every texture upside down. Both files
+    look equally valid to a counter.
+
+    Anchoring on world POSITION rather than a vertex index is what makes this
+    comparable across formats: the importers renumber vertices, but the top of
+    the head is the top of the head in both.
+    """
+    best = None
+    for o in meshes:
+        m = o.data
+        if not m.uv_layers:
+            continue
+        uv = m.uv_layers[0].data
+        for vi, li in _first_loop_per_vertex(m).items():
+            w = o.matrix_world @ m.vertices[vi].co
+            entry = {"z": round(w[2], 6),
+                     "uv": [round(uv[li].uv[0], 6), round(uv[li].uv[1], 6)]}
+            hi = _uv_anchor(w)
+            if best is None or hi < best[0]:
+                best = (hi, entry)
+    return {"highest": best[1] if best else None}
+
+
 def _shape_keys(meshes):
     """Blender's morph targets. key_blocks[0] is the Basis, so a file with N
     morph targets reports N+1 -- hence the [1:]. Also counts how many vertices
@@ -188,6 +244,7 @@ def describe(path: str) -> dict:
         "vertices": verts,
         "triangles": tris,
         "uv_layers": uv_layers,
+        "uv_extremes": _uv_extremes(meshes),
         "armatures": len(armatures),
         "bones": sum(len(a.data.bones) for a in armatures),
         "vertex_groups": vertex_groups,
