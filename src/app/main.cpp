@@ -781,6 +781,17 @@ ViewportMaps viewportMapsOf(const std::filesystem::path& mhmat) {
     maps.normal        = slot(TextureChannel::NormalMap);
     maps.ao            = slot(TextureChannel::AoMap);
     maps.autoBlendSkin = mat->autoBlendSkin;
+    // Never assigned until now, so EVERY worn thing was drawn in the opaque
+    // pass with blending disabled and its alpha discarded. The shipped eye is
+    // what that costs: its front geometry is a cornea whose texel is
+    // alpha 0 -- invisible when blended, an opaque pale disc when not, which is
+    // the blank white oval the eyes rendered as. `MeshInstance::transparent`,
+    // the blend pipeline and `MaterialDesc::transparent` all existed; nothing
+    // connected them.
+    //
+    // Either condition blends, matching what the exporters already write:
+    // `.mhmat`'s own flag, or an opacity below 1.
+    maps.transparent = mat->desc().transparent || mat->desc().opacity < 1.0F;
     maps.normalMapIntensity =
         mat->textures[static_cast<size_t>(TextureChannel::NormalMap)].intensity;
     const auto mr  = mh::foundation::metallicRoughnessOf(mat->desc());
@@ -1954,6 +1965,15 @@ int main(int argc, char** argv) {
             inst.roughness          = wornMaps.roughness;
             scene.push_back(std::move(inst));
         }
+        // Reported from the INSTANCES, not from the materials they came from.
+        // An earlier version of this printed `worn.material->transparent`
+        // directly and was therefore blind to the bug it was meant to cover:
+        // `ViewportMaps::transparent` was never assigned, so the flag never
+        // reached `MeshInstance` and every worn thing drew opaque. Reading the
+        // same field the renderer reads is the whole point.
+        const size_t blended = static_cast<size_t>(
+            std::ranges::count_if(scene, [](const auto& m) { return m.transparent; }));
+        std::fprintf(stderr, "scene: %zu meshes (%zu blended)\n", scene.size(), blended);
         return scene;
     };
 

@@ -255,3 +255,39 @@ TEST_CASE("the shipped eye proxy resolves its diffuse texture", "[material][eyes
     // hands the renderer nothing to bind.
     CHECK(std::filesystem::exists(diffuse));
 }
+
+TEST_CASE("PROBE fitted eye front uvs", "[probe8]") {
+    auto body = mh::core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(body.has_value());
+    const auto proxy = mh::core::loadProxy(std::filesystem::path(MH_DATA_DIR) / "eyes" /
+                                           "high-poly" / "high-poly.mhclo");
+    REQUIRE(proxy.has_value());
+    auto mesh = mh::core::loadObj(proxy->objFile);
+    REQUIRE(mesh.has_value());
+
+    std::vector<mh::foundation::Vec3> fitted;
+    REQUIRE(mh::core::fitProxy(*proxy, body->coord(), fitted));
+    REQUIRE(fitted.size() == mesh->vertexCount());
+    REQUIRE(mesh->setCoords(std::vector<mh::foundation::Vec3>(fitted)));
+    mesh->buildAdjacency();
+    const auto rm   = mh::core::RenderMesh::build(*mesh);
+    const auto view = rm.view();
+
+    // Camera looks down -Z at a model facing +Z, so the visible surface is the
+    // one with the largest Z. Report the UVs those render vertices carry.
+    float zmax = -9e9F;
+    for (const auto& c : view.coord)
+        zmax = std::max(zmax, c.z);
+    float ulo = 9e9F, uhi = -9e9F, vlo = 9e9F, vhi = -9e9F;
+    size_t n = 0;
+    for (size_t i = 0; i < view.coord.size(); ++i) {
+        if (view.coord[i].z < zmax - 0.02F) continue;
+        ulo = std::min(ulo, view.texco[i].x);
+        uhi = std::max(uhi, view.texco[i].x);
+        vlo = std::min(vlo, view.texco[i].y);
+        vhi = std::max(vhi, view.texco[i].y);
+        ++n;
+    }
+    WARN("FITTED front verts=" << n << " zmax=" << zmax << " u " << ulo << ".." << uhi << "  v "
+                               << vlo << ".." << vhi);
+}

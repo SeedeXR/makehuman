@@ -2140,6 +2140,62 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-06 11:45:00 — Session 145 · **the eyes are fixed: two bugs, and my retraction was the wrong call**
+
+### Outcome first
+The eyes render with irises, pupils and sclera. **Two independent bugs**, both
+needed:
+
+1. **The V flip WAS missing.** OBJ's V origin is the image BOTTOM; QRhi samples
+   v=0 at the FIRST row. Diffuse, normal and AO are now flipped at upload — the
+   same correction the reference makes at `lib/texture.py:167`, for the same
+   reason. NOT the litsphere: a matcap is indexed by the view-space normal, not
+   a mesh UV, so it is not in this coordinate system.
+2. **`ViewportMaps::transparent` was never assigned.** Every worn thing drew in
+   the OPAQUE pass with its alpha discarded. `MeshInstance::transparent`, the
+   blend pipeline and `MaterialDesc::transparent` all existed; nothing connected
+   them. That field's own doc-comment predicted the failure — "a cut-out cornea
+   over `opacity 1.0` renders solid".
+
+### I retracted a correct finding, then had to retract the retraction
+Session 143 concluded the flip was missing. Session 144 "corrected" that to
+"the flip is already handled", on the strength of a quad test whose expectation
+I had written backwards — v=1 should sample the image's TOP row under OBJ, and
+I asserted the bottom. The test passed because the code had the same error, so
+it confirmed the bug rather than catching it.
+
+**What broke the tie was the alpha channel**, which I had never looked at. The
+eye's front is a cornea: correct reading gives `alpha 0` (invisible), upside
+down gives `alpha 255` over a pale disc. Only one of those can produce a blank
+white oval. No amount of reasoning about conventions settled it; one number did.
+
+The lesson is narrower than "measure more". Both sessions measured. The
+difference is that a self-authored test only checks that code matches MY
+expectation — when the expectation is the thing in doubt, it proves nothing.
+The alpha was external evidence: the asset author's intent, not mine.
+
+### A second instance of the same trap, caught by mutation
+My first attempt to test the transparency fix printed `worn.material->transparent`
+— the material's own flag — while the bug was that the flag never reached
+`MeshInstance`. Mutation showed it: deleting the fix left the test green. It now
+counts `m.transparent` over the built scene, which is the field the renderer
+reads, and the mutation fails.
+
+Twice in one session, an assertion read from a different place than the code
+under test.
+
+### Verification
+ctest green in debug, release, ASan and TSan. Two mutations killed: the flip
+removed (orientation test), and the plumbing removed (`app_eye_is_blended`).
+Format clean. Sonar OK. Rendered and looked at the result rather than trusting
+the suite.
+
+### Owner asked for eye COLOURS mid-session
+Recorded as the next chunk. This fix is its prerequisite — colour choices are
+meaningless while every eye renders as an opaque blob.
+
+---
+
 ## 2026-09-06 11:00:00 — Session 144 · **I was wrong about the V flip, and the test that proved it is worth keeping**
 
 ### The chunk

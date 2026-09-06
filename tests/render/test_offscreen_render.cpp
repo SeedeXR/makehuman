@@ -1254,9 +1254,9 @@ TEST_CASE("a diffuse map is sampled with V up, as the reference uploads it",
     const auto img = (*r)->render(std::vector{mi}, s);
     REQUIRE(img.has_value());
 
-    // The quad's TOP has v=1. With V up, v=1 must sample the image's BOTTOM
-    // row, which is blue. Unflipped it samples the image's top row, red -- and
-    // that is what shipped.
+    // The quad's TOP has v=1. Under the OBJ convention v=1 is the image's TOP
+    // row, which is red; the quad's bottom (v=0) is the image's bottom row,
+    // blue.
     const auto meanOf = [&img](int y0, int y1) {
         double r0 = 0.0;
         double b0 = 0.0;
@@ -1277,8 +1277,8 @@ TEST_CASE("a diffuse map is sampled with V up, as the reference uploads it",
     INFO("top of quad: r=" << topR << " b=" << topB);
     INFO("bottom of quad: r=" << bottomR << " b=" << bottomB);
 
-    CHECK(topB > topR);        // v=1 -> image bottom -> blue
-    CHECK(bottomR > bottomB);  // v=0 -> image top -> red
+    CHECK(topR > topB);        // v=1 -> image TOP -> red
+    CHECK(bottomB > bottomR);  // v=0 -> image BOTTOM -> blue
 
     std::error_code ec;
     std::filesystem::remove(texture, ec);

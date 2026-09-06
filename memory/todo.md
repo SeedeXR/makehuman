@@ -1113,7 +1113,29 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       - The texture **is** sampled — deleting `diffuseTexture` changes the
         render — and the eye's raw albedo varies (std ≈ 35, range 25–171), so
         UVs reach the shader.
-      - **NOT a missing V flip — I was wrong, and the correction is measured.**
+      - **RESOLVED. Two independent bugs, both fixed. My retraction of the V
+        flip was itself wrong — the flip WAS needed.** What settled it was the
+        texture's ALPHA channel, which I had not looked at:
+        the high-poly proxy's front geometry is a **cornea** UV'd to a small
+        disc at `u 0.92–0.95, v 0.05–0.08`. Read with the OBJ convention that
+        texel is `(182,195,255, alpha 0)` — invisible, so the iris behind shows
+        through. Read upside down it is `(169,169,165, alpha 255)` — an opaque
+        pale disc, which is exactly the blank oval that shipped.
+        1. **The V flip was missing.** OBJ's V origin is the image BOTTOM; QRhi
+           samples v=0 at the FIRST row. Diffuse, normal and AO are now flipped
+           at upload, as the reference does for the same reason
+           (`legacy/python/lib/texture.py:167`). NOT the litsphere — a matcap is
+           indexed by the view-space normal, not a mesh UV.
+        2. **`ViewportMaps::transparent` was never assigned**, so every worn
+           thing drew in the OPAQUE pass with its alpha discarded.
+           `MeshInstance::transparent`, the blend pipeline and
+           `MaterialDesc::transparent` all existed; nothing connected them. The
+           field's own doc-comment predicted this exact failure — "a cut-out
+           cornea over `opacity 1.0` renders solid".
+        Verified by rendering and looking: the eyes now have irises, pupils and
+        sclera. **Superseded note follows, kept because the reasoning error is
+        the lesson:**
+      - ~~NOT a missing V flip — I was wrong, and the correction is measured.~~
         I concluded last session that OBJ's bottom-left V origin was never
         reconciled with QImage's top-left rows. A controlled test settles it:
         a quad with v=0 at its bottom and a texture that is red on top / blue

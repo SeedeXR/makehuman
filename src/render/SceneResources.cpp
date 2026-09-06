@@ -37,6 +37,29 @@ void bindAll(QRhiShaderResourceBindings* srb, QRhiBuffer* ubuf, QRhiTexture* lit
     });
 }
 
+/// UV-mapped textures are stored bottom-up, because OBJ's V origin is the
+/// LOWER-left of the image while QRhi samples v=0 at the FIRST row. Without
+/// this every diffuse, normal and AO map is read upside down.
+///
+/// The reference makes the same correction for the same reason -- GL's t=0 is
+/// also the first row supplied, so `legacy/python/lib/texture.py:167` flips
+/// before `glTexImage2D`.
+///
+/// The shipped eye is what makes it concrete: the high-poly proxy's front
+/// geometry is a CORNEA UV'd to a small disc, whose texel is
+/// (182,195,255, alpha 0) read correctly -- invisible, so the iris behind shows
+/// through -- and (169,169,165, alpha 255) read upside down, an opaque pale
+/// disc. That disc was the blank white oval the eyes rendered as.
+///
+/// NOT applied to the litsphere: a matcap is indexed by the view-space NORMAL
+/// (`normal * 0.495 + 0.5`), not by a mesh UV, so it is not in this coordinate
+/// system at all. Whether the reference's own flip leaves our matcap lookup
+/// vertically mirrored against it is a separate parity question -- see
+/// memory/todo.md.
+QImage bottomUp(QImage img) {
+    return img.flipped(Qt::Vertical);
+}
+
 /// Three mat4 plus a vec4, matching the `Buf` block in litsphere.vert.
 constexpr quint32 kUboSize = 64 * 3 + 16;
 /// Two vec4, matching the `MeshBuf` block: `material` then `pbr`. Both shaders
@@ -337,7 +360,7 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
                 return std::unexpected(
                     RenderError{RenderErrorKind::TextureMissing, instance.diffuse.string()});
             }
-            diffuse = diffuse.convertToFormat(QImage::Format_RGBA8888);
+            diffuse = bottomUp(diffuse.convertToFormat(QImage::Format_RGBA8888));
         }
 
         QImage normalMap;
@@ -347,7 +370,7 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
                 return std::unexpected(
                     RenderError{RenderErrorKind::TextureMissing, instance.normalMap.string()});
             }
-            normalMap = normalMap.convertToFormat(QImage::Format_RGBA8888);
+            normalMap = bottomUp(normalMap.convertToFormat(QImage::Format_RGBA8888));
         }
 
         QImage aoMap;
@@ -357,7 +380,7 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
                 return std::unexpected(
                     RenderError{RenderErrorKind::TextureMissing, instance.aoMap.string()});
             }
-            aoMap = aoMap.convertToFormat(QImage::Format_RGBA8888);
+            aoMap = bottomUp(aoMap.convertToFormat(QImage::Format_RGBA8888));
         }
 
         // Interleaved, because that is what the vertex layout declares and one

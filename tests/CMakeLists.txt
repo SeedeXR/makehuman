@@ -692,6 +692,22 @@ if(MH_HAVE_RENDER)
     # Owner directive 4: the viewport shades with metallic-roughness as well as
     # with the reference matcap. --render goes through the SAME buildScene() and
     # the same SceneResources as the window, so this covers both.
+    # The shipped eye material is `transparent True`, and until now that flag
+    # never left the material: `ViewportMaps::transparent` was unassigned, so
+    # every worn thing drew in the OPAQUE pass with its alpha discarded. The
+    # eye's front geometry is a cornea whose texel is alpha 0 -- invisible when
+    # blended, an opaque pale disc when not, which is why the eyes rendered as
+    # blank white ovals.
+    #
+    # Asserted from the count the SCENE reports, not from the material: an
+    # earlier version of this printed the material's own flag and was blind to
+    # exactly the wiring it was meant to cover.
+    add_test(NAME app_eye_is_blended COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_blend.png)
+    set_tests_properties(app_eye_is_blended PROPERTIES
+        PASS_REGULAR_EXPRESSION "scene: 2 meshes \\(1 blended\\)"
+        SKIP_REGULAR_EXPRESSION "cannot render")
+
     add_test(NAME app_render_pbr COMMAND makehuman
              --render ${CMAKE_CURRENT_BINARY_DIR}/app_render_pbr.png --shading pbr)
     set_tests_properties(app_render_pbr PROPERTIES
