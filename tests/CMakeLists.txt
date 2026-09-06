@@ -265,7 +265,7 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_skin_material_picker COMMAND makehuman
              --render ${CMAKE_CURRENT_BINARY_DIR}/app_picker.png)
     set_tests_properties(app_skin_material_picker PROPERTIES
-        PASS_REGULAR_EXPRESSION "asset groups: 5 \\(skin materials: 9, rigs: 2\\)"
+        PASS_REGULAR_EXPRESSION "asset groups: 6 \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # The rig had no picker either: two ship, --rig has always chosen between
@@ -702,6 +702,42 @@ if(MH_HAVE_RENDER)
     # Asserted from the count the SCENE reports, not from the material: an
     # earlier version of this printed the material's own flag and was blind to
     # exactly the wiring it was meant to cover.
+    # Eye COLOUR is independent of the Eyes group, which picks the geometry.
+    # Six groups now: Skin, Pose, Eyes, Skin material, Eye colour, Skeleton.
+    add_test(NAME app_eye_colour COMMAND makehuman
+             --eye-colour green
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_eye_colour.png)
+    set_tests_properties(app_eye_colour PROPERTIES
+        PASS_REGULAR_EXPRESSION "asset groups: 6 \\(skin materials: 9, rigs: 2\\)"
+        SKIP_REGULAR_EXPRESSION "cannot render")
+
+    # Refused rather than silently defaulted to brown, which would make a typo
+    # produce a plausible character that is not the one asked for.
+    add_test(NAME app_eye_colour_unknown COMMAND makehuman
+             --eye-colour chartreuse
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_eye_bad.png)
+    set_tests_properties(app_eye_colour_unknown PROPERTIES
+        PASS_REGULAR_EXPRESSION "unknown --eye-colour")
+
+    # Saved in the .mhm and restored, like the skin material. The eye GEOMETRY
+    # and the eye COLOUR are separate lines and both have to survive.
+    add_test(NAME app_eye_colour_save COMMAND makehuman
+             --eye-colour blue --save ${CMAKE_CURRENT_BINARY_DIR}/app_eye_colour.mhm)
+    set_tests_properties(app_eye_colour_save PROPERTIES FIXTURES_SETUP app_eye_colour_mhm)
+    add_test(NAME app_eye_colour_saved_line COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_eye_colour.mhm
+             "-DKEYS=eyeMaterial eyes/materials/blue.mhmat"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_eye_colour_saved_line PROPERTIES
+        FIXTURES_REQUIRED app_eye_colour_mhm)
+    add_test(NAME app_eye_colour_reload COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/app_eye_colour.mhm
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_eye_colour_reload.png)
+    set_tests_properties(app_eye_colour_reload PROPERTIES
+        PASS_REGULAR_EXPRESSION "eye colour blue \\(from the file\\)"
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_REQUIRED app_eye_colour_mhm)
+
     add_test(NAME app_eye_is_blended COMMAND makehuman
              --render ${CMAKE_CURRENT_BINARY_DIR}/app_blend.png)
     set_tests_properties(app_eye_is_blended PROPERTIES

@@ -395,10 +395,14 @@ struct WornProxy {
     std::optional<mh::foundation::MaterialDesc> material;
 };
 
+/// Defined below with the other material helpers; needed here so a worn eye can
+/// pick up the chosen colour.
+std::filesystem::path eyeMaterialPath();
+
 /// Loads @p path and fits it to @p body once, so the caller gets something
 /// renderable or nothing.
 std::optional<WornProxy> wearProxy(const std::filesystem::path& path, const mh::core::Mesh& body,
-                                   std::filesystem::path litsphere) {
+                                   std::filesystem::path litsphere, bool isEyes = false) {
     auto proxy = mh::core::loadProxy(path);
     if (!proxy) {
         std::fprintf(stderr, "cannot load proxy %s: %s\n", path.string().c_str(),
@@ -416,6 +420,12 @@ std::optional<WornProxy> wearProxy(const std::filesystem::path& path, const mh::
     if (!mesh) {
         std::fprintf(stderr, "cannot load proxy geometry %s\n", proxy->objFile.string().c_str());
         return std::nullopt;
+    }
+    // The eye colour overrides whatever material the .mhclo names. Only for
+    // the eyes: nothing else has a colour choice yet, and silently repointing
+    // every proxy's material would be a much larger promise.
+    if (isEyes && std::filesystem::exists(eyeMaterialPath())) {
+        proxy->materialFile = eyeMaterialPath();
     }
     WornProxy worn{std::move(*proxy), std::move(*mesh), {}, std::move(litsphere), std::nullopt};
     if (!worn.proxy.materialFile.empty()) {
@@ -478,12 +488,14 @@ std::string selectedChoice(std::span<const mh::foundation::AssetGroup> groups,
 /// Defined further down, next to the rest of the skin-material helpers; needed
 /// here so the picker can list them.
 std::vector<std::string> availableSkinMaterials();
+std::vector<std::string> availableEyeColours();
 
 std::vector<mh::foundation::AssetGroup> buildAssetGroups(const std::string& currentPose,
                                                          const std::string& currentSkin,
                                                          const std::string& currentEyes,
                                                          const std::string& currentMaterial,
-                                                         const std::string& currentRig) {
+                                                         const std::string& currentRig,
+                                                         const std::string& currentEyeColour) {
     namespace fs = std::filesystem;
     std::vector<mh::foundation::AssetGroup> groups;
 
@@ -565,6 +577,19 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(const std::string& curr
     // window could not. The `.mhm` already round-trips the choice
     // (`skeleton <name>.mhskel`, written and read), so this was the only piece
     // missing.
+    // Independent of the Eyes group above: that picks the GEOMETRY, this picks
+    // the material worn on it. Both have to survive a save, so both are saved.
+    mh::foundation::AssetGroup eyeColours;
+    eyeColours.name = "Eye colour";
+    for (const std::string& stem : availableEyeColours()) {
+        eyeColours.choices.push_back({stem, prettyName(fs::path(stem), "")});
+        if (stem == currentEyeColour) {
+            eyeColours.selected = static_cast<int>(eyeColours.choices.size()) - 1;
+        }
+    }
+    if (eyeColours.selected < 0 && !eyeColours.choices.empty()) eyeColours.selected = 0;
+    groups.push_back(std::move(eyeColours));
+
     mh::foundation::AssetGroup skeletons;
     skeletons.name = "Skeleton";
     for (const std::string& stem : rigStems()) {
@@ -878,6 +903,33 @@ std::optional<std::pair<int, int>> blendedSkinTone(const mh::core::Human& human,
 std::string& skinMaterialRef() {
     static std::string name{"default"};
     return name;
+}
+
+/// The chosen eye colour's stem under `data/eyes/materials`, e.g. `green`.
+///
+/// Separate from the Eyes group, which picks the PROXY (high- or low-poly
+/// geometry). Colour is the material worn on whichever proxy that is, so the
+/// two are independent choices and both have to survive a save.
+std::string& eyeColourRef() {
+    static std::string name{"brown"};
+    return name;
+}
+
+std::filesystem::path eyeMaterialPath() {
+    return dataDir() / "eyes" / "materials" / (eyeColourRef() + ".mhmat");
+}
+
+/// The eye colours on disk, by stem, sorted. `brown` first: it is the shipped
+/// original and the one every other colour is a recolour of.
+std::vector<std::string> availableEyeColours() {
+    std::vector<std::string> out;
+    for (const auto& p : filesWithExtension(dataDir() / "eyes" / "materials", ".mhmat"))
+        out.push_back(p.stem().string());
+    std::ranges::sort(out);
+    if (const auto it = std::ranges::find(out, "brown"); it != out.end()) {
+        std::rotate(out.begin(), it, it + 1);
+    }
+    return out;
 }
 
 std::filesystem::path skinMaterialPath() {
@@ -1297,6 +1349,11 @@ int main(int argc, char** argv) {
     const QCommandLineOption transparentOpt(
         QStringLiteral("transparent"),
         QStringLiteral("Render --render's background transparent, for compositing."));
+    const QCommandLineOption eyeColourOpt(
+        QStringLiteral("eye-colour"),
+        QStringLiteral("Iris colour worn on the eye proxy: brown, amber, hazel, green, blue or "
+                       "grey. Independent of --eyes, which picks the geometry."),
+        QStringLiteral("name"), QStringLiteral("brown"));
     const QCommandLineOption randomOpt(
         QStringLiteral("random"),
         QStringLiteral("Randomise the character with this seed. Deterministic: the same seed "
@@ -1384,6 +1441,7 @@ int main(int argc, char** argv) {
     parser.addOption(setOpt);
     parser.addOption(renderOpt);
     parser.addOption(transparentOpt);
+    parser.addOption(eyeColourOpt);
     parser.addOption(randomOpt);
     parser.addOption(shadingOpt);
     parser.addOption(rigOpt);
@@ -1434,6 +1492,20 @@ int main(int argc, char** argv) {
         return 1;
     }
     const std::vector<mh::foundation::TaskViewSpec>& views = standard->views;
+
+    if (parser.isSet(eyeColourOpt)) {
+        const std::string want = parser.value(eyeColourOpt).toStdString();
+        const auto available   = availableEyeColours();
+        if (std::ranges::find(available, want) == available.end()) {
+            std::string list;
+            for (const auto& n : available)
+                list += (list.empty() ? "" : ", ") + n;
+            std::fprintf(stderr, "unknown --eye-colour %s; available: %s\n", want.c_str(),
+                         list.c_str());
+            return 1;
+        }
+        eyeColourRef() = want;
+    }
 
     if (parser.isSet(skinMaterialOpt)) {
         const std::string want = parser.value(skinMaterialOpt).toStdString();
@@ -1556,6 +1628,18 @@ int main(int argc, char** argv) {
     // (`skins/african_deep.mhmat`); we select by stem, so take the stem and
     // ignore a material from a directory we do not ship rather than failing the
     // load over it.
+    // Same precedence as the skin material: the command line wins over the file.
+    if (!parser.isSet(eyeColourOpt)) {
+        if (const auto fromDoc = valueFromDocument(document, "eyeMaterial")) {
+            const std::string stem = std::filesystem::path(*fromDoc).stem().string();
+            const auto available   = availableEyeColours();
+            if (std::ranges::find(available, stem) != available.end()) {
+                eyeColourRef() = stem;
+                std::printf("eye colour %s (from the file)\n", stem.c_str());
+            }
+        }
+    }
+
     if (!parser.isSet(skinMaterialOpt)) {
         if (const auto fromDoc = valueFromDocument(document, "skinMaterial")) {
             const std::string stem = std::filesystem::path(*fromDoc).stem().string();
@@ -1634,7 +1718,7 @@ int main(int argc, char** argv) {
     // on the material actually in use instead of on `default`.
     const auto assetGroups =
         buildAssetGroups(parser.value(poseOpt).toStdString(), parser.value(skinOpt).toStdString(),
-                         eyesChoice, skinMaterialRef(), rigNameRef());
+                         eyesChoice, skinMaterialRef(), rigNameRef(), eyeColourRef());
     // Announced so a test can see the picker was built at all -- a group that
     // silently ends up empty renders as a disabled combo box nobody notices.
     std::printf("asset groups: %zu (skin materials: %zu, rigs: %zu)\n", assetGroups.size(),
@@ -1651,7 +1735,7 @@ int main(int argc, char** argv) {
     // window would: exporting a dressed character naked was the bug.
     if (const std::string eyes = selectedChoice(assetGroups, "Eyes");
         !eyes.empty() && eyes != kNoProxy) {
-        if (auto worn = wearProxy(eyes, *mesh, eyeLitsphere())) {
+        if (auto worn = wearProxy(eyes, *mesh, eyeLitsphere(), /*isEyes=*/true)) {
             wornProxies.insert_or_assign(QStringLiteral("Eyes"), std::move(*worn));
         }
     }
@@ -1676,6 +1760,7 @@ int main(int argc, char** argv) {
         // (3_libraries_material_chooser.py:305). Without it a textured
         // character reopened as the untextured default and the choice was gone.
         recordLine(doc, "skinMaterial", "skins/" + skinMaterialRef() + ".mhmat");
+        recordLine(doc, "eyeMaterial", "eyes/materials/" + eyeColourRef() + ".mhmat");
         recordLine(doc, "skeleton", rig.loaded() ? rigNameRef() + ".mhskel" : std::string{});
         recordLine(doc, "pose", rig.posed() ? poseChoice : std::string{});
         if (const auto ok = mh::core::saveMhm(file, doc); !ok) {
@@ -2107,6 +2192,23 @@ int main(int argc, char** argv) {
             rebuildInto(*shell);
             return;
         }
+        if (group == QLatin1String("Eye colour")) {
+            eyeColourRef() = id.toStdString();
+            // Re-wear rather than patch: the material is read when the proxy is
+            // loaded, so the worn copy has to be rebuilt to pick up the change.
+            // Nothing to do when no eyes are worn -- the choice still sticks and
+            // applies the moment a pair is put on.
+            if (const auto it = wornProxies.find(QStringLiteral("Eyes")); it != wornProxies.end()) {
+                const std::string current = it->second.proxy.objFile.parent_path().string();
+                if (auto worn = wearProxy(
+                        current + "/" + it->second.proxy.objFile.stem().string() + ".mhclo", *mesh,
+                        eyeLitsphere(), /*isEyes=*/true)) {
+                    wornProxies.insert_or_assign(QStringLiteral("Eyes"), std::move(*worn));
+                }
+            }
+            rebuildInto(*shell);
+            return;
+        }
         if (group == QLatin1String("Eyes")) {
             // Erasing or replacing frees geometry the viewport still holds
             // non-owning spans into. That is safe only because this runs to
@@ -2116,7 +2218,8 @@ int main(int argc, char** argv) {
             // erase and the rebuild reintroduces a use-after-free.
             if (id == QLatin1String(kNoProxy)) {
                 wornProxies.erase(group);
-            } else if (auto worn = wearProxy(id.toStdString(), *mesh, eyeLitsphere())) {
+            } else if (auto worn = wearProxy(id.toStdString(), *mesh, eyeLitsphere(),
+                                             /*isEyes=*/true)) {
                 wornProxies.insert_or_assign(group, std::move(*worn));
             } else {
                 // Loading failed and said why. Take the proxy off rather than

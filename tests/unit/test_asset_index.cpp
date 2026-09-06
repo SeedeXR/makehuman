@@ -52,9 +52,10 @@ TEST_CASE("the shipped assets index by uuid", "[core][assetindex][golden]") {
     if (idx.size() == 0) SKIP("asset data not present");
 
     // Counted from disk: 4 proxies (base.mhclo, a7_converter.proxy, and the two
-    // eye meshes) plus 11 materials -- the 3 originals (xray, default skin,
-    // brown eye) and the 8 generated skin tones (tools/make_skins.py).
-    CHECK(idx.size() == 15);
+    // eye meshes) plus 16 materials -- the 3 originals (xray, default skin,
+    // brown eye), the 8 generated skin tones (tools/make_skins.py) and the 5
+    // generated eye colours (tools/make_eyes.py).
+    CHECK(idx.size() == 20);
     CHECK(idx.duplicateUuids().empty());
 
     // The eye proxy's UUID, as it appears in data/eyes/high-poly/high-poly.mhclo.
