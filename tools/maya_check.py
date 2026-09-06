@@ -26,6 +26,14 @@ EXPECT = {
     "ours.fbx": {
         "meshes": 1,
         "vertices": 21833,
+        "uv_sets": 1,
+        # Checked by NAME. An empty Maya scene already ships lambert1 and
+        # friends, and which defaults exist depends on the version, so a count
+        # is a number nobody can verify -- but "our material is there" is.
+        "material_names contains": "Skin",
+        # The RELATIVE path, as the material names it. An absolute path from
+        # the build machine would be a broken link everywhere else.
+        "file_textures contains": "textures/skin/african_deep.png",
     },
     "posed.fbx": {
         "joints": 179,
@@ -57,7 +65,16 @@ for line in sys.stdin:
         print(f"skip {name}: no expectation recorded")
         continue
 
-    problems = [f"{k} {d.get(k)!r} != {v!r}" for k, v in want.items() if d.get(k) != v]
+    problems = []
+    for key, expected in want.items():
+        # `<field> contains <value>` for the list-valued reports, where the
+        # scene's own defaults sit alongside what we wrote.
+        if key.endswith(" contains"):
+            field = key[: -len(" contains")]
+            if expected not in (d.get(field) or []):
+                problems.append(f"{field} {d.get(field)!r} does not contain {expected!r}")
+        elif d.get(key) != expected:
+            problems.append(f"{key} {d.get(key)!r} != {expected!r}")
     if problems:
         print(f"FAIL {name}: " + "; ".join(problems))
         failures += 1

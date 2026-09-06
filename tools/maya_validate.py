@@ -127,6 +127,31 @@ def _deforms_when_posed():
     return max(abs(a - b) for a, b in zip(before, after)) > 1.0
 
 
+def _shading():
+    """UV sets, materials and file textures, as Maya resolves them.
+
+    Blender reports UV layers too, but Maya is the reference implementation of
+    this format: if the two disagree about whether a texture arrived, Maya is
+    the one to believe.
+    """
+    meshes = [m for m in (cmds.ls(type="mesh", long=True) or [])
+              if isinstance(cmds.polyEvaluate(m, vertex=True), int)]
+    uv_sets = 0
+    for m in meshes:
+        names = cmds.polyUVSet(m, query=True, allUVSets=True) or []
+        uv_sets = max(uv_sets, len(names))
+    files = cmds.ls(type="file") or []
+    return {
+        "uv_sets": uv_sets,
+        # NAMES, not a count. An empty Maya scene already ships defaults --
+        # `lambert1` and friends -- and which ones depends on the version, so a
+        # count is a number nobody can check. A name is checkable: the caller
+        # asserts that the material WE wrote is in the list.
+        "material_names": sorted(cmds.ls(materials=True) or []),
+        "file_textures": [cmds.getAttr(f + ".fileTextureName") for f in files],
+    }
+
+
 def describe(path):
     _import(path)
     meshes = [m for m in (cmds.ls(type="mesh", long=True) or [])
@@ -152,6 +177,7 @@ def describe(path):
         "deformed_extent": deformed,
         "live_rig": live,
         "deforms_when_posed": _deforms_when_posed(),
+        **_shading(),
     }
 
 

@@ -301,6 +301,51 @@ Node normalLayer(const foundation::RenderView& mesh) {
 /// meshes whenever no material was connected to it, and accepted the identical
 /// geometry as soon as one was -- so the mesh needs a material to exist, and
 /// the material needs this layer to be addressed by.
+/// `LayerElementUV`, `ByPolygonVertex`/`IndexToDirect`.
+///
+/// The direct array is our per-vertex UVs and the index array is the polygon
+/// index list, unnegated -- our RenderView already has exactly the shape this
+/// form wants, so it stores each UV once and costs nothing to produce.
+///
+/// V is NOT flipped. FBX's UV origin is the lower-left, like OBJ's; glTF is the
+/// odd one out (session 150 checked all four formats against each other in
+/// Blender) and flipping here would mirror every texture vertically.
+Node uvLayer(const foundation::RenderView& mesh) {
+    Node u("LayerElementUV");
+    u.addI32(0);
+    Node v("Version");
+    v.addI32(101);
+    u.add(std::move(v));
+    Node name("Name");
+    name.addString("UVMap");
+    u.add(std::move(name));
+    Node mapping("MappingInformationType");
+    mapping.addString("ByPolygonVertex");
+    u.add(std::move(mapping));
+    Node reference("ReferenceInformationType");
+    reference.addString("IndexToDirect");
+    u.add(std::move(reference));
+
+    std::vector<double> uvs;
+    uvs.reserve(mesh.texco.size() * 2);
+    for (const foundation::Vec2& t : mesh.texco) {
+        uvs.push_back(static_cast<double>(t.x));
+        uvs.push_back(static_cast<double>(t.y));
+    }
+    Node data("UV");
+    data.addArray('d', uvs);
+    u.add(std::move(data));
+
+    std::vector<int32_t> indices;
+    indices.reserve(mesh.index.size());
+    for (const uint32_t i : mesh.index)
+        indices.push_back(static_cast<int32_t>(i));
+    Node idx("UVIndex");
+    idx.addArray('i', indices);
+    u.add(std::move(idx));
+    return u;
+}
+
 Node materialLayer() {
     Node m("LayerElementMaterial");
     m.addI32(0);
@@ -333,7 +378,7 @@ Node layerEntry(std::string_view type) {
     return e;
 }
 
-Node layer() {
+Node layer(bool withUVs) {
     Node l("Layer");
     l.addI32(0);
     Node v("Version");
@@ -341,15 +386,31 @@ Node layer() {
     l.add(std::move(v));
     l.add(layerEntry("LayerElementNormal"));
     l.add(layerEntry("LayerElementMaterial"));
+    if (withUVs) l.add(layerEntry("LayerElementUV"));
     return l;
 }
 
 /// A minimal Lambert material. Stage 2 gives it the real colours; stage 1 needs
 /// it to exist at all, for the reason `materialLayer` records.
-Node material(int64_t id, const std::string& name) {
+Node colourProperty(std::string_view name, const foundation::Vec3& c) {
+    Node p = property70(name, "Color", "", "A");
+    p.addF64(static_cast<double>(c.x));
+    p.addF64(static_cast<double>(c.y));
+    p.addF64(static_cast<double>(c.z));
+    return p;
+}
+
+/// A Lambert material carrying the description's own colours.
+///
+/// `ShininessExponent`, not `Shininess`: `MaterialDesc::shininess` is 0..1 and
+/// every Blinn-Phong interchange format wants the EXPONENT, which is what
+/// `specularExponentOf` converts it to. Writing the 0..1 number into an
+/// exponent field says "almost perfectly matte" for a value that means the
+/// opposite -- the same trap `Geometry.h` documents for Collada and FBX alike.
+Node materialNode(int64_t id, const std::string& name, const foundation::MaterialDesc* desc) {
     Node m("Material");
     m.addI64(id);
-    m.addString(objectName(name, "Material"));
+    m.addString(objectName(desc != nullptr && !desc->name.empty() ? desc->name : name, "Material"));
     m.addString("");
     Node v("Version");
     v.addI32(102);
@@ -360,14 +421,96 @@ Node material(int64_t id, const std::string& name) {
     Node multi("MultiLayer");
     multi.addI32(0);
     m.add(std::move(multi));
+
     Node props("Properties70");
-    Node diffuse = property70("DiffuseColor", "Color", "", "A");
-    diffuse.addF64(0.8);
-    diffuse.addF64(0.8);
-    diffuse.addF64(0.8);
-    props.add(std::move(diffuse));
+    const foundation::Vec3 diffuse  = desc != nullptr ? desc->diffuse : foundation::Vec3{1, 1, 1};
+    const foundation::Vec3 specular = desc != nullptr ? desc->specular : foundation::Vec3{0, 0, 0};
+    const foundation::Vec3 ambient  = desc != nullptr ? desc->ambient : foundation::Vec3{0, 0, 0};
+    props.add(colourProperty("AmbientColor", ambient));
+    props.add(colourProperty("DiffuseColor", diffuse));
+    props.add(colourProperty("SpecularColor", specular));
+    Node shine = property70("ShininessExponent", "Number", "", "A");
+    shine.addF64(static_cast<double>(
+        foundation::specularExponentOf(desc != nullptr ? desc->shininess : 0.2F)));
+    props.add(std::move(shine));
+    if (desc != nullptr && desc->opacity < 1.0F) {
+        Node opacity = property70("Opacity", "Number", "", "A");
+        opacity.addF64(static_cast<double>(desc->opacity));
+        props.add(std::move(opacity));
+    }
     m.add(std::move(props));
     return m;
+}
+
+/// The two objects a file texture takes, read out of Maya's own output: a
+/// `Video` holding the path and a `Texture` naming it through `Media`.
+///
+/// They are separate because FBX lets several textures share one image. We
+/// write one pair per texture, which is the simple case and the only one this
+/// writer produces.
+Node videoClip(int64_t id, const std::string& name, const std::string& path) {
+    Node v("Video");
+    v.addI64(id);
+    v.addString(objectName(name, "Video"));
+    v.addString("Clip");
+    Node type("Type");
+    type.addString("Clip");
+    v.add(std::move(type));
+    v.add(Node("Properties70"));
+    Node mip("UseMipMap");
+    mip.addI32(0);
+    v.add(std::move(mip));
+    Node file("Filename");
+    file.addString(path);
+    v.add(std::move(file));
+    Node rel("RelativeFilename");
+    rel.addString(path);
+    v.add(std::move(rel));
+    return v;
+}
+
+Node textureNode(int64_t id, const std::string& name, const std::string& path) {
+    Node t("Texture");
+    t.addI64(id);
+    t.addString(objectName(name, "Texture"));
+    t.addString("");
+    Node type("Type");
+    type.addString("TextureVideoClip");
+    t.add(std::move(type));
+    Node v("Version");
+    v.addI32(202);
+    t.add(std::move(v));
+    Node tname("TextureName");
+    tname.addString(objectName(name, "Texture"));
+    t.add(std::move(tname));
+    t.add(Node("Properties70"));
+    Node media("Media");
+    media.addString(objectName(name, "Video"));
+    t.add(std::move(media));
+    Node file("FileName");
+    file.addString(path);
+    t.add(std::move(file));
+    Node rel("RelativeFilename");
+    rel.addString(path);
+    t.add(std::move(rel));
+    Node uvt("ModelUVTranslation");
+    uvt.addF64(0.0);
+    uvt.addF64(0.0);
+    t.add(std::move(uvt));
+    Node uvs("ModelUVScaling");
+    uvs.addF64(1.0);
+    uvs.addF64(1.0);
+    t.add(std::move(uvs));
+    Node alpha("Texture_Alpha_Source");
+    alpha.addString("None");
+    t.add(std::move(alpha));
+    Node crop("Cropping");
+    crop.addI32(0);
+    crop.addI32(0);
+    crop.addI32(0);
+    crop.addI32(0);
+    t.add(std::move(crop));
+    return t;
 }
 
 /// The scene document, and the `RootNode` that says where its root is.
@@ -412,9 +555,9 @@ Node definitions() {
     v.addI32(100);
     d.add(std::move(v));
     Node c("Count");
-    c.addI32(3);
+    c.addI32(5);
     d.add(std::move(c));
-    for (const char* type : {"Geometry", "Material", "Model"}) {
+    for (const char* type : {"Geometry", "Material", "Model", "Texture", "Video"}) {
         Node o("ObjectType");
         o.addString(type);
         Node oc("Count");
@@ -465,8 +608,10 @@ Node geometry(int64_t id, const foundation::RenderView& mesh, const Transform& x
     g.add(std::move(gv));
 
     if (mesh.vnorm.size() == mesh.coord.size()) g.add(normalLayer(mesh));
+    const bool withUVs = mesh.texco.size() == mesh.coord.size();
+    if (withUVs) g.add(uvLayer(mesh));
     g.add(materialLayer());
-    g.add(layer());
+    g.add(layer(withUVs));
     return g;
 }
 
@@ -509,7 +654,8 @@ Node model(int64_t id, const std::string& name) {
 
 /// `C` records wire objects together. Object-to-object here: the geometry hangs
 /// off the model, and the model off the scene root (id 0).
-Node connections(int64_t geometryId, int64_t modelId, int64_t materialId) {
+Node connections(int64_t geometryId, int64_t modelId, int64_t materialId, int64_t textureId,
+                 int64_t videoId) {
     Node c("Connections");
     // Model to the scene root FIRST, then the geometry onto the model, which is
     // the order both assimp and Maya write. A reader that builds the graph as
@@ -529,6 +675,24 @@ Node connections(int64_t geometryId, int64_t modelId, int64_t materialId) {
     mat.addI64(materialId);
     mat.addI64(modelId);
     c.add(std::move(mat));
+
+    if (textureId != 0) {
+        // `OP`, object-to-PROPERTY: this is what makes the image the material's
+        // DIFFUSE map rather than an unattached picture. The property name is
+        // the fourth field, and Maya writes exactly this.
+        Node tex("C");
+        tex.addString("OP");
+        tex.addI64(textureId);
+        tex.addI64(materialId);
+        tex.addString("DiffuseColor");
+        c.add(std::move(tex));
+
+        Node vid("C");
+        vid.addString("OO");
+        vid.addI64(videoId);
+        vid.addI64(textureId);
+        c.add(std::move(vid));
+    }
     return c;
 }
 
@@ -559,7 +723,8 @@ std::string FbxWriteError::message() const {
 
 std::expected<FbxWriteResult, FbxWriteError> writeFbx(const std::filesystem::path& path,
                                                       const foundation::RenderView& mesh,
-                                                      const FbxWriteOptions& options) {
+                                                      const FbxWriteOptions& options,
+                                                      const foundation::MaterialDesc* material) {
     if (mesh.coord.empty() || mesh.index.empty()) {
         return std::unexpected(FbxWriteError{FbxWriteErrorKind::EmptyMesh, path.string(), {}});
     }
@@ -592,6 +757,17 @@ std::expected<FbxWriteResult, FbxWriteError> writeFbx(const std::filesystem::pat
     constexpr int64_t kGeometryId = 2'000'000;
     constexpr int64_t kMaterialId = 3'000'000;
     constexpr int64_t kModelId    = 4'000'000;
+    constexpr int64_t kTextureId  = 5'000'000;
+    constexpr int64_t kVideoId    = 6'000'000;
+
+    const bool withTexture = material != nullptr && !material->diffuseTexture.empty();
+    // The path as the material names it. An absolute path from the build
+    // machine would be a broken link everywhere else, and FBX's two filename
+    // fields exist precisely so a consumer can fall back to the relative one.
+    const std::string texturePath =
+        withTexture ? material->diffuseTexture.generic_string() : std::string{};
+    const std::string textureName =
+        withTexture ? material->diffuseTexture.stem().string() : std::string{};
 
     headerExtension().writeTo(out);
     // Maya and assimp both write these three between the header extension and
@@ -613,11 +789,17 @@ std::expected<FbxWriteResult, FbxWriteError> writeFbx(const std::filesystem::pat
 
     Node objects("Objects");
     objects.add(geometry(kGeometryId, mesh, xf, kVertsPerPolygon));
-    objects.add(material(kMaterialId, options.materialName));
+    objects.add(materialNode(kMaterialId, options.materialName, material));
     objects.add(model(kModelId, options.meshName));
+    if (withTexture) {
+        objects.add(textureNode(kTextureId, textureName, texturePath));
+        objects.add(videoClip(kVideoId, textureName, texturePath));
+    }
     objects.writeTo(out);
 
-    connections(kGeometryId, kModelId, kMaterialId).writeTo(out);
+    connections(kGeometryId, kModelId, kMaterialId, withTexture ? kTextureId : 0,
+                withTexture ? kVideoId : 0)
+        .writeTo(out);
 
     // The top-level list is terminated like any other child list.
     out.insert(out.end(), 25, 0U);

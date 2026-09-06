@@ -1725,7 +1725,29 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
          with `mh_fbx_probe` and requires Maya to report 1 mesh / 21,833 verts.
          `.fbx` export still goes through assimp -- our writer has no UVs,
          materials or skin yet, so the application is unchanged.
-      2. Normals, UVs, materials, textures.
+      2. **Normals, UVs, materials, textures — DONE.** `LayerElementUV`
+         (`ByPolygonVertex`/`IndexToDirect`: our per-vertex UVs are the direct
+         array and the polygon list is already the index into it), the material's
+         real `MaterialDesc` colours, and a diffuse texture as the `Texture` +
+         `Video` pair Maya writes, wired with an `OP ... DiffuseColor`
+         connection.
+         - **V is NOT flipped.** FBX's UV origin is the lower-left like OBJ's;
+           glTF is the odd one out. Blender reports our FBX's top-of-head UV as
+           `[[0.66091, 0.42167], [0.66091, 0.54467]]` — the same two seam UVs
+           our OBJ and glTF exports give.
+         - `ShininessExponent`, not `Shininess`: `MaterialDesc::shininess` is
+           0..1 and FBX wants the exponent, so `specularExponentOf` converts.
+         - **Maya confirms all of it**: 1 mesh, 21,833 vertices, `uv_sets: 1`,
+           our material by NAME (`Skin`), and the file texture at its RELATIVE
+           path. The harness asserts each, with `contains` checks for the lists
+           because an empty Maya scene already ships `lambert1` and friends.
+         - Rendered in Blender with the texture resolvable: eyebrows, eyes and
+           lips land in the right places, which a mirrored V would not give.
+         - **A mutation caught my own comment being wrong.** The V-flip test
+           used UVs of 0.25 and 0.75, which are symmetric about 0.5 — so
+           flipping maps the set onto itself and a membership check passes
+           either way, while the comment claimed it could not. Now 0.25 and
+           0.60, and the test also asserts the FLIPPED values are absent.
       3. Skin + bind poses — the live rig, which is the whole reason for this.
       4. Blend shapes.
       Measured so far: Maya 2027 writes **FBX 7700** (FBX SDK 2020.3.9), assimp

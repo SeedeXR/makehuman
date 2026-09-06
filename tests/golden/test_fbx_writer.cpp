@@ -314,6 +314,123 @@ TEST_CASE("each polygon is closed by a negated index", "[io][fbx]") {
     std::filesystem::remove(out, ec);
 }
 
+TEST_CASE("UVs are written, and NOT flipped", "[io][fbx]") {
+    // FBX's UV origin is the LOWER-left, the same as OBJ's -- so V passes
+    // through untouched. glTF is the odd one out and flips (session 150 checked
+    // all four formats against each other in Blender), and applying that flip
+    // here would mirror every texture vertically.
+    const auto out = tempFbx("uv");
+    core::Mesh m("quad", 4);
+    REQUIRE(m.setCoords({{0, 0, 0}, {2, 0, 0}, {2, 0, 3}, {0, 0, 3}}).has_value());
+    // 0.25 and 0.60, NOT 0.25 and 0.75. The obvious pair is symmetric about
+    // 0.5, so flipping V maps the set onto itself and a membership check passes
+    // either way -- which is exactly what happened: the flip mutation survived
+    // the first version of this test, and the comment then claimed it could
+    // not. 1 - 0.25 = 0.75 and 1 - 0.60 = 0.40, neither of which is a source
+    // value.
+    REQUIRE(m.setUVs({{0.0F, 0.25F}, {1.0F, 0.25F}, {1.0F, 0.60F}, {0.0F, 0.60F}}).has_value());
+    m.addFaceGroup("g");
+    REQUIRE(m.setFaces({0, 1, 2, 3}, {0, 1, 2, 3}, {0}).has_value());
+    m.buildAdjacency();
+    m.calcNormals();
+
+    const auto rm = core::RenderMesh::build(m);
+    REQUIRE(io::writeFbx(out, rm.view()).has_value());
+
+    const auto b = readAll(out);
+    const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
+    REQUIRE(blob.find("LayerElementUV") != std::string::npos);
+    // IndexToDirect, like both Maya and assimp: our per-vertex UVs ARE the
+    // direct array and the polygon list is already the index into it, so this
+    // form costs nothing and stores each UV once.
+    REQUIRE(blob.find("IndexToDirect") != std::string::npos);
+    REQUIRE(blob.find("UVIndex") != std::string::npos);
+
+    const auto src = rm.view().texco;
+    REQUIRE(src.size() == 4);
+    const auto bytesOf = [](double v) {
+        std::string bytes(sizeof(double), '\0');
+        std::memcpy(bytes.data(), &v, sizeof(v));
+        return bytes;
+    };
+    for (const auto& uv : src) {
+        const auto v = static_cast<double>(uv.y);
+        INFO("source V " << v);
+        // Present unflipped ...
+        CHECK(blob.find(bytesOf(v)) != std::string::npos);
+        // ... and its flip absent, which is the half that catches the mistake.
+        CHECK(blob.find(bytesOf(1.0 - v)) == std::string::npos);
+    }
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("the material carries the description's colours", "[io][fbx]") {
+    const auto out = tempFbx("material");
+    const auto m   = quad();
+    foundation::MaterialDesc desc;
+    desc.name      = "Skin";
+    desc.diffuse   = {0.76F, 0.62F, 0.53F};
+    desc.specular  = {0.1F, 0.2F, 0.3F};
+    desc.shininess = 0.25F;
+    REQUIRE(io::writeFbx(out, core::RenderMesh::build(m).view(), {}, &desc).has_value());
+
+    const auto b = readAll(out);
+    const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
+    for (const char* p : {"DiffuseColor", "SpecularColor", "ShininessExponent"}) {
+        INFO(p);
+        CHECK(blob.find(p) != std::string::npos);
+    }
+    // The VALUE, not just the property name: a writer that emitted the names
+    // with defaults behind them would pass the check above.
+    const double red = static_cast<double>(desc.diffuse.x);
+    std::string bytes(sizeof(double), '\0');
+    std::memcpy(bytes.data(), &red, sizeof(red));
+    CHECK(blob.find(bytes) != std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("a diffuse texture becomes a Texture and a Video", "[io][fbx]") {
+    // Read out of Maya's own output: a file texture is TWO objects -- a Video
+    // holding the path and a Texture referring to it by name -- wired with an
+    // `OP` connection naming the material property it drives.
+    const auto out = tempFbx("texture");
+    const auto m   = quad();
+    foundation::MaterialDesc desc;
+    desc.diffuseTexture = "textures/skin/african_deep.png";
+    REQUIRE(io::writeFbx(out, core::RenderMesh::build(m).view(), {}, &desc).has_value());
+
+    const auto b = readAll(out);
+    const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
+    CHECK(blob.find("TextureVideoClip") != std::string::npos);
+    CHECK(blob.find("RelativeFilename") != std::string::npos);
+    CHECK(blob.find("african_deep.png") != std::string::npos);
+    // The connection that makes it a DIFFUSE texture rather than an orphan.
+    CHECK(blob.find("OP") != std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("no texture means no Texture object", "[io][fbx]") {
+    // An empty Texture pointing at nothing is worse than none: a DCC shows a
+    // missing-file error for a texture the material never had.
+    const auto out = tempFbx("notexture");
+    const auto m   = quad();
+    foundation::MaterialDesc desc;  // no diffuseTexture
+    REQUIRE(io::writeFbx(out, core::RenderMesh::build(m).view(), {}, &desc).has_value());
+
+    const auto b = readAll(out);
+    const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
+    CHECK(blob.find("TextureVideoClip") == std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
 TEST_CASE("an empty mesh is refused rather than written", "[io][fbx]") {
     // A zero-vertex FBX parses fine and imports as nothing, which is the worst
     // of both: no error and no model.

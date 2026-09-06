@@ -2140,6 +2140,54 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-07 07:45:00 — Session 164 · **FBX stage 2: UVs, materials and a texture, in both readers**
+
+### The chunk
+`LayerElementUV` (`ByPolygonVertex`/`IndexToDirect` — our per-vertex UVs ARE
+the direct array and the polygon list is already the index into it, so the
+compact form costs nothing), the material's real `MaterialDesc` colours, and a
+diffuse texture as the `Texture` + `Video` pair, wired with an
+`OP ... DiffuseColor` connection.
+
+The texture shape was read out of Maya's own output again: a `Video` holding
+the path and a `Texture` naming it through `Media`, with `TextureVideoClip`,
+`ModelUVTranslation`, `ModelUVScaling`, `Texture_Alpha_Source` and `Cropping`.
+Guessing that from the spec alone would have taken far longer than asking Maya
+to write one.
+
+### Both readers agree
+- **Maya**: 1 mesh, 21,833 vertices, `uv_sets: 1`, our material by NAME
+  (`Skin`), and the file texture at its RELATIVE path.
+- **Blender**: 21,833 verts, 26,756 tris, 1 UV layer, 1 material, and the
+  top-of-head UV `[[0.66091, 0.42167], [0.66091, 0.54467]]` — the same two seam
+  UVs our OBJ and glTF exports give, so V is right.
+- **Rendered it and looked**: with the texture resolvable, eyebrows, eyes and
+  lips land in the right places. A mirrored V would put the forehead on the
+  chin.
+
+### The mutation caught my comment, not just my code
+The V-flip test used UVs of **0.25 and 0.75** — symmetric about 0.5, so
+flipping maps the set onto itself and a membership check passes either way. The
+flip mutation survived, and the comment I had written claimed it could not.
+Changed to 0.25 and 0.60, and the test now also asserts the FLIPPED values are
+ABSENT. A test whose fixture is symmetric in the axis under test proves nothing
+about that axis.
+
+### Maya's report got more useful
+`maya_validate.py` now reports UV sets, material NAMES and file textures.
+Names, not counts: an empty Maya scene already ships `lambert1`,
+`particleCloud1`, `standardSurface1` and `openPBR_shader1`, and which defaults
+exist depends on the version — so a count is a number nobody can check, while
+"our material is in the list" is.
+
+### Verification
+ctest green in debug, release, ASan and TSan. Maya harness 2/2 with the new UV,
+material and texture assertions. Format clean. Sonar OK. Mutations killed: V
+flipped, UV layer dropped, material colours ignored, a texture written when
+there is none, the `OP` connection downgraded to `OO`.
+
+---
+
 ## 2026-09-07 06:45:00 — Session 163 · **Maya opens it, and the last bug was my own debug print**
 
 ### Stage 1 is done

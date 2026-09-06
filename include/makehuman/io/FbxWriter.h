@@ -68,6 +68,6 @@ struct FbxWriteResult {
 /// rather than by our own reader agreeing with our own writer.
 [[nodiscard]] std::expected<FbxWriteResult, FbxWriteError> writeFbx(
     const std::filesystem::path& path, const foundation::RenderView& mesh,
-    const FbxWriteOptions& options = {});
+    const FbxWriteOptions& options = {}, const foundation::MaterialDesc* material = nullptr);
 
 }  // namespace mh::io
