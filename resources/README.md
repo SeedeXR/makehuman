@@ -41,6 +41,7 @@ Ported so far: **litsphere** (the headline material — every skin uses it).
 Remaining: phong, normalmap, skin, toon, xray — sources in
 `data/shaders/glsl/`, tracked in `memory/todo.md` M6.
 
-Compile with `tools/compile_shaders.sh`; each stage produces a `.qsb` carrying
-SPIR-V, GLSL 450 and Metal. Verified: the `0.495` litsphere constant survives
-into the generated MSL.
+Compiled by the build: `src/render/CMakeLists.txt` globs this directory and
+runs `qsb` on every `.vert`/`.frag`, so a new stage needs no CMake edit. Each
+produces a `.qsb` carrying SPIR-V, GLSL 450 and Metal. Verified: the `0.495`
+litsphere constant survives into the generated MSL.

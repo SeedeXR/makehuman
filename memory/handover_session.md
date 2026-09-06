@@ -2140,6 +2140,56 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-06 19:15:00 — Session 151 · **a shader could be added and silently not built**
+
+### The chunk
+The next open M6 item was "wire `qt6_add_shaders()` into CMake — deferred until
+Qt is a real build dependency". Both halves were stale, and the interesting part
+was neither of them.
+
+- Qt has been a real build dependency for a while, and the shaders have been
+  compiled by `add_custom_command` + `Qt6::qsb` since M6 landed. The item was
+  already done in substance.
+- `qt6_add_shaders()` is the **wrong tool** here, measured rather than assumed:
+  it always packages its output into a Qt resource under a `PREFIX`
+  (`Qt6ShaderToolsMacros.cmake:5,50`) and has no mode that leaves loose files on
+  disk. This port loads `.qsb` from a resolved directory
+  (`foundation::resolveShaderDir`), which is what lets a relocated `.app` carry
+  its own shaders in `Contents/Resources` — session 147's work. Adopting the
+  macro would mean adopting qrc and unpicking that.
+
+### The actual defect, one line away
+The stage list was a literal `foreach(stage litsphere.vert litsphere.frag
+pbr.vert pbr.frag)`. Add a fifth shader and **nothing builds it and nothing
+says so** — while `tools/compile_shaders.sh`, which globbed, did build it. Two
+implementations of the same step, disagreeing about what the shader set even is.
+
+Measured, not reasoned: dropping a `_probe.frag` into `resources/shaders/rhi/`
+and reconfiguring produced no `.qsb` and no warning. The new test fails on it;
+after switching to `file(GLOB ... CONFIGURE_DEPENDS)` it passes with the probe
+still there, and passes again once the probe is removed.
+
+`tools/compile_shaders.sh` is deleted rather than left to drift. Its header
+comment still claimed "Not wired into CMake yet", which had been false for
+months.
+
+### The test rejects more than absence
+An empty or truncated `.qsb` exists too, and a pipeline built from one fails at
+`create()` saying nothing useful. The test opens each file and requires
+`QShader::fromSerialized(...).isValid()`. Truncating `pbr.frag.qsb` to zero
+bytes fails it.
+
+Also a `message(FATAL_ERROR)` if the glob comes back empty: that would
+configure and build cleanly and fail at the first pipeline, which is the worst
+place to find out.
+
+### Verification
+ctest green in debug, release, ASan and TSan. Format clean. Sonar OK.
+Mutations killed: a shader source with no `.qsb` (proved with a real probe
+file), and a zero-byte `.qsb`.
+
+---
+
 ## 2026-09-06 18:30:00 — Session 150 · **the exporters get V right, and nothing was checking**
 
 ### The chunk

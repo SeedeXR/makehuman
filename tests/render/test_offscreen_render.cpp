@@ -13,6 +13,8 @@
 
 #include <rhi/qrhi.h>
 
+#include <QFile>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -1458,4 +1460,40 @@ TEST_CASE("opacity does not reach the litsphere", "[render][opacity][litsphere]"
     const auto after = (*r)->render(std::vector{plain}, s);
     REQUIRE(after.has_value());
     CHECK(differingPixels(*before, *after) == 0);
+}
+
+// ---------------------------------------------------------------------------
+// EVERY shader source is compiled. Nothing may be added to
+// resources/shaders/rhi/ and then quietly not built.
+//
+// `src/render/CMakeLists.txt` used to name its four stages in a literal
+// `foreach`, so a fifth shader would have been ignored by the build and found
+// only when something tried to load it -- and `tools/compile_shaders.sh`, which
+// globbed, would have compiled it, so the two disagreed about what the shader
+// set even was. The list is now the glob, and this is what keeps it honest:
+// mutate the CMake rule back to a fixed list, add a stage, and this fails.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("every shader source has a compiled .qsb beside the binaries", "[render][shaders]") {
+    namespace fs = std::filesystem;
+    const fs::path src(MH_SHADER_SRC_DIR);
+    const fs::path out(MH_SHADER_DIR);
+    REQUIRE(fs::is_directory(src));
+
+    size_t stages = 0;
+    for (const auto& e : fs::directory_iterator(src)) {
+        const auto ext = e.path().extension();
+        if (ext != ".vert" && ext != ".frag") continue;
+        ++stages;
+        const fs::path qsb = out / (e.path().filename().string() + ".qsb");
+        INFO(e.path().filename().string() << " -> " << qsb.string());
+        REQUIRE(fs::exists(qsb));
+        // Existing is not enough: an empty or truncated file exists too, and a
+        // pipeline built from one fails at create() with nothing useful said.
+        QFile f(QString::fromStdString(qsb.string()));
+        REQUIRE(f.open(QIODevice::ReadOnly));
+        CHECK(QShader::fromSerialized(f.readAll()).isValid());
+    }
+    // Without this the loop is vacuous if the source directory ever moves.
+    CHECK(stages >= 4);
 }

@@ -890,13 +890,32 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `(0,2,3)`, … for any corner count, and a triangle stored as a degenerate
       quad emits one triangle.
 - [~] Shader port to `.qsb`: **litsphere done** (`resources/shaders/rhi/`),
-      compiles to SPIR-V + GLSL 450 + MSL 12 via `tools/compile_shaders.sh`;
-      the `0.495` constant verified present in the generated Metal.
+      compiles to SPIR-V + GLSL 450 + MSL 12 as part of the build
+      (`src/render/CMakeLists.txt`); the `0.495` constant verified present in
+      the generated Metal.
       Remaining: phong, normalmap, skin, toon, xray (sources stay in
       `data/shaders/glsl/`; copying them into resources/ would just drift).
-- [ ] Wire `qt6_add_shaders()` into CMake — deferred until Qt is a real build
-      dependency, so CI does not pay a 5-minute Qt install for shaders nothing
-      renders yet.
+- [x] **Shaders are built by CMake — but deliberately NOT by
+      `qt6_add_shaders()`, and the deferral reason was stale twice over.** Qt
+      has been a real build dependency for a while, and the shaders have been
+      compiled by `add_custom_command` + `Qt6::qsb` since M6 landed. What was
+      left was the wrong question.
+      - `qt6_add_shaders()` **always** packages its output into a Qt resource
+        under a `PREFIX` (`Qt6ShaderToolsMacros.cmake:5,50`); it has no mode
+        that leaves loose files on disk. This port loads `.qsb` from a resolved
+        directory (`foundation::resolveShaderDir`), which is what lets a
+        relocated `.app` carry its own shaders in `Contents/Resources`. Using
+        the macro would mean adopting qrc and unpicking that.
+      - The real defect was next to it: the stage list was a literal
+        `foreach(stage litsphere.vert ...)`, so a new shader was **silently not
+        built**, while `tools/compile_shaders.sh` globbed and did build it. Two
+        implementations disagreeing about what the shader set even is.
+        Measured: adding a fifth stage produced no `.qsb` and no warning.
+      - Now `file(GLOB ... CONFIGURE_DEPENDS)`, and `compile_shaders.sh` is
+        deleted rather than left to drift. Pinned by the test "every shader
+        source has a compiled .qsb beside the binaries", which also rejects an
+        empty or truncated `.qsb` — a pipeline built from one fails at
+        `create()` saying nothing useful.
 - [x] **Litsphere/matcap pixel-faithful** — and it was **not** faithful.
       `0.495` and the `2.0 − mean` term were already correct. A **third** term
       was not: the reference samples the **raw interpolated normal**
