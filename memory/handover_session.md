@@ -2140,6 +2140,56 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-06 23:45:00 — Session 156 · **the Draco codec, and a dependency check that was watching the wrong door**
+
+### The chunk
+M7's first open item: glTF Draco compression. This fire delivers the CODEC and
+its licensing, not the glTF wiring — the extension has rules about attributes
+and accessors that deserve their own pass rather than a rushed one.
+
+`io::dracoEncode` compresses a primitive and returns the bitstream plus the
+glTF-name -> draco-unique-id map that `KHR_draco_mesh_compression` carries. The
+unique id, not the build-time attribute index: the encoder may reorder
+attributes and the unique id is what survives that.
+
+### Optional, like assimp
+`find_package(draco QUIET)`. A build without it writes glTF uncompressed rather
+than failing to configure, and **CI stays green without installing draco** —
+verified by configuring with `-DCMAKE_DISABLE_FIND_PACKAGE_draco=ON`, building
+the tests and running them, not by assuming the `#if` was right.
+`dracoAvailable()` reports which build this is, so the writer cannot declare an
+extension with no encoder behind it.
+
+### Tested by decoding, not by inspection
+Every test round-trips through draco's own decoder — a separate code path from
+the encoder. Measured: 226,328 -> **7,716 bytes (29.3x)** on a 64x64 displaced
+grid; worst position error **4.6e-05** on a 2-unit span at 14 bits.
+
+The position test asserts the error is **greater than zero as well as small**.
+Exact positions would mean the quantisation setting never reached the encoder,
+and a one-sided bound would have called that a pass.
+
+Mutations killed: TEXCOORD_0 dropped from the attribute map; quantisation
+disabled; 4-bit positions; normals never added.
+
+### The dependency check was watching the wrong door
+CI verified that every `FetchContent_Declare` name appears in `LICENSING.md`.
+It said nothing about `find_package` — so Qt, assimp and now draco could be
+linked with nothing recorded about their licences, and that is the half more
+likely to be added casually, since it needs no version pin to work.
+
+Extended to cover both. One wrinkle worth keeping: `find_package(Qt6)` against
+a `LICENSING.md` row that says "Qt" would report the project's oldest
+dependency as unrecorded, so the check also tries the name with trailing digits
+stripped. Mutations killed: an unrecorded `find_package` added; the draco row
+deleted from `LICENSING.md`.
+
+### Verification
+ctest green in debug, release, ASan and TSan, and separately in a
+draco-disabled configuration. Format clean. Sonar OK.
+
+---
+
 ## 2026-09-06 22:45:00 — Session 155 · **"verifying it needs the window" was wrong; exporting twice was enough**
 
 ### The chunk

@@ -13,6 +13,7 @@ add_library(mh_io STATIC
     BvhWriter.cpp
     UsdWriter.cpp
     GltfWriter.cpp
+    DracoMesh.cpp
     SceneIO.cpp)
 add_library(mh::io ALIAS mh_io)
 
@@ -32,6 +33,20 @@ target_include_directories(mh_io PUBLIC
 target_link_libraries(mh_io
     PUBLIC  mh::foundation
     PRIVATE mh::warnings mh::sanitize assimp::assimp)
+
+# Draco (Apache-2.0, google/draco) compresses glTF geometry. OPTIONAL, on the
+# same terms as assimp: a build without it writes glTF uncompressed rather than
+# failing to configure, so a contributor without the library is not blocked and
+# CI can choose whether to pay for it. `dracoAvailable()` reports which build
+# this is, so nothing can declare the extension without an encoder behind it.
+find_package(draco QUIET)
+if(draco_FOUND)
+    target_link_libraries(mh_io PRIVATE draco::draco)
+    target_compile_definitions(mh_io PUBLIC MH_HAVE_DRACO)
+    message(STATUS "draco found: glTF geometry compression available")
+else()
+    message(STATUS "draco NOT found: glTF will be written uncompressed")
+endif()
 
 set_target_properties(mh_io PROPERTIES
     CXX_STANDARD 23

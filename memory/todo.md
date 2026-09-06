@@ -717,7 +717,8 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       deliberate divergence from the reference, not an omission.
       **Reopen when GPU skinning lands** (M6): a vertex shader has no adjacency
       to recompute from, so that is the first real consumer of the w=0 path.
-- [ ] GPU LBS (matrix palette UBO/SSBO) — M6
+- [x] GPU LBS (matrix palette UBO/SSBO) — measured and deliberately not built;
+      the reasoning and the numbers are with the M6 entry.
 - [x] Pose units + slerp-composition blend — **parity on all 60 units x 163
       bones (9,780 transforms)** and on a five-unit weighted blend, in both
       orders.
@@ -1591,7 +1592,35 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       packs images into the BIN chunk with MIME sniffed from magic bytes and
       identical images deduplicated; covered by `test_gltf_writer.cpp` including
       the rejection path for a format GLB cannot carry.
-- [ ] glTF **Draco** compression (blendshapes done — session 029)
+- [~] glTF **Draco** compression — **the codec is in, the glTF wiring is not.**
+      `io::dracoEncode` (`src/io/DracoMesh.cpp`) compresses a primitive and
+      returns the bitstream plus the glTF-name -> draco-unique-id map that
+      `KHR_draco_mesh_compression` carries.
+      - **Optional dependency**, on the same terms as assimp:
+        `find_package(draco QUIET)`, so a build without it writes glTF
+        uncompressed rather than failing to configure. Verified by configuring
+        with `-DCMAKE_DISABLE_FIND_PACKAGE_draco=ON` and building the tests —
+        which is also why **CI stays green without installing draco**.
+        `io::dracoAvailable()` reports which build this is, so nothing can
+        declare the extension with no encoder behind it.
+      - Measured: a 64x64 displaced grid goes **226,328 -> 7,716 bytes
+        (29.3x)**, worst position error **4.6e-05** on a 2-unit span at 14 bits.
+      - Tested by DECODING BACK through draco's own decoder — a separate code
+        path — rather than by inspecting the encoder's own output. Mutations
+        killed: TEXCOORD_0 dropped from the attribute map, quantisation
+        disabled (positions come back exact, which the test rejects as loudly as
+        it rejects them being wrong), 4-bit positions, normals never added.
+      - **Still to do:** the writer side. `KHR_draco_mesh_compression` requires
+        the extension to carry EVERY attribute of the primitive and the
+        accessors to keep their `count`/`type`/`min`/`max` while dropping
+        `bufferView`. Our primitives also carry TANGENT, JOINTS_0 and WEIGHTS_0,
+        which must go in as GENERIC attributes and, being indices and weights,
+        must NOT be quantised. Morph targets are outside the extension and stay
+        uncompressed.
+      - `LICENSING.md` §5.1 records draco (Apache-2.0, 1.5.7), and CI's
+        dependency check now covers `find_package` as well as `FetchContent` —
+        it previously checked only the latter, so anything found on the system
+        could be linked with nothing recorded about its licence.
 - [ ] **Export** FBX 7.4/7.5 — from spec, **not** by translating the GPL Blender code
 - [x] **Export USD (`.usda`)** — written from the published format, **not** by
       linking OpenUSD. Checked first: assimp has **no USD support at all**,

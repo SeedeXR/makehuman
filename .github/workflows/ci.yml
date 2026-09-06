@@ -128,11 +128,24 @@ jobs:
 
       # A dependency that is not recorded in LICENSING.md section 5.1 fails CI
       # (memory/instruction.md section 7).
-      - name: FetchContent dependencies are recorded in LICENSING.md
+      #
+      # Both ways a dependency arrives. This used to check FetchContent only,
+      # so anything found on the system -- Qt, assimp, and now draco -- could be
+      # linked with nothing recorded about its licence. That is the half more
+      # likely to be added casually, since it needs no version pin to work.
+      #
+      # The trailing-digit strip is for `find_package(Qt6)`, which LICENSING.md
+      # records as "Qt". Matching the package name verbatim would report the
+      # project's oldest and best-documented dependency as unrecorded.
+      - name: Dependencies are recorded in LICENSING.md
         run: |
           fail=0
-          for dep in $(grep -oE 'FetchContent_Declare\(([A-Za-z0-9_]+)' CMakeLists.txt | cut -d'(' -f2); do
-            if ! grep -qi "$dep" LICENSING.md; then
+          fetched=$(grep -ohE 'FetchContent_Declare\(([A-Za-z0-9_]+)' CMakeLists.txt | cut -d'(' -f2)
+          found=$(find . -name CMakeLists.txt -not -path './build/*' -print0 \
+                  | xargs -0 grep -ohE 'find_package\(([A-Za-z0-9_]+)' | cut -d'(' -f2)
+          for dep in $(printf '%s\n%s\n' "$fetched" "$found" | sort -u); do
+            stem=$(printf '%s' "$dep" | sed 's/[0-9]*$//')
+            if ! grep -qi "$dep" LICENSING.md && ! grep -qi "$stem" LICENSING.md; then
               echo "::error::dependency '$dep' is not recorded in LICENSING.md"; fail=1
             fi
           done

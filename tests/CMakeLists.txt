@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+# The Draco tests decode what the encoder produced -- a separate code path in
+# the same library -- so the test binary needs draco's headers as well.
+find_package(draco QUIET)
+
 add_executable(mh_tests
     unit/test_mesh.cpp
     unit/test_random.cpp
@@ -36,6 +40,7 @@ add_executable(mh_tests
     golden/test_transform_parity.cpp
     golden/test_bvh_parity.cpp
     golden/test_usd_writer.cpp
+    golden/test_draco.cpp
     golden/test_unit_correctness.cpp
     golden/test_poseunits_parity.cpp
     golden/test_body_pose.cpp
@@ -56,6 +61,12 @@ add_executable(mh_tests
 # legal dependency direction, so inheriting it is correct.
 target_link_libraries(mh_tests
     PRIVATE mh::core mh::rig mh_json Catch2::Catch2WithMain mh::warnings mh::sanitize)
+
+# MH_HAVE_DRACO reaches here through mh_io's PUBLIC definition; the DECODER is
+# what the test needs on top of that, and it lives in the same library.
+if(draco_FOUND)
+    target_link_libraries(mh_tests PRIVATE mh::io draco::draco)
+endif()
 
 target_compile_definitions(mh_tests PRIVATE
     MH_DATA_DIR="${MH_DATA_DIR}"
