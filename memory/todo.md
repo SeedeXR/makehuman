@@ -1113,25 +1113,33 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       - The texture **is** sampled — deleting `diffuseTexture` changes the
         render — and the eye's raw albedo varies (std ≈ 35, range 25–171), so
         UVs reach the shader.
-      - **The cause: we never apply the OBJ→image V flip.** OBJ's V origin is
-        bottom-left; QImage row 0 is top. Measured on the asset: the eyeball's
-        frontmost 130 vertices carry UVs `u 0.921–0.953, v 0.052–0.084`, which
-        in image space is the texture's BOTTOM-right — a small blue disc.
-        Unflipped we sample the TOP-right instead, which is the pale grey
-        background (171,171,167). Adding `.flipped(Qt::Vertical)` at diffuse
-        upload moves the sample onto the blue disc, confirmed by rendering the
-        raw albedo.
+      - **NOT a missing V flip — I was wrong, and the correction is measured.**
+        I concluded last session that OBJ's bottom-left V origin was never
+        reconciled with QImage's top-left rows. A controlled test settles it:
+        a quad with v=0 at its bottom and a texture that is red on top / blue
+        on the bottom renders blue where v=1, which is the OBJ convention,
+        correct. Adding `.flipped(Qt::Vertical)` at diffuse upload makes that
+        test FAIL. The reference does flip
+        (`legacy/python/lib/texture.py:167`) because GL's texture origin is
+        bottom-left; QRhi's is not, so the correction lands elsewhere and no
+        explicit flip belongs here. Pinned by
+        `"a diffuse map is sampled with V up, as the reference uploads it"`.
+      - So the eye's cause is still **open**. What is ruled out now also
+        includes the V flip. Still unexplained: the eye samples the texture's
+        pale background while the eyeball front carries UVs
+        `u 0.921–0.953, v 0.052–0.084`. Next step is to stop reasoning from the
+        raw OBJ and instrument the FITTED proxy — `fitProxy` moves vertices, so
+        "frontmost in the OBJ" is not "visible on screen", and that assumption
+        is doing real work in the analysis above.
       - Rejected by experiment, so nobody repeats them: `shininess`/roughness
         (0.30 and 0.55 both unchanged), render resolution, eyeball orientation
         (the iris IS at the front, Z 1.417 of a 1.221–1.463 mesh), a missing
         material, and missing UVs.
-- [ ] **The V flip is the fix, and it is NOT a one-liner to land.** It changes
-      EVERY sampled texture, so it moves the M6 litsphere parity images and the
-      golden render tests, and it may mean the glTF/USD writers are also
-      emitting bottom-left V into formats that specify top-left. Do it as its
-      own chunk: flip at the READ side or at upload, re-baseline the golden
-      renders deliberately, and cross-check an export in Blender before
-      believing either answer.
+- [ ] **Still worth checking separately: do the EXPORTERS get V right?** glTF
+      specifies a top-left UV origin and our writers pass the OBJ's V through
+      unchanged. That is a different question from the viewport, which is now
+      settled, and it wants a Blender cross-check of an exported GLB rather
+      than more spec-reading.
 - [ ] **Follow-up: `default.mhmat` has no albedo at all**, so `--shading pbr`
       with the default skin renders a near-white body — correct for albedo 1.0,
       but it is not a good default. Either give `default` a neutral map or make

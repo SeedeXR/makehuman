@@ -2140,6 +2140,61 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-06 11:00:00 — Session 144 · **I was wrong about the V flip, and the test that proved it is worth keeping**
+
+### The chunk
+Last session's next item: apply the OBJ→image V flip, re-cut the golden
+baselines, cross-check an export in Blender.
+
+**The flip was not missing.** I had it backwards, and the correction is the
+result of this session.
+
+### How I found the reference's answer first, and still got it wrong
+`legacy/python/lib/texture.py:167,180` do `pixels = image.flip_vertical().data`
+before every GL upload. I read that as "the reference flips, we do not,
+therefore we are broken". It is the right observation and the wrong inference:
+**GL's texture origin is bottom-left, QRhi's is not.** The reference flips to
+get from a top-origin image into a bottom-origin API. We are already in a
+top-origin API, so the same correction is already made.
+
+### The test that settled it
+A quad with `v=0` at its bottom vertices and `v=1` at the top, drawn with a
+texture that is red on its top half and blue on its bottom. Under the OBJ
+convention `v=1` must sample the image's BOTTOM row, so the quad's top must come
+out blue. It does — with the code exactly as shipped. Adding
+`.flipped(Qt::Vertical)` at diffuse upload makes it fail.
+
+Before trusting it I checked the frame the test itself depends on: a quad
+occupying only world `+Y` covers 3,698 pixels in the output's upper half and
+**zero** in the lower, so "top of quad" really is "small y in the image". Both
+directions of the argument now have a measurement.
+
+### What this cost, and the lesson
+I recorded "the cause: we never apply the OBJ→image V flip" in `todo.md` and in
+a commit message as a **finding**, on the strength of a PIL sample and one
+render. That is exactly the failure I had criticised in the note I was
+replacing, one session earlier. Reading the reference's flip felt like
+confirmation and stopped me looking further.
+
+What actually distinguishes the two cases: the PIL check sampled a texture in
+isolation, while the quad test drives the real renderer end to end with a
+controlled input. Only the second can answer "what does OUR sampler do".
+
+### Where the eye stands
+Still unexplained, and `todo.md` now says so. The V flip joins the rejected
+list. Also flagged there: my analysis leaned on "the eyeball's frontmost
+vertices in the OBJ", but `fitProxy` MOVES those vertices before they are drawn,
+so frontmost-in-the-asset is not visible-on-screen. That assumption needs
+instrumenting on the fitted proxy, not the raw file.
+
+### What landed
+The orientation test — which pins a convention nothing checked, in either
+direction — and the corrected record. ctest 539/539 in debug, release, ASan and
+TSan — the count is unchanged because the new case runs inside the single
+`render` ctest entry rather than as its own row. Format clean. Sonar OK.
+
+---
+
 ## 2026-09-06 10:15:00 — Session 143 · **why the eyes are blank, measured rather than guessed — and why I did not fix it yet**
 
 ### The chunk

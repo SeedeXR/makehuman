@@ -1178,3 +1178,108 @@ TEST_CASE("the litsphere is the default and is unaffected by the PBR uniforms",
 
     CHECK(differingPixels(*plain, *loaded) == 0);
 }
+
+// ---------------------------------------------------------------------------
+// TEXTURE ORIENTATION, pinned.
+//
+// OBJ stores V with the origin at the BOTTOM-left while QImage's row 0 is at
+// the TOP, so a renderer has to reconcile the two somewhere. The reference does
+// it at upload -- `legacy/python/lib/texture.py:167` is
+// `pixels = image.flip_vertical().data` before every GL call, because GL's own
+// texture origin is bottom-left.
+//
+// We are on QRhi, whose sampling already puts v=0 at the image's top row, so
+// the correction lands in a different place and needs NO explicit flip. That is
+// easy to talk yourself out of: this test was written while chasing a blank-
+// looking eye proxy, on the theory that the flip was missing, and it proved the
+// opposite. Adding `.flipped(Qt::Vertical)` at diffuse upload makes it fail.
+//
+// So it stays, as the thing that settles the question with a controlled quad
+// and a two-colour texture rather than by squinting at a face -- both
+// directions of the argument now have a measurement behind them.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A unit quad facing the camera, with UVs spanning the full 0..1 range and
+/// V increasing UPWARD -- the OBJ convention.
+struct TexturedQuad {
+    std::vector<foundation::Vec3> coord{
+        {-4.0F, -4.0F, 0.0F}, {4.0F, -4.0F, 0.0F}, {4.0F, 4.0F, 0.0F}, {-4.0F, 4.0F, 0.0F}};
+    /// v=0 at the BOTTOM vertices, v=1 at the top.
+    std::vector<foundation::Vec2> texco{{0.0F, 0.0F}, {1.0F, 0.0F}, {1.0F, 1.0F}, {0.0F, 1.0F}};
+    std::vector<foundation::Vec3> vnorm{
+        {0.0F, 0.0F, 1.0F}, {0.0F, 0.0F, 1.0F}, {0.0F, 0.0F, 1.0F}, {0.0F, 0.0F, 1.0F}};
+    std::vector<foundation::Vec4> vtang{{1.0F, 0.0F, 0.0F, 1.0F},
+                                        {1.0F, 0.0F, 0.0F, 1.0F},
+                                        {1.0F, 0.0F, 0.0F, 1.0F},
+                                        {1.0F, 0.0F, 0.0F, 1.0F}};
+    /// Counter-clockwise seen from +Z, so back-face culling keeps it.
+    std::vector<uint32_t> index{0, 1, 2, 0, 2, 3};
+
+    [[nodiscard]] foundation::RenderView view() const {
+        return foundation::RenderView{coord, texco, vnorm, vtang, index};
+    }
+};
+
+/// Writes a PNG whose TOP half is red and BOTTOM half is blue.
+std::filesystem::path writeHalfAndHalf() {
+    QImage img(8, 8, QImage::Format_RGBA8888);
+    for (int y = 0; y < 8; ++y) {
+        for (int x = 0; x < 8; ++x) {
+            img.setPixelColor(x, y, y < 4 ? QColor(255, 0, 0) : QColor(0, 0, 255));
+        }
+    }
+    const auto path = std::filesystem::temp_directory_path() / "mh_halfandhalf.png";
+    REQUIRE(img.save(QString::fromStdString(path.string())));
+    return path;
+}
+
+}  // namespace
+
+TEST_CASE("a diffuse map is sampled with V up, as the reference uploads it",
+          "[render][texture][orientation]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const TexturedQuad quad;
+    const auto texture = writeHalfAndHalf();
+
+    render::MeshInstance mi{quad.view(), settings().litsphere};
+    mi.diffuse = texture;
+
+    auto s         = settings();
+    s.shading      = render::ShadingModel::Pbr;  // albedo reaches the screen directly
+    const auto img = (*r)->render(std::vector{mi}, s);
+    REQUIRE(img.has_value());
+
+    // The quad's TOP has v=1. With V up, v=1 must sample the image's BOTTOM
+    // row, which is blue. Unflipped it samples the image's top row, red -- and
+    // that is what shipped.
+    const auto meanOf = [&img](int y0, int y1) {
+        double r0 = 0.0;
+        double b0 = 0.0;
+        size_t n  = 0;
+        for (int y = y0; y < y1; ++y) {
+            for (int x = img->width() / 3; x < 2 * img->width() / 3; ++x) {
+                const QColor c = img->pixelColor(x, y);
+                r0 += c.red();
+                b0 += c.blue();
+                ++n;
+            }
+        }
+        return std::pair{r0 / static_cast<double>(n), b0 / static_cast<double>(n)};
+    };
+
+    const auto [topR, topB]       = meanOf(img->height() / 4, img->height() * 2 / 5);
+    const auto [bottomR, bottomB] = meanOf(img->height() * 3 / 5, img->height() * 3 / 4);
+    INFO("top of quad: r=" << topR << " b=" << topB);
+    INFO("bottom of quad: r=" << bottomR << " b=" << bottomB);
+
+    CHECK(topB > topR);        // v=1 -> image bottom -> blue
+    CHECK(bottomR > bottomB);  // v=0 -> image top -> red
+
+    std::error_code ec;
+    std::filesystem::remove(texture, ec);
+}
