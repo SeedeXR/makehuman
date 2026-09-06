@@ -1162,10 +1162,23 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       unchanged. That is a different question from the viewport, which is now
       settled, and it wants a Blender cross-check of an exported GLB rather
       than more spec-reading.
-- [ ] **Follow-up: `default.mhmat` has no albedo at all**, so `--shading pbr`
-      with the default skin renders a near-white body — correct for albedo 1.0,
-      but it is not a good default. Either give `default` a neutral map or make
-      a toned skin the default.
+- [x] **`default.mhmat` rendered a pure white body under PBR — fixed, and the
+      cause was a third unplumbed material property.** The material names no
+      diffuse texture (`shaderConfig diffuse false`) because it is the
+      litsphere-shaded original, where the matcap carries lighting AND colour.
+      Under a real BRDF that left albedo at the 1.0 default.
+      - **`MaterialDesc::diffuse` never reached the viewport.** The glTF writer
+        has always emitted it as `baseColorFactor`
+        (`GltfWriter.cpp:926-928`), so the file and the screen disagreed about
+        the same material — after metallic/roughness and `transparent`, the
+        third property plumbed for export and not for the screen.
+      - Applied in the **PBR path only**. The reference multiplies its matcap by
+        the diffuse TEXTURE alone (`litsphere_fragment_shader.txt:90-91`; the
+        `gl_Color` on `:85` is VERTEX colour behind a define we do not port), so
+        tinting the litsphere would be a divergence. A test asserts a violent
+        green base colour moves **zero** pixels under the litsphere.
+      - `default.mhmat` now carries `diffuseColor 0.76 0.62 0.53`, a neutral mid
+        skin tone, read only by PBR and the exporters.
 - [ ] GPU skinning (matrix palette UBO/SSBO)
 - [ ] ID-buffer picking with async readback (replaces the full-window sync readback)
 - [x] **Cached bounding box: measured, deliberately NOT built.**

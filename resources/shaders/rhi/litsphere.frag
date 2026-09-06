@@ -67,6 +67,13 @@ layout(std140, binding = 4) uniform MeshBuf {
     // buffer and one SRB layout serve both pipelines -- and therefore what lets
     // the viewport switch shading models without re-uploading a mesh.
     vec4 pbr;
+    // rgb = the material's diffuse colour. DECLARED BUT NEVER READ here: the
+    // reference multiplies its matcap by the diffuse TEXTURE alone
+    // (litsphere_fragment_shader.txt:90-91), so tinting it would be a
+    // divergence. Declared only so this block has the same size and layout as
+    // pbr.frag's, which is what lets one uniform buffer and one SRB layout
+    // serve both pipelines.
+    vec4 base;
 }
 mbuf;
 

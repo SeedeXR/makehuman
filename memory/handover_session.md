@@ -2140,6 +2140,56 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-06 16:20:00 — Session 148 · **the third material property plumbed for export and not for the screen**
+
+### The chunk
+The white body: `--shading pbr` with the default skin rendered pure white,
+including in the DMG's own render.
+
+### Cause
+`default.mhmat` names no diffuse texture — `shaderConfig diffuse false`, because
+it is the litsphere-shaded original where the matcap carries the lighting AND
+the colour. Under a real BRDF that left albedo at the 1.0 default.
+
+But the deeper finding is the pattern: **`MaterialDesc::diffuse` never reached
+the viewport at all.** The glTF writer has emitted it as `baseColorFactor` since
+M7 (`GltfWriter.cpp:926-928`), so the file and the screen disagreed about the
+same material. That is the THIRD material property built for export and never
+connected to the renderer, after metallic/roughness and `transparent`. Worth
+naming as a pattern rather than three coincidences: the exporters were written
+against `MaterialDesc` and the viewport against `MeshInstance`, and nobody owned
+the bridge.
+
+### PBR only, and the test says so
+The reference multiplies its matcap by the diffuse TEXTURE alone
+(`litsphere_fragment_shader.txt:90-91`; the `gl_Color` on `:85` is VERTEX
+colour, behind a define we do not port). Tinting the litsphere would be a
+divergence, not a fix, so a test asserts a violently green base colour moves
+**zero** pixels under it. Mutating the litsphere to apply the tint fails that
+test.
+
+`default.mhmat` now carries `diffuseColor 0.76 0.62 0.53`, read only by PBR and
+the exporters.
+
+### Two self-inflicted slips, both caught
+- I declared `material[12]` but left the initialiser at 8 entries, so `base`
+  was zero-filled. The symptom was two IDENTICAL renders rather than an obvious
+  black body, and the test caught it — "differs" would not have been enough on
+  its own, which is why the assertions check direction (darker, red-dominant)
+  rather than difference.
+- `git checkout resources/shaders/rhi/litsphere.frag`, used to undo a mutation,
+  also reverted the uncommitted `vec4 base;` declaration that keeps the two
+  shaders' uniform blocks the same size. Caught by re-running the tests rather
+  than trusting the revert. **Never `git checkout` a file with uncommitted work
+  in it to undo a mutation** — copy it aside first, as I did for the others.
+
+### Verification
+ctest 549/549 in debug, release, ASan and TSan. Release `.app` run. Format
+clean. Sonar OK. Mutations killed: shader ignores the factor, factor not
+uploaded, litsphere tinted.
+
+---
+
 ## 2026-09-06 15:30:00 — Session 147 · **the DMG shipped an app with no assets, and my last note was wrong about why**
 
 ### A correction first

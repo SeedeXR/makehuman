@@ -62,6 +62,8 @@ layout(std140, binding = 4) uniform MeshBuf {
     vec4 material;
     // x = metallic, y = roughness, zw unused.
     vec4 pbr;
+    // rgb = the material's diffuse colour, glTF's baseColorFactor. w unused.
+    vec4 base;
 }
 mbuf;
 
@@ -159,7 +161,10 @@ void main() {
     const vec3 v = normalize(-vViewPos);
 
     const vec4 texel = texture(albedoTexture, vTexCoord);
-    const vec3 albedo = pow(texel.rgb, vec3(2.2));  // sRGB -> linear; see header
+    // sRGB -> linear (see header), then the material's base colour. The factor
+    // is already linear -- a .mhmat's diffuseColor is a multiplier, not a
+    // pixel -- so it must NOT go through the same decode.
+    const vec3 albedo = pow(texel.rgb, vec3(2.2)) * mbuf.base.rgb;
 
     const float metallic = clamp(mbuf.pbr.x, 0.0, 1.0);
     // The floor is not cosmetic: at roughness 0 the GGX denominator collapses to

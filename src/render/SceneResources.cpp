@@ -62,10 +62,10 @@ QImage bottomUp(QImage img) {
 
 /// Three mat4 plus a vec4, matching the `Buf` block in litsphere.vert.
 constexpr quint32 kUboSize = 64 * 3 + 16;
-/// Two vec4, matching the `MeshBuf` block: `material` then `pbr`. Both shaders
-/// declare both, so one size serves both pipelines and the SRB layout that the
-/// two share stays identical.
-constexpr quint32 kMeshUboSize = 32;
+/// Three vec4, matching the `MeshBuf` block: `material`, `pbr`, `base`. Both
+/// shaders declare all three, so one size serves both pipelines and the SRB
+/// layout that the two share stays identical.
+constexpr quint32 kMeshUboSize = 48;
 /// Interleaved position (3) + normal (3) + uv (2) + tangent (4).
 ///
 /// The tangent is always present rather than switching layouts per mesh: 4
@@ -123,6 +123,7 @@ struct Drawable {
     /// Read only by the PBR shader; see MeshInstance.
     float metallic{0.0F};
     float roughness{0.6F};
+    foundation::Vec3 baseColour{1.0F, 1.0F, 1.0F};
     std::unique_ptr<QRhiShaderResourceBindings> srb;
     quint32 indexCount{};
 };
@@ -450,6 +451,7 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
         dr.normalMapIntensity = instance.normalMapIntensity;
         dr.metallic           = instance.metallic;
         dr.roughness          = instance.roughness;
+        dr.baseColour         = instance.baseColour;
         dr.meshBuf.reset(
             rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, kMeshUboSize));
         if (!dr.meshBuf->create()) {
@@ -489,14 +491,18 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
         if (p.drawable.aoTex) batch->uploadTexture(p.drawable.aoTex.get(), p.aoMap);
         // x = intensity, y = 1 when a normal map is bound. Written per mesh
         // because whether one exists is a material property, not a frame one.
-        const float material[8] = {p.drawable.normalMapIntensity,
-                                   p.drawable.normalTex ? 1.0F : 0.0F,
-                                   p.drawable.aoTex ? 1.0F : 0.0F, 0.0F,
-                                   // The second vec4 is `pbr`: metallic, then
-                                   // roughness. The litsphere shader declares
-                                   // it and never reads it, which keeps one
-                                   // buffer size and one SRB layout for both.
-                                   p.drawable.metallic, p.drawable.roughness, 0.0F, 0.0F};
+        const float material[12] = {
+            p.drawable.normalMapIntensity, p.drawable.normalTex ? 1.0F : 0.0F,
+            p.drawable.aoTex ? 1.0F : 0.0F, 0.0F,
+            // The second vec4 is `pbr`: metallic, then
+            // roughness. The litsphere shader declares
+            // it and never reads it, which keeps one
+            // buffer size and one SRB layout for both.
+            p.drawable.metallic, p.drawable.roughness, 0.0F, 0.0F,
+            // The third vec4 is `base`: the material's
+            // diffuse colour, glTF's baseColorFactor.
+            // Also declared-and-ignored by the litsphere.
+            p.drawable.baseColour.x, p.drawable.baseColour.y, p.drawable.baseColour.z, 1.0F};
         batch->updateDynamicBuffer(p.drawable.meshBuf.get(), 0, kMeshUboSize, material);
         built.push_back(std::move(p.drawable));
     }

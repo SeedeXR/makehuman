@@ -157,6 +157,17 @@ struct MeshInstance {
     /// agree. The defaults describe skin: a dielectric, fairly matte.
     float metallic{0.0F};
     float roughness{0.6F};
+
+    /// The material's base colour, multiplied into the sampled albedo.
+    ///
+    /// This is `MaterialDesc::diffuse`, the same value the glTF writer emits as
+    /// `baseColorFactor` (`GltfWriter.cpp:926-928`) -- so a material that
+    /// carries a tint now looks the same on screen as in the file it exports
+    /// to. Read ONLY by `ShadingModel::Pbr`: the reference's litsphere
+    /// multiplies its matcap by the diffuse TEXTURE and nothing else
+    /// (`litsphere_fragment_shader.txt:90-91`), so applying it there would be a
+    /// divergence rather than a fix.
+    foundation::Vec3 baseColour{1.0F, 1.0F, 1.0F};
 };
 
 /// The buffers, textures and pipeline for drawing meshes with the litsphere

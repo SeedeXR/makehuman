@@ -798,6 +798,9 @@ struct ViewportMaps {
     /// disagree about the material they are both describing.
     float metallic{0.0F};
     float roughness{0.6F};
+    /// `MaterialDesc::diffuse`, which the glTF writer emits as
+    /// `baseColorFactor`. Read only by the PBR shading model.
+    mh::foundation::Vec3 baseColour{1.0F, 1.0F, 1.0F};
 };
 
 ViewportMaps viewportMapsOf(const std::filesystem::path& mhmat) {
@@ -825,9 +828,10 @@ ViewportMaps viewportMapsOf(const std::filesystem::path& mhmat) {
     maps.transparent = mat->desc().transparent || mat->desc().opacity < 1.0F;
     maps.normalMapIntensity =
         mat->textures[static_cast<size_t>(TextureChannel::NormalMap)].intensity;
-    const auto mr  = mh::foundation::metallicRoughnessOf(mat->desc());
-    maps.metallic  = mr.metallic;
-    maps.roughness = mr.roughness;
+    maps.baseColour = mat->desc().diffuse;
+    const auto mr   = mh::foundation::metallicRoughnessOf(mat->desc());
+    maps.metallic   = mr.metallic;
+    maps.roughness  = mr.roughness;
     return maps;
 }
 
@@ -2031,6 +2035,7 @@ int main(int argc, char** argv) {
         body.aoMap              = bodyMaps.ao;
         body.transparent        = bodyMaps.transparent;
         body.metallic           = bodyMaps.metallic;
+        body.baseColour         = bodyMaps.baseColour;
         body.roughness          = bodyMaps.roughness;
 
         // autoBlendSkin: the tone follows the ethnic sliders, so it is a blend
@@ -2059,6 +2064,7 @@ int main(int argc, char** argv) {
             inst.aoMap              = wornMaps.ao;
             inst.transparent        = wornMaps.transparent;
             inst.metallic           = wornMaps.metallic;
+            inst.baseColour         = wornMaps.baseColour;
             inst.roughness          = wornMaps.roughness;
             scene.push_back(std::move(inst));
         }

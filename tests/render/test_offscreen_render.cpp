@@ -1283,3 +1283,92 @@ TEST_CASE("a diffuse map is sampled with V up, as the reference uploads it",
     std::error_code ec;
     std::filesystem::remove(texture, ec);
 }
+
+// ---------------------------------------------------------------------------
+// The material's BASE COLOUR reaches the PBR viewport.
+//
+// `MaterialDesc::diffuse` is what the glTF writer emits as `baseColorFactor`
+// (`GltfWriter.cpp:926-928`), so a file already carries it. The viewport
+// ignored it entirely -- the third time a material property was plumbed for
+// export and not for the screen, after metallic/roughness and `transparent`.
+//
+// It is applied in the PBR path ONLY. The reference's litsphere multiplies the
+// matcap by the diffuse TEXTURE and nothing else
+// (`litsphere_fragment_shader.txt:90-91`; the `gl_Color` on :85 is VERTEX
+// colour, behind a VERTEX_COLOR define we do not port), so applying a base
+// colour there would be a divergence, not a fix.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the base colour tints the PBR albedo", "[render][basecolour]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    auto s         = settings();
+    s.shading      = render::ShadingModel::Pbr;
+
+    render::MeshInstance white{sc.rm.view(), s.litsphere};
+    const auto pale = (*r)->render(std::vector{white}, s);
+    REQUIRE(pale.has_value());
+
+    render::MeshInstance tinted{sc.rm.view(), s.litsphere};
+    tinted.baseColour = {0.25F, 0.12F, 0.08F};  // a deep brown
+    const auto dark   = (*r)->render(std::vector{tinted}, s);
+    REQUIRE(dark.has_value());
+
+    // Darker, and warmer: a red-dominant factor must leave red the largest
+    // channel. "Differs" alone would pass on a factor applied to the wrong
+    // channel, or to the specular term instead of the albedo.
+    const auto mean = [](const QImage& img, const render::RenderSettings& st) {
+        const QColor bg = QColor::fromRgbF(st.background.x, st.background.y, st.background.z);
+        double r0 = 0.0, g0 = 0.0, b0 = 0.0;
+        size_t n = 0;
+        for (int y = 0; y < img.height(); ++y) {
+            for (int x = 0; x < img.width(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (std::abs(c.red() - bg.red()) <= 6 && std::abs(c.green() - bg.green()) <= 6 &&
+                    std::abs(c.blue() - bg.blue()) <= 6) {
+                    continue;
+                }
+                r0 += c.red();
+                g0 += c.green();
+                b0 += c.blue();
+                ++n;
+            }
+        }
+        REQUIRE(n > 0);
+        const auto d = static_cast<double>(n);
+        return std::array{r0 / d, g0 / d, b0 / d};
+    };
+
+    const auto light = mean(*pale, s);
+    const auto brown = mean(*dark, s);
+    INFO("white base: " << light[0] << "," << light[1] << "," << light[2]);
+    INFO("brown base: " << brown[0] << "," << brown[1] << "," << brown[2]);
+    CHECK(brown[0] < light[0]);
+    CHECK(brown[0] > brown[1]);
+    CHECK(brown[1] > brown[2]);
+}
+
+// The litsphere must be untouched by it -- that path is the M6 parity oracle,
+// and the reference has no base-colour term in it at all.
+TEST_CASE("the base colour does not reach the litsphere", "[render][basecolour][litsphere]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    const auto s   = settings();
+    REQUIRE(s.shading == render::ShadingModel::Litsphere);
+
+    render::MeshInstance plain{sc.rm.view(), s.litsphere};
+    const auto before = (*r)->render(std::vector{plain}, s);
+    REQUIRE(before.has_value());
+
+    plain.baseColour = {0.1F, 0.9F, 0.2F};  // violently green, and must not show
+    const auto after = (*r)->render(std::vector{plain}, s);
+    REQUIRE(after.has_value());
+
+    CHECK(differingPixels(*before, *after) == 0);
+}

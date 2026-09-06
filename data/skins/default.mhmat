@@ -18,6 +18,20 @@ tag MakeHuman™
 tag MakeHuman™
 
 // Color shading attributes
+// A base colour, so the PBR viewport has something to shade.
+//
+// This material names NO diffuse texture -- `shaderConfig diffuse false` below
+// says so outright -- because it is the litsphere-shaded original, where the
+// matcap carries both the lighting and the colour. Under a real BRDF that left
+// albedo at the 1.0 default and the body rendered pure white, which is correct
+// arithmetic and a terrible default.
+//
+// A neutral mid skin tone instead. It changes nothing in the litsphere path:
+// the reference multiplies its matcap by the diffuse TEXTURE alone
+// (litsphere_fragment_shader.txt:90-91) and our port does the same, so this
+// value is read only by the PBR shader and by the exporters, which already
+// wrote it as glTF's baseColorFactor.
+diffuseColor 0.76 0.62 0.53
 ambientColor 0.11 0.11 0.11
 specularColor 0.3 0.3 0.3
 shininess 0.96
