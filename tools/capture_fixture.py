@@ -447,7 +447,23 @@ def capture_character() -> None:
         h.applyAllTargets()
 
         entries[name] = _write_blob(out / (name + ".bin"), mesh.coord, "f4")
-        stack = {os.path.relpath(k, os.path.abspath("data")): round(float(v), 6)
+        # Anchored at the REPO's data/targets, resolved through the symlink,
+        # and NOT at os.path.abspath("data").
+        #
+        # That form depended on the current working directory -- which line 40
+        # changes to legacy/python -- and on whether the `legacy/python/data`
+        # symlink got resolved, so re-running this script rewrote every key
+        # (`../../data/...` became `../../../data/...`) without a single byte of
+        # geometry changing. An oracle whose content depends on where the repo
+        # sits cannot be diffed after a re-capture, which is the one thing an
+        # oracle is for.
+        #
+        # data/targets rather than data/ deliberately: it makes these keys
+        # IDENTICAL to the C++ side's own stack keys
+        # (`macrodetails/african-male-young.target`), so the test can compare
+        # the stack instead of only counting it.
+        target_root = os.path.realpath(REPO / "data" / "targets")
+        stack = {os.path.relpath(os.path.realpath(k), target_root): round(float(v), 6)
                  for k, v in h.targetsDetailStack.items()}
         described.append({"name": name, "settings": settings,
                           "stack_size": len(stack), "stack": stack})

@@ -2140,6 +2140,59 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-06 09:05:00 — Session 142 · **a fixture that moved when the repo did, and the parity test that never ran production's code path**
+
+### The chunk
+M4's oldest open item: `capture_fixture.py character` was not reproducible.
+
+### The cause, in one line
+`capture_fixture.py:450` anchored the stack keys at `os.path.abspath("data")` —
+the CURRENT WORKING DIRECTORY, which line 40 sets to `legacy/python`, where
+`data` is a symlink to `../../data`. So the relative depth depended on where the
+repo sat and whether the symlink got resolved. Re-running rewrote all 234 key
+lines with not one byte of geometry changing.
+
+Now anchored at the repo's `data/targets`, resolved through the symlink.
+Verified by re-running the capture from `/tmp` and diffing: identical.
+
+### The anchor was a choice, and it paid twice
+`data/targets` rather than `data/` because that makes the fixture keys EXACTLY
+what `Human::stack()` produces. So the test can compare the reference's stack
+instead of only counting it — which it had been doing, reading `stack_size` and
+ignoring 23 keys and weights per case.
+
+Mutating a weight or deleting a target in the fixture now fails the test. Before
+this, either would have been invisible until the geometry check, and then only
+as a wall of bad vertices rather than "this target should not be here".
+
+### What that exposed
+With the stack actually compared, every case disagreed on every key. The keys
+were byte-identical when I dumped them by hand, which is what made it worth
+chasing rather than assuming I had the anchor wrong.
+
+`test_character_parity.cpp` built `TargetIndex::build(MH_DATA_DIR)` and
+`TargetLibrary(MH_DATA_DIR)`. `main.cpp:1441,1445` build both at
+`data/targets`. The test's pairing was internally consistent — which is why it
+passed — but it produced `targets/…`-prefixed keys that the application never
+produces. **The parity oracle had never exercised production's code path.**
+
+I changed the index root first and broke the geometry, because the library root
+has to move with it: the index decides the key form, the library resolves it.
+Both now match `main.cpp`.
+
+### Also
+The hand-rolled `cases.json` scanner is gone. Its comment said "a targeted scan
+beats adding a JSON dependency"; the dependency was already there — `mh_json`
+is linked into that target — and the shape stopped being shallow the moment the
+stack became worth reading.
+
+### Verification
+ctest 538/538 in debug, release, ASan and TSan. Format clean. Sonar OK.
+`audit_taskviews.py` unchanged. Fixture mutations killed: a corrupted weight and
+a dropped target.
+
+---
+
 ## 2026-09-06 08:20:00 — Session 141 · **the loop came home, and a directory stopped being a valid asset**
 
 ### The loop moved local

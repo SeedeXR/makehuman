@@ -1,7 +1,7 @@
 {
   "subsystem": "character",
-  "captured_at": "2026-08-29T04:49:03.753994+00:00",
-  "reference_commit": "8054c1c56723ad51ea9fb475b3165bdfcbfd0895",
+  "captured_at": "2026-09-06T08:41:29.027607+00:00",
+  "reference_commit": "c911e4ff68ee08c3ab7b52a982811de780044ff8",
   "python": "3.14.6",
   "numpy": "2.5.2",
   "platform": "darwin",

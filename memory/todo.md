@@ -552,14 +552,25 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `max(..., default=0)`, because `max()` on an empty `RIGS` raises where the
       old accumulator stayed at zero.
       All five tools CI runs verified with **system `python3`**, not the venv.
-- [ ] **The `character` fixture is not reproducible, and it is not my change.**
-      Re-running `capture_fixture.py character` rewrites `cases.json`'s stack
-      keys from `../../data/targets/...` to `../../../data/...`. Verified
-      environmental by re-running the ORIGINAL script: it does the same. Benign
-      today — `test_character_parity.cpp` reads only `name`, `settings` and
-      `stack_size`, and every `.bin` is byte-identical — but an oracle whose
-      content depends on where the repo sits is a fragile one, and it makes
-      "re-capture and diff" noisier than it should be.
+- [x] **The `character` fixture is reproducible now, and it caught a second
+      bug on the way.** `capture_fixture.py:450` anchored the stack keys at
+      `os.path.abspath("data")` — the CWD, which line 40 sets to
+      `legacy/python`, where `data` is a symlink. Re-running rewrote every key
+      (`../../data/...` → `../../../data/...`) with no geometry change. Now
+      anchored at the repo's `data/targets`, resolved through the symlink;
+      verified byte-identical when re-run from `/tmp`.
+      - Anchoring at `data/targets` was chosen so the keys are EXACTLY
+        `Human::stack()`'s own, which let the test compare the stack instead of
+        only counting it. Mutating a weight or dropping a target in the fixture
+        now fails.
+      - **And that exposed a mismatch nothing was checking:**
+        `test_character_parity.cpp` built `TargetIndex::build(MH_DATA_DIR)` and
+        `TargetLibrary(MH_DATA_DIR)` while `main.cpp:1441,1445` build both at
+        `data/targets`. Self-consistent, but a key form (`targets/…`-prefixed)
+        the application never produces — so the parity oracle had never
+        exercised production's pairing. Both now match `main.cpp`.
+      - The hand-rolled `cases.json` scanner is gone; `mh_json` was already
+        linked into that target.
 
 - [x] **ANSWERED (owner, 2026-09-05): the 179-bone superset is the default rig**
       — *"use the 179-bone set, it's more rich"*. `--rig` now defaults to

@@ -15,6 +15,8 @@
 #include "makehuman/core/Modifier.h"
 #include "makehuman/core/ObjReader.h"
 
+#include <nlohmann/json.hpp>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -47,46 +49,39 @@ struct Case {
     std::string name;
     std::map<std::string, float> settings;
     size_t stackSize{};
+    /// The reference's whole target stack: path relative to `data/targets`, and
+    /// the weight it gave that target. Same key form our own `Human::stack()`
+    /// uses, which is why `capture_fixture.py` anchors there.
+    std::map<std::string, float> stack;
 };
 
-/// Extracts name / settings / stack_size from cases.json. The shape is fixed
-/// and shallow, so a targeted scan beats adding a JSON dependency.
+/// Reads cases.json with the JSON library the target already links.
+///
+/// This was a hand-rolled scan of `find("\"name\":")` and friends, on the
+/// grounds that "the shape is fixed and shallow, so a targeted scan beats
+/// adding a JSON dependency". The dependency was never added -- `mh_json` is
+/// already linked into this target -- and the shape stopped being shallow the
+/// moment the stack itself became worth reading.
 std::vector<Case> loadCases() {
-    std::vector<Case> out;
     std::ifstream in(fixtureDir() / "cases.json");
-    if (!in) return out;
-    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if (!in) return {};
 
-    size_t pos = 0;
-    while ((pos = text.find("\"name\":", pos)) != std::string::npos) {
+    const nlohmann::json doc = nlohmann::json::parse(in, nullptr, false);
+    if (doc.is_discarded() || !doc.is_array()) return {};
+
+    std::vector<Case> out;
+    out.reserve(doc.size());
+    for (const auto& entry : doc) {
         Case c;
-        const size_t nq = text.find('"', pos + 7);
-        const size_t ne = text.find('"', nq + 1);
-        c.name          = text.substr(nq + 1, ne - nq - 1);
-
-        const size_t ss = text.find("\"stack_size\":", ne);
-        if (ss != std::string::npos)
-            c.stackSize = std::strtoul(text.c_str() + ss + 13, nullptr, 10);
-
-        // "settings" is an object of "modifier/full/name": value pairs.
-        const size_t setPos = text.find("\"settings\":", ne);
-        if (setPos != std::string::npos) {
-            const size_t open  = text.find('{', setPos);
-            const size_t close = text.find('}', open);
-            size_t k           = open;
-            while ((k = text.find('"', k + 1)) != std::string::npos && k < close) {
-                const size_t kEnd = text.find('"', k + 1);
-                if (kEnd == std::string::npos || kEnd > close) break;
-                const std::string key = text.substr(k + 1, kEnd - k - 1);
-                const size_t col      = text.find(':', kEnd);
-                if (col == std::string::npos || col > close) break;
-                c.settings[key] = std::strtof(text.c_str() + col + 1, nullptr);
-                k               = text.find(',', col);
-                if (k == std::string::npos || k > close) break;
-            }
+        c.name      = entry.value("name", std::string{});
+        c.stackSize = entry.value("stack_size", size_t{0});
+        for (const auto& [k, v] : entry.value("settings", nlohmann::json::object()).items()) {
+            c.settings[k] = v.get<float>();
+        }
+        for (const auto& [k, v] : entry.value("stack", nlohmann::json::object()).items()) {
+            c.stack[k] = v.get<float>();
         }
         out.push_back(std::move(c));
-        pos = ne;
     }
     return out;
 }
@@ -112,7 +107,13 @@ TEST_CASE("character geometry matches the Python reference end to end",
     const auto cases = loadCases();
     REQUIRE(cases.size() == 14);
 
-    const auto idx = TargetIndex::build(MH_DATA_DIR);
+    // data/targets, NOT data/ -- which is what `main.cpp:1441` builds and this
+    // test did not. The root decides the KEY FORM the stack uses: from `data/`
+    // every key carries a `targets/` prefix the application never sees. It went
+    // unnoticed because nothing compared the keys, only their count; the moment
+    // the stack itself is asserted against the reference, the two disagree on
+    // every single entry.
+    const auto idx = TargetIndex::build(std::filesystem::path(MH_DATA_DIR) / "targets");
     if (idx.componentCount() == 0) SKIP("target data not present");
     const auto mods = loadAllModifiers();
     REQUIRE_FALSE(mods.empty());
@@ -120,7 +121,11 @@ TEST_CASE("character geometry matches the Python reference end to end",
     auto baseMesh = loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
     REQUIRE(baseMesh.has_value());
 
-    TargetLibrary targets(MH_DATA_DIR);
+    // Rooted at data/targets to MATCH the index above and `main.cpp:1445`.
+    // The two roots must agree -- the index decides the key form, the library
+    // resolves it -- and this test had both at `data/`, which is self-consistent
+    // and is not what the application does.
+    TargetLibrary targets(std::filesystem::path(MH_DATA_DIR) / "targets");
 
     for (const Case& c : cases) {
         INFO("case: " << c.name);
@@ -131,8 +136,46 @@ TEST_CASE("character geometry matches the Python reference end to end",
             REQUIRE(h.setModifierValue(full, value));
         }
 
-        // The stack must match the reference's before the geometry can.
+        // The stack must match the reference's before the geometry can -- and
+        // the SIZE alone does not say that. A stack that picks the wrong
+        // targets, or the right targets with wrong weights, has the same count
+        // and produces a different body; the geometry check below would catch
+        // it, but as a wall of bad vertices rather than as "this target should
+        // not be here".
+        //
+        // The fixture's keys were unreadable before this: `capture_fixture.py`
+        // anchored them at a CWD-dependent path, so they were
+        // `../../data/targets/...` or `../../../data/...` depending on where
+        // the repo sat. Anchored at `data/targets` they are exactly the keys
+        // `Human::stack()` uses, so the two are directly comparable.
         CHECK(h.stackSize() == c.stackSize);
+
+        std::vector<std::string> onlyOurs;
+        std::vector<std::string> onlyTheirs;
+        std::vector<std::string> differentWeight;
+        for (const auto& [key, weight] : c.stack) {
+            const auto it = h.stack().find(key);
+            if (it == h.stack().end()) {
+                onlyTheirs.push_back(key);
+            } else if (std::fabs(it->second - weight) > 1e-4F) {
+                differentWeight.push_back(key + " (ref " + std::to_string(weight) + ", ours " +
+                                          std::to_string(it->second) + ")");
+            }
+        }
+        for (const auto& [key, weight] : h.stack()) {
+            if (!c.stack.contains(key)) onlyOurs.push_back(key);
+        }
+        INFO("targets only the reference has: " << onlyTheirs.size());
+        INFO("targets only we have: " << onlyOurs.size());
+        INFO("targets with a different weight: " << differentWeight.size());
+        for (const auto& k : onlyTheirs)
+            INFO("  ref only: " << k);
+        for (const auto& k : onlyOurs)
+            INFO("  ours only: " << k);
+        if (!differentWeight.empty()) INFO("  e.g. " << differentWeight.front());
+        CHECK(onlyTheirs.empty());
+        CHECK(onlyOurs.empty());
+        CHECK(differentWeight.empty());
 
         uint32_t missing = 0;
         h.applyStack(*baseMesh, targets, &missing);
