@@ -30,6 +30,17 @@ struct GltfWriteOptions {
     bool writeNormals{true};
     bool writeUVs{true};
 
+    /// Compress geometry with `KHR_draco_mesh_compression`.
+    ///
+    /// Off by default and it should stay that way: the extension goes in
+    /// `extensionsRequired`, so a consumer without a Draco decoder cannot open
+    /// the file at all. That is the spec's rule, not a choice -- the geometry
+    /// is not present in any other form -- and it makes compression something
+    /// the user asks for rather than something we do to them.
+    ///
+    /// Silently ignored by a build without draco (`io::dracoAvailable()`).
+    bool draco{false};
+
     std::string meshName{"MakeHuman"};
     std::string materialName{"Skin"};
 };

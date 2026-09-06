@@ -1141,7 +1141,8 @@ std::optional<mh::rig::SkinData> exportSkin(const PoseRig& rig, const mh::core::
 bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
                 const mh::foundation::RenderView& body, const std::map<QString, WornProxy>& worn,
                 std::span<const uint8_t> bodyMask, const mh::foundation::SkinView* skin,
-                const PoseRig& rig, std::span<const mh::foundation::MorphTarget> morphs = {}) {
+                const PoseRig& rig, std::span<const mh::foundation::MorphTarget> morphs = {},
+                bool draco = false) {
     const std::string ext = lowerExtension(path);
 
     // OBJ is the only format left with no blendshape channel -- its format
@@ -1191,6 +1192,7 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     objOpts.feetOnGround = true;
     mh::io::GltfWriteOptions gltfOpts;
     gltfOpts.feetOnGround = true;
+    gltfOpts.draco        = draco;
     mh::io::UsdWriteOptions usdOpts;
     usdOpts.feetOnGround = true;
     mh::io::SceneExportOptions sceneOpts;
@@ -1412,6 +1414,11 @@ int main(int argc, char** argv) {
                        ".obj .fbx .glb .usda .usdz .dae .stl .3mf .bvh. Repeatable: "
                        "each path is written from the SAME character, in order."),
         QStringLiteral("path"));
+    const QCommandLineOption dracoOpt(
+        QStringLiteral("draco"),
+        QStringLiteral("Compress glTF geometry with KHR_draco_mesh_compression. The extension "
+                       "is REQUIRED in the file, so a consumer without a decoder cannot open "
+                       "it -- the geometry exists in no other form."));
     const QCommandLineOption inspectOpt(
         QStringLiteral("inspect"),
         QStringLiteral("Read a mesh file with our own importer, print what it holds, and exit. "
@@ -1480,6 +1487,7 @@ int main(int argc, char** argv) {
     parser.addOption(exportOpt);
     parser.addOption(languageOpt);
     parser.addOption(blendshapesOpt);
+    parser.addOption(dracoOpt);
     parser.addOption(inspectOpt);
     parser.addOption(shaderOpt);
     parser.addOption(shotOpt);
@@ -1873,7 +1881,8 @@ int main(int argc, char** argv) {
     // it is how the menu and the command line quietly stop producing the same
     // file, and there are ~90 lines of live-rig restore, vertex compaction,
     // skin remapping and blendshape building to disagree about.
-    const auto exportTo = [&](const std::filesystem::path& outPath, bool wantBlendshapes) -> bool {
+    const bool wantDraco = parser.isSet(dracoOpt);
+    const auto exportTo  = [&](const std::filesystem::path& outPath, bool wantBlendshapes) -> bool {
         // A LIVE RIG ships REST geometry with a POSED armature, so for the
         // formats that carry a skeleton the mesh goes back to its unposed
         // positions before it is written. Normals and tangents are recomputed
@@ -1895,7 +1904,7 @@ int main(int argc, char** argv) {
             mesh->calcNormals();
             mesh->calcVertexTangents();
             std::printf("live rig: rest geometry + posed armature (%zu joints)\n",
-                        rig.globalPose.size());
+                         rig.globalPose.size());
         }
 
         for (auto& [group, worn] : wornProxies)
@@ -1916,7 +1925,7 @@ int main(int argc, char** argv) {
         const auto compact = mh::io::compactUnusedVertices(rm.view());
         if (compact.dropped() > 0) {
             std::printf("compacted %zu of %zu vertices (%zu unreferenced)\n", compact.coord.size(),
-                        compact.remap.size(), compact.dropped());
+                         compact.remap.size(), compact.dropped());
         }
 
         // The skin's joints and weights are per RENDER vertex, so they move
@@ -1929,12 +1938,12 @@ int main(int argc, char** argv) {
             std::tie(joints, weights) = mh::io::compactSkinAttributes(
                 skinData->view(), compact.remap, compact.coord.size());
             skinView = mh::foundation::SkinView{.jointNames   = skinData->jointNames,
-                                                .jointParents = skinData->jointParents,
-                                                .globalRest   = skinData->globalRest,
-                                                .globalPose   = skinData->globalPose,
-                                                .joints       = joints,
-                                                .weights      = weights,
-                                                .influences   = skinData->influences};
+                                                 .jointParents = skinData->jointParents,
+                                                 .globalRest   = skinData->globalRest,
+                                                 .globalPose   = skinData->globalPose,
+                                                 .joints       = joints,
+                                                 .weights      = weights,
+                                                 .influences   = skinData->influences};
         }
 
         // Blendshapes: 34 expression units, each blended across the three
@@ -1949,11 +1958,11 @@ int main(int argc, char** argv) {
                 // subdivided vertices, so expanding them would move the wrong
                 // vertices. Same reason the rig is refused above.
                 std::fprintf(stderr,
-                             "a subdivided mesh cannot carry blendshapes; "
-                             "exporting without them\n");
+                              "a subdivided mesh cannot carry blendshapes; "
+                               "exporting without them\n");
             } else {
                 shapes = mh::core::buildExpressionBlendshapes(index, human.factors(), rm.vmap(),
-                                                              mesh->vertexCount());
+                                                               mesh->vertexCount());
                 shapeDeltas.reserve(shapes.size());
                 morphs.reserve(shapes.size());
                 for (auto& sh : shapes) {
@@ -1965,12 +1974,12 @@ int main(int argc, char** argv) {
                     morphs.push_back({sh.name, shapeDeltas.back()});
                 }
                 std::printf("%zu blendshapes (34 expression units, ethnicity-blended)\n",
-                            morphs.size());
+                             morphs.size());
             }
         }
 
         const bool ok = exportMesh(outPath, displayMesh(), compact.view(), wornProxies, bodyMask,
-                                   skinView ? &*skinView : nullptr, rig, morphs);
+                                   skinView ? &*skinView : nullptr, rig, morphs, wantDraco);
 
         // Put the character back the way it was. The CLI exits straight after
         // this so it never noticed, but File > Export happens with the window

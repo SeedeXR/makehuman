@@ -1747,3 +1747,165 @@ TEST_CASE("glTF flips V, because its origin is the other corner", "[io][gltf][uv
     std::error_code ec;
     std::filesystem::remove(out, ec);
 }
+
+// ---------------------------------------------------------------------------
+// KHR_draco_mesh_compression.
+//
+// The codec has its own tests (test_draco.cpp, which decodes what it encodes).
+// These are about the FILE: an extension declared but not required, an
+// accessor that keeps its bufferView, or an attribute missing from the map all
+// produce a glTF that parses cleanly and is wrong.
+// ---------------------------------------------------------------------------
+
+#if defined(MH_HAVE_DRACO)
+
+namespace {
+
+nlohmann::json jsonOf(const std::filesystem::path& p) {
+    const auto b           = readFile(p);
+    const uint32_t jsonLen = readU32(b, 12);
+    return nlohmann::json::parse(
+        std::string(reinterpret_cast<const char*>(b.data()) + 20, jsonLen));
+}
+
+}  // namespace
+
+TEST_CASE("a Draco glTF declares the extension as REQUIRED", "[io][gltf][draco]") {
+    const auto out = tempGlb("draco_ext");
+    const auto m   = quad();
+    io::GltfWriteOptions opt;
+    opt.draco = true;
+    REQUIRE(io::writeGlb(out, core::RenderMesh::build(m).view(), opt).has_value());
+
+    const auto doc = jsonOf(out);
+    // Required, not merely used: the geometry exists in no other form, so a
+    // consumer without a decoder must refuse the file rather than open an empty
+    // one.
+    REQUIRE(doc.contains("extensionsRequired"));
+    CHECK(std::ranges::find(doc["extensionsRequired"], "KHR_draco_mesh_compression") !=
+          doc["extensionsRequired"].end());
+    REQUIRE(doc.contains("extensionsUsed"));
+    CHECK(std::ranges::find(doc["extensionsUsed"], "KHR_draco_mesh_compression") !=
+          doc["extensionsUsed"].end());
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("every primitive attribute is in the Draco map, and none keeps a bufferView",
+          "[io][gltf][draco]") {
+    const auto out = tempGlb("draco_prim");
+    const auto m   = quad();
+    io::GltfWriteOptions opt;
+    opt.draco = true;
+    REQUIRE(io::writeGlb(out, core::RenderMesh::build(m).view(), opt).has_value());
+
+    const auto doc   = jsonOf(out);
+    const auto& prim = doc["meshes"][0]["primitives"][0];
+    REQUIRE(prim.contains("extensions"));
+    const auto& ext = prim["extensions"]["KHR_draco_mesh_compression"];
+    REQUIRE(ext.contains("bufferView"));
+    REQUIRE(ext.contains("attributes"));
+
+    // Every attribute the primitive declares must be in the compressed buffer:
+    // there is nowhere else for a consumer to read it from.
+    for (const auto& [name, acc] : prim["attributes"].items()) {
+        INFO("attribute " << name);
+        CHECK(ext["attributes"].contains(name));
+        // ... and its accessor must NOT point at a bufferView, or a consumer
+        // may read the uncompressed bytes we no longer wrote.
+        CHECK_FALSE(doc["accessors"][acc.get<size_t>()].contains("bufferView"));
+    }
+    CHECK_FALSE(doc["accessors"][prim["indices"].get<size_t>()].contains("bufferView"));
+
+    // The accessors still have to describe the data -- count, type, and min/max
+    // on POSITION. A decoder uses them to size its output.
+    const auto& pos = doc["accessors"][prim["attributes"]["POSITION"].get<size_t>()];
+    CHECK(pos["count"] == 4);
+    CHECK(pos["type"] == "VEC3");
+    CHECK(pos.contains("min"));
+    CHECK(pos.contains("max"));
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("a rigged Draco primitive still points its skin at the right bytes",
+          "[io][gltf][draco]") {
+    // The accessor indices and the bufferView indices are two counters walking
+    // the same list. A compressed entry writes ONE view where an uncompressed
+    // one writes six, so the second counter has to step over it -- and if it
+    // does not, every accessor after the geometry reads the wrong block. The
+    // quad above cannot see that: with no skin and no morphs, nothing after the
+    // geometry consumes a view at all.
+    const auto m = quad();
+    const std::vector<std::string> names{"root", "child"};
+    const std::vector<int32_t> parents{-1, 0};
+    auto childRest    = foundation::Mat4::identity();
+    childRest.m[1][3] = 2.0F;
+    const std::vector<foundation::Mat4> globalRest{foundation::Mat4::identity(), childRest};
+
+    const auto rm  = core::RenderMesh::build(m);
+    const size_t n = rm.view().vertexCount();
+    const std::vector<uint32_t> joints(n * 4, 0);
+    std::vector<float> weights(n * 4, 0.0F);
+    for (size_t i = 0; i < n; ++i)
+        weights[i * 4] = 1.0F;
+
+    const foundation::SkinView skin{.jointNames   = names,
+                                    .jointParents = parents,
+                                    .globalRest   = globalRest,
+                                    .globalPose   = {},
+                                    .joints       = joints,
+                                    .weights      = weights,
+                                    .influences   = 4};
+    REQUIRE(skin.valid());
+
+    const auto out = tempGlb("draco_rig");
+    io::GltfWriteOptions opt;
+    opt.draco = true;
+    REQUIRE(io::writeGlb(out, rm.view(), opt, nullptr, &skin).has_value());
+
+    const auto doc = jsonOf(out);
+    // The inverse-bind matrices are the first thing after the geometry, and
+    // they are 64 bytes a joint. A view of any other size means the counter
+    // landed on the Draco block or on nothing.
+    const size_t ibmAcc = doc["skins"][0]["inverseBindMatrices"];
+    const auto& acc     = doc["accessors"][ibmAcc];
+    CHECK(acc["type"] == "MAT4");
+    CHECK(acc["count"] == 2);
+    REQUIRE(acc.contains("bufferView"));
+    CHECK(doc["bufferViews"][acc["bufferView"].get<size_t>()]["byteLength"] == 2 * 64);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("the Draco file is smaller than the plain one", "[io][gltf][draco]") {
+    // A quad is four vertices, so compression cannot win on it -- the header
+    // costs more than the data. The body mesh is the honest comparison.
+    const auto mesh = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+    auto copy = *mesh;
+    copy.buildAdjacency();
+    copy.calcNormals();
+    const auto rm = core::RenderMesh::build(copy);
+
+    const auto plainPath = tempGlb("draco_plain");
+    const auto dracoPath = tempGlb("draco_small");
+    REQUIRE(io::writeGlb(plainPath, rm.view()).has_value());
+    io::GltfWriteOptions opt;
+    opt.draco = true;
+    REQUIRE(io::writeGlb(dracoPath, rm.view(), opt).has_value());
+
+    const auto plain = std::filesystem::file_size(plainPath);
+    const auto small = std::filesystem::file_size(dracoPath);
+    INFO("plain " << plain << " bytes, draco " << small);
+    CHECK(small < plain / 3);
+
+    std::error_code ec;
+    std::filesystem::remove(plainPath, ec);
+    std::filesystem::remove(dracoPath, ec);
+}
+
+#endif  // MH_HAVE_DRACO

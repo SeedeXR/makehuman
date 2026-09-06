@@ -265,9 +265,16 @@ present = [n for n in _UV_FORMATS if n in uv_top]
 if len(present) < 2:
     print(f"skip UV convention: only {len(present)} of the base exports reported a UV")
 else:
+    # Every UV on the anchor vertex, compared as a SET. A seam vertex carries
+    # several and no two importers agree on their order.
     reference = uv_top[present[0]]
-    disagree = [n for n in present[1:]
-                if max(abs(a - b) for a, b in zip(uv_top[n], reference)) > 1e-4]
+    def apart(a, b):
+        if len(a) != len(b):
+            return 1.0
+        return max(max(abs(p - q) for p, q in zip(pa, pb)) for pa, pb in zip(a, b))
+    # 3e-4 rather than 1e-4: Draco quantises UVs to 12 bits, a step of 2.4e-4,
+    # and a compressed export must still pass this.
+    disagree = [n for n in present[1:] if apart(uv_top[n], reference) > 3e-4]
     if disagree:
         print(f"FAIL UV convention: {present[0]} puts the top vertex at {reference}, but "
               + "; ".join(f"{n} at {uv_top[n]}" for n in disagree)

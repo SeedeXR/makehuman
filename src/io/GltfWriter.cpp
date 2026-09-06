@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "makehuman/io/GltfWriter.h"
+
 #include "makehuman/foundation/Chars.h"
+#include "makehuman/io/DracoMesh.h"
 
 #include <algorithm>
 #include <array>
@@ -165,6 +167,18 @@ struct Packed {
     Vec3 lo{}, hi{};
     std::vector<foundation::Mat4> localRest;
 
+    /// The Draco block, when `GltfWriteOptions::draco` is on and this build has
+    /// the codec. `dracoBytes == 0` means this entry is written plainly, so the
+    /// two paths cannot be half-applied to one primitive.
+    size_t dracoOffset{}, dracoBytes{};
+    /// Filled in when the view is emitted, not computed from the entry shape:
+    /// a second formula for "which view did that entry get" is one that can
+    /// disagree with the loop.
+    int dracoView{-1};
+    std::vector<std::pair<std::string, uint32_t>> dracoAttributes;
+
+    [[nodiscard]] bool compressed() const { return dracoBytes != 0; }
+
     int posAcc{-1}, normAcc{-1}, uvAcc{-1}, tangAcc{-1}, jointAcc{-1}, weightAcc{-1}, ibmAcc{-1},
         idxAcc{-1};
     std::vector<int> morphAcc;
@@ -264,24 +278,79 @@ Packed packEntry(std::vector<uint8_t>& bin, const GltfSceneEntry& entry,
                  std::numeric_limits<float>::infinity()};
     pk.hi = Vec3{-pk.lo.x, -pk.lo.y, -pk.lo.z};
 
-    pk.posOffset = bin.size();
+    // Built once, then either written to the buffer or handed to Draco. The
+    // transforms are not cosmetic -- the scale, the ground offset and the V flip
+    // are what makes the file correct -- so compressing `rm` directly would
+    // produce a compressed mesh that disagrees with the uncompressed one about
+    // its size, its height and which way up its textures go.
+    std::vector<Vec3> pos;
+    pos.reserve(rm.coord.size());
     for (const Vec3& v : rm.coord) {
-        const float x = v.x * scale;
-        const float y = v.y * scale + groundOffset;
-        const float z = v.z * scale;
-        appendFloat(bin, x);
-        appendFloat(bin, y);
-        appendFloat(bin, z);
-        pk.lo.x = std::min(pk.lo.x, x);
-        pk.lo.y = std::min(pk.lo.y, y);
-        pk.lo.z = std::min(pk.lo.z, z);
-        pk.hi.x = std::max(pk.hi.x, x);
-        pk.hi.y = std::max(pk.hi.y, y);
-        pk.hi.z = std::max(pk.hi.z, z);
+        pos.push_back({v.x * scale, (v.y * scale) + groundOffset, v.z * scale});
+        pk.lo.x = std::min(pk.lo.x, pos.back().x);
+        pk.lo.y = std::min(pk.lo.y, pos.back().y);
+        pk.lo.z = std::min(pk.lo.z, pos.back().z);
+        pk.hi.x = std::max(pk.hi.x, pos.back().x);
+        pk.hi.y = std::max(pk.hi.y, pos.back().y);
+        pk.hi.z = std::max(pk.hi.z, pos.back().z);
     }
-    pk.posBytes = bin.size() - pk.posOffset;
 
-    if (pk.withNormals) {
+    std::vector<Vec2> uv;
+    if (pk.withUVs) {
+        uv.reserve(rm.texco.size());
+        // glTF's UV origin is top-left; OBJ/MakeHuman's is bottom-left, so V is
+        // flipped. Getting this wrong mirrors every texture vertically.
+        for (const Vec2& t : rm.texco)
+            uv.push_back({t.x, 1.0F - t.y});
+    }
+
+    std::vector<Vec4> tang;
+    if (pk.withTangents) {
+        tang.reserve(rm.vtang.size());
+        // The handedness, and the reason this is VEC4 rather than VEC3. The
+        // reference computes its binormal as `cross(normal, tangent)` and so
+        // discards Lengyel's sign, which inverts normal-map lighting on the
+        // mirrored half of a symmetric body (project_context.md 8). Ours
+        // carries it, and glTF's spec says exactly +1 or -1.
+        for (const Vec4& t : rm.vtang)
+            tang.push_back({t.x, t.y, t.z, t.w < 0.0F ? -1.0F : 1.0F});
+    }
+
+    std::vector<uint16_t> jointIdx;
+    if (entry.skin != nullptr) {
+        jointIdx.reserve(entry.skin->joints.size());
+        for (const uint32_t jIdx : entry.skin->joints)
+            jointIdx.push_back(static_cast<uint16_t>(jIdx));
+    }
+
+    if (options.draco && dracoAvailable()) {
+        const foundation::RenderView compressible{pos, uv, rm.vnorm, tang, rm.index};
+        const DracoSkin skin{
+            jointIdx, entry.skin != nullptr ? entry.skin->weights : std::span<const float>{}};
+        if (auto enc = dracoEncode(compressible, skin)) {
+            padTo4(bin);
+            pk.dracoOffset = bin.size();
+            bin.insert(bin.end(), enc->bytes.begin(), enc->bytes.end());
+            pk.dracoBytes      = bin.size() - pk.dracoOffset;
+            pk.dracoAttributes = std::move(enc->attributes);
+        }
+    }
+
+    // Everything below is the UNCOMPRESSED layout. A compressed entry writes
+    // none of it: the geometry lives in the Draco block and its accessors carry
+    // no bufferView, so leaving these blocks in would be dead bytes a consumer
+    // might read instead.
+    if (!pk.compressed()) {
+        pk.posOffset = bin.size();
+        for (const Vec3& v : pos) {
+            appendFloat(bin, v.x);
+            appendFloat(bin, v.y);
+            appendFloat(bin, v.z);
+        }
+        pk.posBytes = bin.size() - pk.posOffset;
+    }
+
+    if (pk.withNormals && !pk.compressed()) {
         padTo4(bin);
         pk.normOffset = bin.size();
         for (const Vec3& n : rm.vnorm) {
@@ -292,31 +361,24 @@ Packed packEntry(std::vector<uint8_t>& bin, const GltfSceneEntry& entry,
         pk.normBytes = bin.size() - pk.normOffset;
     }
 
-    if (pk.withUVs) {
+    if (pk.withUVs && !pk.compressed()) {
         padTo4(bin);
         pk.uvOffset = bin.size();
-        for (const Vec2& t : rm.texco) {
-            // glTF's UV origin is top-left; OBJ/MakeHuman's is bottom-left, so V
-            // is flipped. Getting this wrong mirrors every texture vertically.
+        for (const Vec2& t : uv) {
             appendFloat(bin, t.x);
-            appendFloat(bin, 1.0F - t.y);
+            appendFloat(bin, t.y);
         }
         pk.uvBytes = bin.size() - pk.uvOffset;
     }
 
-    if (pk.withTangents) {
+    if (pk.withTangents && !pk.compressed()) {
         padTo4(bin);
         pk.tangOffset = bin.size();
-        for (const Vec4& t : rm.vtang) {
+        for (const Vec4& t : tang) {
             appendFloat(bin, t.x);
             appendFloat(bin, t.y);
             appendFloat(bin, t.z);
-            // The handedness, and the reason this is VEC4 rather than VEC3.
-            // The reference computes its binormal as `cross(normal, tangent)`
-            // and so discards Lengyel's sign, which inverts normal-map lighting
-            // on the mirrored half of a symmetric body (project_context.md 8).
-            // Ours carries it, and glTF's spec says exactly +1 or -1.
-            appendFloat(bin, t.w < 0.0F ? -1.0F : 1.0F);
+            appendFloat(bin, t.w);
         }
         pk.tangBytes = bin.size() - pk.tangOffset;
     }
@@ -365,17 +427,19 @@ Packed packEntry(std::vector<uint8_t>& bin, const GltfSceneEntry& entry,
                                         scaledNode[i];
         }
 
-        padTo4(bin);
-        pk.jointOffset = bin.size();
-        for (const uint32_t jIdx : skin->joints)
-            appendU16(bin, static_cast<uint16_t>(jIdx));
-        pk.jointBytes = bin.size() - pk.jointOffset;
+        if (!pk.compressed()) {
+            padTo4(bin);
+            pk.jointOffset = bin.size();
+            for (const uint16_t jIdx : jointIdx)
+                appendU16(bin, jIdx);
+            pk.jointBytes = bin.size() - pk.jointOffset;
 
-        padTo4(bin);
-        pk.weightOffset = bin.size();
-        for (const float w : skin->weights)
-            appendFloat(bin, w);
-        pk.weightBytes = bin.size() - pk.weightOffset;
+            padTo4(bin);
+            pk.weightOffset = bin.size();
+            for (const float w : skin->weights)
+                appendFloat(bin, w);
+            pk.weightBytes = bin.size() - pk.weightOffset;
+        }
 
         padTo4(bin);
         pk.ibmOffset = bin.size();
@@ -462,11 +526,13 @@ Packed packEntry(std::vector<uint8_t>& bin, const GltfSceneEntry& entry,
         pk.morphs.push_back(mb);
     }
 
-    padTo4(bin);
-    pk.idxOffset = bin.size();
-    for (const uint32_t i : rm.index)
-        appendU32(bin, i);
-    pk.idxBytes = bin.size() - pk.idxOffset;
+    if (!pk.compressed()) {
+        padTo4(bin);
+        pk.idxOffset = bin.size();
+        for (const uint32_t i : rm.index)
+            appendU32(bin, i);
+        pk.idxBytes = bin.size() - pk.idxOffset;
+    }
 
     padTo4(bin);
     return pk;
@@ -651,6 +717,13 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
     std::string j;
     j.reserve(2048);
     j += R"({"asset":{"version":"2.0","generator":"MakeHuman C++ glTF writer"},)";
+    // REQUIRED, not merely used. The geometry exists in no other form in the
+    // file, so a consumer without a Draco decoder has to refuse it rather than
+    // open an empty scene -- which is what `extensionsUsed` alone would invite.
+    if (std::ranges::any_of(packs, [](const Packed& p) { return p.compressed(); })) {
+        j += R"("extensionsUsed":["KHR_draco_mesh_compression"],)"
+             R"("extensionsRequired":["KHR_draco_mesh_compression"],)";
+    }
 
     // Mesh nodes come first, so joints occupy nodes[entries.size() ..] and a
     // joint's node index is its skin index plus that base.
@@ -729,14 +802,26 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
         j += "}";
     };
     for (size_t i = 0; i < entries.size(); ++i) {
-        const Packed& pk = packs[i];
-        view(pk.posOffset, pk.posBytes, kTargetArrayBuffer);
-        if (pk.withNormals) view(pk.normOffset, pk.normBytes, kTargetArrayBuffer);
-        if (pk.withUVs) view(pk.uvOffset, pk.uvBytes, kTargetArrayBuffer);
-        if (pk.withTangents) view(pk.tangOffset, pk.tangBytes, kTargetArrayBuffer);
+        Packed& pk = packs[i];
+        if (pk.compressed()) {
+            pk.dracoView = viewCount;
+            // ONE view for all of the geometry, and no "target": the block is a
+            // Draco bitstream, not an array of vertices, and a validator flags
+            // an ARRAY_BUFFER target on it. It is emitted FIRST so its index is
+            // the entry's first, which is what the accessor loop below relies on
+            // when it skips a slot.
+            view(pk.dracoOffset, pk.dracoBytes, -1);
+        } else {
+            view(pk.posOffset, pk.posBytes, kTargetArrayBuffer);
+            if (pk.withNormals) view(pk.normOffset, pk.normBytes, kTargetArrayBuffer);
+            if (pk.withUVs) view(pk.uvOffset, pk.uvBytes, kTargetArrayBuffer);
+            if (pk.withTangents) view(pk.tangOffset, pk.tangBytes, kTargetArrayBuffer);
+        }
         if (entries[i].skin != nullptr) {
-            view(pk.jointOffset, pk.jointBytes, kTargetArrayBuffer);
-            view(pk.weightOffset, pk.weightBytes, kTargetArrayBuffer);
+            if (!pk.compressed()) {
+                view(pk.jointOffset, pk.jointBytes, kTargetArrayBuffer);
+                view(pk.weightOffset, pk.weightBytes, kTargetArrayBuffer);
+            }
             // No "target" on the inverse-bind view: it is not vertex data, and a
             // validator flags an ARRAY_BUFFER target on a MAT4 accessor.
             view(pk.ibmOffset, pk.ibmBytes, -1);
@@ -751,7 +836,7 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
                 view(mb.valOffset, mb.valBytes, kTargetArrayBuffer);
             }
         }
-        view(pk.idxOffset, pk.idxBytes, kTargetElementArray);
+        if (!pk.compressed()) view(pk.idxOffset, pk.idxBytes, kTargetElementArray);
     }
     // Image views come last so the accessor indices assigned above stay valid.
     // No "target": image bytes are neither vertex nor index data.
@@ -773,35 +858,57 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
              std::to_string(componentType) + R"(,"count":)" + std::to_string(count) +
              R"(,"type":")" + type + "\"";
     };
+    // The compressed twin: same description, NO bufferView, and no view index
+    // consumed. KHR_draco_mesh_compression requires exactly this -- the
+    // accessor still says how much data a decoder will produce, and points at
+    // nothing, because the bytes only exist inside the Draco block.
+    const auto accNoView = [&](int componentType, size_t count, const char* type) {
+        if (!firstAcc) j += ",";
+        firstAcc = false;
+        j += R"({"componentType":)" + std::to_string(componentType) + R"(,"count":)" +
+             std::to_string(count) + R"(,"type":")" + type + "\"";
+    };
     for (size_t i = 0; i < entries.size(); ++i) {
         Packed& pk   = packs[i];
         const auto n = entries[i].mesh.vertexCount();
-        pk.posAcc    = nextAcc++;
-        acc(kComponentFloat, n, "VEC3");
+        // The geometry accessor helper for THIS entry.
+        const auto geo = [&](int componentType, size_t count, const char* type) {
+            if (pk.compressed()) {
+                accNoView(componentType, count, type);
+            } else {
+                acc(componentType, count, type);
+            }
+        };
+        // The Draco block is this entry's first view and no accessor points at
+        // it, so the counter has to step over it or every later accessor here
+        // reads the wrong block.
+        if (pk.compressed()) ++nextView;
+        pk.posAcc = nextAcc++;
+        geo(kComponentFloat, n, "VEC3");
         j += R"(,"min":[)" + fmtBound(pk.lo.x) + "," + fmtBound(pk.lo.y) + "," + fmtBound(pk.lo.z) +
              R"(],"max":[)" + fmtBound(pk.hi.x) + "," + fmtBound(pk.hi.y) + "," +
              fmtBound(pk.hi.z) + "]}";
         if (pk.withNormals) {
             pk.normAcc = nextAcc++;
-            acc(kComponentFloat, n, "VEC3");
+            geo(kComponentFloat, n, "VEC3");
             j += "}";
         }
         if (pk.withUVs) {
             pk.uvAcc = nextAcc++;
-            acc(kComponentFloat, n, "VEC2");
+            geo(kComponentFloat, n, "VEC2");
             j += "}";
         }
         if (pk.withTangents) {
             pk.tangAcc = nextAcc++;
-            acc(kComponentFloat, n, "VEC4");
+            geo(kComponentFloat, n, "VEC4");
             j += "}";
         }
         if (entries[i].skin != nullptr) {
             pk.jointAcc = nextAcc++;
-            acc(kComponentUnsignedShort, n, "VEC4");
+            geo(kComponentUnsignedShort, n, "VEC4");
             j += "}";
             pk.weightAcc = nextAcc++;
-            acc(kComponentFloat, n, "VEC4");
+            geo(kComponentFloat, n, "VEC4");
             j += "}";
             pk.ibmAcc = nextAcc++;
             acc(kComponentFloat, entries[i].skin->jointCount(), "MAT4");
@@ -842,7 +949,7 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
             j += "}";
         }
         pk.idxAcc = nextAcc++;
-        acc(kComponentUnsignedInt, entries[i].mesh.indexCount(), "SCALAR");
+        geo(kComponentUnsignedInt, entries[i].mesh.indexCount(), "SCALAR");
         j += "}";
     }
     j += "],";
@@ -861,6 +968,20 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
         if (pk.weightAcc >= 0) j += R"(,"WEIGHTS_0":)" + std::to_string(pk.weightAcc);
         j += R"(},"indices":)" + std::to_string(pk.idxAcc) + R"(,"material":)" +
              std::to_string(pk.materialIndex) + R"(,"mode":)" + std::to_string(kModeTriangles);
+        if (pk.compressed()) {
+            // The map is draco's own attribute UNIQUE ids, keyed by the glTF
+            // names above. The `bufferView` is the whole compressed block: a
+            // decoder reads it once and gets every attribute out.
+            j += R"(,"extensions":{"KHR_draco_mesh_compression":{"bufferView":)" +
+                 std::to_string(pk.dracoView) + R"(,"attributes":{)";
+            bool firstDracoAttr = true;
+            for (const auto& [name, id] : pk.dracoAttributes) {
+                if (!firstDracoAttr) j += ",";
+                firstDracoAttr = false;
+                j += "\"" + name + "\":" + std::to_string(id);
+            }
+            j += "}}}";
+        }
         if (!pk.morphAcc.empty()) {
             j += R"(,"targets":[)";
             for (size_t t = 0; t < pk.morphAcc.size(); ++t) {

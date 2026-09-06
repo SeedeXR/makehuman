@@ -2140,6 +2140,66 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-07 01:45:00 — Session 158 · **Draco reaches the file, and my own harness cried wolf again**
+
+### The chunk
+Finished the Draco item: the writer side. `--draco` on the app, `draco` on
+`GltfWriteOptions`, off by default — a required-extension file is not something
+to hand a user unasked.
+
+Geometry accessors keep `count`/`type`/`min`/`max` and drop `bufferView`; the
+bytes become ONE Draco bufferView per primitive with no `target` (a validator
+flags ARRAY_BUFFER on a bitstream); the extension goes in **extensionsRequired**
+as well as `extensionsUsed`, because the geometry exists in no other form and a
+consumer without a decoder must refuse the file rather than open an empty scene.
+Morph targets, inverse-bind matrices and images keep their own views.
+
+### The transforms had to move
+Positions are scaled and ground-offset and V is flipped **on the way into the
+buffer**. Compressing the raw `RenderView` would have produced a compressed mesh
+that disagreed with the uncompressed one about its size, its height and which
+way up its textures go. So `packEntry` now builds the transformed arrays once
+and either writes them or hands them to Draco — one source, two destinations.
+
+### Measured
+2,101,296 -> 1,211,720 bytes through the app (the remainder is embedded texture,
+which Draco does not touch); 1,143,492 -> 124,684 (**9.2x**) on geometry alone.
+Blender opens the compressed file and reports 15,593 vertices, 28,796 triangles,
+179 bones, 14,517 skinned, same height — identical to the plain export. Rendered
+both and looked: same face, same eyes, no faceting.
+
+### The harness cried wolf, for the second time, the same way
+Blender first reported the anchor UV as `[0.6609, 0.4217]` plain against
+`[0.6609, 0.5446]` Draco — a 0.12 gap, far past quantisation, which reads as a
+mirrored V.
+
+It was not. The top of the head sits on a **UV seam** and carries two UVs, and
+glTF unwelds a seam into two vertices at the same position — so "the first UV on
+the anchor vertex" is importer order once more. Both files carry both UVs, and
+they agree to 1.1e-04, inside the 12-bit step of 2.4e-4.
+
+That is the SAME root cause as session 150's base.fbx u-mirror, and my fix then
+(anchor on `(-z, x, y)`) only handled ties in POSITION, not several UVs at one
+position. `uv_extremes` now groups by anchor and reports every UV there as a set.
+Tolerance 3e-4 so a quantised UV passes; the mirror mutation still fails.
+
+Twice is a pattern: a per-corner attribute compared "at a vertex" needs the
+whole set, never a representative.
+
+### Mutations
+Killed: used-but-not-required; geometry accessors keeping their bufferView;
+TEXCOORD_0 left out of the map; the view counter not stepping over the Draco
+block; the uncompressed blocks written as well. The fourth needed a NEW test —
+the quad has no skin or morphs, so nothing after the geometry consumes a view
+and the miscount was invisible; a rigged Draco export now checks the
+inverse-bind view is 64 bytes a joint.
+
+### Verification
+ctest green in debug, release, ASan and TSan. Blender harness 11/11. Format
+clean. Sonar OK.
+
+---
+
 ## 2026-09-07 00:45:00 — Session 157 · **the safeguard I described was a no-op, and the tests said so**
 
 ### The chunk

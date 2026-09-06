@@ -1592,7 +1592,7 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       packs images into the BIN chunk with MIME sniffed from magic bytes and
       identical images deduplicated; covered by `test_gltf_writer.cpp` including
       the rejection path for a format GLB cannot carry.
-- [~] glTF **Draco** compression — **the codec is in, the glTF wiring is not.**
+- [x] glTF **Draco** compression — codec and writer, behind `--draco`.
       `io::dracoEncode` (`src/io/DracoMesh.cpp`) compresses a primitive and
       returns the bitstream plus the glTF-name -> draco-unique-id map that
       `KHR_draco_mesh_compression` carries.
@@ -1626,11 +1626,34 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         protects joints is the declared data type, `DT_UINT16` against glTF's
         UNSIGNED_SHORT. Pinned by a fixture carrying joint index **300**:
         declaring `DT_UINT8` truncates it to 44 and the test fails.
-      - **Still to do:** the writer side. The accessors must keep their
-        `count`/`type`/`min`/`max` while dropping `bufferView`, the geometry
-        bytes are replaced by one Draco bufferView per primitive, and
-        `KHR_draco_mesh_compression` goes in `extensionsRequired`. Morph targets
-        are outside the extension and stay uncompressed.
+      - **The writer is done.** Geometry accessors keep `count`/`type`/`min`/
+        `max` and drop `bufferView`; the geometry bytes become ONE Draco
+        bufferView per primitive, with no `target` (a validator flags
+        ARRAY_BUFFER on a bitstream); `KHR_draco_mesh_compression` goes in
+        `extensionsRequired` as well as `extensionsUsed`, because the geometry
+        exists in no other form and a consumer without a decoder must refuse the
+        file rather than open an empty scene. Morph targets, inverse-bind
+        matrices and images are outside the extension and keep their own views.
+      - **Off by default, `--draco` to ask for it.** Required-extension files
+        are not something to hand a user unasked.
+      - Measured on the shipped character: **2,101,296 -> 1,211,720 bytes**
+        through the app (the rest is embedded texture, which Draco does not
+        touch), and **1,143,492 -> 124,684 (9.2x)** on geometry alone.
+      - **Blender opens it and agrees**: 15,593 vertices, 28,796 triangles, 179
+        bones, 14,517 skinned, same height — identical to the uncompressed
+        export. Rendered both and looked: same face, same eyes, no faceting.
+      - The transforms are applied BEFORE compression. Scale, ground offset and
+        the V flip are what make the file correct, so compressing the raw
+        `RenderView` would produce a compressed mesh that disagreed with the
+        uncompressed one about its size, its height and which way up its
+        textures go.
+      - **The validation harness produced a second false alarm and is fixed.**
+        `uv_extremes` reported ONE UV for the anchor vertex; the top of the head
+        is on a seam and carries two, and glTF unwelds a seam into two vertices
+        at the same position, so "the first one" is importer order again. It now
+        reports every UV at the anchor, as a set. Same root cause as the
+        base.fbx u-mirror in session 150. Tolerance widened to 3e-4 so a
+        12-bit-quantised UV still passes; the mirror mutation still fails it.
       - `LICENSING.md` §5.1 records draco (Apache-2.0, 1.5.7), and CI's
         dependency check now covers `find_package` as well as `FetchContent` —
         it previously checked only the latter, so anything found on the system

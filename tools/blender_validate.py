@@ -82,20 +82,6 @@ def _geometry(meshes):
     return verts, tris, uv_layers, lo, hi
 
 
-def _first_loop_per_vertex(m):
-    """Vertex index -> the loop where it first appears.
-
-    A seam vertex carries several UVs, one per loop. Taking the first
-    occurrence in polygon order is deterministic; taking "the last one seen"
-    depends on iteration order and would differ between importers.
-    """
-    out = {}
-    for poly in m.polygons:
-        for li in poly.loop_indices:
-            out.setdefault(m.loops[li].vertex_index, li)
-    return out
-
-
 def _uv_anchor(w):
     """Sort key picking one vertex out of a world-space extreme, unambiguously.
 
@@ -110,7 +96,15 @@ def _uv_anchor(w):
 
 
 def _uv_extremes(meshes):
-    """The UV of the highest vertex in world space.
+    """EVERY UV on the highest vertex in world space.
+
+    All of them, sorted, not "the first one". A vertex on a UV seam carries
+    several, and which one an importer lists first is its own business -- the
+    top of the head is on a seam and has two, (0.660913, 0.421668) and
+    (0.660913, 0.544667). Reporting one produced a false alarm twice: once on
+    base.fbx against base.obj, and once on a Draco GLB against a plain one,
+    where it looked like a mirrored V and was a different corner of the same
+    seam.
 
     `uv_layers` only counts layers. It cannot see a mirrored V, which is the
     one UV mistake an exporter actually makes: glTF puts (0,0) at the image's
@@ -122,20 +116,26 @@ def _uv_extremes(meshes):
     comparable across formats: the importers renumber vertices, but the top of
     the head is the top of the head in both.
     """
-    best = None
+    # Grouped by anchor, not "best so far". A seam is TWO vertices at one
+    # position after a glTF import -- the format unwelds -- so the winner of the
+    # tie is again whichever the importer listed first, and picking it puts us
+    # back where we started.
+    at_anchor = {}
     for o in meshes:
         m = o.data
         if not m.uv_layers:
             continue
         uv = m.uv_layers[0].data
-        for vi, li in _first_loop_per_vertex(m).items():
-            w = o.matrix_world @ m.vertices[vi].co
-            entry = {"z": round(w[2], 6),
-                     "uv": [round(uv[li].uv[0], 6), round(uv[li].uv[1], 6)]}
-            hi = _uv_anchor(w)
-            if best is None or hi < best[0]:
-                best = (hi, entry)
-    return {"highest": best[1] if best else None}
+        for poly in m.polygons:
+            for li in poly.loop_indices:
+                vi = m.loops[li].vertex_index
+                key = _uv_anchor(o.matrix_world @ m.vertices[vi].co)
+                at_anchor.setdefault(key, set()).add(
+                    (round(uv[li].uv[0], 5), round(uv[li].uv[1], 5)))
+    if not at_anchor:
+        return {"highest": None}
+    best = min(at_anchor)
+    return {"highest": {"z": -best[0], "uv": [list(p) for p in sorted(at_anchor[best])]}}
 
 
 def _shape_keys(meshes):
