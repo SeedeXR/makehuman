@@ -1681,11 +1681,48 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       character's.
       Gated by `tools/run_maya_validation.sh`, which pins `live_rig: False` as
       CURRENT behaviour so an assimp upgrade that fixes it fails loudly.
-      **Owner decision, stated plainly:** writing a binary FBX writer from spec
-      is weeks of work (node records, property types, connections, deflate,
-      footer) to recover ONE property. The cheaper alternatives are to leave FBX
-      baked and document it, or to ship the rest-pose FBX unposed and let the
-      user pose in their DCC. I have not picked one.
+      **OWNER DECISION TAKEN (2026-09-07): build our own FBX writer.** Verbatim:
+      *"but we have autodesk fbx sdk and maya to learn from which is way easier,
+      plus we can test through maya headless and blender headless to ensure all
+      properties on the writer and reader are included"* and *"attack and ensure
+      we have a robust fbx writer that's equivalent to autodesk fbx sdk or maya
+      fbx one and test it both to maya headless and blender headless"*.
+      **The licence line is unchanged and must stay unchanged**: the FBX SDK and
+      Maya are READERS and oracles, exactly as `LICENSING.md` §5.1 already
+      records. Nothing is linked, nothing is copied, and Blender's GPL exporter
+      is not translated either. Learning the format from files those tools
+      produce is what makes this legitimate.
+      Staged, because it is large:
+      1. **Container** — header, node records, property types (including the
+         zlib-encoded array forms), the NULL terminator record and the footer.
+         Validated by Maya AND Blender opening a minimal mesh.
+      2. Normals, UVs, materials, textures.
+      3. Skin + bind poses — the live rig, which is the whole reason for this.
+      4. Blend shapes.
+      Measured so far: Maya 2027 writes **FBX 7700** (FBX SDK 2020.3.9), assimp
+      writes **7500**; both are 7.x binary and the record layout differs only in
+      whether the record header's three counts are 32- or 64-bit (>=7500 is 64).
+      `tools/fbxdump.py` is our own byte-level reader, written from the public
+      record layout, and already walks Maya's file.
+      **What the live rig is made of, read out of Maya's own output** — this is
+      the part assimp drops, and now it is written down rather than guessed:
+      - `Geometry`: `Vertices` (d array), `PolygonVertexIndex` (i array, the
+        LAST index of each polygon stored as `~i`, i.e. negative), `Edges`,
+        `LayerElementNormal` / `LayerElementUV` / `LayerElementMaterial`,
+        `Layer`. Maya writes normals `ByPolygonVertex`/`Direct` and UVs
+        `ByPolygonVertex`/`IndexToDirect` with a separate `UVIndex`.
+      - `NodeAttribute` per joint, subtype `LimbNode`, `TypeFlags: Skeleton`.
+      - `Model` per object, subtype `Mesh` or `LimbNode`, `Version 232`.
+      - `Deformer` subtype `Skin` (`Version 101`, `Link_DeformAcuracy`,
+        `SkinningType: Linear`), then one `Deformer` subtype `Cluster` per
+        joint carrying `Indexes` (i), `Weights` (d), **`Transform`** and
+        **`TransformLink`** (16 doubles each).
+      - `Pose` subtype `BindPose` with `NbPoseNodes` and one `PoseNode` per
+        joint.
+      `TransformLink` is the joint's global at BIND time while the `Model`
+      nodes carry the CURRENT transform — write those two differently and the
+      rig is live; write them the same and you get the baked statue assimp
+      produces.
 - [x] **Export USD (`.usda`)** — written from the published format, **not** by
       linking OpenUSD. Checked first: assimp has **no USD support at all**,
       neither import nor export (verified against the linked build's format

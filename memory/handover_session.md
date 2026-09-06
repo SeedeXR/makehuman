@@ -2140,6 +2140,57 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-07 04:15:00 — Session 161 · **the owner said build the FBX writer, so I read Maya's**
+
+### The decision
+I had recorded the FBX writer as an owner decision. The owner took it, verbatim:
+*"we have autodesk fbx sdk and maya to learn from which is way easier, plus we
+can test through maya headless and blender headless"* and *"attack and ensure we
+have a robust fbx writer that's equivalent to autodesk fbx sdk or maya fbx one
+and test it both to maya headless and blender headless"*.
+
+**The licence line does not move, and does not need to.** The FBX SDK and Maya
+are READERS and oracles, which is exactly what `LICENSING.md` §5.1 already
+records; nothing is linked, nothing is copied, and Blender's GPL exporter is not
+translated either. Learning the format from files those tools produce is what
+makes this legitimate rather than a rule change.
+
+### What I did this fire
+Wrote `tools/fbxdump.py` -- our own byte-level FBX reader, from the public
+record layout -- and pointed it at a skinned cube Maya authored. It walks the
+whole file.
+
+Facts, measured rather than recalled:
+- Maya 2027 writes **FBX 7700** (FBX SDK 2020.3.9); assimp writes **7500**.
+  Both are 7.x binary and the record header differs only in whether its three
+  counts are 32- or 64-bit (>= 7500 is 64).
+- The live rig is: `Deformer`/`Skin`, one `Deformer`/`Cluster` per joint with
+  `Indexes`, `Weights`, **`Transform`** and **`TransformLink`**, plus a `Pose`
+  of subtype `BindPose` with one `PoseNode` per joint.
+- `TransformLink` is the joint's global at BIND time while the `Model` nodes
+  carry the CURRENT transform. Write those two differently and the rig is live;
+  write them the same and you get exactly the baked statue assimp produces.
+- `PolygonVertexIndex` stores the LAST index of each polygon as `~i`.
+- Maya writes normals `ByPolygonVertex`/`Direct` and UVs
+  `ByPolygonVertex`/`IndexToDirect` with a separate `UVIndex`.
+
+All of it is in `todo.md` so the next fire starts from the format rather than
+from a guess.
+
+### Staged, and the stages are real
+1. Container: header, node records, property types (including the zlib array
+   forms), the NULL terminator record, footer. Validated by Maya AND Blender
+   opening a minimal mesh.
+2. Normals, UVs, materials, textures.
+3. Skin + bind poses -- the live rig, which is the whole point.
+4. Blend shapes.
+
+### Verification
+Sonar OK (two findings on the new tool, both fixed rather than silenced). The
+reader is exercised against a real Maya file, not asserted about.
+
+---
+
 ## 2026-09-07 03:45:00 — Session 160 · **real weight, and a bundled M7 item that was three-quarters done**
 
 ### First, the M7 item I did not build
