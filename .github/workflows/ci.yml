@@ -269,6 +269,13 @@ jobs:
       - name: Mixamo bone mapping is consistent
         run: python3 tools/mixamo_mapping.py
 
+      # MH_DATA_DIR and friends are absolute paths into the tree that COMPILED
+      # the binary. A bundled copy carries its own assets, so any code reading
+      # the macro directly ignores them -- which is how the DMG shipped an app
+      # that only ran on the build machine.
+      - name: Runtime asset paths are resolved, not compiled in
+        run: python3 tools/audit_runtime_paths.py
+
       # The superset skeleton is generated, not hand-edited. If someone edits it
       # directly, or changes the generator without regenerating, the committed
       # file and the tool disagree -- and the tool is the one the docs describe.

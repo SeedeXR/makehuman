@@ -2314,12 +2314,22 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       - The `app_*` ctest entries already invoke that bundle's executable, so
         release behaviour was exercised; what was NOT exercised was the bundle
         as an artefact.
-      - **There is no DMG or CPack target at all** — `packaging/` contains only
-        an empty `macos` directory. So "production build" today means the `.app`,
-        not an installable.
-      - The bundle is **not relocatable**: `MH_DATA_DIR` and friends are
-        compile-time absolute paths, so copying the `.app` elsewhere breaks it.
-        That is the real blocker for a shippable DMG and it is still open.
+      - **CORRECTION to what I wrote last session: there IS a `dmg` target.** It
+        lives in `src/app/CMakeLists.txt:41-67`, not in `packaging/` — which is
+        why I looked in the wrong place and said none existed. It runs
+        `macdeployqt` and `hdiutil`.
+      - **RESOLVED: the bundle is relocatable now.** It was not: `macdeployqt`
+        bundles Qt and nothing else, so the DMG shipped an app with no data, no
+        compiled shaders and no icons. Fixed in two halves —
+        `foundation::resolveShaderDir`/`resolveResourceDir` join the existing
+        `resolveDataDir` so all three prefer bundle-relative paths, and the
+        `dmg` target now copies `data/`, `shaders/` and `resources/` into
+        `Contents/Resources`.
+        Proven by building the DMG, copying its `.app` out, **renaming the
+        source `data/` away**, and rendering: it works. That test is what caught
+        `buildAssetGroups` scanning `MH_DATA_DIR` directly for litspheres, poses
+        and eyes — invisible on the build machine, fatal anywhere else.
+        `tools/audit_runtime_paths.py` guards it in CI.
 - [ ] **`tools/make_eyes.py --check` is NOT in CI.** The `inventories` job is
       stdlib-only on ubuntu; this needs PIL and numpy. Either add them to that
       job or give the tool a stdlib PNG reader.

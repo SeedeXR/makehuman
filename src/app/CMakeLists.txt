@@ -53,6 +53,22 @@ if(APPLE AND MH_MACDEPLOYQT)
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/dmg"
         COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "$<TARGET_BUNDLE_DIR:makehuman>" "${CMAKE_BINARY_DIR}/dmg/MakeHuman.app"
+        # The ASSETS. macdeployqt bundles Qt and nothing else, so without these
+        # three the DMG shipped an application with no data, no compiled shaders
+        # and no icons -- it ran only on a machine that still had the source and
+        # build trees at the paths baked in at compile time.
+        #
+        # `foundation::resolve{Data,Shader,Resource}Dir` look here FIRST, ahead
+        # of those compile-time paths, so a bundle that carries its own copies
+        # uses them; one that does not still falls back for a dev build.
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${MH_DATA_DIR}" "${CMAKE_BINARY_DIR}/dmg/MakeHuman.app/Contents/Resources/data"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_BINARY_DIR}/shaders"
+                "${CMAKE_BINARY_DIR}/dmg/MakeHuman.app/Contents/Resources/shaders"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_SOURCE_DIR}/resources"
+                "${CMAKE_BINARY_DIR}/dmg/MakeHuman.app/Contents/Resources/resources"
         # -dmg would build the image too, but it lays out a bare window with no
         # Applications symlink; the hdiutil call below is what gives the usual
         # drag-to-install layout.
@@ -61,7 +77,7 @@ if(APPLE AND MH_MACDEPLOYQT)
                 "${CMAKE_BINARY_DIR}/dmg/Applications"
         COMMAND hdiutil create -volname "MakeHuman" -srcfolder "${CMAKE_BINARY_DIR}/dmg"
                 -ov -format UDZO "${CMAKE_BINARY_DIR}/MakeHuman.dmg"
-        DEPENDS makehuman
+        DEPENDS makehuman mh_shaders
         COMMENT "Packaging MakeHuman.dmg"
         VERBATIM)
 endif()

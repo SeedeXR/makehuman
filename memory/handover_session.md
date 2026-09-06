@@ -2140,6 +2140,59 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-06 15:30:00 — Session 147 · **the DMG shipped an app with no assets, and my last note was wrong about why**
+
+### A correction first
+Last session I wrote "there is no DMG or CPack target at all — `packaging/`
+holds one empty directory". **There IS a `dmg` target**, at
+`src/app/CMakeLists.txt:41-67`. I looked in `packaging/`, found it empty, and
+concluded rather than searched. It runs `macdeployqt` and `hdiutil`.
+
+### What was actually broken
+`macdeployqt` bundles **Qt and nothing else**. So the DMG contained an
+application with no data, no compiled shaders and no icons — it ran only on a
+machine that still had the source and build trees at the paths compiled into it.
+
+Two halves to the fix:
+1. `foundation::resolveShaderDir` and `resolveResourceDir` join the existing
+   `resolveDataDir`, sharing one search so the candidate ORDER is one policy
+   rather than three that drift. `MH_SHADER_DIR` was the worse of the two —
+   `${CMAKE_BINARY_DIR}/shaders`, inside the BUILD tree, so it does not even
+   survive deleting the build directory on the machine that made it.
+2. The `dmg` target now copies `data/`, `shaders/` and `resources/` into
+   `Contents/Resources`.
+
+### The test that mattered
+Build the DMG, copy its `.app` out, **rename the source `data/` away**, render.
+
+First attempt: **exit 1** — "cannot read .../data/litspheres", poses, eyes.
+`buildAssetGroups` scanned `MH_DATA_DIR` directly for those three while
+everything else went through `dataDir()`. Completely invisible on the build
+machine, fatal anywhere else, and precisely the class of bug a packaging step
+ships.
+
+Second attempt after routing them through `dataDir()`: renders, green eyes and
+all, with the source data tree gone.
+
+I nearly accepted an earlier, weaker version of this test. Copying the release
+`.app` to /tmp and running it "worked" — but only because it fell back to
+absolute paths that still existed. `Contents/Resources` held one file,
+`AppIcon.icns`. Hiding the source tree is what turned a test that could not fail
+into one that did.
+
+### The durable guard
+`tools/audit_runtime_paths.py`, in the stdlib-only `inventories` CI job: fails
+if `MH_DATA_DIR`/`MH_SHADER_DIR`/`MH_RESOURCE_DIR` appear in code outside a
+small, budgeted set of resolver fallbacks. It ignores comments and string
+literals — the env-var names are themselves strings in `DataDir.cpp` — and
+re-introducing the poses regression makes it fail.
+
+### Verification
+ctest green in debug, release, ASan and TSan. DMG built (116 MB) and its app run
+from outside the repo with `data/` renamed away. Format clean. Sonar OK.
+
+---
+
 ## 2026-09-06 14:30:00 — Session 146 · **six eye colours, and the production bundle joins the gate**
 
 ### The chunk

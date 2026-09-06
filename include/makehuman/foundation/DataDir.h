@@ -36,4 +36,24 @@ namespace mh::foundation {
 [[nodiscard]] std::filesystem::path resolveDataDir(const std::filesystem::path& executable,
                                                    const std::filesystem::path& compiledDefault);
 
+/// The compiled shaders (`*.qsb`), found the same way.
+///
+/// `MH_SHADER_DIR` is `${CMAKE_BINARY_DIR}/shaders` — a path inside the BUILD
+/// tree, so it is even less portable than the data one: it does not survive
+/// copying the `.app` off the machine that built it, and it does not survive
+/// deleting the build directory on the machine that did.
+///
+/// Sentinel: `litsphere.vert.qsb`, which every render path needs.
+[[nodiscard]] std::filesystem::path resolveShaderDir(const std::filesystem::path& executable,
+                                                     const std::filesystem::path& compiledDefault);
+
+/// The shipped `resources/` tree — icons, fonts, shader sources.
+///
+/// `MH_RESOURCE_DIR` points into the SOURCE tree. Sentinel:
+/// `icons/lucide/save.svg`, because a resources directory with no icons in it
+/// would leave every toolbar button blank, which is the failure this project
+/// has already shipped once.
+[[nodiscard]] std::filesystem::path resolveResourceDir(
+    const std::filesystem::path& executable, const std::filesystem::path& compiledDefault);
+
 }  // namespace mh::foundation

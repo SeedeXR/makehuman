@@ -490,6 +490,12 @@ std::string selectedChoice(std::span<const mh::foundation::AssetGroup> groups,
 std::vector<std::string> availableSkinMaterials();
 std::vector<std::string> availableEyeColours();
 
+/// dataDir(), NOT MH_DATA_DIR. The compile-time macro is an absolute path into
+/// the tree that built the binary; a bundled copy has its own assets and
+/// `resolveDataDir` has already found them. Three scans here used the macro and
+/// therefore ignored the bundle -- caught by running the DMG's app with the
+/// source `data/` renamed away, which failed on litspheres, poses and eyes
+/// while everything routed through dataDir() kept working.
 std::vector<mh::foundation::AssetGroup> buildAssetGroups(const std::string& currentPose,
                                                          const std::string& currentSkin,
                                                          const std::string& currentEyes,
@@ -502,7 +508,7 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(const std::string& curr
     mh::foundation::AssetGroup skins;
     skins.name      = "Skin";
     int defaultSkin = -1;
-    for (const fs::path& p : filesWithExtension(fs::path(MH_DATA_DIR) / "litspheres", ".png")) {
+    for (const fs::path& p : filesWithExtension(dataDir() / "litspheres", ".png")) {
         if (p.stem().string().find("eye") != std::string::npos) continue;  // not a body skin
         skins.choices.push_back({p.string(), prettyName(p, "skinmat_")});
         const int index = static_cast<int>(skins.choices.size()) - 1;
@@ -523,7 +529,7 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(const std::string& curr
     // The rest mesh IS the A-pose, so it is a choice with no file behind it.
     poses.choices.push_back({"rest", "A-pose (rest)"});
     poses.selected = 0;
-    for (const fs::path& p : filesWithExtension(fs::path(MH_DATA_DIR) / "poses", ".bvh")) {
+    for (const fs::path& p : filesWithExtension(dataDir() / "poses", ".bvh")) {
         poses.choices.push_back({p.string(), prettyName(p, "")});
         if (namesPose(p, currentPose)) {
             poses.selected = static_cast<int>(poses.choices.size()) - 1;
@@ -537,7 +543,7 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(const std::string& curr
     eyes.name = "Eyes";
     eyes.choices.push_back({kNoProxy, "None"});
     eyes.selected = 0;
-    for (const fs::path& p : filesWithExtension(fs::path(MH_DATA_DIR) / "eyes", ".mhclo")) {
+    for (const fs::path& p : filesWithExtension(dataDir() / "eyes", ".mhclo")) {
         eyes.choices.push_back({p.string(), prettyName(p, "")});
         if (p.stem().string() == currentEyes) {
             eyes.selected = static_cast<int>(eyes.choices.size()) - 1;
@@ -1307,7 +1313,11 @@ int main(int argc, char** argv) {
     // Resources before any widget exists: a stylesheet applied after the fact
     // repolishes every widget, and a font registered late is not the one the
     // first layout was measured with.
-    const std::filesystem::path resources(MH_RESOURCE_DIR);
+    // Same runtime question as the assets, and the compile-time answer is even
+    // worse here: MH_RESOURCE_DIR points into the SOURCE tree, MH_SHADER_DIR
+    // into the BUILD tree. A copied `.app` finds neither.
+    const std::filesystem::path resources = mh::foundation::resolveResourceDir(
+        QCoreApplication::applicationFilePath().toStdString(), MH_RESOURCE_DIR);
     mh::ui::theme::setIconDir(resources / "icons" / "lucide");
 
     // The Dock and window icon. A BUNDLED app takes its Dock icon from
@@ -1328,9 +1338,11 @@ int main(int argc, char** argv) {
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("MakeHuman (C++/Qt6)"));
     parser.addHelpOption();
-    const QCommandLineOption shaderOpt(QStringLiteral("shaders"),
-                                       QStringLiteral("Directory holding the compiled .qsb files"),
-                                       QStringLiteral("dir"), QStringLiteral(MH_SHADER_DIR));
+    const std::filesystem::path shaderDir = mh::foundation::resolveShaderDir(
+        QCoreApplication::applicationFilePath().toStdString(), MH_SHADER_DIR);
+    const QCommandLineOption shaderOpt(
+        QStringLiteral("shaders"), QStringLiteral("Directory holding the compiled .qsb files"),
+        QStringLiteral("dir"), QString::fromStdString(shaderDir.string()));
     const QCommandLineOption shotOpt(
         QStringLiteral("screenshot"),
         QStringLiteral("Render one frame to this PNG and exit -- how the window is checked "
@@ -2069,7 +2081,7 @@ int main(int argc, char** argv) {
     // @return an empty string on success, or the reason it failed.
     const auto renderTo = [&](const std::filesystem::path& out,
                               const mh::ui::RenderRequest& req) -> std::string {
-        auto renderer = mh::render::OffscreenRenderer::create(MH_SHADER_DIR);
+        auto renderer = mh::render::OffscreenRenderer::create(shaderDir);
         if (!renderer) return renderer.error().message();
 
         mh::render::RenderSettings rs;

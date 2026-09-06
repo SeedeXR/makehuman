@@ -110,3 +110,83 @@ TEST_CASE("an override pointing nowhere is ignored, not obeyed", "[foundation][d
     // caller reports the miss instead.
     CHECK(foundation::resolveDataDir(exe, compiled) == compiled);
 }
+
+// ---------------------------------------------------------------------------
+// The SAME question for the other two runtime directories, and they were worse
+// off than the data one.
+//
+// `MH_SHADER_DIR` is `${CMAKE_BINARY_DIR}/shaders` -- inside the BUILD tree, so
+// it does not survive copying the `.app` off the machine that built it and does
+// not survive deleting the build directory on the machine that did.
+// `MH_RESOURCE_DIR` points into the SOURCE tree.
+//
+// Measured before this was written: a release `.app` copied to /tmp still ran,
+// but only because it fell back to those absolute paths, which happened to
+// still exist. `Contents/Resources/` held one file -- AppIcon.icns.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A bundle layout: <root>/MakeHuman.app/Contents/{MacOS,Resources/<name>}.
+fs::path makeBundle(const fs::path& root, const std::string& name, const fs::path& sentinel) {
+    const fs::path app = root / "MakeHuman.app";
+    fs::create_directories(app / "Contents" / "MacOS");
+    const fs::path dir = app / "Contents" / "Resources" / name;
+    fs::create_directories((dir / sentinel).parent_path());
+    std::ofstream(dir / sentinel) << "# marker\n";
+    return app / "Contents" / "MacOS" / "makehuman";
+}
+
+}  // namespace
+
+TEST_CASE("the shader directory is found inside a bundle", "[datadir]") {
+    Sandbox box("shaders");
+    const fs::path exe = makeBundle(box.root, "shaders", "litsphere.vert.qsb");
+
+    const fs::path found = foundation::resolveShaderDir(exe, box.root / "nowhere");
+    CHECK(found == exe.parent_path().parent_path() / "Resources" / "shaders");
+
+    // The sentinel is load-bearing: a shaders directory with no compiled
+    // shaders in it must NOT win, or the app reports "shader missing" from a
+    // path that looks right.
+    fs::remove(found / "litsphere.vert.qsb");
+    CHECK(foundation::resolveShaderDir(exe, box.root / "nowhere") == box.root / "nowhere");
+}
+
+TEST_CASE("the resource directory is found inside a bundle", "[datadir]") {
+    Sandbox box("resources");
+    const fs::path exe =
+        makeBundle(box.root, "resources", fs::path("icons") / "lucide" / "save.svg");
+
+    const fs::path found = foundation::resolveResourceDir(exe, box.root / "nowhere");
+    CHECK(found == exe.parent_path().parent_path() / "Resources" / "resources");
+
+    // An icons-less resources tree loses. That failure has shipped here once
+    // already -- every toolbar button blank, and nothing logged.
+    fs::remove(found / "icons" / "lucide" / "save.svg");
+    CHECK(foundation::resolveResourceDir(exe, box.root / "nowhere") == box.root / "nowhere");
+}
+
+// All three share one search, so the candidate ORDER is one policy rather than
+// three that can drift. A bundle beats the compiled default for every one.
+TEST_CASE("all three directories use the same precedence", "[datadir]") {
+    Sandbox box("precedence");
+    const fs::path app = box.root / "MakeHuman.app";
+    fs::create_directories(app / "Contents" / "MacOS");
+    const fs::path exe = app / "Contents" / "MacOS" / "makehuman";
+    const fs::path res = app / "Contents" / "Resources";
+
+    makeAssetTree(res / "data");
+    fs::create_directories(res / "shaders");
+    std::ofstream(res / "shaders" / "litsphere.vert.qsb") << "x\n";
+    fs::create_directories(res / "resources" / "icons" / "lucide");
+    std::ofstream(res / "resources" / "icons" / "lucide" / "save.svg") << "x\n";
+
+    // A compiled default that also exists, so "bundle wins" is a real choice
+    // rather than the only option.
+    makeAssetTree(box.root / "src" / "data");
+
+    CHECK(foundation::resolveDataDir(exe, box.root / "src" / "data") == res / "data");
+    CHECK(foundation::resolveShaderDir(exe, box.root / "src") == res / "shaders");
+    CHECK(foundation::resolveResourceDir(exe, box.root / "src") == res / "resources");
+}
