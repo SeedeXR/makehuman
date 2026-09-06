@@ -2163,7 +2163,10 @@ int main(int argc, char** argv) {
         // helper cages exactly as the reference does, which is worth 2.87 cm on
         // the shipped mesh. Recomputing it here is how the two drift apart.
         stats.heightCm = mesh->heightCm();
-        w.setMacroStatus(mh::ui::macroStatusLine(stats, w.units()));
+        // Measured from the same masked body the height is, so the two agree
+        // about what "the figure" is.
+        stats.weightKg = mesh->weightKg();
+        w.setMacroStatus(mh::ui::macroStatusLine(stats, w.units(), w.weightMode()));
     };
 
     // Above `window` for the same reason rebuildInto is: the File-menu

@@ -43,6 +43,7 @@ add_executable(mh_tests
     golden/test_draco.cpp
     golden/test_unit_correctness.cpp
     golden/test_poseunits_parity.cpp
+    golden/test_body_measures.cpp
     golden/test_body_pose.cpp
     golden/test_slider_layout.cpp
     golden/test_obj_writer_parity.cpp

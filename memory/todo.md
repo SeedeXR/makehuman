@@ -1818,7 +1818,28 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       them.
       Not done, and it is the interesting part: **nothing in the application
       exports morph targets yet.** Only `mh_export_fixture` does.
-- [ ] Texture packing (ORM), GLB embedding, KTX2/Basis, optional Draco
+- [~] Texture packing (ORM), GLB embedding, KTX2/Basis, optional Draco — three
+      of the four are settled.
+      - **GLB embedding**: done.
+      - **Optional Draco**: done, `--draco`.
+      - **ORM packing: not applicable to the shipped data.** Occlusion-Roughness-
+        Metallic packs an AO map into R with roughness in G and metallic in B.
+        **No shipped `.mhmat` names an AO map** — the whole of `data/` uses
+        `diffuseTexture` (14 files) and `normalmapTexture` (8), and nothing
+        else. So R would be constant white and G/B are already exact as
+        `roughnessFactor`/`metallicFactor` scalars; packing three constants into
+        an image is strictly larger and less precise than what glTF already
+        carries. Reopen if an AO map ever ships.
+      - **KTX2/Basis is where the remaining win is, and it is an OWNER
+        DECISION.** With Draco on, **74.5% of the GLB is PNG** (1,749,562 of
+        2,348,760 bytes across three images: body diffuse, body normal, eye
+        diffuse — all distinct, dedup is working). But there is no linkable
+        library: Homebrew's `basis_universal` formula installs only the `basisu`
+        CLI (`bin.install "bin/basisu"`), and `libktx` is not in Homebrew at
+        all. So it means FetchContent of KTX-Software, its CI cost, and a
+        **second required extension** (`KHR_texture_basisu`) on top of Draco —
+        narrowing which tools can open our files twice over. I have not taken
+        that decision.
 - [x] **Unit-correctness at dm/m/cm/inch, for every writer.** Each height is
       measured back out of the file the writer produced, not taken from its
       return value: OBJ from its `v` lines, glTF from the POSITION min/max, USD
@@ -2547,10 +2568,29 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         because `isCheckable()` alone would also excuse a checkable TOOLBAR
         toggle, which is icon-only and does need one. Verified it still catches
         a genuinely blank action.
-- [ ] **Real weight (kg/lb) is NOT done.** The reference's `real_weight`
-      setting needs `getWeightKg()`, which derives from body surface area
-      (`human.py:638`, `bsa*bsa*3600/heightCm`). That is a computation we do not
-      have, not a formatting choice, so the weight stays a percentage.
+- [x] **Real weight (kg/lb) — done, and it needed the computation the note said
+      it did.** `Mesh::bodySurfaceArea()` and `Mesh::weightKg()`, with
+      Settings > Real weight (kg) beside Units.
+      - Surface area over the SAME masked body `heightCm()` measures — the
+        static face mask, which on the base mesh is exactly the `body` group's
+        13,378 of 18,486 faces. The reference's `calculateSurface(mesh,
+        vertGroups=['body'])` agrees to the vertex.
+      - Quads split (0,1,2)+(2,3,0), Heron's formula, matching
+        `mesh_operations.py:56-71,130-149`. Heron is worse conditioned than half
+        a cross product and is used anyway, because this number is compared
+        against the reference's.
+      - Parity, from running the reference on this exact `base.obj`: area
+        **161.37875366210938 dm²**, bsa **1.6137875366210936 m²**, height
+        **166.5889892578125 cm**, weight **56.27933 kg**. All four asserted.
+      - A unit cube pins Heron independently at exactly 6.0, and doubling every
+        coordinate must multiply the weight by 8 (area² / height = 4²/2) — which
+        catches a formula using the wrong power.
+      - `lb.` with the full stop and `2.20462` are the reference's own
+        (`guimodifier.py:179-182`). The percentage is NOT unit-converted: a
+        percentage has no units, and multiplying it by 2.20462 is the obvious
+        bug, so a test asserts imperial still reads "100.00 %".
+      - Mutations killed: helper faces counted; bsa left in dm²; area not
+        squared; the percentage converted to pounds; the pounds factor dropped.
 - [ ] **`ExpressionTaskView` / `ExpressionMixerTaskView` — NOT buildable as
       filed.** Measured: **zero `.mhpose` files ship**, so the chooser has no
       content (same as the seven proxy choosers). And the two are different

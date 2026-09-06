@@ -366,6 +366,61 @@ std::expected<std::vector<uint8_t>, MeshError> Mesh::faceMaskForVisibleVertices(
     return faceVisible;
 }
 
+namespace {
+
+/// Heron's formula for one triangle, from its three side lengths.
+///
+/// Accumulated in double even though the sides are float: the reference sums
+/// 26,756 float32 terms and its answer drifts in the last places, and matching
+/// that drift would mean reproducing numpy's pairwise summation rather than
+/// the formula. The difference on the shipped mesh is below 1e-4 dm^2.
+double heronArea(double a, double b, double c) {
+    const double o = (a + b + c) * (a + b - c) * (-a + b + c) * (a - b + c);
+    // Negative under float rounding for a degenerate triangle, and there are
+    // some: a zero-area sliver must contribute zero, not a NaN that poisons the
+    // whole sum.
+    return o <= 0.0 ? 0.0 : std::sqrt(o) / 4.0;
+}
+
+}  // namespace
+
+float Mesh::bodySurfaceArea() const {
+    if (coord_.empty() || fvert_.empty()) return 0.0F;
+    const size_t vpp = vertsPerPrimitive_;
+    if (vpp != 3 && vpp != 4) return 0.0F;
+
+    const std::vector<uint8_t> visible = staticFaceMask();
+    const auto side                    = [](const Vec3& p, const Vec3& q) {
+        const Vec3 d = q - p;
+        return static_cast<double>(std::sqrt(dot(d, d)));
+    };
+    const auto tri = [&](const Vec3& a, const Vec3& b, const Vec3& c) {
+        return heronArea(side(a, b), side(b, c), side(c, a));
+    };
+
+    double total = 0.0;
+    for (size_t f = 0; f < visible.size(); ++f) {
+        if (visible[f] == 0U) continue;
+        const Vec3& v0 = coord_[fvert_[f * vpp]];
+        const Vec3& v1 = coord_[fvert_[(f * vpp) + 1]];
+        const Vec3& v2 = coord_[fvert_[(f * vpp) + 2]];
+        total += tri(v0, v1, v2);
+        // The reference's split is (0,1,2) and (2,3,0), not (0,1,2)/(0,2,3).
+        // Same two triangles, so the area agrees either way -- kept identical
+        // because the side lengths, and therefore the rounding, do not.
+        if (vpp == 4) total += tri(v2, coord_[fvert_[(f * vpp) + 3]], v0);
+    }
+    return static_cast<float>(total);
+}
+
+float Mesh::weightKg() const {
+    const float height = heightCm();
+    if (height <= 0.0F) return 0.0F;
+    // Square METRES: the area above is in dm^2 and 100 dm^2 is 1 m^2.
+    const double bsa = static_cast<double>(bodySurfaceArea()) / 100.0;
+    return static_cast<float>(bsa * bsa * 3600.0 / static_cast<double>(height));
+}
+
 float Mesh::heightCm() const {
     if (coord_.empty() || fvert_.empty()) return 0.0F;
 

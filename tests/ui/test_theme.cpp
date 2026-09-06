@@ -2101,6 +2101,33 @@ TEST_CASE("the status line honours the unit setting", "[ui][status]") {
 
     // Metric is the default, so every existing caller is unchanged.
     CHECK(mh::ui::macroStatusLine(s) == mh::ui::macroStatusLine(s, mh::ui::Units::Metric));
+}
+
+// The reference offers weight as a PERCENTAGE or as a real mass, keyed off its
+// `real_weight` setting (`guimodifier.py:168-183`). The percentage is a slider
+// position; the mass is Mosteller's formula inverted, and needed a body-surface
+// computation this port did not have -- which is why it read "100.00 %" for
+// four milestones.
+TEST_CASE("weight reads as a mass when real weight is on", "[ui][macro][weight]") {
+    mh::ui::MacroStats s;
+    s.heightCm = 166.5889892578125F;
+    s.weightKg = 56.27933F;
+
+    // Percentage by default, unchanged: 50 + 100 * 0.5.
+    CHECK(mh::ui::macroStatusLine(s).contains(QStringLiteral("Weight: 100.00 %")));
+
+    CHECK(mh::ui::macroStatusLine(s, mh::ui::Units::Metric, mh::ui::Weight::Real)
+              .contains(QStringLiteral("Weight: 56.28 kg")));
+
+    // Pounds with a full stop, like "in." for inches -- the reference writes
+    // both as abbreviations (`guimodifier.py:179,182`). 56.27933 * 2.20462.
+    CHECK(mh::ui::macroStatusLine(s, mh::ui::Units::Imperial, mh::ui::Weight::Real)
+              .contains(QStringLiteral("Weight: 124.07 lb.")));
+
+    // Imperial must not silently convert the PERCENTAGE: a percentage has no
+    // units to convert, and multiplying it by 2.20462 is the obvious bug here.
+    CHECK(mh::ui::macroStatusLine(s, mh::ui::Units::Imperial)
+              .contains(QStringLiteral("Weight: 100.00 %")));
 
     // Only the height moves. Muscle and weight are percentages in both systems,
     // and a conversion applied to them would be a units bug that still looked

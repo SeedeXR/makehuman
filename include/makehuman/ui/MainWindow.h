@@ -108,6 +108,9 @@ public:
     /// choice survives a restart. Metric until they say otherwise.
     [[nodiscard]] Units units() const;
 
+    /// Whether the status line shows a mass or the slider percentage.
+    [[nodiscard]] Weight weightMode() const;
+
     /// Restores docks and geometry from QSettings, or lays out the defaults.
     void restoreWorkspace();
     void saveWorkspace() const;

@@ -267,6 +267,32 @@ public:
     /// model on it, and every vertex they write has to be inside it.
     [[nodiscard]] float heightCm() const;
 
+    /// Surface area of the BODY, in square decimetres.
+    ///
+    /// The same subset `heightCm()` measures -- the static face mask, which on
+    /// the shipped base mesh is exactly the `body` group's 13,378 of 18,486
+    /// faces. The helper cages and joint cubes roughly double the total, so
+    /// including them is not a rounding difference.
+    ///
+    /// Quads are split (0,1,2) and (2,3,0) and each triangle measured by
+    /// Heron's formula, which is what the reference does
+    /// (`legacy/python/shared/mesh_operations.py:56-71,130-149`). Heron is a
+    /// worse conditioned way to get a triangle's area than half the cross
+    /// product, and it is used here anyway: this number is compared against the
+    /// reference's, and a better formula would disagree with it.
+    [[nodiscard]] float bodySurfaceArea() const;
+
+    /// Estimated weight in kilograms.
+    ///
+    /// Mosteller's body-surface-area formula, inverted:
+    /// `bsa^2 * 3600 / heightCm`, with `bsa` the area in SQUARE METRES
+    /// (`legacy/python/apps/human.py:635-638`). An estimate from two
+    /// measurements, not a density model -- it knows nothing about muscle or
+    /// fat beyond what they do to the silhouette.
+    ///
+    /// Zero for an empty or zero-height mesh rather than a division by it.
+    [[nodiscard]] float weightKg() const;
+
 private:
     std::string name_;
     uint8_t vertsPerPrimitive_{4};

@@ -94,6 +94,7 @@ struct MainWindow::Impl {
     QMenu* savedMenu{};
     QUndoStack* undo{};
     Units units{Units::Metric};
+    Weight weight{Weight::Percent};
     /// The reference's persistent macro line. A permanent status-bar widget,
     /// because showMessage is transient and every other message would wipe it.
     QLabel* macroStatus{};
@@ -310,6 +311,31 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     addUnit(QT_TR_NOOP("Imperial (in.)"), QStringLiteral("settings.units.imperial"),
             Units::Imperial);
 
+    // Real weight, beside Units because it is the same kind of preference: how
+    // a measurement is written, not what the model is. The reference keys it
+    // off a `real_weight` setting (`guimodifier.py:168`); the percentage stays
+    // the default, as it is there.
+    QAction* realWeight = settings->addAction(tr("Real weight (kg)"));
+    registerText(realWeight, QT_TR_NOOP("Real weight (kg)"));
+    realWeight->setObjectName(QStringLiteral("settings.realweight"));
+    // Every menu action carries an icon -- a rule the icon test enforces, and
+    // it caught this one. `person-standing` rather than the Units menu's
+    // `scale-3d`: this is the figure's mass, not the unit it is written in.
+    realWeight->setIcon(theme::icon("person-standing", theme::palette().textSecondary, 16));
+    realWeight->setCheckable(true);
+    d_->weight = workspaceSettings().value(QStringLiteral("realWeight"), false).toBool()
+                     ? Weight::Real
+                     : Weight::Percent;
+    realWeight->setChecked(d_->weight == Weight::Real);
+    connect(realWeight, &QAction::toggled, this, [this](bool on) {
+        d_->weight = on ? Weight::Real : Weight::Percent;
+        workspaceSettings().setValue(QStringLiteral("realWeight"), on);
+        // Reuses unitsChanged: the one consumer rebuilds the whole status line
+        // from `units()` and `weightMode()`, so a second signal would be a
+        // second thing to forget to connect.
+        emit unitsChanged(d_->units);
+    });
+
     buildLanguageMenu();
 
     // The top toolbar (owner directive 8; the reference has one and we had
@@ -373,6 +399,10 @@ QString MainWindow::macroStatus() const {
 
 Units MainWindow::units() const {
     return d_->units;
+}
+
+Weight MainWindow::weightMode() const {
+    return d_->weight;
 }
 
 ViewportWidget* MainWindow::viewport() const {

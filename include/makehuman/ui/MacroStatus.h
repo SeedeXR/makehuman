@@ -3,6 +3,8 @@
 
 #include <QString>
 
+#include <cstdint>
+
 namespace mh::ui {
 
 /// Which length units the status line reads in.
@@ -20,6 +22,10 @@ enum class Units {
 /// (`guimodifier.py:180`). Exact enough: 1 inch is 2.54 cm by definition, and
 /// 1/2.54 = 0.3937007874..., so this is correct to nine digits.
 inline constexpr float kCentimetresToInches = 0.393700787F;
+
+/// The reference's own constant (`guimodifier.py:182`), not the more precise
+/// 2.20462262: matching its rounding is what keeps the two status lines equal.
+inline constexpr float kKilogramsToPounds = 2.20462F;
 
 /// The numbers behind the reference's persistent status line.
 ///
@@ -42,7 +48,19 @@ struct MacroStats {
     /// Centimetres, i.e. 10x the mesh's Y extent in the internal decimetre
     /// units (`legacy/python/apps/human.py:694-700`).
     float heightCm{0.0F};
+    /// Kilograms, from `Mesh::weightKg()`. Read only when `Weight::Real` is
+    /// asked for; the percentage above is a slider position and says nothing
+    /// about mass.
+    float weightKg{0.0F};
 };
+
+/// Which weight the status line shows.
+///
+/// The reference keys this off a `real_weight` setting
+/// (`legacy/python/apps/gui/guimodifier.py:168-183`). `Percent` is the slider
+/// position rescaled to 50..150; `Real` is Mosteller's formula inverted, and is
+/// the one that needs a mesh to have been measured.
+enum class Weight : uint8_t { Percent, Real };
 
 /// The status line, formatted as the reference formats it
 /// (`legacy/python/apps/gui/guimodifier.py:152-185`).
@@ -60,7 +78,8 @@ struct MacroStats {
 ///
 /// Strings go through `QCoreApplication::translate`, so a language change
 /// restyles them like every other UI string.
-[[nodiscard]] QString macroStatusLine(const MacroStats& stats, Units units = Units::Metric);
+[[nodiscard]] QString macroStatusLine(const MacroStats& stats, Units units = Units::Metric,
+                                      Weight weight = Weight::Percent);
 
 /// Just the gender clause, exposed because it carries all four branches and is
 /// the part worth testing at its boundaries.

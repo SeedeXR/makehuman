@@ -2140,6 +2140,78 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-07 03:45:00 — Session 160 · **real weight, and a bundled M7 item that was three-quarters done**
+
+### First, the M7 item I did not build
+"Texture packing (ORM), GLB embedding, KTX2/Basis, optional Draco" bundles four
+things. Embedding and Draco are done. The other two:
+
+- **ORM packing is not applicable to the shipped data.** ORM puts an AO map in
+  R with roughness in G and metallic in B. **No shipped `.mhmat` names an AO
+  map** — the whole of `data/` uses `diffuseTexture` (14) and `normalmapTexture`
+  (8), nothing else. R would be constant white and G/B are already exact as
+  scalars, so packing them into an image is strictly larger AND less precise.
+- **KTX2/Basis is the remaining win and an owner decision.** With Draco on,
+  **74.5% of the GLB is PNG** (1,749,562 of 2,348,760 bytes). But Homebrew's
+  `basis_universal` installs only the `basisu` CLI and `libktx` is not in
+  Homebrew at all, so it means FetchContent of KTX-Software plus a **second
+  required extension** on top of Draco. Not my call; recorded.
+
+So I picked different work rather than stopping, as the standing directive says.
+
+### Real weight (kg/lb)
+The note said this "needs `getWeightKg()`, which derives from body surface area
+— a computation we do not have". Correct, and now we do.
+
+`Mesh::bodySurfaceArea()` measures the SAME masked body `heightCm()` does: the
+static face mask, which on the base mesh is exactly the `body` group's 13,378 of
+18,486 faces. I verified that equality rather than assuming it — the reference's
+`getFacesForGroups(['body'])` returns 13,378, the same number our render probe
+reports for the static mask.
+
+Quads split (0,1,2)+(2,3,0), Heron's formula. Heron is worse conditioned than
+half a cross product and is used anyway: this number is compared against the
+reference's, and a better formula would disagree with it.
+
+Parity, from running the reference on this exact `base.obj`: area
+**161.37875366210938 dm²**, bsa **1.6137875366210936 m²**, height
+**166.5889892578125 cm**, weight **56.27933 kg**. Reads as
+"Weight: 56.28 kg" / "124.07 lb." for a 166.6 cm figure.
+
+### Two tests that do not depend on the reference
+A unit cube pins Heron at exactly 6.0. And doubling every coordinate must
+multiply the weight by **8** — area² over height is 4²/2 — which catches a
+formula using the wrong power without anyone needing to agree with us.
+
+### The percentage is not a mass
+The reference converts inside the real-weight branch only. A percentage has no
+units, and multiplying it by 2.20462 is the obvious bug, so a test asserts
+imperial still reads "100.00 %". Mutating exactly that fails it.
+
+### My own slip
+`Mesh cube("cube", 8)` — the second argument is verts per PRIMITIVE, not the
+vertex count. Every measurement returned zero, silently, because an 8-sided face
+is neither a triangle nor a quad. Caught by the cube test on its first run,
+which is what it is for; the comment now says so.
+
+### Mutations
+Killed: helper faces counted in the area; bsa left in dm²; area not squared; the
+percentage converted to pounds; the pounds factor dropped.
+
+### The icon rule caught the new menu action
+`settings.realweight` shipped with no icon and the icon test failed it -- every
+menu action must carry one. `person-standing` rather than the Units menu's
+`scale-3d`: this is the figure's mass, not the unit it is written in.
+
+Also learned about my own gate script: it has `set -e`, so the debug ctest
+failure aborted it before release/ASan/TSan ran, and their logs were STALE from
+the previous run. I read them as passes for a moment. Timestamps settled it.
+
+### Verification
+ctest 569/569 in debug, release, ASan and TSan. Format clean. Sonar OK.
+
+---
+
 ## 2026-09-07 02:45:00 — Session 159 · **Maya as a second oracle, and the FBX item's premise had moved**
 
 ### The chunk
