@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "makehuman/core/Modifier.h"
+#include "makehuman/foundation/FileRead.h"
 
 #include <algorithm>
 #include <array>
@@ -94,14 +95,20 @@ std::string ModifierError::message() const {
 
 std::expected<std::vector<Modifier>, ModifierError> loadModifiers(
     const std::filesystem::path& jsonPath) {
-    std::error_code ec;
-    if (!std::filesystem::exists(jsonPath, ec)) {
-        return std::unexpected(ModifierError{ModifierErrorKind::NotFound, jsonPath.string(), {}});
+    // openForRead, not exists()+ifstream: a DIRECTORY satisfies both and
+    // then parses as an empty file, so this reader used to accept one.
+    // See foundation/FileRead.h for what each reader did before.
+    auto opened = foundation::openForRead(jsonPath);
+    if (!opened) {
+        // NotAFile maps to Unreadable rather than NotFound: something IS
+        // there, and saying "not found" about a path that exists sends
+        // whoever is debugging it looking in the wrong place.
+        const auto kind = opened.error() == foundation::FileReadErrorKind::NotFound
+                              ? ModifierErrorKind::NotFound
+                              : ModifierErrorKind::Unreadable;
+        return std::unexpected(ModifierError{kind, jsonPath.string(), {}});
     }
-    std::ifstream in(jsonPath);
-    if (!in) {
-        return std::unexpected(ModifierError{ModifierErrorKind::Unreadable, jsonPath.string(), {}});
-    }
+    std::ifstream& in = *opened;
     const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 
     std::vector<Modifier> out;

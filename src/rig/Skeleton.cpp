@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "makehuman/rig/Skeleton.h"
+#include "makehuman/foundation/FileRead.h"
 
 #include <nlohmann/json.hpp>
 
@@ -183,14 +184,20 @@ bool Skeleton::buildRestMatrices() {
 }
 
 std::expected<Skeleton, SkeletonError> loadSkeleton(const std::filesystem::path& path) {
-    std::error_code ec;
-    if (!std::filesystem::exists(path, ec)) {
-        return std::unexpected(SkeletonError{SkeletonErrorKind::NotFound, path.string(), {}});
+    // openForRead, not exists()+ifstream: a DIRECTORY satisfies both and
+    // then parses as an empty file, so this reader used to accept one.
+    // See foundation/FileRead.h for what each reader did before.
+    auto opened = foundation::openForRead(path);
+    if (!opened) {
+        // NotAFile maps to Unreadable rather than NotFound: something IS
+        // there, and saying "not found" about a path that exists sends
+        // whoever is debugging it looking in the wrong place.
+        const auto kind = opened.error() == foundation::FileReadErrorKind::NotFound
+                              ? SkeletonErrorKind::NotFound
+                              : SkeletonErrorKind::Unreadable;
+        return std::unexpected(SkeletonError{kind, path.string(), {}});
     }
-    std::ifstream in(path);
-    if (!in) {
-        return std::unexpected(SkeletonError{SkeletonErrorKind::Unreadable, path.string(), {}});
-    }
+    std::ifstream& in = *opened;
 
     json root;
     try {

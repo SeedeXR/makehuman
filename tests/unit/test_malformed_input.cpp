@@ -21,6 +21,7 @@
 
 #include "makehuman/core/Material.h"
 #include "makehuman/core/Mhm.h"
+#include "makehuman/core/Modifier.h"
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/core/Proxy.h"
 #include "makehuman/core/SliderLayout.h"
@@ -222,4 +223,92 @@ TEST_CASE("every reader survives malformed input", "[malformed][robustness]") {
             r.run(fs::temp_directory_path());
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// A DIRECTORY IS NOT A FILE, and every reader here treated it as one.
+//
+// `std::filesystem::exists()` is true for a directory and `std::ifstream`
+// OPENS one, so the universal `if (!in) return NotFound;` guard never fires.
+// What happens next splits by how the parser reads:
+//
+//   * a parser that calls `sbumpc()` (nlohmann's) THROWS on the first read;
+//   * a parser that calls `in.get()` or `std::getline` merely sets badbit and
+//     sees end-of-input, so it happily parses a directory into a valid, EMPTY
+//     asset and returns success.
+//
+// The second is ours on every standard library, and it is the worse half: an
+// exception is at least loud. `data/` is full of directories sitting next to
+// the files these readers want, so this is one mistyped path away.
+//
+// This file has handed readers a directory since it was written. It could not
+// see any of it, because it discarded the result. These assert the error KIND.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("every reader refuses a directory", "[malformed][directory]") {
+    // A real directory that certainly exists, with real assets beside it --
+    // which is the point: `data/` is full of these, so this is one mistyped
+    // path away.
+    const std::filesystem::path dir = std::filesystem::path(MH_DATA_DIR) / "targets";
+    REQUIRE(std::filesystem::is_directory(dir));
+
+    // ONE flat case with CHECK, not SECTIONs with REQUIRE. The first version of
+    // this test used both, and Catch2 abandons a section at its first failed
+    // REQUIRE -- so `loadMaterial` failing hid `loadMhm` and `loadProxy`
+    // entirely, and they were doing the same thing. Every reader is asserted
+    // independently now.
+    //
+    // The kind matters as much as the failure. `Unreadable` says "I could not
+    // read this"; `Malformed` -- what four of these returned -- says the
+    // CONTENTS are wrong, which sends whoever is debugging it to inspect a file
+    // that is not a file.
+    const auto mat = mh::core::loadMaterial(dir);
+    CHECK_FALSE(mat.has_value());
+    if (!mat) CHECK(mat.error().kind == mh::core::MaterialErrorKind::Unreadable);
+
+    const auto mhm = mh::core::loadMhm(dir);
+    CHECK_FALSE(mhm.has_value());
+    if (!mhm) CHECK(mhm.error().kind == mh::core::MhmErrorKind::Unreadable);
+
+    const auto proxy = mh::core::loadProxy(dir);
+    CHECK_FALSE(proxy.has_value());
+    if (!proxy) CHECK(proxy.error().kind == mh::core::ProxyErrorKind::Unreadable);
+
+    const auto mods = mh::core::loadModifiers(dir);
+    CHECK_FALSE(mods.has_value());
+    if (!mods) CHECK(mods.error().kind == mh::core::ModifierErrorKind::Unreadable);
+
+    const auto layout = mh::core::loadSliderLayout(dir, {});
+    CHECK_FALSE(layout.has_value());
+    if (!layout) CHECK(layout.error().kind == mh::core::SliderLayoutErrorKind::Unreadable);
+
+    const auto obj = mh::core::loadObj(dir);
+    CHECK_FALSE(obj.has_value());
+    if (!obj) CHECK(obj.error().kind == mh::core::ObjErrorKind::Unreadable);
+
+    const auto skel = mh::rig::loadSkeleton(dir);
+    CHECK_FALSE(skel.has_value());
+    if (!skel) CHECK(skel.error().kind == mh::rig::SkeletonErrorKind::Unreadable);
+
+    const auto units = mh::rig::loadPoseUnitNames(dir);
+    CHECK_FALSE(units.has_value());
+    if (!units) CHECK(units.error().kind == mh::rig::PoseUnitsErrorKind::Unreadable);
+}
+
+// A missing path must still say NotFound. NotAFile mapping to Unreadable is
+// deliberate -- something IS there -- but collapsing both into one answer would
+// lose the distinction that tells a user whether to check the spelling or the
+// permissions.
+TEST_CASE("a missing path is still NotFound, not Unreadable", "[malformed][directory]") {
+    const std::filesystem::path missing =
+        std::filesystem::path(MH_DATA_DIR) / "no-such-thing-anywhere.mhmat";
+    REQUIRE_FALSE(std::filesystem::exists(missing));
+
+    const auto mat = mh::core::loadMaterial(missing);
+    CHECK_FALSE(mat.has_value());
+    if (!mat) CHECK(mat.error().kind == mh::core::MaterialErrorKind::NotFound);
+
+    const auto skel = mh::rig::loadSkeleton(missing);
+    CHECK_FALSE(skel.has_value());
+    if (!skel) CHECK(skel.error().kind == mh::rig::SkeletonErrorKind::NotFound);
 }

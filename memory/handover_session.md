@@ -2140,6 +2140,64 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-06 08:20:00 — Session 141 · **the loop came home, and a directory stopped being a valid asset**
+
+### The loop moved local
+The owner disabled the cloud routine. It had fired **ten times** — 16:27
+through 07:27 — done real work every time, and pushed none of it: the Claude
+GitHub App is read-only on `SeedeXR/makehuman`, so every run ended in a 403 and
+died with its container. `trig_01Q73g2iWMsqUe9T6kzoKo4a` is now `enabled:false`.
+
+Replaced with a local hourly cron (`853ce738`, :23). **Session-only** — it dies
+when this session exits and auto-expires after 7 days. The cloud was the
+durable option; the 403 made it worthless, so this is the better trade, but it
+is not durable and the next session must re-create it.
+
+### The chunk, which the last cloud run found and could not land
+`todo.md` said "four JSON readers crash on a directory". I measured rather than
+trusting it, and it was wrong in both directions. On libc++, given
+`data/targets`:
+
+| Reader | Before |
+|---|---|
+| `loadMaterial`, `loadMhm`, `loadProxy` | **returned SUCCESS** — a valid, empty asset |
+| `loadModifiers`, `loadSliderLayout`, `loadSkeleton`, `loadPoseUnitNames` | `Malformed` |
+| `loadObj` | `EmptyMesh` |
+
+Eight readers, one guard, textually identical in every file:
+
+    if (!exists(path)) return NotFound;
+    std::ifstream in(path);
+    if (!in) return Unreadable;
+
+`exists()` is true for a directory and `ifstream` **opens** one, so `!in` never
+fires. A parser calling `sbumpc()` throws; a parser calling `get()`/`getline()`
+sees end-of-input and succeeds. The three that "succeeded" are the worse half —
+an exception is at least loud — and `data/` is full of directories sitting
+beside the files these readers want.
+
+Fixed with `foundation::openForRead`: one guard, refusing any non-**regular**
+file rather than just directories. A FIFO also exists, also opens, and then
+blocks forever — and a hang is the one failure a test cannot assert on.
+
+### My own test hid three of them
+The first version used `SECTION`s with `REQUIRE`. Catch2 abandons a section at
+its first failed `REQUIRE`, so `loadMaterial` failing hid `loadMhm` and
+`loadProxy` — which were doing exactly the same thing. I only saw all eight by
+writing a throwaway probe that reported each reader's answer independently.
+
+Rewritten as one flat case with `CHECK`, so every reader is asserted on its own.
+The pre-existing `test_malformed_input.cpp` had handed readers a directory since
+it was written and saw none of this, because it discarded the result.
+
+### Verification
+ctest 538/538 in debug, release, ASan and TSan. Format clean. Sonar OK.
+Mutations killed: the regular-file check removed, and `NotAFile` collapsed into
+`NotFound` — the second matters because "not found" about a path that exists
+sends whoever is debugging it looking in the wrong place.
+
+---
+
 ## 2026-09-06 02:35:00 — Session 140 · **units, and my own audit catching me**
 
 ### The chunk

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "makehuman/core/SliderLayout.h"
+#include "makehuman/foundation/FileRead.h"
 
 #include <nlohmann/json.hpp>
 
@@ -58,16 +59,20 @@ std::string guessSliderLabel(std::string_view modifierName, std::string_view gro
 
 std::expected<std::vector<foundation::TaskViewSpec>, SliderLayoutError> loadSliderLayout(
     const std::filesystem::path& path, std::span<const Modifier> modifiers) {
-    std::error_code ec;
-    if (!std::filesystem::exists(path, ec)) {
-        return std::unexpected(
-            SliderLayoutError{SliderLayoutErrorKind::NotFound, path.string(), {}});
+    // openForRead, not exists()+ifstream: a DIRECTORY satisfies both and
+    // then parses as an empty file, so this reader used to accept one.
+    // See foundation/FileRead.h for what each reader did before.
+    auto opened = foundation::openForRead(path);
+    if (!opened) {
+        // NotAFile maps to Unreadable rather than NotFound: something IS
+        // there, and saying "not found" about a path that exists sends
+        // whoever is debugging it looking in the wrong place.
+        const auto kind = opened.error() == foundation::FileReadErrorKind::NotFound
+                              ? SliderLayoutErrorKind::NotFound
+                              : SliderLayoutErrorKind::Unreadable;
+        return std::unexpected(SliderLayoutError{kind, path.string(), {}});
     }
-    std::ifstream in(path);
-    if (!in) {
-        return std::unexpected(
-            SliderLayoutError{SliderLayoutErrorKind::Unreadable, path.string(), {}});
-    }
+    std::ifstream& in = *opened;
 
     json doc;
     try {

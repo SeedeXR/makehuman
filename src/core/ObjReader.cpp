@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/foundation/Chars.h"
+#include "makehuman/foundation/FileRead.h"
 
 #include <cstdio>
 #include <fstream>
@@ -108,15 +109,17 @@ std::string ObjError::message() const {
 }
 
 std::expected<Mesh, ObjError> loadObj(const std::filesystem::path& path) {
-    std::error_code ec;
-    if (!std::filesystem::exists(path, ec)) {
-        return std::unexpected(ObjError{ObjErrorKind::NotFound, path.string(), 0, {}});
+    // openForRead, not exists()+ifstream: a DIRECTORY satisfies both and then
+    // reads as empty, so this used to report EmptyMesh -- a failure, but one
+    // that says the file's CONTENTS are wrong when it is not a file at all.
+    auto opened = foundation::openForRead(path);
+    if (!opened) {
+        const auto kind = opened.error() == foundation::FileReadErrorKind::NotFound
+                              ? ObjErrorKind::NotFound
+                              : ObjErrorKind::Unreadable;
+        return std::unexpected(ObjError{kind, path.string(), 0, {}});
     }
-
-    std::ifstream in(path);
-    if (!in) {
-        return std::unexpected(ObjError{ObjErrorKind::Unreadable, path.string(), 0, {}});
-    }
+    std::ifstream& in = *opened;
 
     std::vector<Vec3> coords;
     std::vector<Vec2> uvs;

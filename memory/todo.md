@@ -31,14 +31,17 @@ build, finds real defects, and loses them when the container is torn down. The
 16:27 run attached its work as an mbox patch (`makehuman-session-131.patch`,
 two commits, verified to reproduce its tree exactly) rather than lose it.
 
-**Still owed from that run, and NOT yet verified locally** — its third finding:
-- [ ] **Four JSON readers crash on a directory.** `exists()` is true for a
-      directory and `ifstream` opens one, so all four reach `json::parse`,
-      whose first read throws `std::ios_base::failure` on libstdc++ —
-      uncaught. `tests/unit/test_malformed_input.cpp` has handed every reader a
-      directory since it was written and passed only because libc++ does not
-      throw. Fix: reject a directory explicitly and assert the error **kind**
-      is `Unreadable`, which has teeth on both standard libraries.
+- [x] **A directory was a valid asset — fixed, and it was worse than the note.**
+      The note said "four JSON readers crash". **Measured here on libc++**, the
+      truth was: `loadMaterial`, `loadMhm` and `loadProxy` returned **success**,
+      parsing a directory into a valid EMPTY asset; `loadModifiers`,
+      `loadSliderLayout`, `loadSkeleton` and `loadPoseUnitNames` returned
+      `Malformed`, which blames the contents of something that is not a file;
+      `loadObj` returned `EmptyMesh`. Eight readers, one shared bad guard.
+      Fixed with `foundation::openForRead` — one place, refusing any
+      non-regular file rather than just directories, because a FIFO also opens
+      and then blocks forever and a hang is the one failure a test cannot
+      assert on.
 
 ---
 

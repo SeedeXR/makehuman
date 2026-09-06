@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "makehuman/core/Material.h"
 #include "makehuman/foundation/Chars.h"
+#include "makehuman/foundation/FileRead.h"
 
 #include <algorithm>
 #include <cctype>
@@ -151,14 +152,20 @@ std::string MaterialError::message() const {
 }
 
 std::expected<Material, MaterialError> loadMaterial(const std::filesystem::path& path) {
-    std::error_code ec;
-    if (!std::filesystem::exists(path, ec)) {
-        return std::unexpected(MaterialError{MaterialErrorKind::NotFound, path.string(), 0, {}});
+    // openForRead, not exists()+ifstream: a DIRECTORY satisfies both and
+    // then parses as an empty file, so this reader used to accept one.
+    // See foundation/FileRead.h for what each reader did before.
+    auto opened = foundation::openForRead(path);
+    if (!opened) {
+        // NotAFile maps to Unreadable rather than NotFound: something IS
+        // there, and saying "not found" about a path that exists sends
+        // whoever is debugging it looking in the wrong place.
+        const auto kind = opened.error() == foundation::FileReadErrorKind::NotFound
+                              ? MaterialErrorKind::NotFound
+                              : MaterialErrorKind::Unreadable;
+        return std::unexpected(MaterialError{kind, path.string(), 0, {}});
     }
-    std::ifstream in(path);
-    if (!in) {
-        return std::unexpected(MaterialError{MaterialErrorKind::Unreadable, path.string(), 0, {}});
-    }
+    std::ifstream& in = *opened;
 
     Material m;
     const auto dir = path.parent_path();

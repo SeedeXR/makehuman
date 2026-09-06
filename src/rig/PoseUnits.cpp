@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "makehuman/rig/PoseUnits.h"
+#include "makehuman/foundation/FileRead.h"
 
 #include <nlohmann/json.hpp>
 
@@ -71,14 +72,20 @@ std::vector<Mat4> PoseUnits::blend(std::span<const size_t> unitIndices,
 
 std::expected<std::vector<std::string>, PoseUnitsError> loadPoseUnitNames(
     const std::filesystem::path& path) {
-    std::error_code ec;
-    if (!std::filesystem::exists(path, ec)) {
-        return std::unexpected(PoseUnitsError{PoseUnitsErrorKind::NotFound, path.string(), {}});
+    // openForRead, not exists()+ifstream: a DIRECTORY satisfies both and
+    // then parses as an empty file, so this reader used to accept one.
+    // See foundation/FileRead.h for what each reader did before.
+    auto opened = foundation::openForRead(path);
+    if (!opened) {
+        // NotAFile maps to Unreadable rather than NotFound: something IS
+        // there, and saying "not found" about a path that exists sends
+        // whoever is debugging it looking in the wrong place.
+        const auto kind = opened.error() == foundation::FileReadErrorKind::NotFound
+                              ? PoseUnitsErrorKind::NotFound
+                              : PoseUnitsErrorKind::Unreadable;
+        return std::unexpected(PoseUnitsError{kind, path.string(), {}});
     }
-    std::ifstream in(path);
-    if (!in) {
-        return std::unexpected(PoseUnitsError{PoseUnitsErrorKind::Unreadable, path.string(), {}});
-    }
+    std::ifstream& in = *opened;
 
     nlohmann::json root;
     try {
