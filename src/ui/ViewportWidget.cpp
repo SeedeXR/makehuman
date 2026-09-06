@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "makehuman/ui/ViewportWidget.h"
 
+#include "makehuman/render/Picking.h"
 #include "makehuman/ui/Theme.h"
 
 #include <rhi/qrhi.h>
@@ -10,6 +11,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
+#include <optional>
 
 namespace mh::ui {
 
@@ -166,6 +169,38 @@ void ViewportWidget::releaseResources() {
 
 void ViewportWidget::mousePressEvent(QMouseEvent* e) {
     d_->lastMouse = e->pos();
+}
+
+void ViewportWidget::mouseDoubleClickEvent(QMouseEvent* e) {
+    if (e->button() != Qt::LeftButton) return;
+
+    // A CPU ray cast, not the reference's colour-ID pass plus depth readback
+    // (`glmodule.py:641`, `camera.py:774`). Once per double-click over 36,972
+    // triangles, so there is nothing to save by going near the GPU -- and this
+    // works before the RHI exists, which is what makes it testable.
+    const render::Ray ray =
+        render::rayThroughPixel(d_->camera, e->pos().x(), e->pos().y(), width(), height());
+
+    std::optional<foundation::Vec3> nearest;
+    float nearestDistance = std::numeric_limits<float>::max();
+    for (const auto& m : d_->meshes) {
+        const auto hit = render::intersect(m.mesh, ray);
+        if (!hit) continue;
+        // Every worn proxy is its own mesh, so "nearest across all of them" is
+        // the question -- clicking a sleeve must focus the sleeve, not the arm
+        // behind it.
+        const foundation::Vec3 delta = *hit - ray.origin;
+        const float distance         = foundation::dot(delta, delta);
+        if (distance >= nearestDistance) continue;
+        nearestDistance = distance;
+        nearest         = hit;
+    }
+    // A miss leaves the camera alone. Focusing on wherever the ray happened to
+    // be would throw the model off screen from any corner of the window.
+    if (!nearest) return;
+
+    render::focusOn(d_->camera, *nearest);
+    update();
 }
 
 void ViewportWidget::mouseMoveEvent(QMouseEvent* e) {

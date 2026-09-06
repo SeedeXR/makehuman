@@ -7,12 +7,14 @@
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/core/RenderMesh.h"
 #include "makehuman/render/OffscreenRenderer.h"
+#include "makehuman/render/Picking.h"
 
 #include <QGuiApplication>
 #include <QImage>
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 
 int main(int argc, char** argv) {
@@ -52,6 +54,27 @@ int main(int argc, char** argv) {
     s.width     = 640;
     s.height    = 640;
     s.litsphere = std::filesystem::path(MH_DATA_DIR) / "litspheres" / "skinmat_caucasian.png";
+
+    // Optional: focus on the point under a pixel first, the way a double-click
+    // does in the viewport. This is what makes the picking maths checkable by
+    // LOOKING -- the picked point must end up in the middle of the frame, and
+    // no assertion about pan proves that as directly as the image does.
+    if (argc > 4) {
+        const int px   = std::atoi(argv[3]);
+        const int py   = std::atoi(argv[4]);
+        const auto hit = mh::render::intersect(
+            rm.view(), mh::render::rayThroughPixel(s.camera, px, py, s.width, s.height));
+        if (!hit) {
+            std::fprintf(stderr, "no hit at %d,%d\n", px, py);
+            return 1;
+        }
+        std::printf("focus: pixel %d,%d hits (%.4f, %.4f, %.4f)\n", px, py,
+                    static_cast<double>(hit->x), static_cast<double>(hit->y),
+                    static_cast<double>(hit->z));
+        mh::render::focusOn(s.camera, *hit);
+        std::printf("focus: pan now (%.4f, %.4f)\n", static_cast<double>(s.camera.panX),
+                    static_cast<double>(s.camera.panY));
+    }
 
     auto img = (*r)->render(rm.view(), s);
     if (!img) {

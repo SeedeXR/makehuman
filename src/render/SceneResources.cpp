@@ -521,16 +521,21 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
     return {};
 }
 
+// The MODEL rotates and the camera stays put (`glmodule.py`), which is what
+// keeps the litsphere's fixed eye-space lighting looking right.
+QMatrix4x4 modelMatrixOf(const Camera& camera) {
+    QMatrix4x4 m;
+    m.rotate(camera.pitchDegrees, 1.0F, 0.0F, 0.0F);
+    m.rotate(camera.yawDegrees, 0.0F, 1.0F, 0.0F);
+    return m;
+}
+
 void SceneResources::updateCamera(QRhiResourceUpdateBatch* batch, const Camera& camera,
                                   float aspect) {
     QMatrix4x4 proj = d_->rhi->clipSpaceCorrMatrix();
     proj.perspective(camera.fovY, aspect, 0.1F, 1000.0F);
 
-    // The MODEL rotates and the camera stays put (`glmodule.py`), which is what
-    // keeps the litsphere's fixed eye-space lighting looking right.
-    QMatrix4x4 model;
-    model.rotate(camera.pitchDegrees, 1.0F, 0.0F, 0.0F);
-    model.rotate(camera.yawDegrees, 0.0F, 1.0F, 0.0F);
+    const QMatrix4x4 model = modelMatrixOf(camera);
     // Pan is applied in EYE space, after the model rotation, so dragging moves
     // the model across the screen rather than along its own axes.
     QMatrix4x4 view;

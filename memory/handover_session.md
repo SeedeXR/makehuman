@@ -2140,6 +2140,68 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-06 21:45:00 — Session 154 · **picking: the item described the wrong feature and the wrong technique**
+
+### The chunk
+"ID-buffer picking with async readback (replaces the full-window sync readback)"
+— M6's last real item. Both halves of the parenthetical are wrong, and the
+feature underneath is not the one named.
+
+- **There is no full-window sync readback to replace.** The only readback in
+  the project is `OffscreenRenderer`'s, and it exists to produce a PNG.
+- **`selectedGroup` is dead in the reference**: `mhmain.py:293` and `:433` are
+  its only two occurrences, assigned and never read. Face-group selection is
+  not a feature to port.
+- **The live consumer of picking is click-to-focus** (`camera.py:774
+  mousePickHumanCenter`), and even there the ID buffer is only a hit test — the
+  real work is a SEPARATE depth readback (`glmodule.py:226`) unprojected to a
+  world position.
+
+So: a CPU ray cast. `render::rayThroughPixel` + `render::intersect`
+(Moller-Trumbore) + `render::focusOn`, on double-click. No readback, no extra
+pass, no GPU round trip, exact rather than quantised to a depth buffer — and it
+runs before the RHI exists, which is what makes it testable at all. Linear over
+36,972 triangles once per double-click; an acceleration structure belongs to
+whatever casts rays per frame, and nothing does.
+
+The eye-space ray is built from the field of view and carried back through the
+inverse model-view, deliberately not through the inverse MVP: that would drag in
+`clipSpaceCorrMatrix()` and the backend's NDC depth range (Metal [0,1], GL
+[-1,1]) for nothing.
+
+### Two mutations survived the first pass, and both were my test's fault
+- **"nearest of several hits wins" passed with the nearest-check removed.** I
+  had listed the NEAR quad last, so "keep whatever was seen most recently"
+  returned the right answer by accident. Reordered.
+- **"nearest across MESHES" was untested** — every UI test used one mesh. Added
+  a two-plane test with the expected pan derived from the geometry
+  (ndcX 0.15 x aspect 4/3 x tan 15 deg = 0.05359 per unit of depth, near plane
+  42 away), so it pins the value rather than a direction.
+
+### And one mutation reported a false pass
+`M1: aspect factor removed` came back green. The build had FAILED
+(`unused variable 'aspect'`) and the stale binary ran. My mutation loop piped
+the build to /dev/null. **A mutation harness must check that the mutation
+compiled** — a build error is not a passing test, it is no test at all. The
+loop now greps for `error:` and says "inconclusive". Re-run compiling, it kills.
+
+### Shared, not duplicated
+`modelMatrixOf` now lives once in `SceneResources` and both the renderer and the
+picker use it. My first version copied it into `Picking.cpp` with a comment
+claiming a test would catch divergence — it would not have: both sides of that
+test used the picker's own copy.
+
+### Verified by looking
+The render probe takes a pixel, focuses, and renders. Picked the chin at
+(320,150): hit (0.0000, 6.2014, 1.4350), pan (-0.0000, -6.2014), and the chin
+sits under the centre crosshair in the after image.
+
+### Verification
+ctest green in debug, release, ASan and TSan. Format clean. Sonar OK. Ten
+mutations killed across the maths, the mesh loop and the viewport wiring.
+
+---
+
 ## 2026-09-06 20:45:00 — Session 153 · **the other four shaders: not ported, and now it stays that way**
 
 ### The chunk

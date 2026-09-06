@@ -95,6 +95,10 @@ protected:
     // the litsphere's fixed eye-space lighting read correctly.
     void mousePressEvent(QMouseEvent* e) override;
     void mouseMoveEvent(QMouseEvent* e) override;
+    /// Double-click focuses: the view recentres on the point under the cursor,
+    /// without zooming. Matches what the reference does with a pick
+    /// (`camera.py:774 mousePickHumanCenter`); a miss is a no-op.
+    void mouseDoubleClickEvent(QMouseEvent* e) override;
     void wheelEvent(QWheelEvent* e) override;
     /// Arrows orbit, +/- dolly, Home resets. Without this the viewport takes
     /// focus and does nothing with it, and orbiting is mouse-only -- which

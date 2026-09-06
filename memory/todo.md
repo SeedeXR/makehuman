@@ -1286,7 +1286,32 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       Recorded as a commented exclusion in `viewportMapsOf`, so a fifth
       "unplumbed property" cannot be reported as a new discovery.
 - [ ] GPU skinning (matrix palette UBO/SSBO)
-- [ ] ID-buffer picking with async readback (replaces the full-window sync readback)
+- [x] **Picking, done as a CPU ray cast — and the item's own description was
+      wrong twice.** There was no "full-window sync readback" to replace: the
+      only readback in the project is `OffscreenRenderer`'s, which exists to
+      produce a PNG. And an ID buffer is not what the feature needs.
+      - **What the reference actually does.** A colour-ID pass
+        (`glmodule.py:641 pickMesh`) answers "is the human under the cursor"
+        (`gui3d.py:436`), then a SEPARATE depth readback
+        (`glmodule.py:226`) is unprojected to a world position
+        (`camera.py:774 mousePickHumanCenter`). The ID buffer is a hit test; the
+        depth buffer does the real work.
+      - **`selectedGroup` is dead in the reference.** `mhmain.py:293` and `:433`
+        are its only two occurrences — assigned, never read. So face-group
+        selection is not a feature to port; **click-to-focus** is.
+      - Implemented as `render::rayThroughPixel` + `render::intersect`
+        (Moller-Trumbore) + `render::focusOn`, wired to double-click in the
+        viewport. No readback, no extra pass, no GPU round trip, exact rather
+        than quantised to a depth buffer, and it works before the RHI exists —
+        which is what makes it testable at all.
+      - Linear over 36,972 triangles, once per double-click. An acceleration
+        structure belongs to whatever casts rays per FRAME; nothing does.
+      - The model matrix is now **shared** with `SceneResources::updateCamera`
+        (`modelMatrixOf`). A second copy is only the first one's inverse while
+        the two stay identical, and a drift would put every click a few degrees
+        off — a bug that looks like bad aim rather than a broken matrix.
+      - Verified by looking: the probe takes a pixel, focuses on it, and the
+        picked point lands in the middle of the frame.
 - [x] **Cached bounding box: measured, deliberately NOT built.**
       `Mesh::boundingBox()` has **zero production callers** — it appears only in
       three tests. It is one linear pass over 19,158 `Vec3`.

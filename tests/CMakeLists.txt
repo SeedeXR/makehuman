@@ -109,7 +109,8 @@ set_target_properties(mh_export_fixture PROPERTIES CXX_STANDARD 23 CXX_STANDARD_
 # renderer is. They run offscreen -- no window is created.
 if(MH_HAVE_RENDER)
     add_executable(mh_render_tests render/test_offscreen_render.cpp
-                                   render/test_proxy_render.cpp)
+                                   render/test_proxy_render.cpp
+                                   unit/test_picking.cpp)
     target_link_libraries(mh_render_tests
         PRIVATE mh::core mh::render mh::io Catch2::Catch2WithMain mh::warnings mh::sanitize)
     target_compile_definitions(mh_render_tests PRIVATE

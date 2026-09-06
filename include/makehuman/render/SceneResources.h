@@ -51,6 +51,15 @@ struct Camera {
     float panY{0.0F};
 };
 
+/// The model rotation this camera implies.
+///
+/// Shared rather than written twice: the renderer builds the frame with it and
+/// the picker inverts it, and the two are only each other's inverse while they
+/// are literally the same matrix. A second copy that drifted would put every
+/// click a few degrees off the thing under the cursor -- a bug that looks like
+/// bad aim, not like a broken matrix.
+[[nodiscard]] QMatrix4x4 modelMatrixOf(const Camera& camera);
+
 /// Which shader shades the frame.
 ///
 /// Both are always built, because the viewport toggles between them at runtime
