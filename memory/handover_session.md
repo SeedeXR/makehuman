@@ -2140,6 +2140,52 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-06 20:45:00 — Session 153 · **the other four shaders: not ported, and now it stays that way**
+
+### The chunk
+Closed the M6 shader-port item. It had sat at `[~]` reading "Remaining: phong,
+normalmap, skin, toon" as though four ports were queued. Reading the four
+settles it, and the answer is that none of them should be written.
+
+**Nothing in `data/` asks for them.** Every `shader` line across the 1,787
+shipped files names one of two stems: `litsphere` (`default.mhmat`,
+`brown.mhmat`) and `xray` (`materials/xray.mhmat`). That is the whole demand.
+
+- **phong** — Blinn-Phong over diffuse + AO. The PBR path consumes the same
+  `MaterialDesc` fields through a better BRDF, and `metallicRoughnessOf` is the
+  recorded conversion between the two models.
+- **normalmap** — tangent-space normal mapping against ONE light
+  (`normalmap_fragment_shader.txt:9-17`); PBR does it against three.
+- **skin** — Blinn-Phong + AO + a **1D gradient map** for light colour
+  temperature (`skin_fragment_shader.txt:5,17`). **Unportable as shipped:
+  `find data -iname '*gradient*'` returns nothing**, so its central input does
+  not exist in the tree. Real subsurface is M9, not a port of this.
+- **toon** — genuinely distinct, and nothing requests it.
+- **xray** — forbidden to translate (session 152: MeshLab, GPL-2.0-or-later).
+
+### The part that is not documentation
+A `.mhmat` names a shader and **this port ignores the name** — the viewport
+picks its model from settings, and `Material.cpp:59` only strips the stem. So an
+asset asking for `toon` today renders as PBR or the matcap and nothing says why.
+Harmless while both stems are accounted for; a trap the moment a new asset
+arrives, and the seven empty proxy choosers mean new assets are expected.
+
+`tools/audit_shading.py` fails unless every stem in `data/` is either
+implemented or excluded with a reason that still appears in the file which
+recorded the decision. Same shape as `audit_licences.py` from the last chunk,
+and it now sits beside it in CI's stdlib-only `inventories` job. Reopening any
+exclusion means deleting its line, which fails until the model exists.
+
+Three mutations, all killed: a material asking for `toon`; the `LICENSING.md`
+section renamed so xray's exclusion loses its record; `litsphere` removed from
+IMPLEMENTED.
+
+### Verification
+ctest green in debug, release, ASan and TSan. Format clean. Sonar OK. Audit
+reports 2 stems: litsphere implemented, xray excluded.
+
+---
+
 ## 2026-09-06 20:00:00 — Session 152 · **the xray shader is MeshLab's, and LICENSING.md said otherwise**
 
 ### The chunk

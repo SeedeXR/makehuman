@@ -889,12 +889,37 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `src/core/RenderMesh.cpp:172` fan-triangulates at unweld time: `(0,1,2)`,
       `(0,2,3)`, … for any corner count, and a triangle stored as a degenerate
       quad emits one triangle.
-- [~] Shader port to `.qsb`: **litsphere done** (`resources/shaders/rhi/`),
-      compiles to SPIR-V + GLSL 450 + MSL 12 as part of the build
-      (`src/render/CMakeLists.txt`); the `0.495` constant verified present in
+- [x] **Shader port to `.qsb`: litsphere done, and the other four are
+      deliberately NOT ported.** The litsphere is in `resources/shaders/rhi/`
+      and compiles to SPIR-V + GLSL 450 + MSL 12 as part of the build
+      (`src/render/CMakeLists.txt`); the `0.495` constant is verified present in
       the generated Metal.
-      Remaining: phong, normalmap, skin, toon (sources stay in
-      `data/shaders/glsl/`; copying them into resources/ would just drift).
+      **Nothing in `data/` asks for the other four.** Every `shader` line across
+      all 1,787 shipped files names one of two stems: `litsphere`
+      (`default.mhmat`, `brown.mhmat`) and `xray` (`materials/xray.mhmat`).
+      Reading them settles the rest:
+      - **phong** — Blinn-Phong over diffuse + AO. The PBR path consumes the
+        same `MaterialDesc` fields through a strictly better BRDF, and
+        `metallicRoughnessOf(shininess)` is the recorded conversion between the
+        two models. Superseded.
+      - **normalmap** — tangent-space normal mapping against ONE light
+        (`normalmap_fragment_shader.txt:9-17`). PBR does tangent-space normal
+        mapping against three. Superseded.
+      - **skin** — Blinn-Phong + AO + a **1D gradient map** for light colour
+        temperature, a fake subsurface (`skin_fragment_shader.txt:5,17`).
+        **Unportable as shipped: no gradient map exists in `data/`**
+        (`find data -iname '*gradient*'` returns nothing), so its central input
+        is absent. Real subsurface is M9 (`Physically-based skin: SSS`), not a
+        port of this.
+      - **toon** — genuinely distinct (silhouette threshold, quantised
+        diffuse/specular), and nothing requests it. Build it when a look calls
+        for it, not speculatively.
+      - **xray** — forbidden to translate; MeshLab GPL-2.0-or-later, see
+        `LICENSING.md` §3.4.
+      Enforced rather than remembered: `tools/audit_shading.py` fails if a
+      shipped material names a stem that is neither implemented nor excluded
+      with a reason recorded in the file that decided it. Reopening any of these
+      means deleting its exclusion, which fails until the model exists.
       **`xray` is struck off the list — it is not ours to translate.**
       `data/shaders/glsl/xray_{vertex,fragment}_shader.txt` is MeshLab, © 2005,
       2009 Visual Computing Lab / ISTI-CNR, granting "GNU General Public

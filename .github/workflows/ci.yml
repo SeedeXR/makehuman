@@ -276,6 +276,13 @@ jobs:
       - name: Bundled licences are all recorded
         run: python3 tools/audit_licences.py
 
+      # A .mhmat names a shader and this port ignores the name -- the viewport
+      # picks its model from settings. Harmless while every stem in data/ is
+      # accounted for; the moment an asset asks for one we do not have, it
+      # renders as something else with nothing to explain it.
+      - name: Shipped materials only ask for shading we have
+        run: python3 tools/audit_shading.py
+
       # MH_DATA_DIR and friends are absolute paths into the tree that COMPILED
       # the binary. A bundled copy carries its own assets, so any code reading
       # the macro directly ignores them -- which is how the DMG shipped an app
