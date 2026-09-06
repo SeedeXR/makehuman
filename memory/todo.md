@@ -1610,13 +1610,27 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         killed: TEXCOORD_0 dropped from the attribute map, quantisation
         disabled (positions come back exact, which the test rejects as loudly as
         it rejects them being wrong), 4-bit positions, normals never added.
-      - **Still to do:** the writer side. `KHR_draco_mesh_compression` requires
-        the extension to carry EVERY attribute of the primitive and the
-        accessors to keep their `count`/`type`/`min`/`max` while dropping
-        `bufferView`. Our primitives also carry TANGENT, JOINTS_0 and WEIGHTS_0,
-        which must go in as GENERIC attributes and, being indices and weights,
-        must NOT be quantised. Morph targets are outside the extension and stay
-        uncompressed.
+      - **Every attribute a rigged primitive carries is now compressed**:
+        TANGENT, JOINTS_0 and WEIGHTS_0 go in as GENERIC (draco's own
+        TANGENT/JOINTS/WEIGHTS types are behind `DRACO_TRANSCODER_SUPPORTED` and
+        are a bitstream change; the extension maps glTF NAMES to draco unique
+        ids, so generic is exactly as addressable). The extension has no partial
+        mode — a consumer reads the compressed buffer and has nowhere else to
+        get an attribute from, so a rigged primitive shipping position/normal/UV
+        only would load as an unrigged statue with a skeleton attached.
+      - **The obvious safety reasoning was wrong, and measuring caught it.** I
+        wrote that not quantising the GENERIC type is what keeps joint indices
+        exact. It is not: `SetAttributeQuantization(GENERIC, 2)` changes
+        **nothing** in draco 1.5.7 — weights still come back summing to exactly
+        1 — because the option is honoured for NAMED types only. What actually
+        protects joints is the declared data type, `DT_UINT16` against glTF's
+        UNSIGNED_SHORT. Pinned by a fixture carrying joint index **300**:
+        declaring `DT_UINT8` truncates it to 44 and the test fails.
+      - **Still to do:** the writer side. The accessors must keep their
+        `count`/`type`/`min`/`max` while dropping `bufferView`, the geometry
+        bytes are replaced by one Draco bufferView per primitive, and
+        `KHR_draco_mesh_compression` goes in `extensionsRequired`. Morph targets
+        are outside the extension and stay uncompressed.
       - `LICENSING.md` §5.1 records draco (Apache-2.0, 1.5.7), and CI's
         dependency check now covers `find_package` as well as `FetchContent` —
         it previously checked only the latter, so anything found on the system

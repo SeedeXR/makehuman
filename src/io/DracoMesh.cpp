@@ -16,7 +16,7 @@ bool dracoAvailable() noexcept {
     return false;
 }
 
-std::optional<DracoBuffer> dracoEncode(const foundation::RenderView&) {
+std::optional<DracoBuffer> dracoEncode(const foundation::RenderView&, const DracoSkin&) {
     return std::nullopt;
 }
 
@@ -39,7 +39,7 @@ bool dracoAvailable() noexcept {
     return true;
 }
 
-std::optional<DracoBuffer> dracoEncode(const foundation::RenderView& mesh) {
+std::optional<DracoBuffer> dracoEncode(const foundation::RenderView& mesh, const DracoSkin& skin) {
     const size_t faces = mesh.triangleCount();
     if (faces == 0 || mesh.coord.empty()) return std::nullopt;
 
@@ -50,8 +50,15 @@ std::optional<DracoBuffer> dracoEncode(const foundation::RenderView& mesh) {
     draco::TriangleSoupMeshBuilder builder;
     builder.Start(static_cast<int>(faces));
 
-    const bool withNormals = mesh.vnorm.size() == mesh.coord.size();
-    const bool withUVs     = mesh.texco.size() == mesh.coord.size();
+    const bool withNormals  = mesh.vnorm.size() == mesh.coord.size();
+    const bool withUVs      = mesh.texco.size() == mesh.coord.size();
+    const bool withTangents = mesh.vtang.size() == mesh.coord.size();
+    // Four per vertex, glTF's fixed influence count. A partial array is a
+    // caller bug, not something to pad over: padding would silently weight
+    // vertices to joint 0.
+    const bool withSkin =
+        skin.joints.size() == mesh.coord.size() * 4 && skin.weights.size() == mesh.coord.size() * 4;
+    if (!skin.joints.empty() && !withSkin) return std::nullopt;
 
     const int posId =
         builder.AddAttribute(draco::GeometryAttribute::POSITION, 3, draco::DT_FLOAT32);
@@ -61,6 +68,19 @@ std::optional<DracoBuffer> dracoEncode(const foundation::RenderView& mesh) {
     const int uvId =
         withUVs ? builder.AddAttribute(draco::GeometryAttribute::TEX_COORD, 2, draco::DT_FLOAT32)
                 : -1;
+    // GENERIC for the rest: draco's own TANGENT/JOINTS/WEIGHTS types are behind
+    // DRACO_TRANSCODER_SUPPORTED and are a bitstream change, and the glTF
+    // extension does not care -- it maps glTF NAMES to draco unique ids, so a
+    // generic attribute is exactly as addressable as a named one.
+    const int tangId =
+        withTangents ? builder.AddAttribute(draco::GeometryAttribute::GENERIC, 4, draco::DT_FLOAT32)
+                     : -1;
+    const int jointId =
+        withSkin ? builder.AddAttribute(draco::GeometryAttribute::GENERIC, 4, draco::DT_UINT16)
+                 : -1;
+    const int weightId =
+        withSkin ? builder.AddAttribute(draco::GeometryAttribute::GENERIC, 4, draco::DT_FLOAT32)
+                 : -1;
 
     for (size_t f = 0; f < faces; ++f) {
         const draco::FaceIndex fi(static_cast<uint32_t>(f));
@@ -76,6 +96,16 @@ std::optional<DracoBuffer> dracoEncode(const foundation::RenderView& mesh) {
         if (uvId >= 0) {
             builder.SetAttributeValuesForFace(uvId, fi, &mesh.texco[a], &mesh.texco[b],
                                               &mesh.texco[c]);
+        }
+        if (tangId >= 0) {
+            builder.SetAttributeValuesForFace(tangId, fi, &mesh.vtang[a], &mesh.vtang[b],
+                                              &mesh.vtang[c]);
+        }
+        if (jointId >= 0) {
+            builder.SetAttributeValuesForFace(jointId, fi, &skin.joints[a * 4], &skin.joints[b * 4],
+                                              &skin.joints[c * 4]);
+            builder.SetAttributeValuesForFace(weightId, fi, &skin.weights[a * 4],
+                                              &skin.weights[b * 4], &skin.weights[c * 4]);
         }
     }
 
@@ -99,17 +129,26 @@ std::optional<DracoBuffer> dracoEncode(const foundation::RenderView& mesh) {
 
     // The extension maps glTF names to draco UNIQUE ids, not to the attribute
     // indices used while building: the encoder is free to reorder attributes,
-    // and the unique id is what survives that.
-    const auto uniqueId = [&built](draco::GeometryAttribute::Type t) {
-        const int id = built->GetNamedAttributeId(t);
+    // and the unique id is what survives that. For the generic ones the
+    // BUILDER's id is the only handle we have -- there is no "the" generic
+    // attribute to look up by type, since three of them share it.
+    const auto uniqueOf = [&built](int id) {
         return static_cast<uint32_t>(built->attribute(id)->unique_id());
     };
-    result.attributes.emplace_back("POSITION", uniqueId(draco::GeometryAttribute::POSITION));
+    const auto named = [&built, &uniqueOf](draco::GeometryAttribute::Type t) {
+        return uniqueOf(built->GetNamedAttributeId(t));
+    };
+    result.attributes.emplace_back("POSITION", named(draco::GeometryAttribute::POSITION));
     if (normId >= 0) {
-        result.attributes.emplace_back("NORMAL", uniqueId(draco::GeometryAttribute::NORMAL));
+        result.attributes.emplace_back("NORMAL", named(draco::GeometryAttribute::NORMAL));
     }
     if (uvId >= 0) {
-        result.attributes.emplace_back("TEXCOORD_0", uniqueId(draco::GeometryAttribute::TEX_COORD));
+        result.attributes.emplace_back("TEXCOORD_0", named(draco::GeometryAttribute::TEX_COORD));
+    }
+    if (tangId >= 0) result.attributes.emplace_back("TANGENT", uniqueOf(tangId));
+    if (jointId >= 0) {
+        result.attributes.emplace_back("JOINTS_0", uniqueOf(jointId));
+        result.attributes.emplace_back("WEIGHTS_0", uniqueOf(weightId));
     }
     return result;
 }

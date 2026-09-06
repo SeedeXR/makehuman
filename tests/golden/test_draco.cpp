@@ -42,6 +42,31 @@ struct Primitive {
     }
 };
 
+/// The same quad with everything a rigged primitive carries.
+struct RiggedPrimitive : Primitive {
+    std::vector<foundation::Vec4> tang{{1.0F, 0.0F, 0.0F, 1.0F},
+                                       {0.98F, 0.2F, 0.0F, -1.0F},
+                                       {0.99F, 0.0F, 0.1F, 1.0F},
+                                       {1.0F, 0.0F, 0.0F, -1.0F}};
+    /// Four influences a vertex, glTF's JOINTS_0 shape. Deliberately spread
+    /// across a wide index range and never repeating a row: a codec that
+    /// collapsed or reordered them would have to be lucky to still match.
+    ///
+    /// One index is **300**, past what a byte holds. The Mixamo superset rig
+    /// has 179 bones so nothing shipped needs it today, but glTF allows
+    /// JOINTS_0 as UNSIGNED_BYTE and declaring the narrower type is a one-word
+    /// mistake that truncates silently -- joint 300 becomes joint 44.
+    std::vector<uint16_t> joints{0, 1, 2, 3, 7, 11, 40, 300, 5, 5, 5, 5, 162, 0, 99, 1};
+    std::vector<float> weights{0.5F, 0.3F, 0.15F, 0.05F, 0.7F,  0.2F,  0.07F, 0.03F,
+                               1.0F, 0.0F, 0.0F,  0.0F,  0.25F, 0.25F, 0.25F, 0.25F};
+
+    [[nodiscard]] foundation::RenderView riggedView() const {
+        return foundation::RenderView{coord, uv, norm, tang, index};
+    }
+
+    [[nodiscard]] io::DracoSkin skin() const { return io::DracoSkin{joints, weights}; }
+};
+
 }  // namespace
 
 TEST_CASE("draco availability is reported, not assumed", "[io][draco]") {
@@ -161,6 +186,102 @@ TEST_CASE("compression actually makes the base mesh smaller", "[io][draco]") {
                        (uv.size() * sizeof(foundation::Vec2)) + (index.size() * sizeof(uint32_t));
     INFO("raw " << raw << " bytes, draco " << enc->bytes.size());
     CHECK(enc->bytes.size() < raw / 2);
+}
+
+TEST_CASE("every attribute of a rigged primitive is compressed", "[io][draco]") {
+    // KHR_draco_mesh_compression has no partial mode: a consumer reads the
+    // compressed buffer and has nowhere else to get an attribute from. A
+    // rigged primitive that shipped POSITION/NORMAL/TEXCOORD_0 only would load
+    // with no tangents and, worse, no skin -- an unrigged statue with a
+    // skeleton attached.
+    const RiggedPrimitive p;
+    const auto enc = io::dracoEncode(p.riggedView(), p.skin());
+    REQUIRE(enc.has_value());
+
+    std::vector<std::string> names;
+    for (const auto& [name, id] : enc->attributes)
+        names.push_back(name);
+    std::ranges::sort(names);
+    CHECK(names == std::vector<std::string>{"JOINTS_0", "NORMAL", "POSITION", "TANGENT",
+                                            "TEXCOORD_0", "WEIGHTS_0"});
+
+    // The ids must be DISTINCT. Two attributes mapped to one draco id is a file
+    // that decodes without error and puts the wrong data in both.
+    std::vector<uint32_t> ids;
+    for (const auto& [name, id] : enc->attributes)
+        ids.push_back(id);
+    std::ranges::sort(ids);
+    CHECK(std::ranges::adjacent_find(ids) == ids.end());
+}
+
+TEST_CASE("joint indices come back EXACT", "[io][draco]") {
+    // The one attribute quantisation must never touch. A joint index off by one
+    // weights a vertex to the wrong bone: the limb tears in a DCC and nothing
+    // in a byte count or a bounding box says why.
+    const RiggedPrimitive p;
+    const auto enc = io::dracoEncode(p.riggedView(), p.skin());
+    REQUIRE(enc.has_value());
+
+    draco::DecoderBuffer buf;
+    buf.Init(reinterpret_cast<const char*>(enc->bytes.data()), enc->bytes.size());
+    draco::Decoder dec;
+    auto mesh = dec.DecodeMeshFromBuffer(&buf);
+    REQUIRE(mesh.ok());
+
+    const int32_t id = mesh.value()->GetAttributeIdByUniqueId([&] {
+        for (const auto& [name, uid] : enc->attributes) {
+            if (name == "JOINTS_0") return uid;
+        }
+        return uint32_t{0};
+    }());
+    REQUIRE(id >= 0);
+    const auto* att = mesh.value()->attribute(id);
+    REQUIRE(att != nullptr);
+
+    // Draco reorders points, so match each decoded row against the set that
+    // went in rather than against a position in the list.
+    std::vector<std::array<uint16_t, 4>> want;
+    for (size_t v = 0; v + 3 < p.joints.size(); v += 4) {
+        want.push_back({p.joints[v], p.joints[v + 1], p.joints[v + 2], p.joints[v + 3]});
+    }
+    size_t matched = 0;
+    for (draco::PointIndex i(0); i < mesh.value()->num_points(); ++i) {
+        std::array<uint16_t, 4> got{};
+        REQUIRE(att->ConvertValue<uint16_t, 4>(att->mapped_index(i), got.data()));
+        matched += static_cast<size_t>(std::ranges::find(want, got) != want.end());
+    }
+    CHECK(matched == 4);
+}
+
+TEST_CASE("weights come back exact too", "[io][draco]") {
+    // Not quantised either: a weight that drifts stops the four summing to one,
+    // and a renderer that normalises hides it while one that does not shows a
+    // seam.
+    const RiggedPrimitive p;
+    const auto enc = io::dracoEncode(p.riggedView(), p.skin());
+    REQUIRE(enc.has_value());
+
+    draco::DecoderBuffer buf;
+    buf.Init(reinterpret_cast<const char*>(enc->bytes.data()), enc->bytes.size());
+    draco::Decoder dec;
+    auto mesh = dec.DecodeMeshFromBuffer(&buf);
+    REQUIRE(mesh.ok());
+
+    uint32_t uid = 0;
+    for (const auto& [name, u] : enc->attributes) {
+        if (name == "WEIGHTS_0") uid = u;
+    }
+    const int32_t id = mesh.value()->GetAttributeIdByUniqueId(uid);
+    REQUIRE(id >= 0);
+    const auto* att = mesh.value()->attribute(id);
+
+    for (draco::PointIndex i(0); i < mesh.value()->num_points(); ++i) {
+        std::array<float, 4> got{};
+        REQUIRE(att->ConvertValue<float, 4>(att->mapped_index(i), got.data()));
+        const float sum = got[0] + got[1] + got[2] + got[3];
+        INFO("weights sum " << sum);
+        CHECK(std::abs(sum - 1.0F) < 1e-6F);
+    }
 }
 
 #endif  // MH_HAVE_DRACO

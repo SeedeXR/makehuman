@@ -2140,6 +2140,55 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-07 00:45:00 — Session 157 · **the safeguard I described was a no-op, and the tests said so**
+
+### The chunk
+Continued the Draco work (the previous fire left it `[~]`): the codec now
+carries **every** attribute a rigged primitive has — TANGENT, JOINTS_0 and
+WEIGHTS_0 as GENERIC, alongside POSITION/NORMAL/TEXCOORD_0.
+
+That is the extension's rule, not thoroughness: `KHR_draco_mesh_compression`
+has no partial mode. A consumer reads the compressed buffer and has nowhere
+else to get an attribute from, so a rigged primitive shipping position, normal
+and UV only would load as an unrigged statue with a skeleton attached.
+
+Generic rather than draco's own TANGENT/JOINTS/WEIGHTS types: those are behind
+`DRACO_TRANSCODER_SUPPORTED` and are a bitstream change. The extension maps
+glTF NAMES to draco unique ids, so a generic attribute is exactly as
+addressable as a named one.
+
+### The correction that matters
+I wrote — in a doc comment, confidently — that **not** quantising the GENERIC
+type is what keeps joint indices exact, since one off by a single unit weights
+a vertex to the wrong bone.
+
+The mutation that should have proved it **did not fail**. So I pushed harder:
+`SetAttributeQuantization(GENERIC, 2)` — two bits — and weights STILL came back
+summing to exactly 1. The option is honoured for named types only; on GENERIC
+it does nothing at all in draco 1.5.7. My "safeguard" was describing a decision
+the library never consulted.
+
+What actually protects joints is the declared data TYPE. So I made that
+testable: the fixture now carries joint index **300**, past what a byte holds,
+and declaring `DT_UINT8` truncates it to 44 and fails the test. The comment now
+says what was measured, and flags that draco's named JOINTS/WEIGHTS types ARE
+quantisable if anyone moves to them.
+
+Worth naming as a pattern: a surviving mutation is not always a weak test. Here
+it was a wrong belief about the dependency, and the test was right to be
+unmoved.
+
+### Mutations
+Killed: skin attributes omitted from the map; WEIGHTS_0 mapped to the joint id
+(duplicate ids decode without error and put the wrong data in both); skin
+stride 3 instead of 4; joints declared UINT8. Deliberately NOT killed and
+recorded as such: quantising GENERIC, which is a no-op.
+
+### Verification
+ctest green in debug, release, ASan and TSan. Format clean. Sonar OK.
+
+---
+
 ## 2026-09-06 23:45:00 — Session 156 · **the Draco codec, and a dependency check that was watching the wrong door**
 
 ### The chunk
