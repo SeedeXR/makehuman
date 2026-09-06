@@ -16,6 +16,17 @@ import sys
 # If an assimp upgrade ever starts preserving the pose, this fails and the
 # expectation gets flipped -- which is the point of writing it down.
 EXPECT = {
+    # Written by OUR FBX writer. The counts are the compacted base mesh with the
+    # static face mask applied, triangulated: what mh_fbx_probe writes.
+    #
+    # `meshes: 1` is the whole point. It read 0 for four separate reasons in
+    # turn -- a missing NULL record, an unvalidated footer id, an empty
+    # Properties70 on the Model, and a truncated property NAME -- and Blender
+    # opened every one of those files without complaint.
+    "ours.fbx": {
+        "meshes": 1,
+        "vertices": 21833,
+    },
     "posed.fbx": {
         "joints": 179,
         "skin_clusters": 1,

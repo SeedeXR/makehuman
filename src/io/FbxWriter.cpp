@@ -488,7 +488,12 @@ Node model(int64_t id, const std::string& name) {
     Node rotationActive = property70("RotationActive", "bool", "", "");
     rotationActive.addI32(1);
     props.add(std::move(rotationActive));
-    props.add(intProperty("DefaultAttributeIn", 0));
+    // `DefaultAttributeIndex`, in full. I wrote `DefaultAttributeIn` for a
+    // while -- 18 characters -- because I read the name out of my own debug
+    // dump, which truncated strings at 18. Maya then dropped the Model, and
+    // with it the entire mesh, silently. A print that elides its data is not a
+    // record of that data.
+    props.add(intProperty("DefaultAttributeIndex", 0));
     Node inherit = property70("InheritType", "enum", "", "");
     inherit.addI32(1);
     props.add(std::move(inherit));

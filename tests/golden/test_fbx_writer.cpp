@@ -66,6 +66,43 @@ core::Mesh quad() {
     return m;
 }
 
+/// Recursively checks that every record in [@p from, @p to) is well formed.
+///
+/// A record's content is its header, name and properties; everything after that
+/// and before its EndOffset is its child list, which must end with a 25-byte
+/// NULL record. A file can be wrong here and still walk correctly at the TOP
+/// level -- each record's own EndOffset keeps the outer loop in step -- which
+/// is exactly how a missing terminator went unnoticed while Maya imported
+/// nothing.
+void checkRecords(const std::vector<uint8_t>& b, size_t from, size_t to) {
+    size_t o = from;
+    while (o + 25 <= to) {
+        const uint64_t end     = u64At(b, o);
+        const uint64_t nProps  = u64At(b, o + 8);
+        const uint64_t propLen = u64At(b, o + 16);
+        if (end == 0) {
+            // A NULL record ends the list, and must end it exactly.
+            REQUIRE(o + 25 == to);
+            return;
+        }
+        REQUIRE(end > o);
+        REQUIRE(end <= to);
+        const size_t nameLen = b[o + 24];
+        const size_t content = o + 25 + nameLen + propLen;
+        REQUIRE(content <= end);
+        if (content < end) {
+            // Everything after the properties is children, terminator included.
+            checkRecords(b, content, end);
+        } else {
+            // No child region at all, which is only allowed when the record
+            // carries properties: an empty record still needs its terminator.
+            CHECK(nProps > 0);
+        }
+        o = end;
+    }
+    REQUIRE(o == to);
+}
+
 /// Walks the record tree, returning the top-level node names in order.
 ///
 /// A deliberately strict walk: every record's EndOffset must land exactly on
@@ -134,8 +171,24 @@ TEST_CASE("the footer is the shape both Maya and assimp write", "[io][fbx]") {
     CHECK(u32At(b, b.size() - 144) == 0);
     CHECK((b.size() - 144) % 16 == 0);
 
+    // Again for a mesh of a DIFFERENT size. Aligning the wrong field happens to
+    // give the right answer whenever the unpadded length lands conveniently,
+    // and one file cannot tell the two rules apart.
+    const auto other = tempFbx("footer2");
+    core::Mesh tri("tri", 3);
+    REQUIRE(tri.setCoords({{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}).has_value());
+    tri.addFaceGroup("g");
+    REQUIRE(tri.setFaces({0, 1, 2}, {}, {0}).has_value());
+    tri.buildAdjacency();
+    tri.calcNormals();
+    REQUIRE(io::writeFbx(other, core::RenderMesh::build(tri).view()).has_value());
+    const auto b2 = readAll(other);
+    CHECK((b2.size() - 144) % 16 == 0);
+    CHECK(std::memcmp(b2.data() + b2.size() - 16, kMagic, 16) == 0);
+
     std::error_code ec;
     std::filesystem::remove(out, ec);
+    std::filesystem::remove(other, ec);
 }
 
 TEST_CASE("the top-level records are the ones a reader requires", "[io][fbx]") {
@@ -172,6 +225,90 @@ TEST_CASE("the mesh reaches the file", "[io][fbx]") {
     CHECK(blob.find("PolygonVertexIndex") != std::string::npos);
     CHECK(blob.find("Geometry") != std::string::npos);
     CHECK(blob.find("Connections") != std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("every record is terminated exactly as the format requires", "[io][fbx]") {
+    const auto out = tempFbx("records_deep");
+    const auto m   = quad();
+    REQUIRE(io::writeFbx(out, core::RenderMesh::build(m).view()).has_value());
+
+    const auto b = readAll(out);
+    // The top-level list runs from the header to the footer, and the footer is
+    // the last 144 bytes plus whatever padding aligned them.
+    size_t topEnd = b.size() - 144;
+    while (topEnd > 27 && b[topEnd - 1] == 0)
+        --topEnd;
+    // Back up over the 16-byte footer id, which is not a record.
+    REQUIRE(topEnd > 27 + 16);
+    checkRecords(b, 27, topEnd - 16);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("the records Maya refuses the file without are present", "[io][fbx]") {
+    // Every name here was learned by Maya rejecting a file that lacked it --
+    // importing ZERO meshes, with nothing in its own SDK log. Blender opened
+    // each of those same files correctly, so none of this is reachable from one
+    // reader alone.
+    const auto out = tempFbx("required");
+    const auto m   = quad();
+    REQUIRE(io::writeFbx(out, core::RenderMesh::build(m).view()).has_value());
+
+    const auto b = readAll(out);
+    const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
+    for (const char* needed : {// Spelled in FULL. `DefaultAttributeIn` -- 18 characters, which is
+                               // where my own debug dump truncated it -- costs the whole mesh.
+                               "DefaultAttributeIndex",
+                               // A Model whose Properties70 is empty is discarded.
+                               "RotationActive", "InheritType",
+                               // A Geometry with no material layer is discarded.
+                               "LayerElementMaterial", "Materials",
+                               // ... and the material it names has to exist.
+                               "Material",
+                               // The scene root the objects hang from.
+                               "RootNode"}) {
+        INFO(needed);
+        CHECK(blob.find(needed) != std::string::npos);
+    }
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("each polygon is closed by a negated index", "[io][fbx]") {
+    // FBX has no per-face vertex count: the LAST index of every polygon is
+    // stored as `~i`, and that is the only thing separating one face from the
+    // next. Without it a reader sees a single polygon spanning the whole mesh,
+    // which loads without complaint and looks like a shattered model.
+    const auto out = tempFbx("polygons");
+    const auto m   = quad();
+    REQUIRE(io::writeFbx(out, core::RenderMesh::build(m).view()).has_value());
+
+    const auto b = readAll(out);
+    // The array property is `i` followed by count, encoding, byte length.
+    const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
+    const size_t at = blob.find("PolygonVertexIndex");
+    REQUIRE(at != std::string::npos);
+    size_t o = at + std::strlen("PolygonVertexIndex");
+    REQUIRE(b[o] == 'i');
+    const uint32_t count = u32At(b, o + 1);
+    REQUIRE(u32At(b, o + 5) == 0);  // stored raw, not deflated
+    o += 13;
+
+    REQUIRE(count == 6);  // one quad -> two triangles -> six corners
+    size_t negatives = 0;
+    for (uint32_t i = 0; i < count; ++i) {
+        const auto v           = static_cast<int32_t>(u32At(b, o + (i * 4)));
+        const bool endsPolygon = (i % 3) == 2;
+        INFO("index " << i << " = " << v);
+        CHECK((v < 0) == endsPolygon);
+        negatives += static_cast<size_t>(v < 0);
+    }
+    CHECK(negatives == 2);
 
     std::error_code ec;
     std::filesystem::remove(out, ec);

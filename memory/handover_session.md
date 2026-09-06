@@ -2140,6 +2140,53 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-07 06:45:00 — Session 163 · **Maya opens it, and the last bug was my own debug print**
+
+### Stage 1 is done
+Both readers accept our own FBX. Maya: 1 mesh, 21,833 vertices. Blender: 21,833
+vertices, 26,756 triangles, 1.69455 m -- exactly what we wrote. Rendered it in
+Blender and looked: a clean body, no shattered faces, no inverted normals.
+
+### How the last defect was found
+Continuing the bisect from the previous fire, the split finally localised:
+`p2` (assimp's Objects+Connections, OUR scaffolding) imported fine, `p1` (OUR
+Objects+Connections) did not. Then per-object: our Geometry fine, our Material
+fine, **our Model not**. Then property by property, and there it was --
+
+    assimp:  DefaultAttributeIndex
+    ours:    DefaultAttributeIn
+
+Eighteen characters. I had read the name out of my own debug dump, which
+truncates strings at 18 with `str(x[1])[:18]`, and copied the truncation into
+the writer. Maya then dropped the Model, and with it the whole mesh, in silence.
+
+**A print that elides its data is not a record of that data.** That is the
+lesson, and it cost more time than the other three defects together.
+
+### Four defects, and Maya reported none of them
+The NULL-record rule; the footer id it validates; an empty `Properties70` on
+the Model; the truncated property name. Every one imported as zero meshes with
+nothing in the SDK log, and Blender opened every one of those same files
+correctly. Neither reader alone would have found this.
+
+### The tests were weaker than the mutations
+Two mutations survived the first pass and both were real gaps: the NULL-record
+rule was invisible because my walk only stepped the TOP level (each record's own
+EndOffset keeps that loop in step regardless), and the polygon terminator was
+unchecked entirely -- a mesh with no `~i` markers is one giant face. Added a
+recursive structural walk and an index-level check; both now fail.
+
+And two "survivals" were my mutation script failing to match reformatted source.
+A mutation that did not compile, or did not apply, is not a passing test.
+
+### Verification
+ctest green in debug, release, ASan and TSan. Maya harness 2/2 -- it now writes
+`ours.fbx` and requires 1 mesh / 21,833 verts. Blender harness 11/11. Format
+clean. Sonar OK. Mutations killed: truncated property name, NULL rule, footer
+alignment, missing material layer, missing polygon terminator.
+
+---
+
 ## 2026-09-07 05:30:00 — Session 162 · **the FBX container: Blender yes, Maya not yet, and four rules learned the hard way**
 
 ### Where it got to

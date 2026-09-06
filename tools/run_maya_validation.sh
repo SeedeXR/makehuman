@@ -39,6 +39,16 @@ mkdir -p "$out"
 "$app" --rig mixamo_superset --pose tpose --export "$out/posed.fbx" >/dev/null
 echo "exported $out/posed.fbx"
 
-"$MAYAPY" "$repo/tools/maya_validate.py" "$out/posed.fbx" 2>/dev/null |
+# OUR OWN writer, next to the assimp one. Maya is the reference implementation
+# of this format, so "Maya opens what we wrote" is the only statement about an
+# FBX worth making -- and it is the one that took four separate defects to earn.
+probe="$repo/build/macos-arm64-debug/tools/mh_fbx_probe"
+if [ -x "$probe" ]; then
+    "$probe" "$out/ours.fbx" >/dev/null && echo "wrote $out/ours.fbx (our writer)"
+else
+    echo "skip ours.fbx: $probe not built"
+fi
+
+"$MAYAPY" "$repo/tools/maya_validate.py" "$out/posed.fbx" "$out/ours.fbx" 2>/dev/null |
     grep '^MAYA_VALIDATE:' |
     python3 "$repo/tools/maya_check.py"

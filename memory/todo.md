@@ -1693,47 +1693,38 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       is not translated either. Learning the format from files those tools
       produce is what makes this legitimate.
       Staged, because it is large:
-      1. **Container — HALF DONE. Blender opens our file correctly; Maya still
-         imports it as zero meshes.** `io::writeFbx` writes the whole container
-         and the geometry, and Blender reports **21,833 vertices / 26,756
-         triangles / 1.69455 m** — exactly what we wrote. Maya reads the file
-         with no warning in its own SDK log and produces nothing.
-         **Proved along the way, each by experiment:**
-         - The **record encoder is byte-exact**. Re-emitting assimp's
-           `base.fbx` through our encoding rules is byte-identical across the
-           entire record region (differing only in the footer). So nothing
-           below is an encoding bug.
-         - **The NULL-record rule**, surveyed over ~650 records in Maya's and
-           assimp's output: children -> 25-byte null record; no children but
-           properties -> none; **no children AND no properties -> null record**.
-           That last row is the one "only when it has children" gets wrong, and
-           `References` is exactly such a node: omitting its terminator shifted
-           every later offset by 25 bytes.
-         - **Maya validates the 16-byte footer id.** Re-emitting assimp's file
-           byte-for-byte but for the last 161 bytes imported as 0 meshes;
-           grafting the original footer back on made it 1 mesh / 21,833 verts.
-           The id is a function of `FileId` and `CreationTime` through an
-           obfuscation Autodesk does not publish (two documented formulations
-           were tested against two ground-truth samples and reproduced neither),
-           so we adopt a consistent triple.
-         - **Blender asserts on `P` subtypes**: `Integer` for `int`, `Number`
-           for `double`. An empty subtype fails its importer outright.
-         - **An empty `Properties70` on a Model makes Maya discard it** — proved
-           both ways: emptying assimp's broke a working file, filling ours fixed
-           it inside assimp's scaffolding.
-         - `UnitScaleFactor` is **centimetres per file unit** (10/unitScale),
-           not the scale factor.
-         **Eliminated as the cause of Maya's refusal**, each tested by swapping
-         our record into assimp's known-good tree and back: our Definitions,
-         Documents, GlobalSettings, References, Connections, Geometry, Model,
-         Material; object id values; PropertyTemplates; the full 20-entry
-         GlobalSettings; `RootNode` as `L`; `EncryptionType` +
-         `CreationTimeStamp`; a connected Material. Every one of our records
-         works INSIDE assimp's tree, and our whole file still does not — so the
-         cause is a combination not yet isolated. **Next fire starts here**, not
-         from the beginning.
-         Nothing regresses meanwhile: `writeFbx` has no caller in the
-         application, and `.fbx` export still goes through assimp.
+      1. **Container — DONE. Both Maya and Blender open our file.** Maya
+         reports 1 mesh / 21,833 vertices; Blender 21,833 vertices / 26,756
+         triangles / 1.69455 m -- exactly what we wrote. Rendered in Blender and
+         looked at it: a clean body, no shattered faces, no inverted normals.
+         **Four separate defects had to be found, and Maya reported none of
+         them** -- it imported zero meshes, silently, with nothing in its own
+         SDK log, while Blender opened every one of those same files:
+         - **The NULL-record rule.** Surveyed over ~650 records in Maya's and
+           assimp's output: children -> 25-byte terminator; no children but
+           properties -> none; **no children AND no properties -> terminator**.
+           `References` is that last case; omitting its terminator shifted every
+           later offset by 25 bytes.
+         - **The 16-byte footer id, which Maya validates.** Re-emitting assimp's
+           file byte-for-byte but for the last 161 bytes imported as 0 meshes;
+           grafting the original footer back made it 1 mesh. The id derives from
+           `FileId` and `CreationTime` through an obfuscation Autodesk does not
+           publish -- two documented formulations reproduced neither of two
+           ground-truth samples -- so a consistent triple is adopted instead.
+         - **An empty `Properties70` on the Model.** Maya discards the Model,
+           and with it the mesh. Proved both ways.
+         - **A property NAME truncated to 18 characters.**
+           `DefaultAttributeIndex` written as `DefaultAttributeIn`, because I
+           read it out of my own debug dump, which truncates strings at 18. That
+           one cost the most time and taught the most: **a print that elides its
+           data is not a record of that data.**
+         Also learned and fixed: Blender asserts on `P` subtypes (`Integer`,
+         `Number`); `UnitScaleFactor` is centimetres per file unit; a Geometry
+         with no `LayerElementMaterial` and no connected Material is discarded.
+         Gated by `tools/run_maya_validation.sh`, which now writes `ours.fbx`
+         with `mh_fbx_probe` and requires Maya to report 1 mesh / 21,833 verts.
+         `.fbx` export still goes through assimp -- our writer has no UVs,
+         materials or skin yet, so the application is unchanged.
       2. Normals, UVs, materials, textures.
       3. Skin + bind poses — the live rig, which is the whole reason for this.
       4. Blend shapes.
