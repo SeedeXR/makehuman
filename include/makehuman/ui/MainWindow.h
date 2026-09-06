@@ -3,6 +3,7 @@
 
 #include "makehuman/foundation/Geometry.h"
 #include "makehuman/render/SceneResources.h"
+#include "makehuman/ui/MacroStatus.h"
 #include "makehuman/ui/TaskRegistry.h"
 
 #include <QMainWindow>
@@ -103,6 +104,10 @@ public:
     void setMacroStatus(const QString& line);
     [[nodiscard]] QString macroStatus() const;
 
+    /// The user's length units, restored from QSettings at construction so the
+    /// choice survives a restart. Metric until they say otherwise.
+    [[nodiscard]] Units units() const;
+
     /// Restores docks and geometry from QSettings, or lays out the defaults.
     void restoreWorkspace();
     void saveWorkspace() const;
@@ -138,6 +143,10 @@ signals:
     /// window reached them; this is what makes them reachable. Intent only --
     /// `mh_ui` is Apache-2.0 and knows nothing about glTF, USD or FBX.
     void exportRequested();
+
+    /// Settings > Units changed. Carries the new value so the app can reformat
+    /// the status line without asking back.
+    void unitsChanged(Units units);
 
     /// Edit > Randomise. Belongs with Undo rather than in File: it edits the
     /// character rather than producing a file, and it is the one command in the

@@ -2007,7 +2007,7 @@ int main(int argc, char** argv) {
         // helper cages exactly as the reference does, which is worth 2.87 cm on
         // the shipped mesh. Recomputing it here is how the two drift apart.
         stats.heightCm = mesh->heightCm();
-        w.setMacroStatus(mh::ui::macroStatusLine(stats));
+        w.setMacroStatus(mh::ui::macroStatusLine(stats, w.units()));
     };
 
     // Above `window` for the same reason rebuildInto is: the File-menu
@@ -2374,6 +2374,11 @@ int main(int argc, char** argv) {
     // The SAME renderTo the command line uses. The dialog's defaults are
     // --render's defaults, so pressing Enter twice produces exactly what the
     // command line would.
+    // Changing units reformats the line from the numbers already computed --
+    // no rebuild, because nothing about the character changed.
+    QObject::connect(&window, &mh::ui::MainWindow::unitsChanged,
+                     [&](mh::ui::Units) { rebuildInto(window); });
+
     // Randomise. A fresh seed each time, from the same clock the user's other
     // non-repeatable choices come from -- `--random <seed>` is where
     // reproducibility lives, and a button that always produced the same person

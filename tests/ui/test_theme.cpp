@@ -28,6 +28,7 @@
 #include <QAbstractButton>
 #include <QAbstractSlider>
 #include <QAction>
+#include <QActionGroup>
 #include <QApplication>
 #include <QComboBox>
 #include <QDockWidget>
@@ -1624,6 +1625,14 @@ TEST_CASE("every action in the window has a real icon", "[ui][icons]") {
         // `workspace.reset` and `workspace.saveAs` are commands and are NOT
         // exempt: excluding the whole `workspace.` prefix is what let Reset
         // Workspace ship as bare text in the toolbar while this test was green.
+        // Radio-style menu items are exempt: an exclusive checkable action
+        // shows its state with a CHECK MARK, and macOS menus do not pair a
+        // check with an icon. Deliberately narrow -- `isCheckable()` alone
+        // would also excuse a checkable TOOLBAR toggle, which is icon-only and
+        // absolutely does need one.
+        if (a->isCheckable() && a->actionGroup() != nullptr && a->actionGroup()->isExclusive()) {
+            continue;
+        }
         if (name.startsWith(QLatin1String("workspace.saved"))) continue;
         if (name.startsWith(QLatin1String("workspace.")) &&
             name != QLatin1String("workspace.reset") && name != QLatin1String("workspace.saveAs")) {
@@ -2072,4 +2081,85 @@ TEST_CASE("the Edit menu can randomise", "[ui][undo]") {
     QObject::connect(&w, &mh::ui::MainWindow::randomiseRequested, [&emitted] { ++emitted; });
     act->trigger();
     CHECK(emitted == 1);
+}
+
+// The reference converts at display time and keeps the stored value in
+// centimetres (guimodifier.py:174-181). A setting that changed the model's
+// units rather than their presentation would be a very different, much worse
+// idea, so the conversion lives here and nowhere else.
+TEST_CASE("the status line honours the unit setting", "[ui][status]") {
+    mh::ui::MacroStats s;
+    s.heightCm = 175.0F;
+
+    CHECK(mh::ui::macroStatusLine(s, mh::ui::Units::Metric)
+              .contains(QStringLiteral("Height: 175.00 cm")));
+
+    // 175 cm = 68.90 in. The reference's own constant, and the suffix carries
+    // its full stop -- "in." reads as an abbreviation, "in" reads as the word.
+    CHECK(mh::ui::macroStatusLine(s, mh::ui::Units::Imperial)
+              .contains(QStringLiteral("Height: 68.90 in.")));
+
+    // Metric is the default, so every existing caller is unchanged.
+    CHECK(mh::ui::macroStatusLine(s) == mh::ui::macroStatusLine(s, mh::ui::Units::Metric));
+
+    // Only the height moves. Muscle and weight are percentages in both systems,
+    // and a conversion applied to them would be a units bug that still looked
+    // plausible.
+    const QString metric   = mh::ui::macroStatusLine(s, mh::ui::Units::Metric);
+    const QString imperial = mh::ui::macroStatusLine(s, mh::ui::Units::Imperial);
+    CHECK(metric.contains(QStringLiteral("Muscle: 50.00 %")));
+    CHECK(imperial.contains(QStringLiteral("Muscle: 50.00 %")));
+    CHECK(metric.contains(QStringLiteral("Weight: 100.00 %")));
+    CHECK(imperial.contains(QStringLiteral("Weight: 100.00 %")));
+}
+
+// The units setting has to SURVIVE a restart, or it is a toggle the user
+// re-flips every session. Persisted immediately rather than at shutdown: a
+// crash should not lose a preference they have already seen take effect.
+TEST_CASE("the units setting persists and is exclusive", "[ui][status]") {
+    theme::setIconDir(std::filesystem::path(MH_RESOURCE_DIR) / "icons" / "lucide");
+
+    {
+        mh::ui::MainWindow w(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+        auto* metric   = w.findChild<QAction*>(QStringLiteral("settings.units.metric"));
+        auto* imperial = w.findChild<QAction*>(QStringLiteral("settings.units.imperial"));
+        REQUIRE(metric != nullptr);
+        REQUIRE(imperial != nullptr);
+        CHECK(metric->isCheckable());
+        CHECK(imperial->isCheckable());
+
+        int emitted        = 0;
+        mh::ui::Units seen = mh::ui::Units::Metric;
+        QObject::connect(&w, &mh::ui::MainWindow::unitsChanged, [&](mh::ui::Units u) {
+            ++emitted;
+            seen = u;
+        });
+
+        imperial->trigger();
+        CHECK(emitted == 1);
+        CHECK(seen == mh::ui::Units::Imperial);
+        CHECK(w.units() == mh::ui::Units::Imperial);
+
+        // Exclusive: choosing one unchecks the other, or both read as active.
+        CHECK(imperial->isChecked());
+        CHECK_FALSE(metric->isChecked());
+
+        // Re-triggering the SAME unit must not emit again -- the app rebuilds
+        // the scene on this signal, and a redundant rebuild on every menu open
+        // would be a real cost.
+        imperial->trigger();
+        CHECK(emitted == 1);
+    }
+
+    // A second window reads the stored value.
+    {
+        mh::ui::MainWindow w2(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+        CHECK(w2.units() == mh::ui::Units::Imperial);
+        CHECK(w2.findChild<QAction*>(QStringLiteral("settings.units.imperial"))->isChecked());
+
+        // Put it back, so this test does not leave the user's real preference
+        // flipped and does not depend on the order it runs in.
+        w2.findChild<QAction*>(QStringLiteral("settings.units.metric"))->trigger();
+        CHECK(w2.units() == mh::ui::Units::Metric);
+    }
 }

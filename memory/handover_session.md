@@ -2140,6 +2140,54 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-06 02:35:00 — Session 140 · **units, and my own audit catching me**
+
+### The chunk
+`SettingsTaskView`, first slice. The status line hardcoded centimetres; the
+reference has a units setting and converts at DISPLAY time
+(`guimodifier.py:174-181`), keeping the stored value in centimetres. A
+preference that changed the model's units rather than their presentation would
+be a very different and much worse idea, so the conversion lives in one place.
+
+Settings > Units, exclusive, persisted to QSettings **immediately** rather than
+at shutdown — a crash should not lose a preference the user has already watched
+take effect.
+
+The menu holds exactly one setting. That is deliberate: it is the only one that
+currently changes anything on screen, and a Settings menu full of controls that
+do nothing would be worse than a short one.
+
+### The icon audit caught me
+`[ui][icons]` failed the moment I added the two unit radio items:
+
+    actions with no icon: settings.units.imperial, settings.units.metric
+
+Which is the audit working. The question was whether they SHOULD have icons,
+and the answer is no — an exclusive checkable action shows its state with a
+check mark, and macOS menus do not pair a check with an icon.
+
+**The exclusion is deliberately narrow**: `isCheckable() && actionGroup() &&
+actionGroup()->isExclusive()`. `isCheckable()` alone would also excuse a
+checkable TOOLBAR toggle, which is icon-only and absolutely needs one. Verified
+by mutation that a genuinely blank action still fails.
+
+Worth noting the sequence: I added a feature, my own test refused it, and the
+right response was to narrow the rule rather than delete it. That is the audit
+earning its place a second time.
+
+### What I did NOT add
+`real_weight` (kg/lb), which the reference also offers. It needs
+`getWeightKg()`, derived from body surface area (`human.py:638`,
+`bsa*bsa*3600/heightCm`) — a computation we do not have, not a formatting
+choice. Weight stays a percentage. Recorded rather than half-built.
+
+### Verification
+ctest 536/536 in debug, release, ASan and TSan. Format clean. Sonar OK.
+Mutations killed: conversion ignored, units not persisted, same-unit retrigger
+still emitting (which would rebuild the scene on every menu open).
+
+---
+
 ## 2026-09-06 01:50:00 — Session 139 · **245 changes as one undo step, and counting the calls**
 
 ### The chunk

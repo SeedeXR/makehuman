@@ -93,6 +93,7 @@ struct MainWindow::Impl {
     QStringList categories;
     QMenu* savedMenu{};
     QUndoStack* undo{};
+    Units units{Units::Metric};
     /// The reference's persistent macro line. A permanent status-bar widget,
     /// because showMessage is transient and every other message would wipe it.
     QLabel* macroStatus{};
@@ -272,6 +273,43 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     resetAction->setIcon(theme::icon("refresh-cw", theme::palette().textSecondary, 16));
     connect(resetAction, &QAction::triggered, this, &MainWindow::resetWorkspace);
 
+    // Settings. The reference has a whole Settings tab; this holds the one
+    // setting that currently changes anything on screen, and grows as more
+    // earn their place. A menu of controls that do nothing would be worse than
+    // a short menu.
+    QMenu* settings = menuBar()->addMenu(tr("&Settings"));
+    registerText(settings, QT_TR_NOOP("&Settings"));
+    QMenu* unitsMenu = settings->addMenu(tr("Units"));
+    registerText(unitsMenu, QT_TR_NOOP("Units"));
+    unitsMenu->menuAction()->setObjectName(QStringLiteral("settings.units"));
+    unitsMenu->menuAction()->setIcon(theme::icon("scale-3d", theme::palette().textSecondary, 16));
+
+    // Restored before the actions are built, so the right one starts checked.
+    d_->units = workspaceSettings().value(QStringLiteral("units"), 0).toInt() == 1 ? Units::Imperial
+                                                                                   : Units::Metric;
+
+    auto* unitGroup = new QActionGroup(this);
+    unitGroup->setExclusive(true);
+    const auto addUnit = [&](const char* label, const QString& objectName, Units value) {
+        QAction* a = unitsMenu->addAction(QCoreApplication::translate("", label));
+        registerText(a, label);
+        a->setObjectName(objectName);
+        a->setCheckable(true);
+        a->setChecked(d_->units == value);
+        unitGroup->addAction(a);
+        connect(a, &QAction::triggered, this, [this, value] {
+            if (d_->units == value) return;
+            d_->units = value;
+            // Persisted immediately rather than at shutdown: a crash should not
+            // lose a preference the user has already seen take effect.
+            workspaceSettings().setValue(QStringLiteral("units"), value == Units::Imperial ? 1 : 0);
+            emit unitsChanged(value);
+        });
+    };
+    addUnit(QT_TR_NOOP("Metric (cm)"), QStringLiteral("settings.units.metric"), Units::Metric);
+    addUnit(QT_TR_NOOP("Imperial (in.)"), QStringLiteral("settings.units.imperial"),
+            Units::Imperial);
+
     buildLanguageMenu();
 
     // The top toolbar (owner directive 8; the reference has one and we had
@@ -331,6 +369,10 @@ void MainWindow::setMacroStatus(const QString& line) {
 
 QString MainWindow::macroStatus() const {
     return d_->macroStatus->text();
+}
+
+Units MainWindow::units() const {
+    return d_->units;
 }
 
 ViewportWidget* MainWindow::viewport() const {

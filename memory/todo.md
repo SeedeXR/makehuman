@@ -2193,6 +2193,24 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       slider and modifier and then rebuilds once. **The call COUNT is asserted**
       — "it worked" and "it worked 245 times too slowly" look identical from
       outside, and a mutation applying one-at-a-time fails the test.
+- [x] **`SettingsTaskView`, first slice: units.** The status line hardcoded
+      centimetres while the reference has a units setting and converts at
+      DISPLAY time (`guimodifier.py:174-181`) — the stored value stays
+      centimetres either way. Settings > Units, exclusive, persisted to
+      QSettings immediately rather than at shutdown. The menu holds one setting
+      because it is the only one that currently changes anything on screen; it
+      grows as more earn their place.
+      - Note: the icon audit caught the two new radio items on the first run.
+        They are now exempt — an exclusive checkable action shows state with a
+        CHECK MARK — but the exclusion is deliberately narrow
+        (`isCheckable() && actionGroup() && actionGroup()->isExclusive()`),
+        because `isCheckable()` alone would also excuse a checkable TOOLBAR
+        toggle, which is icon-only and does need one. Verified it still catches
+        a genuinely blank action.
+- [ ] **Real weight (kg/lb) is NOT done.** The reference's `real_weight`
+      setting needs `getWeightKg()`, which derives from body surface area
+      (`human.py:638`, `bsa*bsa*3600/heightCm`). That is a computation we do not
+      have, not a formatting choice, so the weight stays a percentage.
 - [ ] **`ExpressionTaskView` / `ExpressionMixerTaskView` — NOT buildable as
       filed.** Measured: **zero `.mhpose` files ship**, so the chooser has no
       content (same as the seven proxy choosers). And the two are different

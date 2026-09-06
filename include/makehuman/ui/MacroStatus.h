@@ -5,6 +5,22 @@
 
 namespace mh::ui {
 
+/// Which length units the status line reads in.
+///
+/// The reference keeps this as an application setting and converts at display
+/// time (`guimodifier.py:174-181`); so do we. The stored value stays
+/// centimetres either way — a preference that changed the model's units rather
+/// than their presentation would be a very different and much worse idea.
+enum class Units {
+    Metric,   ///< centimetres
+    Imperial  ///< inches
+};
+
+/// Centimetres to inches, the reference's own constant
+/// (`guimodifier.py:180`). Exact enough: 1 inch is 2.54 cm by definition, and
+/// 1/2.54 = 0.3937007874..., so this is correct to nine digits.
+inline constexpr float kCentimetresToInches = 0.393700787F;
+
 /// The numbers behind the reference's persistent status line.
 ///
 /// Plain floats, NOT a `core::Human`. `mh_ui` is Apache-2.0 and must never
@@ -44,7 +60,7 @@ struct MacroStats {
 ///
 /// Strings go through `QCoreApplication::translate`, so a language change
 /// restyles them like every other UI string.
-[[nodiscard]] QString macroStatusLine(const MacroStats& stats);
+[[nodiscard]] QString macroStatusLine(const MacroStats& stats, Units units = Units::Metric);
 
 /// Just the gender clause, exposed because it carries all four branches and is
 /// the part worth testing at its boundaries.
