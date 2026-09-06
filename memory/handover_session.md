@@ -2140,6 +2140,61 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-06 10:15:00 — Session 143 · **why the eyes are blank, measured rather than guessed — and why I did not fix it yet**
+
+### The chunk
+The PBR follow-up: the eyes render as flat pale ovals. My own earlier note said
+"the eye geometry in the base mesh takes the BODY albedo, and its UV island
+lands on a bright region of the generated skin texture", and filed it under PBR.
+**Every part of that was wrong**, and it was written as a guess.
+
+### What it actually is
+OBJ's V origin is bottom-left; QImage's row 0 is at the top. **We never apply
+the flip.** Measured on the asset: the eyeball's frontmost 130 vertices carry
+UVs `u 0.921–0.953, v 0.052–0.084`, which in image space is the texture's
+BOTTOM-right — a small blue disc. Unflipped we sample the TOP-right instead,
+which is the pale grey background, RGB (171,171,167). That is the colour on
+screen.
+
+Confirmed by rendering the raw sampled albedo with the lighting removed: flat
+(171,171,167) unflipped, and the blue disc once `.flipped(Qt::Vertical)` is
+added at diffuse upload.
+
+### Five hypotheses killed by experiment, so nobody repeats them
+- **Shininess/roughness.** `shininess 1.0` → roughness 0.045, a near-mirror,
+  looked like an obvious specular blowout. Tested 0.55 and 0.30: unchanged.
+  I first dismissed this on a LOW-RESOLUTION look, which was sloppy — I redid
+  it at 10x zoom before ruling it out.
+- **Render resolution.** At 1024 full-body each eye is ~10 px, so "no iris"
+  could have been sampling. Rendered and zoomed 10x: the white region is ~30 px
+  and genuinely featureless.
+- **Eyeball orientation.** The iris is at the FRONT — Z 1.417 in a 1.221–1.463
+  mesh, model faces +Z. Not backwards.
+- **Missing material or texture.** The whole chain resolves; now asserted by a
+  test that walks proxy → material → texture and requires the file to exist.
+- **Missing UVs.** Mesh 808 UVs / 1064 verts (per-corner), RenderView 1076
+  texco spanning 0.011–0.991, `texco.size() == vertexCount()` so the interleave
+  writes them. The eye's raw albedo varies (std ≈ 35, range 25–171).
+
+### Why I did not land the fix
+`.flipped(Qt::Vertical)` at diffuse upload is one line, and it changes EVERY
+sampled texture. That moves the M6 litsphere parity images and the golden render
+baselines, and it raises a question I have not answered: glTF specifies a
+top-left UV origin, so if we pass OBJ's bottom-left V straight through, the
+**exporters may be wrong too**. Flipping only the viewport would then hide that
+rather than fix it.
+
+That deserves its own chunk with the baselines re-cut deliberately and an export
+cross-checked in Blender — not a one-liner bolted onto the end of an
+investigation. The full measurement set is in todo.md so the next iteration
+starts from evidence instead of from my earlier wrong guess.
+
+### What did land
+The proxy → material → texture assertion, and the corrected note. ctest 539/539
+in debug, release, ASan and TSan. Format clean. Sonar OK.
+
+---
+
 ## 2026-09-06 09:05:00 — Session 142 · **a fixture that moved when the repo did, and the parity test that never ran production's code path**
 
 ### The chunk

@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "makehuman/core/Material.h"
+#include "makehuman/core/ObjReader.h"
+#include "makehuman/core/Proxy.h"
+#include "makehuman/core/RenderMesh.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -223,4 +226,32 @@ TEST_CASE("a missing material is reported", "[core][material]") {
     REQUIRE_FALSE(m.has_value());
     CHECK(m.error().kind == MaterialErrorKind::NotFound);
     CHECK_FALSE(m.error().message().empty());
+}
+
+// The shipped eye proxy renders with NO iris -- a plain white oval -- in BOTH
+// shading models. It looked like a PBR defect (that is where it is visible) and
+// it is not: the eye's diffuse map never reaches the shader at all, so the
+// renderer binds its 1x1 white stand-in.
+//
+// This walks the real chain the viewport walks: proxy -> material file ->
+// diffuse texture path -> a file that exists.
+TEST_CASE("the shipped eye proxy resolves its diffuse texture", "[material][eyes]") {
+    const auto proxy = mh::core::loadProxy(std::filesystem::path(MH_DATA_DIR) / "eyes" /
+                                           "high-poly" / "high-poly.mhclo");
+    REQUIRE(proxy.has_value());
+
+    INFO("materialFile = " << proxy->materialFile.string());
+    REQUIRE_FALSE(proxy->materialFile.empty());
+    REQUIRE(std::filesystem::exists(proxy->materialFile));
+
+    const auto mat = mh::core::loadMaterial(proxy->materialFile);
+    REQUIRE(mat.has_value());
+
+    const auto& diffuse =
+        mat->textures[static_cast<size_t>(mh::core::TextureChannel::Diffuse)].path;
+    INFO("diffuse = " << diffuse.string());
+    REQUIRE_FALSE(diffuse.empty());
+    // Resolved, not just recorded: a relative path that never resolves is what
+    // hands the renderer nothing to bind.
+    CHECK(std::filesystem::exists(diffuse));
 }

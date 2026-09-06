@@ -1100,10 +1100,38 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       - Metallic/roughness come from `foundation::metallicRoughnessOf()`, the
         SAME call the glTF and USD writers make, so the viewport and the
         exported file cannot disagree.
-- [ ] **Follow-up from the PBR work: the eyeballs blow out to white.** Visible
-      only under PBR (the matcap flattened it). The eye geometry in the base
-      mesh takes the BODY albedo, and its UV island lands on a bright region of
-      the generated skin texture. Pre-existing asset/UV issue, not a shader one.
+- [ ] **The eyes render as flat pale ovals — MEASURED, and my earlier note was
+      wrong on every count.** It said "the eye geometry takes the BODY albedo
+      and its UV island lands on a bright region", and blamed PBR. All three
+      parts are false. Findings, each measured 2026-09-06:
+      - It is the **eye PROXY**, not body geometry: `--eyes none` removes the
+        ovals entirely.
+      - It happens in **BOTH** shading models. PBR only made it obvious.
+      - The material chain is sound: `high-poly.mhclo` → `brown.mhmat` →
+        `brown_eye.png`, all resolving (now asserted by
+        `"the shipped eye proxy resolves its diffuse texture"`).
+      - The texture **is** sampled — deleting `diffuseTexture` changes the
+        render — and the eye's raw albedo varies (std ≈ 35, range 25–171), so
+        UVs reach the shader.
+      - **The cause: we never apply the OBJ→image V flip.** OBJ's V origin is
+        bottom-left; QImage row 0 is top. Measured on the asset: the eyeball's
+        frontmost 130 vertices carry UVs `u 0.921–0.953, v 0.052–0.084`, which
+        in image space is the texture's BOTTOM-right — a small blue disc.
+        Unflipped we sample the TOP-right instead, which is the pale grey
+        background (171,171,167). Adding `.flipped(Qt::Vertical)` at diffuse
+        upload moves the sample onto the blue disc, confirmed by rendering the
+        raw albedo.
+      - Rejected by experiment, so nobody repeats them: `shininess`/roughness
+        (0.30 and 0.55 both unchanged), render resolution, eyeball orientation
+        (the iris IS at the front, Z 1.417 of a 1.221–1.463 mesh), a missing
+        material, and missing UVs.
+- [ ] **The V flip is the fix, and it is NOT a one-liner to land.** It changes
+      EVERY sampled texture, so it moves the M6 litsphere parity images and the
+      golden render tests, and it may mean the glTF/USD writers are also
+      emitting bottom-left V into formats that specify top-left. Do it as its
+      own chunk: flip at the READ side or at upload, re-baseline the golden
+      renders deliberately, and cross-check an export in Blender before
+      believing either answer.
 - [ ] **Follow-up: `default.mhmat` has no albedo at all**, so `--shading pbr`
       with the default skin renders a near-white body — correct for albedo 1.0,
       but it is not a good default. Either give `default` a neutral map or make
