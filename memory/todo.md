@@ -1693,9 +1693,47 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       is not translated either. Learning the format from files those tools
       produce is what makes this legitimate.
       Staged, because it is large:
-      1. **Container** — header, node records, property types (including the
-         zlib-encoded array forms), the NULL terminator record and the footer.
-         Validated by Maya AND Blender opening a minimal mesh.
+      1. **Container — HALF DONE. Blender opens our file correctly; Maya still
+         imports it as zero meshes.** `io::writeFbx` writes the whole container
+         and the geometry, and Blender reports **21,833 vertices / 26,756
+         triangles / 1.69455 m** — exactly what we wrote. Maya reads the file
+         with no warning in its own SDK log and produces nothing.
+         **Proved along the way, each by experiment:**
+         - The **record encoder is byte-exact**. Re-emitting assimp's
+           `base.fbx` through our encoding rules is byte-identical across the
+           entire record region (differing only in the footer). So nothing
+           below is an encoding bug.
+         - **The NULL-record rule**, surveyed over ~650 records in Maya's and
+           assimp's output: children -> 25-byte null record; no children but
+           properties -> none; **no children AND no properties -> null record**.
+           That last row is the one "only when it has children" gets wrong, and
+           `References` is exactly such a node: omitting its terminator shifted
+           every later offset by 25 bytes.
+         - **Maya validates the 16-byte footer id.** Re-emitting assimp's file
+           byte-for-byte but for the last 161 bytes imported as 0 meshes;
+           grafting the original footer back on made it 1 mesh / 21,833 verts.
+           The id is a function of `FileId` and `CreationTime` through an
+           obfuscation Autodesk does not publish (two documented formulations
+           were tested against two ground-truth samples and reproduced neither),
+           so we adopt a consistent triple.
+         - **Blender asserts on `P` subtypes**: `Integer` for `int`, `Number`
+           for `double`. An empty subtype fails its importer outright.
+         - **An empty `Properties70` on a Model makes Maya discard it** — proved
+           both ways: emptying assimp's broke a working file, filling ours fixed
+           it inside assimp's scaffolding.
+         - `UnitScaleFactor` is **centimetres per file unit** (10/unitScale),
+           not the scale factor.
+         **Eliminated as the cause of Maya's refusal**, each tested by swapping
+         our record into assimp's known-good tree and back: our Definitions,
+         Documents, GlobalSettings, References, Connections, Geometry, Model,
+         Material; object id values; PropertyTemplates; the full 20-entry
+         GlobalSettings; `RootNode` as `L`; `EncryptionType` +
+         `CreationTimeStamp`; a connected Material. Every one of our records
+         works INSIDE assimp's tree, and our whole file still does not — so the
+         cause is a combination not yet isolated. **Next fire starts here**, not
+         from the beginning.
+         Nothing regresses meanwhile: `writeFbx` has no caller in the
+         application, and `.fbx` export still goes through assimp.
       2. Normals, UVs, materials, textures.
       3. Skin + bind poses — the live rig, which is the whole reason for this.
       4. Blend shapes.

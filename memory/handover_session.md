@@ -2140,6 +2140,55 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-07 05:30:00 — Session 162 · **the FBX container: Blender yes, Maya not yet, and four rules learned the hard way**
+
+### Where it got to
+`io::writeFbx` writes the container and the geometry. **Blender opens it and
+reports 21,833 vertices, 26,756 triangles, 1.69455 m** -- exactly what we wrote.
+**Maya still imports it as zero meshes**, with no warning in its own SDK log.
+Half the stage, and I am not going to call it more than that.
+
+### What is proved, not assumed
+- **The record encoder is byte-exact.** Re-emitting assimp's `base.fbx` through
+  our encoding rules produced a byte-identical file across the whole record
+  region. That single experiment took "is it an encoding bug?" off the table
+  for everything that followed.
+- **The NULL-record rule**, surveyed over ~650 records in two writers' output:
+  children -> terminator; no children but properties -> none; **no children AND
+  no properties -> terminator**. `References` is exactly that last case, and
+  omitting its terminator shifted every later offset by 25 bytes. Maya read
+  that file without a single warning and imported nothing.
+- **Maya validates the 16-byte footer id.** Byte-identical file, wrong footer:
+  0 meshes. Graft the original footer back: 1 mesh, 21,833 vertices. The id is
+  a function of FileId and CreationTime through an obfuscation Autodesk does not
+  publish -- I tested two documented formulations against two ground-truth
+  samples and neither reproduced either, so I did not pretend to have it and
+  adopted a consistent triple instead.
+- **Blender asserts on `P` subtypes** (`Integer`, `Number`); an empty subtype
+  fails its importer outright.
+- **An empty `Properties70` on a Model makes Maya discard it**, proved both
+  ways.
+
+### The mistake worth recording
+I ran six bisect variants and drew conclusions from all of them before noticing
+that my Python re-encoder wrote a **zero footer** -- so every one of those files
+was failing for the footer, not for the content under test. The results were
+void and I had to redo them. A test harness that can fail for its own reasons
+will happily answer a question you did not ask.
+
+### Where it stands
+Every record of ours works INSIDE assimp's known-good tree -- Definitions,
+Documents, GlobalSettings, References, Connections, Geometry, Model, Material,
+ids, PropertyTemplates, the full GlobalSettings, `RootNode` as `L`,
+`CreationTimeStamp` -- and our whole file still does not. So the cause is a
+combination I have not isolated. The eliminated list is in `todo.md` so the next
+fire starts from there rather than from the beginning.
+
+Nothing regresses meanwhile: `writeFbx` has no caller in the application, and
+`.fbx` export still goes through assimp.
+
+---
+
 ## 2026-09-07 04:15:00 — Session 161 · **the owner said build the FBX writer, so I read Maya's**
 
 ### The decision

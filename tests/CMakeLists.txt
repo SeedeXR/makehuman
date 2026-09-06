@@ -48,6 +48,7 @@ add_executable(mh_tests
     golden/test_slider_layout.cpp
     golden/test_obj_writer_parity.cpp
     golden/test_blendshapes.cpp
+    golden/test_fbx_writer.cpp
     golden/test_gltf_writer.cpp
     golden/test_scene_io.cpp
     golden/test_roundtrip.cpp

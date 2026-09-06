@@ -13,6 +13,7 @@ add_library(mh_io STATIC
     BvhWriter.cpp
     UsdWriter.cpp
     GltfWriter.cpp
+    FbxWriter.cpp
     DracoMesh.cpp
     SceneIO.cpp)
 add_library(mh::io ALIAS mh_io)

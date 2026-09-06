@@ -1,0 +1,631 @@
+// SPDX-License-Identifier: Apache-2.0
+
+#include "makehuman/io/FbxWriter.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <fstream>
+#include <vector>
+
+namespace mh::io {
+namespace {
+
+using foundation::Vec3;
+
+/// 7500, not 7700. Both Maya (7700) and assimp (7500) write 7.x binary and the
+/// record header is identical from 7500 on -- the three counts became 64-bit
+/// there. 7500 is the older of the two and so the wider-read one; nothing below
+/// needs anything 7700 added.
+constexpr uint32_t kVersion = 7500;
+
+constexpr int64_t kDocumentId = 1'000'000;
+
+/// The last 16 bytes of every FBX binary. Constant: Maya and assimp write the
+/// same bytes, which is how it was established rather than recalled.
+constexpr uint8_t kFooterMagic[16] = {0xF8, 0x5A, 0x8C, 0x6A, 0xDE, 0xF5, 0xD9, 0x7E,
+                                      0xEC, 0xE9, 0x0C, 0xE3, 0x75, 0x8F, 0x29, 0x0B};
+
+/// THESE THREE MOVE TOGETHER. Change one and the file stops importing in Maya.
+///
+/// The 16-byte footer id is a function of `FileId` and `CreationTime` through
+/// an obfuscation Autodesk does not publish, and **Maya's SDK checks it**:
+/// given a mismatched id it reads the file, reports no warning in its own log,
+/// and imports ZERO objects. Blender ignores the id entirely and imports the
+/// same file correctly, so only asking both readers finds this at all.
+///
+/// Proved rather than reasoned: re-emitting assimp's `base.fbx` byte-for-byte
+/// with our encoder, differing ONLY in these last 161 bytes, imported as 0
+/// meshes; grafting the original footer back on made it 1 mesh and 21,833
+/// vertices.
+///
+/// So we adopt a known-consistent triple. It is assimp's -- which uses a fixed
+/// id and the epoch for every file it writes, verified across three of them --
+/// and it is data, from a BSD-3-Clause tool's OUTPUT, not code. If the
+/// obfuscation is ever worked out, compute the id and delete this note.
+constexpr uint8_t kFileId[16]       = {0x28, 0xB3, 0x2A, 0xEB, 0xB6, 0x24, 0xCC, 0xC2,
+                                       0xBF, 0xC8, 0xB0, 0x2A, 0xA9, 0x2B, 0xFC, 0xF1};
+constexpr const char* kCreationTime = "1970-01-01 10:00:00:000";
+constexpr uint8_t kFooterId[16]     = {0xFA, 0xBC, 0xAB, 0x09, 0xD0, 0xC8, 0xD4, 0x66,
+                                       0xB1, 0x76, 0xFB, 0x83, 0x1C, 0xF7, 0x26, 0x7E};
+
+/// Object names are `Name\0\x01Class` -- a NUL and a 0x01 between the two,
+/// not a separator anyone would guess. Read out of Maya's file: `RefCube`
+/// arrives as `RefCube\0\x01Model`.
+std::string objectName(std::string_view name, std::string_view klass) {
+    std::string out(name);
+    out.push_back('\0');
+    out.push_back('\x01');
+    out.append(klass);
+    return out;
+}
+
+/// A record being built. Children are appended as finished byte blocks, so a
+/// node's own length is known only once it is closed -- which is why this
+/// exists rather than a stream.
+class Node {
+public:
+    explicit Node(std::string name) : name_(std::move(name)) {}
+
+    void addI16(int16_t v) { scalar('Y', &v, sizeof(v)); }
+
+    void addBool(bool v) {
+        const uint8_t b = v ? 1U : 0U;
+        scalar('C', &b, sizeof(b));
+    }
+
+    void addI32(int32_t v) { scalar('I', &v, sizeof(v)); }
+
+    void addF64(double v) { scalar('D', &v, sizeof(v)); }
+
+    void addI64(int64_t v) { scalar('L', &v, sizeof(v)); }
+
+    void addString(std::string_view v) {
+        ++properties_;
+        props_.push_back('S');
+        appendU32(props_, static_cast<uint32_t>(v.size()));
+        props_.insert(props_.end(), v.begin(), v.end());
+    }
+
+    void addRaw(const uint8_t* data, size_t n) {
+        ++properties_;
+        props_.push_back('R');
+        appendU32(props_, static_cast<uint32_t>(n));
+        props_.insert(props_.end(), data, data + n);
+    }
+
+    /// An array property, stored UNCOMPRESSED (encoding 0).
+    ///
+    /// The format allows zlib (encoding 1) and both Maya and assimp use it. We
+    /// do not yet: a deflate stream that a reader rejects fails in a way that
+    /// looks like a corrupt mesh, and there is no point paying that risk before
+    /// the uncompressed path is proven against both DCCs.
+    template <typename T>
+    void addArray(char type, const std::vector<T>& values) {
+        ++properties_;
+        props_.push_back(static_cast<uint8_t>(type));
+        appendU32(props_, static_cast<uint32_t>(values.size()));
+        appendU32(props_, 0U);  // encoding: raw
+        appendU32(props_, static_cast<uint32_t>(values.size() * sizeof(T)));
+        const auto* bytes = reinterpret_cast<const uint8_t*>(values.data());
+        props_.insert(props_.end(), bytes, bytes + (values.size() * sizeof(T)));
+    }
+
+    void add(Node&& child) { children_.push_back(std::move(child)); }
+
+    /// Appends this record, and everything under it, to @p out.
+    void writeTo(std::vector<uint8_t>& out) const {
+        const size_t headerAt = out.size();
+        appendU64(out, 0);  // EndOffset, patched below
+        appendU64(out, properties_);
+        appendU64(out, props_.size());
+        out.push_back(static_cast<uint8_t>(name_.size()));
+        out.insert(out.end(), name_.begin(), name_.end());
+        out.insert(out.end(), props_.begin(), props_.end());
+
+        for (const Node& c : children_)
+            c.writeTo(out);
+        // The NULL record rule, MEASURED across both writers rather than
+        // assumed. Surveying every record in assimp's and Maya's output:
+        //
+        //   children              -> 25-byte null record   (18 + 39 nodes)
+        //   no children, props    -> none                  (186 + 402 nodes)
+        //   no children, no props -> 25-byte null record    (1 + 1 nodes)
+        //
+        // That last row is the one a "only when it has children" rule gets
+        // wrong, and it is not academic: `References` is exactly such a node,
+        // and omitting its terminator shifted every later offset by 25 bytes.
+        // Maya then read the file without a single warning and imported ZERO
+        // meshes; Blender read the same file correctly.
+        if (!children_.empty() || properties_ == 0) out.insert(out.end(), 25, 0U);
+
+        const uint64_t end = out.size();
+        std::memcpy(out.data() + headerAt, &end, sizeof(end));
+    }
+
+    static void appendU32(std::vector<uint8_t>& b, uint32_t v) {
+        const auto* p = reinterpret_cast<const uint8_t*>(&v);
+        b.insert(b.end(), p, p + sizeof(v));
+    }
+
+    static void appendU64(std::vector<uint8_t>& b, uint64_t v) {
+        const auto* p = reinterpret_cast<const uint8_t*>(&v);
+        b.insert(b.end(), p, p + sizeof(v));
+    }
+
+private:
+    void scalar(char type, const void* data, size_t n) {
+        ++properties_;
+        props_.push_back(static_cast<uint8_t>(type));
+        const auto* p = static_cast<const uint8_t*>(data);
+        props_.insert(props_.end(), p, p + n);
+    }
+
+    std::string name_;
+    uint64_t properties_{0};
+    std::vector<uint8_t> props_;
+    std::vector<Node> children_;
+};
+
+/// A `Properties70` entry: name, type, subtype, flags, then the value.
+Node property70(std::string_view name, std::string_view type, std::string_view sub,
+                std::string_view flags) {
+    Node p("P");
+    p.addString(name);
+    p.addString(type);
+    p.addString(sub);
+    p.addString(flags);
+    return p;
+}
+
+/// The SUBTYPE is not decoration. Blender's importer asserts on it --
+/// `elem_props_get_number` requires `b'Number'` in slot 2 -- and rejects the
+/// whole file if it is empty. Maya writes `Integer` for `int` and `Number` for
+/// `double`, which is where these came from.
+Node intProperty(std::string_view name, int32_t value) {
+    Node p = property70(name, "int", "Integer", "");
+    p.addI32(value);
+    return p;
+}
+
+Node doubleProperty(std::string_view name, double value) {
+    Node p = property70(name, "double", "Number", "");
+    p.addF64(value);
+    return p;
+}
+
+Node headerExtension() {
+    Node h("FBXHeaderExtension");
+    Node v("FBXHeaderVersion");
+    v.addI32(1003);
+    h.add(std::move(v));
+    Node fv("FBXVersion");
+    fv.addI32(static_cast<int32_t>(kVersion));
+    h.add(std::move(fv));
+    Node enc("EncryptionType");
+    enc.addI32(0);
+    h.add(std::move(enc));
+
+    // The timestamp, broken into fields. Both Maya and assimp write it and a
+    // strict reader looks for it; the values match `kCreationTime`, which the
+    // footer id is derived from, so the two cannot disagree.
+    Node stamp("CreationTimeStamp");
+    for (const auto& [name, value] : {std::pair<const char*, int32_t>{"Version", 1000},
+                                      {"Year", 1970},
+                                      {"Month", 1},
+                                      {"Day", 1},
+                                      {"Hour", 10},
+                                      {"Minute", 0},
+                                      {"Second", 0},
+                                      {"Millisecond", 0}}) {
+        Node field(name);
+        field.addI32(value);
+        stamp.add(std::move(field));
+    }
+    h.add(std::move(stamp));
+
+    Node c("Creator");
+    c.addString("MakeHuman C++ FBX writer");
+    h.add(std::move(c));
+    return h;
+}
+
+Node globalSettings(const FbxWriteOptions& options) {
+    Node g("GlobalSettings");
+    Node v("Version");
+    v.addI32(1000);
+    g.add(std::move(v));
+
+    Node p("Properties70");
+    // Y-up, Z-front, X-right: MakeHuman's own convention, stated rather than
+    // left to the reader's default. An importer that assumes Z-up lays the
+    // figure on its face.
+    p.add(intProperty("UpAxis", 1));
+    p.add(intProperty("UpAxisSign", 1));
+    p.add(intProperty("FrontAxis", 2));
+    p.add(intProperty("FrontAxisSign", 1));
+    p.add(intProperty("CoordAxis", 0));
+    p.add(intProperty("CoordAxisSign", 1));
+    // CENTIMETRES PER FILE UNIT. The mesh is already scaled out of decimetres
+    // by `unitScale`, so one file unit is `10 / unitScale` centimetres: 1 for
+    // centimetres, 100 for metres, 2.54 for inches. Writing the scale factor
+    // itself instead makes a metre-scale model arrive 1000x too large.
+    p.add(doubleProperty("UnitScaleFactor", 10.0 / static_cast<double>(unitScale(options.unit))));
+    g.add(std::move(p));
+    return g;
+}
+
+/// `LayerElementNormal` plus a `Layer` that names it.
+///
+/// Not decoration, and not stage-2 polish: Maya imported a Geometry with no
+/// Layer as **zero meshes**, silently. Blender took the same file happily, so
+/// only asking both caught it. Every writer that Maya accepts -- its own and
+/// assimp's -- emits these.
+///
+/// `ByPolygonVertex`/`Direct`: one normal per INDEX entry, in index order,
+/// which is how a hard edge is expressed at all. Per-vertex normals would make
+/// every edge smooth.
+Node normalLayer(const foundation::RenderView& mesh) {
+    Node n("LayerElementNormal");
+    n.addI32(0);
+    Node v("Version");
+    v.addI32(102);
+    n.add(std::move(v));
+    Node name("Name");
+    name.addString("");
+    n.add(std::move(name));
+    Node mapping("MappingInformationType");
+    mapping.addString("ByPolygonVertex");
+    n.add(std::move(mapping));
+    Node reference("ReferenceInformationType");
+    reference.addString("Direct");
+    n.add(std::move(reference));
+
+    std::vector<double> normals;
+    normals.reserve(mesh.index.size() * 3);
+    for (const uint32_t i : mesh.index) {
+        const Vec3& nv = mesh.vnorm[i];
+        normals.push_back(static_cast<double>(nv.x));
+        normals.push_back(static_cast<double>(nv.y));
+        normals.push_back(static_cast<double>(nv.z));
+    }
+    Node data("Normals");
+    data.addArray('d', normals);
+    n.add(std::move(data));
+    return n;
+}
+
+/// `LayerElementMaterial`, `AllSame`: one material for the whole mesh.
+///
+/// Required in practice, not in principle. Maya imported our Geometry as ZERO
+/// meshes whenever no material was connected to it, and accepted the identical
+/// geometry as soon as one was -- so the mesh needs a material to exist, and
+/// the material needs this layer to be addressed by.
+Node materialLayer() {
+    Node m("LayerElementMaterial");
+    m.addI32(0);
+    Node v("Version");
+    v.addI32(101);
+    m.add(std::move(v));
+    Node name("Name");
+    name.addString("");
+    m.add(std::move(name));
+    Node mapping("MappingInformationType");
+    mapping.addString("AllSame");
+    m.add(std::move(mapping));
+    Node reference("ReferenceInformationType");
+    reference.addString("IndexToDirect");
+    m.add(std::move(reference));
+    Node materials("Materials");
+    materials.addArray('i', std::vector<int32_t>{0});
+    m.add(std::move(materials));
+    return m;
+}
+
+Node layerEntry(std::string_view type) {
+    Node e("LayerElement");
+    Node t("Type");
+    t.addString(type);
+    e.add(std::move(t));
+    Node index("TypedIndex");
+    index.addI32(0);
+    e.add(std::move(index));
+    return e;
+}
+
+Node layer() {
+    Node l("Layer");
+    l.addI32(0);
+    Node v("Version");
+    v.addI32(100);
+    l.add(std::move(v));
+    l.add(layerEntry("LayerElementNormal"));
+    l.add(layerEntry("LayerElementMaterial"));
+    return l;
+}
+
+/// A minimal Lambert material. Stage 2 gives it the real colours; stage 1 needs
+/// it to exist at all, for the reason `materialLayer` records.
+Node material(int64_t id, const std::string& name) {
+    Node m("Material");
+    m.addI64(id);
+    m.addString(objectName(name, "Material"));
+    m.addString("");
+    Node v("Version");
+    v.addI32(102);
+    m.add(std::move(v));
+    Node shading("ShadingModel");
+    shading.addString("Lambert");
+    m.add(std::move(shading));
+    Node multi("MultiLayer");
+    multi.addI32(0);
+    m.add(std::move(multi));
+    Node props("Properties70");
+    Node diffuse = property70("DiffuseColor", "Color", "", "A");
+    diffuse.addF64(0.8);
+    diffuse.addF64(0.8);
+    diffuse.addF64(0.8);
+    props.add(std::move(diffuse));
+    m.add(std::move(props));
+    return m;
+}
+
+/// The scene document, and the `RootNode` that says where its root is.
+///
+/// The `RootNode` child is what was missing when Maya imported this file as
+/// ZERO meshes, with no warning in its own SDK log -- the objects were read and
+/// then attached to nothing. Blender does not need it and took the same file
+/// happily, which is why only asking both found it. The name property is EMPTY
+/// and the class is "Scene", matching what assimp writes.
+Node documents() {
+    Node d("Documents");
+    Node c("Count");
+    c.addI32(1);
+    d.add(std::move(c));
+    Node doc("Document");
+    doc.addI64(kDocumentId);
+    doc.addString("");
+    doc.addString("Scene");
+    // Two entries, because an EMPTY Properties70 is what made Maya discard the
+    // Model -- the same trap, one node up.
+    Node props("Properties70");
+    props.add(property70("SourceObject", "object", "", ""));
+    Node active = property70("ActiveAnimStackName", "KString", "", "");
+    active.addString("");
+    props.add(std::move(active));
+    doc.add(std::move(props));
+
+    // `L`, an int64, NOT an int32. Both Maya and assimp write it that way, and
+    // a reader that takes the property's declared type at its word finds a
+    // 4-byte value where it expects 8 -- which is a scene whose root resolves
+    // to nothing, and objects that are read and then attached to nothing.
+    Node root("RootNode");
+    root.addI64(0);
+    doc.add(std::move(root));
+    d.add(std::move(doc));
+    return d;
+}
+
+Node definitions() {
+    Node d("Definitions");
+    Node v("Version");
+    v.addI32(100);
+    d.add(std::move(v));
+    Node c("Count");
+    c.addI32(3);
+    d.add(std::move(c));
+    for (const char* type : {"Geometry", "Material", "Model"}) {
+        Node o("ObjectType");
+        o.addString(type);
+        Node oc("Count");
+        oc.addI32(1);
+        o.add(std::move(oc));
+        d.add(std::move(o));
+    }
+    return d;
+}
+
+/// The geometry record: positions and the polygon index list.
+///
+/// `PolygonVertexIndex` marks the END of each polygon by storing that index as
+/// `~i`. Without it a reader has no way to know where one face stops, and every
+/// face after the first lands on the wrong vertices.
+Node geometry(int64_t id, const foundation::RenderView& mesh, const Transform& xf,
+              size_t vertsPerPolygon) {
+    Node g("Geometry");
+    g.addI64(id);
+    g.addString(objectName("", "Geometry"));
+    g.addString("Mesh");
+
+    std::vector<double> coords;
+    coords.reserve(mesh.coord.size() * 3);
+    for (const Vec3& v : mesh.coord) {
+        const Vec3 p = xf.place(v);
+        coords.push_back(static_cast<double>(p.x));
+        coords.push_back(static_cast<double>(p.y));
+        coords.push_back(static_cast<double>(p.z));
+    }
+    Node verts("Vertices");
+    verts.addArray('d', coords);
+    g.add(std::move(verts));
+
+    std::vector<int32_t> indices;
+    indices.reserve(mesh.index.size());
+    for (size_t i = 0; i < mesh.index.size(); ++i) {
+        const auto idx  = static_cast<int32_t>(mesh.index[i]);
+        const bool last = (i % vertsPerPolygon) == (vertsPerPolygon - 1);
+        indices.push_back(last ? ~idx : idx);
+    }
+    Node poly("PolygonVertexIndex");
+    poly.addArray('i', indices);
+    g.add(std::move(poly));
+
+    Node gv("GeometryVersion");
+    gv.addI32(124);
+    g.add(std::move(gv));
+
+    if (mesh.vnorm.size() == mesh.coord.size()) g.add(normalLayer(mesh));
+    g.add(materialLayer());
+    g.add(layer());
+    return g;
+}
+
+Node model(int64_t id, const std::string& name) {
+    Node m("Model");
+    m.addI64(id);
+    m.addString(objectName(name, "Model"));
+    m.addString("Mesh");
+    Node v("Version");
+    v.addI32(232);
+    m.add(std::move(v));
+
+    // An EMPTY Properties70 makes Maya discard the model, and with it the whole
+    // mesh -- silently, with nothing in its own SDK log. Proved both ways:
+    // taking assimp's working file and emptying just this node broke it (0
+    // meshes), and putting these three entries onto our own model fixed it
+    // (1 mesh, 21,833 vertices). Blender does not care either way.
+    Node props("Properties70");
+    Node rotationActive = property70("RotationActive", "bool", "", "");
+    rotationActive.addI32(1);
+    props.add(std::move(rotationActive));
+    props.add(intProperty("DefaultAttributeIn", 0));
+    Node inherit = property70("InheritType", "enum", "", "");
+    inherit.addI32(1);
+    props.add(std::move(inherit));
+    m.add(std::move(props));
+    Node shading("Shading");
+    shading.addBool(true);
+    m.add(std::move(shading));
+    Node culling("Culling");
+    culling.addString("CullingOff");
+    m.add(std::move(culling));
+    return m;
+}
+
+/// `C` records wire objects together. Object-to-object here: the geometry hangs
+/// off the model, and the model off the scene root (id 0).
+Node connections(int64_t geometryId, int64_t modelId, int64_t materialId) {
+    Node c("Connections");
+    // Model to the scene root FIRST, then the geometry onto the model, which is
+    // the order both assimp and Maya write. A reader that builds the graph as
+    // it goes has the parent already when the child arrives.
+    Node m("C");
+    m.addString("OO");
+    m.addI64(modelId);
+    m.addI64(0);
+    c.add(std::move(m));
+    Node g("C");
+    g.addString("OO");
+    g.addI64(geometryId);
+    g.addI64(modelId);
+    c.add(std::move(g));
+    Node mat("C");
+    mat.addString("OO");
+    mat.addI64(materialId);
+    mat.addI64(modelId);
+    c.add(std::move(mat));
+    return c;
+}
+
+void appendFooter(std::vector<uint8_t>& out) {
+    out.insert(out.end(), kFooterId, kFooterId + sizeof(kFooterId));
+    // Pad so the trailing block -- four zeros, the version, 120 zeros, the
+    // magic -- BEGINS on a 16-byte boundary. Measured from Maya's own file: its
+    // four zeros sit at 38304 and 38304 % 16 == 0. Aligning the version itself
+    // instead puts the whole tail four bytes out.
+    while ((out.size() % 16) != 0)
+        out.push_back(0U);
+    Node::appendU32(out, 0U);
+    Node::appendU32(out, kVersion);
+    out.insert(out.end(), 120, 0U);
+    out.insert(out.end(), kFooterMagic, kFooterMagic + sizeof(kFooterMagic));
+}
+
+}  // namespace
+
+std::string FbxWriteError::message() const {
+    switch (kind) {
+        case FbxWriteErrorKind::CannotOpen: return "cannot open " + file;
+        case FbxWriteErrorKind::EmptyMesh: return file + ": mesh has no vertices or no faces";
+        case FbxWriteErrorKind::NonFiniteValue: return file + ": non-finite " + detail;
+    }
+    return file + ": unknown error";
+}
+
+std::expected<FbxWriteResult, FbxWriteError> writeFbx(const std::filesystem::path& path,
+                                                      const foundation::RenderView& mesh,
+                                                      const FbxWriteOptions& options) {
+    if (mesh.coord.empty() || mesh.index.empty()) {
+        return std::unexpected(FbxWriteError{FbxWriteErrorKind::EmptyMesh, path.string(), {}});
+    }
+    for (const Vec3& v : mesh.coord) {
+        if (!std::isfinite(v.x) || !std::isfinite(v.y) || !std::isfinite(v.z)) {
+            return std::unexpected(
+                FbxWriteError{FbxWriteErrorKind::NonFiniteValue, path.string(), "vertex position"});
+        }
+    }
+
+    // A RenderView is a triangle list by construction, so a polygon is three
+    // corners. Quads survive to the FILE only if the caller kept them, and this
+    // writer does not invent them back.
+    constexpr size_t kVertsPerPolygon = 3;
+    if ((mesh.index.size() % kVertsPerPolygon) != 0) {
+        return std::unexpected(FbxWriteError{FbxWriteErrorKind::EmptyMesh, path.string(),
+                                             "index count is not a whole number of triangles"});
+    }
+
+    const Transform xf =
+        meshTransform(unitScale(options.unit) * options.scale, options.feetOnGround, mesh);
+
+    std::vector<uint8_t> out;
+    out.insert(out.end(), {'K', 'a', 'y', 'd', 'a', 'r', 'a', ' ', 'F', 'B', 'X',
+                           ' ', 'B', 'i', 'n', 'a', 'r', 'y', ' ', ' ', '\0'});
+    out.push_back(0x1A);
+    out.push_back(0x00);
+    Node::appendU32(out, kVersion);
+
+    constexpr int64_t kGeometryId = 2'000'000;
+    constexpr int64_t kMaterialId = 3'000'000;
+    constexpr int64_t kModelId    = 4'000'000;
+
+    headerExtension().writeTo(out);
+    // Maya and assimp both write these three between the header extension and
+    // the settings. Cheap, and the kind of thing a strict reader looks for.
+    Node fileId("FileId");
+    fileId.addRaw(kFileId, sizeof(kFileId));
+    fileId.writeTo(out);
+    Node created("CreationTime");
+    created.addString(kCreationTime);
+    created.writeTo(out);
+    Node creator("Creator");
+    creator.addString("MakeHuman C++ FBX writer");
+    creator.writeTo(out);
+
+    globalSettings(options).writeTo(out);
+    documents().writeTo(out);
+    Node("References").writeTo(out);
+    definitions().writeTo(out);
+
+    Node objects("Objects");
+    objects.add(geometry(kGeometryId, mesh, xf, kVertsPerPolygon));
+    objects.add(material(kMaterialId, options.materialName));
+    objects.add(model(kModelId, options.meshName));
+    objects.writeTo(out);
+
+    connections(kGeometryId, kModelId, kMaterialId).writeTo(out);
+
+    // The top-level list is terminated like any other child list.
+    out.insert(out.end(), 25, 0U);
+    appendFooter(out);
+
+    std::ofstream f(path, std::ios::binary);
+    if (!f) return std::unexpected(FbxWriteError{FbxWriteErrorKind::CannotOpen, path.string(), {}});
+    f.write(reinterpret_cast<const char*>(out.data()), static_cast<std::streamsize>(out.size()));
+    if (!f) return std::unexpected(FbxWriteError{FbxWriteErrorKind::CannotOpen, path.string(), {}});
+
+    return FbxWriteResult{.vertices = mesh.coord.size(),
+                          .polygons = mesh.index.size() / kVertsPerPolygon,
+                          .bytes    = out.size()};
+}
+
+}  // namespace mh::io
