@@ -39,7 +39,8 @@ proprietary closed fork of it.
 |---|---|---|
 | MakeHuman source code | **AGPL-3.0-or-later** | `LICENSE.md` §B; per-file headers, e.g. `legacy/python/core/export.py:21-30` |
 | Bundled assets (base mesh, targets, proxies, materials, poses, rigs, UVs, litspheres) | **CC0-1.0** | `LICENSE.md` §C; `LICENSE.ASSETS.md`; per-file headers, e.g. `data/3dobjs/base.obj:3-4`, `data/targets/asym/asym-eye-6-l.target:3-4` |
-| UI images, icons, themes, GLSL shaders | **AGPL-3.0** | `LICENSE.md` §B explicitly includes "glsl shaders" and UI images |
+| UI images, icons, themes, GLSL shaders **written by the MakeHuman team** | **AGPL-3.0** | `LICENSE.md` §B explicitly includes "glsl shaders" and UI images; per-file headers, e.g. `data/shaders/glsl/litsphere_fragment_shader.txt:16` (`**Licensing:** AGPL3`) |
+| `data/shaders/glsl/xray_{vertex,fragment}_shader.txt` | **GPL-2.0-or-later** (MeshLab, © 2005, 2009 Visual Computing Lab, ISTI-CNR) | `data/shaders/glsl/xray_fragment_shader.txt:5-19` — see §3.4 |
 | Output of the application | **Unencumbered** — project claims nothing | `LICENSE.md` §D |
 | `legacy/python/plugins/9_export_fbx/{encode_bin,data_types,fbx_utils_bin,fbx_binary}.py` | **GPL-2.0-or-later** (Blender 2.79, © Campbell Barton, Bastien Montagne) | `legacy/python/licenses/pyFbx-license.txt:1-20`; `legacy/python/plugins/9_export_fbx/encode_bin.py:21-23` |
 | `legacy/python/plugins/9_massproduce/` | **MIT** | `legacy/python/plugins/9_massproduce/__init__.py:15` |
@@ -89,6 +90,37 @@ set any field**; assets load with the default `LicenseInfo`. Verified: only
 
 **Action for the port:** parse the prose headers properly, or add a structured
 sidecar. Licence metadata that silently defaults is worse than none.
+
+### 3.4 The xray shader is MeshLab, not MakeHuman
+
+The table in §3 used to read "GLSL shaders | AGPL-3.0" without qualification,
+and that is wrong for one pair. `data/shaders/glsl/xray_{vertex,fragment}_shader.txt`
+carries a MeshLab header — © 2005, 2009 Visual Computing Lab, ISTI - Italian
+National Research Council — granting the
+
+> "GNU General Public License ... either version 2 of the License, or (at your
+> option) any later version"
+> — `data/shaders/glsl/xray_fragment_shader.txt:12-14`
+
+**Compatibility: no conflict**, by exactly the pyFBX reasoning in §3.1.
+GPL-2.0-**or-later** upgrades to GPL-3.0, which is compatible with AGPL-3.0
+(§13 of both). Shipping the file inside an AGPL-3.0 application is fine, and it
+ships as reference data only: `xray.mhmat`'s `shader` line is parsed down to a
+path stem (`src/core/Material.cpp:59`) and the GLSL itself is never opened —
+this renderer picks its shading model from settings, not from the material.
+
+**Porting: forbidden.** `memory/todo.md` listed `xray` among the reference
+shaders still to translate into `resources/shaders/rhi/`. It is now excluded
+explicitly. Translating it would pull GPL-2.0-or-later text into our shader
+tree, and `resources/shaders/rhi/` is where the Apache-2.0 `mh_render` looks —
+rule 1 below forbids exactly that direction, and rule 4 ("when in doubt it is
+AGPL") does not rescue a file that is not ours to relicense. If the xray LOOK
+is ever wanted, it is written from the technique — one minus a power of the
+view/normal dot product — the same call §3.1 records for FBX.
+
+Re-derived rather than trusted: `tools/audit_licences.py` scans every bundled
+text file for a GPL or non-commercial grant and fails on any not recorded here.
+It found this one.
 
 ## 4. The Apache-2.0 clean-room boundary
 

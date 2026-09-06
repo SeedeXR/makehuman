@@ -2140,6 +2140,57 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-06 20:00:00 — Session 152 · **the xray shader is MeshLab's, and LICENSING.md said otherwise**
+
+### The chunk
+Next open M6 item: "Shader port to `.qsb` — remaining: phong, normalmap, skin,
+toon, **xray**". Before porting anything the question is which of the five we
+are allowed to touch, so I read their headers.
+
+Four carry `**Licensing:** AGPL3` and the MakeHuman Team copyright
+(`litsphere_fragment_shader.txt:16`). **`xray` does not.** It is MeshLab —
+© 2005, 2009 Visual Computing Lab, ISTI - Italian National Research Council —
+granting "GNU General Public License ... either version 2 of the License, or
+(at your option) any later version" (`xray_fragment_shader.txt:5-19`).
+
+`LICENSING.md` row 42 said, without qualification, "UI images, icons, themes,
+**GLSL shaders** | AGPL-3.0". For this pair that was **wrong**.
+
+### What follows, and what does not
+- **Shipping it is fine.** GPL-2.0-*or-later* upgrades to GPL-3.0, compatible
+  with AGPL-3.0 (§13 of both). That is exactly the analysis §3.1 already
+  records for pyFBX, so the conclusion is precedent, not a new argument.
+- **Translating it is not.** `resources/shaders/rhi/` is what the Apache-2.0
+  `mh_render` reads. `xray` is struck off the port list; if the look is ever
+  wanted it gets written from the technique (one minus a power of the
+  view/normal dot product), which is the call the project already made for FBX.
+
+### The gate, because a blanket row is the easiest thing here to get wrong
+`tools/audit_licences.py` scans every bundled text file — **1,364** of them,
+1.5 s — for a GPL or non-commercial GRANT (not a mention: the AGPL notice
+contains the words "GNU General Public License" too, so a version number must
+follow). Anything not in an ALLOWED table, whose reason string must itself
+appear in `LICENSING.md`, is an offence.
+
+It **failed on the tree as it stood**, which is how the finding got confirmed
+rather than argued. Now in CI's `inventories` job, which is stdlib-only.
+
+Three mutations, all killed: an unrecorded GPL-2 grant planted in
+`default.mhmat` (exit 1); the `LICENSING.md` section renamed so the record
+disappears; xray recorded under the wrong family (GPL-3.0 against a GPL-2.0
+file).
+
+### Note for whoever ports the remaining four
+phong, normalmap, skin and toon are clean — normalmap and skin carry no licence
+header of their own and fall under `LICENSE.md` §B with the rest of the
+MakeHuman tree. The audit will say so on every run.
+
+### Verification
+ctest green in debug, release, ASan and TSan. Format clean. Sonar OK. Licence
+audit 1,364 files, 2 recorded grants, 0 unaccounted.
+
+---
+
 ## 2026-09-06 19:15:00 — Session 151 · **a shader could be added and silently not built**
 
 ### The chunk

@@ -893,8 +893,21 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       compiles to SPIR-V + GLSL 450 + MSL 12 as part of the build
       (`src/render/CMakeLists.txt`); the `0.495` constant verified present in
       the generated Metal.
-      Remaining: phong, normalmap, skin, toon, xray (sources stay in
+      Remaining: phong, normalmap, skin, toon (sources stay in
       `data/shaders/glsl/`; copying them into resources/ would just drift).
+      **`xray` is struck off the list — it is not ours to translate.**
+      `data/shaders/glsl/xray_{vertex,fragment}_shader.txt` is MeshLab, © 2005,
+      2009 Visual Computing Lab / ISTI-CNR, granting "GNU General Public
+      License ... version 2 ... or (at your option) any later version"
+      (`xray_fragment_shader.txt:12-14`) — not the AGPL3 the other four carry in
+      their own headers. Shipping it is fine (GPL-2.0-or-later upgrades to
+      GPL-3.0, compatible with AGPL-3.0 §13, the same reasoning `LICENSING.md`
+      §3.1 already applies to pyFBX); TRANSLATING it into
+      `resources/shaders/rhi/` is not, because that tree is what the Apache-2.0
+      `mh_render` reads. If the xray look is ever wanted it gets written from
+      the technique — one minus a power of the view/normal dot product — the
+      same call the project already made for FBX. Recorded in `LICENSING.md`
+      §3.4 and enforced by `tools/audit_licences.py`.
 - [x] **Shaders are built by CMake — but deliberately NOT by
       `qt6_add_shaders()`, and the deferral reason was stale twice over.** Qt
       has been a real build dependency for a while, and the shaders have been

@@ -269,6 +269,13 @@ jobs:
       - name: Mixamo bone mapping is consistent
         run: python3 tools/mixamo_mapping.py
 
+      # LICENSING.md answers every licence question this project gets asked, and
+      # its rows describe whole directories -- the easiest thing in the repo to
+      # be quietly wrong about. It was: "GLSL shaders | AGPL-3.0" did not hold
+      # for data/shaders/glsl/xray_*, which is MeshLab under GPL-2.0-or-later.
+      - name: Bundled licences are all recorded
+        run: python3 tools/audit_licences.py
+
       # MH_DATA_DIR and friends are absolute paths into the tree that COMPILED
       # the binary. A bundled copy carries its own assets, so any code reading
       # the macro directly ignores them -- which is how the DMG shipped an app
