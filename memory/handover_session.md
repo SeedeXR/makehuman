@@ -2140,6 +2140,62 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-06 22:45:00 — Session 155 · **"verifying it needs the window" was wrong; exporting twice was enough**
+
+### The chunk
+Closed the last two M6/M8 items I had been walking past, one by measurement and
+one by finding that its stated blocker was not real.
+
+### The live-rig export restore is testable from the CLI after all
+`exportTo` swaps the mesh to REST positions before writing a rig-carrying
+format, then puts the posed ones back. The note said verifying that "needs the
+window", because the CLI exits straight after exporting and has nothing left to
+observe.
+
+**Export twice and it has something to observe.** `--export` is now repeatable
+(useful in itself: one character, several formats). An OBJ carries no rig, so it
+always gets the baked POSED mesh — and must be byte-identical to an OBJ written
+with no `.glb` before it.
+
+First run FAILED, and the failure was informative: the only differing line was
+`mtllib`, which names the file after itself. Every vertex already matched. Same
+basename in two directories fixes it — and that near-miss is worth keeping,
+because "the files differ" would otherwise have read as a restore bug.
+
+Mutations killed: the restore skipped entirely; normals and tangents not
+recomputed after it. **One survived and stays surviving on purpose:** removing
+the worn-proxy refit inside the restore changes nothing, because every export
+refits the proxies at its top. That line is there for the SCREEN — File > Export
+leaves the window showing the character — and only a rendered frame after an
+export would catch it. Recorded as the precise remaining limit rather than
+deleted or papered over.
+
+### GPU skinning: measured, not built
+Timed the whole interactive rebuild in release — the path every slider drag
+takes through `buildScene`:
+
+    applyStack 0.07, updateJoints 0.01, buildRestMatrices 0.02,
+    computeSkinningMatrices 0.00, skinPositions 0.12, calcNormals 0.09,
+    calcVertexTangents 0.22   -> about 0.51 ms
+
+Skinning is **0.12 ms of a 16.7 ms frame — 0.7%**. Moving it to the GPU buys
+back under one percent of a frame and costs a matrix-palette upload and a second
+vertex path. It would also make normals worse: a vertex shader has no adjacency,
+so normals would have to be skinned rather than recomputed, which this port
+already rejected as less accurate (M5).
+
+Incidentally the largest item is `calcVertexTangents` at 0.22 ms, nearly twice
+skinning. I checked whether it was dead work — it is not: eight shipped skins
+carry a normal map.
+
+Reopen if something poses per FRAME. Nothing does.
+
+### Verification
+ctest green in debug, release, ASan and TSan. Format clean. Sonar OK. Benchmark
+numbers above are from `mh_bench`, release build, run this session.
+
+---
+
 ## 2026-09-06 21:45:00 — Session 154 · **picking: the item described the wrong feature and the wrong technique**
 
 ### The chunk

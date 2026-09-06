@@ -301,18 +301,49 @@ if(MH_HAVE_RENDER)
     # to its rest positions before writing, and is restored afterwards. `.obj`
     # cannot carry a rig, so app_rig_superset below does NOT reach this branch
     # and .glb is needed to exercise it at all.
-    #
-    # HONEST LIMIT: this proves the branch RUNS -- and under ASan and TSan, so a
-    # bad size or a use-after-move in the restore is caught. It does NOT prove
-    # the restore puts the right vertices back, because the CLI exits
-    # immediately after exporting and has nothing left to observe. Verifying
-    # that needs the window; recorded in memory/todo.md.
     add_test(NAME app_live_rig_export COMMAND makehuman
              --rig mixamo_superset --pose tpose
              --export ${CMAKE_CURRENT_BINARY_DIR}/app_live_rig.glb)
     set_tests_properties(app_live_rig_export PROPERTIES
         PASS_REGULAR_EXPRESSION "live rig: rest geometry \\+ posed armature"
         FAIL_REGULAR_EXPRESSION "cannot restore the rest mesh;export failed")
+
+    # ... and the restore puts the RIGHT vertices back.
+    #
+    # This was recorded as unverifiable ("needs the window"): the CLI exited
+    # immediately after exporting, so nothing could look at the character
+    # afterwards. Exporting twice in one run gives it something to look at. The
+    # .glb swaps the mesh to its rest positions and restores them; the .obj that
+    # follows carries no rig, so it always gets the baked POSED mesh -- and must
+    # therefore be byte-identical to one written with no .glb before it.
+    #
+    # A restore that put back the rest positions, or left stale normals, changes
+    # that file -- both mutations fail it.
+    #
+    # WHAT IT STILL CANNOT SEE: the worn-proxy refit inside the restore. Every
+    # export refits the proxies against the current body at its top, so the
+    # second export fixes them whether or not the restore did. That line is
+    # there for the SCREEN -- File > Export leaves the window showing the
+    # character -- and only a rendered frame after an export would catch it.
+    # Same BASENAME in two directories, deliberately: an OBJ names its material
+    # library after itself, so `body.obj` vs `other.obj` differ on the `mtllib`
+    # line and nowhere else -- which is exactly the false failure this test
+    # produced first time out.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/restore_after
+                        ${CMAKE_CURRENT_BINARY_DIR}/restore_alone)
+    add_test(NAME app_restore_after_live_rig COMMAND makehuman
+             --rig mixamo_superset --pose tpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/restore_after/live.glb
+             --export ${CMAKE_CURRENT_BINARY_DIR}/restore_after/body.obj)
+    add_test(NAME app_restore_baseline COMMAND makehuman
+             --rig mixamo_superset --pose tpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/restore_alone/body.obj)
+    add_test(NAME app_restore_matches COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/restore_after/body.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/restore_alone/body.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_match.cmake)
+    set_tests_properties(app_restore_matches PROPERTIES
+        DEPENDS "app_restore_after_live_rig;app_restore_baseline")
 
     add_test(NAME app_rig_superset COMMAND makehuman
              --rig mixamo_superset

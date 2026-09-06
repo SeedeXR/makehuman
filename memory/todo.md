@@ -1285,7 +1285,24 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       Adding a slot would invent shading the exported file does not describe.
       Recorded as a commented exclusion in `viewportMapsOf`, so a fifth
       "unplumbed property" cannot be reported as a new discovery.
-- [ ] GPU skinning (matrix palette UBO/SSBO)
+- [x] **GPU skinning: measured, deliberately NOT built.** The whole interactive
+      rebuild — the path every slider drag takes through `buildScene` — timed in
+      release on the dev machine: `applyStack` 0.07 ms, `updateJoints` 0.01,
+      `buildRestMatrices` 0.02, `computeSkinningMatrices` 0.00,
+      **`skinPositions` (LBS, 19,158 x 4) 0.12**, `calcNormals` 0.09,
+      `calcVertexTangents` 0.22. About **0.51 ms** in total, of which skinning
+      is 0.12 — **0.7% of a 16.7 ms frame**. Moving it to the GPU buys back
+      under one percent of a frame and adds a matrix-palette upload and a second
+      vertex path.
+      - And it would make normals WORSE. A vertex shader has no adjacency to
+        recompute from, so normals would be skinned rather than recomputed —
+        which this port deliberately rejected as less accurate for the deformed
+        surface (M5: "recomputing is the better answer here").
+      - The largest item is `calcVertexTangents` at 0.22 ms, nearly twice
+        skinning. Not dead work: eight shipped skins carry a normal map, and
+        tangents follow the morphed positions.
+      - **Reopen if** something poses per FRAME — an animation player — rather
+        than per interaction. Same call as the cached bounding box.
 - [x] **Picking, done as a CPU ray cast — and the item's own description was
       wrong twice.** There was no "full-window sync readback" to replace: the
       only readback in the project is `OffscreenRenderer`'s, which exists to
@@ -2353,13 +2370,27 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
             chrome, so that is what is being built; the chrome itself is worth
             an explicit decision before anyone builds it.
 
-- [ ] **Not covered by a test: the live-rig export restore.** `exportTo` swaps
-      the mesh to its REST positions before writing a rig-carrying format and
-      restores the posed ones afterwards. `app_live_rig_export` proves the
-      branch runs, under ASan and TSan, so a bad size or use-after-move is
-      caught — but the CLI exits immediately after exporting and has nothing
-      left to observe, so nothing asserts the RIGHT vertices came back.
-      Verifying it needs the window.
+- [x] **The live-rig export restore is covered now — and it did NOT need the
+      window.** `exportTo` swaps the mesh to its REST positions before writing a
+      rig-carrying format and restores the posed ones afterwards.
+      `app_live_rig_export` only ever proved the branch runs.
+      - The old note said verifying it "needs the window", because the CLI
+        exited straight after exporting and had nothing left to observe.
+        **Exporting twice in one run gives it something.** `--export` is now
+        repeatable, which is useful in itself (one character, several formats).
+        An OBJ carries no rig, so it always gets the baked POSED mesh — and must
+        be byte-identical to one written with no `.glb` before it.
+      - Same BASENAME in two directories: an OBJ names its material library
+        after itself, so `body.obj` vs `other.obj` differ on the `mtllib` line
+        and nowhere else. That was the first run's false failure, and it also
+        confirmed every vertex already matched.
+      - Mutations killed: the restore skipped entirely; normals and tangents not
+        recomputed after it.
+      - **Remaining limit, precisely:** the worn-proxy refit *inside* the
+        restore is still unobserved. Every export refits the proxies at its top,
+        so the second export fixes them regardless. That line serves the SCREEN
+        (File > Export leaves the window showing the character), and only a
+        rendered frame after an export would catch it.
 
 - [x] **`memory/taskviews.md` corrected**: it filed eight proxy choosers as
       "blocked on the viewport drawing exactly one mesh". Multi-mesh rendering

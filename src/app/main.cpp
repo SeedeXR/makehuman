@@ -1409,7 +1409,8 @@ int main(int argc, char** argv) {
     const QCommandLineOption exportOpt(
         QStringLiteral("export"),
         QStringLiteral("Write the posed mesh here and exit. Format from the extension: "
-                       ".obj .fbx .glb .usda .usdz .dae .stl .3mf .bvh"),
+                       ".obj .fbx .glb .usda .usdz .dae .stl .3mf .bvh. Repeatable: "
+                       "each path is written from the SAME character, in order."),
         QStringLiteral("path"));
     const QCommandLineOption inspectOpt(
         QStringLiteral("inspect"),
@@ -1989,8 +1990,15 @@ int main(int argc, char** argv) {
     };
 
     if (parser.isSet(exportOpt)) {
-        return exportTo(parser.value(exportOpt).toStdString(), parser.isSet(blendshapesOpt)) ? 0
-                                                                                             : 1;
+        // Every path from ONE character. A live-rig format swaps the mesh to
+        // its rest positions and puts the posed ones back afterwards, so
+        // writing several formats in a row only agrees with writing each alone
+        // if that restore is exact -- which is what makes it observable at all
+        // (`app_restore_matches`).
+        for (const QString& path : parser.values(exportOpt)) {
+            if (!exportTo(path.toStdString(), parser.isSet(blendshapesOpt))) return 1;
+        }
+        return 0;
     }
 
     // The one rebuild path: sliders, pose and skin all go through it, so the
