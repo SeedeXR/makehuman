@@ -5,9 +5,11 @@
 #include "makehuman/foundation/Transform.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -620,9 +622,18 @@ Node skinDeformer(int64_t id) {
 
 /// One joint's cluster: which vertices it moves, how much, and from where.
 ///
-/// `Transform` is the MESH's global at bind time (identity here -- the geometry
-/// is written in model space) and `TransformLink` is the JOINT's. Swapping them
-/// produces a rig that deforms by the inverse of what it should.
+/// `TransformLink` is the JOINT's global at bind time and `Transform` is the
+/// **INVERSE BIND** matrix -- the mesh relative to that joint. Read out of
+/// Maya's own numbers rather than reasoned about: for a joint at (0, -1, 0) it
+/// writes `TransformLink` translation (0, -1, 0) and `Transform` translation
+/// (0, +1, 0), which is inverse(TransformLink) for a mesh at the origin.
+///
+/// Writing identity there instead -- "the mesh's global, and the mesh is at the
+/// origin" -- is a reading of the field name that costs the whole deformation:
+/// every vertex is then displaced by its joint's bind position. Measured, with
+/// an UNPOSED rig whose deformation must be exactly the identity: Maya
+/// evaluated the body to 247 x 334 x 269 cm instead of leaving it at
+/// 105 x 166 x 43.
 Node clusterDeformer(int64_t id, const std::string& name, std::vector<int32_t> indices,
                      std::vector<double> weights, const foundation::Mat4& bind) {
     Node c("Deformer");
@@ -649,7 +660,7 @@ Node clusterDeformer(int64_t id, const std::string& name, std::vector<int32_t> i
     }
 
     Node transform("Transform");
-    transform.addArray('d', matrixValues(foundation::Mat4::identity()));
+    transform.addArray('d', matrixValues(foundation::rigidInverse(bind)));
     c.add(std::move(transform));
     Node link("TransformLink");
     link.addArray('d', matrixValues(bind));
@@ -914,50 +925,6 @@ Node model(int64_t id, const std::string& name) {
     return m;
 }
 
-/// `C` records wire objects together. Object-to-object here: the geometry hangs
-/// off the model, and the model off the scene root (id 0).
-Node connections(int64_t geometryId, int64_t modelId, int64_t materialId, int64_t textureId,
-                 int64_t videoId) {
-    Node c("Connections");
-    // Model to the scene root FIRST, then the geometry onto the model, which is
-    // the order both assimp and Maya write. A reader that builds the graph as
-    // it goes has the parent already when the child arrives.
-    Node m("C");
-    m.addString("OO");
-    m.addI64(modelId);
-    m.addI64(0);
-    c.add(std::move(m));
-    Node g("C");
-    g.addString("OO");
-    g.addI64(geometryId);
-    g.addI64(modelId);
-    c.add(std::move(g));
-    Node mat("C");
-    mat.addString("OO");
-    mat.addI64(materialId);
-    mat.addI64(modelId);
-    c.add(std::move(mat));
-
-    if (textureId != 0) {
-        // `OP`, object-to-PROPERTY: this is what makes the image the material's
-        // DIFFUSE map rather than an unattached picture. The property name is
-        // the fourth field, and Maya writes exactly this.
-        Node tex("C");
-        tex.addString("OP");
-        tex.addI64(textureId);
-        tex.addI64(materialId);
-        tex.addString("DiffuseColor");
-        c.add(std::move(tex));
-
-        Node vid("C");
-        vid.addString("OO");
-        vid.addI64(videoId);
-        vid.addI64(textureId);
-        c.add(std::move(vid));
-    }
-    return c;
-}
-
 void appendFooter(std::vector<uint8_t>& out) {
     out.insert(out.end(), kFooterId, kFooterId + sizeof(kFooterId));
     // Pad so the trailing block -- four zeros, the version, 120 zeros, the
@@ -983,31 +950,74 @@ std::string FbxWriteError::message() const {
     return file + ": unknown error";
 }
 
-std::expected<FbxWriteResult, FbxWriteError> writeFbx(
-    const std::filesystem::path& path, const foundation::RenderView& mesh,
-    const FbxWriteOptions& options, const foundation::MaterialDesc* material,
-    const foundation::SkinView* skin, std::span<const foundation::MorphTarget> morphTargets) {
-    if (mesh.coord.empty() || mesh.index.empty()) {
-        return std::unexpected(FbxWriteError{FbxWriteErrorKind::EmptyMesh, path.string(), {}});
+namespace {
+
+/// A RenderView is a triangle list by construction, so a polygon is three
+/// corners. Quads survive to the FILE only if the caller kept them, and this
+/// writer does not invent them back.
+constexpr size_t kVertsPerPolygon = 3;
+
+std::optional<FbxWriteError> validateEntry(const std::filesystem::path& path,
+                                           const FbxSceneEntry& entry) {
+    if (entry.mesh.coord.empty() || entry.mesh.index.empty()) {
+        return FbxWriteError{FbxWriteErrorKind::EmptyMesh, path.string(), entry.name};
     }
-    for (const Vec3& v : mesh.coord) {
+    for (const Vec3& v : entry.mesh.coord) {
         if (!std::isfinite(v.x) || !std::isfinite(v.y) || !std::isfinite(v.z)) {
-            return std::unexpected(
-                FbxWriteError{FbxWriteErrorKind::NonFiniteValue, path.string(), "vertex position"});
+            return FbxWriteError{FbxWriteErrorKind::NonFiniteValue, path.string(),
+                                 entry.name + " vertex position"};
         }
     }
+    if ((entry.mesh.index.size() % kVertsPerPolygon) != 0) {
+        return FbxWriteError{FbxWriteErrorKind::EmptyMesh, path.string(),
+                             entry.name + ": index count is not a whole number of triangles"};
+    }
+    return std::nullopt;
+}
 
-    // A RenderView is a triangle list by construction, so a polygon is three
-    // corners. Quads survive to the FILE only if the caller kept them, and this
-    // writer does not invent them back.
-    constexpr size_t kVertsPerPolygon = 3;
-    if ((mesh.index.size() % kVertsPerPolygon) != 0) {
-        return std::unexpected(FbxWriteError{FbxWriteErrorKind::EmptyMesh, path.string(),
-                                             "index count is not a whole number of triangles"});
+/// Every id one entry needs, allocated from ONE running counter.
+///
+/// Not per-kind blocks. FBX addresses everything by id through `Connections`,
+/// and a block scheme that overflows -- more joints than the block is wide --
+/// wires clusters to the wrong bones while remaining valid in every other
+/// respect. A counter cannot overflow into its neighbour.
+struct EntryIds {
+    int64_t geometry{};
+    int64_t material{};
+    int64_t model{};
+    int64_t texture{};
+    int64_t video{};
+    int64_t skin{};
+    int64_t pose{};
+    int64_t blend{};
+    std::vector<int64_t> jointModel;
+    std::vector<int64_t> jointAttr;
+    std::vector<int64_t> jointCluster;
+    std::vector<int64_t> channel;
+    std::vector<int64_t> shape;
+    std::vector<size_t> movingTargets;
+    std::vector<foundation::Mat4> bindGlobal;
+    std::vector<foundation::Mat4> nodeLocal;
+    bool withTexture{};
+    bool withSkin{};
+};
+
+}  // namespace
+
+std::expected<FbxWriteResult, FbxWriteError> writeFbxScene(const std::filesystem::path& path,
+                                                           std::span<const FbxSceneEntry> entries,
+                                                           const FbxWriteOptions& options) {
+    if (entries.empty()) {
+        return std::unexpected(FbxWriteError{FbxWriteErrorKind::EmptyMesh, path.string(), {}});
+    }
+    for (const FbxSceneEntry& e : entries) {
+        if (auto bad = validateEntry(path, e)) return std::unexpected(*bad);
     }
 
+    // ONE ground offset for the whole scene. Levelling each mesh on its own
+    // drops the clothes to the floor beside the body.
     const Transform xf =
-        meshTransform(unitScale(options.unit) * options.scale, options.feetOnGround, mesh);
+        sceneTransform(unitScale(options.unit) * options.scale, options.feetOnGround, entries);
 
     std::vector<uint8_t> out;
     out.insert(out.end(), {'K', 'a', 'y', 'd', 'a', 'r', 'a', ' ', 'F', 'B', 'X',
@@ -1016,86 +1026,121 @@ std::expected<FbxWriteResult, FbxWriteError> writeFbx(
     out.push_back(0x00);
     Node::appendU32(out, kVersion);
 
-    constexpr int64_t kGeometryId = 2'000'000;
-    constexpr int64_t kMaterialId = 3'000'000;
-    constexpr int64_t kModelId    = 4'000'000;
-    constexpr int64_t kTextureId  = 5'000'000;
-    constexpr int64_t kVideoId    = 6'000'000;
+    // Starts past the Document's id, which is the one fixed value in the file.
+    int64_t nextId      = kDocumentId + 1;
+    const auto allocate = [&nextId] { return nextId++; };
 
-    const bool withTexture = material != nullptr && !material->diffuseTexture.empty();
-    // The path as the material names it. An absolute path from the build
-    // machine would be a broken link everywhere else, and FBX's two filename
-    // fields exist precisely so a consumer can fall back to the relative one.
-    const std::string texturePath =
-        withTexture ? material->diffuseTexture.generic_string() : std::string{};
-    const std::string textureName =
-        withTexture ? material->diffuseTexture.stem().string() : std::string{};
+    std::vector<EntryIds> ids(entries.size());
+    Node objects("Objects");
+    size_t totalVertices = 0;
+    size_t totalPolygons = 0;
 
-    // --- the rig -------------------------------------------------------
-    //
-    // Ids are laid out in blocks so a joint's attribute, model and cluster are
-    // derivable from its index. Blocks rather than a running counter because
-    // the connection list is written after the objects and has to name the same
-    // ids without carrying a second table that could disagree.
-    const bool withSkin             = skin != nullptr && skin->valid();
-    const size_t jointCount         = withSkin ? skin->jointCount() : 0;
-    constexpr int64_t kSkinId       = 7'000'000;
-    constexpr int64_t kPoseId       = 8'000'000;
-    constexpr int64_t kJointModel   = 10'000'000;
-    constexpr int64_t kJointAttr    = 20'000'000;
-    constexpr int64_t kJointCluster = 30'000'000;
-    const auto jointModelId   = [](size_t j) { return kJointModel + static_cast<int64_t>(j); };
-    const auto jointAttrId    = [](size_t j) { return kJointAttr + static_cast<int64_t>(j); };
-    const auto jointClusterId = [](size_t j) { return kJointCluster + static_cast<int64_t>(j); };
+    for (size_t e = 0; e < entries.size(); ++e) {
+        const FbxSceneEntry& entry = entries[e];
+        EntryIds& id               = ids[e];
+        totalVertices += entry.mesh.coord.size();
+        totalPolygons += entry.mesh.index.size() / kVertsPerPolygon;
 
-    // Blend shapes. A target that moves NOTHING is dropped: it would be a shape
-    // a user can drag with no effect, which is worse than its absence.
-    constexpr int64_t kBlendId        = 9'000'000;
-    constexpr int64_t kBlendChannel   = 40'000'000;
-    constexpr int64_t kBlendShapeGeom = 50'000'000;
-    std::vector<size_t> movingTargets;
-    for (size_t t = 0; t < morphTargets.size(); ++t) {
-        const auto& deltas = morphTargets[t].deltas;
-        const bool moves   = std::ranges::any_of(
-            deltas, [](const Vec3& d) { return d.x != 0.0F || d.y != 0.0F || d.z != 0.0F; });
-        if (moves) movingTargets.push_back(t);
-    }
-    const bool withMorphs = !movingTargets.empty();
+        id.geometry = allocate();
+        id.material = allocate();
+        id.model    = allocate();
+        objects.add(geometry(id.geometry, entry.mesh, xf, kVertsPerPolygon));
+        objects.add(materialNode(id.material, entry.name + "_material", entry.material));
+        objects.add(model(id.model, entry.name));
 
-    // Placed exactly as the mesh was: rotation untouched, translation through
-    // the same scale and ground offset. Doing it here rather than trusting the
-    // caller is what keeps the rig and the body in one space.
-    const auto place = [&xf](const foundation::Mat4& m) {
-        foundation::Mat4 out = m;
-        out.m[0][3] *= xf.scale;
-        out.m[1][3] = xf.placedY(out.m[1][3]);
-        out.m[2][3] *= xf.scale;
-        return out;
-    };
-    std::vector<foundation::Mat4> bindGlobal;
-    std::vector<foundation::Mat4> nodeGlobal;
-    std::vector<foundation::Mat4> nodeLocal;
-    std::vector<int64_t> jointModelIds;
-    if (withSkin) {
-        bindGlobal.reserve(jointCount);
-        nodeGlobal.reserve(jointCount);
-        for (size_t j = 0; j < jointCount; ++j) {
-            bindGlobal.push_back(place(skin->globalRest[j]));
-            // Where the joint SITS. With a pose these are the posed globals, so
-            // the consumer computes pose * inverse(bind) and reproduces our
-            // skinning; with none the two coincide and the deformation is the
-            // identity, which is the unposed export.
-            nodeGlobal.push_back(
-                place(skin->globalPose.empty() ? skin->globalRest[j] : skin->globalPose[j]));
+        id.withTexture = entry.material != nullptr && !entry.material->diffuseTexture.empty();
+        if (id.withTexture) {
+            // The path as the material names it. An absolute path from the
+            // build machine would be a broken link everywhere else, and FBX's
+            // two filename fields exist so a consumer can fall back to the
+            // relative one.
+            const std::string texturePath = entry.material->diffuseTexture.generic_string();
+            const std::string textureName = entry.material->diffuseTexture.stem().string();
+            id.texture                    = allocate();
+            id.video                      = allocate();
+            objects.add(textureNode(id.texture, textureName, texturePath));
+            objects.add(videoClip(id.video, textureName, texturePath));
         }
-        nodeLocal.resize(jointCount);
-        for (size_t j = 0; j < jointCount; ++j) {
-            const int32_t parent = skin->jointParents[j];
-            nodeLocal[j]         = parent < 0
-                                       ? nodeGlobal[j]
-                                       : foundation::rigidInverse(nodeGlobal[static_cast<size_t>(parent)]) *
+
+        id.withSkin = entry.skin != nullptr && entry.skin->valid();
+        if (id.withSkin) {
+            const foundation::SkinView& skin = *entry.skin;
+            const size_t jointCount          = skin.jointCount();
+            const auto place                 = [&xf](const foundation::Mat4& m) {
+                foundation::Mat4 placed = m;
+                placed.m[0][3] *= xf.scale;
+                placed.m[1][3] = xf.placedY(placed.m[1][3]);
+                placed.m[2][3] *= xf.scale;
+                return placed;
+            };
+            std::vector<foundation::Mat4> nodeGlobal;
+            nodeGlobal.reserve(jointCount);
+            for (size_t j = 0; j < jointCount; ++j) {
+                id.bindGlobal.push_back(place(skin.globalRest[j]));
+                // Where the joint SITS. With a pose these are the posed globals,
+                // so the consumer computes pose * inverse(bind) and reproduces
+                // our skinning; with none the two coincide and the deformation
+                // is the identity, which is the unposed export.
+                nodeGlobal.push_back(
+                    place(skin.globalPose.empty() ? skin.globalRest[j] : skin.globalPose[j]));
+            }
+            id.nodeLocal.resize(jointCount);
+            for (size_t j = 0; j < jointCount; ++j) {
+                const int32_t parent = skin.jointParents[j];
+                id.nodeLocal[j] =
+                    parent < 0 ? nodeGlobal[j]
+                               : foundation::rigidInverse(nodeGlobal[static_cast<size_t>(parent)]) *
                                      nodeGlobal[j];
-            jointModelIds.push_back(jointModelId(j));
+            }
+            for (size_t j = 0; j < jointCount; ++j) {
+                id.jointAttr.push_back(allocate());
+                id.jointModel.push_back(allocate());
+                objects.add(limbAttribute(id.jointAttr.back()));
+                objects.add(limbModel(id.jointModel.back(), skin.jointNames[j], id.nodeLocal[j]));
+            }
+            id.skin = allocate();
+            objects.add(skinDeformer(id.skin));
+            for (size_t j = 0; j < jointCount; ++j) {
+                // Which vertices this joint moves, and how much. Zero weights
+                // are dropped: a cluster listing every vertex at 0 is the same
+                // rig and several times the file.
+                std::vector<int32_t> indices;
+                std::vector<double> weights;
+                for (size_t v = 0; v < entry.mesh.coord.size(); ++v) {
+                    for (uint8_t i = 0; i < skin.influences; ++i) {
+                        const size_t at = (v * skin.influences) + i;
+                        if (skin.joints[at] != j || skin.weights[at] == 0.0F) continue;
+                        indices.push_back(static_cast<int32_t>(v));
+                        weights.push_back(static_cast<double>(skin.weights[at]));
+                    }
+                }
+                id.jointCluster.push_back(allocate());
+                objects.add(clusterDeformer(id.jointCluster.back(), skin.jointNames[j],
+                                            std::move(indices), std::move(weights),
+                                            id.bindGlobal[j]));
+            }
+            id.pose = allocate();
+            objects.add(bindPose(id.pose, id.model, id.jointModel, id.bindGlobal));
+        }
+
+        // Blend shapes. A target that moves NOTHING is dropped: it would be a
+        // shape a user can drag with no effect, which is worse than its absence.
+        for (size_t t = 0; t < entry.morphTargets.size(); ++t) {
+            const auto& deltas = entry.morphTargets[t].deltas;
+            const bool moves   = std::ranges::any_of(
+                deltas, [](const Vec3& d) { return d.x != 0.0F || d.y != 0.0F || d.z != 0.0F; });
+            if (moves) id.movingTargets.push_back(t);
+        }
+        if (!id.movingTargets.empty()) {
+            id.blend = allocate();
+            objects.add(blendShapeDeformer(id.blend, entry.name));
+            for (const size_t t : id.movingTargets) {
+                id.channel.push_back(allocate());
+                id.shape.push_back(allocate());
+                objects.add(blendShapeChannel(id.channel.back(), entry.morphTargets[t].name));
+                objects.add(shapeGeometry(id.shape.back(), entry.morphTargets[t].name,
+                                          entry.morphTargets[t], xf));
+            }
         }
     }
 
@@ -1116,92 +1161,60 @@ std::expected<FbxWriteResult, FbxWriteError> writeFbx(
     documents().writeTo(out);
     Node("References").writeTo(out);
     definitions().writeTo(out);
-
-    Node objects("Objects");
-    objects.add(geometry(kGeometryId, mesh, xf, kVertsPerPolygon));
-    objects.add(materialNode(kMaterialId, options.materialName, material));
-    objects.add(model(kModelId, options.meshName));
-    if (withTexture) {
-        objects.add(textureNode(kTextureId, textureName, texturePath));
-        objects.add(videoClip(kVideoId, textureName, texturePath));
-    }
-    if (withSkin) {
-        for (size_t j = 0; j < jointCount; ++j) {
-            objects.add(limbAttribute(jointAttrId(j)));
-            objects.add(limbModel(jointModelId(j), skin->jointNames[j], nodeLocal[j]));
-        }
-        objects.add(skinDeformer(kSkinId));
-        for (size_t j = 0; j < jointCount; ++j) {
-            // Which vertices this joint moves, and how much. Zero weights are
-            // dropped: a cluster listing every vertex at 0 is the same rig and
-            // several times the file.
-            std::vector<int32_t> indices;
-            std::vector<double> weights;
-            for (size_t v = 0; v < mesh.coord.size(); ++v) {
-                for (uint8_t i = 0; i < skin->influences; ++i) {
-                    const size_t at = (v * skin->influences) + i;
-                    if (skin->joints[at] != j || skin->weights[at] == 0.0F) continue;
-                    indices.push_back(static_cast<int32_t>(v));
-                    weights.push_back(static_cast<double>(skin->weights[at]));
-                }
-            }
-            objects.add(clusterDeformer(jointClusterId(j), skin->jointNames[j], std::move(indices),
-                                        std::move(weights), bindGlobal[j]));
-        }
-        objects.add(bindPose(kPoseId, kModelId, jointModelIds, bindGlobal));
-    }
-    if (withMorphs) {
-        objects.add(blendShapeDeformer(kBlendId, options.meshName));
-        for (const size_t t : movingTargets) {
-            objects.add(
-                blendShapeChannel(kBlendChannel + static_cast<int64_t>(t), morphTargets[t].name));
-            objects.add(shapeGeometry(kBlendShapeGeom + static_cast<int64_t>(t),
-                                      morphTargets[t].name, morphTargets[t], xf));
-        }
-    }
     objects.writeTo(out);
 
-    Node conn = connections(kGeometryId, kModelId, kMaterialId, withTexture ? kTextureId : 0,
-                            withTexture ? kVideoId : 0);
-    if (withSkin) {
-        const auto link = [&conn](const char* kind, int64_t from, int64_t to) {
-            Node c("C");
-            c.addString(kind);
-            c.addI64(from);
-            c.addI64(to);
-            conn.add(std::move(c));
-        };
-        // The deformer hangs off the GEOMETRY, not the model: it deforms
-        // vertices, and the model is only where they are drawn.
-        link("OO", kSkinId, kGeometryId);
-        for (size_t j = 0; j < jointCount; ++j) {
-            link("OO", jointAttrId(j), jointModelId(j));
-            const int32_t parent = skin->jointParents[j];
-            // A root joint parents to the SCENE, not to the mesh: parenting it
-            // under the mesh model makes the whole rig inherit the mesh's
-            // transform and deform twice.
-            link("OO", jointModelId(j),
-                 parent < 0 ? int64_t{0} : jointModelId(static_cast<size_t>(parent)));
-            link("OO", jointClusterId(j), kSkinId);
-            link("OO", jointModelId(j), jointClusterId(j));
+    Node conn("Connections");
+    const auto link = [&conn](const char* kind, int64_t from, int64_t to) {
+        Node c("C");
+        c.addString(kind);
+        c.addI64(from);
+        c.addI64(to);
+        conn.add(std::move(c));
+    };
+    for (size_t e = 0; e < entries.size(); ++e) {
+        const EntryIds& id = ids[e];
+        // Model to the scene root FIRST, then the geometry onto the model,
+        // which is the order both assimp and Maya write.
+        link("OO", id.model, 0);
+        link("OO", id.geometry, id.model);
+        link("OO", id.material, id.model);
+        if (id.withTexture) {
+            // `OP`, object-to-PROPERTY: this is what makes the image the
+            // material's DIFFUSE map rather than an unattached picture.
+            Node tex("C");
+            tex.addString("OP");
+            tex.addI64(id.texture);
+            tex.addI64(id.material);
+            tex.addString("DiffuseColor");
+            conn.add(std::move(tex));
+            link("OO", id.video, id.texture);
         }
-    }
-    if (withMorphs) {
-        const auto link = [&conn](int64_t from, int64_t to) {
-            Node c("C");
-            c.addString("OO");
-            c.addI64(from);
-            c.addI64(to);
-            conn.add(std::move(c));
-        };
-        // The deformer hangs off the GEOMETRY, the channels off the deformer,
-        // and each shape off its channel. Any other order and a DCC lists the
-        // blend shapes with nothing behind them.
-        link(kBlendId, kGeometryId);
-        for (const size_t t : movingTargets) {
-            const auto channel = kBlendChannel + static_cast<int64_t>(t);
-            link(channel, kBlendId);
-            link(kBlendShapeGeom + static_cast<int64_t>(t), channel);
+        if (id.withSkin) {
+            const foundation::SkinView& skin = *entries[e].skin;
+            // The deformer hangs off the GEOMETRY, not the model: it deforms
+            // vertices, and the model is only where they are drawn.
+            link("OO", id.skin, id.geometry);
+            for (size_t j = 0; j < id.jointModel.size(); ++j) {
+                link("OO", id.jointAttr[j], id.jointModel[j]);
+                const int32_t parent = skin.jointParents[j];
+                // A root joint parents to the SCENE, not to the mesh: under the
+                // mesh model the whole rig inherits the mesh's transform and
+                // deforms twice.
+                link("OO", id.jointModel[j],
+                     parent < 0 ? int64_t{0} : id.jointModel[static_cast<size_t>(parent)]);
+                link("OO", id.jointCluster[j], id.skin);
+                link("OO", id.jointModel[j], id.jointCluster[j]);
+            }
+        }
+        if (!id.movingTargets.empty()) {
+            // The deformer hangs off the GEOMETRY, the channels off the
+            // deformer, and each shape off its channel. Any other order and a
+            // DCC lists the blend shapes with nothing behind them.
+            link("OO", id.blend, id.geometry);
+            for (size_t t = 0; t < id.channel.size(); ++t) {
+                link("OO", id.channel[t], id.blend);
+                link("OO", id.shape[t], id.channel[t]);
+            }
         }
     }
     conn.writeTo(out);
@@ -1215,9 +1228,20 @@ std::expected<FbxWriteResult, FbxWriteError> writeFbx(
     f.write(reinterpret_cast<const char*>(out.data()), static_cast<std::streamsize>(out.size()));
     if (!f) return std::unexpected(FbxWriteError{FbxWriteErrorKind::CannotOpen, path.string(), {}});
 
-    return FbxWriteResult{.vertices = mesh.coord.size(),
-                          .polygons = mesh.index.size() / kVertsPerPolygon,
-                          .bytes    = out.size()};
+    return FbxWriteResult{
+        .vertices = totalVertices, .polygons = totalPolygons, .bytes = out.size()};
+}
+
+std::expected<FbxWriteResult, FbxWriteError> writeFbx(
+    const std::filesystem::path& path, const foundation::RenderView& mesh,
+    const FbxWriteOptions& options, const foundation::MaterialDesc* material,
+    const foundation::SkinView* skin, std::span<const foundation::MorphTarget> morphTargets) {
+    const std::array<FbxSceneEntry, 1> one{FbxSceneEntry{.mesh         = mesh,
+                                                         .name         = options.meshName,
+                                                         .material     = material,
+                                                         .skin         = skin,
+                                                         .morphTargets = morphTargets}};
+    return writeFbxScene(path, one, options);
 }
 
 }  // namespace mh::io

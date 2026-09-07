@@ -62,6 +62,30 @@ struct FbxWriteResult {
     size_t bytes{};
 };
 
+/// One mesh in a multi-mesh FBX: a dressed character is the body plus each worn
+/// proxy, each with its own name and material.
+struct FbxSceneEntry {
+    foundation::RenderView mesh;
+    std::string name{"MakeHuman"};
+    const foundation::MaterialDesc* material{nullptr};
+    /// Only the body is rigged, and only the body has expressions. Several
+    /// entries carrying a skin would each claim the same joints.
+    const foundation::SkinView* skin{nullptr};
+    std::span<const foundation::MorphTarget> morphTargets{};
+};
+
+/// Writes every entry into one FBX, each as its own geometry, model and
+/// material.
+///
+/// Object ids are allocated from a single running counter rather than from
+/// per-kind blocks. FBX addresses everything by id through the `Connections`
+/// list, and a block scheme that overflows -- more joints than the block is
+/// wide -- produces a file whose clusters connect to the wrong bones and which
+/// is valid in every other respect.
+[[nodiscard]] std::expected<FbxWriteResult, FbxWriteError> writeFbxScene(
+    const std::filesystem::path& path, std::span<const FbxSceneEntry> entries,
+    const FbxWriteOptions& options = {});
+
 /// Writes @p mesh as a binary FBX.
 ///
 /// Stage 1 writes the container and the geometry. Normals, UVs, materials and

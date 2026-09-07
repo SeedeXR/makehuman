@@ -1782,6 +1782,28 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
            the very values the bind-versus-pose test searches for. A tiny quad
            (0..0.7) separates them. A fixture that can supply the answer under
            test is not a fixture.
+      5. **The application's `.fbx` export now uses OUR writer.** `writeFbxScene`
+         takes the same entry list the other writers do -- body plus every worn
+         proxy, each with its own material -- and ids come from ONE running
+         counter rather than per-kind blocks, which cannot overflow into a
+         neighbour.
+         - **Maya reproduces our own skinning from the file.** The posed export
+           evaluates to **168.6275 x 166.3017 x 30.0878 cm**, our CPU LBS answer
+           to four decimals and the same number the Blender harness pins for the
+           glTF live rig. The unposed export evaluates to exactly its rest
+           shape: the deformation is the identity.
+         - **Two defects the switch exposed, both found end to end:**
+           - `.fbx` was missing from `formatCarriesRig`, because it had been
+             excluded WHEN ASSIMP BAKED. The app therefore wrote baked geometry
+             while our writer also wrote the pose: Maya evaluated the body to
+             440 x 328 x 267 cm. Getting that list wrong is not a missing
+             feature, it is a double transform.
+           - The cluster's `Transform` must be the **INVERSE BIND** matrix, not
+             identity. Read out of Maya's own numbers: for a joint at (0,-1,0)
+             it writes `TransformLink` (0,-1,0) and `Transform` (0,+1,0).
+             Identity displaces every vertex by its joint's bind position --
+             247 x 334 x 269 on an UNPOSED rig, whose deformation must be
+             exactly the identity. That case is now a harness expectation.
       4. **Blend shapes — DONE, and both readers list them.** Three objects per
          target, as Maya writes them: a `Geometry`/`Shape` holding the deltas, a
          `Deformer`/`BlendShapeChannel` holding the weight, and one
@@ -1963,6 +1985,21 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       them.
       Not done, and it is the interesting part: **nothing in the application
       exports morph targets yet.** Only `mh_export_fixture` does.
+- [ ] **Worn proxies are left behind by a live rig — ALL formats, pre-existing.**
+      Rendered and compared, 2026-09-07: with `--pose tpose` the eyes protrude
+      from the sockets and the sockets show dark; with no pose they sit
+      correctly. **Our glTF shows the identical artefact**, so this is not the
+      FBX switch.
+      Cause: `exportTo` swaps the body to REST coordinates for a rig-carrying
+      format and re-fits the worn proxies to THAT body, then ships them
+      **unskinned**. A consumer applying the pose moves the body and leaves the
+      proxies where they were.
+      Fixing it means giving the proxies skin weights. They have none — the
+      viewport re-fits them every rebuild instead — so this is real work, not a
+      flag. Until then a live-rig export is correct for the body and wrong for
+      anything worn, which is worth saying out loud rather than shipping
+      quietly.
+
 - [~] Texture packing (ORM), GLB embedding, KTX2/Basis, optional Draco — three
       of the four are settled.
       - **GLB embedding**: done.

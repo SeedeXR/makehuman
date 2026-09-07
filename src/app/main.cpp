@@ -20,6 +20,7 @@
 #include "makehuman/foundation/DataDir.h"
 #include "makehuman/io/BvhWriter.h"
 #include "makehuman/io/Compact.h"
+#include "makehuman/io/FbxWriter.h"
 #include "makehuman/io/GltfWriter.h"
 #include "makehuman/io/ObjWriter.h"
 #include "makehuman/io/SceneIO.h"
@@ -1061,18 +1062,26 @@ std::string lowerExtension(const std::filesystem::path& path) {
 ///   * `.glb`  — rest 1.0516 m wide, evaluated **1.6863** — matches our own
 ///     baked answer (16.8628 dm) exactly. The rig deforms.
 ///   * `.usda` — same, 1.6863. `usdchecker` clean.
-///   * `.fbx`  — **fails**: evaluated equals raw, so the armature does not
-///     deform and the file would ship a rest-pose statue. assimp's FBX writer
-///     does not carry what a consumer needs to pose it. This is the concrete
-///     motivation for writing FBX from the spec (M7).
+///   * `.fbx`  — **used to fail, and no longer does.** assimp's writer emitted
+///     no bind pose, so its own SDK log said "The imported scene has no initial
+///     binding position (Bind Pose) for the skin. The plug-in will compute one
+///     automatically" -- Maya then took the current pose as the bind pose and
+///     the file was a statue. `io::writeFbxScene` writes the bind pose, and
+///     **Maya reports it as `live_rig: true`** (rest 169.455, deformed 249.455
+///     on the harness fixture). So .fbx joined this list the moment the writer
+///     changed.
 ///   * `.dae`  — **unverified**: Blender 5.2 removed its Collada importer, so
-///     there is no third party here to check it with. Same assimp writer as
-///     FBX, which fails, so it is excluded rather than assumed to work.
+///     there is no third party here to check it with. Still assimp's writer, so
+///     it is excluded rather than assumed to work.
 ///
-/// FBX and Collada therefore keep BAKING the pose. That is a real limitation,
-/// not a preference, and it is recorded rather than hidden.
+/// **Getting this list wrong is not a missing feature, it is a double
+/// transform.** A format in the list gets REST geometry and a posed armature; a
+/// format out of it gets BAKED geometry. Leave a format out while its writer
+/// also writes the pose and the consumer applies the deformation twice --
+/// measured, when .fbx was switched to our writer before this line was updated:
+/// Maya evaluated the body to 440 x 328 x 267 cm.
 bool formatCarriesRig(std::string_view ext) {
-    return ext == ".glb" || ext == ".usd" || ext == ".usda" || ext == ".usdz";
+    return ext == ".glb" || ext == ".usd" || ext == ".usda" || ext == ".usdz" || ext == ".fbx";
 }
 
 /// The body's skin for export, or nothing when there is no rig to export.
@@ -1287,8 +1296,25 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     // PLY is deliberately absent -- assimp 6.0.4 writes corrupt faces for any
     // mesh with UVs, and every mesh here has them (SceneIO.h).
     if (ext == ".fbx") {
-        const auto r =
-            mh::io::exportScene(path, sceneEntries(), mh::io::SceneFormat::FbxBinary, sceneOpts);
+        // OUR writer, not assimp's. The reason is the LIVE RIG: assimp's FBX
+        // writer emits no bind pose, so its own SDK log says "The imported
+        // scene has no initial binding position (Bind Pose) for the skin. The
+        // plug-in will compute one automatically" -- Maya then takes the
+        // current pose as the bind pose and the character arrives baked. Maya
+        // reports ours as `live_rig: true` and assimp's as false, side by side,
+        // in tools/run_maya_validation.sh.
+        //
+        // Everything the assimp path carried is carried here: geometry,
+        // normals, UVs, materials, textures, the skin and the blend shapes.
+        std::vector<mh::io::FbxSceneEntry> scene;
+        scene.push_back({body, "body", allDressed ? &*bodyMat : nullptr, skin, morphs});
+        for (const auto& [group, proxy] : worn) {
+            scene.push_back({proxy.rm.view(), group.toLower().toStdString(),
+                             allDressed ? &*proxy.material : nullptr});
+        }
+        mh::io::FbxWriteOptions fbxOpts;
+        fbxOpts.feetOnGround = true;
+        const auto r         = mh::io::writeFbxScene(path, scene, fbxOpts);
         return report(r ? std::string{} : r.error().message());
     }
     if (ext == ".dae") {

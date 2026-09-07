@@ -1,3 +1,4 @@
+#include <array>
 #include <cstdio>
 #include <span>
 #include <string>
@@ -95,6 +96,32 @@ int main(int argc, char** argv) {
             targets.push_back({name, deltaStore.back()});
         }
     }
+    // A two-entry SCENE when asked, which is what a dressed character is.
+    const bool scene = argc > 2 && std::string(argv[2]) == "--scene";
+    if (scene) {
+        mh::core::Mesh plate("plate", 4);
+        (void)plate.setCoords({{-4, 2, 2}, {4, 2, 2}, {4, 12, 2}, {-4, 12, 2}});
+        plate.addFaceGroup("g");
+        (void)plate.setFaces({0, 1, 2, 3}, {}, {0});
+        plate.buildAdjacency();
+        plate.calcNormals();
+        const auto plateRm = mh::core::RenderMesh::build(plate);
+        mh::foundation::MaterialDesc cloth;
+        cloth.name    = "Cloth";
+        cloth.diffuse = {0.2F, 0.3F, 0.8F};
+        const std::array<mh::io::FbxSceneEntry, 2> entries{
+            mh::io::FbxSceneEntry{.mesh = rm.view(), .name = "body", .material = &desc},
+            mh::io::FbxSceneEntry{.mesh = plateRm.view(), .name = "shirt", .material = &cloth}};
+        const auto sr = mh::io::writeFbxScene(argv[1], entries);
+        if (!sr) {
+            std::fprintf(stderr, "%s\n", sr.error().message().c_str());
+            return 1;
+        }
+        std::printf("wrote %s: %zu verts, %zu polys, %zu bytes (2 entries)\n", argv[1],
+                    sr->vertices, sr->polygons, sr->bytes);
+        return 0;
+    }
+
     auto r = mh::io::writeFbx(argv[1], rm.view(), {}, &desc, rigged ? &skin : nullptr,
                               morphed ? std::span<const mh::foundation::MorphTarget>(targets)
                                       : std::span<const mh::foundation::MorphTarget>{});

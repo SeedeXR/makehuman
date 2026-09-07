@@ -549,6 +549,14 @@ TEST_CASE("TransformLink is the BIND pose, not the current one", "[io][fbx][skin
     CHECK(blob.find(bytesOf(50.0)) != std::string::npos);
     CHECK(blob.find(bytesOf(30.0)) != std::string::npos);
 
+    // And the cluster's `Transform` is the INVERSE bind, not identity. Read out
+    // of Maya's own numbers: for a joint at (0, -1, 0) it writes TransformLink
+    // (0, -1, 0) and Transform (0, +1, 0). Identity there instead displaces
+    // every vertex by its joint's bind position -- measured on an UNPOSED rig,
+    // whose deformation must be exactly the identity, as Maya evaluating the
+    // body to 247 x 334 x 269 cm instead of leaving it at 105 x 166 x 43.
+    CHECK(blob.find(bytesOf(-20.0)) != std::string::npos);
+
     std::error_code ec;
     std::filesystem::remove(out, ec);
 }
@@ -705,6 +713,107 @@ TEST_CASE("a target that moves nothing is not written", "[io][fbx][morph]") {
     const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
     CHECK(blob.find("still") == std::string::npos);
     CHECK(blob.find("BlendShapeChannel") == std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("a scene writes every entry as its own mesh", "[io][fbx][scene]") {
+    // A dressed character is the body plus every worn proxy. Writing only the
+    // first is the failure that looks like success: the file opens, the body is
+    // there, and the clothes are simply missing.
+    const auto out  = tempFbx("scene");
+    const auto body = quad();
+    core::Mesh shirt("shirt", 4);
+    REQUIRE(shirt.setCoords({{0, 4, 0}, {2, 4, 0}, {2, 4, 3}, {0, 4, 3}}).has_value());
+    shirt.addFaceGroup("g");
+    REQUIRE(shirt.setFaces({0, 1, 2, 3}, {}, {0}).has_value());
+    shirt.buildAdjacency();
+    shirt.calcNormals();
+
+    const auto bodyRm  = core::RenderMesh::build(body);
+    const auto shirtRm = core::RenderMesh::build(shirt);
+    foundation::MaterialDesc skinMat;
+    skinMat.name = "Skin";
+    foundation::MaterialDesc clothMat;
+    clothMat.name = "Cloth";
+
+    const std::array<io::FbxSceneEntry, 2> entries{
+        io::FbxSceneEntry{.mesh = bodyRm.view(), .name = "body", .material = &skinMat},
+        io::FbxSceneEntry{.mesh = shirtRm.view(), .name = "shirt", .material = &clothMat}};
+    const auto r = io::writeFbxScene(out, entries);
+    REQUIRE(r.has_value());
+    CHECK(r->vertices == bodyRm.view().vertexCount() + shirtRm.view().vertexCount());
+
+    const auto b = readAll(out);
+    const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
+    // Both models and both materials, by name.
+    CHECK(blob.find("body") != std::string::npos);
+    CHECK(blob.find("shirt") != std::string::npos);
+    CHECK(blob.find("Skin") != std::string::npos);
+    CHECK(blob.find("Cloth") != std::string::npos);
+    // Two of each record, not one.
+    const auto count = [&blob](const std::string& needle) {
+        size_t n = 0;
+        for (size_t at = blob.find(needle); at != std::string::npos;
+             at        = blob.find(needle, at + 1)) {
+            ++n;
+        }
+        return n;
+    };
+    CHECK(count("PolygonVertexIndex") == 2);
+
+    // And every record still walks: two entries double the objects and the
+    // connections, which is where an id scheme goes wrong.
+    size_t topEnd = b.size() - 144;
+    while (topEnd > 27 && b[topEnd - 1] == 0)
+        --topEnd;
+    checkRecords(b, 27, topEnd - 16);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("only the skinned entry gets a deformer", "[io][fbx][scene]") {
+    // The body is rigged and the clothes are not. A writer that put the skin on
+    // every entry would bind the shirt to the body's joints by index, which
+    // deforms it by whatever those joints happen to mean for it.
+    const auto out  = tempFbx("scene_skin");
+    const auto body = quad();
+    const auto rm   = core::RenderMesh::build(body);
+    SkinnedQuad sk;
+    const auto skin = sk.view(rm.view().vertexCount());
+
+    core::Mesh hat("hat", 4);
+    REQUIRE(hat.setCoords({{0, 9, 0}, {1, 9, 0}, {1, 9, 1}, {0, 9, 1}}).has_value());
+    hat.addFaceGroup("g");
+    REQUIRE(hat.setFaces({0, 1, 2, 3}, {}, {0}).has_value());
+    hat.buildAdjacency();
+    hat.calcNormals();
+    const auto hatRm = core::RenderMesh::build(hat);
+
+    const std::array<io::FbxSceneEntry, 2> entries{
+        io::FbxSceneEntry{.mesh = rm.view(), .name = "body", .skin = &skin},
+        io::FbxSceneEntry{.mesh = hatRm.view(), .name = "hat"}};
+    REQUIRE(io::writeFbxScene(out, entries).has_value());
+
+    const auto b = readAll(out);
+    const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
+    const auto count = [&blob](const std::string& needle) {
+        size_t n = 0;
+        for (size_t at = blob.find(needle); at != std::string::npos;
+             at        = blob.find(needle, at + 1)) {
+            ++n;
+        }
+        return n;
+    };
+    // One bind pose OBJECT for the whole file, not one per entry.
+    //
+    // Counted by the object-name marker, not by the word: "BindPose" appears
+    // twice per Pose -- once as the object's subtype and once in its `Type`
+    // child -- so counting the word says 2 for a single correct pose.
+    const std::string poseObject = std::string("") + '\0' + '\x01' + "Pose";
+    CHECK(count(poseObject) == 1);
 
     std::error_code ec;
     std::filesystem::remove(out, ec);

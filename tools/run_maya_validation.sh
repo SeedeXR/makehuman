@@ -33,11 +33,17 @@ if [ ! -x "$app" ]; then
 fi
 
 mkdir -p "$out"
-# The POSED export, which is the only one where live-versus-baked is a question
-# at all. An unposed file's rest and deformed shapes agree by construction and
-# would report `live_rig: false` while being perfectly correct.
-"$app" --rig mixamo_superset --pose tpose --export "$out/posed.fbx" >/dev/null
-echo "exported $out/posed.fbx"
+# The APPLICATION's own exports, which is what a user actually gets. Both a
+# posed and an unposed one:
+#
+#   posed   -- Maya's skinning of our rest geometry must reproduce OUR CPU LBS
+#              answer, 168.63 x 166.30 x 30.09 cm.
+#   unposed -- the deformation must be exactly the IDENTITY. That is where a
+#              wrong bind matrix is easiest to see, and it is how the
+#              `Transform`-must-be-the-inverse-bind defect was caught.
+"$app" --rig mixamo_superset --pose tpose --export "$out/app_posed.fbx" >/dev/null
+"$app" --rig mixamo_superset --export "$out/app_unposed.fbx" >/dev/null
+echo "exported $out/app_posed.fbx and $out/app_unposed.fbx"
 
 # OUR OWN writer, next to the assimp one. Maya is the reference implementation
 # of this format, so "Maya opens what we wrote" is the only statement about an
@@ -55,8 +61,8 @@ else
     echo "skip ours.fbx: $probe not built"
 fi
 
-"$MAYAPY" "$repo/tools/maya_validate.py" "$out/posed.fbx" "$out/ours.fbx" "$out/rigged.fbx" \
-    "$out/morphed.fbx" \
+"$MAYAPY" "$repo/tools/maya_validate.py" "$out/app_posed.fbx" "$out/app_unposed.fbx" \
+    "$out/ours.fbx" "$out/rigged.fbx" "$out/morphed.fbx" \
     2>/dev/null |
     grep '^MAYA_VALIDATE:' |
     python3 "$repo/tools/maya_check.py"

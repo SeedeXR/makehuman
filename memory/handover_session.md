@@ -2140,6 +2140,63 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-07 11:45:00 — Session 167 · **the app writes FBX itself now, and two defects the switch exposed**
+
+### The chunk
+`writeFbxScene` -- the same entry list the other writers take, body plus every
+worn proxy with its own material -- and the application's `.fbx` export routed
+through it instead of assimp.
+
+Object ids come from ONE running counter rather than per-kind blocks. FBX
+addresses everything by id through `Connections`, and a block scheme that
+overflows wires clusters to the wrong bones while staying valid in every other
+respect.
+
+### Maya reproduces our own skinning from the file
+The posed export evaluates to **168.6275 x 166.3017 x 30.0878 cm** -- our CPU
+LBS answer to four decimals, and the same number the Blender harness pins for
+the glTF live rig. The unposed export evaluates to exactly its rest shape: the
+deformation is the identity, as it must be.
+
+### Two defects, both found end to end and neither by a unit test
+- **`.fbx` was missing from `formatCarriesRig`.** It had been excluded *because
+  assimp baked*. So the app wrote BAKED geometry while our writer also wrote the
+  pose, and Maya evaluated the body to 440 x 328 x 267 cm. That list is not a
+  feature switch; getting it wrong is a double transform.
+- **The cluster's `Transform` must be the INVERSE BIND matrix, not identity.**
+  I had read the field name as "the mesh's global, and the mesh is at the
+  origin". Maya's own numbers say otherwise: for a joint at (0,-1,0) it writes
+  `TransformLink` (0,-1,0) and `Transform` (0,+1,0). With identity, every vertex
+  is displaced by its joint's bind position.
+
+  What caught it was exporting with **no pose at all**, where the deformation
+  must be exactly the identity -- 247 x 334 x 269 instead of 105 x 166 x 43.
+  The posed case was wrong too, but "wrong" is hard to judge; "should not have
+  moved and did" is not. That case is now a harness expectation.
+
+### The render found a defect that is not mine
+The posed export renders with the **eyes protruding from their sockets**. I
+checked before blaming the switch: our **glTF shows the identical artefact**,
+and the same export with no pose is clean.
+
+Cause: `exportTo` swaps the body to REST coordinates for a rig-carrying format,
+re-fits the worn proxies to THAT body, and ships them **unskinned**. A consumer
+applying the pose moves the body and leaves the proxies behind. It affects every
+live-rig format and always has.
+
+Recorded as an open item rather than fixed here: the proxies have no skin
+weights at all -- the viewport re-fits them every rebuild instead -- so this is
+real work. A live-rig export is correct for the body and wrong for anything
+worn, and that is worth saying out loud.
+
+### Verification
+ctest green in debug, release, ASan and TSan. Maya harness **5/5**, now
+including the application's own posed and unposed exports. Rendered and looked,
+which is what found the proxy defect. Format clean. Sonar OK. Mutations killed:
+`Transform` back to identity, plus the earlier scene and rig ones.
+
+---
+
 ## 2026-09-07 10:15:00 — Session 166 · **FBX stage 4: blend shapes, and two tests that could not fail**
 
 ### The chunk

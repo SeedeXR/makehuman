@@ -49,6 +49,26 @@ EXPECT = {
         "uv_sets": 1,
         "material_names contains": "Skin",
     },
+    # The APPLICATION's own FBX export, through our writer. This is the one a
+    # user gets, and the number that matters is `evaluated`: Maya's own skinning
+    # of our rest geometry must reproduce OUR CPU LBS answer, which the Blender
+    # harness pins for the glTF live rig as 1.6863 x 0.3009 x 1.663 m.
+    #
+    # Getting `Transform` wrong -- identity instead of the inverse bind --
+    # produced 247 x 334 x 269 here while every other field stayed correct.
+    "app_posed.fbx": {
+        "joints": 179,
+        "skin_clusters": 1,
+        "live_rig": True,
+        "deformed_extent": [168.6275, 166.3017, 30.0878],
+    },
+    # ... and with NO pose the deformation must be exactly the identity. An
+    # unposed rig that moves anything is the same bug, showing up where it is
+    # easiest to see.
+    "app_unposed.fbx": {
+        "joints": 179,
+        "live_rig": False,
+    },
     # OUR writer with blend shapes. The names come back ESCAPED: Maya cannot
     # put a hyphen in a node name and encodes it as `FBXASC045`, so
     # `mouth-open` arrives as `mouthFBXASC045open`. The names survive; they are
@@ -64,14 +84,6 @@ EXPECT = {
         # and does the same to its OWN files -- a cube with one target reports
         # 2. Ours is the base plus three targets.
         "meshes": 4,
-    },
-    "posed.fbx": {
-        "joints": 179,
-        "skin_clusters": 1,
-        # The skin is real: turning a limb joint moves the mesh. Without this,
-        # `live_rig: False` could equally mean the weights never arrived.
-        "deforms_when_posed": True,
-        "live_rig": False,
     },
 }
 
