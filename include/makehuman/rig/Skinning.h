@@ -76,6 +76,34 @@ using foundation::Mat4;
 bool skinPositions(std::span<const foundation::Vec3> rest, const CompiledWeights& weights,
                    std::span<const Mat4> skinning, std::vector<foundation::Vec3>& out);
 
+/// Dual quaternion skinning, positions only. Same contract as `skinPositions`.
+///
+/// **Why it exists.** `skinPositions` blends MATRICES. Halfway between two very
+/// different rotations the averaged matrix is no longer a rotation -- it
+/// shrinks -- and the mesh collapses toward the bone axis. On a limb twisted
+/// about its own length that is the "candy wrapper", the most visible artefact
+/// in skinned character work: measured on a ring of radius 2 dm weighted 50/50
+/// across a 180-degree twist, LBS pinches it to **0.0** and DQS holds **2.0**.
+///
+/// DQS blends the rigid transforms as dual quaternions and renormalises, so the
+/// result is always a rotation plus a translation.
+///
+/// **It cannot represent scale or shear**, and a skinning matrix carrying
+/// either is REFUSED rather than approximated -- silently dropping the scale
+/// gives a mesh that is subtly the wrong size with nothing to explain it. Ours
+/// are `poseGlobal * inv(restGlobal)`, both rigid, so this never fires for a
+/// skeleton `buildRestMatrices` produced; it fires for one that was scaled by
+/// hand.
+///
+/// Not the default. LBS is cheaper, it is what the reference does, and it is
+/// indistinguishable from DQS everywhere the bones do not disagree much -- which
+/// is most of a body most of the time.
+///
+/// @return false on the same input disagreements as `skinPositions`, and
+///         additionally when a skinning matrix is not rigid.
+bool skinPositionsDqs(std::span<const foundation::Vec3> rest, const CompiledWeights& weights,
+                      std::span<const Mat4> skinning, std::vector<foundation::Vec3>& out);
+
 /// Owns the arrays a foundation::SkinView points at.
 ///
 /// The view is non-owning by design, so something has to hold the storage; this

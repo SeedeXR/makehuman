@@ -4,6 +4,64 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-07 (fourteenth) — Session · **DQS, and FOUR decorative gates in one chunk**
+
+### The chunk
+`rig::skinPositionsDqs`, same contract as `skinPositions`, reachable as
+`--skinning dqs`. Built on the existing `foundation::Quat` helpers, so no new
+dependency.
+
+**The side-by-side the item asked for, as a number:** a ring of radius 2 dm
+weighted 50/50 across a 180° twist. LBS pinches it to **0.0**; DQS holds
+**2.0**. That is the candy wrapper.
+
+On the shipped T-pose the two agree almost everywhere — over 14,444 vertices the
+**median displacement is exactly 0**, the max is 8.4 mm, and the 578 vertices
+moving more than 1 mm all sit at Y 11.9–14.1 on a 16.6 body: the shoulders,
+where a T-pose rotates most. Rendered both and looked; shoulders subtly fuller
+under DQS, no artefacts anywhere. The picture confirms DQS does not BREAK
+anything; the ring number is what proves it helps.
+
+Non-rigid input is refused rather than approximated — DQS has no spelling for
+scale or shear.
+
+### Four gates that tested nothing, in one chunk
+This is the theme and it is worth the space.
+
+1. **The antipodality test.** Two guesses, both wrong, then a measurement.
+   `quaternionFromMatrix` canonicalises the **largest component** positive, not
+   `w` — so neither identity-vs-300° nor +170°-vs-−170° ever produces a negative
+   dot, and deleting the sign correction passed both. A sweep over 400,000
+   random pairs found 27% negative, all about DIFFERENT axes, and led to the
+   readable case: 150° about (1,1,1) vs 150° about (1,1,−1), dot −0.378. Checked
+   against `quaternionSlerp`, an independent implementation of the same
+   correction.
+2. **The normalisation test.** `quaternionMatrix` normalises internally, so
+   dropping the explicit step leaves the ROTATION correct and corrupts only the
+   TRANSLATION — which no blended test exercised. Caught by a new property: the
+   result must depend only on the RATIO of the weights, not their sum.
+3. **`app_skinning_dqs`.** Asserted only that the export succeeded, which passes
+   with the flag forced off.
+4. **`app_skinning_dqs_differs`.** Added to fix (3), and still green with the
+   flag off — because an OBJ's third line is `mtllib <stem>.mtl`, so exports to
+   `app_lbs.obj` and `app_dqs.obj` differ on that line whatever the skinning
+   does. Fixed by writing the SAME basename into two directories.
+
+Two of the six code mutations also failed to compile at first
+(`-Wunused-function`), which is no test at all.
+
+**The rule, now stated four ways:** an assertion satisfied by a default, by an
+unrelated difference, or by a mutation that does not build, is decorative. After
+writing a gate, break the thing it guards and watch it fail — every time, not
+once per chunk.
+
+### Next
+`memory/todo.md` in milestone order. Recorded, not done: `--skinning` has no UI.
+A toggle wants the viewport to re-pose live, which `poseInPlace` does not do on
+a settings change, so it is its own chunk.
+
+---
+
 ## 2026-09-07 (thirteenth) — Session · **The rebinding dialog, and the same defect twice in one day**
 
 ### The chunk

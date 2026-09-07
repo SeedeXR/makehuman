@@ -3588,7 +3588,27 @@ agree today (geometry, UVs, and 169.5 cm under three unit conventions).
       **Lesson recorded**: a probe placed before the line that does the work
       proves nothing. My first probe sat one statement too early and produced
       three sessions' worth of confident wrong reasoning.
-- [ ] DQS skinning path (M6), with a side-by-side against LBS on a twisted limb
+- [x] **DQS skinning path, with the side-by-side** (2026-09-07).
+      `rig::skinPositionsDqs`, same contract as `skinPositions`, reachable as
+      `--skinning dqs`. Built on the existing `foundation::Quat` helpers — no
+      new dependency.
+      - **The measured side-by-side.** A ring of radius 2 dm weighted 50/50
+        across a 180° twist: LBS pinches it to **0.0**, DQS holds **2.0**. That
+        is the candy wrapper, in one number.
+      - On the shipped T-pose the two agree almost everywhere: over 14,444
+        vertices the **median displacement is exactly 0**, the max is 8.4 mm,
+        and the 578 vertices that move by more than 1 mm all sit at Y 11.9–14.1
+        on a 16.6 body — the shoulders, where a T-pose rotates most. Rendered
+        both and looked: shoulders subtly fuller under DQS, no artefacts.
+      - **Non-rigid input is refused**, not approximated. DQS has no spelling
+        for scale or shear, and silently dropping it gives a mesh that is
+        quietly the wrong size.
+      - Opt-in, not the default: LBS is cheaper, it is what the reference does,
+        and it is indistinguishable wherever bones do not disagree much.
+- [ ] **No UI for `--skinning`.** The flag exists and the Settings menu is where
+      it would go, beside Units. Left out deliberately: this chunk was already
+      large, and a skinning toggle wants the viewport to re-pose live, which
+      `poseInPlace` does not currently do on a settings change.
 
 **SMPL / SMPL-X is licence-blocked for us** — see `LICENSING.md` §5.2. The full
 parametric model is research-only; the CC-BY subset deliberately omits the shape

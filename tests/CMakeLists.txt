@@ -21,6 +21,7 @@ add_executable(mh_tests
     unit/test_malformed_input.cpp
     unit/test_compact.cpp
     unit/test_transform.cpp
+    unit/test_dqs.cpp
     unit/test_version.cpp
     golden/test_base_mesh_parity.cpp
     golden/test_mesh_fixture_parity.cpp
@@ -423,6 +424,39 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
     set_tests_properties(app_blendshapes_usda_bound PROPERTIES
         FIXTURES_REQUIRED app_bs_usda_file)
+
+    # Dual quaternion skinning is reachable from the command line, and an
+    # unknown method is refused rather than silently falling back to linear --
+    # a user who asked for DQS and got LBS has no way to tell.
+    # The SAME basename in two directories, deliberately. An OBJ's third line
+    # is `mtllib <stem>.mtl`, so exports to app_lbs.obj and app_dqs.obj differ
+    # on that line whatever the skinning does -- measured: with the flag forced
+    # off the files still differed, and the gate below stayed green while
+    # testing nothing.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/skin_lbs
+                        ${CMAKE_CURRENT_BINARY_DIR}/skin_dqs)
+    add_test(NAME app_skinning_linear COMMAND makehuman
+             --rig mixamo_superset --pose tpose --skinning linear
+             --export ${CMAKE_CURRENT_BINARY_DIR}/skin_lbs/pose.obj)
+    set_tests_properties(app_skinning_linear PROPERTIES FIXTURES_SETUP app_lbs_obj)
+    add_test(NAME app_skinning_dqs COMMAND makehuman
+             --rig mixamo_superset --pose tpose --skinning dqs
+             --export ${CMAKE_CURRENT_BINARY_DIR}/skin_dqs/pose.obj)
+    set_tests_properties(app_skinning_dqs PROPERTIES
+        PASS_REGULAR_EXPRESSION "wrote .*pose\\.obj"
+        FIXTURES_SETUP app_dqs_obj)
+    # The flag has to CHANGE something. Asserting only that the export succeeded
+    # passes with the flag disabled.
+    add_test(NAME app_skinning_dqs_differs COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/skin_lbs/pose.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/skin_dqs/pose.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_skinning_dqs_differs PROPERTIES
+        FIXTURES_REQUIRED "app_lbs_obj;app_dqs_obj")
+    add_test(NAME app_skinning_unknown COMMAND makehuman
+             --skinning nonsense --export ${CMAKE_CURRENT_BINARY_DIR}/app_never.obj)
+    set_tests_properties(app_skinning_unknown PROPERTIES
+        PASS_REGULAR_EXPRESSION "unknown skinning method")
 
     # A texture path is written INTO an exported file, so it has to be clean.
     # Measured before `lexically_normal` landed: every shipped skin says

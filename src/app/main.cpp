@@ -285,6 +285,13 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
     return true;
 }
 
+/// Which skinning method `poseInPlace` uses. Set once from `--skinning`.
+///
+/// A file-scope flag rather than a parameter threaded through: the pose helper
+/// is called from four places and none of them has an opinion about the method
+/// -- the user does, once, at start-up.
+bool gUseDualQuaternion = false;
+
 /// Applies @p rig's pose to @p mesh in place. A no-op when no pose is loaded.
 bool poseInPlace(mh::core::Mesh& mesh, PoseRig& rig) {
     if (!rig.posed()) return true;
@@ -306,9 +313,17 @@ bool poseInPlace(mh::core::Mesh& mesh, PoseRig& rig) {
         rig.globalPose.push_back(b < skinning.size() ? skinning[b] * rest : rest);
     }
 
+    // LBS by default, DQS when asked. DQS costs more and is indistinguishable
+    // wherever the bones do not disagree much -- which is most of a body most
+    // of the time -- so it is opt-in rather than a silent change to every
+    // existing export.
     std::vector<mh::foundation::Vec3> posed;
-    if (!mh::rig::skinPositions(mesh.coord(), rig.weights, skinning, posed)) {
-        std::fprintf(stderr, "skinning failed\n");
+    const bool skinned = gUseDualQuaternion
+                             ? mh::rig::skinPositionsDqs(mesh.coord(), rig.weights, skinning, posed)
+                             : mh::rig::skinPositions(mesh.coord(), rig.weights, skinning, posed);
+    if (!skinned) {
+        std::fprintf(stderr, "skinning failed (%s)\n",
+                     gUseDualQuaternion ? "dual quaternion" : "linear blend");
         return false;
     }
     if (const auto ok = mesh.setCoords(std::move(posed)); !ok) {
@@ -1576,6 +1591,12 @@ int main(int argc, char** argv) {
     parser.addOption(transparentOpt);
     parser.addOption(eyeColourOpt);
     parser.addOption(randomOpt);
+    const QCommandLineOption skinningOpt(
+        QStringLiteral("skinning"),
+        QStringLiteral("Skinning method: linear (default) or dqs. Dual quaternion skinning keeps "
+                       "a twisted limb's volume where linear blending collapses it."),
+        QStringLiteral("method"), QStringLiteral("linear"));
+    parser.addOption(skinningOpt);
     parser.addOption(shadingOpt);
     parser.addOption(rigOpt);
     parser.addOption(poseOpt);
@@ -1591,6 +1612,14 @@ int main(int argc, char** argv) {
     // An unrecognised model is refused rather than defaulted: silently falling
     // back to the litsphere would make `--shading pbrr` produce a plausible
     // image that is not what was asked for.
+    const QString skinningName = parser.value(skinningOpt).toLower();
+    if (skinningName != QLatin1String("linear") && skinningName != QLatin1String("dqs")) {
+        std::fprintf(stderr, "unknown skinning method \"%s\" (linear or dqs)\n",
+                     skinningName.toStdString().c_str());
+        return 1;
+    }
+    gUseDualQuaternion = skinningName == QLatin1String("dqs");
+
     const QString shadingName        = parser.value(shadingOpt);
     mh::render::ShadingModel shading = mh::render::ShadingModel::Litsphere;
     if (shadingName == QLatin1String("pbr")) {
