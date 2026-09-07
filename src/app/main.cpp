@@ -1245,10 +1245,12 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     // proxy simply stays where it was while the body moves -- measured, the
     // eyes protruded from their sockets in both formats.
     //
-    // Computed once for the two formats that can carry it: OBJ, STL and 3MF get
-    // the baked posed mesh, and the assimp and USD scene entries have no skin
-    // field at all.
-    const bool proxiesCanFollow = skin != nullptr && (ext == ".glb" || ext == ".fbx");
+    // Computed once for the three formats that can carry it: OBJ, STL and 3MF
+    // get the baked posed mesh, and the assimp scene entries have no skin field
+    // at all.
+    const bool proxiesCanFollow =
+        skin != nullptr &&
+        (ext == ".glb" || ext == ".fbx" || ext == ".usd" || ext == ".usda" || ext == ".usdz");
     const std::vector<mh::rig::SkinData> proxySkins =
         proxiesCanFollow ? wornSkins(rig, worn) : std::vector<mh::rig::SkinData>{};
     std::vector<mh::foundation::SkinView> proxyViews;
@@ -1321,16 +1323,15 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     // format an AR or Apple pipeline actually takes.
     if (ext == ".usda" || ext == ".usd" || ext == ".usdz") {
         std::vector<mh::io::UsdSceneEntry> scene;
-        scene.push_back({body, "body", allDressed ? &*bodyMat : nullptr, morphs});
+        scene.push_back({body, "body", allDressed ? &*bodyMat : nullptr, skin, morphs});
+        size_t at = 0;
         for (const auto& [group, proxy] : worn) {
             scene.push_back({proxy.rm.view(), group.toLower().toStdString(),
-                             allDressed ? &*proxy.material : nullptr});
+                             allDressed ? &*proxy.material : nullptr, proxySkin(at)});
+            ++at;
         }
-        // Both writers take the skin as a parameter rather than per entry and
-        // bind it to the FIRST one, which is the body -- the same one-skin rule
-        // glTF and the assimp path follow.
-        const auto r = ext == ".usdz" ? mh::io::writeUsdzScene(path, scene, usdOpts, skin)
-                                      : mh::io::writeUsdaScene(path, scene, usdOpts, skin);
+        const auto r = ext == ".usdz" ? mh::io::writeUsdzScene(path, scene, usdOpts)
+                                      : mh::io::writeUsdaScene(path, scene, usdOpts);
         return report(r ? std::string{} : r.error().message());
     }
     if (ext == ".glb") {

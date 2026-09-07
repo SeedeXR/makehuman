@@ -2059,11 +2059,28 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
           `skins[0].inverseBindMatrices` at the entry that deliberately writes
           none, and assimp refused the file outright. It now reuses the same
           `firstSkinned` iterator the validation uses.
-      - **Still to wire: USD.** `writeUsdaScene`/`writeUsdzScene` take the skin
-        as a PARAMETER rather than per entry and bind it to the first one
-        (`main.cpp`, the `.usda` branch), so a posed `.usd` still ships the
-        proxies unskinned — the same protruding eyes. Different shape of change
-        from the other two: the signature has to grow a per-entry skin first.
+      - **USD: wired and confirmed** (2026-09-07). The skin was a trailing
+        PARAMETER of `writeUsdaScene`/`writeUsdzScene`, bound to the first entry,
+        so nothing worn could ever be skinned. It is now `UsdSceneEntry::skin`
+        and the parameter is gone — one source of truth, like the other two
+        writers. UsdSkel says it directly: one `Skeleton` prim under the
+        `SkelRoot`, and every skinned `Mesh` binding to it through
+        `rel skel:skeleton`, with `jointIndices`/`jointWeights` per mesh. An
+        entry naming a different skeleton is refused
+        (`UsdWriteErrorKind::MixedSkeletons`).
+        - **usdchecker** (Pixar's own) validates the posed stage, in the Blender
+          harness and as a ctest.
+        - **Blender**: `posed.usda` reads as 2 meshes, ONE armature, 179 bones,
+          **15,593 of 15,593 skinned**, evaluating to 1.6863 × 0.3009 × 1.663 m
+          — the same as `posed.glb`, `posed.fbx` and our CPU LBS. 13/13.
+        - **Looked at it**: rendered the posed head from the stage — eyes seated
+          in the sockets. Blender resolves `Eye_brown` to the `brown_eye.png`
+          copied beside the stage, so the material binding is right too.
+        - New gate script `tests/file_count.cmake`: `file_contains.cmake` answers
+          "is it there", which cannot tell one bound mesh from two.
+      - **All three live-rig formats now agree**, and that agreement is the
+        strongest statement available: three writers, three importers and our own
+        solver all landing on 1.6863 × 0.3009 × 1.663 m.
 
 - [~] Texture packing (ORM), GLB embedding, KTX2/Basis, optional Draco — three
       of the four are settled.

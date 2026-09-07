@@ -4,6 +4,59 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-07 (third) — Session · **USD gets the per-entry skin, and all three formats agree**
+
+### The chunk
+`writeUsdaScene`/`writeUsdzScene` took the skin as a trailing PARAMETER and bound
+it to `entries.data()` -- the body. Nothing worn could be skinned, by
+construction, so a posed `.usd` shipped the body deforming and the eyes standing
+still in their old place.
+
+The skin is now `UsdSceneEntry::skin` and the parameter is gone. One source of
+truth, like `FbxSceneEntry` and `GltfSceneEntry`. UsdSkel expresses the sharing
+directly: one `Skeleton` prim under the `SkelRoot`, every skinned `Mesh` bound
+through `rel skel:skeleton`, and `jointIndices`/`jointWeights` per mesh because
+the weights differ. An entry naming a different skeleton is refused --
+`UsdWriteErrorKind::MixedSkeletons` -- since the indices address the shared one.
+
+`main.cpp` needed one word: `proxiesCanFollow` grew the three USD extensions,
+and the `.usda` branch now hands each entry `proxySkin(at)`.
+
+### What the readers say
+- **usdchecker**, Pixar's own: Success on the posed stage. It is in the Blender
+  harness and in ctest now, not just the blend-shape stages.
+- **Blender**: `posed.usda` -> 2 meshes, ONE armature, 179 bones, **15,593 of
+  15,593 skinned**, evaluating to 1.6863 x 0.3009 x 1.663 m. 13/13.
+- That last number now comes out of THREE writers, three importers and our own
+  CPU LBS. Any one of them matching a written-down number proves little; all
+  four agreeing is the statement worth having.
+
+Rendered the posed head from the stage and looked at it: eyes seated. Probed the
+import as well -- Blender resolves `Eye_brown` to the `brown_eye.png` copied
+beside the stage, so the material binding survived too.
+
+### The assertion that had to be added
+Counting `primvars:skel:jointIndices` proves only that two meshes got some
+weights. Writing the SCENE skin's arrays on every mesh -- the obvious wrong
+version -- also gives two, and hands the 4-vertex eyes the body's 58,068 indices.
+The test now reads each array's LENGTH out of the stage and requires
+`vertexCount * 4`. That is what killed the mutation.
+
+### New gate script
+`tests/file_count.cmake`. `file_contains.cmake` answers "is it there", which is
+the wrong question for anything shared: a stage with one `Skeleton` prim and ONE
+bound mesh contains every key a correct one does. Only the count separates them.
+
+### Mutations, all killed
+Mixed skeletons accepted; only the first entry skinned (the old rule); every
+mesh given the scene skin's arrays; and the app leaving USD proxies unskinned.
+
+### Next
+The proxy-skin item is closed for all three live-rig formats. Next open item in
+`memory/todo.md` order.
+
+---
+
 ## 2026-09-07 (later) — Session · **The glTF scene gets one shared skin too**
 
 ### The chunk

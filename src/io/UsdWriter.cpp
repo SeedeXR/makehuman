@@ -89,6 +89,9 @@ std::string UsdWriteError::message() const {
         case UsdWriteErrorKind::EmptyMesh: k = "mesh has no geometry"; break;
         case UsdWriteErrorKind::NonFiniteValue: k = "non-finite value"; break;
         case UsdWriteErrorKind::InvalidMorphTarget: k = "invalid blend shape"; break;
+        case UsdWriteErrorKind::MixedSkeletons:
+            k = "entries name different skeletons; one stage carries one";
+            break;
     }
     std::string m = file + ": " + k;
     if (!detail.empty()) m += " (" + detail + ")";
@@ -97,8 +100,7 @@ std::string UsdWriteError::message() const {
 
 std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesystem::path& path,
                                                             std::span<const UsdSceneEntry> entries,
-                                                            const UsdWriteOptions& options,
-                                                            const foundation::SkinView* skin) {
+                                                            const UsdWriteOptions& options) {
     if (entries.empty()) {
         return std::unexpected(UsdWriteError{UsdWriteErrorKind::EmptyMesh, path.string(), {}});
     }
@@ -131,6 +133,25 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
             }
         }
         morphed = i;
+    }
+
+    // ONE skeleton for the stage, taken from the first entry that has a skin.
+    //
+    // UsdSkel says it directly: one `Skeleton` prim under the `SkelRoot`, and
+    // every skinned `Mesh` binding to it. The body and everything worn ride the
+    // same rig, so what differs per entry is jointIndices/jointWeights -- which
+    // is exactly why the skin moved from a trailing parameter onto the entry.
+    //
+    // Every other skin must BE that skeleton, because the indices address it.
+    const foundation::SkinView* skin = nullptr;
+    for (const UsdSceneEntry& entry : entries) {
+        if (entry.skin == nullptr) continue;
+        if (skin == nullptr) {
+            skin = entry.skin;
+        } else if (!std::ranges::equal(entry.skin->jointNames, skin->jointNames)) {
+            return std::unexpected(
+                UsdWriteError{UsdWriteErrorKind::MixedSkeletons, path.string(), entry.name});
+        }
     }
 
     std::ofstream out(path);
@@ -339,9 +360,11 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
         // and is not conformant. It is prim METADATA, so it belongs in the
         // parentheses before the body, not among the properties: putting it
         // inside the braces makes the stage fail to open at all.
-        // Only the FIRST entry is skinned -- the body. Clothing follows the
-        // body through its own fit, not through the skeleton.
-        const bool skinned = skin != nullptr && !jointPaths.empty() && &entry == entries.data();
+        // Every entry that CARRIES a skin is bound. This used to be "the first
+        // entry, which is the body", so a posed stage shipped the body
+        // deforming and everything worn standing still -- the eyes protruded
+        // from their sockets.
+        const bool skinned = entry.skin != nullptr && !jointPaths.empty();
         const bool morphs  = !entry.morphTargets.empty();
         // One API schema entry covers both: SkelBindingAPI carries the skeleton
         // binding AND the blend shapes, so listing it twice would be invalid.
@@ -374,17 +397,21 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
             out << "]\n";
         }
         if (skinned) {
+            // THIS entry's weights, against the shared skeleton. Writing the
+            // scene skin's arrays here would give every mesh the body's
+            // weights, which is a different vertex count and a broken stage.
+            const foundation::SkinView& bind = *entry.skin;
             out << "        rel skel:skeleton = </" << options.primName << "/Skel>\n";
-            const size_t infl = skin->influences != 0 ? skin->influences : 1;
+            const size_t infl = bind.influences != 0 ? bind.influences : 1;
             out << "        int[] primvars:skel:jointIndices = [";
-            for (size_t i = 0; i < skin->joints.size(); ++i) {
-                out << (i != 0 ? ", " : "") << skin->joints[i];
+            for (size_t i = 0; i < bind.joints.size(); ++i) {
+                out << (i != 0 ? ", " : "") << bind.joints[i];
             }
             out << "] (\n            elementSize = " << infl
                 << "\n            interpolation = \"vertex\"\n        )\n";
             out << "        float[] primvars:skel:jointWeights = [";
-            for (size_t i = 0; i < skin->weights.size(); ++i) {
-                out << (i != 0 ? ", " : "") << num(skin->weights[i]);
+            for (size_t i = 0; i < bind.weights.size(); ++i) {
+                out << (i != 0 ? ", " : "") << num(bind.weights[i]);
             }
             out << "] (\n            elementSize = " << infl
                 << "\n            interpolation = \"vertex\"\n        )\n";
@@ -553,8 +580,7 @@ std::string alignmentExtra(size_t headerEnd) {
 
 std::expected<UsdWriteResult, UsdWriteError> writeUsdzScene(const std::filesystem::path& path,
                                                             std::span<const UsdSceneEntry> entries,
-                                                            const UsdWriteOptions& options,
-                                                            const foundation::SkinView* skin) {
+                                                            const UsdWriteOptions& options) {
     // Build the stage in a scratch directory. writeUsdaScene copies each
     // texture beside the stage and references it by filename, so whatever ends
     // up in this directory IS the archive's contents -- no second code path
@@ -579,7 +605,7 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdzScene(const std::filesyste
 
     const std::string stem = path.stem().string();
     const auto stagePath   = scratch / (stem + ".usda");
-    auto wrote             = writeUsdaScene(stagePath, entries, options, skin);
+    auto wrote             = writeUsdaScene(stagePath, entries, options);
     if (!wrote) return std::unexpected(wrote.error());
 
     // The stage FIRST -- that is how a reader finds it -- then everything else

@@ -62,6 +62,11 @@ if [ -x "$app" ]; then
     "$app" --pose tpose --export "$out/posed.fbx" >/dev/null 2>&1 \
         && echo "posed.fbx: T-pose, live rig, body and eyes on one skeleton" \
         || echo "warn: posed.fbx export failed"
+    # ...and in USD. UsdSkel is the third independent expression of the same
+    # claim: one Skeleton prim, and every skinned Mesh bound to it.
+    "$app" --pose tpose --export "$out/posed.usda" >/dev/null 2>&1 \
+        && echo "posed.usda: T-pose, live rig, body and eyes on one skeleton" \
+        || echo "warn: posed.usda export failed"
 else
     echo "skip posed.glb: $app not built"
 fi
@@ -72,7 +77,10 @@ fi
 # you. expressions.usda deliberately has NO skeleton, which is the case the
 # application cannot produce because it always builds a rig.
 if command -v usdchecker >/dev/null 2>&1; then
-    for stage in "$out/base.usda" "$out/expressions.usda"; do
+    # posed.usda is the SKINNED one: usdchecker is the tool that rejects
+    # SkelBindingAPI on a prim not rooted at a SkelRoot, and it is the only
+    # reader here with a stake in UsdSkel conformance.
+    for stage in "$out/base.usda" "$out/expressions.usda" "$out/posed.usda"; do
         if usdchecker "$stage" >/dev/null 2>&1; then
             echo "ok   $(basename "$stage"): usdchecker validates"
         else
@@ -86,6 +94,8 @@ else
 fi
 
 "$BLENDER" --background --python "$repo/tools/blender_validate.py" -- \
-    "$out/base.obj" "$out/posed.glb" "$out/posed.fbx" "$out/base.glb" "$out/expressions.glb" "$out/expressions.fbx" "$out/expressions.usda" "$out/base.fbx" "$out/rigged.glb" "$out/morphed.glb" "$out/rigged.fbx" "$out/base.usda" 2>/dev/null |
+    "$out/base.obj" "$out/posed.glb" "$out/posed.fbx" "$out/posed.usda" "$out/base.glb" \
+    "$out/expressions.glb" "$out/expressions.fbx" "$out/expressions.usda" "$out/base.fbx" \
+    "$out/rigged.glb" "$out/morphed.glb" "$out/rigged.fbx" "$out/base.usda" 2>/dev/null |
     grep '^BLENDER_VALIDATE:' | sed 's/^BLENDER_VALIDATE://' |
     python3 "$repo/tools/blender_check.py"

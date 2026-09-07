@@ -141,6 +141,19 @@ EXPECT = {
         "live_rig": True, "evaluated": [1.6863, 0.3009, 1.663],
     },
 
+    # ...and the same character through our USD writer, read by the same third
+    # party. Three formats, three importers and our own CPU LBS all landing on
+    # 1.6863 x 0.3009 x 1.663 m is a much stronger statement than any one of
+    # them matching a number written down here.
+    #
+    # 134 vertex groups: like the FBX importer, Blender's USD importer makes a
+    # group only where a joint actually weights something.
+    "posed.usda": {
+        "vertices": 15593, "triangles": 28796, "tallest": 1.659377, "uv_layers": 1,
+        "bones": 179, "armatures": 1, "skinned": 15593, "vertex_groups": 134,
+        "live_rig": True, "evaluated": [1.6863, 0.3009, 1.663],
+    },
+
     # The SHIPPED blendshape set -- what `makehuman --blendshapes` writes: the
     # 34 expression units, each blended across african/asian/caucasian by the
     # character's macro factors. NOT the 102 `.target` files on disk, which are

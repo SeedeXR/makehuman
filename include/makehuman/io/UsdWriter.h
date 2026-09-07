@@ -64,6 +64,11 @@ enum class UsdWriteErrorKind {
     /// A blend shape's deltas are not parallel to its mesh, or more than one
     /// entry carries a set.
     InvalidMorphTarget,
+    /// Two entries name different skeletons. The stage carries ONE `Skeleton`
+    /// prim, so every entry's `jointIndices` index it -- meaningless across
+    /// unrelated rigs, and it produces a stage that opens and poses wrongly
+    /// rather than one that fails.
+    MixedSkeletons,
 };
 
 struct UsdWriteError {
@@ -86,6 +91,9 @@ struct UsdSceneEntry {
     foundation::RenderView mesh;
     std::string name{"mesh"};
     const foundation::MaterialDesc* material{nullptr};
+    /// This entry's UsdSkel binding, or null. Every skinned entry must name the
+    /// SAME skeleton -- see writeUsdaScene.
+    const foundation::SkinView* skin{nullptr};
     /// UsdSkel blend shapes for this entry. Only ONE entry may carry a set, the
     /// same rule the skin and the glTF/FBX writers follow: a worn proxy is
     /// re-fitted to the body rather than blended.
@@ -109,13 +117,20 @@ struct UsdSceneEntry {
 /// A `diffuseTexture` is referenced by asset path and **copied beside the
 /// stage**, the same rule the OBJ writer follows for `map_Kd`: a stage naming a
 /// texture that is not there is a broken file.
-/// @param skin optional UsdSkel binding. When present the root becomes a
-///        `SkelRoot`, a `Skeleton` prim is emitted, and the **first** entry is
-///        bound to it -- the same "one skin per scene" rule glTF export
-///        follows, because only the body is rigged.
+/// **Several entries may be skinned, to ONE shared skeleton.** The body and
+/// everything worn ride the same rig, and UsdSkel expresses that directly: one
+/// `Skeleton` prim under a `SkelRoot`, and every skinned `Mesh` binding to it
+/// through `rel skel:skeleton`. The skeleton is taken from the first entry that
+/// has a skin; `jointIndices`/`jointWeights` stay per mesh, because the weights
+/// differ. An entry naming a different skeleton is refused -- its indices would
+/// address the shared one.
+///
+/// The skin used to be a trailing PARAMETER bound to the first entry, which is
+/// how a posed stage came to ship the body deforming and everything worn
+/// standing still.
 [[nodiscard]] std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(
     const std::filesystem::path& path, std::span<const UsdSceneEntry> entries,
-    const UsdWriteOptions& options = {}, const foundation::SkinView* skin = nullptr);
+    const UsdWriteOptions& options = {});
 
 [[nodiscard]] std::expected<UsdWriteResult, UsdWriteError> writeUsda(
     const std::filesystem::path& path, const foundation::RenderView& mesh,
@@ -139,6 +154,6 @@ struct UsdSceneEntry {
 /// and its siblings are exactly the set to package.
 [[nodiscard]] std::expected<UsdWriteResult, UsdWriteError> writeUsdzScene(
     const std::filesystem::path& path, std::span<const UsdSceneEntry> entries,
-    const UsdWriteOptions& options = {}, const foundation::SkinView* skin = nullptr);
+    const UsdWriteOptions& options = {});
 
 }  // namespace mh::io

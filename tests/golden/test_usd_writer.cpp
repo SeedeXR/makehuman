@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -477,6 +478,153 @@ TEST_CASE("a usdz is a stored, 64-byte aligned zip", "[io][usd][usdz]") {
 // `usdchecker` reports Success on the result, but it cannot catch either of the
 // two traps below -- both produce a perfectly valid stage that poses wrongly.
 // So they are pinned here.
+namespace {
+
+/// The base mesh, the shipped rig and the weights compiled onto the render
+/// vertices -- everything the UsdSkel cases need before they can say anything.
+struct RiggedBody {
+    core::Mesh mesh;
+    rig::Skeleton skel;
+    core::RenderMesh rm;
+    rig::SkinData skin;
+};
+
+RiggedBody riggedBody() {
+    core::Mesh mesh = baseMesh();
+    auto skel = rig::loadSkeleton(std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel");
+    REQUIRE(skel.has_value());
+    REQUIRE(skel->updateJoints(mesh.coord()));
+    REQUIRE(skel->buildRestMatrices());
+    auto vw = rig::loadWeights(std::filesystem::path(MH_DATA_DIR) / "rigs" / "default_weights.mhw",
+                               mesh.vertexCount());
+    REQUIRE(vw.has_value());
+    auto rm             = core::RenderMesh::build(mesh);
+    const auto compiled = vw->compile(*skel, 4);
+    auto skin           = rig::buildSkinData(*skel, compiled, rm.vmap());
+    REQUIRE_FALSE(skin.jointNames.empty());
+    return RiggedBody{std::move(mesh), std::move(*skel), std::move(rm), std::move(skin)};
+}
+
+/// A skin over @p vertices bound to the SAME skeleton as @p from, every vertex
+/// on joint 0.
+///
+/// A fitted proxy's real weights come from `rig::proxyWeights`, which derives
+/// them against the body's skeleton. Borrowing the arrays here keeps the
+/// fixture about the SHARING rather than about inventing a second rig.
+struct BorrowedSkin {
+    std::vector<uint32_t> joints;
+    std::vector<float> weights;
+
+    foundation::SkinView view(const foundation::SkinView& from, size_t vertices) {
+        joints.assign(vertices * 4, 0);
+        weights.assign(vertices * 4, 0.0F);
+        for (size_t i = 0; i < vertices; ++i)
+            weights[i * 4] = 1.0F;
+        return foundation::SkinView{.jointNames   = from.jointNames,
+                                    .jointParents = from.jointParents,
+                                    .globalRest   = from.globalRest,
+                                    .globalPose   = from.globalPose,
+                                    .joints       = joints,
+                                    .weights      = weights,
+                                    .influences   = 4};
+    }
+};
+
+}  // namespace
+
+TEST_CASE("several skinned entries share ONE skeleton", "[io][usd][usdskel]") {
+    // The body and everything worn ride the same rig. UsdSkel expresses that
+    // directly -- one `Skeleton` prim, and every skinned Mesh binding to it
+    // through `rel skel:skeleton` -- so a second skeleton prim would be a
+    // second rig, and no skin at all leaves the proxy standing still while the
+    // body moves. Measured: the eyes protruded from their sockets.
+    const auto rigPath = std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel";
+    if (!std::filesystem::exists(rigPath)) return;
+
+    auto body                 = riggedBody();
+    const auto bodyView       = body.skin.view();
+    const core::Mesh eyesMesh = quadAt(8.0F, "eyes");
+    const auto rmEyes         = core::RenderMesh::build(eyesMesh);
+    BorrowedSkin borrowed;
+    const auto eyesView = borrowed.view(bodyView, rmEyes.view().vertexCount());
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_usdskel_shared.usda";
+    const std::vector<io::UsdSceneEntry> scene{
+        {body.rm.view(), "body", nullptr, &bodyView},
+        {rmEyes.view(), "eyes", nullptr, &eyesView},
+    };
+    REQUIRE(io::writeUsdaScene(out, scene).has_value());
+    const std::string t = readAll(out);
+
+    // ONE skeleton prim for the stage...
+    CHECK(countOccurrences(t, "def Skeleton \"Skel\"") == 1);
+    // ...and BOTH meshes bound to it. One binding is the old behaviour, where
+    // only the first entry was skinned.
+    CHECK(countOccurrences(t, "rel skel:skeleton = </") == 2);
+    CHECK(countOccurrences(t, "prepend apiSchemas = [\"SkelBindingAPI\"]") == 2);
+    // Weights are PER MESH -- that is the whole reason each entry carries its
+    // own skin rather than sharing the body's arrays.
+    CHECK(countOccurrences(t, "int[] primvars:skel:jointIndices") == 2);
+    CHECK(countOccurrences(t, "float[] primvars:skel:jointWeights") == 2);
+
+    // And they are the RIGHT arrays. `interpolation = "vertex"` means one
+    // element per vertex per influence, so writing the scene skin's arrays on
+    // every mesh gives the eyes the body's 58,068 indices for its 4 vertices --
+    // a count no reader can reconcile, and one nothing above would notice.
+    const auto lengthOf = [&t](const char* key, size_t from) {
+        const size_t at = t.find(key, from);
+        REQUIRE(at != std::string::npos);
+        const size_t open  = t.find('[', at + std::strlen(key) - 1);
+        const size_t close = t.find(']', open);
+        REQUIRE(close != std::string::npos);
+        return std::count(t.begin() + static_cast<long>(open), t.begin() + static_cast<long>(close),
+                          ',') +
+               1;
+    };
+    const char* kIdx    = "int[] primvars:skel:jointIndices = ";
+    const size_t bodyAt = t.find(kIdx);
+    REQUIRE(bodyAt != std::string::npos);
+    CHECK(static_cast<size_t>(lengthOf(kIdx, 0)) == body.rm.view().vertexCount() * 4);
+    CHECK(static_cast<size_t>(lengthOf(kIdx, bodyAt + 1)) == rmEyes.view().vertexCount() * 4);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("entries skinned to DIFFERENT skeletons are refused", "[io][usd][usdskel]") {
+    // One `Skeleton` prim means one is CHOSEN, and every other entry's
+    // jointIndices then index it. Across unrelated rigs that indexing is
+    // nonsense: the stage opens, poses, and moves each vertex with whatever
+    // joint shares its number.
+    const auto rigPath = std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel";
+    if (!std::filesystem::exists(rigPath)) return;
+
+    auto body                 = riggedBody();
+    const auto bodyView       = body.skin.view();
+    const core::Mesh eyesMesh = quadAt(8.0F, "eyes");
+    const auto rmEyes         = core::RenderMesh::build(eyesMesh);
+    BorrowedSkin borrowed;
+    auto eyesView = borrowed.view(bodyView, rmEyes.view().vertexCount());
+    std::vector<std::string> other(bodyView.jointNames.begin(), bodyView.jointNames.end());
+    other[0]            = "hips";
+    eyesView.jointNames = other;
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_usdskel_mixed.usda";
+    std::error_code gone;
+    std::filesystem::remove(out, gone);
+    const std::vector<io::UsdSceneEntry> scene{
+        {body.rm.view(), "body", nullptr, &bodyView},
+        {rmEyes.view(), "eyes", nullptr, &eyesView},
+    };
+    const auto r = io::writeUsdaScene(out, scene);
+    REQUIRE_FALSE(r.has_value());
+    CHECK(r.error().kind == io::UsdWriteErrorKind::MixedSkeletons);
+    CHECK(r.error().detail.find("eyes") != std::string::npos);
+    // Nothing written: a refused export must not leave a partial stage where
+    // the previous good one was.
+    CHECK_FALSE(std::filesystem::exists(out));
+}
+
 TEST_CASE("a skinned stage binds a UsdSkel skeleton", "[io][usd][usdskel]") {
     const auto rigPath = std::filesystem::path(MH_DATA_DIR) / "rigs" / "default.mhskel";
     if (!std::filesystem::exists(rigPath)) return;
@@ -497,8 +645,8 @@ TEST_CASE("a skinned stage binds a UsdSkel skeleton", "[io][usd][usdskel]") {
     REQUIRE(skin.globalRest.size() == 163);
 
     const auto out = std::filesystem::temp_directory_path() / "mh_usdskel.usda";
-    const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr}};
-    REQUIRE(io::writeUsdaScene(out, scene, {}, &view).has_value());
+    const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr, &view}};
+    REQUIRE(io::writeUsdaScene(out, scene).has_value());
 
     std::ifstream in(out);
     const std::string t((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
@@ -597,8 +745,8 @@ TEST_CASE("the skeleton is in the same space as the mesh", "[io][usd][usdskel][u
     const auto view     = skin.view();
 
     const auto out = std::filesystem::temp_directory_path() / "mh_usdskel_space.usda";
-    const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr}};
-    REQUIRE(io::writeUsdaScene(out, scene, {}, &view).has_value());
+    const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr, &view}};
+    REQUIRE(io::writeUsdaScene(out, scene).has_value());
     const std::string t = readAll(out);
 
     // The mesh's own declared bounds, straight out of the file.
@@ -699,7 +847,7 @@ TEST_CASE("a stage with blend shapes is rooted at a SkelRoot, with no skeleton",
     const std::vector<foundation::MorphTarget> morphs{{"smile", deltas}};
 
     const auto out = std::filesystem::temp_directory_path() / "mh_usd_blendshape.usda";
-    const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr, morphs}};
+    const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr, nullptr, morphs}};
     REQUIRE(io::writeUsdaScene(out, scene).has_value());
 
     std::ifstream in(out);
@@ -753,8 +901,8 @@ TEST_CASE("a stage refuses a second blend shape set, and a mismatched one",
     std::error_code ec;
 
     SECTION("two entries carrying blend shapes") {
-        const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr, a},
-                                                   {rm.view(), "shirt", nullptr, a}};
+        const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr, nullptr, a},
+                                                   {rm.view(), "shirt", nullptr, nullptr, a}};
         const auto r = io::writeUsdaScene(out, scene);
         REQUIRE_FALSE(r.has_value());
         CHECK(r.error().kind == io::UsdWriteErrorKind::InvalidMorphTarget);
@@ -763,7 +911,7 @@ TEST_CASE("a stage refuses a second blend shape set, and a mismatched one",
     SECTION("deltas that do not describe the entry's mesh") {
         const std::vector<foundation::Vec3> tooShort(3, foundation::Vec3{});
         const std::vector<foundation::MorphTarget> bad{{"bad", tooShort}};
-        const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr, bad}};
+        const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr, nullptr, bad}};
         const auto r = io::writeUsdaScene(out, scene);
         REQUIRE_FALSE(r.has_value());
         CHECK(r.error().kind == io::UsdWriteErrorKind::InvalidMorphTarget);
@@ -782,7 +930,7 @@ TEST_CASE("a blend shape that moves nothing is still a valid target", "[io][usd]
     const std::vector<foundation::MorphTarget> morphs{{"still", none}};
 
     const auto out = std::filesystem::temp_directory_path() / "mh_usd_bs_empty.usda";
-    const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr, morphs}};
+    const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr, nullptr, morphs}};
     REQUIRE(io::writeUsdaScene(out, scene).has_value());
 
     std::ifstream in(out);

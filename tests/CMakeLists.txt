@@ -554,6 +554,39 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION "mesh \"eyes\":.*skin of 179 bones"
         FIXTURES_REQUIRED app_worn_glb_file)
 
+    # ...and USD, which had it worst: `writeUsdaScene` took the skin as a
+    # PARAMETER and bound it to the first entry, so nothing worn could ever be
+    # skinned. Counted rather than merely found: a stage with one Skeleton prim
+    # and ONE mesh bound to it contains every key a correct one does.
+    add_test(NAME app_worn_skin_usda_export COMMAND makehuman
+             --rig mixamo_superset
+             --eyes high-poly
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_worn.usda)
+    set_tests_properties(app_worn_skin_usda_export PROPERTIES
+        PASS_REGULAR_EXPRESSION "eyes skin: 179 joints"
+        FIXTURES_SETUP app_worn_usda_file)
+    add_test(NAME app_worn_skin_usda_bound COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_worn.usda
+             "-DNEEDLE=rel skel:skeleton = </"
+             -DCOUNT=2
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_count.cmake)
+    set_tests_properties(app_worn_skin_usda_bound PROPERTIES
+        FIXTURES_REQUIRED app_worn_usda_file)
+    # ONE skeleton, shared. Two prims would be two rigs.
+    add_test(NAME app_worn_skin_usda_one_skeleton COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_worn.usda
+             "-DNEEDLE=def Skeleton"
+             -DCOUNT=1
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_count.cmake)
+    set_tests_properties(app_worn_skin_usda_one_skeleton PROPERTIES
+        FIXTURES_REQUIRED app_worn_usda_file)
+    if(MH_USDCHECKER)
+        add_test(NAME app_worn_skin_usda_valid
+                 COMMAND ${MH_USDCHECKER} ${CMAKE_CURRENT_BINARY_DIR}/app_worn.usda)
+        set_tests_properties(app_worn_skin_usda_valid PROPERTIES
+            FIXTURES_REQUIRED app_worn_usda_file)
+    endif()
+
     # What a character is WEARING was not saved, and reopening it silently
     # substituted the default. Measured before the fix: saved wearing Low-Poly,
     # reopened wearing HighPolyEyes.

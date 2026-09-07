@@ -161,7 +161,7 @@ int main(int argc, char** argv) {
     // is no skeleton at all, and Blender imports that invalid stage without
     // complaint. run_blender_validation.sh runs usdchecker on this.
     const std::vector<mh::io::UsdSceneEntry> exprStage{
-        {rm.view(), "body", nullptr, units},
+        {rm.view(), "body", nullptr, nullptr, units},
     };
     if (const auto r = mh::io::writeUsdaScene(out / "expressions.usda", exprStage); !r) {
         std::fprintf(stderr, "expressions usda: %s\n", r.error().message().c_str());
