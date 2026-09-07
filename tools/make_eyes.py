@@ -102,6 +102,55 @@ def recolour(rgb: np.ndarray, mask: np.ndarray, hue: float, sat_mul: float,
     return out
 
 
+def differences(png: Path, want_rgb: np.ndarray, want_alpha: np.ndarray,
+                src_shape: tuple[int, ...]) -> list[str]:
+    """How @p png disagrees with what the generator would write.
+
+    Compared as PIXELS, not as file bytes. PNG encoders are not
+    byte-reproducible across versions or platforms, so a byte compare would
+    fail on CI for a file that is perfectly correct -- and a gate that cries
+    wolf gets switched off.
+    """
+    got = np.asarray(Image.open(png).convert("RGBA")).astype(int)
+    if got.shape != src_shape:
+        return [f"{png.name}: {got.shape} against the source's {src_shape}"]
+
+    out: list[str] = []
+    if not np.array_equal(got[:, :, :3], want_rgb):
+        differing = int((got[:, :, :3] != want_rgb).any(2).sum())
+        out.append(f"{png.name}: {differing} pixels differ from what the generator produces")
+    # The alpha-0 cornea disc is the whole reason these are recolours rather
+    # than fresh images; losing it paints an opaque disc over the iris in the
+    # high-poly proxy.
+    if not np.array_equal(got[:, :, 3], want_alpha):
+        out.append(f"{png.name}: the alpha channel differs from the source's")
+    return out
+
+
+def check_generated(src: np.ndarray, rgb: np.ndarray, alpha: np.ndarray,
+                    mask: np.ndarray) -> list[str]:
+    """Every way the committed eye assets fail to match this generator.
+
+    Existence alone is not enough, and that is all this used to check. A
+    generated asset that no longer matches its generator is the failure mode:
+    change COLOURS, forget to re-run, and the shipped PNGs stay at the old hue
+    while the tool that documents them says otherwise. Same question
+    `build_mixamo_superset.py --check` asks of the skeleton.
+    """
+    problems: list[str] = []
+    for name, (hue, sat_mul, val_mul) in COLOURS.items():
+        png = EYES / f"{name}_eye.png"
+        mat = EYES / f"{name}.mhmat"
+        absent = [f for f in (png, mat) if not f.exists()]
+        if absent:
+            problems += [f"{f.name}: missing" for f in absent]
+            continue
+        problems += differences(png, recolour(rgb, mask, hue, sat_mul, val_mul), alpha, src.shape)
+        if mat.read_text() != MHMAT.format(name=name):
+            problems.append(f"{mat.name}: does not match the MHMAT template")
+    return problems
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true",
@@ -130,12 +179,18 @@ def main() -> int:
               "recolouring would touch the sclera", file=sys.stderr)
         return 1
     if args.check:
-        for name in COLOURS:
-            for f in (EYES / f"{name}_eye.png", EYES / f"{name}.mhmat"):
-                if not f.exists():
-                    print(f"missing {f}", file=sys.stderr)
-                    return 1
-        print("ok")
+        stale = check_generated(src, rgb, alpha, mask)
+        if stale:
+            print("generated eye assets are stale:", file=sys.stderr)
+            for line in stale:
+                print(f"  {line}", file=sys.stderr)
+            print(
+                "\nRe-run without --check to regenerate:\n"
+                "  ./.venv-mh/bin/python tools/make_eyes.py",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"ok -- {len(COLOURS)} eye colours match the generator")
         return 0
 
     for name, (hue, sat_mul, val_mul) in COLOURS.items():

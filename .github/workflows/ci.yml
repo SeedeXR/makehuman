@@ -267,10 +267,23 @@ jobs:
 
   inventories:
     name: inventories (task views, Mixamo rig)
-    # One stdlib-only Python script -- no need for a macOS runner.
+    # Pure Python -- no need for a macOS runner. Mostly stdlib; the eye-asset
+    # check decodes a PNG and does array maths, so this job installs Pillow and
+    # NumPy for that one step. They are the SAME libraries the tool uses locally
+    # from .venv-mh, deliberately: a second implementation of the iris mask --
+    # a stdlib PNG decoder written to keep the job dependency-free -- could
+    # disagree with the one that generates the assets, and then the gate would
+    # be checking the wrong thing.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # An interpreter pip can install into. The runner's system Python can be
+      # marked externally-managed (PEP 668), which turns `pip install` into a
+      # hard error -- and this job now needs two wheels.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       # memory/taskviews.md carries counts taken from the reference. A stale
       # number there misdirects the roadmap, so it is re-derived, not trusted.
       - name: Task-view inventory matches the reference
@@ -302,6 +315,20 @@ jobs:
       # that only ran on the build machine.
       - name: Runtime asset paths are resolved, not compiled in
         run: python3 tools/audit_runtime_paths.py
+
+      # The six eye colours are GENERATED from brown_eye.png by recolouring the
+      # iris, and the tool rests on a measured assumption: every pixel with
+      # saturation > 0.35 is inside one of the two iris discs, so the sclera's
+      # blood vessels are untouched by construction. A future retouch of the
+      # source could break that silently, and the recoloured assets could drift
+      # from the generator that documents them. Both are checked here.
+      #
+      # It was not in CI at all until 2026-09-07, for want of these two wheels.
+      - name: Install Pillow and NumPy for the eye-asset check
+        run: python3 -m pip install --quiet pillow numpy
+
+      - name: Generated eye colours match their generator
+        run: python3 tools/make_eyes.py --check
 
       # ONE product version, in /VERSION. CMake reads it, the generated
       # Version.h carries it, and the two files that cannot read it -- the

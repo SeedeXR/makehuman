@@ -4,6 +4,84 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-07 (sixth) — Session · **The eye-asset gate runs in CI, and it was checking almost nothing**
+
+### The chunk
+`tools/make_eyes.py --check` existed and was **not in CI**, for want of two
+wheels: the `inventories` job is Python-only on ubuntu and the tool needs Pillow
+and NumPy. The item offered two options and I took the first — pip-install them
+in that job — and **rejected the second on purpose**. A stdlib PNG decoder
+written to keep the job dependency-free would be a SECOND implementation of the
+iris mask, free to disagree with the one that generates the assets; the gate
+would then be checking the wrong thing with great confidence.
+
+`actions/setup-python@v5` went in first, because a runner's system Python can be
+externally-managed (PEP 668) and `pip install` is then a hard error. **Verified
+by reproducing the step in a clean venv with pip wheels rather than assuming**:
+exit 0 under NumPy 2.5.3, where local `.venv-mh` has 2.5.2.
+
+### The gate was weak, and that was the real find
+`--check` asserted only that the generated files EXISTED. It would pass happily
+on assets that no longer matched the generator — change `COLOURS`, forget to
+re-run, and the shipped PNGs stay at the old hue while the tool that documents
+them says otherwise. Its sibling `build_mixamo_superset.py --check` asks the
+staleness question; this one did not.
+
+It now recomputes each recolour and compares **pixels, not file bytes** — PNG
+encoders are not byte-reproducible across versions or platforms, and a byte
+compare would fail on CI for a file that is perfectly correct. A gate that cries
+wolf gets switched off. It also checks the alpha-0 cornea disc survived (losing
+it paints an opaque disc over the iris in the high-poly proxy) and compares each
+`.mhmat` against the template.
+
+Null result worth recording: the committed assets **do** match the generator, on
+both NumPy versions. 1.9 s.
+
+Four mutations, all killed with the file and a count: one perturbed iris pixel
+(`1 pixels differ`), a hand-edited `.mhmat`, a flattened alpha channel, and a
+changed `COLOURS` hue without regenerating (`78960 pixels differ`). Each was run
+against the real tracked assets and restored with `git checkout --`.
+
+### SonarQube caught the shape of it
+Inlining the whole staleness loop into `main()` took its cognitive complexity to
+30 against a limit of 15 — a CRITICAL, and a fair one. Split into `differences()`
+(one PNG against what the generator would write) and `check_generated()` (the
+loop over colours). **Every mutation was re-run after the refactor**, because a
+restructure of checking logic is exactly where a gate quietly loses its teeth;
+all five still bite, including a newly added "file missing" case.
+
+Process note: the first attempt at that split spliced on a marker that no longer
+matched and produced an `IndentationError`, and my "restore the pristine copy"
+fallback was itself a copy taken *after* the first edit. The assertion in the
+second attempt refused to fire and nothing was written, which is the only reason
+it was obvious. Splice on text read back from the file in the same step, not on
+a remembered marker.
+
+### Licence records were wrong, and hard rule 6 applies
+Pillow's `LICENSING.md` row claimed `make_appicon.py` was its only user and that
+"a machine without Pillow builds fine" — half stale once `make_eyes.py` is a CI
+gate. And **NumPy was not recorded as ours at all**, only as a legacy-Python
+dependency in a different table. Both fixed, with the honest note that they are
+unpinned: if a future release changes rounding, the gate will report correct
+assets as stale, and the fix at that point is to pin.
+
+### Also closed
+**"Test the PRODUCTION build"** (owner request, 2026-09-06). Every sub-bullet was
+already resolved; I verified the two load-bearing claims rather than tick the box
+— the `dmg` target is at `src/app/CMakeLists.txt:41-67`, and all three of
+`resolveDataDir`/`resolveShaderDir`/`resolveResourceDir` exist in
+`DataDir.h:36,47,56` — then ran the release `.app` end to end for `--version`, a
+posed USD export and a PBR render.
+
+### Next
+`memory/todo.md` in milestone order. The remaining M8 items are either owner
+decisions (the seven empty proxy choosers; docks-vs-tabs, which the misnamed
+"Materials" dock is tied to) or content-blocked (`ExpressionTaskView`, no
+`.mhpose` files). The next actionable ones are symbolic shortcut/mouse
+persistence and canonicalising the texture dedup key.
+
+---
+
 ## 2026-09-07 (fifth) — Session · **One product version, and the SMPL-X alternatives verified**
 
 Two owner requests in one fire.

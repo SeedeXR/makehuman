@@ -2900,7 +2900,11 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         choices are saved separately.
       - Prerequisite was the transparency/V-flip fix: colour choices are
         meaningless while every eye renders as an opaque blob.
-- [ ] **OWNER REQUEST (2026-09-06): test the PRODUCTION build, not only debug.**
+- [x] **OWNER REQUEST (2026-09-06): test the PRODUCTION build, not only debug.**
+      Closed 2026-09-07: every sub-bullet below is resolved and re-verified —
+      the `dmg` target is at `src/app/CMakeLists.txt:41-67` and all three of
+      `resolveDataDir` / `resolveShaderDir` / `resolveResourceDir` exist
+      (`include/makehuman/foundation/DataDir.h:36,47,56`).
       Now part of the standing gate: after the four presets, the
       **release-preset `.app` bundle** is run end to end
       (`build/macos-arm64-release/src/app/makehuman.app/Contents/MacOS/makehuman`)
@@ -2925,9 +2929,31 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         `buildAssetGroups` scanning `MH_DATA_DIR` directly for litspheres, poses
         and eyes — invisible on the build machine, fatal anywhere else.
         `tools/audit_runtime_paths.py` guards it in CI.
-- [ ] **`tools/make_eyes.py --check` is NOT in CI.** The `inventories` job is
-      stdlib-only on ubuntu; this needs PIL and numpy. Either add them to that
-      job or give the tool a stdlib PNG reader.
+- [x] **`tools/make_eyes.py --check` runs in CI now** (2026-09-07). Took the
+      first option the item offered — pip-install Pillow and NumPy in the
+      `inventories` job — and **rejected the second on purpose**: a stdlib PNG
+      decoder written to keep that job dependency-free would be a SECOND
+      implementation of the iris mask, able to disagree with the one that
+      generates the assets, and then the gate would be checking the wrong thing.
+      `actions/setup-python@v5` was added first, because the runner's system
+      Python can be externally-managed (PEP 668) and `pip install` is then a
+      hard error. Verified by reproducing the step in a clean venv with pip
+      wheels, not by assuming: exit 0, NumPy 2.5.3.
+      - **`--check` was weak and is now a real gate.** It only asserted the
+        generated files EXISTED, so it passed on stale ones. It now recomputes
+        each recolour and compares PIXELS (not file bytes — PNG encoders are not
+        byte-reproducible across versions, and a gate that cries wolf gets
+        switched off), checks the alpha-0 cornea disc survived, and compares each
+        `.mhmat` against the template.
+      - Null result worth having: the committed assets **do** match the
+        generator, on both NumPy 2.5.2 and 2.5.3.
+      - Four mutations killed, each naming the file and the count: one perturbed
+        iris pixel (`1 pixels differ`), a hand-edited `.mhmat`, a flattened alpha
+        channel, and a changed `COLOURS` hue without regenerating
+        (`78960 pixels differ`).
+      - Pillow's `LICENSING.md` row was stale — it claimed `make_appicon.py` was
+        the only user — and **NumPy was not recorded as ours at all**, only as a
+        legacy-Python dependency. Both fixed (hard rule 6).
 - [ ] **OWNER DECISION: the seven empty proxy choosers.** They are blocked on
       CONTENT, not code. Upstream ships these as separate downloadable asset
       packs. Either (a) an asset-pack decision, or (b) generate proxies
