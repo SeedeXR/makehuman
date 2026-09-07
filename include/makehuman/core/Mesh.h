@@ -20,6 +20,7 @@ enum class MeshError {
     FaceArraySizeMismatch,  ///< faceVerts not a whole number of primitives
     UvArraySizeMismatch,    ///< faceUVs present but not parallel to faceVerts
     MaskSizeMismatch,       ///< a vertex mask not parallel to the vertex array
+    VertexCountMismatch,    ///< changeCoords given a different number of vertices
 };
 
 /// Indexed mesh with a uniform primitive size.
@@ -173,6 +174,23 @@ public:
     /// it would strand a vertex index already recorded in the face arrays --
     /// the same reasoning as setUVs.
     [[nodiscard]] std::expected<void, MeshError> setCoords(std::vector<Vec3> coords);
+
+    /// Moves the vertices WITHOUT redefining the morph base.
+    ///
+    /// The reference splits these two deliberately (`module3d.py:523` vs
+    /// `:591`) and everything that DEFORMS a mesh -- skinning
+    /// (`shared/animation.py:1092`) and proxy fitting (`shared/proxy.py:227`)
+    /// -- uses this one. `setCoords` says "this is different geometry" and
+    /// makes it the base that `Human::applyStack` restores before replaying
+    /// the morph stack; a pose written through setCoords therefore BECOMES
+    /// that base, and the next rebuild re-morphs and re-poses on top of the
+    /// last one. Measured on the shipped T-pose: 18 cm of drift on the second
+    /// rebuild, and a morph base 70 cm from the real one.
+    ///
+    /// @return VertexCountMismatch if @p coords is not the length of the
+    ///         current vertex array. Deformation cannot add or remove
+    ///         vertices, and a caller that resized meant setCoords.
+    [[nodiscard]] std::expected<void, MeshError> changeCoords(std::vector<Vec3> coords);
     /// Sets the UV array. Rejected if it would strand a UV index already
     /// recorded in the face arrays -- setFaces validates against the UVs
     /// present at that moment, so shrinking them afterwards would leave

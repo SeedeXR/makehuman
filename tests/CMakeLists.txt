@@ -55,6 +55,7 @@ add_executable(mh_tests
     golden/test_gltf_writer.cpp
     golden/test_scene_io.cpp
     golden/test_roundtrip.cpp
+    regression/test_repose.cpp
     regression/test_review_findings.cpp
     regression/test_io_review_findings.cpp)
 

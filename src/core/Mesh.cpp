@@ -31,6 +31,19 @@ std::expected<void, MeshError> Mesh::setCoords(std::vector<Vec3> coords) {
     return {};
 }
 
+std::expected<void, MeshError> Mesh::changeCoords(std::vector<Vec3> coords) {
+    // No index validation: the count is unchanged, so every index that was in
+    // range still is. module3d.py:591 does not check even that.
+    if (coords.size() != coord_.size()) return std::unexpected(MeshError::VertexCountMismatch);
+
+    coord_ = std::move(coords);
+    // origCoord_ is deliberately left alone -- that is the whole point of this
+    // function; see the header.
+    vnorm_.clear();
+    vtang_.clear();
+    return {};
+}
+
 std::expected<void, MeshError> Mesh::setUVs(std::vector<Vec2> uvs) {
     if (!fuvs_.empty()) {
         const auto n = static_cast<uint32_t>(uvs.size());

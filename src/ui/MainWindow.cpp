@@ -101,6 +101,7 @@ struct MainWindow::Impl {
     QUndoStack* undo{};
     Units units{Units::Metric};
     Weight weight{Weight::Percent};
+    Skinning skinning{Skinning::Linear};
     /// The reference's persistent macro line. A permanent status-bar widget,
     /// because showMessage is transient and every other message would wipe it.
     QLabel* macroStatus{};
@@ -365,6 +366,52 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
         emit unitsChanged(d_->units);
     });
 
+    // Skinning, under a separator: Units and Real weight change how a number is
+    // WRITTEN, this changes the geometry on screen. It is the one setting here
+    // that costs a re-pose, which is why the app is told rather than polling.
+    //
+    // Radio entries rather than one "Dual quaternion" checkbox: unchecked would
+    // have to be read as "linear blend" without ever saying so, and the choice
+    // is between two named methods, not between a feature and its absence.
+    settings->addSeparator();
+    QMenu* skinningMenu = settings->addMenu(tr("Skinning"));
+    registerText(skinningMenu, QT_TR_NOOP("Skinning"));
+    skinningMenu->menuAction()->setObjectName(QStringLiteral("settings.skinning"));
+    skinningMenu->menuAction()->setIcon(theme::icon("bone", theme::palette().textSecondary, 16));
+
+    // Restored before the actions are built, so the right one starts checked.
+    // Stored as the word `--skinning` takes rather than an int: someone reading
+    // the ini file sees the same spelling they would type. Anything else reads
+    // as linear, which is the shipped default and the safe one.
+    d_->skinning =
+        workspaceSettings().value(QStringLiteral("skinning")).toString() == QLatin1String("dqs")
+            ? Skinning::DualQuaternion
+            : Skinning::Linear;
+
+    auto* skinningGroup = new QActionGroup(this);
+    skinningGroup->setExclusive(true);
+    const auto addSkinning = [&](const char* label, const QString& objectName, Skinning value) {
+        QAction* a = skinningMenu->addAction(QCoreApplication::translate("", label));
+        registerText(a, label);
+        a->setObjectName(objectName);
+        a->setCheckable(true);
+        a->setChecked(d_->skinning == value);
+        skinningGroup->addAction(a);
+        connect(a, &QAction::triggered, this, [this, value] {
+            if (d_->skinning == value) return;
+            d_->skinning = value;
+            workspaceSettings().setValue(QStringLiteral("skinning"),
+                                         value == Skinning::DualQuaternion
+                                             ? QStringLiteral("dqs")
+                                             : QStringLiteral("linear"));
+            emit skinningChanged(value);
+        });
+    };
+    addSkinning(QT_TR_NOOP("Linear blend"), QStringLiteral("settings.skinning.linear"),
+                Skinning::Linear);
+    addSkinning(QT_TR_NOOP("Dual quaternion"), QStringLiteral("settings.skinning.dqs"),
+                Skinning::DualQuaternion);
+
     buildLanguageMenu();
 
     // The top toolbar (owner directive 8; the reference has one and we had
@@ -448,6 +495,23 @@ Units MainWindow::units() const {
 
 Weight MainWindow::weightMode() const {
     return d_->weight;
+}
+
+Skinning MainWindow::skinning() const {
+    return d_->skinning;
+}
+
+void MainWindow::setSkinning(Skinning method) {
+    d_->skinning = method;
+    // setChecked, not trigger: the menu entries are connected to `triggered`,
+    // which setChecked does not raise, so this moves the tick without
+    // persisting the choice or asking the app to re-pose. The exclusive
+    // QActionGroup unchecks the other one for us.
+    if (QAction* a = findChild<QAction*>(method == Skinning::DualQuaternion
+                                             ? QStringLiteral("settings.skinning.dqs")
+                                             : QStringLiteral("settings.skinning.linear"))) {
+        a->setChecked(true);
+    }
 }
 
 ViewportWidget* MainWindow::viewport() const {

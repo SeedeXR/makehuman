@@ -4,6 +4,77 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (fifteenth) — Session · **A skinning toggle, and the 70 cm defect it uncovered**
+
+### The chunk as asked
+Settings ▸ Skinning ▸ Linear blend / Dual quaternion. Radio entries beside
+Units, because "Dual quaternion" as a checkbox would make "linear blend" a
+state with no name. Persisted immediately, storing the word `--skinning` takes
+so the ini reads the way the flag is typed. `--skinning` on the command line
+wins for the run and moves the tick WITHOUT persisting or emitting: a flag is a
+decision about now, and the menu must never claim linear while the run is dual.
+
+The note this chunk came from said a live toggle "wants the viewport to re-pose
+live, which `poseInPlace` does not do on a settings change". That was wrong.
+`buildScene` already resets to the morph base and re-poses on every rebuild, so
+the wiring is two lines. Reality beat the memory, as the procedure says it will.
+
+### What looking at the picture found
+Rendering the toggle showed a DIFFERENT POSE, not different skinning. Chasing
+it down:
+
+- `Mesh::setCoords` captures the morph base (`origCoord_`, `module3d.py:532`),
+  and the app stored the POSED vertices through it. The posed mesh therefore
+  became the base that `Human::applyStack` resets to.
+- Startup poses once (`main.cpp:1826`); `buildScene` poses again for the window.
+  So **every window frame and every `--render` of a posed character has been
+  doubly posed**, and each further rebuild compounded it.
+- Measured: 18 cm of drift on the second rebuild, 70 cm of drift in the morph
+  base, and by the third rebuild the torso tears open along the helper seams.
+  The `--pose tpose` figure the window has been drawing has its arms 45° ABOVE
+  horizontal and its legs pinched together. Side by side with the fix it is not
+  a subtle difference.
+- Confirmed pre-existing and unrelated to skinning by triggering master's own
+  `unitsChanged` rebuild instead: same corruption.
+
+The fix is the reference's own split, which we had collapsed into one function:
+`Mesh::changeCoords` (`module3d.py:591`) writes positions and leaves
+`orig_coord` alone, and that is what the reference uses for skinning
+(`shared/animation.py:1092`) and proxy fitting (`shared/proxy.py:227`). All four
+of the app's deformation writes go through it now.
+
+**Why 638 tests missed it: nothing ever built the same scene twice.** `--export`
+poses once and is Blender-validated. The window and `--render` were only ever
+checked for pixel coverage, and a doubly posed body covers pixels.
+
+### Verification
+- `tests/regression/test_repose.cpp`: rebuild three times, demand bit-identical
+  coordinates and an intact morph base. Fails on the old code by 1.82 dm and
+  7.02 dm.
+- Toggling skinning at runtime is **pixel-identical** to starting in that mode
+  (0 differing pixels of 2.6 M) and differs from linear in 10,367.
+- Mutations: making `changeCoords` write the base, dropping its size guard,
+  making `setSkinning` persist, making it trigger, dropping the same-value
+  early-out, and ignoring the stored value at startup — all six caught.
+- Two survivors, both stated in `memory/todo.md` rather than glossed:
+  `setSkinning` calling `trigger()` instead of `setChecked()` is an EQUIVALENT
+  mutant (the assignment above it makes the slot early-out), and reverting
+  `main.cpp` to `setCoords` is genuinely ungated because `poseInPlace` lives in
+  `main.cpp`.
+
+### Blocked in the same session
+`osascript` has no assistive access on this machine, so the menu could not be
+clicked from a script. The real menu ACTION was triggered in-process instead by
+a temporary local patch — the same code path a click takes — and the patch was
+removed before the gates.
+
+### Next
+`memory/todo.md` in milestone order. The first-named follow-up is the pair
+recorded above: an assertion on a rendered posed body, and a blank-frame guard
+for `--render`, which currently exits 0 on a blank PNG.
+
+---
+
 ## 2026-09-07 (fourteenth) — Session · **DQS, and FOUR decorative gates in one chunk**
 
 ### The chunk

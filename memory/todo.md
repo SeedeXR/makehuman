@@ -3600,15 +3600,64 @@ agree today (geometry, UVs, and 169.5 cm under three unit conventions).
         and the 578 vertices that move by more than 1 mm all sit at Y 11.9–14.1
         on a 16.6 body — the shoulders, where a T-pose rotates most. Rendered
         both and looked: shoulders subtly fuller under DQS, no artefacts.
+        (2026-09-08: those two renders were of a DOUBLY POSED body — see the
+        `--pose` defect below. The measurement stands, because it was taken from
+        exported meshes, which are posed once; the pictures were re-taken after
+        the fix and say the same thing.)
       - **Non-rigid input is refused**, not approximated. DQS has no spelling
         for scale or shear, and silently dropping it gives a mesh that is
         quietly the wrong size.
       - Opt-in, not the default: LBS is cheaper, it is what the reference does,
         and it is indistinguishable wherever bones do not disagree much.
-- [ ] **No UI for `--skinning`.** The flag exists and the Settings menu is where
-      it would go, beside Units. Left out deliberately: this chunk was already
-      large, and a skinning toggle wants the viewport to re-pose live, which
-      `poseInPlace` does not currently do on a settings change.
+- [x] **UI for `--skinning`** (2026-09-08). Settings ▸ Skinning ▸ Linear blend /
+      Dual quaternion, radio entries beside Units, persisted in the same ini as
+      the word `--skinning` takes so the file reads the way the flag is typed.
+      The stored preference is the default and `--skinning` wins for the run;
+      the flag moves the tick without persisting, so the menu can never claim
+      linear while the run is dual. Verified end to end: toggling at runtime is
+      **pixel-identical** to starting in that mode (0 differing pixels of
+      2.6 M), and differs from linear in 10,367.
+      - The previous note here said a live toggle "wants the viewport to re-pose
+        live, which `poseInPlace` does not do". That was wrong: `buildScene`
+        already resets to the morph base and re-poses on every rebuild
+        (`src/app/main.cpp`, buildScene). Reality beat the memory.
+      - **It also uncovered a 70 cm defect** — see the entry below.
+- [x] **The window applied `--pose` TWICE** (found 2026-09-08, fixed the same
+      day). `Mesh::setCoords` redefines the morph base (`origCoord_`,
+      `module3d.py:532`) and the app stored the POSED vertices through it, so
+      the posed mesh became the base `Human::applyStack` resets to. Startup
+      poses once at `main.cpp:1826` and `buildScene` poses again for the
+      window, so **every window frame and every `--render` of a posed character
+      was doubly posed**, and each further rebuild — any slider, units, skin or
+      skinning change — compounded it: measured 18 cm of drift on the second
+      rebuild and a morph base 70 cm from the real one, with the torso tearing
+      open by the third.
+      - Fixed by porting the reference's own split: `Mesh::changeCoords`
+        (`module3d.py:591`) writes positions and leaves `orig_coord` alone, and
+        that is what the reference uses for skinning
+        (`shared/animation.py:1092`) and proxy fitting (`shared/proxy.py:227`).
+        All four of the app's deformation writes now use it.
+      - **Why 638 tests missed it:** nothing ever built the same scene twice.
+        `--export` poses once and is Blender-validated; the window and
+        `--render` were only ever checked for pixel coverage, and a doubly
+        posed body covers pixels. It was visible in a picture and nowhere else.
+      - Gate: `tests/regression/test_repose.cpp` rebuilds three times and
+        demands bit-identical coordinates plus an intact morph base, and
+        `tests/unit/test_mesh.cpp` pins `changeCoords` itself.
+- [ ] **Ungated: which `Mesh` method the app poses through.** Reverting
+      `main.cpp`'s `changeCoords` to `setCoords` — the exact defect above —
+      passes the whole suite, because `poseInPlace` lives in `main.cpp` and no
+      test can call it. Killing that mutation needs an assertion on a RENDERED
+      posed body; the two renders are unmistakable side by side (a clean T-pose
+      versus a torn one) but differ by only 8% in covered pixels, so a coverage
+      threshold would be brittle. `--render` also has **no blank-frame guard at
+      all** — `describe()` is only used by `--screenshot`, so a blank
+      production render exits 0. One chunk should close both.
+- [ ] **No UI toggle for skinning in the headless path.** The stored preference
+      is a WINDOW preference: `--export` and `--render` build no window, never
+      read it, and take `--skinning` alone. Deliberate — the flag is the
+      headless spelling — but a user who picks DQS in the menu and then scripts
+      an export gets LBS without being told.
 
 **SMPL / SMPL-X is licence-blocked for us** — see `LICENSING.md` §5.2. The full
 parametric model is research-only; the CC-BY subset deliberately omits the shape

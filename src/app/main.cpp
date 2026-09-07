@@ -326,7 +326,9 @@ bool poseInPlace(mh::core::Mesh& mesh, PoseRig& rig) {
                      gUseDualQuaternion ? "dual quaternion" : "linear blend");
         return false;
     }
-    if (const auto ok = mesh.setCoords(std::move(posed)); !ok) {
+    // changeCoords, not setCoords: posing must not redefine the morph base that
+    // applyStack resets to, or every rebuild poses on top of the last one.
+    if (const auto ok = mesh.changeCoords(std::move(posed)); !ok) {
         std::fprintf(stderr, "cannot store the posed mesh (MeshError %d)\n",
                      static_cast<int>(ok.error()));
         return false;
@@ -480,7 +482,7 @@ std::optional<WornProxy> wearProxy(const std::filesystem::path& path, const mh::
 void refitProxy(WornProxy& worn, const mh::core::Mesh& body) {
     std::vector<mh::foundation::Vec3> fitted;
     if (!mh::core::fitProxy(worn.proxy, body.coord(), fitted)) return;
-    if (!worn.mesh.setCoords(std::move(fitted))) return;
+    if (!worn.mesh.changeCoords(std::move(fitted))) return;
     worn.mesh.calcNormals();
     worn.mesh.calcVertexTangents();
     worn.rm.refreshPositions(worn.mesh);
@@ -2021,7 +2023,7 @@ int main(int argc, char** argv) {
         if (liveRig) {
             // Kept so the interactive path can undo this; see the restore below.
             posedBackup.assign(mesh->coord().begin(), mesh->coord().end());
-            if (!mesh->setCoords(std::vector<mh::foundation::Vec3>(rig.restCoords))) {
+            if (!mesh->changeCoords(std::vector<mh::foundation::Vec3>(rig.restCoords))) {
                 std::fprintf(stderr, "cannot restore the rest mesh for a live rig\n");
                 return false;
             }
@@ -2112,7 +2114,7 @@ int main(int argc, char** argv) {
         if (!posedBackup.empty()) {
             // Cannot fail: it is the vertex array this mesh was carrying a
             // moment ago, so the size already matches.
-            (void)mesh->setCoords(std::move(posedBackup));
+            (void)mesh->changeCoords(std::move(posedBackup));
             mesh->calcNormals();
             mesh->calcVertexTangents();
             for (auto& [group, worn] : wornProxies)
@@ -2490,6 +2492,28 @@ int main(int argc, char** argv) {
     // render disagreeing.
     window.viewport()->setShadingModel(shading);
     shell = &window;
+
+    // Skinning. The stored preference is the default and `--skinning` wins for
+    // the run, because a flag typed now is a decision about now; the menu is
+    // told either way, so it never claims linear while the run is dual.
+    //
+    // The preference is a WINDOW preference: a headless `--export` builds no
+    // window, does not read it, and takes `--skinning` alone. Recorded in
+    // memory/todo.md rather than hidden.
+    if (parser.isSet(skinningOpt)) {
+        window.setSkinning(gUseDualQuaternion ? mh::ui::Skinning::DualQuaternion
+                                              : mh::ui::Skinning::Linear);
+    } else {
+        gUseDualQuaternion = window.skinning() == mh::ui::Skinning::DualQuaternion;
+    }
+    // Re-posing live is the whole point, and it costs nothing extra: buildScene
+    // resets the mesh to its morph base with applyStack before posing it
+    // (src/app/main.cpp, buildScene), so the second method is applied to the
+    // REST mesh rather than on top of the first one's result.
+    QObject::connect(&window, &mh::ui::MainWindow::skinningChanged, [&](mh::ui::Skinning method) {
+        gUseDualQuaternion = method == mh::ui::Skinning::DualQuaternion;
+        rebuildInto(window);
+    });
     panel = new mh::ui::ModifierPanel(views);
     for (const auto& [id, v] : presets)
         panel->setValue(id, v);

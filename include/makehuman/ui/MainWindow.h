@@ -9,6 +9,7 @@
 #include <QMainWindow>
 #include <QStringList>
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <vector>
@@ -18,6 +19,17 @@ class QUndoStack;
 namespace mh::ui {
 
 class ViewportWidget;
+
+/// How a pose is applied to the mesh.
+///
+/// A preference rather than a property of the character: the same body posed
+/// either way is the same body. Linear is the default because it is what the
+/// reference does, what every export already carries, and indistinguishable
+/// from the alternative wherever the bones do not disagree much.
+enum class Skinning : uint8_t {
+    Linear,         ///< linear blend skinning
+    DualQuaternion  ///< keeps volume where two bones disagree; costs more
+};
 
 /// The application shell: a viewport with dockable panels around it.
 ///
@@ -111,6 +123,19 @@ public:
     /// Whether the status line shows a mass or the slider percentage.
     [[nodiscard]] Weight weightMode() const;
 
+    /// The skinning method, restored from QSettings at construction so the
+    /// choice survives a restart. Linear until they say otherwise.
+    [[nodiscard]] Skinning skinning() const;
+
+    /// Shows @p method as the current one WITHOUT emitting or persisting.
+    ///
+    /// This is for `--skinning`, which is a decision about one run: the app has
+    /// already applied it, so emitting would ask for a rebuild of a scene that
+    /// does not exist yet, and storing it would overwrite the preference the
+    /// user chose in the menu. Without it the menu would claim linear while the
+    /// run is dual.
+    void setSkinning(Skinning method);
+
     /// Restores docks and geometry from QSettings, or lays out the defaults.
     void restoreWorkspace();
     void saveWorkspace() const;
@@ -150,6 +175,10 @@ signals:
     /// Settings > Units changed. Carries the new value so the app can reformat
     /// the status line without asking back.
     void unitsChanged(Units units);
+
+    /// Settings > Skinning changed. The app owns the rig and the mesh, so it
+    /// re-poses; this module only knows which method the user picked.
+    void skinningChanged(Skinning method);
 
     /// Edit > Randomise. Belongs with Undo rather than in File: it edits the
     /// character rather than producing a file, and it is the one command in the

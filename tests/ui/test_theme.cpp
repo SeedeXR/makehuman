@@ -47,6 +47,7 @@
 #include <QRegularExpression>
 #include <QScrollArea>
 #include <QSet>
+#include <QSettings>
 #include <QSlider>
 #include <QSpinBox>
 #include <QStandardPaths>
@@ -2194,5 +2195,94 @@ TEST_CASE("the units setting persists and is exclusive", "[ui][status]") {
         // flipped and does not depend on the order it runs in.
         w2.findChild<QAction*>(QStringLiteral("settings.units.metric"))->trigger();
         CHECK(w2.units() == mh::ui::Units::Metric);
+    }
+}
+
+// The skinning method is a preference of the same kind as Units -- the same
+// character posed either way is the same character -- so it sits in the same
+// menu and obeys the same rules: exclusive, persisted the moment it is chosen,
+// and emitted once so the app can re-pose. `--skinning` shipped in the previous
+// chunk with no way to reach it from the window, which is the gap this closes.
+//
+// Like the units test above, this writes the developer's REAL preference file:
+// MainWindow's QSettings is not redirected. It puts the shipped default back at
+// the end, and touches only the one key.
+TEST_CASE("the skinning setting persists and is exclusive", "[ui][skinning]") {
+    theme::setIconDir(std::filesystem::path(MH_RESOURCE_DIR) / "icons" / "lucide");
+
+    const auto stored = [] {
+        return QSettings(QSettings::IniFormat, QSettings::UserScope, QStringLiteral("MakeHuman"),
+                         QStringLiteral("MakeHumanCpp"));
+    };
+
+    // A fresh install has no stored value, and LBS is the documented default:
+    // it is what the reference does and what every export already carries.
+    stored().remove(QStringLiteral("skinning"));
+    {
+        mh::ui::MainWindow w(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+        auto* linear = w.findChild<QAction*>(QStringLiteral("settings.skinning.linear"));
+        auto* dqs    = w.findChild<QAction*>(QStringLiteral("settings.skinning.dqs"));
+        REQUIRE(linear != nullptr);
+        REQUIRE(dqs != nullptr);
+        CHECK(linear->isCheckable());
+        CHECK(dqs->isCheckable());
+        CHECK(w.skinning() == mh::ui::Skinning::Linear);
+        CHECK(linear->isChecked());
+        CHECK_FALSE(dqs->isChecked());
+
+        int emitted           = 0;
+        mh::ui::Skinning seen = mh::ui::Skinning::Linear;
+        QObject::connect(&w, &mh::ui::MainWindow::skinningChanged, [&](mh::ui::Skinning m) {
+            ++emitted;
+            seen = m;
+        });
+
+        dqs->trigger();
+        CHECK(emitted == 1);
+        CHECK(seen == mh::ui::Skinning::DualQuaternion);
+        CHECK(w.skinning() == mh::ui::Skinning::DualQuaternion);
+
+        // Exclusive: choosing one unchecks the other, or both read as active.
+        CHECK(dqs->isChecked());
+        CHECK_FALSE(linear->isChecked());
+
+        // Re-triggering the SAME method must not emit again -- the app re-poses
+        // 19,158 vertices on this signal, and a redundant rebuild every time the
+        // menu is opened is a real cost.
+        dqs->trigger();
+        CHECK(emitted == 1);
+    }
+
+    // A second window reads the stored value.
+    {
+        mh::ui::MainWindow w2(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+        CHECK(w2.skinning() == mh::ui::Skinning::DualQuaternion);
+        CHECK(w2.findChild<QAction*>(QStringLiteral("settings.skinning.dqs"))->isChecked());
+
+        // `--skinning` is a decision about ONE run: it moves the tick so the
+        // menu cannot claim linear while the run is dual, and it neither emits
+        // (the app has already applied it, and asking it to re-pose a scene it
+        // has not built yet is a crash waiting to happen) nor overwrites the
+        // preference the user chose in the menu.
+        int emitted = 0;
+        QObject::connect(&w2, &mh::ui::MainWindow::skinningChanged,
+                         [&](mh::ui::Skinning) { ++emitted; });
+        w2.setSkinning(mh::ui::Skinning::Linear);
+        CHECK(emitted == 0);
+        CHECK(w2.skinning() == mh::ui::Skinning::Linear);
+        CHECK(w2.findChild<QAction*>(QStringLiteral("settings.skinning.linear"))->isChecked());
+        CHECK_FALSE(w2.findChild<QAction*>(QStringLiteral("settings.skinning.dqs"))->isChecked());
+        CHECK(stored().value(QStringLiteral("skinning")).toString() == QLatin1String("dqs"));
+    }
+
+    // ...and a third window still restores what the MENU last chose, not what
+    // the flag last showed.
+    {
+        mh::ui::MainWindow w3(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+        CHECK(w3.skinning() == mh::ui::Skinning::DualQuaternion);
+        // Put the shipped default back, so this test does not leave the
+        // developer's own preference flipped and does not depend on run order.
+        w3.findChild<QAction*>(QStringLiteral("settings.skinning.linear"))->trigger();
+        CHECK(w3.skinning() == mh::ui::Skinning::Linear);
     }
 }

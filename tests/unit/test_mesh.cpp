@@ -96,6 +96,25 @@ TEST_CASE("resetToOriginal restores the morph base", "[core][mesh]") {
     REQUIRE(m.coord()[0] == Vec3{0, 0, 0});
 }
 
+TEST_CASE("changeCoords deforms without moving the morph base", "[core][mesh]") {
+    // module3d.py:591. Deformation -- skinning, proxy fitting -- goes through
+    // this and NOT setCoords, which would make the deformed mesh the base that
+    // resetToOriginal restores; see Mesh.h and tests/regression/test_repose.cpp.
+    Mesh m = makeUnitQuad();
+    REQUIRE(m.changeCoords({{0, 9, 0}, {1, 9, 0}, {1, 9, 1}, {0, 9, 1}}).has_value());
+    CHECK(m.coord()[0] == Vec3{0, 9, 0});
+    CHECK(m.origCoord()[0] == Vec3{0, 0, 0});
+    m.resetToOriginal();
+    CHECK(m.coord()[0] == Vec3{0, 0, 0});
+
+    // Adding or removing vertices is setCoords' job, and only setCoords
+    // re-validates the face indices that would strand.
+    const auto shorter = m.changeCoords({{0, 0, 0}, {1, 0, 0}});
+    REQUIRE_FALSE(shorter.has_value());
+    CHECK(shorter.error() == MeshError::VertexCountMismatch);
+    CHECK(m.vertexCount() == 4);
+}
+
 TEST_CASE("height is the Y extent in decimetres scaled to centimetres", "[core][mesh][units]") {
     // human.py:694-699 -- internal units are decimetres.
     Mesh m("bar", 4);
