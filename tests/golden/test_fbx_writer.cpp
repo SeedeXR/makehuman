@@ -20,6 +20,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -562,6 +563,148 @@ TEST_CASE("no skin means no deformer", "[io][fbx][skin]") {
     const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
     CHECK(blob.find("BindPose") == std::string::npos);
     CHECK(blob.find("LimbNode") == std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("blend shapes become a BlendShape deformer", "[io][fbx][morph]") {
+    // Read out of Maya's own output: three objects per target -- a
+    // `Geometry`/`Shape` holding the deltas, a `Deformer`/`BlendShapeChannel`
+    // holding the weight, and one `Deformer`/`BlendShape` on the geometry that
+    // owns the channels.
+    const auto out = tempFbx("morph");
+    const auto m   = quad();
+    const auto rm  = core::RenderMesh::build(m);
+
+    std::vector<foundation::Vec3> deltas(rm.view().vertexCount(), foundation::Vec3{0, 0, 0});
+    deltas[1] = {0.0F, 0.4F, 0.0F};
+    const std::array<foundation::MorphTarget, 1> targets{
+        foundation::MorphTarget{"nose-base-up", deltas}};
+    REQUIRE(io::writeFbx(out, rm.view(), {}, nullptr, nullptr, targets).has_value());
+
+    const auto b = readAll(out);
+    const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
+    for (const char* needed :
+         {"BlendShape", "BlendShapeChannel", "Shape", "DeformPercent", "FullWeights",
+          // The target's name has to survive: a DCC lists blend shapes by name
+          // and an unnamed one is unusable however correct its deltas are.
+          "nose-base-up"}) {
+        INFO(needed);
+        CHECK(blob.find(needed) != std::string::npos);
+    }
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("a blend shape stores only the vertices it moves", "[io][fbx][morph]") {
+    // SPARSE, like Maya's own: the shape carries an `Indexes` array and only the
+    // deltas for those vertices. The expression targets move a few hundred
+    // vertices of 21,833, so a dense shape would be two orders of magnitude of
+    // zeros -- and 34 of them.
+    const auto out = tempFbx("morph_sparse");
+    const auto m   = quad();
+    const auto rm  = core::RenderMesh::build(m);
+
+    std::vector<foundation::Vec3> deltas(rm.view().vertexCount(), foundation::Vec3{0, 0, 0});
+    deltas[1] = {0.0F, 0.4F, 0.0F};  // exactly one vertex moves
+    const std::array<foundation::MorphTarget, 1> targets{foundation::MorphTarget{"one", deltas}};
+    REQUIRE(io::writeFbx(out, rm.view(), {}, nullptr, nullptr, targets).has_value());
+
+    const auto b = readAll(out);
+    const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
+    const size_t at = blob.find("Indexes");
+    REQUIRE(at != std::string::npos);
+    size_t o = at + std::strlen("Indexes");
+    REQUIRE(b[o] == 'i');
+    // One moved vertex, not four. A dense writer would say 4 here and be
+    // "correct" in every other respect.
+    CHECK(u32At(b, o + 1) == 1);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("a blend shape delta is a displacement, not a point", "[io][fbx][morph]") {
+    // With feetOnGround the mesh is lifted by a ground offset. A DELTA must not
+    // be: it is a displacement, and adding the offset to it shifts the whole
+    // body once per active target -- 34 times over on a full expression export.
+    // The default is feetOnGround FALSE, so a test that leaves it alone cannot
+    // see this at all, which is why the mutation survived the first pass.
+    const auto out = tempFbx("morph_ground");
+    core::Mesh m("raised", 4);
+    // Sitting at y = 1, so levelling it moves the mesh by a known -10 cm.
+    REQUIRE(m.setCoords({{0, 1, 0}, {0.7F, 1, 0}, {0.7F, 1, 0.7F}, {0, 1, 0.7F}}).has_value());
+    m.addFaceGroup("g");
+    REQUIRE(m.setFaces({0, 1, 2, 3}, {}, {0}).has_value());
+    m.buildAdjacency();
+    m.calcNormals();
+    const auto rm = core::RenderMesh::build(m);
+
+    std::vector<foundation::Vec3> deltas(rm.view().vertexCount(), foundation::Vec3{0, 0, 0});
+    deltas[1] = {0.0F, 0.4F, 0.0F};
+    const std::array<foundation::MorphTarget, 1> targets{foundation::MorphTarget{"lift", deltas}};
+    io::FbxWriteOptions opt;
+    opt.feetOnGround = true;
+    REQUIRE(io::writeFbx(out, rm.view(), opt, nullptr, nullptr, targets).has_value());
+
+    const auto b = readAll(out);
+    const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
+    const auto bytesOf = [](double v) {
+        std::string bytes(sizeof(double), '\0');
+        std::memcpy(bytes.data(), &v, sizeof(v));
+        return bytes;
+    };
+    // 0.4 dm scaled to centimetres is 4. The offset would make it -6.
+    CHECK(blob.find(bytesOf(4.0)) != std::string::npos);
+    CHECK(blob.find(bytesOf(-6.0)) == std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("the channel is named after its target", "[io][fbx][morph]") {
+    // The channel is what a DCC LISTS. Naming every channel the same thing
+    // still produces a file whose shapes carry the right names -- and a blend
+    // shape panel of identical entries. Checked on the channel record itself,
+    // because the name also appears on the Shape geometry and a plain search
+    // finds that one.
+    const auto out = tempFbx("morph_named");
+    const auto m   = quad();
+    const auto rm  = core::RenderMesh::build(m);
+    std::vector<foundation::Vec3> deltas(rm.view().vertexCount(), foundation::Vec3{0, 0, 0});
+    deltas[1] = {0.0F, 0.4F, 0.0F};
+    const std::array<foundation::MorphTarget, 1> targets{
+        foundation::MorphTarget{"mouth-open", deltas}};
+    REQUIRE(io::writeFbx(out, rm.view(), {}, nullptr, nullptr, targets).has_value());
+
+    const auto b = readAll(out);
+    const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
+    // `Name\0\x01SubDeformer` is how an object of that class is spelt, so this
+    // pins the name onto the CHANNEL rather than onto the shape.
+    const std::string expected = std::string("mouth-open") + '\0' + '\x01' + "SubDeformer";
+    CHECK(blob.find(expected) != std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("a target that moves nothing is not written", "[io][fbx][morph]") {
+    // An all-zero target is a blend shape a user can drag with no effect. The
+    // reference ships some (nose-base-up has 11 literally-zero rows of 305), so
+    // this is not hypothetical -- but a WHOLE target of zeros is.
+    const auto out = tempFbx("morph_empty");
+    const auto m   = quad();
+    const auto rm  = core::RenderMesh::build(m);
+    const std::vector<foundation::Vec3> zeros(rm.view().vertexCount(), foundation::Vec3{0, 0, 0});
+    const std::array<foundation::MorphTarget, 1> targets{foundation::MorphTarget{"still", zeros}};
+    REQUIRE(io::writeFbx(out, rm.view(), {}, nullptr, nullptr, targets).has_value());
+
+    const auto b = readAll(out);
+    const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
+    CHECK(blob.find("still") == std::string::npos);
+    CHECK(blob.find("BlendShapeChannel") == std::string::npos);
 
     std::error_code ec;
     std::filesystem::remove(out, ec);

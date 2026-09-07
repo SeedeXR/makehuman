@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <span>
 #include <string>
 
 namespace mh::io {
@@ -69,6 +70,7 @@ struct FbxWriteResult {
 [[nodiscard]] std::expected<FbxWriteResult, FbxWriteError> writeFbx(
     const std::filesystem::path& path, const foundation::RenderView& mesh,
     const FbxWriteOptions& options = {}, const foundation::MaterialDesc* material = nullptr,
-    const foundation::SkinView* skin = nullptr);
+    const foundation::SkinView* skin                      = nullptr,
+    std::span<const foundation::MorphTarget> morphTargets = {});
 
 }  // namespace mh::io

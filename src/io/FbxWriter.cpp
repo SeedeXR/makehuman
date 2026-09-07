@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <span>
 #include <vector>
 
 namespace mh::io {
@@ -698,6 +699,81 @@ Node bindPose(int64_t id, int64_t meshModelId, std::span<const int64_t> jointMod
     return p;
 }
 
+/// One blend shape target's geometry: which vertices move, and by how much.
+///
+/// SPARSE, like Maya's own. The shipped expression targets move a few hundred
+/// vertices of 21,833, so a dense shape would be two orders of magnitude of
+/// zeros, thirty-four times over.
+Node shapeGeometry(int64_t id, const std::string& name, const foundation::MorphTarget& target,
+                   const Transform& xf) {
+    Node g("Geometry");
+    g.addI64(id);
+    g.addString(objectName(name, "Geometry"));
+    g.addString("Shape");
+    Node v("Version");
+    v.addI32(100);
+    g.add(std::move(v));
+
+    std::vector<int32_t> indices;
+    std::vector<double> deltas;
+    for (size_t i = 0; i < target.deltas.size(); ++i) {
+        const Vec3& d = target.deltas[i];
+        if (d.x == 0.0F && d.y == 0.0F && d.z == 0.0F) continue;
+        indices.push_back(static_cast<int32_t>(i));
+        // Scaled like a position but WITHOUT the ground offset: a delta is a
+        // displacement, not a point, and adding the offset would shift the body
+        // once per active target.
+        deltas.push_back(static_cast<double>(d.x * xf.scale));
+        deltas.push_back(static_cast<double>(d.y * xf.scale));
+        deltas.push_back(static_cast<double>(d.z * xf.scale));
+    }
+    Node idx("Indexes");
+    idx.addArray('i', indices);
+    g.add(std::move(idx));
+    Node verts("Vertices");
+    verts.addArray('d', deltas);
+    g.add(std::move(verts));
+    // Normals, all zero: a shape may carry normal deltas and ours does not --
+    // the consumer recomputes, which is what the viewport does too and is more
+    // accurate than blending rest normals.
+    Node normals("Normals");
+    normals.addArray('d', std::vector<double>(deltas.size(), 0.0));
+    g.add(std::move(normals));
+    return g;
+}
+
+/// The channel that drives one target. `DeformPercent` 0 is the unmorphed
+/// state, which is what a file should open in; `FullWeights` is the 0..100
+/// scale at which the shape is fully applied.
+Node blendShapeChannel(int64_t id, const std::string& name) {
+    Node c("Deformer");
+    c.addI64(id);
+    c.addString(objectName(name, "SubDeformer"));
+    c.addString("BlendShapeChannel");
+    Node v("Version");
+    v.addI32(100);
+    c.add(std::move(v));
+    Node percent("DeformPercent");
+    percent.addF64(0.0);
+    c.add(std::move(percent));
+    Node weights("FullWeights");
+    weights.addArray('d', std::vector<double>{100.0});
+    c.add(std::move(weights));
+    return c;
+}
+
+Node blendShapeDeformer(int64_t id, const std::string& name) {
+    Node b("Deformer");
+    b.addI64(id);
+    b.addString(objectName(name, "Deformer"));
+    b.addString("BlendShape");
+    Node v("Version");
+    v.addI32(100);
+    b.add(std::move(v));
+    b.add(Node("Properties70"));
+    return b;
+}
+
 /// The scene document, and the `RootNode` that says where its root is.
 ///
 /// The `RootNode` child is what was missing when Maya imported this file as
@@ -907,11 +983,10 @@ std::string FbxWriteError::message() const {
     return file + ": unknown error";
 }
 
-std::expected<FbxWriteResult, FbxWriteError> writeFbx(const std::filesystem::path& path,
-                                                      const foundation::RenderView& mesh,
-                                                      const FbxWriteOptions& options,
-                                                      const foundation::MaterialDesc* material,
-                                                      const foundation::SkinView* skin) {
+std::expected<FbxWriteResult, FbxWriteError> writeFbx(
+    const std::filesystem::path& path, const foundation::RenderView& mesh,
+    const FbxWriteOptions& options, const foundation::MaterialDesc* material,
+    const foundation::SkinView* skin, std::span<const foundation::MorphTarget> morphTargets) {
     if (mesh.coord.empty() || mesh.index.empty()) {
         return std::unexpected(FbxWriteError{FbxWriteErrorKind::EmptyMesh, path.string(), {}});
     }
@@ -972,6 +1047,20 @@ std::expected<FbxWriteResult, FbxWriteError> writeFbx(const std::filesystem::pat
     const auto jointModelId   = [](size_t j) { return kJointModel + static_cast<int64_t>(j); };
     const auto jointAttrId    = [](size_t j) { return kJointAttr + static_cast<int64_t>(j); };
     const auto jointClusterId = [](size_t j) { return kJointCluster + static_cast<int64_t>(j); };
+
+    // Blend shapes. A target that moves NOTHING is dropped: it would be a shape
+    // a user can drag with no effect, which is worse than its absence.
+    constexpr int64_t kBlendId        = 9'000'000;
+    constexpr int64_t kBlendChannel   = 40'000'000;
+    constexpr int64_t kBlendShapeGeom = 50'000'000;
+    std::vector<size_t> movingTargets;
+    for (size_t t = 0; t < morphTargets.size(); ++t) {
+        const auto& deltas = morphTargets[t].deltas;
+        const bool moves   = std::ranges::any_of(
+            deltas, [](const Vec3& d) { return d.x != 0.0F || d.y != 0.0F || d.z != 0.0F; });
+        if (moves) movingTargets.push_back(t);
+    }
+    const bool withMorphs = !movingTargets.empty();
 
     // Placed exactly as the mesh was: rotation untouched, translation through
     // the same scale and ground offset. Doing it here rather than trusting the
@@ -1061,6 +1150,15 @@ std::expected<FbxWriteResult, FbxWriteError> writeFbx(const std::filesystem::pat
         }
         objects.add(bindPose(kPoseId, kModelId, jointModelIds, bindGlobal));
     }
+    if (withMorphs) {
+        objects.add(blendShapeDeformer(kBlendId, options.meshName));
+        for (const size_t t : movingTargets) {
+            objects.add(
+                blendShapeChannel(kBlendChannel + static_cast<int64_t>(t), morphTargets[t].name));
+            objects.add(shapeGeometry(kBlendShapeGeom + static_cast<int64_t>(t),
+                                      morphTargets[t].name, morphTargets[t], xf));
+        }
+    }
     objects.writeTo(out);
 
     Node conn = connections(kGeometryId, kModelId, kMaterialId, withTexture ? kTextureId : 0,
@@ -1086,6 +1184,24 @@ std::expected<FbxWriteResult, FbxWriteError> writeFbx(const std::filesystem::pat
                  parent < 0 ? int64_t{0} : jointModelId(static_cast<size_t>(parent)));
             link("OO", jointClusterId(j), kSkinId);
             link("OO", jointModelId(j), jointClusterId(j));
+        }
+    }
+    if (withMorphs) {
+        const auto link = [&conn](int64_t from, int64_t to) {
+            Node c("C");
+            c.addString("OO");
+            c.addI64(from);
+            c.addI64(to);
+            conn.add(std::move(c));
+        };
+        // The deformer hangs off the GEOMETRY, the channels off the deformer,
+        // and each shape off its channel. Any other order and a DCC lists the
+        // blend shapes with nothing behind them.
+        link(kBlendId, kGeometryId);
+        for (const size_t t : movingTargets) {
+            const auto channel = kBlendChannel + static_cast<int64_t>(t);
+            link(channel, kBlendId);
+            link(kBlendShapeGeom + static_cast<int64_t>(t), channel);
         }
     }
     conn.writeTo(out);

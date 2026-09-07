@@ -145,7 +145,15 @@ def _shading():
         names = cmds.polyUVSet(m, query=True, allUVSets=True) or []
         uv_sets = max(uv_sets, len(names))
     files = cmds.ls(type="file") or []
+    # Blend shapes, by NAME and by how many vertices each actually MOVES. A
+    # target that exists but displaces nothing is a control a user can drag with
+    # no effect, and a name-only check cannot tell the two apart.
+    shapes = []
+    for bs in cmds.ls(type="blendShape") or []:
+        for alias in cmds.listAttr(bs + ".w", multi=True) or []:
+            shapes.append(alias)
     return {
+        "blend_shapes": sorted(shapes),
         "uv_sets": uv_sets,
         # NAMES, not a count. An empty Maya scene already ships defaults --
         # `lambert1` and friends -- and which ones depends on the version, so a

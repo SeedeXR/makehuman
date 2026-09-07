@@ -1782,7 +1782,31 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
            the very values the bind-versus-pose test searches for. A tiny quad
            (0..0.7) separates them. A fixture that can supply the answer under
            test is not a fixture.
-      4. Blend shapes.
+      4. **Blend shapes — DONE, and both readers list them.** Three objects per
+         target, as Maya writes them: a `Geometry`/`Shape` holding the deltas, a
+         `Deformer`/`BlendShapeChannel` holding the weight, and one
+         `Deformer`/`BlendShape` on the geometry owning the channels.
+         - **SPARSE**, like Maya's own: an `Indexes` array and only the deltas
+           for those vertices. The shipped expression targets move a few hundred
+           of 21,833, so a dense shape would be two orders of magnitude of zeros,
+           34 times over.
+         - **Blender**: all three by name, with the right moved-vertex count
+           (5,823 each) and `value 0.0` — unmorphed on open, which is what a
+           file should do.
+         - **Maya**: all three, escaped as its node names require —
+           `mouth-open` arrives as `mouthFBXASC045open`. The names survive; they
+           are spelt Maya's way, and asserting the raw name would fail a
+           perfectly correct file.
+         - Maya imports each target as its own mesh (4 for base + 3), and does
+           the same to its OWN files — a cube with one target reports 2. Not a
+           defect in ours.
+         - Rendered the shape at 0 and at 1 in Blender and looked: the band
+           above the waist displaces, the mesh is intact in both.
+         - **Two mutations survived a fixture that could not see them.** The
+           ground offset on a delta is invisible unless `feetOnGround` is on,
+           and the default is off; and the channel name is invisible while the
+           SHAPE carries the same name, so a plain search finds that one. Both
+           now have their own test.
       Measured so far: Maya 2027 writes **FBX 7700** (FBX SDK 2020.3.9), assimp
       writes **7500**; both are 7.x binary and the record layout differs only in
       whether the record header's three counts are 32- or 64-bit (>=7500 is 64).

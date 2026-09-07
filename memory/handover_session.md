@@ -2140,6 +2140,53 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-07 10:15:00 — Session 166 · **FBX stage 4: blend shapes, and two tests that could not fail**
+
+### The chunk
+Blend shapes, learned from a Maya-authored file as every stage has been: three
+objects per target -- a `Geometry`/`Shape` with the deltas, a
+`Deformer`/`BlendShapeChannel` with the weight, and one `Deformer`/`BlendShape`
+on the geometry owning the channels -- wired
+`BlendShape -> Geometry`, `Channel -> BlendShape`, `Shape -> Channel`.
+
+Sparse, like Maya's: an `Indexes` array and only the deltas for those vertices.
+The shipped expression targets move a few hundred vertices of 21,833, so dense
+shapes would be two orders of magnitude of zeros, thirty-four times over.
+
+### Both readers list them
+- **Blender**: all three by name, 5,823 moved vertices each, `value 0.0` --
+  unmorphed on open, which is what a file should do.
+- **Maya**: all three, escaped the way its node names require --
+  `mouth-open` arrives as `mouthFBXASC045open`. Asserting the raw name would
+  fail a file that is perfectly correct, so the check uses the escaped form and
+  says why.
+- Maya imports each target as a separate mesh (4 for base + 3). It does the same
+  to its OWN files -- a cube with one target reports 2 -- so that is Maya, not
+  us. Checked before writing it down.
+- **Rendered the shape at 0 and at 1 and looked**: the band above the waist
+  displaces, the mesh is intact in both.
+
+### Two mutations survived because the fixtures could not see them
+- **The ground offset on a delta.** A delta is a displacement, not a point, so
+  the offset must not apply -- but `feetOnGround` defaults to FALSE, so the
+  offset is zero and the mutation is a no-op in every test that leaves the
+  default alone. Now there is a test that turns it on.
+- **The channel's name.** The SHAPE geometry carries the same name, so a plain
+  search for "mouth-open" finds it whatever the channel is called -- and the
+  channel is what a DCC lists. The test now pins the name onto the channel
+  record specifically, by matching `Name\0\x01SubDeformer`.
+
+Both are the same shape of mistake as session 165's: a fixture that cannot
+distinguish the thing under test from something else in the same file.
+
+### Verification
+ctest green in debug, release, ASan and TSan. Maya harness **4/4**. Blender
+confirms the shape keys. Format clean. Sonar OK. Mutations killed: dense shape,
+an all-zero target written, the ground offset applied to deltas, the channel
+name lost.
+
+---
+
 ## 2026-09-07 09:00:00 — Session 165 · **the live rig, in the format that could not express one**
 
 ### The result

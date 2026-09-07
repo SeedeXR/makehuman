@@ -49,6 +49,22 @@ EXPECT = {
         "uv_sets": 1,
         "material_names contains": "Skin",
     },
+    # OUR writer with blend shapes. The names come back ESCAPED: Maya cannot
+    # put a hyphen in a node name and encodes it as `FBXASC045`, so
+    # `mouth-open` arrives as `mouthFBXASC045open`. The names survive; they are
+    # just spelled Maya's way, and asserting the raw name would fail on a file
+    # that is perfectly correct.
+    "morphed.fbx": {
+        "blend_shapes": [
+            "headFBXASC045oval",
+            "mouthFBXASC045open",
+            "noseFBXASC045baseFBXASC045up",
+        ],
+        # 4 meshes, not 1: Maya imports each blend-shape target as its own mesh,
+        # and does the same to its OWN files -- a cube with one target reports
+        # 2. Ours is the base plus three targets.
+        "meshes": 4,
+    },
     "posed.fbx": {
         "joints": 179,
         "skin_clusters": 1,

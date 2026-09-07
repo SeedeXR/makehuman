@@ -1,5 +1,7 @@
 #include <cstdio>
+#include <span>
 #include <string>
+#include <utility>
 #include <vector>
 #include "makehuman/core/Mesh.h"
 #include "makehuman/core/ObjReader.h"
@@ -72,7 +74,30 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
-    auto r = mh::io::writeFbx(argv[1], rm.view(), {}, &desc, rigged ? &skin : nullptr);
+    // Three blend shapes when asked, so a DCC has something to list and drive.
+    // Named after the shipped expression units, since that is what the real
+    // export carries.
+    const bool morphed = argc > 2 && std::string(argv[2]) == "--morphed";
+    std::vector<std::vector<mh::foundation::Vec3>> deltaStore;
+    std::vector<mh::foundation::MorphTarget> targets;
+    if (morphed) {
+        const size_t n = rm.view().vertexCount();
+        for (const auto& [name, axis] : std::vector<std::pair<const char*, int>>{
+                 {"mouth-open", 1}, {"head-oval", 0}, {"nose-base-up", 2}}) {
+            std::vector<mh::foundation::Vec3> d(n, mh::foundation::Vec3{0, 0, 0});
+            // A band of the body moves, not all of it: a target that displaces
+            // every vertex is indistinguishable from a translation.
+            for (size_t i = 0; i < n; ++i) {
+                if (rm.view().coord[i].y < 6.0F) continue;
+                (&d[i].x)[axis] = 0.3F;
+            }
+            deltaStore.push_back(std::move(d));
+            targets.push_back({name, deltaStore.back()});
+        }
+    }
+    auto r = mh::io::writeFbx(argv[1], rm.view(), {}, &desc, rigged ? &skin : nullptr,
+                              morphed ? std::span<const mh::foundation::MorphTarget>(targets)
+                                      : std::span<const mh::foundation::MorphTarget>{});
     if (!r) {
         std::fprintf(stderr, "%s\n", r.error().message().c_str());
         return 1;

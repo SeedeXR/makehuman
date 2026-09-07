@@ -49,11 +49,14 @@ if [ -x "$probe" ]; then
     # FBX arrives as a statue and ours has to arrive as a rig Maya can pose.
     "$probe" "$out/rigged.fbx" --rigged >/dev/null &&
         echo "wrote $out/rigged.fbx (our writer, live rig)"
+    "$probe" "$out/morphed.fbx" --morphed >/dev/null &&
+        echo "wrote $out/morphed.fbx (our writer, blend shapes)"
 else
     echo "skip ours.fbx: $probe not built"
 fi
 
 "$MAYAPY" "$repo/tools/maya_validate.py" "$out/posed.fbx" "$out/ours.fbx" "$out/rigged.fbx" \
+    "$out/morphed.fbx" \
     2>/dev/null |
     grep '^MAYA_VALIDATE:' |
     python3 "$repo/tools/maya_check.py"
