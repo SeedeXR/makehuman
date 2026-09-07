@@ -15,6 +15,7 @@
 #include "makehuman/core/SkinTone.h"
 #include "makehuman/core/SliderLayout.h"
 #include "makehuman/core/Subdivider.h"
+#include "makehuman/core/Symmetry.h"
 #include "makehuman/core/Target.h"
 #include "makehuman/core/TargetIndex.h"
 #include "makehuman/foundation/DataDir.h"
@@ -1503,6 +1504,11 @@ int main(int argc, char** argv) {
         QStringLiteral("Randomise the character with this seed. Deterministic: the same seed "
                        "always gives the same person."),
         QStringLiteral("seed"));
+    const QCommandLineOption symmetryOpt(
+        QStringLiteral("symmetry"),
+        QStringLiteral("Mirror the character: l2r copies the left side onto the right, r2l the "
+                       "reverse. Runs after --set, so it mirrors the finished character."),
+        QStringLiteral("direction"));
     const QCommandLineOption shadingOpt(
         QStringLiteral("shading"),
         QStringLiteral("litsphere (the reference matcap, default) or pbr (metallic-roughness). "
@@ -1593,6 +1599,7 @@ int main(int argc, char** argv) {
     parser.addOption(transparentOpt);
     parser.addOption(eyeColourOpt);
     parser.addOption(randomOpt);
+    parser.addOption(symmetryOpt);
     const QCommandLineOption skinningOpt(
         QStringLiteral("skinning"),
         QStringLiteral("Skinning method: linear (default) or dqs. Dual quaternion skinning keeps "
@@ -1769,6 +1776,27 @@ int main(int argc, char** argv) {
             return 1;
         }
         presets.emplace_back(halves[0], v);
+    }
+
+    // Symmetry LAST, so it mirrors whatever --load, --random and --set between
+    // them produced. The spelling names both sides rather than just the target,
+    // because "--symmetry r" reads as "make it right-handed" to everyone who
+    // has not read `human.py:1238`.
+    if (parser.isSet(symmetryOpt)) {
+        const QString direction = parser.value(symmetryOpt).toLower();
+        if (direction != QLatin1String("l2r") && direction != QLatin1String("r2l")) {
+            std::fprintf(stderr, "unknown --symmetry direction \"%s\" (l2r or r2l)\n",
+                         direction.toStdString().c_str());
+            return 1;
+        }
+        const auto mirrored =
+            mh::core::symmetrise(human, direction == QLatin1String("l2r") ? 'r' : 'l');
+        std::printf("mirrored %zu modifiers (%s)\n", mirrored.size(),
+                    direction.toStdString().c_str());
+        // The sliders have to follow, exactly as --set's do: a panel showing
+        // the pre-mirror value snaps the model back on the first nudge.
+        for (const auto& [name, value] : mirrored)
+            presets.emplace_back(QString::fromStdString(name), value);
     }
 
     if (human.stackSize() > 0) {
@@ -2761,6 +2789,32 @@ int main(int argc, char** argv) {
             QObject::tr("Randomise"), std::move(changes), applyModifiers));
         window.statusBar()->showMessage(QObject::tr("Randomised %1 modifiers").arg(changed.size()),
                                         3000);
+    });
+
+    // Symmetry. Same shape as Randomise and for the same reason: it moves many
+    // sliders at once, so it is ONE undo step and one rebuild rather than 61.
+    QObject::connect(&window, &mh::ui::MainWindow::symmetryRequested, [&](char targetSide) {
+        // BEFORE values first, as above: symmetrise mutates `human` in place.
+        std::vector<mh::ui::MultiValueChangeCommand::Change> changes;
+        for (const auto& [name, value] : mh::core::symmetrise(human, targetSide)) {
+            const QString key = QString::fromStdString(name);
+            changes.push_back({key, panel->value(key), value});
+        }
+        if (changes.empty()) {
+            // Not silence: an already symmetric character is the common case
+            // for a fresh model, and a menu item that appears to do nothing is
+            // indistinguishable from one that is broken.
+            window.statusBar()->showMessage(QObject::tr("Already symmetric"), 3000);
+            return;
+        }
+        // Counted BEFORE the move: `changes` is empty afterwards, and the
+        // message would read "Mirrored 0 modifiers" every time.
+        const auto mirrored = static_cast<qsizetype>(changes.size());
+        window.undoStack()->push(new mh::ui::MultiValueChangeCommand(
+            targetSide == 'r' ? QObject::tr("Symmetry Left \u2192 Right")
+                              : QObject::tr("Symmetry Right \u2192 Left"),
+            std::move(changes), applyModifiers));
+        window.statusBar()->showMessage(QObject::tr("Mirrored %1 modifiers").arg(mirrored), 3000);
     });
 
     // The finished render is SHOWN, not filed. It used to demand a path before

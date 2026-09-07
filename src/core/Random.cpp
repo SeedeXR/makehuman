@@ -59,38 +59,6 @@ bool wanted(const Modifier& m, const RandomOptions& o) {
 
 }  // namespace
 
-char symmetrySide(std::string_view modifierName) noexcept {
-    size_t start = 0;
-    while (start <= modifierName.size()) {
-        const size_t dash           = modifierName.find('-', start);
-        const std::string_view part = modifierName.substr(
-            start, dash == std::string_view::npos ? std::string_view::npos : dash - start);
-        if (part == "l") return 'l';
-        if (part == "r") return 'r';
-        if (dash == std::string_view::npos) break;
-        start = dash + 1;
-    }
-    return '\0';
-}
-
-std::string symmetricOpposite(const Modifier& m) {
-    if (symmetrySide(m.name) == '\0') return {};
-
-    std::string flipped;
-    flipped.reserve(m.name.size());
-    size_t start = 0;
-    while (true) {
-        const size_t dash        = m.name.find('-', start);
-        const std::string_view p = std::string_view(m.name).substr(
-            start, dash == std::string::npos ? std::string_view::npos : dash - start);
-        flipped += (p == "l") ? "r" : (p == "r") ? "l" : std::string(p);
-        if (dash == std::string::npos) break;
-        flipped += '-';
-        start = dash + 1;
-    }
-    return m.group + "/" + flipped;
-}
-
 float randomValue(float minValue, float maxValue, float middle, float sigmaFactor,
                   uint64_t& state) {
     const float range = std::fabs(maxValue - minValue);

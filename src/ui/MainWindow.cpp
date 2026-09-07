@@ -239,6 +239,23 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     randomise->setShortcut(QKeySequence(QStringLiteral("Ctrl+R")));
     connect(randomise, &QAction::triggered, this, &MainWindow::randomiseRequested);
 
+    // Symmetry, the reference's third toolbar group (`core/mhmain.py:1516`).
+    // Here rather than on the toolbar: the two commands differ only in
+    // DIRECTION, lucide ships one mirror glyph and no left/right pair, and two
+    // identical icon-only buttons would be a coin toss. Words say it; the empty
+    // `resources/icons/custom/` is where a proper pair would go.
+    const auto addSymmetry = [&](const char* label, const QString& objectName, char targetSide) {
+        QAction* a =
+            edit->addAction(theme::icon("flip-horizontal-2", theme::palette().textSecondary, 16),
+                            QCoreApplication::translate("", label));
+        registerText(a, label);
+        a->setObjectName(objectName);
+        connect(a, &QAction::triggered, this,
+                [this, targetSide] { emit symmetryRequested(targetSide); });
+    };
+    addSymmetry(QT_TR_NOOP("Symmetry Left \u2192 Right"), QStringLiteral("edit.symmetryLtoR"), 'r');
+    addSymmetry(QT_TR_NOOP("Symmetry Right \u2192 Left"), QStringLiteral("edit.symmetryRtoL"), 'l');
+
     QMenu* workspace = menuBar()->addMenu(tr("&Workspace"));
     registerText(workspace, QT_TR_NOOP("&Workspace"));
     int index = 0;

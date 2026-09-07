@@ -2366,3 +2366,46 @@ TEST_CASE("the Smooth toggle reports intent and is not a preference", "[ui][smoo
     // that nothing is READ. This is what a stray write would trip over.
     CHECK_FALSE(stored().contains(QStringLiteral("smooth")));
 }
+
+// Symmetry, the reference's third toolbar group (`core/mhmain.py:1516-1522`).
+// In the Edit menu rather than the toolbar, and deliberately: the two commands
+// differ only in DIRECTION, lucide has one mirror glyph (`flip-horizontal-2`)
+// and no left/right pair, and two identical icon-only buttons side by side
+// would be a coin toss. A menu shows the direction in words.
+TEST_CASE("Edit offers both symmetry directions and names the target side", "[ui][symmetry]") {
+    theme::setIconDir(std::filesystem::path(MH_RESOURCE_DIR) / "icons" / "lucide");
+    mh::ui::MainWindow w(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+
+    auto* toRight = w.findChild<QAction*>(QStringLiteral("edit.symmetryLtoR"));
+    auto* toLeft  = w.findChild<QAction*>(QStringLiteral("edit.symmetryRtoL"));
+    REQUIRE(toRight != nullptr);
+    REQUIRE(toLeft != nullptr);
+
+    // On the Edit menu, with Undo and Randomise -- these are edits to the
+    // character, and every one of them has to be undoable in one step.
+    QMenu* edit = nullptr;
+    for (QMenu* m : w.menuBar()->findChildren<QMenu*>()) {
+        if (m->actions().contains(toRight)) edit = m;
+    }
+    REQUIRE(edit != nullptr);
+    CHECK(edit->actions().contains(toLeft));
+    CHECK(edit->actions().contains(w.findChild<QAction*>(QStringLiteral("edit.randomise"))));
+
+    // Not checkable: each is a one-shot command, not a mode. A checkable one
+    // would leave a tick that means nothing after the mirror has happened.
+    CHECK_FALSE(toRight->isCheckable());
+    CHECK_FALSE(toLeft->isCheckable());
+
+    std::vector<char> seen;
+    QObject::connect(&w, &mh::ui::MainWindow::symmetryRequested,
+                     [&](char side) { seen.push_back(side); });
+
+    // The letter names the side being OVERWRITTEN, which is the reference's own
+    // convention. Asserting the two differ would pass on a pair wired the same
+    // way round; asserting the letters pins the direction.
+    toRight->trigger();
+    toLeft->trigger();
+    REQUIRE(seen.size() == 2);
+    CHECK(seen[0] == 'r');
+    CHECK(seen[1] == 'l');
+}

@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 
-#include "makehuman/core/Modifier.h"
+// Symmetry.h for symmetrySide/symmetricOpposite: the randomiser mirrors pairs,
+// and the day a symmetry COMMAND needed them -- foretold in the note that used
+// to sit here -- they moved to their own header rather than being duplicated.
+#include "makehuman/core/Symmetry.h"
 
 #include <cstdint>
 #include <string>
@@ -27,22 +30,6 @@ struct RandomOptions {
     bool face{true};
     bool body{true};
 };
-
-/// The side of a symmetric pair this modifier name takes: `'l'`, `'r'`, or
-/// `'\0'` when symmetry does not apply.
-///
-/// A component of the `-`-separated name being exactly "l" or "r", not a
-/// prefix — `humanmodifier.py:304-311`. So `l-eye-height` is left and
-/// `lowerface-...` is not, which a `starts_with("l")` test would get wrong.
-[[nodiscard]] char symmetrySide(std::string_view modifierName) noexcept;
-
-/// The full name of the modifier mirroring @p m, or empty when it has none.
-///
-/// Lives here rather than on `Modifier` because the randomiser is its only
-/// caller. It moves onto `Modifier` the day a symmetry command needs it — the
-/// reference has left-to-right and right-to-left buttons in its toolbar, so
-/// that day is likely.
-[[nodiscard]] std::string symmetricOpposite(const Modifier& m);
 
 /// One draw from the reference's distribution
 /// (`0_modeling_8_random.py:184-192`).

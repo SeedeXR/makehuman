@@ -196,6 +196,13 @@ signals:
     /// mesh and must not learn how -- `core::Subdivider` is AGPL.
     void smoothChanged(bool on);
 
+    /// Edit > Symmetry. @p targetSide is the side to OVERWRITE -- `'r'` makes
+    /// the right side match the left -- which is the reference's own
+    /// convention (`core/mhmain.py:1516-1522`). A plain char rather than an
+    /// enum of two values, and for the same reason as the signals above: this
+    /// module reports intent and the app, which owns the modifiers, acts.
+    void symmetryRequested(char targetSide);
+
     /// Edit > Randomise. Belongs with Undo rather than in File: it edits the
     /// character rather than producing a file, and it is the one command in the
     /// application that changes hundreds of values at once.

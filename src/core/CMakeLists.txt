@@ -15,6 +15,7 @@ add_library(mh_core STATIC
     TargetIndex.cpp
     Modifier.cpp
     Random.cpp
+    Symmetry.cpp
     Mhm.cpp
     Proxy.cpp
     SkinTone.cpp

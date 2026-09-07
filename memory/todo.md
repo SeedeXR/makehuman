@@ -2743,14 +2743,55 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
               instead of `setChecked()` passed everything, because the test
               never called it on an ALREADY ticked button — and `trigger()`
               toggles. A stray QSettings write passed too. Both are now pinned.
+      - [x] **Symmetry, both directions** (2026-09-08). `core::symmetrise`
+            ports `Human.symmetrize` (`apps/human.py:1238-1264`); Edit ▸
+            Symmetry Left → Right and Right → Left drive it, and `--symmetry
+            l2r|r2l` makes it reachable headlessly — which is also the only way
+            the path could be gated, since the menu handler lives in
+            `main.cpp`.
+            - **In the Edit menu, not the toolbar, deliberately.** The two
+              commands differ only in DIRECTION, lucide ships one mirror glyph
+              (`flip-horizontal-2`) and no left/right pair, and two identical
+              icon-only buttons would be a coin toss. Words say it. A proper
+              pair belongs in the empty `resources/icons/custom/`.
+            - The direction letter names the side being OVERWRITTEN, which is
+              the reference's own crossover: `applySymmetryRight` calls
+              `symmetrize('r')`, whose SOURCE is the left side. The CLI spells
+              both sides (`l2r`) because `--symmetry r` reads as "make it
+              right-handed" to anyone who has not read that function.
+            - Two departures from the reference, both recorded in the header: a
+              half-installed pair is skipped rather than raising
+              (`human.py:1262` dereferences `getModifier` unconditionally), and
+              the value is read back after the write because
+              `setModifierValue` clamps — otherwise a pair with unequal ranges
+              would report a change forever.
+            - Only real changes are returned, so mirroring an already symmetric
+              character puts nothing on the undo stack and says "Already
+              symmetric" instead of appearing broken.
+            - **Measured, not assumed.** A character with three left limbs
+              widened is 22.97 % asymmetric by silhouette and has 4,666 of
+              14,444 vertices with no mirrored twin. After `l2r`: 1.69 % and
+              **58** vertices — which is exactly what the UNTOUCHED default
+              character has, so the command restores the base mesh's own
+              symmetry precisely. Rendered all three and looked: `l2r` gives two
+              thick limbs, `r2l` two thin ones.
+            - `symmetrySide` and `symmetricOpposite` moved out of `Random.h`
+              into `core/Symmetry.h`, which is what the note in that header
+              said should happen "the day a symmetry command needs it".
       - [ ] **The rest of that toolbar, and why it is still missing.** Wireframe
-            (`Ctrl+F` there), grid, pose-toggle, symmetry (3) and the body-part
-            camera views (~8) are NOT built: nothing here can draw edges, lay
-            down a floor or mirror anything, so each would be a painted no-op.
+            (`Ctrl+F` there), grid, the pose toggle and the body-part camera
+            views (~8) are NOT built: nothing here can draw edges, lay down a
+            floor or hide a pose, so each would be a painted no-op.
             `core::Material` carries a `wireframe` flag that no renderer reads,
             which is the closest any of them has to a foundation. The body-part
             views additionally need CUSTOM icons — lucide has no anatomy glyphs,
             which is what the empty `resources/icons/custom/` is for.
+      - [ ] **The symmetry MODE is not built.** The reference's third symmetry
+            button is a toggle (`symmetryModeEnabled`, `core/mhmain.py:1524`)
+            that mirrors every slider drag as it happens, rather than a one-shot
+            command. It wants a hook inside `Human::setModifierValue` or the
+            panel's `valueChanged`, and an undo entry that carries both sides;
+            the two one-shot commands are the useful half and are done.
       - [x] **Bottom stats line**, as a permanent status-bar widget (a transient
             `showMessage` would be wiped by the next "Saved workspace"). Format
             copied from `guimodifier.py:152-185`. Two rules there are NOT what a

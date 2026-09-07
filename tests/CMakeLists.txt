@@ -6,6 +6,7 @@ find_package(draco QUIET)
 add_executable(mh_tests
     unit/test_mesh.cpp
     unit/test_random.cpp
+    unit/test_symmetry.cpp
     unit/test_obj_reader.cpp
     unit/test_proxy_weights.cpp
     unit/test_tangents.cpp
@@ -458,6 +459,30 @@ if(MH_HAVE_RENDER)
              --skinning nonsense --export ${CMAKE_CURRENT_BINARY_DIR}/app_never.obj)
     set_tests_properties(app_skinning_unknown PROPERTIES
         PASS_REGULAR_EXPRESSION "unknown skinning method")
+
+    # Symmetry, end to end. The menu commands cannot be driven from a test --
+    # `symmetryRequested` is wired in main.cpp -- so `--symmetry` is what makes
+    # the whole path observable: one asymmetric modifier in, both sides equal
+    # out, in a file that can be read back.
+    add_test(NAME app_symmetry COMMAND makehuman
+             --set "eyes/l-eye-bag-decr|incr=0.8" --symmetry l2r
+             --save ${CMAKE_CURRENT_BINARY_DIR}/app_symmetry.mhm)
+    set_tests_properties(app_symmetry PROPERTIES
+        PASS_REGULAR_EXPRESSION "mirrored 1 modifiers"
+        FIXTURES_SETUP app_symmetry_mhm)
+    # ...and the file, because "the app said it mirrored one" and "the right eye
+    # actually carries the left one's value" are different claims. Both lines
+    # are asserted: the SOURCE has to survive untouched, or a command that
+    # simply zeroed both sides would pass.
+    add_test(NAME app_symmetry_file COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_symmetry.mhm
+             "-DKEYS=modifier eyes/r-eye-bag-decr|incr 0.800000;modifier eyes/l-eye-bag-decr|incr 0.800000"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_symmetry_file PROPERTIES FIXTURES_REQUIRED app_symmetry_mhm)
+    add_test(NAME app_symmetry_unknown COMMAND makehuman
+             --symmetry sideways --export ${CMAKE_CURRENT_BINARY_DIR}/app_never_sym.obj)
+    set_tests_properties(app_symmetry_unknown PROPERTIES
+        PASS_REGULAR_EXPRESSION "unknown --symmetry direction")
 
     # `--subdivide` had NO app-level test. Catmull-Clark itself is covered by
     # unit and golden fixtures; nothing checked that the flag reaches the scene,

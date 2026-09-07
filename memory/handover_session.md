@@ -4,6 +4,66 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (seventeenth) — Session · **Symmetry, in the menu where the direction can be read**
+
+### The chunk
+The next open toolbar group. Of what remained — wireframe, grid, pose toggle,
+symmetry, body-part cameras — **symmetry is the only one that needs no
+renderer**: it moves modifier values, and `symmetrySide` / `symmetricOpposite`
+have been sitting in `Random.h` under a note saying they move out "the day a
+symmetry command needs it". They moved to `core/Symmetry.h`.
+
+`core::symmetrise(human, targetSide)` ports `Human.symmetrize`
+(`apps/human.py:1238-1264`), Edit ▸ Symmetry Left → Right / Right → Left drives
+it through one `MultiValueChangeCommand` (one undo step, one rebuild, not 61),
+and `--symmetry l2r|r2l` makes it reachable headlessly.
+
+**In the Edit menu rather than the toolbar, and that is the design call worth
+recording.** The two commands differ only in DIRECTION; lucide ships one mirror
+glyph and no left/right pair, so two icon-only buttons side by side would be a
+coin toss. Words say which way it goes. The reference's own naming crosses over
+(`applySymmetryRight` → `symmetrize('r')` → copies the LEFT side), so the CLI
+spells both ends: `--symmetry r` would read as "make it right-handed".
+
+### Measured, then looked at
+- A character with three left limbs widened is **22.97 %** asymmetric by
+  silhouette, with **4,666 of 14,444** vertices having no mirrored twin.
+- After `l2r`: **1.69 %** and **58** vertices — and 58 is exactly what the
+  UNTOUCHED default character has, so the command restores the base mesh's own
+  symmetry precisely rather than approximately. That baseline was measured
+  before drawing any conclusion from the residual.
+- Rendered all three: `l2r` gives two thick limbs, `r2l` two thin ones. The
+  direction convention is right way round in the picture, not just in the test.
+
+### Gates and mutations
+Five mutations, all killed after one was rewritten: **deleting the
+"report only real changes" line did not compile** (`before` unused under
+-Werror), which is no test at all — the compiling form (`if (false && ...)`)
+fails two assertions. Mirroring the wrong way, stopping after the first pair,
+dropping the direction guard, and wiring both menu items the same way are the
+others.
+
+The app-level pair earns its place: under the wrong-way mutation the app still
+prints "mirrored 1 modifiers" and `app_symmetry` passes — only reading the
+saved `.mhm` and asserting **both** lines catches it. A command that zeroed both
+sides would pass a check on the target alone.
+
+### Reviewed my own diff and deleted from it
+`if (opposite.empty() || human.findModifier(opposite) == nullptr) continue;`
+was dead twice over: `opposite` cannot be empty after the side check, and
+`setModifierValue` already returns false for a name it does not know. It looked
+careful and tested nothing. Also fixed before it ever built: `changes.size()`
+read after `std::move(changes)`, which would have printed "Mirrored 0
+modifiers" every time.
+
+### Next
+`memory/todo.md` in milestone order. The symmetry MODE (the reference's third
+button — live mirroring on every slider drag) is recorded and not done. Still
+first among the named follow-ups: an assertion on a RENDERED posed body, and a
+blank-frame guard for `--render`.
+
+---
+
 ## 2026-09-08 (sixteenth) — Session · **Smooth: the one View-toolbar button that had its behaviour**
 
 ### The chunk
