@@ -2852,13 +2852,27 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         near the panel title it switches, and read as a status strip. Only
         visible by looking.
       Still to do: the rename below, which needs a settings-key migration.
-- [ ] **The two-level tab bar's labels truncate to nothing, and a screenshot of
-      the Tabbed preset made it obvious.** At a 380 px panel the Modelling
-      sub-tabs render as `Ma⋯ B⋯ G⋯ F⋯ T⋯ Ar⋯ M⋯` — seven tabs whose names are
-      each one letter. Pre-existing and independent of the tabbing work, but it
-      is the same "two-level tab bar" the owner's UI request asks for, and it is
-      unusable as it stands. Options: elide less aggressively, wrap to two rows,
-      scroll buttons, or icons with tooltips.
+- [x] **The two-level tab bar's labels no longer truncate to initials**
+      (2026-09-07). At a 380 px panel the Modelling sub-tabs rendered as
+      `Ma⋯ B⋯ G⋯ F⋯ T⋯ Ar⋯ M⋯`. They now read
+      **Macro modelling | Body shapes | Gender | Face** with ‹ › arrows to reach
+      Torso, Arms and Legs and Measure — screenshotted.
+      **Two style defaults combining into the worst case, and they differ per
+      platform.** Measured: the macOS style says `ElideRight` **and**
+      `usesScrollButtons == false`, so a bar needing 593 px in a 380 px dock
+      elides every label and never offers to scroll. Fusion says `ElideNone` and
+      `true`. `ModifierPanel` now sets both explicitly, so every style behaves
+      the same.
+      - **The test had to be pinned to the offending STYLE, not the platform.**
+        CI runs the offscreen platform, which uses Fusion — whose defaults
+        already satisfy the assertion, so a test reading them would have passed
+        on CI forever while macOS users saw initials. `QStyleFactory::create
+        ("macOS")` works under the offscreen platform, so the case that matters
+        is tested where it is not the default. Both mutations now fail on CI's
+        platform as well as on cocoa; before the pinning, one failed only on
+        cocoa.
+      - Same lesson as `file_count.cmake` last chunk, from the other direction:
+        an assertion that a default already satisfies is decorative.
       Noted, not fixed: a redundancy that came WITH tabbing is that a tabified
       dock shows its name twice, once in the tab and once in its own title bar.
       Standard Qt, and the title bar carries the grip and the close button, so

@@ -14,6 +14,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSlider>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QVBoxLayout>
 
@@ -135,6 +136,21 @@ ModifierPanel::ModifierPanel(std::span<const foundation::TaskViewSpec> views, QW
 
     tabs_ = new QTabWidget(this);
     tabs_->setObjectName(QStringLiteral("modifiers.tabs"));
+
+    // Both set EXPLICITLY, because the two style defaults combine into the
+    // worst possible behaviour and they differ per platform.
+    //
+    // Measured 2026-09-07: the macOS style says ElideRight and
+    // usesScrollButtons false, so a bar needing 593 px in a 380 px dock elides
+    // every label and never offers to scroll -- seven tabs rendered as
+    // "Ma... B... G... F... T... Ar... M...", one letter each. Fusion happens to
+    // say ElideNone and true, which is why nothing on the build machines ever
+    // showed it; only a screenshot on macOS did.
+    //
+    // ElideNone makes the bar ask for its natural width, which is what turns
+    // the scroll buttons on. Names stay readable and the user scrolls.
+    tabs_->tabBar()->setElideMode(Qt::ElideNone);
+    tabs_->tabBar()->setUsesScrollButtons(true);
     column->addWidget(tabs_, 1);
 
     for (const foundation::TaskViewSpec& view : views) {

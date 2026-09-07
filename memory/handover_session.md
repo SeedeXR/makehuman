@@ -4,6 +4,57 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-07 (eleventh) — Session · **Sub-tab labels, and a test that would have been decorative on CI**
+
+### The chunk
+The Modelling sub-tabs rendered as `Ma... B... G... F... T... Ar... M...` in a
+380 px dock — seven tabs reduced to one letter each. Found last chunk by looking
+at a screenshot, not by any assertion.
+
+**Two style defaults combining into the worst possible behaviour.** Measured:
+the macOS style says `SH_TabBar_ElideMode = ElideRight` **and**
+`usesScrollButtons == false`, so a bar wanting 593 px in a 380 px dock elides
+every label and never offers to scroll. `ModifierPanel` now sets both
+explicitly — `ElideNone` makes the bar ask for its natural width, which is what
+turns the scroll buttons on. Screenshotted: **Macro modelling | Body shapes |
+Gender | Face** with ‹ › arrows to the rest.
+
+### The part worth remembering
+My first version of the test **passed before the fix existed**.
+
+CI runs the offscreen platform, which uses the **Fusion** style, whose defaults
+are already `ElideNone` and scroll-buttons-on. So an assertion that simply read
+`bar->elideMode()` was satisfied by the default, and would have passed on CI
+forever while every macOS user saw initials. The measurements side by side:
+
+| style | elideMode | usesScrollButtons |
+|---|---|---|
+| fusion (offscreen, CI) | ElideNone | true |
+| macos (cocoa, real) | ElideRight | false |
+
+`QStyleFactory::create("macOS")` **is available under the offscreen platform**,
+so the test now applies that style to the tab bar and re-asserts. Before that
+pinning, removing the fix failed only on cocoa; after it, both mutations fail on
+CI's platform too.
+
+This is the same lesson as `file_count.cmake` last chunk, approached from the
+other side: there, a gate read nothing; here, an assertion read a default that
+already agreed with it. **An assertion the default already satisfies is
+decorative.** When a fix exists to override a platform default, the test has to
+recreate that default.
+
+### Mutations
+Two, both killed on both platforms: the explicit setters removed, and elision
+off but scroll buttons left off — which yields readable names you cannot reach.
+
+### Next
+`memory/todo.md` in milestone order. Remaining M8 work is owner-blocked (the
+seven empty proxy choosers; the preset-name rename, which is a CLI argument) or
+content-blocked (`ExpressionTaskView`, no `.mhpose` files). The actionable ones
+left are mouse-button persistence and the shortcut rebinding UI.
+
+---
+
 ## 2026-09-07 (tenth) — Session · **"Materials" becomes "Assets", and the rename costs nothing**
 
 ### The chunk

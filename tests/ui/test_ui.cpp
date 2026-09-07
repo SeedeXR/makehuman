@@ -23,10 +23,16 @@
 #include <QAccessible>
 #include <QApplication>
 #include <QDockWidget>
+#include <QFontMetrics>
+#include <QGuiApplication>
 #include <QLabel>
+#include <QLayout>
 #include <QMouseEvent>
 #include <QSettings>
 #include <QSlider>
+#include <QStyle>
+#include <QStyleFactory>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QUndoStack>
@@ -719,4 +725,62 @@ TEST_CASE("a duplicate id is still refused however it is titled", "[ui][registry
     REQUIRE(tasks.add(QStringLiteral("Materials"), QStringLiteral("Assets")));
     CHECK_FALSE(tasks.add(QStringLiteral("materials"), QStringLiteral("Something Else")));
     CHECK(tasks.categories().size() == 1);
+}
+
+// ------------------------------------------------ two-level tab labels -----
+//
+// Found by looking at a screenshot of the Tabbed workspace, not by any
+// assertion: in a 380 px dock the Modelling sub-tabs rendered as
+// `Ma... B... G... F... T... Ar... M...` -- seven tabs reduced to one letter
+// each. The names are real words: Face, Torso, Arms and Legs, Gender,
+// Macro modelling, and the body-shape and measure views.
+//
+// The cause is the pair of defaults. QTabBar elides to fit (macOS style says
+// ElideRight) and, because it elides, never needs the scroll buttons -- so it
+// silently destroys every label rather than offering to scroll. Turning elision
+// off makes the bar ask for its natural width, which is what turns the scroll
+// buttons on.
+TEST_CASE("sub-tab labels are not elided into initials", "[ui][modifiers][tabs]") {
+    const auto views = shippedModifierViews();
+    if (views.empty()) return;  // no data directory on this machine
+
+    mh::ui::ModifierPanel panel(views);
+    // The real dock width. `applyWorkspacePreset` resizes the first dock to 380,
+    // and that is the width the screenshot was taken at.
+    panel.resize(380, 900);
+    if (auto* l = panel.layout()) l->activate();
+
+    auto* bar = panel.tabs()->tabBar();
+    REQUIRE(bar != nullptr);
+    REQUIRE(bar->count() >= 5);
+
+    CHECK(bar->elideMode() == Qt::ElideNone);
+    CHECK(bar->usesScrollButtons());
+
+    // ...and under the style that actually breaks it. The build machines run
+    // FUSION, whose defaults happen to be ElideNone and scroll-buttons-on -- so
+    // an assertion reading only the defaults would pass on CI forever while
+    // macOS users saw initials. Measured: fusion ElideNone/true,
+    // macOS ElideRight/false.
+    //
+    // The macOS style is available on the offscreen platform, so the case that
+    // matters is testable where it is not the default.
+    if (QStyle* macStyle = QStyleFactory::create(QStringLiteral("macOS"))) {
+        macStyle->setParent(bar);  // outlives the bar by exactly as long as needed
+        bar->setStyle(macStyle);
+        bar->ensurePolished();
+        INFO("under the macOS style");
+        CHECK(bar->elideMode() == Qt::ElideNone);
+        CHECK(bar->usesScrollButtons());
+    }
+
+    // The assertion with teeth: every tab must be at least as wide as the text
+    // it has to show. With ElideRight this fails by a factor of five.
+    const QFontMetrics fm(bar->font());
+    for (int i = 0; i < bar->count(); ++i) {
+        const QString text = bar->tabText(i);
+        INFO("tab " << i << " \"" << text.toStdString() << "\" rect " << bar->tabRect(i).width()
+                    << " needs " << fm.horizontalAdvance(text));
+        CHECK(bar->tabRect(i).width() >= fm.horizontalAdvance(text));
+    }
 }
