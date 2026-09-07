@@ -7,6 +7,7 @@
 #include "makehuman/ui/MouseBindings.h"
 #include "makehuman/ui/PanelTitleBar.h"
 #include "makehuman/ui/Shortcuts.h"
+#include "makehuman/ui/ShortcutsDialog.h"
 #include "makehuman/ui/Theme.h"
 #include "makehuman/ui/ViewportWidget.h"
 #include "makehuman/ui/Workspace.h"
@@ -295,6 +296,19 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     // a short menu.
     QMenu* settings = menuBar()->addMenu(tr("&Settings"));
     registerText(settings, QT_TR_NOOP("&Settings"));
+    // Shortcuts first: it is the one entry here that answers a question a user
+    // arrives with ("how do I drive this"), and it covers the mouse too.
+    QAction* rebind = settings->addAction(tr("Shortcuts…"));
+    registerText(rebind, QT_TR_NOOP("Shortcuts…"));
+    rebind->setObjectName(QStringLiteral("settings.shortcuts"));
+    rebind->setIcon(theme::icon("sliders-horizontal", theme::palette().textSecondary, 16));
+    connect(rebind, &QAction::triggered, this, [this] {
+        QSettings stored = workspaceSettings();
+        ShortcutsDialog dialog(*this, d_->viewport->mouseBindings(), stored, this);
+        (void)dialog.exec();
+    });
+    settings->addSeparator();
+
     QMenu* unitsMenu = settings->addMenu(tr("Units"));
     registerText(unitsMenu, QT_TR_NOOP("Units"));
     unitsMenu->menuAction()->setObjectName(QStringLiteral("settings.units"));

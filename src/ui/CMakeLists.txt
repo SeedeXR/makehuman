@@ -19,6 +19,7 @@ add_library(mh_ui STATIC
     MouseBindings.cpp
     RenderDialog.cpp
     Shortcuts.cpp
+    ShortcutsDialog.cpp
     Theme.cpp
     PanelTitleBar.cpp
     ModifierPanel.cpp
@@ -35,6 +36,7 @@ add_library(mh_ui STATIC
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/MouseBindings.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/RenderDialog.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/Shortcuts.h
+    ${CMAKE_SOURCE_DIR}/include/makehuman/ui/ShortcutsDialog.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/ModifierPanel.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/AssetPanel.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/Workspace.h

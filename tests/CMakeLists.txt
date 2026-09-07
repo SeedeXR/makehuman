@@ -146,7 +146,8 @@ if(MH_HAVE_RENDER)
     # widget is constructed -- Catch2's main would build the widgets first.
     add_executable(mh_ui_tests ui/test_ui.cpp ui/test_theme.cpp ui/test_language.cpp
                                ui/test_image_viewer.cpp ui/test_shortcuts.cpp
-                               ui/test_mouse_bindings.cpp)
+                               ui/test_mouse_bindings.cpp
+                               ui/test_shortcuts_dialog.cpp)
     target_link_libraries(mh_ui_tests
         PRIVATE mh::ui mh::core Catch2::Catch2 mh::warnings mh::sanitize)
     target_compile_definitions(mh_ui_tests PRIVATE

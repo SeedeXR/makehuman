@@ -4,6 +4,59 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-07 (thirteenth) — Session · **The rebinding dialog, and the same defect twice in one day**
+
+### The chunk
+Settings ▸ Shortcuts…, built to owner directive 10, which put the design call
+here and judged it on how intuitive the result is.
+
+- **Keyboard and mouse in ONE dialog.** The reference splits them across
+  `5_settings_shortcuts.py` and `5_settings_mouse.py`, so a user must know
+  whether "how do I pan" is a shortcut question before they can find the answer.
+  One list of commands; some bound to keys, some to drags.
+- **Click a row, then press.** Bare modifiers do not end the recording —
+  otherwise the first Ctrl of Ctrl+K binds the command to nothing usable, and
+  every retry does the same, which is how a rebinding dialog earns a reputation
+  for being broken. Escape abandons.
+- **Conflicts on the row**, naming what was collided with. A modal alert hides
+  exactly the information the user needs behind an OK button.
+- Applied live, which obliges Cancel to undo.
+
+### The design question the tests exposed
+**Reset and Cancel are not the same restore point**, and my first cut used one
+value for both. Reset means "give me the default back"; Cancel means "forget
+what I just did". With no saved override those are the same string — so every
+test passed. It took writing a case with an override in the file to separate
+them, and now `Row` carries `shipped` and `onOpen` for the two buttons.
+
+### The same defect twice in one day
+The screenshot showed the command column using the default split, so
+"Orbit the camera" rendered as "Orbit the …" — **the identical elision defect
+fixed on the modifier sub-tabs an hour earlier, in a dialog written after it.**
+Fixing one instance of a class of bug does not fix the class; look at the
+picture every time.
+
+**And my assertion for it was decorative.** Removing the fix left the test
+green: without it the column is 100 px and the widest label needs 99 under the
+offscreen font — it passes by ONE pixel while eliding on macOS. Re-pinned on
+`sectionResizeMode(0) == ResizeToContents`, which is **not** a Qt default
+(`Interactive` is), so it cannot be satisfied for free. Third time this week
+that an assertion agreed with a default and proved nothing; the rule is
+hardening into: **assert the thing you set, and check the default disagrees.**
+
+### Mutations
+Six, all killed — two only after being redone. One did not compile
+(`-Wunused-function` on the now-unused helper) and was therefore no test at all;
+one passed by that single pixel.
+
+### Next
+This closes the last actionable M8 item. What remains there is owner-blocked
+(the seven empty proxy choosers; the `--workspace Materials` rename, a CLI
+argument) or content-blocked (`ExpressionTaskView`, zero `.mhpose` files). The
+next milestone with actionable work is M6's DQS skinning path.
+
+---
+
 ## 2026-09-07 (twelfth) — Session · **Mouse gestures leave the event handler**
 
 ### The chunk

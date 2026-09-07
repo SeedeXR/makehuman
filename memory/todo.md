@@ -3126,11 +3126,35 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         reported on stderr, `mouse: orbit: 4 is a raw Qt button mask ...`.
       - Five mutations killed, including loose modifier matching and the
         `lastMouse` regression.
-- [ ] **No rebinding UI yet**, so `shortcuts::save` and `reset` have tests but no
-      caller — a recorded deferral, not dead code. The reference puts this in a
-      Settings task view (`5_settings_shortcuts.py`): click a box, press the
-      keys. Ours would add "Settings ▸ Shortcuts…" beside the existing Units and
-      Real-weight groups.
+- [x] **The rebinding UI ships: Settings ▸ Shortcuts…** (2026-09-07), built to
+      owner directive 10, which put the design call here.
+      - **Keyboard AND mouse in ONE dialog.** The reference splits them across
+        `5_settings_shortcuts.py` and `5_settings_mouse.py`, so a user has to
+        know whether "how do I pan" is a shortcut question before they can find
+        the answer. One list of commands; some bound to keys, some to drags.
+      - **Click a row, then press** — the reference's own interaction. Bare
+        modifiers do not end the recording (otherwise the first Ctrl of Ctrl+K
+        binds nothing usable, every time), and Escape abandons it.
+      - **Conflicts on the row**, naming the command collided with, not in an
+        alert that hides exactly that.
+      - **Reset and Cancel are DIFFERENT restore points**, and the first cut had
+        one value for both. Reset returns to the shipped default; Cancel returns
+        to what was in effect when the dialog opened. With no saved override
+        those are the same string, so every test passed until one was written
+        with an override in the file.
+      - `shortcuts::save`/`reset` and `MouseBindings::bind`/`save`/`reset` now
+        have their caller; the recorded deferral is closed.
+      - **Looked at it, and the screenshot found a defect the assertions missed
+        — the same one, again.** The command column used the default split, so
+        "Orbit the camera" rendered as "Orbit the …" in a dialog written an hour
+        after fixing exactly that on the modifier sub-tabs.
+      - **And the assertion for it was decorative at first.** Without the fix
+        the column is 100 px and the widest label needs 99 under the offscreen
+        font — it passes by ONE pixel while eliding on macOS. Re-pinned on
+        `sectionResizeMode == ResizeToContents`, which is not a Qt default
+        (`Interactive` is), so it cannot be satisfied for free.
+      - Six mutations killed. Two had to be redone: one did not compile
+        (`-Wunused-function`) and one passed by that single pixel.
 - [~] **Task views inventoried and classified** — `memory/taskviews.md`,
       re-derived by `tools/audit_taskviews.py` in CI. **51, not 50**: an AST
       audit found six views a regex could not see, five of them real tabs
