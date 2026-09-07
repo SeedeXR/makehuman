@@ -422,6 +422,39 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_blendshapes_usda_bound PROPERTIES
         FIXTURES_REQUIRED app_bs_usda_file)
 
+    # A texture path is written INTO an exported file, so it has to be clean.
+    # Measured before `lexically_normal` landed: every shipped skin says
+    # `diffuseTexture ../textures/skin/<tone>.png`, and this export embedded
+    # `.../data/skins/../textures/skin/african_deep.png` four times over. The
+    # same unnormalised path was the exporters' dedup key, so one image named
+    # from two directories was embedded twice.
+    #
+    # `--count 0` is an ABSENCE check, and it is counted in Python for a reason:
+    # `tests/file_count.cmake` used to do this and silently checked nothing on a
+    # binary. CMake's `string(REGEX MATCHALL)` stops at the first NUL, and an
+    # FBX has one at byte 20 -- so it saw twenty bytes and passed a file holding
+    # four copies of the bad path. Proven by running it against that file.
+    add_test(NAME app_texture_path_export COMMAND makehuman
+             --skin-material african_deep
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_skinmat.fbx)
+    set_tests_properties(app_texture_path_export PROPERTIES
+        FIXTURES_SETUP app_skinmat_fbx)
+    add_test(NAME app_texture_path_normalised COMMAND python3
+             ${CMAKE_SOURCE_DIR}/tools/count_in_file.py
+             --file ${CMAKE_CURRENT_BINARY_DIR}/app_skinmat.fbx
+             "--needle=/../"
+             --count 0)
+    set_tests_properties(app_texture_path_normalised PROPERTIES
+        FIXTURES_REQUIRED app_skinmat_fbx)
+    # ...and the texture it names is really there, which is the point of a clean
+    # path. A test that only forbade `..` would pass on a path to nowhere.
+    add_test(NAME app_texture_path_resolves COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_skinmat.fbx
+             "-DKEYS=data/textures/skin/african_deep.png"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_texture_path_resolves PROPERTIES
+        FIXTURES_REQUIRED app_skinmat_fbx)
+
     # ONE product version, in /VERSION, and every other declaration derived
     # from it. The gate is a ctest as well as a CI job because the thing it
     # catches -- a version that is right in three places and wrong in a fourth
@@ -598,19 +631,19 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_worn_skin_usda_export PROPERTIES
         PASS_REGULAR_EXPRESSION "eyes skin: 179 joints"
         FIXTURES_SETUP app_worn_usda_file)
-    add_test(NAME app_worn_skin_usda_bound COMMAND ${CMAKE_COMMAND}
-             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_worn.usda
-             "-DNEEDLE=rel skel:skeleton = </"
-             -DCOUNT=2
-             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_count.cmake)
+    add_test(NAME app_worn_skin_usda_bound COMMAND python3
+             ${CMAKE_SOURCE_DIR}/tools/count_in_file.py
+             --file ${CMAKE_CURRENT_BINARY_DIR}/app_worn.usda
+             "--needle=rel skel:skeleton = </"
+             --count 2)
     set_tests_properties(app_worn_skin_usda_bound PROPERTIES
         FIXTURES_REQUIRED app_worn_usda_file)
     # ONE skeleton, shared. Two prims would be two rigs.
-    add_test(NAME app_worn_skin_usda_one_skeleton COMMAND ${CMAKE_COMMAND}
-             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_worn.usda
-             "-DNEEDLE=def Skeleton"
-             -DCOUNT=1
-             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_count.cmake)
+    add_test(NAME app_worn_skin_usda_one_skeleton COMMAND python3
+             ${CMAKE_SOURCE_DIR}/tools/count_in_file.py
+             --file ${CMAKE_CURRENT_BINARY_DIR}/app_worn.usda
+             "--needle=def Skeleton"
+             --count 1)
     set_tests_properties(app_worn_skin_usda_one_skeleton PROPERTIES
         FIXTURES_REQUIRED app_worn_usda_file)
     if(MH_USDCHECKER)

@@ -316,7 +316,23 @@ std::expected<Material, MaterialError> loadMaterial(const std::filesystem::path&
             for (const ChannelKey& ck : kChannels) {
                 const auto slot = static_cast<size_t>(ck.channel);
                 if (key == ck.texture && need(1)) {
-                    m.textures[slot].path = dir / tok[1];
+                    // NORMALISED, because this path is two things: the key the
+                    // exporters dedup on and the string they write into the
+                    // file. Every shipped skin says `../textures/skin/<tone>.png`,
+                    // so without this an FBX exported with `--skin-material
+                    // african_deep` embedded
+                    // `.../data/skins/../textures/skin/african_deep.png` --
+                    // measured, four times in one file -- and two materials in
+                    // different directories naming ONE image compared unequal,
+                    // so `GltfWriter` embedded it twice.
+                    //
+                    // `lexically_normal`, not `weakly_canonical`: purely
+                    // textual, so it needs no filesystem access, cannot throw
+                    // on a missing or slow path, and does not silently rewrite
+                    // a symlink that a bundle may depend on. The residual is
+                    // that two spellings via a SYMLINK still compare unequal;
+                    // nothing in `data/` uses one.
+                    m.textures[slot].path = (dir / tok[1]).lexically_normal();
                     break;
                 }
                 if (ck.intensity != nullptr && key == ck.intensity && need(1)) {

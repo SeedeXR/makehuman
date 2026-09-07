@@ -4,6 +4,66 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-07 (eighth) — Session · **A texture path, and a gate that checked nothing**
+
+### The chunk
+The todo item said the texture dedup hazard was "unreachable today (one textured
+proxy)". **Measured, and the root cause was reachable by a different route.**
+
+`Material.cpp:319` stored `dir / token` verbatim. Every shipped skin says
+`diffuseTexture ../textures/skin/<tone>.png`, so
+`makehuman --skin-material african_deep --export x.fbx` embedded
+
+    /Users/.../data/skins/../textures/skin/african_deep.png
+
+**four times**. That path is two things at once: the key the exporters dedup on,
+and the string they write into the file. Now
+`(dir / tok[1]).lexically_normal()` — textual, so no filesystem access, cannot
+throw on a missing or slow path, and does not silently rewrite a symlink a
+bundle may depend on. That is a deliberate departure from the
+`weakly_canonical` the item suggested.
+
+The dedup path itself really was unreachable, and I checked rather than assumed:
+`skin_normal.png` is named by 8 materials, all in `data/skins`, and only one is
+in a scene at a time.
+
+### The find: a gate that checked nothing
+Mutation-testing my own new gate is what caught it. Reverting the fix left
+`/../` in the FBX and `app_texture_path_normalised` **still passed**.
+
+`tests/file_count.cmake` used `string(REGEX MATCHALL)`. CMake's `file(READ)`
+does load the whole file, but **REGEX MATCHALL stops at the first NUL** — and an
+FBX has one at byte 20, inside `Kaydara FBX Binary  \0`. The gate saw twenty
+bytes, found zero matches, and passed a file holding four copies of the bad
+path. `file_contains.cmake` is unaffected because `string(FIND)` scans the whole
+buffer, which is precisely why one gate caught the mutation and its sibling did
+not — the asymmetry is what gave it away.
+
+Deleted, and replaced by `tools/count_in_file.py`, which counts over bytes.
+
+**Both USD count gates from last chunk were on that same broken script.** They
+had never been proven to bite: when I mutation-tested that chunk, the app-level
+export step failed first and left the count tests "Not Run", so their green was
+meaningless. They are proven now — mutating `UsdWriter` so only the first entry
+is skinned fails `app_worn_skin_usda_bound`.
+
+Lesson, and it is a new one rather than a repeat: **mutation-test the gate, not
+only the code.** A gate is code. Two of mine were decorative for a whole chunk.
+
+### Owner decision recorded mid-chunk
+Docks vs tabs: *"we can design for both, just ensure it's intuitive and allows
+someone to configure their workspace and save or decided to reset to the default
+ui."* Written into `memory/todo.md` with what already exists — the workspace
+save/restore/reset and named-workspace machinery all ship, and Qt's
+`saveState`/`restoreState` already round-trips a tabbed arrangement, so the
+chunk is smaller than it looks. That unblocks the "Materials" dock rename, which
+needs a settings-key migration.
+
+### Next
+The docks-and-tabs chunk, now unblocked.
+
+---
+
 ## 2026-09-07 (seventh) — Session · **Shortcuts persist symbolically, and running it found what tests could not**
 
 ### The chunk

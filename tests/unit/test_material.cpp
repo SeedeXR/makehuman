@@ -292,3 +292,62 @@ TEST_CASE("PROBE fitted eye front uvs", "[probe8]") {
     WARN("FITTED front verts=" << n << " zmax=" << zmax << " u " << ulo << ".." << uhi << "  v "
                                << vlo << ".." << vhi);
 }
+
+// A texture path is stored NORMALISED, because it is two things at once: the
+// dedup key the exporters compare, and the string they write into the file.
+//
+// Measured 2026-09-07, before this was fixed. Every shipped skin says
+// `diffuseTexture ../textures/skin/<tone>.png`, and the loader stored
+// `dir / token` verbatim -- so an FBX exported with `--skin-material
+// african_deep` contained, four times over:
+//
+//   /Users/.../data/skins/../textures/skin/african_deep.png
+//
+// Two consequences. That `..` goes into every consumer's asset database, and
+// two materials in DIFFERENT directories naming one file produce two different
+// key strings, so `GltfWriter`'s dedup embeds the same image twice.
+TEST_CASE("a texture path is normalised, so it works as a dedup key", "[core][material]") {
+    const TempMat mat("name t\ndiffuseTexture ../textures/skin/x.png\n");
+    const auto m = loadMaterial(mat.path());
+    REQUIRE(m.has_value());
+
+    const auto& stored = m->texture(TextureChannel::Diffuse).path;
+    INFO(stored.string());
+    // No `..` component survives.
+    CHECK(std::ranges::find(stored, "..") == stored.end());
+    // ...and it still names the same file it always did.
+    CHECK(stored == (mat.path().parent_path() / "../textures/skin/x.png").lexically_normal());
+}
+
+TEST_CASE("one file named from two directories gives ONE key", "[core][material]") {
+    // The dedup property, stated directly. `GltfWriter` compares these paths
+    // with `==`; before normalisation these two were different strings for the
+    // same file and the image was embedded twice.
+    const auto tmp = std::filesystem::temp_directory_path();
+    const TempMat here("name a\ndiffuseTexture shared.png\n");
+    const TempMat below("name b\ndiffuseTexture ./sub/../shared.png\n");
+
+    const auto a = loadMaterial(here.path());
+    const auto b = loadMaterial(below.path());
+    REQUIRE(a.has_value());
+    REQUIRE(b.has_value());
+    CHECK(a->texture(TextureChannel::Diffuse).path == b->texture(TextureChannel::Diffuse).path);
+}
+
+TEST_CASE("normalising a texture path does not need the file to exist", "[core][material]") {
+    // Purely lexical on purpose. `weakly_canonical` -- which the todo item
+    // suggested -- touches the filesystem: it resolves symlinks, and on a
+    // network or missing path it can be slow or throw. A material has to load
+    // identically whether or not its texture happens to be on disk, because
+    // loading a material and finding its files are two separate questions.
+    const TempMat mat("name t\ndiffuseTexture ../nope/absent.png\n");
+    const auto m = loadMaterial(mat.path());
+    REQUIRE(m.has_value());
+    const auto& stored = m->texture(TextureChannel::Diffuse).path;
+    CHECK(std::ranges::find(stored, "..") == stored.end());
+    CHECK_FALSE(std::filesystem::exists(stored));
+    // `present()` asks whether a path was NAMED, not whether it resolves --
+    // it is `!path.empty()` (`Material.h:40`). Normalising must not change
+    // that answer either way.
+    CHECK(m->texture(TextureChannel::Diffuse).present());
+}

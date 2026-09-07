@@ -2820,6 +2820,21 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       one. Added a "Skeleton" group; switching re-applies the CURRENT pose,
       because a user changing rig mid-pose expects to keep it, and puts the
       picker back if the rig will not load.
+- [ ] **OWNER DECISION TAKEN (2026-09-07): docks AND tabs, both.** Verbatim:
+      *"for docks vs tabs , we can design for both , just ensure it's intuitive
+      and allows someone to configure their workspace and save or decided to
+      reset to the default ui."*
+      This unblocks the two items below. What already exists, so the chunk is
+      smaller than it looks: `restoreWorkspace` / `saveWorkspace` /
+      `resetWorkspace`, `saveWorkspaceAs` / `loadNamedWorkspace` /
+      `namedWorkspaces`, and `applyWorkspacePreset` (`design.md` §6.4) all ship,
+      and Qt's `saveState`/`restoreState` already round-trips a TABBED dock
+      arrangement — `tabifyDockWidget` plus `AllowTabbedDocks` is the mechanism,
+      and `dockOptionsFor` already sets the flags.
+      Still to do: let the user actually tabify (drag one dock onto another is
+      Qt-native once the option is on — verify it, do not assume), a visible
+      "reset to the default UI" that is discoverable rather than only in a menu,
+      and the rename below, which needs a key migration.
 - [ ] **The "Materials" dock is misnamed and I made it worse.** It now holds
       Skin, Pose, Eyes, Skin material and Skeleton — three of which are not
       materials. Renaming is not free: `dockObjectName()` lower-cases the
@@ -3182,10 +3197,38 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `LayerElementTangent`; the Collada carries `semantic="NORMAL"` and
       `"TEXCOORD"` and no `TEXTANGENT`. glTF gets tangents because that writer
       is ours.
-- [ ] **Canonicalise the texture dedup key.** Dedup compares
-      `std::filesystem::path` exactly, so the same file reached by two spellings
-      (`a/../b.png` vs `b.png`) embeds twice. Unreachable today (one textured
-      proxy); `weakly_canonical` on the key when a second one lands.
+- [x] **Texture paths are normalised at the source** (2026-09-07). The item said
+      the dedup hazard was "unreachable today"; **measured, and the root cause
+      was reachable by a different route.** `Material.cpp:319` stored
+      `dir / token` verbatim, and every shipped skin says
+      `diffuseTexture ../textures/skin/<tone>.png`, so
+      `makehuman --skin-material african_deep --export x.fbx` embedded
+      `/Users/.../data/skins/../textures/skin/african_deep.png` **four times**.
+      That path is two things at once: the exporters' dedup key AND the string
+      written into the file. Now `(dir / tok[1]).lexically_normal()`.
+      - `lexically_normal`, **not** the `weakly_canonical` this item suggested:
+        purely textual, so no filesystem access, cannot throw on a missing or
+        slow path, and does not silently rewrite a symlink a bundle may depend
+        on. Residual: two spellings via a symlink still compare unequal, and
+        nothing in `data/` uses one.
+      - Measured reachability rather than trusting the note: `skin_normal.png`
+        is named by **8** materials, but all 8 live in `data/skins` and only one
+        is in a scene at a time, so the dedup path itself really was unreachable.
+        The exported-string path was not.
+- [x] **`tests/file_count.cmake` was a gate that checked nothing on binaries,
+      and is deleted** (2026-09-07). Found by mutation-testing the gate itself:
+      reverting the fix above left `/../` in the FBX and the count gate still
+      PASSED. CMake's `file(READ)` does load the whole file, but
+      `string(REGEX MATCHALL)` **stops at the first NUL** — and an FBX has one at
+      byte 20, inside `Kaydara FBX Binary  \0`. So it saw twenty bytes, found
+      nothing, and passed a file holding four copies of the bad path.
+      `file_contains.cmake` is unaffected because `string(FIND)` scans the whole
+      buffer — which is exactly why one gate caught the mutation and its sibling
+      did not.
+      Replaced by `tools/count_in_file.py`, which counts over BYTES. Both USD
+      count gates added last chunk were on the same broken script and had never
+      been proven to bite; they now are — mutating `UsdWriter` so only the first
+      entry is skinned fails `app_worn_skin_usda_bound`.
 - [ ] Consider renaming `--skin` to `--litsphere` (keeping `--skin` as an
       alias). It selects a viewport matcap, not a material: `--skin african`
       still exports `DefaultSkin`, which is correct but reads as a bug. The
