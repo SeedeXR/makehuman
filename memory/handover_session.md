@@ -4,6 +4,63 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-07 (tenth) — Session · **"Materials" becomes "Assets", and the rename costs nothing**
+
+### The chunk
+The second dock was labelled "Materials" and holds Skin, Pose, Eyes, Skin
+material and Skeleton — three of which are not materials. The item called the
+rename expensive: `dockObjectName` lower-cases the category and
+`QMainWindow::saveState` keys on that, so renaming would drop the panel out of
+every workspace a user had saved.
+
+It is only expensive if the visible title and the persisted key are the same
+string. `TaskRegistry::add(id, title)` splits them. The **id** stays `Materials`
+forever — it is a persisted key and the header now says so in those words — and
+the **title** is free to change. Proven behaviourally: a window titled "Assets"
+saves a state that a window titled "Materials" restores correctly, because only
+the id participates.
+
+### My first answer was wrong, and checking is what caught it
+I reached for **"Libraries"**, because the reference's plugins are
+`3_libraries_eye_chooser`, `_material_chooser`, `_pose`, `_skeleton`. That is a
+filename ORDERING convention, not a tab. Grepping `getCategory(...)` shows the
+reference's real categories — Community, Geometries, Help, Materials, Modelling,
+Pose/Animate, Rendering, Settings, Utilities — and it **splits our one dock
+across three of them**: Materials for the material chooser, Geometries for the
+eyes, Pose/Animate for pose and skeleton.
+
+So "Libraries" would have invented a user-facing name the reference does not
+have, in a project that cites reference provenance for everything. The name it
+took instead is the one our own code already uses: the widget in that dock is
+`ui::AssetPanel`, and skin, eyes, pose, skeleton and material are all chosen
+assets. When the task-view work eventually subdivides this panel it will follow
+the reference's three categories; one honest name now beats three wrong ones.
+
+**Looked at it**: the panel reads "Assets" over Skin, Pose, Eyes, Skin material,
+Eye colour, Skeleton.
+
+### Two tests I had to throw away first
+I twice tried to prove the key by searching `saveState`'s blob for
+`dock.materials` — once reinterpreting the whole thing as UTF-16, once building
+the UTF-16 bytes by hand. Both found nothing in perfectly correct output:
+`saveState` is a QDataStream, not a run of UTF-16 at a predictable offset.
+Testing the BEHAVIOUR — save under one title, restore under another — is both
+easier and the thing that actually matters. Do not assert on another library's
+serialisation format when the property is observable directly.
+
+### Mutations
+Four, all killed, including the expensive one: deriving the dock object name
+from the TITLE, which is precisely the mistake that would have made this rename
+break every saved workspace.
+
+### Next
+Recorded, not done: the workspace preset named "Materials" now labels a dock
+called "Assets". Same id-versus-title problem one level up, but a preset's name
+is also a **CLI argument** (`--workspace Materials`), so renaming it is
+user-facing and wants the owner's word first.
+
+---
+
 ## 2026-09-07 (ninth) — Session · **Docks AND tabs, on the owner's decision**
 
 ### The decision

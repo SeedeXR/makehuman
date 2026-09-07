@@ -2425,7 +2425,14 @@ int main(int argc, char** argv) {
     const QString kMaterials = QStringLiteral("Materials");
 
     mh::ui::TaskRegistry tasks;
-    if (!tasks.add(kModelling) || !tasks.add(kMaterials)) {
+    // The id stays "Materials" forever -- `saveState` keys on it, so changing
+    // it would drop that panel out of every workspace already saved. Only the
+    // TITLE changes: the dock holds Skin, Pose, Eyes, Skin material and
+    // Skeleton, and three of those are not materials. "Assets" is what our own
+    // code calls the widget inside it (`ui::AssetPanel`); the reference has no
+    // single name for this set, splitting it across Materials, Geometries and
+    // Pose/Animate.
+    if (!tasks.add(kModelling) || !tasks.add(kMaterials, QStringLiteral("Assets"))) {
         std::fprintf(stderr, "duplicate task category\n");
         return 1;
     }

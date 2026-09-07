@@ -2863,11 +2863,34 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       dock shows its name twice, once in the tab and once in its own title bar.
       Standard Qt, and the title bar carries the grip and the close button, so
       removing it would make the window less configurable rather than more.
-- [ ] **The "Materials" dock is misnamed and I made it worse.** It now holds
-      Skin, Pose, Eyes, Skin material and Skeleton — three of which are not
-      materials. Renaming is not free: `dockObjectName()` lower-cases the
-      category and `saveState` keys on it, so a rename invalidates every saved
-      workspace. Tied to the docks-vs-tabs decision; do them together.
+- [x] **The "Materials" dock is renamed to "Assets"** (2026-09-07), and the
+      rename cost nothing because the identity and the label stopped being one
+      string. `TaskRegistry::add(id, title)`: the **id** is what
+      `dockObjectName` lower-cases and `saveState` keys on, so it stays
+      `Materials` forever; the **title** is what the user reads. Every workspace
+      saved before the rename still restores — proven by a test that saves from
+      a window titled "Assets" and restores into one titled "Materials".
+      - **The name was researched, and my first answer was wrong.** I reached for
+        "Libraries" because the reference's plugin files are `3_libraries_*` —
+        but that is a filename ordering convention, not a tab. Checked
+        `getCategory(...)` and the reference SPLITS this dock's contents across
+        three of its own categories: `Materials` (material chooser), `Geometries`
+        (eyes), `Pose/Animate` (pose, skeleton). Borrowing "Libraries" would have
+        invented a user-facing name the reference does not have.
+      - So it takes the name our own code already uses: the widget in that dock
+        is `ui::AssetPanel`, and skin, eyes, pose, skeleton and material are all
+        chosen assets. **Looked at it**: the panel reads "Assets" over Skin,
+        Pose, Eyes, Skin material, Eye colour, Skeleton.
+      - Four mutations killed, including the expensive one — deriving the dock
+        object name from the TITLE, which is exactly the mistake that would have
+        made the rename break saved workspaces.
+- [ ] **The workspace preset named "Materials" now labels a dock called
+      "Assets".** Same id-versus-title problem one level up: a preset's name is
+      its identity (`--workspace Materials`, the `workspace.<name>` object name)
+      *and* its menu label. The fix is the same split, but renaming the preset
+      changes a **CLI argument**, so it is user-facing — ask before doing it.
+      Defensible as it stands: "Materials" reads as *the layout for working on
+      materials*, which is still true.
 - [x] **`RandomTaskView` core + `--random <seed>`.** Ported from
       `0_modeling_8_random.py`, seeded and deterministic. Per-group sigmas as
       the reference has them (macro 0.3, face 0.1, two forehead modifiers 0.02),

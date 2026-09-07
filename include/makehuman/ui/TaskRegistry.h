@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <QHash>
 #include <QString>
 #include <QStringList>
 
@@ -23,17 +24,35 @@ namespace mh::ui {
 /// reader, only tests. They come back with the first view that needs them.
 class TaskRegistry {
 public:
+    /// Registers a category.
+    ///
+    /// @param category the **stable id**. It is what `dockObjectName` lowercases
+    ///        and what `QMainWindow::saveState` therefore keys on, so it is a
+    ///        PERSISTED key: changing it silently drops that panel out of every
+    ///        workspace a user has already saved. Never rename one.
+    /// @param title what the user reads, empty meaning "the id". Separate for
+    ///        exactly that reason -- the second dock was labelled "Materials"
+    ///        while holding Skin, Pose, Eyes, Skin material and Skeleton, and
+    ///        relabelling it to "Assets" cost nothing once the two stopped
+    ///        being one string.
+    ///
     /// @return false if @p category is already registered, ignoring case,
-    ///         leaving the registry untouched. Case matters because the dock
-    ///         object name is the lower-cased category and `saveState` keys on
-    ///         it: two categories differing only in case would share one dock.
-    [[nodiscard]] bool add(QString category);
+    ///         leaving the registry untouched. Case matters for the same
+    ///         reason: two ids differing only in case would share one dock and
+    ///         one saved-state key.
+    [[nodiscard]] bool add(QString category, QString title = {});
 
-    /// Categories in registration order.
+    /// Category **ids** in registration order.
     [[nodiscard]] QStringList categories() const;
+
+    /// The display title for @p category, or the id itself when none was given
+    /// or the id is unknown. A blank dock title is worse than a slightly wrong
+    /// one, so this never returns empty for a non-empty id.
+    [[nodiscard]] QString title(const QString& category) const;
 
 private:
     QStringList categories_;
+    QHash<QString, QString> titles_;
 };
 
 }  // namespace mh::ui

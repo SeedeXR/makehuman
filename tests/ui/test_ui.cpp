@@ -622,3 +622,101 @@ TEST_CASE("a named workspace keeps its tabs", "[ui][workspace][tabs]") {
     REQUIRE(window.loadNamedWorkspace(name));
     CHECK(window.tabifiedDockWidgets(modelling).contains(materials));
 }
+
+// ------------------------------------------------- category id vs title -----
+//
+// The second dock was called "Materials" and holds Skin, Pose, Eyes, Skin
+// material and Skeleton -- three of which are not materials.
+//
+// There is no reference name for this set, and I checked rather than assumed:
+// the `3_libraries_*` filenames are a plugin-ordering convention, not a tab.
+// The reference SPLITS these across three of its own categories --
+// `getCategory('Materials')` for the material chooser,
+// `getCategory('Geometries')` for the eyes, `getCategory('Pose/Animate')` for
+// pose and skeleton. Borrowing "Libraries" would have invented a user-facing
+// name the reference does not have.
+//
+// So it takes the name our own code already gives it: the widget in that dock
+// is `mh::ui::AssetPanel`, and skin, eyes, pose, skeleton and material are all
+// chosen ASSETS. When the task-view work subdivides this panel it will follow
+// the reference's three categories; until then one honest name beats three
+// wrong ones.
+//
+// Renaming looked expensive because `dockObjectName` lower-cases the category
+// and `QMainWindow::saveState` keys on that, so every saved workspace would
+// stop matching. It is only expensive if the visible title and the persisted
+// key are the same string. They are now separate: the ID stays "Materials"
+// forever, the TITLE is what the user reads.
+
+TEST_CASE("a category has a stable id and a separate display title", "[ui][registry]") {
+    mh::ui::TaskRegistry tasks;
+    REQUIRE(tasks.add(QStringLiteral("Modelling")));
+    REQUIRE(tasks.add(QStringLiteral("Materials"), QStringLiteral("Assets")));
+
+    // categories() is the ID list -- what dockObjectName and the workspace
+    // presets address -- and it is unchanged by any renaming.
+    CHECK(tasks.categories() ==
+          QStringList{QStringLiteral("Modelling"), QStringLiteral("Materials")});
+    CHECK(tasks.title(QStringLiteral("Materials")) == QStringLiteral("Assets"));
+
+    // A category registered without one is its own title, so the common case
+    // stays a single argument.
+    CHECK(tasks.title(QStringLiteral("Modelling")) == QStringLiteral("Modelling"));
+    // An id nobody registered answers with itself rather than an empty string:
+    // a blank dock title is worse than a slightly wrong one.
+    CHECK(tasks.title(QStringLiteral("Nope")) == QStringLiteral("Nope"));
+}
+
+TEST_CASE("renaming the title leaves the persisted key alone", "[ui][registry]") {
+    // The property that makes the rename free. If this ever fails, every
+    // workspace a user saved before the rename silently loses that panel's
+    // position -- restoreState matches docks by objectName and quietly ignores
+    // one it does not recognise.
+    CHECK(mh::ui::MainWindow::dockObjectName(QStringLiteral("Materials")) ==
+          QStringLiteral("dock.materials"));
+
+    mh::ui::TaskRegistry tasks;
+    REQUIRE(tasks.add(QStringLiteral("Modelling")));
+    REQUIRE(tasks.add(QStringLiteral("Materials"), QStringLiteral("Assets")));
+    mh::ui::MainWindow window(std::filesystem::path{}, tasks);
+
+    auto* dock = window.findChild<QDockWidget*>(QStringLiteral("dock.materials"));
+    REQUIRE(dock != nullptr);
+    CHECK(dock->windowTitle() == QStringLiteral("Assets"));
+
+    // Hidden, so restoring has something unmistakable to bring back.
+    dock->setVisible(false);
+    const QByteArray state = window.saveState();
+
+    // The property itself, without reading Qt's blob format: a window whose
+    // category carries a DIFFERENT title restores that same state correctly,
+    // because only the id is persisted. That is what makes every workspace
+    // saved before the rename keep working.
+    //
+    // Two earlier attempts asserted on the blob's bytes instead and both found
+    // nothing in perfectly correct output -- `saveState` is a QDataStream, not
+    // a run of UTF-16 at a predictable offset. Testing the behaviour is both
+    // easier and the thing that actually matters.
+    mh::ui::TaskRegistry oldNames;
+    REQUIRE(oldNames.add(QStringLiteral("Modelling")));
+    REQUIRE(oldNames.add(QStringLiteral("Materials")));  // the pre-rename title
+    mh::ui::MainWindow other(std::filesystem::path{}, oldNames);
+
+    auto* sameDock = other.findChild<QDockWidget*>(QStringLiteral("dock.materials"));
+    REQUIRE(sameDock != nullptr);
+    CHECK(sameDock->windowTitle() == QStringLiteral("Materials"));
+    REQUIRE_FALSE(sameDock->isHidden());
+
+    REQUIRE(other.restoreState(state));
+    CHECK(sameDock->isHidden());
+}
+
+TEST_CASE("a duplicate id is still refused however it is titled", "[ui][registry]") {
+    // The case rule exists because dockObjectName lower-cases: two categories
+    // differing only in case would share one dock and one saved-state key.
+    // Giving them different titles must not sneak them past it.
+    mh::ui::TaskRegistry tasks;
+    REQUIRE(tasks.add(QStringLiteral("Materials"), QStringLiteral("Assets")));
+    CHECK_FALSE(tasks.add(QStringLiteral("materials"), QStringLiteral("Something Else")));
+    CHECK(tasks.categories().size() == 1);
+}

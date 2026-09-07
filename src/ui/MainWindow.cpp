@@ -147,9 +147,13 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
         // dock's accessibleName and its placeholder body from it, and neither
         // follows a later setWindowTitle. registerText then keeps the visible
         // title live across a language switch.
-        QDockWidget* dock = makeDock(QCoreApplication::translate("", category.toUtf8().constData()),
-                                     dockObjectName(category), area, this);
-        registerText(dock, category.toUtf8().constData());
+        // TITLE for what is shown, category ID for the object name. The id is
+        // a persisted key -- `saveState` records it -- so it never changes;
+        // the title is free to.
+        const QByteArray shown = tasks.title(category).toUtf8();
+        QDockWidget* dock      = makeDock(QCoreApplication::translate("", shown.constData()),
+                                          dockObjectName(category), area, this);
+        registerText(dock, shown.constData());
         addDockWidget(area, dock);
         first = false;
     }
