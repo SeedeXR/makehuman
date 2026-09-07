@@ -2,6 +2,7 @@
 #include "makehuman/core/Mhm.h"
 #include "makehuman/foundation/Chars.h"
 #include "makehuman/foundation/FileRead.h"
+#include "makehuman/foundation/Version.h"
 
 #include "makehuman/core/Modifier.h"
 
@@ -212,7 +213,7 @@ std::expected<void, MhmError> saveMhm(const std::filesystem::path& path, const M
     // Binary mode plus explicit "\n": text mode on some platforms would turn
     // these into CRLF, and the reference writes LF.
     out << "# Written by MakeHuman "
-        << (mhm.writtenBy.empty() ? std::string(MH_VERSION_STRING) : mhm.writtenBy) << "\n";
+        << (mhm.writtenBy.empty() ? std::string(foundation::kVersion) : mhm.writtenBy) << "\n";
     out << "version " << (mhm.version.empty() ? std::string(kFormatVersion) : mhm.version) << "\n";
 
     // uuid, name and tags are omitted entirely when empty, not written blank.

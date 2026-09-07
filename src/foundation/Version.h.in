@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// GENERATED FROM src/foundation/Version.h.in -- do not edit the copy in the
+// build tree, and do not add a version literal here.
+//
+// The product version has ONE home, `/VERSION` at the repository root. CMake
+// reads it, `project()` takes it, and this header is configured from
+// `PROJECT_VERSION`, so a change to that one file reaches the binary, the macOS
+// bundle, `--version` and every `.mhm` header without anyone editing anything
+// else. `tools/audit_version.py` fails the build if a second declaration
+// appears.
+//
+// It replaced `target_compile_definitions(mh_core PRIVATE MH_VERSION_STRING=...)`,
+// which put the version in exactly one library: `main.cpp` could not see it, so
+// `makehuman --version` did not work while the version sat in the binary the
+// whole time.
+#pragma once
+
+#include <cstdint>
+#include <string_view>
+
+namespace mh::foundation {
+
+/// The product version, `MAJOR.MINOR.PATCH`, exactly as `/VERSION` spells it.
+inline constexpr std::string_view kVersion = "@PROJECT_VERSION@";
+
+/// The same three numbers, for comparisons a string cannot do.
+inline constexpr uint32_t kVersionMajor = @PROJECT_VERSION_MAJOR@;
+inline constexpr uint32_t kVersionMinor = @PROJECT_VERSION_MINOR@;
+inline constexpr uint32_t kVersionPatch = @PROJECT_VERSION_PATCH@;
+
+}  // namespace mh::foundation

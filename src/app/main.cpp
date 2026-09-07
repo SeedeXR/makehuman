@@ -18,6 +18,7 @@
 #include "makehuman/core/Target.h"
 #include "makehuman/core/TargetIndex.h"
 #include "makehuman/foundation/DataDir.h"
+#include "makehuman/foundation/Version.h"
 #include "makehuman/io/BvhWriter.h"
 #include "makehuman/io/Compact.h"
 #include "makehuman/io/FbxWriter.h"
@@ -1415,6 +1416,11 @@ int main(int argc, char** argv) {
     }
     QCoreApplication::setOrganizationName(QStringLiteral("MakeHuman"));
     QCoreApplication::setApplicationName(QStringLiteral("MakeHumanCpp"));
+    // From /VERSION, through the generated header. `--version` did not work at
+    // all before this: the version was compiled into mh_core as a PRIVATE
+    // macro, so it was in the binary and unreachable from here.
+    QCoreApplication::setApplicationVersion(QString::fromUtf8(
+        mh::foundation::kVersion.data(), static_cast<qsizetype>(mh::foundation::kVersion.size())));
 
     // Resources before any widget exists: a stylesheet applied after the fact
     // repolishes every widget, and a font registered late is not the one the
@@ -1444,6 +1450,9 @@ int main(int argc, char** argv) {
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("MakeHuman (C++/Qt6)"));
     parser.addHelpOption();
+    // Qt prints "<appName> <appVersion>" and exits. Without this, `--version`
+    // was reported as an unknown option.
+    parser.addVersionOption();
     const std::filesystem::path shaderDir = mh::foundation::resolveShaderDir(
         QCoreApplication::applicationFilePath().toStdString(), MH_SHADER_DIR);
     const QCommandLineOption shaderOpt(

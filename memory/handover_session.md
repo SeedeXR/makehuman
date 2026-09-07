@@ -4,6 +4,88 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-07 (fifth) — Session · **One product version, and the SMPL-X alternatives verified**
+
+Two owner requests in one fire.
+
+### 1. `/VERSION` is the single source of truth
+Measured starting state: **three independent declarations, one dead and
+contradicting the other two.** `/VERSION` held `0.1.0`, was untracked, had never
+been committed, and was read by NOTHING. `CMakeLists.txt` held `2.0.0` and was
+the de facto source. `sonar-project.properties` held a hand-copied `2.0.0`. Two
+of the three agreeing was luck, not wiring.
+
+Owner settled it mid-chunk: **2.0.0**.
+
+CMake now reads `/VERSION` before `project()` and refuses anything that is not
+`MAJOR.MINOR.PATCH` with a FATAL_ERROR naming the value — CMake itself accepts
+`1.2` and four-part versions, and the macOS bundle and SonarQube would each
+interpret the missing components their own way. `src/foundation/Version.h.in`
+configures into `makehuman/foundation/Version.h` on `mh_foundation`'s PUBLIC
+include path.
+
+**Verified by bumping the file to `9.8.7`** and watching the CMake banner, the
+generated header (string and all three numeric constants), `--version`, both
+`Info.plist` keys and the `.mhm` header follow, while the audit correctly failed
+on the one file that cannot read it. That is the requirement, executed rather
+than asserted.
+
+`--version` did not work AT ALL before this. `MH_VERSION_STRING` was
+`target_compile_definitions(... PRIVATE)` on `mh_core`, so `main.cpp` could not
+reach it: the version was in the binary and unreachable from the CLI, and no
+test had ever asserted on it.
+
+### 2. Two mutation lessons worth keeping
+- `configure_file(… COPYONLY)` cannot be mutation-tested here: the numeric
+  constants stop compiling, so the build fails and a stale binary "passes". That
+  failure IS the protection — the constants are the substitution's compile-time
+  canary — and the test comment now says so instead of claiming a kill.
+- Swapping `PROJECT_VERSION_PATCH` for `_MINOR` **survives at 2.0.0**, because
+  minor and patch are both `0`. Killed only at `9.8.7`. Same shape as the V-flip
+  test that used 0.25/0.75: **a surviving mutation points at the fixture first.**
+  Fifth fire running.
+
+### 3. A subagent claim that was wrong
+The version inventory reported `memory/architecture.md:199` as stale — "FBX 7300"
+against the code's 7500. It is not: that paragraph documents the **Python
+reference's** writer, and `legacy/python/plugins/9_export_fbx/fbx_utils_bin.py:32`
+does say `FBX_VERSION = 7300`. I had already applied the "fix" before checking,
+and reverted it. Subagent output is a claim; the citation it hands you is what
+you verify.
+
+### 4. SMPL-X alternatives — verified, and one answer changed
+Owner supplied three candidates. Recorded in `LICENSING.md` §5.2a, each checked
+against the primary source:
+- **NVIDIA SOMA-X** is the SMPL-X replacement. Code **and** weights are
+  Apache-2.0, model card says "ready for commercial use", ungated. **But its
+  identity backends are not equally licensed**: `SOMA`/`MHR`/`Anny`/
+  `GarmentMeasurements` are clean, while `SMPL`/`SMPL-H`/`SMPL-X`/`MANO` are
+  user-supplied licensed files NVIDIA does not redistribute. Selecting one of
+  those re-imports the research-only licence §5.2 forbids, through an
+  Apache-2.0 front door. If it is ever wired in, **the backend must be pinned in
+  code and asserted by a test.**
+- **HSRD-100** is `cc-by-4.0`, 246 GB, 100 poses / 10 subjects, OBJ + PNG,
+  ungated. Usable **with attribution**, which lands in §6 the moment anything
+  derived ships. (My first guess at the HF org was wrong and I invented it;
+  search corrected it to `digitalrealitylab/HSRD-100`.)
+- **Quaternius is NOT cleared.** Reported CC0; the licence page yielded no terms
+  to two fetches and there are free and patron tiers. Stays out until someone
+  reads the text — hard rule 6.
+- Re-confirmed forbidden, matching the owner's own reading: Human-M3, Texel
+  (MIT **code** / CC-BY-**NC** data), H3WB / Human3.6M.
+
+No training pipeline exists in this repository and the port ships no Python, so
+nothing here needs Colab yet. If M10 ever needs a trained model, where it runs is
+a separate owner decision.
+
+### Next
+`memory/todo.md` in milestone order. Two follow-ups this chunk exposed and did
+not take: `--version`/`--help` still die without an asset tree (start-up
+ordering), and exported FBX/glTF/USD/OBJ carry the product name but no version,
+so an asset cannot be traced to a build.
+
+---
+
 ## 2026-09-07 (fourth) — Session · **The render is shown, not filed**
 
 ### The chunk

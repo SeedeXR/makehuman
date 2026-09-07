@@ -3368,6 +3368,32 @@ parametric model is research-only; the CC-BY subset deliberately omits the shape
 blendshapes that make it a generator. Our own 1,280 CC0 targets are the asset
 base for M10. The papers are fair to learn from; the models are not.
 
+**OWNER DECISION TAKEN (2026-09-07): the alternatives, verified.** Recorded in
+`LICENSING.md` §5.2a. Every claim was checked against the primary source, and
+one of them changed the answer:
+- **NVIDIA SOMA-X** is the SMPL-X replacement. Code **and** weights are
+  Apache-2.0 and the model card says "ready for commercial use", ungated. 77
+  joints, one canonical topology, body + hands + face. **But its identity
+  backends are not equally licensed**: `SOMA`/`MHR`/`Anny`/`GarmentMeasurements`
+  are clean, while `SMPL`/`SMPL-H`/`SMPL-X`/`MANO` are user-supplied licensed
+  files. Selecting one of those re-imports the research-only licence through an
+  Apache-2.0 front door. If SOMA-X is ever wired in, **the backend must be
+  pinned in code and asserted by a test** — a default that happens to be `MHR`
+  is not a licence guarantee.
+- **HSRD-100** (`digitalrealitylab/HSRD-100`) is `cc-by-4.0`, 246 GB, 100 poses
+  / 10 subjects, OBJ + PNG, ungated. Usable **with attribution**, which lands in
+  `LICENSING.md` §6 the moment anything derived from it ships.
+- **Quaternius is NOT cleared.** Reported CC0; the licence page yielded no terms
+  to two fetches, and there are free and patron tiers. Stays out until someone
+  reads the actual text (hard rule 6).
+- Still forbidden, re-confirmed: Human-M3, the Texel scans (MIT code / CC-BY-NC
+  **data**), H3WB / Human3.6M (permissive wrapper, licensed payload).
+
+None of this is wired into anything yet, and **no model training happens in this
+repository**: the port ships no Python and has no training pipeline. If M10 ever
+needs a trained model, that is a separate decision about where it runs (a local
+GPU here, or Colab) and it comes back to the owner first.
+
 ## M9 — MetaHuman-class character tooling
 
 - [ ] FACS-based facial rig extending the 60 existing pose units
@@ -3388,6 +3414,62 @@ base for M10. The papers are fair to learn from; the models are not.
 - [ ] Generative model over the modifier vector
 - [ ] Image/scan → parameters fitting
 - [ ] Guardrails: no MetaHuman-derived data, ever (`project_context.md` §4.3)
+
+## Versioning — ONE source of truth (2026-09-07)
+
+- [x] **`/VERSION` is the product version, and everything derives from it.**
+      Owner request. Measured starting state: **three independent declarations,
+      one of them dead and contradicting the other two.**
+      - `/VERSION` said `0.1.0`, was **untracked**, had never been committed,
+        and was read by **nothing** — a decoy for the next person who looked.
+      - `CMakeLists.txt` said `2.0.0` and was the de facto source.
+      - `sonar-project.properties` said `2.0.0`, hand-copied.
+      **Owner decision mid-chunk: 2.0.0 wins.** `/VERSION` now holds `2.0.0`
+      and is committed.
+      Wiring: CMake reads `/VERSION` **before** `project()` and refuses anything
+      that is not `MAJOR.MINOR.PATCH` with a `FATAL_ERROR` — CMake itself would
+      accept `1.2` or a four-part version, and the bundle and SonarQube would
+      then each interpret the missing components their own way.
+      `src/foundation/Version.h.in` → `makehuman/foundation/Version.h`, on
+      `mh_foundation`'s PUBLIC include path so **every** module and the app can
+      read it.
+      - **Verified end to end by bumping the file to `9.8.7`**: the CMake banner,
+        the generated header (string *and* all three numeric constants),
+        `makehuman --version`, both `Info.plist` keys and the `.mhm` header all
+        followed, and the audit correctly failed on the one file that cannot
+        read it. Restored to 2.0.0 afterwards.
+      - Replaced `target_compile_definitions(mh_core PRIVATE MH_VERSION_STRING=…)`.
+        That put the version in **one library**, so `main.cpp` could not see it —
+        which is why **`makehuman --version` did not work at all** while the
+        version sat in the binary the whole time. It prints `MakeHumanCpp 2.0.0`
+        now.
+      - `tools/audit_version.py` is the gate, in CI and as a ctest. SonarQube's
+        `.properties` cannot read another file and deleting the key is not free
+        either (the server's "new code" period can be defined as "since the
+        previous version"), so it stays a duplicate and staying correct is the
+        gate's job.
+      - Tests: unit (`[foundation][version]`, three cases), integration
+        (`app_version`, expected string interpolated from `PROJECT_VERSION` so
+        the *test* derives from `/VERSION` too), regression
+        (`app_mhm_version_header` — nothing had ever asserted the version
+        reaches a written file).
+      - **Two mutation lessons.** `configure_file(… COPYONLY)` does not survive
+        to a test at all: the numeric constants stop compiling, which makes them
+        the substitution's compile-time canary. And swapping
+        `PROJECT_VERSION_PATCH` for `_MINOR` **survives at 2.0.0**, because minor
+        and patch are both 0 — killed only at `9.8.7`. The surviving mutation was
+        the fixture's fault, not the code's; the test says so.
+- [ ] **`--version` and `--help` still require the asset tree.** The data-dir
+      check in `main()` runs and `return 1`s *before* `QCommandLineParser` is
+      built, so both die on a machine with no `data/`. Pre-existing and unrelated
+      to the version wiring; fixing it means reordering start-up, which is its
+      own chunk.
+- [ ] **Exported assets cannot be traced to a build.** `.mhm` carries the product
+      version; FBX `Creator`, glTF `generator`, USD `doc` and the OBJ/MTL comment
+      carry the product NAME only. Adding the version there is ~4 one-line
+      changes and no test pins those strings today — but it makes every export
+      byte-differ on a version bump, which is a real cost for any future
+      byte-golden comparison. **Owner's call**, not done.
 
 ## M11 — Packaging and release
 

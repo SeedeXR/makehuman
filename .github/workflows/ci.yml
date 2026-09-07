@@ -303,6 +303,14 @@ jobs:
       - name: Runtime asset paths are resolved, not compiled in
         run: python3 tools/audit_runtime_paths.py
 
+      # ONE product version, in /VERSION. CMake reads it, the generated
+      # Version.h carries it, and the two files that cannot read it -- the
+      # SonarQube properties among them -- are checked against it here. The
+      # repository had three independent declarations, one of them dead and
+      # contradicting the other two.
+      - name: Product version declarations agree
+        run: python3 tools/audit_version.py
+
       # The superset skeleton is generated, not hand-edited. If someone edits it
       # directly, or changes the generator without regenerating, the committed
       # file and the tool disagree -- and the tool is the one the docs describe.

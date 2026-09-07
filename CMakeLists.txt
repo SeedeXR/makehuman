@@ -1,8 +1,27 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 cmake_minimum_required(VERSION 3.28)
 
+# ONE product version, in /VERSION. Read before project() so PROJECT_VERSION
+# and everything derived from it -- the generated Version.h, the macOS bundle
+# keys, --version, the .mhm header -- all come from that single file.
+#
+# Read as STRINGS with LIMIT_COUNT 1 rather than file(READ): READ keeps the
+# trailing newline, and `project(VERSION "0.1.0\n")` fails with a message that
+# does not mention newlines.
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" MH_VERSION LIMIT_COUNT 1)
+string(STRIP "${MH_VERSION}" MH_VERSION)
+if(NOT MH_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+    # Refused rather than passed on: CMake would accept `1.2` or a four-part
+    # version, and the macOS bundle and SonarQube would then each interpret the
+    # missing components their own way.
+    message(FATAL_ERROR
+        "VERSION must be MAJOR.MINOR.PATCH, got \"${MH_VERSION}\".\n"
+        "It is the single source of truth for the product version; see "
+        "tools/audit_version.py.")
+endif()
+
 project(MakeHuman
-    VERSION 2.0.0
+    VERSION ${MH_VERSION}
     DESCRIPTION "Parametric 3D human generator"
     HOMEPAGE_URL "http://www.makehumancommunity.org"
     LANGUAGES CXX)

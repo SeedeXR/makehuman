@@ -21,6 +21,7 @@ add_executable(mh_tests
     unit/test_malformed_input.cpp
     unit/test_compact.cpp
     unit/test_transform.cpp
+    unit/test_version.cpp
     golden/test_base_mesh_parity.cpp
     golden/test_mesh_fixture_parity.cpp
     golden/test_subdiv_fixture_parity.cpp
@@ -420,6 +421,37 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
     set_tests_properties(app_blendshapes_usda_bound PROPERTIES
         FIXTURES_REQUIRED app_bs_usda_file)
+
+    # ONE product version, in /VERSION, and every other declaration derived
+    # from it. The gate is a ctest as well as a CI job because the thing it
+    # catches -- a version that is right in three places and wrong in a fourth
+    # -- is found by a user reading an About box, not by a compiler.
+    add_test(NAME audit_version
+             COMMAND python3 ${CMAKE_SOURCE_DIR}/tools/audit_version.py)
+
+    # `makehuman --version` did not work at all: no addVersionOption(), and the
+    # version was a PRIVATE macro in mh_core that main.cpp could not read.
+    #
+    # The expected string is interpolated from PROJECT_VERSION, so the TEST
+    # derives from /VERSION too -- a literal here would be the fourth
+    # declaration this whole chunk exists to remove.
+    add_test(NAME app_version COMMAND makehuman --version)
+    set_tests_properties(app_version PROPERTIES
+        PASS_REGULAR_EXPRESSION "${PROJECT_VERSION}")
+
+    # ...and it reaches the one export format that has always carried it. The
+    # .mhm header is written from foundation::kVersion; nothing asserted that
+    # before, so the version could have been empty and every test stayed green.
+    add_test(NAME app_mhm_carries_version COMMAND makehuman
+             --save ${CMAKE_CURRENT_BINARY_DIR}/app_version.mhm)
+    set_tests_properties(app_mhm_carries_version PROPERTIES
+        FIXTURES_SETUP app_version_mhm)
+    add_test(NAME app_mhm_version_header COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_version.mhm
+             "-DKEYS=# Written by MakeHuman ${PROJECT_VERSION}"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_mhm_version_header PROPERTIES
+        FIXTURES_REQUIRED app_version_mhm)
 
     # Pixar's own validator on the stage we generate. It is the tool that caught
     # the SkelRoot requirement -- Blender imports the non-conformant version

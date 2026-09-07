@@ -7,8 +7,15 @@
 add_library(mh_foundation STATIC Chars.cpp DataDir.cpp FileRead.cpp Transform.cpp)
 add_library(mh::foundation ALIAS mh_foundation)
 
+# The product version, generated from /VERSION via PROJECT_VERSION. It lives
+# here because foundation is the one module everything else may depend on, and
+# because a version is exactly the kind of platform plumbing this module is for.
+configure_file(Version.h.in
+    "${CMAKE_BINARY_DIR}/generated/makehuman/foundation/Version.h" @ONLY)
+
 target_include_directories(mh_foundation PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/generated>
     $<INSTALL_INTERFACE:include>)
 
 target_link_libraries(mh_foundation PRIVATE mh::warnings mh::sanitize)

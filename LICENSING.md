@@ -254,6 +254,57 @@ data are not.
 MakeHuman's own 1,280 targets are CC0 and already give us a parametric body.
 That is the asset base to build M10 on.
 
+### 5.2a Licence-cleared alternatives to SMPL-X (owner-supplied, 2026-09-07)
+
+§5.2 says what we **cannot** use. The owner supplied three candidates for what
+we can, and every claim below was verified against the primary source on
+2026-09-07 rather than taken from the summary — one of them changes the answer.
+
+**NVIDIA SOMA-X — the SMPL-X replacement. Usable, with one hard condition.**
+
+| Thing | Licence | Verified at |
+|---|---|---|
+| Code | **Apache-2.0** | `github.com/NVlabs/SOMA-X` README, "SOMA-X is licensed under Apache-2.0" |
+| Model weights | **Apache-2.0**, "This model is ready for commercial use" | `huggingface.co/nvidia/SOMA-X`, ungated, no extra agreement |
+
+SOMA maps several parametric body models onto one canonical topology and
+skeleton (77 joints) so a single LBS pipeline serves all of them. **That is
+exactly where the trap is:** the identity backends are not equally licensed.
+
+| Backend | Third-party licence needed |
+|---|---|
+| `SOMA` (native), `MHR` (default), `Anny`, `GarmentMeasurements` | **No** — clean |
+| `SMPL`, `SMPL-H`, `SMPL-X`, `MANO` | **YES** — user-supplied licensed model files, which NVIDIA does not redistribute |
+
+So **SOMA-X is usable only with the SOMA / MHR / Anny / GarmentMeasurements
+backends.** Selecting an SMPL backend re-imports the research-only licence §5.2
+forbids, through an Apache-2.0 front door. The README's own words: "Optional
+third-party models and dependencies retain their own license terms." If SOMA-X is
+ever wired in, the backend must be pinned in code and asserted by a test — a
+runtime string that happens to default to `MHR` is not a licence guarantee.
+
+**HSRD-100 — 3D human scans. Usable.**
+`huggingface.co/datasets/digitalrealitylab/HSRD-100`, licence tag **`cc-by-4.0`**
+("Creative Commons Attribution 4.0 International"). 246 GB, 100 poses across 10
+subjects, OBJ plus PNG textures, ungated — no login or agreement. Commercial use,
+modification and redistribution permitted **with attribution**, which means the
+attribution goes in §6 the moment anything derived from it ships. The dataset
+card also declares biometric identification, medical diagnosis and surveillance
+out of scope; none of those are things we do.
+
+**Quaternius — NOT verified, do not use yet.**
+Reported as CC0. The site's licence page did not yield terms to either of the
+two fetches attempted on 2026-09-07, and Quaternius has historically had both a
+free and a patron tier. CC0 is *plausible* and unconfirmed, so by hard rule 6 it
+stays out until someone reads the actual licence text and records it here. An
+asset whose licence we assumed is the one that has to be torn out later.
+
+**Also re-confirmed as forbidden**, matching §5.2 and the owner's own reading:
+Human-M3 (data licence bars commercial products and services), the Texel body
+scan dataset (MIT **code**, CC-BY-**NC** data — the split is the point), and
+H3WB / Human3.6M (MIT repository, but the images stay under the Human3.6M
+licence; a permissive wrapper does not launder the payload).
+
 ### 5.3 The Autodesk FBX SDK — why it is not used
 
 The SDK **is** free of charge, and version 2020.3.9 is installed on the
