@@ -781,6 +781,134 @@ TEST_CASE("a skinned body and an unskinned proxy coexist", "[gltf][skin][multime
     std::filesystem::remove(out, ec);
 }
 
+namespace {
+
+/// How many times @p needle occurs in @p hay.
+size_t countOf(const std::string& hay, const std::string& needle) {
+    size_t n = 0;
+    for (size_t at = hay.find(needle); at != std::string::npos; at = hay.find(needle, at + 1))
+        ++n;
+    return n;
+}
+
+/// A skin over @p vertices bound to the SAME skeleton as @p from, every vertex
+/// on joint 0.
+///
+/// That is what a fitted proxy's skin IS -- `rig::proxyWeights` derives real
+/// weights from the fitting, and the skeleton it derives them against is the
+/// body's. Borrowing the arrays here keeps the fixture about the SHARING rather
+/// than about inventing a second rig.
+struct BorrowedSkin {
+    std::vector<uint32_t> joints;
+    std::vector<float> weights;
+
+    foundation::SkinView view(const foundation::SkinView& from, size_t vertices) {
+        joints.assign(vertices * io::kGltfInfluences, 0);
+        weights.assign(vertices * io::kGltfInfluences, 0.0F);
+        for (size_t i = 0; i < vertices; ++i)
+            weights[i * io::kGltfInfluences] = 1.0F;
+        return foundation::SkinView{.jointNames   = from.jointNames,
+                                    .jointParents = from.jointParents,
+                                    .globalRest   = from.globalRest,
+                                    .globalPose   = from.globalPose,
+                                    .joints       = joints,
+                                    .weights      = weights,
+                                    .influences   = io::kGltfInfluences};
+    }
+};
+
+}  // namespace
+
+TEST_CASE("several skinned entries share ONE skin", "[gltf][skin][multimesh]") {
+    // The body and everything worn ride the same rig. A live-rig export ships
+    // REST geometry and lets the consumer pose it, so an entry with no skin
+    // stays where it was while the body moves -- measured, the eyes protruded
+    // from their sockets. One `skins` entry, one set of inverse binds, and both
+    // mesh nodes pointing at it.
+    auto f                     = buildRigged();
+    const auto rmBody          = core::RenderMesh::build(f.mesh);
+    const auto bodySkin        = f.skin.view();
+    const core::Mesh proxyMesh = quadAt(8.0F, "eyes");
+    const auto rmProxy         = core::RenderMesh::build(proxyMesh);
+    BorrowedSkin borrowed;
+    const auto eyeSkin = borrowed.view(bodySkin, rmProxy.view().vertexCount());
+
+    const auto out = tempGlb("shared_skin");
+    const std::vector<io::GltfSceneEntry> scene{
+        {rmBody.view(), "body", nullptr, &bodySkin},
+        {rmProxy.view(), "eyes", nullptr, &eyeSkin},
+    };
+    REQUIRE(io::writeGlbScene(out, scene).has_value());
+
+    const std::string j = glbJson(out);
+    CHECK(countOf(j, R"("skins":[)") == 1);
+    // BOTH mesh nodes reference it. One reference is the old behaviour, where
+    // the proxy shipped unskinned.
+    CHECK(countOf(j, R"("skin":0)") == 2);
+    // ONE set of inverse binds: the skeleton is the same, so a second is a
+    // duplicate block nothing reads. Counted as MAT4 ACCESSORS, not as the
+    // `inverseBindMatrices` key -- the key sits in `skins`, so it reads 1
+    // whether or not the bytes were written twice.
+    CHECK(countOf(j, R"("inverseBindMatrices":)") == 1);
+    CHECK(countOf(j, R"("type":"MAT4")") == 1);
+    // ...but the attributes are per mesh, because the weights differ.
+    CHECK(countOf(j, R"("JOINTS_0":)") == 2);
+    CHECK(countOf(j, R"("WEIGHTS_0":)") == 2);
+
+#if defined(MH_HAVE_ASSIMP)
+    Assimp::Importer importer;
+    const aiScene* sc = importer.ReadFile(out.string(), 0);
+    INFO("assimp: " << importer.GetErrorString());
+    REQUIRE(sc != nullptr);
+    REQUIRE(sc->mNumMeshes == 2);
+    CHECK(sc->mMeshes[0]->HasBones());
+    CHECK(sc->mMeshes[1]->HasBones());
+    // Every bone of BOTH meshes must resolve to a real node: joint indices that
+    // point past the node array are the classic multi-skin mistake.
+    size_t unresolved = 0;
+    for (unsigned m = 0; m < sc->mNumMeshes; ++m) {
+        for (unsigned b = 0; b < sc->mMeshes[m]->mNumBones; ++b) {
+            if (sc->mRootNode->FindNode(sc->mMeshes[m]->mBones[b]->mName) == nullptr) ++unresolved;
+        }
+    }
+    CHECK(unresolved == 0);
+#endif
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("entries skinned to DIFFERENT skeletons are refused", "[gltf][skin][multimesh]") {
+    // One `skins` entry means one is CHOSEN, and every other entry's JOINTS_0
+    // then indexes it. Across unrelated rigs that indexing is nonsense: the file
+    // loads, poses, and moves each vertex with whatever joint shares its number.
+    auto f              = buildRigged();
+    const auto rmBody   = core::RenderMesh::build(f.mesh);
+    const auto bodySkin = f.skin.view();
+
+    const core::Mesh proxyMesh = quadAt(8.0F, "eyes");
+    const auto rmProxy         = core::RenderMesh::build(proxyMesh);
+    // The same shape of rig under a different name is still a different rig.
+    std::vector<std::string> other(f.skin.jointNames.begin(), f.skin.jointNames.end());
+    other[0] = "hips";
+    BorrowedSkin borrowed;
+    auto eyeSkin       = borrowed.view(bodySkin, rmProxy.view().vertexCount());
+    eyeSkin.jointNames = other;
+
+    const auto out = tempGlb("mixed_skin");
+    std::error_code before;
+    std::filesystem::remove(out, before);
+    const std::vector<io::GltfSceneEntry> scene{
+        {rmBody.view(), "body", nullptr, &bodySkin},
+        {rmProxy.view(), "eyes", nullptr, &eyeSkin},
+    };
+    const auto r = io::writeGlbScene(out, scene);
+    REQUIRE_FALSE(r.has_value());
+    CHECK(r.error().kind == io::GltfWriteErrorKind::InvalidSkin);
+    CHECK(r.error().detail.find("different skeleton") != std::string::npos);
+    CHECK_FALSE(std::filesystem::exists(out));
+}
+
 // glTF requires an accessor's min/max to be the true bounds of its data, and a
 // validator compares them as doubles against the float data widened to double.
 // Printing the bound with too few digits puts it INSIDE the range, which the
@@ -1876,6 +2004,74 @@ TEST_CASE("a rigged Draco primitive still points its skin at the right bytes",
     CHECK(acc["count"] == 2);
     REQUIRE(acc.contains("bufferView"));
     CHECK(doc["bufferViews"][acc["bufferView"].get<size_t>()]["byteLength"] == 2 * 64);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("two skinned Draco entries keep ONE set of inverse binds", "[io][gltf][draco]") {
+    // Draco and the shared skin meet in the accessor/bufferView counters. A
+    // compressed entry writes one view where a plain one writes several, and a
+    // second skinned entry now writes NO inverse-bind view at all -- two
+    // separate reasons for the two counters to fall out of step, and the file
+    // still loads either way with every accessor reading the wrong block.
+    const auto a   = quadAt(0.0F, "body");
+    const auto b   = quadAt(8.0F, "eyes");
+    const auto rmA = core::RenderMesh::build(a);
+    const auto rmB = core::RenderMesh::build(b);
+
+    const std::vector<std::string> names{"root", "child"};
+    const std::vector<int32_t> parents{-1, 0};
+    auto childRest    = foundation::Mat4::identity();
+    childRest.m[1][3] = 2.0F;
+    const std::vector<foundation::Mat4> globalRest{foundation::Mat4::identity(), childRest};
+
+    const auto oneSkin = [&](size_t n, std::vector<uint32_t>& joints, std::vector<float>& weights) {
+        joints.assign(n * 4, 0);
+        weights.assign(n * 4, 0.0F);
+        for (size_t i = 0; i < n; ++i)
+            weights[i * 4] = 1.0F;
+        return foundation::SkinView{.jointNames   = names,
+                                    .jointParents = parents,
+                                    .globalRest   = globalRest,
+                                    .globalPose   = {},
+                                    .joints       = joints,
+                                    .weights      = weights,
+                                    .influences   = 4};
+    };
+    std::vector<uint32_t> ja;
+    std::vector<float> wa;
+    std::vector<uint32_t> jb;
+    std::vector<float> wb;
+    const auto skinA = oneSkin(rmA.view().vertexCount(), ja, wa);
+    const auto skinB = oneSkin(rmB.view().vertexCount(), jb, wb);
+
+    const auto out = tempGlb("draco_shared_rig");
+    io::GltfWriteOptions opt;
+    opt.draco = true;
+    const std::vector<io::GltfSceneEntry> scene{
+        {rmA.view(), "body", nullptr, &skinA},
+        {rmB.view(), "eyes", nullptr, &skinB},
+    };
+    REQUIRE(io::writeGlbScene(out, scene, opt).has_value());
+
+    const auto doc      = jsonOf(out);
+    const size_t ibmAcc = doc["skins"][0]["inverseBindMatrices"];
+    const auto& acc     = doc["accessors"][ibmAcc];
+    CHECK(acc["type"] == "MAT4");
+    CHECK(acc["count"] == 2);
+    REQUIRE(acc.contains("bufferView"));
+    // 64 bytes a joint. Any other size means a counter landed on the Draco
+    // block, on the second entry's attributes, or on nothing.
+    CHECK(doc["bufferViews"][acc["bufferView"].get<size_t>()]["byteLength"] == 2 * 64);
+
+    size_t mat4 = 0;
+    for (const auto& a2 : doc["accessors"])
+        if (a2["type"] == "MAT4") ++mat4;
+    CHECK(mat4 == 1);
+    CHECK(doc["skins"].size() == 1);
+    CHECK(doc["nodes"][0]["skin"] == 0);
+    CHECK(doc["nodes"][1]["skin"] == 0);
 
     std::error_code ec;
     std::filesystem::remove(out, ec);

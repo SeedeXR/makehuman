@@ -2041,10 +2041,29 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
           refused (`FbxWriteErrorKind::MixedSkeletons`) because the clusters are
           wired to the scene skeleton BY INDEX, and the bind pose lists only the
           SKINNED mesh nodes.
-      - **Still to wire: glTF.** `writeGlbScene` still allows one skinned entry,
-        which is why Blender reports `posed.glb` as 14,517 skinned of 15,593 —
-        the body alone. Same shape of change: one `skin`, several meshes
-        referencing it.
+      - **glTF: wired and confirmed** (2026-09-07). `writeGlbScene` allowed
+        exactly one skinned entry; it now takes the skeleton from the first
+        skinned entry and writes ONE `skins` entry with ONE set of inverse-bind
+        matrices, which every skinned mesh node references. JOINTS_0/WEIGHTS_0
+        stay per mesh, because the weights differ. An entry naming a different
+        skeleton is refused: JOINTS_0 indexes the shared one.
+        - **Blender**: `posed.glb` now reads **15,593 of 15,593 skinned** (was
+          14,517, the body alone), 2 meshes on ONE armature, 179 bones,
+          evaluating to the same 1.6863 × 0.3009 × 1.663 m as before and as
+          `posed.fbx`. 12/12.
+        - **Looked at it**: rendered the posed head from `posed.glb` — eyes
+          seated in the sockets, iris centred.
+        - A latent defect the change exposed: the loop finding the scene's skin
+          had **no `break`**, so it kept the LAST skinned entry. Harmless while
+          only one could be skinned; with two it pointed
+          `skins[0].inverseBindMatrices` at the entry that deliberately writes
+          none, and assimp refused the file outright. It now reuses the same
+          `firstSkinned` iterator the validation uses.
+      - **Still to wire: USD.** `writeUsdaScene`/`writeUsdzScene` take the skin
+        as a PARAMETER rather than per entry and bind it to the first one
+        (`main.cpp`, the `.usda` branch), so a posed `.usd` still ships the
+        proxies unskinned — the same protruding eyes. Different shape of change
+        from the other two: the signature has to grow a per-entry skin first.
 
 - [~] Texture packing (ORM), GLB embedding, KTX2/Basis, optional Draco — three
       of the four are settled.

@@ -105,9 +105,17 @@ EXPECT = {
     # 179 bones, not 163: the app defaults to mixamo_superset. The fixture's own
     # rigged.glb still uses the reference's 163-bone rig, so both numbers appear
     # in this file on purpose.
+    # 15,593 of 15,593 skinned, not 14,517: the eyes ride the body's skeleton
+    # now. `writeGlbScene` used to allow exactly ONE skinned entry, so the
+    # proxies shipped unskinned and stood still while the body moved.
+    #
+    # 358 vertex groups, not 179: glTF's importer makes a group per joint per
+    # MESH, so two skinned meshes on one 179-bone armature give 2 x 179. The FBX
+    # importer counts differently (see posed.fbx) because it makes a group only
+    # for a cluster that weights something.
     "posed.glb": {
         "vertices": 15593, "triangles": 28796, "tallest": 1.659377, "uv_layers": 1,
-        "bones": 179, "armatures": 1, "skinned": 14517, "vertex_groups": 179,
+        "bones": 179, "armatures": 1, "skinned": 15593, "vertex_groups": 358,
         "live_rig": True, "evaluated": [1.6863, 0.3009, 1.663],
     },
 

@@ -263,8 +263,14 @@ std::expected<void, GltfWriteError> validateEntry(const std::filesystem::path& p
 }
 
 /// Appends one entry's attributes to @p bin, recording where each block landed.
+///
+/// @param withInverseBinds whether this entry writes the inverse-bind block.
+///        The scene has ONE skin, so only the first skinned entry does: every
+///        entry shares the skeleton, so the matrices would be identical and
+///        nothing would read the copies.
 Packed packEntry(std::vector<uint8_t>& bin, const GltfSceneEntry& entry,
-                 const GltfWriteOptions& options, float scale, float groundOffset) {
+                 const GltfWriteOptions& options, float scale, float groundOffset,
+                 bool withInverseBinds) {
     const foundation::RenderView& rm = entry.mesh;
     Packed pk;
     pk.withNormals = options.writeNormals && rm.vnorm.size() == rm.vertexCount();
@@ -441,20 +447,22 @@ Packed packEntry(std::vector<uint8_t>& bin, const GltfSceneEntry& entry,
             pk.weightBytes = bin.size() - pk.weightOffset;
         }
 
-        padTo4(bin);
-        pk.ibmOffset = bin.size();
-        for (const auto& g : scaledGlobal) {
-            const foundation::Mat4 inv = foundation::rigidInverse(g);
-            // glTF stores matrices COLUMN-major. Ours are row-major, so this
-            // transposes on the way out. Writing them row-major produces a file
-            // that loads, poses, and is wrong in a way that looks like bad
-            // weights.
-            for (size_t c = 0; c < 4; ++c) {
-                for (size_t r = 0; r < 4; ++r)
-                    appendFloat(bin, inv.m[r][c]);
+        if (withInverseBinds) {
+            padTo4(bin);
+            pk.ibmOffset = bin.size();
+            for (const auto& g : scaledGlobal) {
+                const foundation::Mat4 inv = foundation::rigidInverse(g);
+                // glTF stores matrices COLUMN-major. Ours are row-major, so this
+                // transposes on the way out. Writing them row-major produces a file
+                // that loads, poses, and is wrong in a way that looks like bad
+                // weights.
+                for (size_t c = 0; c < 4; ++c) {
+                    for (size_t r = 0; r < 4; ++r)
+                        appendFloat(bin, inv.m[r][c]);
+                }
             }
+            pk.ibmBytes = bin.size() - pk.ibmOffset;
         }
-        pk.ibmBytes = bin.size() - pk.ibmOffset;
     }
 
     // Morph targets, one block per target. Scaled like positions, but WITHOUT
@@ -582,13 +590,26 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
         if (const auto ok = validateEntry(path, e); !ok) return std::unexpected(ok.error());
     }
 
-    // Joint nodes follow the mesh nodes, so one skeleton's node block is easy
-    // to address and two would collide. Refused rather than silently dropped.
-    const size_t skinned = static_cast<size_t>(std::count_if(
-        entries.begin(), entries.end(), [](const GltfSceneEntry& e) { return e.skin != nullptr; }));
-    if (skinned > 1) {
-        return std::unexpected(GltfWriteError{GltfWriteErrorKind::InvalidSkin, path.string(),
-                                              "only one entry may carry a skin"});
+    // ONE skeleton for the scene, taken from the first entry that has a skin.
+    //
+    // The body and everything worn ride the same rig, and joint nodes follow the
+    // mesh nodes, so a second skeleton would need its own node block. It does
+    // not need one: every skinned entry references `skins[0]`, and what differs
+    // between them is JOINTS_0/WEIGHTS_0, which are per mesh anyway.
+    //
+    // So every other skin must BE that skeleton, because JOINTS_0 indexes it. A
+    // different rig under the same indices gives a file that loads, poses, and
+    // moves each vertex with whatever joint shares its number.
+    const auto firstSkinned = std::find_if(
+        entries.begin(), entries.end(), [](const GltfSceneEntry& e) { return e.skin != nullptr; });
+    for (const GltfSceneEntry& e : entries) {
+        if (firstSkinned == entries.end()) break;
+        if (e.skin != nullptr &&
+            !std::ranges::equal(e.skin->jointNames, firstSkinned->skin->jointNames)) {
+            return std::unexpected(GltfWriteError{GltfWriteErrorKind::InvalidSkin, path.string(),
+                                                  e.name + " names a different skeleton; one glTF "
+                                                           "scene carries one"});
+        }
     }
 
     // The same two material hazards the OBJ writer refuses (ObjWriter.cpp), and
@@ -617,8 +638,12 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
     std::vector<uint8_t> bin;
     std::vector<Packed> packs;
     packs.reserve(entries.size());
-    for (const GltfSceneEntry& e : entries)
-        packs.push_back(packEntry(bin, e, options, scale, groundOffset));
+    bool ibmWritten = false;
+    for (const GltfSceneEntry& e : entries) {
+        const bool withIbm = e.skin != nullptr && !ibmWritten;
+        packs.push_back(packEntry(bin, e, options, scale, groundOffset, withIbm));
+        ibmWritten = ibmWritten || withIbm;
+    }
 
     // ---- materials, deduped by name in first-use order ---------------------
     struct MatSlot {
@@ -727,15 +752,16 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
 
     // Mesh nodes come first, so joints occupy nodes[entries.size() ..] and a
     // joint's node index is its skin index plus that base.
-    const size_t jointBase                = entries.size();
-    const foundation::SkinView* sceneSkin = nullptr;
-    size_t skinnedEntry                   = 0;
-    for (size_t i = 0; i < entries.size(); ++i) {
-        if (entries[i].skin != nullptr) {
-            sceneSkin    = entries[i].skin;
-            skinnedEntry = i;
-        }
-    }
+    const size_t jointBase = entries.size();
+    // The FIRST skinned entry, the same one the skeleton and the inverse binds
+    // came from. This used to be its own loop with no `break`, so it found the
+    // LAST -- harmless while only one entry could be skinned, and the moment two
+    // could it pointed `skins[0].inverseBindMatrices` at the entry that
+    // deliberately does not write them.
+    const bool anySkin                    = firstSkinned != entries.end();
+    const foundation::SkinView* sceneSkin = anySkin ? firstSkinned->skin : nullptr;
+    const size_t skinnedEntry =
+        anySkin ? static_cast<size_t>(std::distance(entries.begin(), firstSkinned)) : 0;
 
     j += R"("scene":0,"scenes":[{"nodes":[)";
     for (size_t i = 0; i < entries.size(); ++i) {
@@ -823,8 +849,11 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
                 view(pk.weightOffset, pk.weightBytes, kTargetArrayBuffer);
             }
             // No "target" on the inverse-bind view: it is not vertex data, and a
-            // validator flags an ARRAY_BUFFER target on a MAT4 accessor.
-            view(pk.ibmOffset, pk.ibmBytes, -1);
+            // validator flags an ARRAY_BUFFER target on a MAT4 accessor. Only
+            // the entry that PACKED one gets a view -- the views and the
+            // accessors below are consumed in lockstep, so both sides must ask
+            // the same question.
+            if (pk.ibmBytes != 0) view(pk.ibmOffset, pk.ibmBytes, -1);
         }
         for (const Packed::MorphBlock& mb : pk.morphs) {
             // A sparse accessor's own bufferViews must NOT declare a target
@@ -910,9 +939,11 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
             pk.weightAcc = nextAcc++;
             geo(kComponentFloat, n, "VEC4");
             j += "}";
-            pk.ibmAcc = nextAcc++;
-            acc(kComponentFloat, entries[i].skin->jointCount(), "MAT4");
-            j += "}";
+            if (pk.ibmBytes != 0) {
+                pk.ibmAcc = nextAcc++;
+                acc(kComponentFloat, entries[i].skin->jointCount(), "MAT4");
+                j += "}";
+            }
         }
         for (const Packed::MorphBlock& mb : pk.morphs) {
             pk.morphAcc.push_back(nextAcc++);

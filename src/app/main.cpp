@@ -1240,6 +1240,26 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     mh::io::SceneExportOptions sceneOpts;
     sceneOpts.feetOnGround = true;
 
+    // Everything worn rides the SAME skeleton, and both live-rig writers now
+    // emit the joints once and let each entry reference them. Without a skin a
+    // proxy simply stays where it was while the body moves -- measured, the
+    // eyes protruded from their sockets in both formats.
+    //
+    // Computed once for the two formats that can carry it: OBJ, STL and 3MF get
+    // the baked posed mesh, and the assimp and USD scene entries have no skin
+    // field at all.
+    const bool proxiesCanFollow = skin != nullptr && (ext == ".glb" || ext == ".fbx");
+    const std::vector<mh::rig::SkinData> proxySkins =
+        proxiesCanFollow ? wornSkins(rig, worn) : std::vector<mh::rig::SkinData>{};
+    std::vector<mh::foundation::SkinView> proxyViews;
+    proxyViews.reserve(proxySkins.size());
+    for (const mh::rig::SkinData& s : proxySkins)
+        proxyViews.push_back(s.view());
+    // The i-th worn proxy's skin, or null when it has none.
+    const auto proxySkin = [&proxyViews](size_t i) -> const mh::foundation::SkinView* {
+        return i < proxyViews.size() && proxyViews[i].valid() ? &proxyViews[i] : nullptr;
+    };
+
     // OBJ is the only format left that cannot carry a skeleton -- it has no
     // concept of one. Said here rather than per format, because silence is how
     // the rig went missing from every export for four milestones.
@@ -1315,12 +1335,12 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     }
     if (ext == ".glb") {
         std::vector<mh::io::GltfSceneEntry> scene;
-        // Only the body is rigged, and writeGlbScene allows exactly one skinned
-        // entry -- worn proxies follow the body by being re-fitted, not skinned.
         scene.push_back({body, "body", allDressed ? &*bodyMat : nullptr, skin, morphs});
+        size_t at = 0;
         for (const auto& [group, proxy] : worn) {
             scene.push_back({proxy.rm.view(), group.toLower().toStdString(),
-                             allDressed ? &*proxy.material : nullptr});
+                             allDressed ? &*proxy.material : nullptr, proxySkin(at)});
+            ++at;
         }
         const auto r = mh::io::writeGlbScene(path, scene, gltfOpts);
         return report(r ? std::string{} : r.error().message());
@@ -1342,21 +1362,12 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
         //
         // Everything worn is skinned too, to the SAME skeleton -- the writer
         // emits the joints once and each entry's clusters point at them.
-        const std::vector<mh::rig::SkinData> proxySkins =
-            skin != nullptr ? wornSkins(rig, worn) : std::vector<mh::rig::SkinData>{};
-        std::vector<mh::foundation::SkinView> proxyViews;
-        proxyViews.reserve(proxySkins.size());
-        for (const auto& s : proxySkins)
-            proxyViews.push_back(s.view());
-
         std::vector<mh::io::FbxSceneEntry> scene;
         scene.push_back({body, "body", allDressed ? &*bodyMat : nullptr, skin, morphs});
         size_t at = 0;
         for (const auto& [group, proxy] : worn) {
-            const bool skinned = at < proxyViews.size() && proxyViews[at].valid();
             scene.push_back({proxy.rm.view(), group.toLower().toStdString(),
-                             allDressed ? &*proxy.material : nullptr,
-                             skinned ? &proxyViews[at] : nullptr});
+                             allDressed ? &*proxy.material : nullptr, proxySkin(at)});
             ++at;
         }
         mh::io::FbxWriteOptions fbxOpts;

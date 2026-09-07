@@ -538,6 +538,22 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION "mesh \"eyes\":.*skin of 179 bones"
         FIXTURES_REQUIRED app_worn_fbx_file)
 
+    # ...and the same in glTF, which had the identical defect: writeGlbScene
+    # allowed exactly one skinned entry, so Blender read posed.glb as 14,517
+    # skinned vertices of 15,593 -- the body alone.
+    add_test(NAME app_worn_skin_glb_export COMMAND makehuman
+             --rig mixamo_superset
+             --eyes high-poly
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_worn.glb)
+    set_tests_properties(app_worn_skin_glb_export PROPERTIES
+        PASS_REGULAR_EXPRESSION "eyes skin: 179 joints"
+        FIXTURES_SETUP app_worn_glb_file)
+    add_test(NAME app_worn_skin_glb COMMAND makehuman
+             --inspect ${CMAKE_CURRENT_BINARY_DIR}/app_worn.glb)
+    set_tests_properties(app_worn_skin_glb PROPERTIES
+        PASS_REGULAR_EXPRESSION "mesh \"eyes\":.*skin of 179 bones"
+        FIXTURES_REQUIRED app_worn_glb_file)
+
     # What a character is WEARING was not saved, and reopening it silently
     # substituted the default. Measured before the fix: saved wearing Low-Poly,
     # reopened wearing HighPolyEyes.

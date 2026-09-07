@@ -86,7 +86,7 @@ struct GltfSceneEntry {
     foundation::RenderView mesh;
     std::string name{"MakeHuman"};
     const foundation::MaterialDesc* material{nullptr};
-    /// Only ONE entry in a scene may carry a skin -- see writeGlbScene.
+    /// Every skinned entry must name the SAME skeleton -- see writeGlbScene.
     const foundation::SkinView* skin{nullptr};
     std::span<const foundation::MorphTarget> morphTargets{};
 };
@@ -98,10 +98,15 @@ struct GltfSceneEntry {
 /// Sharing one accessor block -- the classic multi-mesh glTF bug -- yields
 /// several meshes drawn on top of each other.
 ///
-/// **At most one entry may carry a skin.** Joint nodes follow the mesh nodes,
-/// so a second skeleton would need its own node block; nothing needs that yet
-/// (only the body is rigged) and guessing at it would be untested code. A
-/// second skin is refused rather than silently dropped.
+/// **Several entries may be skinned, to ONE shared skeleton.** The body and
+/// everything worn ride the same rig, so the file carries one `skins` entry and
+/// one set of inverse-bind matrices, taken from the first skinned entry; every
+/// skinned mesh node references it, and JOINTS_0/WEIGHTS_0 stay per mesh because
+/// the weights differ. Joint nodes follow the mesh nodes, so a SECOND skeleton
+/// would need its own node block -- and JOINTS_0 indexes the shared one, so an
+/// entry naming a different skeleton is refused rather than written as a file
+/// that loads, poses, and moves each vertex with whatever joint shares its
+/// number.
 ///
 /// `feetOnGround` levels the whole scene by the lowest point of any entry:
 /// levelling each mesh independently would drop the clothes to the floor beside

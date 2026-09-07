@@ -4,6 +4,63 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-07 (later) — Session · **The glTF scene gets one shared skin too**
+
+### The chunk
+`writeGlbScene` allowed exactly one skinned entry -- "joint nodes follow the
+mesh nodes, so a second skeleton would need its own node block". True, and
+beside the point: the body and everything worn ride the SAME skeleton, so
+nothing needs a second node block. It now takes the skeleton from the first
+skinned entry and writes ONE `skins` entry with ONE set of inverse-bind
+matrices; every skinned mesh node references it, and JOINTS_0/WEIGHTS_0 stay per
+mesh because the weights differ (`GltfWriter.cpp`, the `firstSkinned` block, the
+`withInverseBinds` parameter, and the two `pk.ibmBytes != 0` guards).
+
+`main.cpp` now computes the worn skins ONCE for both live-rig formats
+(`proxiesCanFollow` / `proxySkin`), instead of the FBX branch owning them.
+
+### The latent defect it exposed
+The loop that found the scene's skin had **no `break`**, so it kept the LAST
+skinned entry. Harmless while only one entry could be skinned. With two, it
+pointed `skins[0].inverseBindMatrices` at the entry that deliberately writes
+none, and assimp refused the file: *Member "inverseBindMatrices" was not of type
+"uint"*. It now reuses the same `firstSkinned` iterator the validation uses, so
+there is one answer to "which entry is the skeleton" rather than two.
+
+### What Blender says
+`posed.glb`: **15,593 of 15,593 vertices skinned** (was 14,517 -- the body
+alone), 2 meshes, ONE armature, 179 bones, evaluating to 1.6863 x 0.3009 x
+1.663 m -- unchanged, and the same as `posed.fbx`. 12/12.
+
+Rendered the posed head from the GLB and looked at it: eyes seated in the
+sockets, iris centred. (The GLB embeds its textures, so unlike the FBX render
+the iris is actually visible.)
+
+### A test that would not have had teeth
+`countOf(j, "inverseBindMatrices") == 1` proves nothing about duplication: that
+key lives in `skins`, so it reads 1 whether the bytes were written once or
+twice. Counting MAT4 **accessors** is the assertion that bites, and it is what
+killed the "write inverse binds for every skinned entry" mutation.
+
+### Mutations, all killed
+Mixed skeletons accepted; `skins[0]` pointing at the last skinned entry;
+inverse binds written per entry; the inverse-bind VIEW emitted without its
+accessor (and the same split under Draco); and the app leaving glTF proxies
+unskinned.
+
+Draco earned its own test: a compressed entry writes one view where a plain one
+writes several, and a second skinned entry now writes no inverse-bind view at
+all -- two independent reasons for the accessor and bufferView counters to fall
+out of step, with a file that still loads and reads every wrong block.
+
+### Next
+**USD.** `writeUsdaScene`/`writeUsdzScene` take the skin as a PARAMETER rather
+than per entry and bind it to the first, so a posed `.usd` still ships the
+proxies unskinned -- the same protruding eyes. The signature has to grow a
+per-entry skin first, which is why it is not this chunk.
+
+---
+
 ## 2026-09-07 — Session · **One skeleton for the whole FBX scene, and the eyes finally move**
 
 ### The chunk
