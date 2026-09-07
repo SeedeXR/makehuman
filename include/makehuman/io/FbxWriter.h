@@ -43,6 +43,11 @@ enum class FbxWriteErrorKind : uint8_t {
     /// A coordinate was NaN or infinite. FBX stores doubles raw, so unlike JSON
     /// this would produce a readable file with a poisoned mesh in it.
     NonFiniteValue,
+    /// Two entries name different skeletons. The scene carries ONE, so every
+    /// entry's clusters are wired to it by joint index -- which is meaningless
+    /// across unrelated rigs, and produces a file that opens and deforms
+    /// wrongly rather than one that fails.
+    MixedSkeletons,
 };
 
 struct FbxWriteError {

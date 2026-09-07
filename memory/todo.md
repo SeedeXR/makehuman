@@ -2008,10 +2008,43 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         shrinks the vertex toward the origin by the discarded weight.
       - Real data: the shipped `eyes/high-poly.mhclo` derives **1,064 vertices,
         0 not fully weighted**.
-      - **Still to wire.** Both writers allow ONE skinned entry, and the joints
-        must be SHARED rather than duplicated per proxy — 179 bones once, with
-        each entry's clusters connecting to them. That is the next chunk, and it
-        ends with Maya confirming the eyes follow the pose.
+      - **FBX: wired and confirmed** (2026-09-07). `writeFbxScene` now takes the
+        skeleton from the first entry that has a skin and writes it ONCE —
+        `NodeAttribute`, `Model` and the parent links, plus a single scene-level
+        `BindPose` listing the skinned mesh nodes and the joints. Each entry
+        keeps its own `Deformer`/Skin and its own clusters, and every cluster
+        connects to the SHARED joint model. `main.cpp` derives each worn proxy's
+        weights with `rig::proxyWeights` and hands them over.
+        - **Maya, the reference implementation, confirms it**: `app_posed.fbx`
+          reports `skin_clusters: 2` and `live_meshes: ["bodyShape",
+          "eyesShape"]`. With the proxy skin removed it reports
+          `["bodyShape"]` — measured, not assumed.
+        - `maya_validate.py` needed two fixes to be able to say that. Its
+          rest-and-deformed pair was two independent loops each keeping whatever
+          came last, which reported the EYES' 8.87 × 2.98 × 2.34 cm as the
+          character's extent the moment a second skinned mesh appeared; it now
+          pairs each geometry with its own `Orig` shape and describes the
+          largest. And `live_meshes` measures per-vertex DISPLACEMENT, not
+          change of extent: a T-pose moves the eyes ~8 cm sideways without
+          altering their bounding box by a millimetre, so the extent test called
+          a correctly skinned proxy dead.
+        - **Blender, independently**: `posed.fbx` reads back as 2 meshes, ONE
+          armature, 179 bones, **15,593 of 15,593 vertices skinned**, and its
+          own skinning evaluates to 1.6863 × 0.3009 × 1.663 m — the same answer
+          as our CPU LBS and as `posed.glb`. A skeleton written per entry would
+          report two armatures.
+        - **Looked at it.** Rendered the posed head in Blender: eyes seated in
+          the sockets. The same file with the eyes' armature modifier removed —
+          which is exactly what shipping them unskinned looks like — has the
+          eyeballs bulging out of the face, 6.4 cm forward.
+        - Two guards came with it: entries skinned to DIFFERENT skeletons are
+          refused (`FbxWriteErrorKind::MixedSkeletons`) because the clusters are
+          wired to the scene skeleton BY INDEX, and the bind pose lists only the
+          SKINNED mesh nodes.
+      - **Still to wire: glTF.** `writeGlbScene` still allows one skinned entry,
+        which is why Blender reports `posed.glb` as 14,517 skinned of 15,593 —
+        the body alone. Same shape of change: one `skin`, several meshes
+        referencing it.
 
 - [~] Texture packing (ORM), GLB embedding, KTX2/Basis, optional Draco — three
       of the four are settled.

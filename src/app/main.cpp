@@ -1043,6 +1043,39 @@ bool inspectFile(const std::filesystem::path& path) {
     return true;
 }
 
+/// A skin for everything worn, derived from the body's.
+///
+/// A live-rig export ships REST geometry and lets the consumer pose it, so an
+/// entry with no skin simply stays where it was while the body moves. Measured
+/// 2026-09-07 in Maya, before this existed: the body deformed and the eyes did
+/// not, so they protruded from their sockets.
+///
+/// A proxy vertex IS a weighted blend of three base vertices, so its weights
+/// are that same blend -- `rig::proxyWeights`, which is where the reasoning and
+/// its tests live. Parallel to @p worn, which is an ordered map, so entry `i`
+/// here is the `i`-th entry a writer loop appends.
+std::vector<mh::rig::SkinData> wornSkins(const PoseRig& rig,
+                                         const std::map<QString, WornProxy>& worn) {
+    std::vector<mh::rig::SkinData> skins;
+    skins.reserve(worn.size());
+    for (const auto& [group, proxy] : worn) {
+        const std::string name = group.toLower().toStdString();
+        const mh::rig::CompiledWeights w =
+            mh::rig::proxyWeights(rig.weights, proxy.proxy.refVerts, proxy.proxy.weights);
+        mh::rig::SkinData skin = mh::rig::buildSkinData(rig.skeleton, w, proxy.rm.vmap());
+        if (skin.jointNames.empty()) {
+            std::fprintf(stderr, "%s: no skin could be derived; it will not follow the pose\n",
+                         name.c_str());
+        } else {
+            if (rig.posed()) skin.globalPose = rig.globalPose;
+            std::printf("%s skin: %zu joints, %u influences/vertex\n", name.c_str(),
+                        skin.globalRest.size(), static_cast<unsigned>(skin.influences));
+        }
+        skins.push_back(std::move(skin));
+    }
+    return skins;
+}
+
 /// Lower-cased extension of @p path, so every format test spells it one way.
 std::string lowerExtension(const std::filesystem::path& path) {
     std::string ext = path.extension().string();
@@ -1306,11 +1339,25 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
         //
         // Everything the assimp path carried is carried here: geometry,
         // normals, UVs, materials, textures, the skin and the blend shapes.
+        //
+        // Everything worn is skinned too, to the SAME skeleton -- the writer
+        // emits the joints once and each entry's clusters point at them.
+        const std::vector<mh::rig::SkinData> proxySkins =
+            skin != nullptr ? wornSkins(rig, worn) : std::vector<mh::rig::SkinData>{};
+        std::vector<mh::foundation::SkinView> proxyViews;
+        proxyViews.reserve(proxySkins.size());
+        for (const auto& s : proxySkins)
+            proxyViews.push_back(s.view());
+
         std::vector<mh::io::FbxSceneEntry> scene;
         scene.push_back({body, "body", allDressed ? &*bodyMat : nullptr, skin, morphs});
+        size_t at = 0;
         for (const auto& [group, proxy] : worn) {
+            const bool skinned = at < proxyViews.size() && proxyViews[at].valid();
             scene.push_back({proxy.rm.view(), group.toLower().toStdString(),
-                             allDressed ? &*proxy.material : nullptr});
+                             allDressed ? &*proxy.material : nullptr,
+                             skinned ? &proxyViews[at] : nullptr});
+            ++at;
         }
         mh::io::FbxWriteOptions fbxOpts;
         fbxOpts.feetOnGround = true;

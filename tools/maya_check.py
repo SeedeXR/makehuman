@@ -58,9 +58,17 @@ EXPECT = {
     # produced 247 x 334 x 269 here while every other field stayed correct.
     "app_posed.fbx": {
         "joints": 179,
-        "skin_clusters": 1,
+        # TWO: the body and the eyes it is wearing by default. One SKELETON,
+        # written once and shared, and a skin per mesh -- which is the only
+        # arrangement where a single pose moves both.
+        "skin_clusters": 2,
         "live_rig": True,
         "deformed_extent": [168.6275, 166.3017, 30.0878],
+        # The line this whole chunk exists for. Everything worn must MOVE, and
+        # `live_rig` cannot say so: it is one scene-wide number, and the body
+        # deforming hides eyes that do not. Measured with the proxy skin
+        # removed, this reads `["bodyShape"]` and the eyes protrude.
+        "live_meshes": ["bodyShape", "eyesShape"],
     },
     # ... and with NO pose the deformation must be exactly the identity. An
     # unposed rig that moves anything is the same bug, showing up where it is
@@ -68,6 +76,9 @@ EXPECT = {
     "app_unposed.fbx": {
         "joints": 179,
         "live_rig": False,
+        # Nothing moves, the worn proxy included: an unposed rig that displaces
+        # anything is the same bug where it is easiest to see.
+        "live_meshes": [],
     },
     # OUR writer with blend shapes. The names come back ESCAPED: Maya cannot
     # put a hyphen in a node name and encodes it as `FBXASC045`, so

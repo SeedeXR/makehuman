@@ -59,24 +59,75 @@ def _import(path):
               mergeNamespacesOnClash=False, pr=True)
 
 
-def _rest_and_deformed():
-    """Extents before and after the skin deformer, or (None, None).
+def _skinned_pairs():
+    """Every skinned mesh as (name, its "Orig" shape, its visible shape, verts).
 
-    The intermediate ("Orig") mesh is what the skinCluster reads; the visible
-    mesh is what it produces. Comparing them is the whole point of this file.
+    The "Orig" mesh is what the skinCluster READS and the visible one is what it
+    produces, so the pair is what settles live-versus-baked. Paired per geometry
+    on purpose: this used to be two independent loops, each keeping whatever came
+    last, which was harmless while a file held one skinned mesh and wrong the
+    moment the body arrived wearing something -- it then reported the EYES'
+    8.87 x 2.98 x 2.34 cm as the character's extent.
     """
-    rest = None
-    deformed = None
+    pairs = []
     for sc in cmds.ls(type="skinCluster") or []:
-        for g in cmds.skinCluster(sc, q=True, geometry=True) or []:
-            pts = cmds.xform(g + ALL_VERTS, q=True, ws=True, t=True)
-            deformed = _extent(pts)
-    for orig in cmds.ls(type="mesh", long=True, intermediateObjects=True) or []:
-        if not isinstance(cmds.polyEvaluate(orig, vertex=True), int):
+        for i, g in enumerate(cmds.skinCluster(sc, q=True, geometry=True) or []):
+            src = cmds.listConnections("%s.input[%d].inputGeometry" % (sc, i),
+                                       source=True, destination=False, shapes=True) or []
+            verts = cmds.polyEvaluate(g, vertex=True)
+            if not src or not isinstance(verts, int):
+                continue
+            pairs.append((g.split("|")[-1], src[0], g, verts))
+    return pairs
+
+
+def _rest_and_deformed():
+    """Extents before and after the skin deformer for the LARGEST skinned mesh.
+
+    The largest is the body; the worn proxies are the small ones. A scene-wide
+    answer is the only thing a single pair of extents can be, and this is the
+    honest choice of which mesh it describes -- `live_meshes` is what covers
+    the rest.
+    """
+    best = (None, None, -1)
+    for _, orig, shape, verts in _skinned_pairs():
+        if verts <= best[2]:
             continue
-        pts = cmds.xform(orig + ALL_VERTS, q=True, os=True, t=True)
-        rest = _extent(pts)
-    return rest, deformed
+        # WORLD space for the deformed side, OBJECT for the rest side, which is
+        # what the pinned 168.6275 x 166.3017 x 30.0878 was measured with.
+        best = (_extent(cmds.xform(orig + ALL_VERTS, q=True, os=True, t=True)),
+                _extent(cmds.xform(shape + ALL_VERTS, q=True, ws=True, t=True)),
+                verts)
+    return best[0], best[1]
+
+
+def _skin_live():
+    """Names of the skinned meshes whose deformer actually MOVES them.
+
+    A scene-wide extent cannot answer this once a file holds more than one
+    skinned mesh: the body deforming hides a proxy that does not. That is the
+    exact defect this was written for -- the worn eyes shipped unskinned, stayed
+    in the rest pose while everything around them moved, and protruded from
+    their sockets. `live_rig` was True the whole time, because the body was.
+
+    Measured as the largest per-vertex DISPLACEMENT, not as a change of extent.
+    Extent is what `live_rig` uses and it is the wrong tool here: a T-pose moves
+    the eyes about 8 cm sideways without changing their bounding box by a
+    millimetre, so the extent test called a correctly skinned proxy dead.
+    Compared per geometry against the mesh's own "Orig" shape, both sides in
+    OBJECT space so the mesh's own transform cancels out.
+    """
+    live = []
+    for name, orig, shape, _ in _skinned_pairs():
+        rest = cmds.xform(orig + ALL_VERTS, q=True, os=True, t=True)
+        posed = cmds.xform(shape + ALL_VERTS, q=True, os=True, t=True)
+        if len(rest) != len(posed):
+            continue
+        moved = max((sum((a - b) ** 2 for a, b in zip(rest[i:i + 3], posed[i:i + 3]))
+                     for i in range(0, len(rest), 3)), default=0.0)
+        if moved > 1.0:  # 1 cm, squared -- far below any real pose.
+            live.append(name)
+    return sorted(live)
 
 
 def _deforms_when_posed():
@@ -191,6 +242,7 @@ def describe(path):
         "rest_extent": rest,
         "deformed_extent": deformed,
         "live_rig": live,
+        "live_meshes": _skin_live(),
         "deforms_when_posed": _deforms_when_posed(),
         **_shading(),
     }

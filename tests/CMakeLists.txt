@@ -517,6 +517,27 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION "units: 1 = 0\\.01 m, so 1\\.6[0-9]+ m tall"
         FIXTURES_REQUIRED app_rig_fbx_file)
 
+    # Everything WORN follows the pose too, on the same skeleton. A live-rig
+    # export ships rest geometry and lets the consumer pose it, so an unskinned
+    # entry simply stays put: measured in Maya on 2026-09-07, the body deformed
+    # and the eyes did not, so they protruded from their sockets.
+    #
+    # assimp reads this back, not our own reader, and reports the bone count per
+    # MESH -- which is also what proves the joints are shared rather than
+    # duplicated, since 179 is the whole rig and there is one skeleton in it.
+    add_test(NAME app_worn_skin_export COMMAND makehuman
+             --rig mixamo_superset
+             --eyes high-poly
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_worn.fbx)
+    set_tests_properties(app_worn_skin_export PROPERTIES
+        PASS_REGULAR_EXPRESSION "eyes skin: 179 joints"
+        FIXTURES_SETUP app_worn_fbx_file)
+    add_test(NAME app_worn_skin COMMAND makehuman
+             --inspect ${CMAKE_CURRENT_BINARY_DIR}/app_worn.fbx)
+    set_tests_properties(app_worn_skin PROPERTIES
+        PASS_REGULAR_EXPRESSION "mesh \"eyes\":.*skin of 179 bones"
+        FIXTURES_REQUIRED app_worn_fbx_file)
+
     # What a character is WEARING was not saved, and reopening it silently
     # substituted the default. Measured before the fix: saved wearing Low-Poly,
     # reopened wearing HighPolyEyes.

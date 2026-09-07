@@ -4,6 +4,87 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-07 — Session · **One skeleton for the whole FBX scene, and the eyes finally move**
+
+### The chunk
+`writeFbxScene` wrote a private copy of the skeleton for every skinned entry.
+That produces a file that opens, deforms, and lists the rig two or three times,
+with a DCC letting a user pose one copy while the others stay put. It now takes
+the skeleton from the **first entry with a skin** and writes it once:
+`NodeAttribute`/LimbNode, `Model`/LimbNode, the parent links, and a single
+scene-level `BindPose`. Each entry keeps its own `Deformer`/Skin and its own
+clusters — the meshes are weighted differently — and every cluster connects to
+the SHARED joint model (`FbxWriter.cpp`, the `skeleton`/`jointModelIds` block and
+the connections loop).
+
+`main.cpp::wornSkins` then derives a skin for everything worn with
+`rig::proxyWeights` + `buildSkinData` and hands it to the writer, so a live-rig
+FBX no longer ships the eyes as a statue riding a moving head.
+
+### What Maya and Blender say
+- **Maya** (`tools/maya_check.py`): `app_posed.fbx` → `skin_clusters: 2`,
+  `live_meshes: ["bodyShape", "eyesShape"]`, deformed extent unchanged at
+  168.6275 × 166.3017 × 30.0878 cm. 5/5.
+- **Blender** (`tools/blender_check.py`, new `posed.fbx` row): 2 meshes, **ONE
+  armature**, 179 bones, **15,593 of 15,593 vertices skinned**, evaluating to
+  1.6863 × 0.3009 × 1.663 m — the same answer as our CPU LBS and as
+  `posed.glb`. 12/12.
+- **Negative control, measured both ways**: with `wornSkins` returning nothing,
+  Maya reports `live_meshes: ["bodyShape"]` and `skin_clusters: 1`.
+
+### The Maya harness was lying by construction
+Two separate defects in `maya_validate.py`, both invisible while a file held one
+skinned mesh:
+
+1. `_rest_and_deformed` was two independent loops, each keeping whatever the
+   scene listed last. The moment the body arrived wearing something it reported
+   the **eyes'** 8.87 × 2.98 × 2.34 cm as the character's extent. Now paired per
+   geometry against that mesh's own `Orig` shape, describing the largest.
+2. A first `live_meshes` compared **extents**, and reported the correctly
+   skinned eyes as dead: a T-pose moves them ~8 cm sideways without changing
+   their bounding box by a millimetre. It measures per-vertex **displacement**
+   now.
+
+### Looked at it
+Rendered the posed head from `posed.fbx` in Blender: eyes seated in the sockets.
+The same file with the eyes' armature modifier removed — exactly what shipping
+them unskinned looks like — has the eyeballs bulging out of the face, centre
+6.4 cm forward (y −0.0622 → −0.1261). Neither picture is something the assertions
+above would have shown me.
+
+### A mutation that "passed" for the wrong reason
+The bind-pose change (list only the SKINNED mesh nodes) appeared to be caught by
+the mixed-skeleton test. It was not: `tempFbx` is a fixed path, an earlier
+mutation run had left a file there, and the test's `CHECK_FALSE(exists(out))` was
+reading that. Removing the stale file first showed the mutation surviving, and it
+needed a test of its own — `NbPoseNodes` must be 3 for two joints and one skinned
+mesh out of two entries. Four fires running, the lesson repeats: **a surviving
+mutation points at the fixture first.**
+
+### Guards added
+- `FbxWriteErrorKind::MixedSkeletons`: entries skinned to different skeletons are
+  refused. The clusters are wired to the scene skeleton **by index**, so two
+  unrelated rigs give a file that opens and deforms wrongly rather than failing.
+- The bind pose lists only skinned mesh nodes; an unskinned entry was never bound.
+
+### Also new
+`tests/golden/test_fbx_writer.cpp` grew a small typed **property reader**
+(`Prop`, `readProp`, `eachRecord`). Reading our own bytes proves nothing about
+the FORMAT — Maya and Blender do that — but it is the only way to assert what is
+WIRED TO WHAT, and a cluster on the wrong joint is valid FBX that deforms wrongly.
+
+### Next
+`writeGlbScene` still allows one skinned entry: Blender reads `posed.glb` as
+14,517 skinned of 15,593, the body alone. Same shape of change — one `skin`,
+several meshes referencing it.
+
+Noticed, not fixed: the app's FBX writes an **absolute** texture path
+(`/Users/.../data/eyes/materials/brown_eye.png`), which is a broken link on any
+other machine. The writer takes whatever the material names; the material is
+where the absolute path comes from.
+
+---
+
 ## 2026-09-01 00:08:19 — Session 076 · **BVH export, and Blender contradicting our own reader**
 
 ### The chunk

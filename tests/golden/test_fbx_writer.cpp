@@ -25,6 +25,9 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <map>
+#include <ranges>
 #include <string>
 #include <vector>
 
@@ -123,6 +126,75 @@ std::vector<std::string> topLevelNames(const std::vector<uint8_t>& b) {
         o = end;
     }
     return names;
+}
+
+/// One property value -- the int and the string, which is all these tests read.
+struct Prop {
+    char type{};
+    int64_t i{};
+    std::string s;
+};
+
+/// Reads the property at @p o and returns the offset of the next one.
+size_t readProp(const std::vector<uint8_t>& b, size_t o, Prop& p) {
+    p.type = static_cast<char>(b[o]);
+    ++o;
+    switch (p.type) {
+        case 'C': p.i = b[o]; return o + 1;
+        case 'Y': return o + 2;
+        case 'I': {
+            int32_t v{};
+            std::memcpy(&v, b.data() + o, sizeof(v));
+            p.i = v;
+            return o + 4;
+        }
+        case 'F': return o + 4;
+        case 'D': return o + 8;
+        case 'L': {
+            int64_t v{};
+            std::memcpy(&v, b.data() + o, sizeof(v));
+            p.i = v;
+            return o + 8;
+        }
+        case 'S':
+        case 'R': {
+            const uint32_t n = u32At(b, o);
+            p.s.assign(reinterpret_cast<const char*>(b.data()) + o + 4, n);
+            return o + 4 + n;
+        }
+        default:
+            // An array: count, encoding, byte length, then that many bytes.
+            return o + 12 + u32At(b, o + 8);
+    }
+}
+
+/// Calls @p fn with the properties of every record named @p want, at any depth.
+///
+/// Reading our own bytes back proves nothing about the FORMAT -- Maya and
+/// Blender do that -- but it is the only way to assert what is WIRED TO WHAT,
+/// and a cluster on the wrong joint is valid FBX that deforms wrongly.
+void eachRecord(const std::vector<uint8_t>& b, size_t from, size_t to, const std::string& want,
+                const std::function<void(const std::vector<Prop>&)>& fn) {
+    size_t o = from;
+    while (o + 25 <= to) {
+        const uint64_t end = u64At(b, o);
+        if (end == 0) return;
+        const uint64_t nProps  = u64At(b, o + 8);
+        const uint64_t propLen = u64At(b, o + 16);
+        const size_t nameLen   = b[o + 24];
+        const std::string name(reinterpret_cast<const char*>(b.data()) + o + 25, nameLen);
+        const size_t props = o + 25 + nameLen;
+        if (name == want) {
+            std::vector<Prop> values(nProps);
+            size_t at = props;
+            for (uint64_t i = 0; i < nProps; ++i)
+                at = readProp(b, at, values[i]);
+            fn(values);
+        }
+        if (props + propLen < end)
+            eachRecord(b, props + propLen, static_cast<size_t>(end), want, fn);
+        o = static_cast<size_t>(end);
+    }
 }
 
 }  // namespace
@@ -817,6 +889,161 @@ TEST_CASE("only the skinned entry gets a deformer", "[io][fbx][scene]") {
 
     std::error_code ec;
     std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("several skinned entries share ONE skeleton", "[io][fbx][scene][skin]") {
+    // The body and everything worn ride the same rig. Writing a private copy of
+    // the skeleton per entry produces a file that opens, deforms, and has the
+    // rig listed two or three times -- and a DCC that lets a user pose one copy
+    // while the others stay put.
+    const auto out  = tempFbx("scene_shared");
+    const auto body = quad();
+    const auto rm   = core::RenderMesh::build(body);
+    core::Mesh eyes("eyes", 4);
+    REQUIRE(eyes.setCoords({{0, 8, 0}, {1, 8, 0}, {1, 8, 1}, {0, 8, 1}}).has_value());
+    eyes.addFaceGroup("g");
+    REQUIRE(eyes.setFaces({0, 1, 2, 3}, {}, {0}).has_value());
+    eyes.buildAdjacency();
+    eyes.calcNormals();
+    const auto eyesRm = core::RenderMesh::build(eyes);
+
+    SkinnedQuad bodySkin;
+    SkinnedQuad eyeSkin;
+    const auto bs = bodySkin.view(rm.view().vertexCount());
+    const auto es = eyeSkin.view(eyesRm.view().vertexCount());
+
+    const std::array<io::FbxSceneEntry, 2> entries{
+        io::FbxSceneEntry{.mesh = rm.view(), .name = "body", .skin = &bs},
+        io::FbxSceneEntry{.mesh = eyesRm.view(), .name = "eyes", .skin = &es}};
+    REQUIRE(io::writeFbxScene(out, entries).has_value());
+
+    const auto b = readAll(out);
+    const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
+    const auto count = [&blob](const std::string& needle) {
+        size_t n = 0;
+        for (size_t at = blob.find(needle); at != std::string::npos;
+             at        = blob.find(needle, at + 1)) {
+            ++n;
+        }
+        return n;
+    };
+    // Two joints, each contributing one Model and one NodeAttribute -- four
+    // "LimbNode" subtypes for the scene, not eight.
+    CHECK(count("LimbNode") == 4);
+    // One bind pose for the file.
+    const std::string poseObject = std::string("") + '\0' + '\x01' + "Pose";
+    CHECK(count(poseObject) == 1);
+    // But a skin deformer EACH: the clusters differ even though the joints do
+    // not, because the two meshes are weighted differently.
+    const std::string deformer = std::string("") + '\0' + '\x01' + "Deformer";
+    CHECK(count(deformer) == 2);
+
+    // And the clusters must reach those shared joints, one each per entry.
+    // Every cluster wired to joint 0 is valid FBX with the same object counts
+    // and the same record tree -- it simply deforms wrongly, which is why the
+    // counts above are not enough on their own.
+    std::map<int64_t, std::string> limbs;   // joint model id -> name
+    std::map<int64_t, std::string> subDef;  // deformer id -> "Skin" or "Cluster"
+    const size_t objectsEnd = b.size() - 144;
+    eachRecord(b, 27, objectsEnd, "Model", [&limbs](const std::vector<Prop>& v) {
+        REQUIRE(v.size() == 3);
+        if (v[2].s == "LimbNode") limbs[v[0].i] = v[1].s;
+    });
+    eachRecord(b, 27, objectsEnd, "Deformer", [&subDef](const std::vector<Prop>& v) {
+        REQUIRE(v.size() == 3);
+        subDef[v[0].i] = v[2].s;
+    });
+    CHECK(limbs.size() == 2);
+    CHECK(std::ranges::count(std::views::values(subDef), "Cluster") == 4);
+
+    std::map<int64_t, size_t> clustersPerJoint;
+    eachRecord(b, 27, b.size() - 144, "C",
+               [&limbs, &subDef, &clustersPerJoint](const std::vector<Prop>& v) {
+                   if (v.size() != 3 || v[0].s != "OO") return;
+                   const auto to = subDef.find(v[2].i);
+                   if (to == subDef.end() || to->second != "Cluster") return;
+                   if (limbs.contains(v[1].i)) ++clustersPerJoint[v[1].i];
+               });
+    REQUIRE(clustersPerJoint.size() == 2);
+    for (const auto& [joint, used] : clustersPerJoint) {
+        INFO("joint " << limbs[joint]);
+        CHECK(used == 2);
+    }
+
+    checkRecords(b, 27, [&b] {
+        size_t topEnd = b.size() - 144;
+        while (topEnd > 27 && b[topEnd - 1] == 0)
+            --topEnd;
+        return topEnd - 16;
+    }());
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("the bind pose lists only the skinned meshes", "[io][fbx][scene][skin]") {
+    // A bind pose records where the BOUND nodes were. An entry with no deformer
+    // was never bound to anything, so listing it is a claim about a binding
+    // that does not exist -- and a scene mixing a skinned body with an
+    // unskinned prop is the ordinary case, not a contrived one.
+    const auto out = tempFbx("scene_partial");
+    const auto m   = quad();
+    const auto rm  = core::RenderMesh::build(m);
+    SkinnedQuad sk;
+    const auto skin = sk.view(rm.view().vertexCount());
+
+    const std::array<io::FbxSceneEntry, 2> entries{
+        io::FbxSceneEntry{.mesh = rm.view(), .name = "body", .skin = &skin},
+        io::FbxSceneEntry{.mesh = rm.view(), .name = "prop"}};
+    REQUIRE(io::writeFbxScene(out, entries).has_value());
+
+    const auto b = readAll(out);
+    std::vector<int64_t> counts;
+    eachRecord(b, 27, b.size() - 144, "NbPoseNodes", [&counts](const std::vector<Prop>& v) {
+        REQUIRE(v.size() == 1);
+        counts.push_back(v[0].i);
+    });
+    // Two joints and ONE mesh, not two.
+    REQUIRE(counts.size() == 1);
+    CHECK(counts[0] == 3);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("entries skinned to DIFFERENT skeletons are refused", "[io][fbx][scene][skin]") {
+    // One skeleton for the scene means one is CHOSEN -- the first entry with a
+    // skin -- and every other entry's clusters are then wired to those joints by
+    // index. If a caller hands over two unrelated rigs, that indexing is
+    // nonsense: the file still opens, still deforms, and moves each vertex with
+    // whatever joint happens to share its number. Refusing is the only honest
+    // answer, and it costs one name comparison per entry.
+    const auto out = tempFbx("scene_mixed");
+    // tempFbx is a fixed path in the temp directory, so a file left by an
+    // earlier run would satisfy the "nothing was written" check below for the
+    // wrong reason -- which it did, and briefly reported an unrelated mutation
+    // as caught.
+    std::error_code gone;
+    std::filesystem::remove(out, gone);
+    const auto m  = quad();
+    const auto rm = core::RenderMesh::build(m);
+
+    SkinnedQuad a;
+    SkinnedQuad b;
+    b.names       = {"hips", "spine"};
+    const auto av = a.view(rm.view().vertexCount());
+    const auto bv = b.view(rm.view().vertexCount());
+
+    const std::array<io::FbxSceneEntry, 2> entries{
+        io::FbxSceneEntry{.mesh = rm.view(), .name = "one", .skin = &av},
+        io::FbxSceneEntry{.mesh = rm.view(), .name = "two", .skin = &bv}};
+    const auto r = io::writeFbxScene(out, entries);
+    REQUIRE_FALSE(r.has_value());
+    CHECK(r.error().kind == io::FbxWriteErrorKind::MixedSkeletons);
+    CHECK(r.error().message().find("two") != std::string::npos);
+    // And nothing was written: a refused export must not leave a partial file
+    // where the previous good one was.
+    CHECK_FALSE(std::filesystem::exists(out));
 }
 
 TEST_CASE("an empty mesh is refused rather than written", "[io][fbx]") {

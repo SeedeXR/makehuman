@@ -111,6 +111,28 @@ EXPECT = {
         "live_rig": True, "evaluated": [1.6863, 0.3009, 1.663],
     },
 
+    # The same character through OUR FBX writer, read by a second party. Two
+    # meshes, ONE armature: the body and the eyes it is wearing share the
+    # skeleton, and `skinned` counts every vertex of both -- 15,593 against the
+    # glTF's 14,517, which is the body alone because `writeGlbScene` still
+    # allows a single skinned entry.
+    #
+    # `evaluated` is the number that makes this worth running: Blender's own
+    # skinning of our rest geometry lands on the same 1.6863 x 0.3009 x 1.663 as
+    # our CPU LBS and as the glTF, so two formats, two importers and our own
+    # solver all agree. Maya says the same in centimetres
+    # (tools/maya_check.py), including which MESHES move.
+    #
+    # 132 vertex groups, not 179: Blender's FBX importer makes a group only for
+    # a cluster that weights something, and 126 bones reach the masked body
+    # while 6 reach the eyes. A skeleton written per entry would report two
+    # armatures here.
+    "posed.fbx": {
+        "vertices": 15593, "triangles": 28796, "tallest": 1.659377, "uv_layers": 1,
+        "bones": 179, "armatures": 1, "skinned": 15593, "vertex_groups": 132,
+        "live_rig": True, "evaluated": [1.6863, 0.3009, 1.663],
+    },
+
     # The SHIPPED blendshape set -- what `makehuman --blendshapes` writes: the
     # 34 expression units, each blended across african/asian/caucasian by the
     # character's macro factors. NOT the 102 `.target` files on disk, which are

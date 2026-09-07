@@ -56,6 +56,12 @@ if [ -x "$app" ]; then
     "$app" --pose tpose --export "$out/posed.glb" >/dev/null 2>&1 \
         && echo "posed.glb: T-pose, live rig (rest geometry + posed armature)" \
         || echo "warn: posed.glb export failed"
+    # The same export in FBX, through our own writer. It is the one that carries
+    # the worn proxy on the SHARED skeleton, and Blender is the second reader
+    # of that claim -- Maya is the first.
+    "$app" --pose tpose --export "$out/posed.fbx" >/dev/null 2>&1 \
+        && echo "posed.fbx: T-pose, live rig, body and eyes on one skeleton" \
+        || echo "warn: posed.fbx export failed"
 else
     echo "skip posed.glb: $app not built"
 fi
@@ -80,6 +86,6 @@ else
 fi
 
 "$BLENDER" --background --python "$repo/tools/blender_validate.py" -- \
-    "$out/base.obj" "$out/posed.glb" "$out/base.glb" "$out/expressions.glb" "$out/expressions.fbx" "$out/expressions.usda" "$out/base.fbx" "$out/rigged.glb" "$out/morphed.glb" "$out/rigged.fbx" "$out/base.usda" 2>/dev/null |
+    "$out/base.obj" "$out/posed.glb" "$out/posed.fbx" "$out/base.glb" "$out/expressions.glb" "$out/expressions.fbx" "$out/expressions.usda" "$out/base.fbx" "$out/rigged.glb" "$out/morphed.glb" "$out/rigged.fbx" "$out/base.usda" 2>/dev/null |
     grep '^BLENDER_VALIDATE:' | sed 's/^BLENDER_VALIDATE://' |
     python3 "$repo/tools/blender_check.py"
