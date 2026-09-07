@@ -4,6 +4,67 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-07 (fourth) — Session · **The render is shown, not filed**
+
+### The chunk
+`OffscreenRenderer` has been in the tree since M6 and File ▸ Render has reached
+it since M8, but the result went straight to a PNG: the app asked for a path
+BEFORE rendering, wrote the file, and put "Rendered <path>" in the status bar.
+The one thing a render is for -- looking at it -- meant leaving the application
+and opening a file browser.
+
+`ui::ImageViewer` (Apache-2.0, `src/ui/ImageViewer.cpp`) is the viewer the
+reference has as a task view: fit / zoom / pan, a `65% · 1024 × 1024` readout,
+and Save As, which is where the path decision moved -- the user decides after
+seeing the result. A window rather than a task view, because our shell keeps a
+permanent viewport in the middle rather than a tab stack.
+
+`renderTo` split into `renderImage` (returns the QImage) and a thin file wrapper
+the CLI still uses, so `--render` and the menu cannot drift apart.
+
+### Looked at it, twice
+Once with a two-colour fixture, to see that it paints at all, and once with a
+real 1024² PBR render from `--render`: fits at 65%, centred, readout agreeing,
+toolbar intact. Neither picture is something the assertions could have shown me
+-- every arithmetic assertion in the file passes on a widget that stores the
+image, computes the right scale and paints an empty QLabel. So the test file
+ends with a grab that hunts for both halves of a two-colour source, and a
+mutation that clears the pixmap fails it.
+
+### Two things the mutations found
+- The null-image guard in `saveAs` was DEAD: `QImage::save` already refuses a
+  null image and writes nothing. Deleting the guard left every test green, so
+  the guard is gone and the comment records the measurement.
+- A `saveAs` that writes what is on SCREEN rather than the image survives
+  nothing: the test reads the file back and checks the full 48×32.
+
+### A gate that had been passing by accident
+`sonar-project.properties` listed `cmake` in `sonar.sources`. That directory has
+NEVER been in the repository -- git cannot store an empty directory -- and the
+scanner accepted it only because an empty `cmake/` happened to sit in this
+working tree. A `git stash -u` swept it away and the next scan failed outright:
+*The folder 'cmake' does not exist*. The gate query then returned the PREVIOUS
+analysis, still OK, which is exactly the stale-log trap this project has hit
+before. Removed from `sonar.sources`, with the reason written down.
+
+Noticed, not fixed: `CMakeLists.txt:10` still appends that same non-existent
+`cmake` path to `CMAKE_MODULE_PATH`. Harmless -- a missing entry is ignored, and
+no `.cmake` module lives outside `tests/` -- but it is dead configuration.
+
+### Also worth knowing
+Running `mh_ui_tests` directly on macOS fails one THEME test (`64 == 32`): the
+cocoa platform has devicePixelRatio 2, so `QIcon::pixmap(32,32)` returns 64px.
+ctest runs it with `QT_QPA_PLATFORM=offscreen`, where it passes. Verified
+pre-existing on HEAD before touching anything. Run the UI tests the way ctest
+does or the first failure you see is the platform.
+
+### Next
+`memory/todo.md` in milestone order. The UI-completion request still has the
+misnamed "Materials" dock (tied to the docks-vs-tabs owner decision) and the
+two-level tab bar.
+
+---
+
 ## 2026-09-07 (third) — Session · **USD gets the per-entry skin, and all three formats agree**
 
 ### The chunk

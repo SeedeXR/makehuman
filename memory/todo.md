@@ -1985,7 +1985,8 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       them.
       Not done, and it is the interesting part: **nothing in the application
       exports morph targets yet.** Only `mh_export_fixture` does.
-- [ ] **Worn proxies are left behind by a live rig — ALL formats, pre-existing.**
+- [x] **Worn proxies are left behind by a live rig — FIXED in all three live-rig
+      formats** (2026-09-07). Was: ALL formats, pre-existing.
       Rendered and compared, 2026-09-07: with `--pose tpose` the eyes protrude
       from the sockets and the sockets show dark; with no pose they sit
       correctly. **Our glTF shows the identical artefact**, so this is not the
@@ -2787,9 +2788,31 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       optional here — `render::kSampleCount` is requested for every target and
       the backend may clamp it, so the checkbox would sometimes do nothing.
       The shading model takes its place, which the reference could not offer.
-- [ ] **`ViewerTaskView` still todo.** The reference sends a finished render to
-      an in-app viewer (`mh2opengl.py:122-123`); ours writes a PNG and says so
-      in the status bar. Worth doing, not blocking.
+- [x] **The finished render is SHOWN now, not filed** (2026-09-07). The
+      reference hands its image to a viewer task (`mh2opengl.py:122-123`,
+      `4_rendering_9_viewer.py:78-84`) and switches to it. Ours asked for a path
+      BEFORE rendering and then reported the write in the status bar, so the one
+      thing a render is for — looking at it — meant leaving the application.
+      `ui::ImageViewer` is that viewer: fit/zoom/pan, a zoom-and-size readout,
+      and Save As, which is where the path decision moved. A window rather than
+      a task view, because our shell keeps a viewport in the middle rather than
+      a tab stack.
+      - `renderTo` split into `renderImage` (returns the QImage) and the file
+        wrapper the CLI still uses, so `--render` and File ▸ Render cannot drift.
+      - **Looked at it**, twice: the two-colour fixture to check it paints at
+        all, and a real 1024² PBR render, which fits at 65% with the readout
+        agreeing. Screenshots in the session scratchpad.
+      - The paint assertion is the point of the test file: every arithmetic
+        assertion passes on a widget that stores the image, computes the right
+        scale and paints NOTHING. It grabs the widget and looks for both halves
+        of a two-colour source.
+      - A mutation showed the null-image guard in `saveAs` was dead — Qt already
+        refuses one — so it is gone and the test asserts the behaviour instead.
+- [ ] **The viewer only ever holds the last render.** The reference's version
+      doubles as a general image viewer with a Refresh button that re-reads its
+      path (`4_rendering_9_viewer.py:71-75`). Ours has no path to re-read
+      because nothing is written until Save As. Open a file into it if a use
+      appears; do not add Refresh with nothing to refresh.
 - [x] **The rig had no picker.** Two ship (`default` 163-bone, `mixamo_superset`
       179-bone), `--rig` has always chosen between them, and the `.mhm` already
       round-trips the choice (`skeleton <name>.mhskel`, written AND read — I

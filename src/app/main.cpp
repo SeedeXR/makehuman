@@ -32,6 +32,7 @@
 #include "makehuman/rig/Skinning.h"
 #include "makehuman/rig/VertexWeights.h"
 #include "makehuman/ui/AssetPanel.h"
+#include "makehuman/ui/ImageViewer.h"
 #include "makehuman/ui/Language.h"
 #include "makehuman/ui/MacroStatus.h"
 #include "makehuman/ui/MainWindow.h"
@@ -2202,11 +2203,14 @@ int main(int argc, char** argv) {
     // exportTo is shared -- a menu and a command line that build the scene
     // separately quietly stop producing the same picture.
     //
-    // @return an empty string on success, or the reason it failed.
-    const auto renderTo = [&](const std::filesystem::path& out,
-                              const mh::ui::RenderRequest& req) -> std::string {
+    // Split in two because the two triggers now want different things: the
+    // command line wants a file, and the window wants the IMAGE, to show it.
+    // The error is a message either way, because both callers do the same thing
+    // with it -- put it in front of someone.
+    const auto renderImage =
+        [&](const mh::ui::RenderRequest& req) -> std::expected<QImage, std::string> {
         auto renderer = mh::render::OffscreenRenderer::create(shaderDir);
-        if (!renderer) return renderer.error().message();
+        if (!renderer) return std::unexpected(renderer.error().message());
 
         mh::render::RenderSettings rs;
         rs.width                 = req.width;
@@ -2216,14 +2220,21 @@ int main(int argc, char** argv) {
         rs.shading               = req.shading;
 
         const auto scene = buildScene();
-        if (scene.empty()) return "nothing to draw";
-        const auto img = (*renderer)->render(scene, rs);
-        if (!img) return img.error().message();
+        if (scene.empty()) return std::unexpected(std::string{"nothing to draw"});
+        auto img = (*renderer)->render(scene, rs);
+        if (!img) return std::unexpected(img.error().message());
+        return std::move(*img);
+    };
+
+    const auto renderTo = [&](const std::filesystem::path& out,
+                              const mh::ui::RenderRequest& req) -> std::string {
+        const auto img = renderImage(req);
+        if (!img) return img.error();
         if (!img->save(QString::fromStdString(out.string()))) {
             return "cannot write " + out.string();
         }
         std::printf("rendered %s (%dx%d%s, %s)\n", out.string().c_str(), img->width(),
-                    img->height(), rs.transparentBackground ? ", transparent" : "",
+                    img->height(), req.transparent ? ", transparent" : "",
                     req.shading == mh::render::ShadingModel::Pbr ? "pbr" : "litsphere");
         return {};
     };
@@ -2670,21 +2681,37 @@ int main(int argc, char** argv) {
                                         3000);
     });
 
-    QObject::connect(&window, &mh::ui::MainWindow::renderRequested, [&] {
+    // The finished render is SHOWN, not filed. It used to demand a path before
+    // rendering and then report the write in the status bar, so the one thing a
+    // render is for -- looking at it -- meant leaving the application. The
+    // reference hands its image to a viewer task and switches to it
+    // (`legacy/python/plugins/4_rendering_opengl/mh2opengl.py:122-123`); this is
+    // that, as a window, because our shell keeps a viewport in the middle
+    // rather than a tab stack. Saving moved into the viewer, where the user can
+    // decide after seeing the result.
+    //
+    // Parented to the window so it closes with it, `Qt::Window` so it is a
+    // window rather than a child pasted over the viewport.
+    auto* renderViewer = new mh::ui::ImageViewer(&window);
+    renderViewer->setWindowFlag(Qt::Window);
+    QObject::connect(&window, &mh::ui::MainWindow::renderRequested, [&, renderViewer] {
         mh::ui::RenderRequest req;
         req.shading = shading;  // whatever the viewport is currently showing
         mh::ui::RenderDialog dlg(req, &window);
         if (dlg.exec() != QDialog::Accepted) return;
 
-        const QString file = QFileDialog::getSaveFileName(&window, QObject::tr("Render to"), {},
-                                                          QObject::tr("PNG image (*.png)"));
-        if (file.isEmpty()) return;
-        if (const std::string err = renderTo(file.toStdString(), dlg.request()); !err.empty()) {
+        const auto img = renderImage(dlg.request());
+        if (!img) {
             window.statusBar()->showMessage(
-                QObject::tr("Cannot render: %1").arg(QString::fromStdString(err)), 4000);
+                QObject::tr("Cannot render: %1").arg(QString::fromStdString(img.error())), 4000);
             return;
         }
-        window.statusBar()->showMessage(QObject::tr("Rendered %1").arg(file), 3000);
+        renderViewer->setImage(*img);
+        renderViewer->show();
+        renderViewer->raise();
+        renderViewer->activateWindow();
+        window.statusBar()->showMessage(
+            QObject::tr("Rendered %1 × %2").arg(img->width()).arg(img->height()), 3000);
     });
     QObject::connect(&window, &mh::ui::MainWindow::saveRequested, [&] {
         // Save with no path yet is Save As -- silently writing somewhere the

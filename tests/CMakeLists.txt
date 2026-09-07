@@ -143,7 +143,8 @@ if(MH_HAVE_RENDER)
 
     # The UI tests provide their own main() so a QApplication exists before any
     # widget is constructed -- Catch2's main would build the widgets first.
-    add_executable(mh_ui_tests ui/test_ui.cpp ui/test_theme.cpp ui/test_language.cpp)
+    add_executable(mh_ui_tests ui/test_ui.cpp ui/test_theme.cpp ui/test_language.cpp
+                               ui/test_image_viewer.cpp)
     target_link_libraries(mh_ui_tests
         PRIVATE mh::ui mh::core Catch2::Catch2 mh::warnings mh::sanitize)
     target_compile_definitions(mh_ui_tests PRIVATE
