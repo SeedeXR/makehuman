@@ -1,11 +1,13 @@
 #include <cstdio>
+#include <string>
+#include <vector>
 #include "makehuman/core/Mesh.h"
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/core/RenderMesh.h"
 #include "makehuman/foundation/Geometry.h"
 #include "makehuman/io/FbxWriter.h"
 
-int main(int, char** argv) {
+int main(int argc, char** argv) {
     auto m = mh::core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
     if (!m) {
         std::fprintf(stderr, "mesh\n");
@@ -24,7 +26,53 @@ int main(int, char** argv) {
     desc.specular       = {0.1F, 0.1F, 0.1F};
     desc.shininess      = 0.25F;
     desc.diffuseTexture = "textures/skin/african_deep.png";
-    auto r              = mh::io::writeFbx(argv[1], rm.view(), {}, &desc);
+    // A rig too, when asked: `mh_fbx_probe out.fbx --rigged`. The whole reason
+    // for writing our own FBX is the LIVE rig, so the probe has to be able to
+    // produce one for Maya to judge.
+    const bool rigged = argc > 2 && std::string(argv[2]) == "--rigged";
+    std::vector<mh::foundation::Mat4> rest;
+    std::vector<mh::foundation::Mat4> posed;
+    std::vector<std::string> names;
+    std::vector<int32_t> parents;
+    std::vector<uint32_t> joints;
+    std::vector<float> weights;
+    mh::foundation::SkinView skin;
+    if (rigged) {
+        // Two joints down the body's height, the child rotated by the pose.
+        // Deliberately simple: this is a test of the FILE, not of our skinning,
+        // and a rig whose effect is obvious is one whose absence is obvious.
+        names             = {"root", "spine"};
+        parents           = {-1, 0};
+        auto childRest    = mh::foundation::Mat4::identity();
+        childRest.m[1][3] = 8.0F;
+        rest              = {mh::foundation::Mat4::identity(), childRest};
+        auto childPose    = childRest;
+        childPose.m[0][3] = 6.0F;
+        posed             = {mh::foundation::Mat4::identity(), childPose};
+
+        const size_t n = rm.view().vertexCount();
+        joints.assign(n * 4, 0);
+        weights.assign(n * 4, 0.0F);
+        for (size_t i = 0; i < n; ++i) {
+            // Everything above the waist follows the child joint, so the pose
+            // visibly bends the figure rather than translating all of it.
+            const bool upper = rm.view().coord[i].y > 0.0F;
+            joints[i * 4]    = upper ? 1U : 0U;
+            weights[i * 4]   = 1.0F;
+        }
+        skin = mh::foundation::SkinView{.jointNames   = names,
+                                        .jointParents = parents,
+                                        .globalRest   = rest,
+                                        .globalPose   = posed,
+                                        .joints       = joints,
+                                        .weights      = weights,
+                                        .influences   = 4};
+        if (!skin.valid()) {
+            std::fprintf(stderr, "skin invalid\n");
+            return 1;
+        }
+    }
+    auto r = mh::io::writeFbx(argv[1], rm.view(), {}, &desc, rigged ? &skin : nullptr);
     if (!r) {
         std::fprintf(stderr, "%s\n", r.error().message().c_str());
         return 1;

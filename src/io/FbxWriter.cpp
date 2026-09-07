@@ -2,6 +2,8 @@
 
 #include "makehuman/io/FbxWriter.h"
 
+#include "makehuman/foundation/Transform.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -513,6 +515,189 @@ Node textureNode(int64_t id, const std::string& name, const std::string& path) {
     return t;
 }
 
+/// FBX stores a 4x4 COLUMN-major, the same convention glTF uses. Ours is
+/// row-major with column vectors, so this transposes on the way out. Writing it
+/// straight through produces a file that loads, poses, and is wrong in a way
+/// that looks like bad weights.
+std::vector<double> matrixValues(const foundation::Mat4& m) {
+    std::vector<double> out;
+    out.reserve(16);
+    for (size_t c = 0; c < 4; ++c) {
+        for (size_t r = 0; r < 4; ++r)
+            out.push_back(static_cast<double>(m.m[r][c]));
+    }
+    return out;
+}
+
+/// One joint's `NodeAttribute`. `TypeFlags: Skeleton` is what makes it a bone
+/// rather than a transform: without it Maya imports a hierarchy of empties and
+/// the skin has nothing to bind to.
+Node limbAttribute(int64_t id) {
+    Node n("NodeAttribute");
+    n.addI64(id);
+    n.addString(objectName("", "NodeAttribute"));
+    n.addString("LimbNode");
+    n.add(Node("Properties70"));
+    Node flags("TypeFlags");
+    flags.addString("Skeleton");
+    n.add(std::move(flags));
+    return n;
+}
+
+/// One joint's `Model`, carrying its LOCAL transform.
+///
+/// This is the POSED transform, and the cluster's `TransformLink` is the BIND
+/// one. That difference is the live rig: a consumer computes
+/// `pose * inverse(bind)` and reproduces the deformation itself, instead of
+/// receiving geometry with the pose already baked into it.
+Node limbModel(int64_t id, const std::string& name, const foundation::Mat4& local) {
+    Node m("Model");
+    m.addI64(id);
+    m.addString(objectName(name, "Model"));
+    m.addString("LimbNode");
+    Node v("Version");
+    v.addI32(232);
+    m.add(std::move(v));
+
+    Node props("Properties70");
+    Node rotationActive = property70("RotationActive", "bool", "", "");
+    rotationActive.addI32(1);
+    props.add(std::move(rotationActive));
+    Node inherit = property70("InheritType", "enum", "", "");
+    inherit.addI32(1);
+    props.add(std::move(inherit));
+    props.add(intProperty("DefaultAttributeIndex", 0));
+
+    Node translation = property70("Lcl Translation", "Lcl Translation", "", "A");
+    translation.addF64(static_cast<double>(local.m[0][3]));
+    translation.addF64(static_cast<double>(local.m[1][3]));
+    translation.addF64(static_cast<double>(local.m[2][3]));
+    props.add(std::move(translation));
+
+    // Degrees, in FBX's default XYZ rotation order, taken from the same matrix
+    // the translation came from so the two cannot describe different placements.
+    //
+    // The angles are written by AXIS IDENTITY -- `sxyz` returns [x, y, z] and
+    // that is the order `Lcl Rotation` wants. Popping them positionally into
+    // some other order is the mistake session 076 made in the BVH writer, where
+    // it moved a matrix element by 1.69 and looked like a precision problem.
+    // Checked against Maya below rather than argued.
+    const auto euler = foundation::eulerFromMatrix(local, foundation::EulerOrder{0, 0, 0, 0});
+    Node rotation    = property70("Lcl Rotation", "Lcl Rotation", "", "A");
+    constexpr double kRadiansToDegrees = 57.295779513082320876798154814105;
+    for (const double angle : euler)
+        rotation.addF64(angle * kRadiansToDegrees);
+    props.add(std::move(rotation));
+    m.add(std::move(props));
+
+    Node shading("Shading");
+    shading.addBool(true);
+    m.add(std::move(shading));
+    Node culling("Culling");
+    culling.addString("CullingOff");
+    m.add(std::move(culling));
+    return m;
+}
+
+/// The skin deformer itself. One per mesh; the clusters hang off it.
+Node skinDeformer(int64_t id) {
+    Node s("Deformer");
+    s.addI64(id);
+    s.addString(objectName("", "Deformer"));
+    s.addString("Skin");
+    Node v("Version");
+    v.addI32(101);
+    s.add(std::move(v));
+    Node accuracy("Link_DeformAcuracy");  // spelt this way in the format
+    accuracy.addF64(50.0);
+    s.add(std::move(accuracy));
+    Node type("SkinningType");
+    type.addString("Linear");
+    s.add(std::move(type));
+    return s;
+}
+
+/// One joint's cluster: which vertices it moves, how much, and from where.
+///
+/// `Transform` is the MESH's global at bind time (identity here -- the geometry
+/// is written in model space) and `TransformLink` is the JOINT's. Swapping them
+/// produces a rig that deforms by the inverse of what it should.
+Node clusterDeformer(int64_t id, const std::string& name, std::vector<int32_t> indices,
+                     std::vector<double> weights, const foundation::Mat4& bind) {
+    Node c("Deformer");
+    c.addI64(id);
+    c.addString(objectName(name, "SubDeformer"));
+    c.addString("Cluster");
+    Node v("Version");
+    v.addI32(100);
+    c.add(std::move(v));
+    Node user("UserData");
+    user.addString("");
+    user.addString("");
+    c.add(std::move(user));
+
+    // A joint that moves nothing still needs its cluster -- the bind pose is
+    // per joint, and a missing one shifts every later index.
+    if (!indices.empty()) {
+        Node idx("Indexes");
+        idx.addArray('i', indices);
+        c.add(std::move(idx));
+        Node w("Weights");
+        w.addArray('d', weights);
+        c.add(std::move(w));
+    }
+
+    Node transform("Transform");
+    transform.addArray('d', matrixValues(foundation::Mat4::identity()));
+    c.add(std::move(transform));
+    Node link("TransformLink");
+    link.addArray('d', matrixValues(bind));
+    c.add(std::move(link));
+    return c;
+}
+
+/// The bind pose: every node's global transform at the moment of binding.
+///
+/// **This is the record assimp omits**, and its own SDK log says what happens
+/// then: "The imported scene has no initial binding position (Bind Pose) for
+/// the skin. The plug-in will compute one automatically." Maya's automatic one
+/// is taken from the CURRENT pose, so rest and posed coincide and the rig
+/// arrives baked -- measured at 168.63 x 166.30 x 30.09 cm for both.
+Node bindPose(int64_t id, int64_t meshModelId, std::span<const int64_t> jointModelIds,
+              std::span<const foundation::Mat4> jointGlobals) {
+    Node p("Pose");
+    p.addI64(id);
+    p.addString(objectName("", "Pose"));
+    p.addString("BindPose");
+    Node type("Type");
+    type.addString("BindPose");
+    p.add(std::move(type));
+    Node v("Version");
+    v.addI32(100);
+    p.add(std::move(v));
+    Node count("NbPoseNodes");
+    count.addI32(static_cast<int32_t>(jointModelIds.size() + 1));
+    p.add(std::move(count));
+
+    // The MESH's node is in the pose too, not just the joints: a bind pose
+    // records where everything was, and Maya's own files include it.
+    const auto poseNode = [](int64_t node, const foundation::Mat4& m) {
+        Node n("PoseNode");
+        Node id2("Node");
+        id2.addI64(node);
+        n.add(std::move(id2));
+        Node matrix("Matrix");
+        matrix.addArray('d', matrixValues(m));
+        n.add(std::move(matrix));
+        return n;
+    };
+    p.add(poseNode(meshModelId, foundation::Mat4::identity()));
+    for (size_t j = 0; j < jointModelIds.size(); ++j) {
+        p.add(poseNode(jointModelIds[j], jointGlobals[j]));
+    }
+    return p;
+}
+
 /// The scene document, and the `RootNode` that says where its root is.
 ///
 /// The `RootNode` child is what was missing when Maya imported this file as
@@ -555,9 +740,10 @@ Node definitions() {
     v.addI32(100);
     d.add(std::move(v));
     Node c("Count");
-    c.addI32(5);
+    c.addI32(8);
     d.add(std::move(c));
-    for (const char* type : {"Geometry", "Material", "Model", "Texture", "Video"}) {
+    for (const char* type : {"Geometry", "Material", "Model", "Texture", "Video", "NodeAttribute",
+                             "Deformer", "Pose"}) {
         Node o("ObjectType");
         o.addString(type);
         Node oc("Count");
@@ -724,7 +910,8 @@ std::string FbxWriteError::message() const {
 std::expected<FbxWriteResult, FbxWriteError> writeFbx(const std::filesystem::path& path,
                                                       const foundation::RenderView& mesh,
                                                       const FbxWriteOptions& options,
-                                                      const foundation::MaterialDesc* material) {
+                                                      const foundation::MaterialDesc* material,
+                                                      const foundation::SkinView* skin) {
     if (mesh.coord.empty() || mesh.index.empty()) {
         return std::unexpected(FbxWriteError{FbxWriteErrorKind::EmptyMesh, path.string(), {}});
     }
@@ -769,6 +956,60 @@ std::expected<FbxWriteResult, FbxWriteError> writeFbx(const std::filesystem::pat
     const std::string textureName =
         withTexture ? material->diffuseTexture.stem().string() : std::string{};
 
+    // --- the rig -------------------------------------------------------
+    //
+    // Ids are laid out in blocks so a joint's attribute, model and cluster are
+    // derivable from its index. Blocks rather than a running counter because
+    // the connection list is written after the objects and has to name the same
+    // ids without carrying a second table that could disagree.
+    const bool withSkin             = skin != nullptr && skin->valid();
+    const size_t jointCount         = withSkin ? skin->jointCount() : 0;
+    constexpr int64_t kSkinId       = 7'000'000;
+    constexpr int64_t kPoseId       = 8'000'000;
+    constexpr int64_t kJointModel   = 10'000'000;
+    constexpr int64_t kJointAttr    = 20'000'000;
+    constexpr int64_t kJointCluster = 30'000'000;
+    const auto jointModelId   = [](size_t j) { return kJointModel + static_cast<int64_t>(j); };
+    const auto jointAttrId    = [](size_t j) { return kJointAttr + static_cast<int64_t>(j); };
+    const auto jointClusterId = [](size_t j) { return kJointCluster + static_cast<int64_t>(j); };
+
+    // Placed exactly as the mesh was: rotation untouched, translation through
+    // the same scale and ground offset. Doing it here rather than trusting the
+    // caller is what keeps the rig and the body in one space.
+    const auto place = [&xf](const foundation::Mat4& m) {
+        foundation::Mat4 out = m;
+        out.m[0][3] *= xf.scale;
+        out.m[1][3] = xf.placedY(out.m[1][3]);
+        out.m[2][3] *= xf.scale;
+        return out;
+    };
+    std::vector<foundation::Mat4> bindGlobal;
+    std::vector<foundation::Mat4> nodeGlobal;
+    std::vector<foundation::Mat4> nodeLocal;
+    std::vector<int64_t> jointModelIds;
+    if (withSkin) {
+        bindGlobal.reserve(jointCount);
+        nodeGlobal.reserve(jointCount);
+        for (size_t j = 0; j < jointCount; ++j) {
+            bindGlobal.push_back(place(skin->globalRest[j]));
+            // Where the joint SITS. With a pose these are the posed globals, so
+            // the consumer computes pose * inverse(bind) and reproduces our
+            // skinning; with none the two coincide and the deformation is the
+            // identity, which is the unposed export.
+            nodeGlobal.push_back(
+                place(skin->globalPose.empty() ? skin->globalRest[j] : skin->globalPose[j]));
+        }
+        nodeLocal.resize(jointCount);
+        for (size_t j = 0; j < jointCount; ++j) {
+            const int32_t parent = skin->jointParents[j];
+            nodeLocal[j]         = parent < 0
+                                       ? nodeGlobal[j]
+                                       : foundation::rigidInverse(nodeGlobal[static_cast<size_t>(parent)]) *
+                                     nodeGlobal[j];
+            jointModelIds.push_back(jointModelId(j));
+        }
+    }
+
     headerExtension().writeTo(out);
     // Maya and assimp both write these three between the header extension and
     // the settings. Cheap, and the kind of thing a strict reader looks for.
@@ -795,11 +1036,59 @@ std::expected<FbxWriteResult, FbxWriteError> writeFbx(const std::filesystem::pat
         objects.add(textureNode(kTextureId, textureName, texturePath));
         objects.add(videoClip(kVideoId, textureName, texturePath));
     }
+    if (withSkin) {
+        for (size_t j = 0; j < jointCount; ++j) {
+            objects.add(limbAttribute(jointAttrId(j)));
+            objects.add(limbModel(jointModelId(j), skin->jointNames[j], nodeLocal[j]));
+        }
+        objects.add(skinDeformer(kSkinId));
+        for (size_t j = 0; j < jointCount; ++j) {
+            // Which vertices this joint moves, and how much. Zero weights are
+            // dropped: a cluster listing every vertex at 0 is the same rig and
+            // several times the file.
+            std::vector<int32_t> indices;
+            std::vector<double> weights;
+            for (size_t v = 0; v < mesh.coord.size(); ++v) {
+                for (uint8_t i = 0; i < skin->influences; ++i) {
+                    const size_t at = (v * skin->influences) + i;
+                    if (skin->joints[at] != j || skin->weights[at] == 0.0F) continue;
+                    indices.push_back(static_cast<int32_t>(v));
+                    weights.push_back(static_cast<double>(skin->weights[at]));
+                }
+            }
+            objects.add(clusterDeformer(jointClusterId(j), skin->jointNames[j], std::move(indices),
+                                        std::move(weights), bindGlobal[j]));
+        }
+        objects.add(bindPose(kPoseId, kModelId, jointModelIds, bindGlobal));
+    }
     objects.writeTo(out);
 
-    connections(kGeometryId, kModelId, kMaterialId, withTexture ? kTextureId : 0,
-                withTexture ? kVideoId : 0)
-        .writeTo(out);
+    Node conn = connections(kGeometryId, kModelId, kMaterialId, withTexture ? kTextureId : 0,
+                            withTexture ? kVideoId : 0);
+    if (withSkin) {
+        const auto link = [&conn](const char* kind, int64_t from, int64_t to) {
+            Node c("C");
+            c.addString(kind);
+            c.addI64(from);
+            c.addI64(to);
+            conn.add(std::move(c));
+        };
+        // The deformer hangs off the GEOMETRY, not the model: it deforms
+        // vertices, and the model is only where they are drawn.
+        link("OO", kSkinId, kGeometryId);
+        for (size_t j = 0; j < jointCount; ++j) {
+            link("OO", jointAttrId(j), jointModelId(j));
+            const int32_t parent = skin->jointParents[j];
+            // A root joint parents to the SCENE, not to the mesh: parenting it
+            // under the mesh model makes the whole rig inherit the mesh's
+            // transform and deform twice.
+            link("OO", jointModelId(j),
+                 parent < 0 ? int64_t{0} : jointModelId(static_cast<size_t>(parent)));
+            link("OO", jointClusterId(j), kSkinId);
+            link("OO", jointModelId(j), jointClusterId(j));
+        }
+    }
+    conn.writeTo(out);
 
     // The top-level list is terminated like any other child list.
     out.insert(out.end(), 25, 0U);

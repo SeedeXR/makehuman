@@ -2140,6 +2140,69 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-07 09:00:00 — Session 165 · **the live rig, in the format that could not express one**
+
+### The result
+Maya reports our rigged FBX as **`live_rig: true`** -- rest extent
+99.464 x **169.455** x 43.598 against deformed 139.757 x **249.455** x 43.598.
+The file ships REST geometry and Maya's own skinning moves it. That is the thing
+assimp's writer cannot do, measured three fires ago, and the whole reason the
+owner asked for our own writer.
+
+The harness now shows the contrast in one run:
+
+    posed.fbx  (assimp)  live_rig=False   <- the statue
+    rigged.fbx (ours)    live_rig=True    <- the rig
+
+### What it took
+Joints as `NodeAttribute`(LimbNode, `TypeFlags: Skeleton`) plus
+`Model`(LimbNode) carrying the POSED local transform; `Deformer`/Skin with a
+`Deformer`/Cluster per joint holding `Indexes`, `Weights`, `Transform` and
+`TransformLink` from the BIND globals; and a `Pose`/BindPose with a `PoseNode`
+per joint and one for the mesh.
+
+`TransformLink` is bind, the Model node is current. Collapse the two and you get
+a rig that deforms by the identity -- present, bound, and doing nothing.
+
+### Blender and Maya disagree, and I checked rather than guessed
+Blender reads 2 bones and all 21,833 vertices skinned, but `armature_shift` is
+1.5e-05: it imports the armature at BIND. My first instinct was that our file
+was missing something, so I compared against a Maya-authored rig -- and Blender
+imported **zero meshes** from it, because that file is FBX **7700** and Blender
+does not read it. The comparison was void.
+
+The honest reading: Blender does the same thing to assimp's posed FBX
+(shift 0.000234), so it is Blender's FBX convention, not our defect. And the
+7700 finding is a concrete argument for our 7500 target -- the version both
+readers accept.
+
+### Two mutations survived because the fixture answered the question
+`TransformLink from the posed globals` and `joint nodes at bind` both passed.
+The bind-versus-pose test searches the file for the rig's numbers, and the
+ordinary test quad spans 0..3 -- which at the centimetre scale is 0, 20 and 30,
+exactly those numbers. The test was finding the MESH's coordinates. A tiny quad
+(0..0.7) separates them and both mutations now fail.
+
+**A fixture that can supply the answer under test is not a fixture.** That is
+the third time in this FBX work that the harness, not the code, was what needed
+fixing.
+
+### The Maya validator was lying twice, too
+It counted intermediate ("Orig") shapes as meshes, so a rigged file reported
+twice its vertices -- 30,110 for a 15,593-vertex export. And its
+`deforms_when_posed` probe started its "most descendants" search at 0, so a
+two-joint rig (one joint with a parent, no descendants) selected nothing and
+reported `None`, which reads as "no rig". Both fixed.
+
+### Verification
+ctest green in debug, release, ASan and TSan. Maya harness **3/3**, including
+`live_rig: True` on our file. Rendered the rigged FBX in Blender and looked: a
+clean textured body at rest, no distortion. Format clean. Sonar OK. Mutations
+killed: TransformLink from pose, joint nodes at bind, no bind pose, clusters
+without weights, the Skeleton flag dropped.
+
+---
+
 ## 2026-09-07 07:45:00 — Session 164 · **FBX stage 2: UVs, materials and a texture, in both readers**
 
 ### The chunk

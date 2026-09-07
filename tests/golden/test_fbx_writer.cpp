@@ -15,6 +15,7 @@
 
 #include "makehuman/core/Mesh.h"
 #include "makehuman/core/RenderMesh.h"
+#include "makehuman/foundation/Transform.h"
 #include "makehuman/io/FbxWriter.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -426,6 +427,141 @@ TEST_CASE("no texture means no Texture object", "[io][fbx]") {
     const auto b = readAll(out);
     const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
     CHECK(blob.find("TextureVideoClip") == std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+namespace {
+
+/// A two-joint skin over the quad, with the child MOVED by the pose.
+///
+/// Rest and pose deliberately differ: that difference is the whole feature, and
+/// a writer that collapsed them would still produce a valid file -- just a
+/// statue, which is what assimp's FBX writer produces and why this one exists.
+struct SkinnedQuad {
+    std::vector<std::string> names{"root", "tip"};
+    std::vector<int32_t> parents{-1, 0};
+    std::vector<foundation::Mat4> rest;
+    std::vector<foundation::Mat4> pose;
+    std::vector<uint32_t> joints;
+    std::vector<float> weights;
+
+    SkinnedQuad() {
+        auto childRest    = foundation::Mat4::identity();
+        childRest.m[1][3] = 2.0F;
+        rest              = {foundation::Mat4::identity(), childRest};
+        auto childPose    = childRest;
+        // The pose moves the child in x AND y. Moving it in x alone leaves the
+        // rest and posed y equal, so a writer that put the POSED matrix into
+        // TransformLink would still emit the rest y and pass -- which is
+        // exactly what the first version of this fixture allowed.
+        childPose.m[0][3] = 5.0F;
+        childPose.m[1][3] = 3.0F;
+        pose              = {foundation::Mat4::identity(), childPose};
+    }
+
+    [[nodiscard]] foundation::SkinView view(size_t vertices) {
+        joints.assign(vertices * 4, 0);
+        weights.assign(vertices * 4, 0.0F);
+        for (size_t i = 0; i < vertices; ++i)
+            weights[i * 4] = 1.0F;
+        return foundation::SkinView{.jointNames   = names,
+                                    .jointParents = parents,
+                                    .globalRest   = rest,
+                                    .globalPose   = pose,
+                                    .joints       = joints,
+                                    .weights      = weights,
+                                    .influences   = 4};
+    }
+};
+
+}  // namespace
+
+TEST_CASE("a skinned mesh carries joints, clusters and a bind pose", "[io][fbx][skin]") {
+    const auto out = tempFbx("skin");
+    const auto m   = quad();
+    const auto rm  = core::RenderMesh::build(m);
+    SkinnedQuad sk;
+    const auto skin = sk.view(rm.view().vertexCount());
+    REQUIRE(skin.valid());
+    REQUIRE(io::writeFbx(out, rm.view(), {}, nullptr, &skin).has_value());
+
+    const auto b = readAll(out);
+    const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
+    for (const char* needed : {// A joint is a Model of subtype LimbNode plus a NodeAttribute
+                               // flagged as a Skeleton; without the flag Maya imports transforms
+                               // rather than a rig.
+                               "LimbNode", "TypeFlags", "Skeleton",
+                               // The deformer and its per-joint clusters.
+                               "Deformer", "Cluster", "Indexes", "Weights", "TransformLink",
+                               // The bind pose, which is what assimp omits -- Maya then computes
+                               // one from the CURRENT pose and the rig arrives baked.
+                               "BindPose", "NbPoseNodes", "PoseNode"}) {
+        INFO(needed);
+        CHECK(blob.find(needed) != std::string::npos);
+    }
+    // Both joints, by name.
+    CHECK(blob.find("root") != std::string::npos);
+    CHECK(blob.find("tip") != std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("TransformLink is the BIND pose, not the current one", "[io][fbx][skin]") {
+    // The single most important number in the file. `TransformLink` is the
+    // joint's global at BIND time while the joint's Model node carries the
+    // CURRENT transform; a consumer computes pose * inverse(bind) from the two.
+    // Write the same matrix into both and the deformation is the identity --
+    // a rig that exists, deforms nothing, and looks correct in a screenshot.
+    const auto out = tempFbx("bind");
+    // A TINY quad, spanning 0..0.7 -- so at the default centimetre scale its
+    // coordinates are 0..7 and cannot collide with the rig's numbers below.
+    // The ordinary quad spans 0..3, which scales to 0, 20 and 30 -- exactly the
+    // values this test looks for, and it passed the bind/pose mutations by
+    // finding the MESH's coordinates instead of the rig's.
+    core::Mesh m("tiny", 4);
+    REQUIRE(m.setCoords({{0, 0, 0}, {0.7F, 0, 0}, {0.7F, 0, 0.7F}, {0, 0, 0.7F}}).has_value());
+    m.addFaceGroup("g");
+    REQUIRE(m.setFaces({0, 1, 2, 3}, {}, {0}).has_value());
+    m.buildAdjacency();
+    m.calcNormals();
+    const auto rm = core::RenderMesh::build(m);
+    SkinnedQuad sk;
+    const auto skin = sk.view(rm.view().vertexCount());
+    REQUIRE(io::writeFbx(out, rm.view(), {}, nullptr, &skin).has_value());
+
+    const auto b = readAll(out);
+    const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
+    const auto bytesOf = [](double v) {
+        std::string bytes(sizeof(double), '\0');
+        std::memcpy(bytes.data(), &v, sizeof(v));
+        return bytes;
+    };
+    // The child's REST y is 2 and its POSED position is (5, 3), in MakeHuman's
+    // decimetres, and the default unit is the centimetre. So the file must
+    // contain 20 (the bind y, in a TransformLink) AND 50 and 30 (the posed
+    // placement, on the joint's node). Collapsing the two -- writing either
+    // matrix into both places -- loses one of these numbers.
+    CHECK(blob.find(bytesOf(20.0)) != std::string::npos);
+    CHECK(blob.find(bytesOf(50.0)) != std::string::npos);
+    CHECK(blob.find(bytesOf(30.0)) != std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("no skin means no deformer", "[io][fbx][skin]") {
+    // A Deformer with no clusters is a rig that binds nothing, and a DCC shows
+    // it as a skeleton the mesh ignores.
+    const auto out = tempFbx("noskin");
+    const auto m   = quad();
+    REQUIRE(io::writeFbx(out, core::RenderMesh::build(m).view()).has_value());
+    const auto b = readAll(out);
+    const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
+    CHECK(blob.find("BindPose") == std::string::npos);
+    CHECK(blob.find("LimbNode") == std::string::npos);
 
     std::error_code ec;
     std::filesystem::remove(out, ec);

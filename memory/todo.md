@@ -1748,7 +1748,40 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
            flipping maps the set onto itself and a membership check passes
            either way, while the comment claimed it could not. Now 0.25 and
            0.60, and the test also asserts the FLIPPED values are absent.
-      3. Skin + bind poses — the live rig, which is the whole reason for this.
+      3. **Skin + bind poses — DONE, and Maya says the rig is LIVE.** Joints as
+         `NodeAttribute`(LimbNode, `TypeFlags: Skeleton`) + `Model`(LimbNode)
+         carrying the POSED local transform; `Deformer`/Skin with a
+         `Deformer`/Cluster per joint holding `Indexes`, `Weights`, `Transform`
+         and `TransformLink` from the BIND globals; and a `Pose`/BindPose with a
+         `PoseNode` per joint plus the mesh.
+         - **Maya, the reference implementation, reports `live_rig: true`**:
+           rest extent 99.464 x **169.455** x 43.598, deformed
+           139.757 x **249.455** x 43.598. The file ships REST geometry and
+           Maya's own skinning moves it. `deforms_when_posed: true` as well, so
+           the skin is real and bound.
+         - Side by side in one harness run, which is the contrast this whole
+           effort is about: `posed.fbx` (assimp) `live_rig=False`;
+           `rigged.fbx` (ours) `live_rig=True`.
+         - **Blender reads 2 bones and 21,833 skinned vertices but imports the
+           armature at BIND** (`armature_shift` 1.5e-05), exactly as it does for
+           assimp's posed FBX (0.000234). That is Blender's FBX convention, not
+           a defect in our file — and it is why Maya is the reader that settles
+           an FBX.
+         - **Blender imports NOTHING from Maya's own FBX 7700** (0 meshes),
+           which is a concrete argument for our 7500 target: it is the version
+           both readers accept.
+         - Matrices are transposed on the way out — FBX stores column-major,
+           ours is row-major with column vectors.
+         - `Lcl Rotation` is written by AXIS IDENTITY from `eulerFromMatrix`
+           (`sxyz` returns [x, y, z], which is the order the property wants).
+           Popping positionally is the mistake session 076 made in the BVH
+           writer.
+         - **Two mutations survived at first because the test looked for the
+           rig's numbers in a mesh that already contained them.** The ordinary
+           test quad spans 0..3, which at the centimetre scale is 0, 20 and 30 —
+           the very values the bind-versus-pose test searches for. A tiny quad
+           (0..0.7) separates them. A fixture that can supply the answer under
+           test is not a fixture.
       4. Blend shapes.
       Measured so far: Maya 2027 writes **FBX 7700** (FBX SDK 2020.3.9), assimp
       writes **7500**; both are 7.x binary and the record layout differs only in

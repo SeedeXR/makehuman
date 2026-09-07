@@ -35,6 +35,20 @@ EXPECT = {
         # the build machine would be a broken link everywhere else.
         "file_textures contains": "textures/skin/african_deep.png",
     },
+    # OUR writer with a rig. `live_rig: True` is the statement the whole FBX
+    # effort exists to make, and it is the one assimp's writer cannot: the file
+    # ships REST geometry and Maya's own skinning moves it (169.455 -> 249.455
+    # in y), rather than shipping geometry with the pose already baked in.
+    "rigged.fbx": {
+        "meshes": 1,
+        "vertices": 21833,
+        "joints": 2,
+        "skin_clusters": 1,
+        "live_rig": True,
+        "deforms_when_posed": True,
+        "uv_sets": 1,
+        "material_names contains": "Skin",
+    },
     "posed.fbx": {
         "joints": 179,
         "skin_clusters": 1,

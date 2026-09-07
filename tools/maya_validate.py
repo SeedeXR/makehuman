@@ -107,13 +107,17 @@ def _deforms_when_posed():
     # muscle whose 45 degrees moves a few face vertices -- far under the
     # centimetre threshold on a 168 cm figure -- and reported the rig as dead.
     best = None
-    best_count = 0
+    best_count = -1
     for j in joints:
         if not cmds.listRelatives(j, parent=True, type="joint"):
             continue
         kids = cmds.listRelatives(j, allDescendents=True, type="joint") or []
         if len(kids) > best_count:
             best, best_count = j, len(kids)
+    # `> best_count` starting from -1, not 0: a two-joint rig has exactly one
+    # joint with a parent and it has no descendants, so starting from 0 chose
+    # nothing and reported `None` -- which reads as "no rig" for a rig that is
+    # perfectly fine.
     if best is None:
         return None
 
@@ -134,7 +138,7 @@ def _shading():
     this format: if the two disagree about whether a texture arrived, Maya is
     the one to believe.
     """
-    meshes = [m for m in (cmds.ls(type="mesh", long=True) or [])
+    meshes = [m for m in (cmds.ls(type="mesh", long=True, noIntermediate=True) or [])
               if isinstance(cmds.polyEvaluate(m, vertex=True), int)]
     uv_sets = 0
     for m in meshes:
@@ -154,7 +158,10 @@ def _shading():
 
 def describe(path):
     _import(path)
-    meshes = [m for m in (cmds.ls(type="mesh", long=True) or [])
+    # NOT intermediate shapes. A skinCluster creates an "Orig" mesh holding the
+    # pre-deformation geometry, so counting every `mesh` node reports a rigged
+    # file as twice the vertices it has -- which it did, until this filter.
+    meshes = [m for m in (cmds.ls(type="mesh", long=True, noIntermediate=True) or [])
               if isinstance(cmds.polyEvaluate(m, vertex=True), int)]
     verts = sum(cmds.polyEvaluate(m, vertex=True) for m in meshes)
     rest, deformed = _rest_and_deformed()
