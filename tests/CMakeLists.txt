@@ -954,6 +954,34 @@ if(MH_HAVE_RENDER)
         SKIP_REGULAR_EXPRESSION "cannot render"
         FAIL_REGULAR_EXPRESSION "nothing to draw;cannot write")
 
+    # Wireframe, at the level where it silently failed. The render-level test
+    # (`[render][wireframe]`) proves the PIPELINE draws edges; this proves the
+    # FLAG reaches it. It caught the real thing: `rs.wireframe = req.wireframe`
+    # was missing from renderImage, the viewport drew edges, `--wireframe
+    # --render` wrote a byte-identical solid image, and every unit test passed.
+    #
+    # files_differ is enough here only because two renders of the same scene
+    # ARE byte-identical -- checked, not assumed -- so the difference can come
+    # from nothing else.
+    add_test(NAME app_wireframe COMMAND makehuman
+             --wireframe --render ${CMAKE_CURRENT_BINARY_DIR}/app_wire.png)
+    set_tests_properties(app_wireframe PROPERTIES
+        PASS_REGULAR_EXPRESSION "rendered .*app_wire\\.png"
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_SETUP app_wire_png)
+    add_test(NAME app_wireframe_solid COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_solid.png)
+    set_tests_properties(app_wireframe_solid PROPERTIES
+        PASS_REGULAR_EXPRESSION "rendered .*app_solid\\.png"
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_SETUP app_solid_png)
+    add_test(NAME app_wireframe_differs COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/app_wire.png
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/app_solid.png
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_wireframe_differs PROPERTIES
+        FIXTURES_REQUIRED "app_wire_png;app_solid_png")
+
     # Owner directive 4: the viewport shades with metallic-roughness as well as
     # with the reference matcap. --render goes through the SAME buildScene() and
     # the same SceneResources as the window, so this covers both.

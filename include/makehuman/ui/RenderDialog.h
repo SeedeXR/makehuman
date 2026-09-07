@@ -21,6 +21,11 @@ struct RenderRequest {
     /// Clear to alpha 0 rather than opaque, for compositing.
     bool transparent{false};
     render::ShadingModel shading{render::ShadingModel::Litsphere};
+
+    /// Draw edges instead of faces. Not in the dialog: it is the VIEW's mode,
+    /// set from the toolbar, and a production render follows what is on screen
+    /// exactly as it follows the shading model.
+    bool wireframe{false};
 };
 
 /// Asks for the four things `--render` accepts.

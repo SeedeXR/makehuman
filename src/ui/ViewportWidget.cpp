@@ -30,6 +30,7 @@ struct ViewportWidget::Impl {
     /// Held here rather than only in `scene`, which is destroyed and rebuilt
     /// whenever the device or render pass changes.
     render::ShadingModel shading{render::ShadingModel::Litsphere};
+    bool wireframe{false};
     QString error;
 
     /// What `scene` was built against. initialize() runs on every resize, but
@@ -88,6 +89,20 @@ render::ShadingModel ViewportWidget::shadingModel() const {
     return d_->shading;
 }
 
+void ViewportWidget::setWireframe(bool on) {
+    d_->wireframe = on;
+    if (d_->scene) d_->scene->setWireframe(on);
+    update();
+}
+
+bool ViewportWidget::wireframe() const {
+    return d_->wireframe;
+}
+
+bool ViewportWidget::wireframeSupported() const {
+    return d_->scene && d_->scene->wireframeSupported();
+}
+
 render::Camera ViewportWidget::camera() const {
     return d_->camera;
 }
@@ -127,6 +142,7 @@ void ViewportWidget::initialize(QRhiCommandBuffer* cb) {
     // render target, which the offscreen UI tests do not have. The widget-side
     // memory below it IS covered; this line is reviewed, not proven.
     d_->scene->setShadingModel(d_->shading);
+    d_->scene->setWireframe(d_->wireframe);
     d_->builtAgainstRhi  = rhi();
     d_->builtAgainstPass = pass;
     d_->needsUpload      = true;

@@ -42,6 +42,15 @@ std::expected<std::unique_ptr<OffscreenRenderer>, RenderError> OffscreenRenderer
     return r;
 }
 
+bool OffscreenRenderer::wireframeSupported() const {
+    // The QRhi feature, not a scene: this is asked BEFORE a render, and a
+    // SceneResources needs a render pass descriptor that only exists inside
+    // render(). SceneResources::wireframeSupported() is the stricter answer --
+    // it knows whether the pipeline actually created -- and the draw loop uses
+    // that one.
+    return d_->rhi && d_->rhi->isFeatureSupported(QRhi::NonFillPolygonMode);
+}
+
 std::expected<QImage, RenderError> OffscreenRenderer::render(const foundation::RenderView& mesh,
                                                              const RenderSettings& s) {
     const std::array<MeshInstance, 1> one{MeshInstance{mesh, s.litsphere}};
@@ -101,6 +110,7 @@ std::expected<QImage, RenderError> OffscreenRenderer::render(std::span<const Mes
     auto scene = SceneResources::create(rhi, rp.get(), d_->shaderDir, samples);
     if (!scene) return std::unexpected(scene.error());
     (*scene)->setShadingModel(s.shading);
+    (*scene)->setWireframe(s.wireframe);
 
     QRhiCommandBuffer* cb = nullptr;
     if (rhi->beginOffscreenFrame(&cb) != QRhi::FrameOpSuccess) {

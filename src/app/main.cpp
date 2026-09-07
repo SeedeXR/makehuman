@@ -1504,6 +1504,10 @@ int main(int argc, char** argv) {
         QStringLiteral("Randomise the character with this seed. Deterministic: the same seed "
                        "always gives the same person."),
         QStringLiteral("seed"));
+    const QCommandLineOption wireframeOpt(
+        QStringLiteral("wireframe"),
+        QStringLiteral("Draw edges instead of filled faces, in the viewport and in --render. "
+                       "Ignored on a device that cannot draw non-filled polygons."));
     const QCommandLineOption symmetryOpt(
         QStringLiteral("symmetry"),
         QStringLiteral("Mirror the character: l2r copies the left side onto the right, r2l the "
@@ -1600,6 +1604,7 @@ int main(int argc, char** argv) {
     parser.addOption(eyeColourOpt);
     parser.addOption(randomOpt);
     parser.addOption(symmetryOpt);
+    parser.addOption(wireframeOpt);
     const QCommandLineOption skinningOpt(
         QStringLiteral("skinning"),
         QStringLiteral("Skinning method: linear (default) or dqs. Dual quaternion skinning keeps "
@@ -2286,6 +2291,7 @@ int main(int argc, char** argv) {
         rs.litsphere             = skin;
         rs.transparentBackground = req.transparent;
         rs.shading               = req.shading;
+        rs.wireframe             = req.wireframe;
 
         const auto scene = buildScene();
         if (scene.empty()) return std::unexpected(std::string{"nothing to draw"});
@@ -2551,6 +2557,29 @@ int main(int argc, char** argv) {
     QObject::connect(&window, &mh::ui::MainWindow::smoothChanged, [&](bool on) {
         subdivided = on;
         rebuildInto(window);
+    });
+
+    // Wireframe. A view mode, so it needs no rebuild at all -- the geometry is
+    // unchanged and only the pipeline differs. `update()` inside
+    // ViewportWidget::setWireframe is the whole cost.
+    if (parser.isSet(wireframeOpt)) {
+        window.viewport()->setWireframe(true);
+        window.setWireframe(true);
+    }
+    QObject::connect(&window, &mh::ui::MainWindow::wireframeChanged, [&](bool on) {
+        window.viewport()->setWireframe(on);
+        // Refused rather than pretended. Without this the button ticks, the
+        // body stays solid, and the user is left to guess -- which is exactly
+        // the painted no-op the rest of that toolbar group is waiting to avoid.
+        // Asked only when turning it ON, and only after a frame exists: the
+        // answer comes from a pipeline built with the scene.
+        if (on && !window.viewport()->wireframeSupported()) {
+            std::fprintf(stderr, "this device cannot draw non-filled polygons\n");
+            window.viewport()->setWireframe(false);
+            window.setWireframe(false);
+            window.statusBar()->showMessage(QObject::tr("This device cannot draw a wireframe"),
+                                            4000);
+        }
     });
     panel = new mh::ui::ModifierPanel(views);
     for (const auto& [id, v] : presets)
@@ -2880,7 +2909,8 @@ int main(int argc, char** argv) {
         const mh::ui::RenderRequest req{.width       = 1024,
                                         .height      = 1024,
                                         .transparent = parser.isSet(transparentOpt),
-                                        .shading     = shading};
+                                        .shading     = shading,
+                                        .wireframe   = parser.isSet(wireframeOpt)};
         if (const std::string err = renderTo(parser.value(renderOpt).toStdString(), req);
             !err.empty()) {
             std::fprintf(stderr, "cannot render: %s\n", err.c_str());

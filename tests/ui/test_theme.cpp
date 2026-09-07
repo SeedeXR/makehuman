@@ -2409,3 +2409,68 @@ TEST_CASE("Edit offers both symmetry directions and names the target side", "[ui
     CHECK(seen[0] == 'r');
     CHECK(seen[1] == 'l');
 }
+
+// Wireframe, the other half of the reference's View toolbar
+// (`core/mhmain.py:1734`, Ctrl+F at `:1498`). Same shape as Smooth and for the
+// same reason -- it changes what is DRAWN, not what the character is -- so it
+// is not a preference either.
+TEST_CASE("the Wireframe toggle reports intent and is not a preference", "[ui][wireframe]") {
+    theme::setIconDir(std::filesystem::path(MH_RESOURCE_DIR) / "icons" / "lucide");
+
+    const auto stored = [] {
+        return QSettings(QSettings::IniFormat, QSettings::UserScope, QStringLiteral("MakeHuman"),
+                         QStringLiteral("MakeHumanCpp"));
+    };
+    stored().remove(QStringLiteral("wireframe"));
+
+    mh::ui::MainWindow w(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+    auto* wire = w.findChild<QAction*>(QStringLiteral("view.wireframe"));
+    REQUIRE(wire != nullptr);
+    CHECK(wire->isCheckable());
+    CHECK_FALSE(wire->isChecked());
+    CHECK_FALSE(w.wireframe());
+
+    auto* bar = w.findChild<QToolBar*>(QStringLiteral("toolbar.main"));
+    REQUIRE(bar != nullptr);
+    CHECK(bar->actions().contains(wire));
+    CHECK(wire->shortcut() == QKeySequence(QStringLiteral("Ctrl+F")));
+
+    // Beside Smooth: they are one group in the reference and both answer "how
+    // is the mesh drawn", so a user who finds one has found the other.
+    auto* smooth = w.findChild<QAction*>(QStringLiteral("view.smooth"));
+    REQUIRE(smooth != nullptr);
+    const int smoothAt = static_cast<int>(bar->actions().indexOf(smooth));
+    const int wireAt   = static_cast<int>(bar->actions().indexOf(wire));
+    CHECK(wireAt == smoothAt + 1);
+
+    int emitted = 0;
+    bool seen   = false;
+    QObject::connect(&w, &mh::ui::MainWindow::wireframeChanged, [&](bool on) {
+        ++emitted;
+        seen = on;
+    });
+
+    wire->trigger();
+    CHECK(emitted == 1);
+    CHECK(seen);
+    CHECK(w.wireframe());
+
+    wire->trigger();
+    CHECK(emitted == 2);
+    CHECK_FALSE(seen);
+    CHECK_FALSE(w.wireframe());
+
+    // setWireframe is how the app says "this device cannot do it, put the
+    // button back" -- and how it seeds `--wireframe`. It must not emit, or the
+    // refusal would ask for the very render that just failed. Called twice on
+    // purpose: anything that toggles rather than sets passes the single call.
+    w.setWireframe(true);
+    w.setWireframe(true);
+    CHECK(emitted == 2);
+    CHECK(w.wireframe());
+    CHECK(wire->isChecked());
+
+    mh::ui::MainWindow w2(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+    CHECK_FALSE(w2.wireframe());
+    CHECK_FALSE(stored().contains(QStringLiteral("wireframe")));
+}

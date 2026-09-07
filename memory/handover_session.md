@@ -4,6 +4,65 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (eighteenth) — Session · **Wireframe, and an edit that never reached the disk**
+
+### The chunk
+The next open toolbar item, and the first of that group needing the RENDERER
+rather than the window: a third pipeline per shading model with
+`QRhiGraphicsPipeline::Line`, reusing the same shaders, bindings and buffers.
+No line-index buffer and no second geometry path — `PolygonMode::Line` is one
+call, and the mesh already uploaded is the mesh to draw.
+
+Toolbar toggle beside Smooth with the reference's Ctrl+F, `--wireframe` for the
+CLI and for `--render`, and a production render that follows the view exactly as
+it already follows the shading model.
+
+**Refused, never pretended.** A device without `QRhi::NonFillPolygonMode` gets
+no wire pipeline; `SceneResources::wireframeSupported()` answers from the
+PIPELINE, not the feature flag, because a device can advertise the feature and
+still fail to create the pipeline. The app un-ticks the button and says so.
+
+### The defect the picture caught
+`rs.wireframe = req.wireframe` never reached `renderImage`: the edit was in a
+script that reassigned its path variable and never wrote that buffer. The result
+was the worst kind of pass — the viewport drew edges, the render-level test drew
+edges, and `--wireframe --render` wrote a **byte-identical solid PNG**. Every
+test was green.
+
+It was found by rendering it and looking: the "wireframe" crop was a solid body.
+Then measured (0 differing pixels), then traced with one print at each end until
+the gap between them was obvious.
+
+`app_wireframe_differs` is the gate that would have caught it, and it earns
+`files_differ` honestly: two renders of the same scene are byte-identical, which
+I checked rather than assumed.
+
+### Numbers
+- 28.9 % of body pixels are background under wireframe at 1024², 0 % without it.
+- Resolution-dependent: **7.7 % at 512, 29.4 % at 1024, 53.4 % at 2048** — so
+  the render test names its size, and the assertion is a floor at half the
+  measured value rather than a number chosen by feel.
+- The window agrees: viewport coverage 181,954 → 106,779.
+
+### Mutations
+Four, all killed: never binding the wire pipeline; dropping the flag in
+`renderImage` (the real defect, caught by the app gate); a toolbar toggle that
+emits nothing; and `setWireframe` toggling instead of setting — the same trap
+the Smooth gate found last session, which is why that gate calls it twice.
+
+### Fidelity note, recorded not hidden
+Ours draws the TRIANGULATION, diagonals included, because that is the geometry
+the GPU is given. The reference draws quad edges. A quad-edge wireframe needs a
+line-index buffer built from the quad faces; recorded in `memory/todo.md`.
+
+### Next
+`memory/todo.md` in milestone order: the grid, the pose toggle and the body-part
+camera views are what remain of that group, all still painted no-ops. The named
+follow-ups from earlier sessions stand — an assertion on a RENDERED posed body,
+and a blank-frame guard for `--render`.
+
+---
+
 ## 2026-09-08 (seventeenth) — Session · **Symmetry, in the menu where the direction can be read**
 
 ### The chunk

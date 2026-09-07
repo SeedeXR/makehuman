@@ -1497,3 +1497,69 @@ TEST_CASE("every shader source has a compiled .qsb beside the binaries", "[rende
     // Without this the loop is vacuous if the source directory ever moves.
     CHECK(stages >= 4);
 }
+
+// Wireframe: the reference's other View-toolbar toggle (`core/mhmain.py:1734`,
+// Ctrl+F at `:1498`), and the first thing in that group that needed the
+// RENDERER rather than the window.
+//
+// The obvious assertion -- "wireframe covers fewer pixels" -- is weak and
+// resolution-dependent: 18,486 quads drawn as lines fill a 256-pixel body
+// almost solidly. The property that actually separates lines from fill is that
+// wireframe leaves BACKGROUND showing inside the silhouette, where the solid
+// render has surface. That holds at any resolution.
+TEST_CASE("wireframe draws edges and leaves the faces empty", "[render][wireframe]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+    if (!(*r)->wireframeSupported()) {
+        SKIP("this device cannot draw non-filled polygons -- wireframe not exercised");
+    }
+
+    const Scene sc = bodyScene();
+    const std::vector<render::MeshInstance> one{{sc.rm.view(), settings().litsphere}};
+
+    render::RenderSettings solidSettings = settings();
+    solidSettings.width                  = 1024;
+    solidSettings.height                 = 1024;
+    const auto solid                     = (*r)->render(one, solidSettings);
+    REQUIRE(solid.has_value());
+
+    render::RenderSettings wireSettings = solidSettings;
+    wireSettings.wireframe              = true;
+    const auto wire                     = (*r)->render(one, wireSettings);
+    REQUIRE(wire.has_value());
+
+    // It drew something, and it is not the solid image. A wireframe flag that
+    // did nothing would pass every coverage assertion below on its own.
+    CHECK(coverage(*wire, wireSettings) > 0.01);
+    CHECK(differingPixels(*solid, *wire) > 2000);
+
+    // The real property: count pixels that are BODY in the solid render and
+    // BACKGROUND in the wireframe one. Those are the face interiors that
+    // wireframe does not fill. A filled render can never produce them.
+    const QColor bg = QColor::fromRgbF(solidSettings.background.x, solidSettings.background.y,
+                                       solidSettings.background.z);
+    const auto isBackground = [&](const QImage& img, int x, int y) {
+        const QColor c = img.pixelColor(x, y);
+        return std::abs(c.red() - bg.red()) <= 6 && std::abs(c.green() - bg.green()) <= 6 &&
+               std::abs(c.blue() - bg.blue()) <= 6;
+    };
+    size_t body  = 0;
+    size_t holes = 0;
+    for (int y = 0; y < solid->height(); ++y) {
+        for (int x = 0; x < solid->width(); ++x) {
+            if (isBackground(*solid, x, y)) continue;
+            ++body;
+            if (isBackground(*wire, x, y)) ++holes;
+        }
+    }
+    REQUIRE(body > 1000);
+    INFO("body pixels " << body << ", empty under wireframe " << holes);
+    // 1024 is chosen from a measurement, not by taste: 18,486 quads drawn as
+    // lines are dense, so the fraction of body pixels that stay empty is
+    // 7.7% at 512, **29.4% at 1024** and 53.4% at 2048. 1024 is also the size
+    // the application's own production render uses. The floor is half the
+    // measured value -- the point is that it is nowhere near the ~0 a still
+    // filled render would give.
+    CHECK(static_cast<double>(holes) / static_cast<double>(body) > 0.15);
+}

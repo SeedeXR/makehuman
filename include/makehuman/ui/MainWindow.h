@@ -148,6 +148,15 @@ public:
     /// would otherwise claim "off" over a subdivided body.
     void setSmooth(bool on);
 
+    /// Whether the viewport draws edges instead of filled faces. Like Smooth,
+    /// a view mode rather than a preference, so a fresh window starts filled.
+    [[nodiscard]] bool wireframe() const;
+
+    /// Shows @p on WITHOUT emitting. Two callers: `--wireframe`, and the app
+    /// putting the button back when the device cannot draw non-filled polygons
+    /// -- emitting there would ask for the render that has just been refused.
+    void setWireframe(bool on);
+
     /// Restores docks and geometry from QSettings, or lays out the defaults.
     void restoreWorkspace();
     void saveWorkspace() const;
@@ -195,6 +204,9 @@ signals:
     /// The Smooth toolbar toggle. Intent only: this module cannot subdivide a
     /// mesh and must not learn how -- `core::Subdivider` is AGPL.
     void smoothChanged(bool on);
+
+    /// The Wireframe toolbar toggle.
+    void wireframeChanged(bool on);
 
     /// Edit > Symmetry. @p targetSide is the side to OVERWRITE -- `'r'` makes
     /// the right side match the left -- which is the reference's own

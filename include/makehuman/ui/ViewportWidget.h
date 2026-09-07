@@ -89,6 +89,16 @@ public:
     void setShadingModel(render::ShadingModel model);
     [[nodiscard]] render::ShadingModel shadingModel() const;
 
+    /// Draws edges instead of filled faces. Remembered until the scene exists,
+    /// like the shading model.
+    void setWireframe(bool on);
+    [[nodiscard]] bool wireframe() const;
+
+    /// Whether the device can draw them. **False until the first frame**: the
+    /// answer comes from a pipeline that is built with the scene, and the scene
+    /// is built on first paint. Ask after showing the window.
+    [[nodiscard]] bool wireframeSupported() const;
+
     /// Empty until a frame has been drawn; holds the reason if setup failed.
     [[nodiscard]] QString lastError() const;
 

@@ -134,6 +134,9 @@ struct Pipelines {
     std::unique_ptr<QRhiGraphicsPipeline> opaque;
     /// The same pipeline with alpha blending on and depth WRITE off.
     std::unique_ptr<QRhiGraphicsPipeline> blend;
+    /// The same pipeline again with `PolygonMode::Line`. Null where the device
+    /// cannot do it, which is what `wireframeSupported()` reports.
+    std::unique_ptr<QRhiGraphicsPipeline> wire;
 };
 
 struct SceneResources::Impl {
@@ -152,6 +155,7 @@ struct SceneResources::Impl {
     /// create(), so the viewport's shading toggle cannot mutate one in place.
     std::array<Pipelines, 2> pipelines;
     ShadingModel model{ShadingModel::Litsphere};
+    bool wireframe{false};
     std::vector<Drawable> drawables;
 
     [[nodiscard]] const Pipelines& active() const { return pipelines[static_cast<size_t>(model)]; }
@@ -204,7 +208,21 @@ struct SceneResources::Impl {
     blend.srcAlpha = QRhiGraphicsPipeline::One;
     blend.dstAlpha = QRhiGraphicsPipeline::OneMinusSrcAlpha;
     out.blend->setTargetBlends({blend});
-    return out.blend->create();
+    if (!out.blend->create()) return false;
+
+    // Wireframe, where the device has it. Back-face culling stays ON: the
+    // reference's wireframe hides the far side of the body, and without it the
+    // silhouette fills with the edges of faces pointing away.
+    if (!rhi->isFeatureSupported(QRhi::NonFillPolygonMode)) return true;
+    out.wire.reset(rhi->newGraphicsPipeline());
+    configure(out.wire.get());
+    out.wire->setDepthWrite(true);
+    out.wire->setPolygonMode(QRhiGraphicsPipeline::Line);
+    // A failure here is not fatal to the scene: everything else is built and
+    // usable, and `wireframeSupported()` then answers false because the
+    // pipeline is null.
+    if (!out.wire->create()) out.wire.reset();
+    return true;
 }
 
 SceneResources::SceneResources() : d_(std::make_unique<Impl>()) {}
@@ -558,6 +576,22 @@ void SceneResources::setShadingModel(ShadingModel model) {
     d_->model = model;
 }
 
+void SceneResources::setWireframe(bool on) {
+    d_->wireframe = on;
+}
+
+bool SceneResources::wireframe() const {
+    return d_->wireframe;
+}
+
+bool SceneResources::wireframeSupported() const {
+    // Asked of the pipeline that exists rather than of the QRhi feature flag: a
+    // device can advertise the feature and still fail to CREATE the pipeline,
+    // and it is the pipeline the draw loop needs.
+    return d_->pipelines[static_cast<size_t>(ShadingModel::Litsphere)].wire != nullptr &&
+           d_->pipelines[static_cast<size_t>(ShadingModel::Pbr)].wire != nullptr;
+}
+
 void SceneResources::draw(QRhiCommandBuffer* cb, const QSize& pixelSize) {
     if (d_->drawables.empty()) return;
 
@@ -573,13 +607,19 @@ void SceneResources::draw(QRhiCommandBuffer* cb, const QSize& pixelSize) {
     // material is transparent (the eyes) so the question does not arise yet;
     // it will the moment a second one lands, and a sort belongs then rather
     // than as machinery nothing exercises.
+    // Wireframe replaces BOTH passes: it is a view of the whole scene, and a
+    // blended wireframe over a wireframe body would show the eyes' edges
+    // through the head for no benefit.
+    const bool wire = d_->wireframe && d_->active().wire;
     const auto pass = [&](bool transparent) {
         bool bound = false;
         for (const Drawable& dr : d_->drawables) {
             if (dr.transparent != transparent) continue;
             if (!bound) {
                 const Pipelines& pl = d_->active();
-                cb->setGraphicsPipeline(transparent ? pl.blend.get() : pl.opaque.get());
+                cb->setGraphicsPipeline(wire          ? pl.wire.get()
+                                        : transparent ? pl.blend.get()
+                                                      : pl.opaque.get());
                 bound = true;
             }
             cb->setShaderResources(dr.srb.get());

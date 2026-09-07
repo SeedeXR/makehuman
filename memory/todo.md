@@ -2778,14 +2778,41 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
             - `symmetrySide` and `symmetricOpposite` moved out of `Random.h`
               into `core/Symmetry.h`, which is what the note in that header
               said should happen "the day a symmetry command needs it".
-      - [ ] **The rest of that toolbar, and why it is still missing.** Wireframe
-            (`Ctrl+F` there), grid, the pose toggle and the body-part camera
-            views (~8) are NOT built: nothing here can draw edges, lay down a
-            floor or hide a pose, so each would be a painted no-op.
-            `core::Material` carries a `wireframe` flag that no renderer reads,
-            which is the closest any of them has to a foundation. The body-part
-            views additionally need CUSTOM icons — lucide has no anatomy glyphs,
-            which is what the empty `resources/icons/custom/` is for.
+      - [x] **Wireframe** (2026-09-08), beside Smooth on the toolbar with the
+            reference's own Ctrl+F (`core/mhmain.py:1734`, `:1498`). The first
+            of that group that needed the RENDERER: a third pipeline per shading
+            model with `QRhiGraphicsPipeline::Line`, reusing the same shaders,
+            bindings and buffers — no line-index buffer, no second geometry
+            path.
+            - Culling stays ON, so the far side of the body does not fill the
+              silhouette with edges.
+            - **Refused, never pretended.** A device without
+              `QRhi::NonFillPolygonMode` gets no wire pipeline;
+              `wireframeSupported()` reports the PIPELINE rather than the
+              feature flag, and the app un-ticks the button and says so rather
+              than leaving a tick over a solid body.
+            - Measured: at 1024² **28.9 %** of the body's pixels are background
+              under wireframe and none are without it. The fraction is
+              resolution-dependent (7.7 % at 512, 53.4 % at 2048), which is why
+              the render test states its size and why the assertion is a floor.
+            - **The bug that only the picture caught.** `rs.wireframe =
+              req.wireframe` never made it into `renderImage` — an edit lost in
+              my own tooling — so the viewport drew edges while `--wireframe
+              --render` wrote a **byte-identical** solid PNG, and every unit
+              test passed. `app_wireframe_differs` now compares the two renders;
+              two renders of the same scene are byte-identical (checked), so
+              nothing else can make them differ.
+            - **Fidelity note:** ours draws the TRIANGULATION, diagonals
+              included, because that is what the GPU is given. The reference
+              draws quad edges. Not wrong, but visibly different from a
+              MakeHuman 1.x screenshot; a quad-edge wireframe needs its own
+              line-index buffer built from the quad faces.
+      - [ ] **The rest of that toolbar, and why it is still missing.** The grid,
+            the pose toggle and the body-part camera views (~8) are NOT built:
+            nothing here can lay down a floor or hide a pose, so each would be a
+            painted no-op. The body-part views additionally need CUSTOM icons —
+            lucide has no anatomy glyphs, which is what the empty
+            `resources/icons/custom/` is for.
       - [ ] **The symmetry MODE is not built.** The reference's third symmetry
             button is a toggle (`symmetryModeEnabled`, `core/mhmain.py:1524`)
             that mirrors every slider drag as it happens, rather than a one-shot

@@ -226,6 +226,19 @@ public:
     /// exist, so this only chooses between them and needs no re-upload.
     void setShadingModel(ShadingModel model);
 
+    /// Draws edges instead of filled faces, for every drawable including the
+    /// blended ones: wireframe is a diagnostic view of the whole scene, not a
+    /// material property.
+    ///
+    /// A no-op where `wireframeSupported()` is false. Nothing is silently
+    /// approximated -- there is no line-index fallback, because a mesh drawn as
+    /// unshared line primitives is a different picture, not the same one.
+    void setWireframe(bool on);
+    [[nodiscard]] bool wireframe() const;
+
+    /// Whether the device supports `QRhiGraphicsPipeline::Line`.
+    [[nodiscard]] bool wireframeSupported() const;
+
     /// Records one draw per uploaded mesh. `upload` must have run in an earlier
     /// or the same batch.
     void draw(QRhiCommandBuffer* cb, const QSize& pixelSize);

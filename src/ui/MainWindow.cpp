@@ -103,6 +103,7 @@ struct MainWindow::Impl {
     Weight weight{Weight::Percent};
     Skinning skinning{Skinning::Linear};
     bool smooth{false};
+    bool wireframe{false};
     /// The reference's persistent macro line. A permanent status-bar widget,
     /// because showMessage is transient and every other message would wipe it.
     QLabel* macroStatus{};
@@ -482,6 +483,21 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
         // No QSettings: this belongs to the character, not to the application.
         emit smoothChanged(on);
     });
+
+    // Wireframe, beside Smooth and with the reference's own Ctrl+F
+    // (`core/mhmain.py:1498`). `grid-3x3` rather than a mesh glyph: lucide has
+    // no wireframe icon and a grid is what the mode actually draws.
+    QAction* wire = bar->addAction(theme::icon("grid-3x3", theme::palette().textSecondary, 16),
+                                   tr("Wireframe"));
+    registerText(wire, QT_TR_NOOP("Wireframe"));
+    wire->setObjectName(QStringLiteral("view.wireframe"));
+    wire->setCheckable(true);
+    wire->setShortcut(QKeySequence(QStringLiteral("Ctrl+F")));
+    connect(wire, &QAction::toggled, this, [this](bool on) {
+        if (d_->wireframe == on) return;
+        d_->wireframe = on;
+        emit wireframeChanged(on);
+    });
     bar->addSeparator();
 
     QAction* shot = bar->addAction(theme::icon("camera", theme::palette().textSecondary, 16),
@@ -542,6 +558,16 @@ Skinning MainWindow::skinning() const {
 
 bool MainWindow::smooth() const {
     return d_->smooth;
+}
+
+bool MainWindow::wireframe() const {
+    return d_->wireframe;
+}
+
+void MainWindow::setWireframe(bool on) {
+    // Assign first, then setChecked: see setSmooth.
+    d_->wireframe = on;
+    if (QAction* a = findChild<QAction*>(QStringLiteral("view.wireframe"))) a->setChecked(on);
 }
 
 void MainWindow::setSmooth(bool on) {

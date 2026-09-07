@@ -48,12 +48,23 @@ struct RenderSettings {
     /// Which shader shades the frame. Defaults to the litsphere so every
     /// existing render -- including the golden parity images -- is unchanged.
     ShadingModel shading{ShadingModel::Litsphere};
+
+    /// Draw edges instead of filled faces (the reference's Wireframe toggle,
+    /// `core/mhmain.py:1734`). Ignored, with no error, on a device that cannot
+    /// do it -- ask `wireframeSupported()` first if you need to know.
+    bool wireframe{false};
 };
 
 class OffscreenRenderer {
 public:
     [[nodiscard]] static std::expected<std::unique_ptr<OffscreenRenderer>, RenderError> create(
         const std::filesystem::path& shaderDir);
+
+    /// Whether this device can draw non-filled polygons. False means
+    /// `RenderSettings::wireframe` will be ignored -- a caller that offers the
+    /// toggle should hide or refuse it rather than ticking a button that draws
+    /// a solid body.
+    [[nodiscard]] bool wireframeSupported() const;
 
     ~OffscreenRenderer();
     OffscreenRenderer(const OffscreenRenderer&)            = delete;
