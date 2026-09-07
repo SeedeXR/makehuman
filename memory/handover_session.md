@@ -4,6 +4,72 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-07 (ninth) — Session · **Docks AND tabs, on the owner's decision**
+
+### The decision
+Owner, verbatim: *"for docks vs tabs , we can design for both , just ensure it's
+intuitive and allows someone to configure their workspace and save or decided to
+reset to the default ui."*
+
+### What was already true, checked rather than assumed
+`AllowTabbedDocks` and `GroupedDragging` have been in `dockOptionsFor` all along,
+so dragging one panel onto another has always tabbed them. And `saveState` does
+round-trip a tabbed arrangement — Qt's claim, this window's problem, so it is now
+pinned by a test that tabs, saves, pulls the docks apart, restores, and checks
+the tabs came back.
+
+The workspace machinery was already there too: save/restore/reset, named
+layouts, presets. So the chunk was mostly about making tabs REACHABLE.
+
+### What was added
+`WorkspacePreset::tabbed`, and a **"Tabbed" preset** — everything shown, stacked
+as tabs — so the mode is something a user picks from the Workspace menu (⌘5,
+assigned automatically by the existing preset loop) rather than a gesture they
+must discover. Side-by-side presets leave the flag false and un-tab whatever the
+last one did, because `applyWorkspacePreset` restores the shipped layout first.
+Tested in BOTH directions: tabbing is not a one-way door.
+
+`resetWorkspace` from a tabbed layout returns the docked default, and a named
+workspace keeps its tabs through the real JSON file. Those are the owner's
+"configure and save, or reset to the default UI", each with a test.
+
+### What only the screenshot showed
+**Qt puts dock tabs at `South`.** In the Tabbed workspace that placed the
+"Modelling | Materials" bar below 900 pixels of sliders — nowhere near the panel
+title it switches, reading as a status strip rather than a switcher. Now
+`setTabPosition(Qt::AllDockWidgetAreas, QTabWidget::North)`, pinned by a test
+because it is a deliberate departure from the default. No assertion would have
+found that; it took looking at the picture.
+
+The same screenshot exposed a pre-existing problem worth its own item: at a
+380 px panel the Modelling sub-tabs elide to `Ma⋯ B⋯ G⋯ F⋯ T⋯ Ar⋯ M⋯` — seven
+tabs reduced to one letter each. That is the "two-level tab bar" in the owner's
+UI request, and it is unusable as it stands.
+
+Noted and deliberately not changed: a tabified dock shows its name twice, in the
+tab and in its own title bar. Standard Qt, and the title bar carries the grip and
+close button — removing it would make the window less configurable, which is the
+opposite of the request.
+
+### Mutations
+Three, all killed: tabs back at `South`; the `tabbed` flag ignored; every preset
+tabbed so the mode becomes one-way.
+
+### A test that correctly refused the change
+`"the four shipped presets ..."` pinned `presets.size() == 4` and failed the
+moment a fifth appeared — which is the assertion working, not a nuisance: a
+preset appearing or vanishing shifts every ⌘N after it. Updated to five with
+`Tabbed` asserted LAST, so ⌘1-4 keep the meanings they shipped with. Renaming
+the count away would have been weakening it.
+
+### Next
+The "Materials" dock rename, which is what remains of this item and needs a
+settings-key migration — `dockObjectName` lower-cases the category and
+`saveState` keys on it, so a rename invalidates every saved workspace unless the
+old key is migrated.
+
+---
+
 ## 2026-09-07 (eighth) — Session · **A texture path, and a gate that checked nothing**
 
 ### The chunk

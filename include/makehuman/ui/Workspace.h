@@ -51,6 +51,18 @@ struct WorkspacePreset {
     /// means every registered category; an empty list means none. The first is
     /// the one the preset is about and gets the wider column.
     std::optional<QStringList> categories;
+
+    /// Stack the shown panels as TABS in one area instead of side by side.
+    ///
+    /// Owner decision, 2026-09-07: the window should offer docks *and* tabs.
+    /// `AllowTabbedDocks` and `GroupedDragging` were already on, so dragging one
+    /// panel onto another has always tabbed them -- but that is a gesture a user
+    /// has to discover. A preset makes the same arrangement something they can
+    /// pick from the Workspace menu, which is what "intuitive" means here.
+    ///
+    /// Side-by-side presets leave this false and un-tab whatever the last one
+    /// did, because `applyWorkspacePreset` restores the shipped layout first.
+    bool tabbed{false};
 };
 
 [[nodiscard]] const std::vector<WorkspacePreset>& workspacePresets();

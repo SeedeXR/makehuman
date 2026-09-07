@@ -71,11 +71,17 @@ const std::vector<WorkspacePreset>& workspacePresets() {
     // differ from Modelling only in what they hide. Shipped now so the
     // switcher, the shortcuts and the file format are exercised by four real
     // entries rather than one.
+    //
+    // "Tabbed" shows everything like "Modelling" and differs only in the
+    // arrangement, which is the point: it is how a user reaches the tabbed mode
+    // without having to discover that one panel can be dragged onto another.
+    // Last, so the existing Cmd+1..4 shortcuts keep the meanings they had.
     static const std::vector<WorkspacePreset> presets{
-        {QStringLiteral("Modelling"), std::nullopt},  // everything
-        {QStringLiteral("Rigging"), QStringList{QStringLiteral("Modelling")}},
-        {QStringLiteral("Materials"), QStringList{QStringLiteral("Materials")}},
-        {QStringLiteral("Export"), QStringList{}},  // nothing
+        {QStringLiteral("Modelling"), std::nullopt, false},  // everything
+        {QStringLiteral("Rigging"), QStringList{QStringLiteral("Modelling")}, false},
+        {QStringLiteral("Materials"), QStringList{QStringLiteral("Materials")}, false},
+        {QStringLiteral("Export"), QStringList{}, false},  // nothing
+        {QStringLiteral("Tabbed"), std::nullopt, true},
     };
     return presets;
 }

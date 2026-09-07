@@ -17,6 +17,7 @@
 
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <filesystem>
+#include <ranges>
 #include <vector>
 
 #include <QAccessible>
@@ -26,6 +27,7 @@
 #include <QMouseEvent>
 #include <QSettings>
 #include <QSlider>
+#include <QTabWidget>
 #include <QTemporaryDir>
 #include <QUndoStack>
 #include <QWheelEvent>
@@ -483,4 +485,140 @@ TEST_CASE("panning scales with distance", "[ui][viewport][pan]") {
     REQUIRE(near > 0.0F);
     INFO("near " << near << ", far " << far);
     CHECK(far > near * 5.0F);  // 10x the distance, so nearly 10x the pan
+}
+
+// ---------------------------------------------------------------- tabs -----
+//
+// Owner decision, 2026-09-07: "for docks vs tabs, we can design for both, just
+// ensure it's intuitive and allows someone to configure their workspace and
+// save or decided to reset to the default ui."
+//
+// `AllowTabbedDocks` and `GroupedDragging` were already set, so dragging one
+// panel onto another has always tabbed them -- but nothing verified that the
+// arrangement SURVIVES a save, and nothing offered tabs except by discovering
+// the drag. These cover both halves.
+
+TEST_CASE("a tabbed arrangement survives save and restore", "[ui][workspace][tabs]") {
+    // The claim `saveState` round-trips tabbing is Qt's, not ours, and this
+    // window is the thing that has to keep working -- so it is checked rather
+    // than assumed. If Qt ever stopped, a user's tabbed layout would silently
+    // come back as columns.
+    mh::ui::MainWindow window(std::filesystem::path{}, shippedTasks());
+    auto* modelling = window.findChild<QDockWidget*>(
+        mh::ui::MainWindow::dockObjectName(QStringLiteral("Modelling")));
+    auto* materials = window.findChild<QDockWidget*>(
+        mh::ui::MainWindow::dockObjectName(QStringLiteral("Materials")));
+    REQUIRE(modelling != nullptr);
+    REQUIRE(materials != nullptr);
+    REQUIRE(window.tabifiedDockWidgets(modelling).isEmpty());
+
+    window.tabifyDockWidget(modelling, materials);
+    REQUIRE(window.tabifiedDockWidgets(modelling).contains(materials));
+
+    const QByteArray tabbed = window.saveState();
+    // Pulled apart again, so restoring has something real to undo.
+    window.addDockWidget(Qt::RightDockWidgetArea, materials);
+    REQUIRE(window.tabifiedDockWidgets(modelling).isEmpty());
+
+    REQUIRE(window.restoreState(tabbed));
+    CHECK(window.tabifiedDockWidgets(modelling).contains(materials));
+}
+
+TEST_CASE("panel tabs sit at the top, not Qt's default bottom", "[ui][workspace][tabs]") {
+    // Pinned because it is a deliberate departure from the Qt default, and the
+    // reason is only visible in a screenshot: at `South` the
+    // "Modelling | Materials" bar sat below 900 pixels of sliders, nowhere near
+    // the panel title it switches, and read as a status strip.
+    mh::ui::MainWindow window(std::filesystem::path{}, shippedTasks());
+    for (const Qt::DockWidgetArea area : {Qt::LeftDockWidgetArea, Qt::RightDockWidgetArea,
+                                          Qt::TopDockWidgetArea, Qt::BottomDockWidgetArea}) {
+        CHECK(window.tabPosition(area) == QTabWidget::North);
+    }
+}
+
+TEST_CASE("the Tabbed preset really tabs the panels", "[ui][workspace][tabs]") {
+    // Tabs as something a user can CHOOSE, not only discover by dragging. The
+    // preset list is what the Workspace menu and Cmd+1..n are built from, so
+    // adding it there is what makes the mode reachable.
+    const auto& presets = mh::ui::workspacePresets();
+    const auto tabbed   = std::ranges::find_if(
+        presets, [](const auto& p) { return p.name == QStringLiteral("Tabbed"); });
+    REQUIRE(tabbed != presets.end());
+    CHECK(tabbed->tabbed);
+
+    mh::ui::MainWindow window(std::filesystem::path{}, shippedTasks());
+    REQUIRE(window.applyWorkspacePreset(QStringLiteral("Tabbed")));
+
+    auto* modelling = window.findChild<QDockWidget*>(
+        mh::ui::MainWindow::dockObjectName(QStringLiteral("Modelling")));
+    auto* materials = window.findChild<QDockWidget*>(
+        mh::ui::MainWindow::dockObjectName(QStringLiteral("Materials")));
+    REQUIRE(modelling != nullptr);
+    REQUIRE(materials != nullptr);
+    // isHidden(), not isVisible(): this window is never shown, so every child
+    // reports isVisible() == false whatever was asked for. Same reason as
+    // "saveState round-trips dock visibility" above.
+    CHECK_FALSE(modelling->isHidden());
+    CHECK_FALSE(materials->isHidden());
+    CHECK(window.tabifiedDockWidgets(modelling).contains(materials));
+}
+
+TEST_CASE("a side-by-side preset un-tabs what Tabbed did", "[ui][workspace][tabs]") {
+    // "Both" has to mean both DIRECTIONS. Applying Modelling after Tabbed must
+    // give columns back, or the tabbed mode is a one-way door.
+    mh::ui::MainWindow window(std::filesystem::path{}, shippedTasks());
+    REQUIRE(window.applyWorkspacePreset(QStringLiteral("Tabbed")));
+    auto* modelling = window.findChild<QDockWidget*>(
+        mh::ui::MainWindow::dockObjectName(QStringLiteral("Modelling")));
+    REQUIRE(modelling != nullptr);
+    REQUIRE_FALSE(window.tabifiedDockWidgets(modelling).isEmpty());
+
+    REQUIRE(window.applyWorkspacePreset(QStringLiteral("Modelling")));
+    CHECK(window.tabifiedDockWidgets(modelling).isEmpty());
+}
+
+TEST_CASE("reset returns to the docked default from a tabbed layout", "[ui][workspace][tabs]") {
+    // The owner's "or decided to reset to the default ui", from the state most
+    // likely to make someone want it.
+    mh::ui::MainWindow window(std::filesystem::path{}, shippedTasks());
+    auto* modelling = window.findChild<QDockWidget*>(
+        mh::ui::MainWindow::dockObjectName(QStringLiteral("Modelling")));
+    auto* materials = window.findChild<QDockWidget*>(
+        mh::ui::MainWindow::dockObjectName(QStringLiteral("Materials")));
+    REQUIRE(modelling != nullptr);
+    REQUIRE(materials != nullptr);
+
+    window.tabifyDockWidget(modelling, materials);
+    REQUIRE_FALSE(window.tabifiedDockWidgets(modelling).isEmpty());
+
+    window.resetWorkspace();
+    CHECK(window.tabifiedDockWidgets(modelling).isEmpty());
+    CHECK_FALSE(modelling->isHidden());
+    CHECK_FALSE(materials->isHidden());
+}
+
+TEST_CASE("a named workspace keeps its tabs", "[ui][workspace][tabs]") {
+    // The configure-and-save half of the request, end to end through the real
+    // JSON file rather than through saveState alone.
+    QTemporaryDir dir;
+    REQUIRE(dir.isValid());
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, dir.path());
+
+    mh::ui::MainWindow window(std::filesystem::path{}, shippedTasks());
+    auto* modelling = window.findChild<QDockWidget*>(
+        mh::ui::MainWindow::dockObjectName(QStringLiteral("Modelling")));
+    auto* materials = window.findChild<QDockWidget*>(
+        mh::ui::MainWindow::dockObjectName(QStringLiteral("Materials")));
+    REQUIRE(modelling != nullptr);
+    REQUIRE(materials != nullptr);
+
+    window.tabifyDockWidget(modelling, materials);
+    const QString name = QStringLiteral("tabbed-layout");
+    REQUIRE(window.saveWorkspaceAs(name));
+
+    window.resetWorkspace();
+    REQUIRE(window.tabifiedDockWidgets(modelling).isEmpty());
+
+    REQUIRE(window.loadNamedWorkspace(name));
+    CHECK(window.tabifiedDockWidgets(modelling).contains(materials));
 }

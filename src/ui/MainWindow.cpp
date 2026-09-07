@@ -27,6 +27,7 @@
 #include <QPointer>
 #include <QSaveFile>
 #include <QSettings>
+#include <QTabWidget>
 
 #include <QStandardPaths>
 #include <QUndoStack>
@@ -164,6 +165,12 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     // "snapping" has nothing to snap into.
     setDockNestingEnabled(true);
     setDockOptions(dockOptionsFor(theme::reduceMotion()));
+    // Panel tabs at the TOP. Qt's default for dock areas is `South`, and a
+    // screenshot of the Tabbed workspace is what showed why that is wrong here:
+    // the "Modelling | Materials" bar sat under 900 pixels of sliders, far from
+    // the panel title it belongs to, and read as a status strip rather than a
+    // switcher. Every DCC this port is measured against puts them on top.
+    setTabPosition(Qt::AllDockWidgetAreas, QTabWidget::North);
 
     QMenu* file = menuBar()->addMenu(tr("&File"));
     registerText(file, QT_TR_NOOP("&File"));
@@ -625,6 +632,26 @@ bool MainWindow::applyWorkspacePreset(const QString& name) {
     for (QDockWidget* dock : findChildren<QDockWidget*>()) {
         dock->setVisible(visible.contains(dock->objectName()));
     }
+    // Tabs, when the preset asks for them. After restoreState above, so it
+    // stacks the shipped layout rather than whatever the last preset left --
+    // and before resizeDocks, because tabifying moves docks between areas and
+    // a width set first would apply to the wrong one.
+    if (found->tabbed) {
+        QDockWidget* anchor = nullptr;
+        for (const QString& objectName : visible) {
+            auto* dock = findChild<QDockWidget*>(objectName);
+            if (dock == nullptr) continue;
+            if (anchor == nullptr) {
+                anchor = dock;
+                continue;
+            }
+            tabifyDockWidget(anchor, dock);
+        }
+        // The first category named is the one the preset is about, so it is the
+        // tab the user is looking at rather than whichever Qt raised last.
+        if (anchor != nullptr) anchor->raise();
+    }
+
     // The first category named is the one the preset is about, so it gets room.
     if (!visible.isEmpty()) {
         if (auto* dock = findChild<QDockWidget*>(visible.front())) {

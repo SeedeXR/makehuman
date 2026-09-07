@@ -2831,10 +2831,38 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       and Qt's `saveState`/`restoreState` already round-trips a TABBED dock
       arrangement — `tabifyDockWidget` plus `AllowTabbedDocks` is the mechanism,
       and `dockOptionsFor` already sets the flags.
-      Still to do: let the user actually tabify (drag one dock onto another is
-      Qt-native once the option is on — verify it, do not assume), a visible
-      "reset to the default UI" that is discoverable rather than only in a menu,
-      and the rename below, which needs a key migration.
+      **Done 2026-09-07:**
+      - **Verified, not assumed**: dragging one dock onto another already tabs
+        them (`AllowTabbedDocks` + `GroupedDragging` were set all along), and
+        `saveState`/`restoreState` really does round-trip the tabbed arrangement
+        — now pinned by a test that tabs, saves, pulls apart, restores.
+      - **A "Tabbed" workspace preset**, so tabs are something a user can PICK
+        from the Workspace menu (and ⌘5, assigned automatically by the preset
+        loop) rather than a drag gesture they have to discover.
+        `WorkspacePreset::tabbed` drives it; side-by-side presets leave it false
+        and un-tab whatever the last one did, because `applyWorkspacePreset`
+        restores the shipped layout first — tested in both directions, so the
+        tabbed mode is not a one-way door.
+      - A named workspace keeps its tabs through the real JSON file
+        (`saveWorkspaceAs` → `resetWorkspace` → `loadNamedWorkspace`), and
+        `resetWorkspace` returns a tabbed layout to the docked default.
+      - **Panel tabs moved to the TOP.** Qt defaults dock tabs to `South`, and a
+        screenshot is what showed why that is wrong: the
+        "Modelling | Materials" bar sat below 900 pixels of sliders, nowhere
+        near the panel title it switches, and read as a status strip. Only
+        visible by looking.
+      Still to do: the rename below, which needs a settings-key migration.
+- [ ] **The two-level tab bar's labels truncate to nothing, and a screenshot of
+      the Tabbed preset made it obvious.** At a 380 px panel the Modelling
+      sub-tabs render as `Ma⋯ B⋯ G⋯ F⋯ T⋯ Ar⋯ M⋯` — seven tabs whose names are
+      each one letter. Pre-existing and independent of the tabbing work, but it
+      is the same "two-level tab bar" the owner's UI request asks for, and it is
+      unusable as it stands. Options: elide less aggressively, wrap to two rows,
+      scroll buttons, or icons with tooltips.
+      Noted, not fixed: a redundancy that came WITH tabbing is that a tabified
+      dock shows its name twice, once in the tab and once in its own title bar.
+      Standard Qt, and the title bar carries the grip and the close button, so
+      removing it would make the window less configurable rather than more.
 - [ ] **The "Materials" dock is misnamed and I made it worse.** It now holds
       Skin, Pose, Eyes, Skin material and Skeleton — three of which are not
       materials. Renaming is not free: `dockObjectName()` lower-cases the

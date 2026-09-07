@@ -780,13 +780,19 @@ TEST_CASE("a corrupt state blob is refused rather than silently ignored", "[work
     CHECK_FALSE(mh::ui::workspaceFromJson(noName).has_value());
 }
 
-TEST_CASE("the four shipped presets are on the menu with the documented shortcuts", "[workspace]") {
+TEST_CASE("the shipped presets are on the menu with the documented shortcuts", "[workspace]") {
     useShippedIcons();
     mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
 
+    // FIVE since 2026-09-07: "Tabbed" joined them on the owner's docks-and-tabs
+    // decision. The count is pinned deliberately -- a preset appearing or
+    // vanishing shifts every Ctrl+N after it, so it should not happen quietly.
     const auto& presets = mh::ui::workspacePresets();
-    REQUIRE(presets.size() == 4);
+    REQUIRE(presets.size() == 5);
     CHECK(presets[0].name == QStringLiteral("Modelling"));
+    // Tabbed is LAST on purpose, so Ctrl+1..4 keep the meanings they shipped
+    // with; it takes Ctrl+5.
+    CHECK(presets.back().name == QStringLiteral("Tabbed"));
 
     int i = 0;
     for (const auto& preset : presets) {
