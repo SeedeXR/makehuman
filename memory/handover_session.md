@@ -55,6 +55,27 @@ opposite of the request.
 Three, all killed: tabs back at `South`; the `tabbed` flag ignored; every preset
 tabbed so the mode becomes one-way.
 
+### PROCESS DEFECT: two gate runs overlapped and corrupted each other
+I launched a second four-preset gate **while the first was still running its
+tsan step** — I had read its debug/release/asan lines and assumed it was done.
+Both write `/tmp/c_<preset>.log` and both build the same `build/macos-arm64-tsan`
+directory.
+
+The result looked exactly like a flaky test: the second run reported tsan
+`1 tests failed out of 627`, and I pushed before reading that line properly.
+`/tmp/c_tsan.log` then held **two** ctest summaries — `0 failed` and `1 failed` —
+with `Test #543 ui` appearing once and Passed. The failure was the STALE
+preset-count test from the earlier run, and whichever summary my
+`grep | tail -1` picked depended on interleaving. Eight clean reruns and a
+separate exclusive tsan gate confirmed the code was fine all along.
+
+Two things to change, both worse than the wrong log line:
+- **Never start a gate while one is running.** Two concurrent ninja builds in
+  one build directory can produce a mixed binary, which is a much worse failure
+  than a corrupted log and would not announce itself.
+- **Read the last line before committing.** I had the evidence and pushed
+  anyway.
+
 ### A test that correctly refused the change
 `"the four shipped presets ..."` pinned `presets.size() == 4` and failed the
 moment a fifth appeared — which is the assertion working, not a nuisance: a
