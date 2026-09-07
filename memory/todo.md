@@ -2981,7 +2981,53 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       they write has to be inside it; four round-trip tests were comparing an
       unmasked EXPORT against `heightCm()` and now say `boundingBox()`
       explicitly, asserting the same values as before.
-- [ ] Symbolic shortcut/mouse persistence (not raw Qt enum ints)
+- [x] **Symbolic shortcut persistence** (2026-09-07). `ui::shortcuts::apply` /
+      `save` / `reset`, `QSettings` group `[shortcuts]`, one key per action
+      `objectName`, value = `QKeySequence` **PortableText** (`"Ctrl+Z"`).
+      The reference persists raw Qt enum ints —
+      `f.write('%d %d %s\n' % (shortcut[0], shortcut[1], action))`
+      (`legacy/python/core/mhmain.py:1022`) — and pays twice: the file is opaque
+      (`67108864 90 undo`), and the numbers only mean anything to the Qt that
+      wrote them, so it carries a magic sentinel
+      (`'_versionSentinel': (0, 0x87654321)`) and throws the WHOLE file away when
+      it mismatches (`:988-989`). Deliberate divergence, hard rule 3.
+      - **Only overrides are written.** An action back on its shipped default has
+        its key removed rather than recorded. That is what makes a changed
+        default in a later release reach the user — and it is precisely why the
+        reference needs a sentinel, because writing every binding freezes its own
+        defaults on disk the first time anything is saved.
+      - Rejects, with a message naming the entry and the reason: unknown action
+        name, unparseable sequence, raw Qt key code, and collisions (Qt gives an
+        ambiguous shortcut to NEITHER action, so the user silently loses both —
+        the reference refuses them too, `mhmain.py:1387`). An empty value is a
+        deliberate "no shortcut", which the reference cannot express.
+      - Applied last in the `MainWindow` constructor and **logged to stderr**;
+        verified end to end against a real INI, with the one valid override
+        applying silently and three bad ones each reported.
+      - **Two defects the tests would not have found alone.**
+        `QKeySequence::isEmpty()` does not reject garbage — Qt parses
+        `"NotAKey+++"` into a sequence holding `Qt::Key_unknown`. And the raw-int
+        guard passed its unit test while failing in the app: QSettings caches
+        parsed data per process, so a value written as an int reads back as an
+        int, whereas a **hand-edited or migrated** file arrives as strings and
+        `edit.randomise=5` sailed through. Now guarded on the text as well, with
+        the line drawn at two or more digits — a single digit is Qt's own
+        portable text for that digit key, and every code a reference file can
+        hold is ≥ 2 digits.
+      - Seven mutations killed. One survived first time because the fixture used
+        `90`, which the unknown-key guard catches anyway; only a small int like
+        `5` gives the type guard teeth. **Sixth time a surviving mutation has
+        pointed at the fixture rather than the code.**
+- [ ] **Mouse-button persistence, not done.** The symbolic FORMAT is settled by
+      the above and the mouse side inherits it, but `ViewportWidget` dispatches
+      on hardcoded buttons in `mouseMoveEvent` (LEFT orbits, MIDDLE pans, wheel
+      zooms) and would have to become table-driven first. That is its own chunk,
+      not a tail of this one.
+- [ ] **No rebinding UI yet**, so `shortcuts::save` and `reset` have tests but no
+      caller — a recorded deferral, not dead code. The reference puts this in a
+      Settings task view (`5_settings_shortcuts.py`): click a box, press the
+      keys. Ours would add "Settings ▸ Shortcuts…" beside the existing Units and
+      Real-weight groups.
 - [~] **Task views inventoried and classified** — `memory/taskviews.md`,
       re-derived by `tools/audit_taskviews.py` in CI. **51, not 50**: an AST
       audit found six views a regex could not see, five of them real tabs

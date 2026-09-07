@@ -5,6 +5,7 @@
 
 #include "makehuman/ui/Language.h"
 #include "makehuman/ui/PanelTitleBar.h"
+#include "makehuman/ui/Shortcuts.h"
 #include "makehuman/ui/Theme.h"
 #include "makehuman/ui/ViewportWidget.h"
 #include "makehuman/ui/Workspace.h"
@@ -26,8 +27,10 @@
 #include <QPointer>
 #include <QSaveFile>
 #include <QSettings>
+
 #include <QStandardPaths>
 #include <QUndoStack>
+#include <cstdio>
 
 #include <QStatusBar>
 #include <QToolBar>
@@ -385,6 +388,17 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     resize(1280, 800);
     // Captured AFTER every dock exists, so a preset restoring it gets them all.
     d_->defaultState = saveState();
+
+    // Shortcut overrides, LAST: every action has to exist before it can be
+    // rebound, and `apply` records each shipped sequence as it goes.
+    //
+    // Reported on stderr rather than swallowed. A shortcut that silently did
+    // not take is the kind of thing a user blames on their keyboard, and the
+    // message names the entry and what is wrong with it.
+    QSettings stored = workspaceSettings();
+    for (const QString& problem : shortcuts::apply(*this, stored)) {
+        std::fprintf(stderr, "shortcuts: %s\n", problem.toUtf8().constData());
+    }
 }
 
 MainWindow::~MainWindow() = default;

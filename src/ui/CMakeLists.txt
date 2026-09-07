@@ -17,6 +17,7 @@ add_library(mh_ui STATIC
     MacroStatus.cpp
     ImageViewer.cpp
     RenderDialog.cpp
+    Shortcuts.cpp
     Theme.cpp
     PanelTitleBar.cpp
     ModifierPanel.cpp
@@ -31,6 +32,7 @@ add_library(mh_ui STATIC
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/PanelTitleBar.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/ImageViewer.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/RenderDialog.h
+    ${CMAKE_SOURCE_DIR}/include/makehuman/ui/Shortcuts.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/ModifierPanel.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/AssetPanel.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/Workspace.h

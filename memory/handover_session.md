@@ -4,6 +4,67 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-07 (seventh) — Session · **Shortcuts persist symbolically, and running it found what tests could not**
+
+### The chunk
+`ui::shortcuts::apply` / `save` / `reset`. `QSettings` group `[shortcuts]`, one
+key per action `objectName`, value = `QKeySequence` PortableText — `"Ctrl+Z"`.
+
+The reference stores raw Qt enum ints,
+`f.write('%d %d %s\n' % (shortcut[0], shortcut[1], action))`
+(`legacy/python/core/mhmain.py:1022`), and pays for it twice: the file is opaque
+to a human (`67108864 90 undo`), and the numbers only mean anything to the Qt
+build that wrote them — so it carries a magic sentinel
+(`'_versionSentinel': (0, 0x87654321)`) and discards the WHOLE file when it
+fails to match (`:988-989`). Deliberate divergence under hard rule 3.
+
+**Only overrides are written.** An action back on its shipped default has its key
+removed rather than recorded, so a changed default in a later release still
+reaches the user. That is exactly why the reference needs its sentinel: writing
+every binding freezes its own defaults on disk the first time anything is saved.
+
+### Two defects that only running it exposed
+1. **`QKeySequence::isEmpty()` does not reject garbage.** Qt parses
+   `"NotAKey+++"` into a one-element sequence holding `Qt::Key_unknown`, so a
+   typo in the settings file was being accepted as a real, unpressable shortcut.
+   Caught by a unit test.
+2. **The raw-int guard passed its unit test and failed in the application.**
+   QSettings caches parsed file data per process, so a value written as an int
+   *in the same process* reads back as an int — which made a `typeId()` check
+   look sufficient. A **hand-edited or migrated** file arrives as strings, and
+   `edit.randomise=5` sailed straight through as the "5" key. Found only by
+   appending a bad section to the real INI and running the app.
+
+   The fix guards the text as well, with the line at **two or more digits**: a
+   single digit is Qt's own portable text for that digit key, and every code a
+   reference file can hold is ≥ 2 digits (Qt's digit keys are ASCII 48-57).
+   Both sides of that rule are mutation-pinned — too loose and too strict each
+   fail a test.
+
+### The fixture lesson, sixth time
+The raw-int mutation SURVIVED first time. Not a code gap: the fixture used `90`,
+which the unknown-key guard rejects anyway, so the type guard was never the thing
+under test. Only a small int like `5` gives it teeth. Seven mutations killed once
+the fixture was fixed.
+
+### A process note that cost time twice
+`timeout` does not exist on macOS. My first end-to-end check reported "no
+warnings" from a command that never ran — a false negative that looked exactly
+like a broken feature. Background the process and `kill` it instead.
+
+And splicing on a remembered marker damaged the test file again, the same way as
+last session. Read the region back in the same step before editing it.
+
+### Scope held
+Mouse-button persistence is NOT done and is recorded as its own chunk:
+`ViewportWidget` dispatches on hardcoded buttons in `mouseMoveEvent` and would
+have to become table-driven first. The symbolic format is settled, so the mouse
+side inherits it. `save`/`reset` have tests but no caller until there is a
+rebinding UI — a recorded deferral, written down rather than left as quiet dead
+code.
+
+---
+
 ## 2026-09-07 (sixth) — Session · **The eye-asset gate runs in CI, and it was checking almost nothing**
 
 ### The chunk
