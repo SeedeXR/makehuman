@@ -459,6 +459,27 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_skinning_unknown PROPERTIES
         PASS_REGULAR_EXPRESSION "unknown skinning method")
 
+    # `--subdivide` had NO app-level test. Catmull-Clark itself is covered by
+    # unit and golden fixtures; nothing checked that the flag reaches the scene,
+    # which is precisely what the new Smooth toolbar toggle drives. The face
+    # count is what makes it observable: 53,512 of 73,944 against the base
+    # mesh's 13,378 of 18,486, and asserting it here is what stops the toggle
+    # becoming a button that ticks and changes nothing.
+    add_test(NAME app_subdivide COMMAND makehuman
+             --subdivide --export ${CMAKE_CURRENT_BINARY_DIR}/app_subdivide.obj)
+    set_tests_properties(app_subdivide PROPERTIES
+        PASS_REGULAR_EXPRESSION "body: 53512 of 73944 faces visible"
+        FIXTURES_SETUP app_subdivide_obj)
+    # ...and then read the file, for the reason app_smoke_obj_faces gives: "the
+    # app said 53512" and "the file holds 53512" are different claims, and it
+    # was the second one that was false last time. 54,532 = 53,512 subdivided
+    # body + 1,020 eyes, which are a separate proxy mesh and are NOT subdivided.
+    add_test(NAME app_subdivide_obj_faces COMMAND ${CMAKE_COMMAND}
+             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/app_subdivide.obj -DEXPECT=54532
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_body_faces.cmake)
+    set_tests_properties(app_subdivide_obj_faces PROPERTIES
+        FIXTURES_REQUIRED app_subdivide_obj)
+
     # A texture path is written INTO an exported file, so it has to be clean.
     # Measured before `lexically_normal` landed: every shipped skin says
     # `diffuseTexture ../textures/skin/<tone>.png`, and this export embedded

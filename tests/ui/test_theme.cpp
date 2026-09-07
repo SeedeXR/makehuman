@@ -2286,3 +2286,83 @@ TEST_CASE("the skinning setting persists and is exclusive", "[ui][skinning]") {
         CHECK(w3.skinning() == mh::ui::Skinning::Linear);
     }
 }
+
+// Smooth: the reference's View-toolbar toggle (`core/mhmain.py:1733`, Alt+S at
+// `:170`), and the first of that group whose BEHAVIOUR we already have --
+// `--subdivide`, `Subdivider` and the `.mhm`'s `subdivide` line have all
+// shipped for milestones, with nothing in the window able to reach them. The
+// others in that group (wireframe, grid) are still painted no-ops here and are
+// deliberately absent; see memory/todo.md.
+TEST_CASE("the Smooth toggle reports intent and is not a preference", "[ui][smooth]") {
+    theme::setIconDir(std::filesystem::path(MH_RESOURCE_DIR) / "icons" / "lucide");
+
+    // Cleared first, so the "nothing was written" assertion at the end reads
+    // the run rather than whatever an older build left in the developer's real
+    // preferences -- which is exactly how it first failed, on a key a MUTANT
+    // binary had written minutes earlier.
+    const auto stored = [] {
+        return QSettings(QSettings::IniFormat, QSettings::UserScope, QStringLiteral("MakeHuman"),
+                         QStringLiteral("MakeHumanCpp"));
+    };
+    stored().remove(QStringLiteral("smooth"));
+
+    mh::ui::MainWindow w(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+
+    auto* smooth = w.findChild<QAction*>(QStringLiteral("view.smooth"));
+    REQUIRE(smooth != nullptr);
+    CHECK(smooth->isCheckable());
+    CHECK_FALSE(smooth->isChecked());
+    CHECK_FALSE(w.smooth());
+    // On the toolbar, where the reference has it. An action reachable only by
+    // its shortcut is one a user has to be told about.
+    auto* bar = w.findChild<QToolBar*>(QStringLiteral("toolbar.main"));
+    REQUIRE(bar != nullptr);
+    CHECK(bar->actions().contains(smooth));
+    CHECK(smooth->shortcut() == QKeySequence(QStringLiteral("Alt+S")));
+
+    int emitted = 0;
+    bool seen   = false;
+    QObject::connect(&w, &mh::ui::MainWindow::smoothChanged, [&](bool on) {
+        ++emitted;
+        seen = on;
+    });
+
+    smooth->trigger();
+    CHECK(emitted == 1);
+    CHECK(seen);
+    CHECK(w.smooth());
+
+    // Both directions: a toggle that only ever reports "on" leaves the mesh
+    // subdivided for the rest of the session.
+    smooth->trigger();
+    CHECK(emitted == 2);
+    CHECK_FALSE(seen);
+    CHECK_FALSE(w.smooth());
+
+    // setSmooth is for `--subdivide` and for opening a `.mhm` that carries it:
+    // the app has already applied it, so this moves the tick and tells nobody.
+    // Without it the button would claim "off" over a subdivided body.
+    w.setSmooth(true);
+    CHECK(emitted == 2);
+    CHECK(w.smooth());
+    CHECK(smooth->isChecked());
+
+    // Idempotent, and this is the assertion that matters: `applyLoaded` calls
+    // it on EVERY open, including one that changes nothing. Anything that
+    // toggles rather than sets -- `trigger()` in place of `setChecked()` --
+    // passes every line above and unticks the button here.
+    w.setSmooth(true);
+    CHECK(emitted == 2);
+    CHECK(w.smooth());
+    CHECK(smooth->isChecked());
+
+    // NOT a preference. Subdivision belongs to the character and travels in the
+    // `.mhm` (`subdivide` there, read at `applyLoaded` and written at save), so
+    // a second window must start unticked however this one was left.
+    mh::ui::MainWindow w2(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+    CHECK_FALSE(w2.smooth());
+    CHECK_FALSE(w2.findChild<QAction*>(QStringLiteral("view.smooth"))->isChecked());
+    // Said at the other end too: a second window reading nothing proves only
+    // that nothing is READ. This is what a stray write would trip over.
+    CHECK_FALSE(stored().contains(QStringLiteral("smooth")));
+}

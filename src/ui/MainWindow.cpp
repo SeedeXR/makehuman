@@ -102,6 +102,7 @@ struct MainWindow::Impl {
     Units units{Units::Metric};
     Weight weight{Weight::Percent};
     Skinning skinning{Skinning::Linear};
+    bool smooth{false};
     /// The reference's persistent macro line. A permanent status-bar widget,
     /// because showMessage is transient and every other message would wipe it.
     QLabel* macroStatus{};
@@ -421,10 +422,13 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     // and translation registration. Undo and redo make that concrete: they
     // grey out with the stack only because there is exactly one of each.
     //
-    // The mesh-display, symmetry and body-part-camera groups in the reference
-    // screenshot are NOT here: nothing in this module can smooth, wireframe,
-    // subdivide or mirror anything yet, so those buttons would be painted
-    // no-ops. They arrive with the behaviour they need.
+    // The symmetry and body-part-camera groups in the reference screenshot are
+    // NOT here, and neither is wireframe or grid: nothing can mirror, draw
+    // edges or lay down a floor yet, so every one of those buttons would be a
+    // painted no-op. They arrive with the behaviour they need. Smooth is the
+    // one of that group that HAS its behaviour -- `--subdivide` and the
+    // `.mhm`'s subdivide line have both shipped for milestones -- so it is
+    // here.
     auto* bar = new QToolBar(tr("Main"), this);
     registerText(bar, QT_TR_NOOP("Main"));
     bar->setObjectName(QStringLiteral("toolbar.main"));
@@ -443,6 +447,24 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     bar->addAction(undoAction);
     bar->addAction(redoAction);
     bar->addAction(resetAction);
+    bar->addSeparator();
+
+    // Smooth: the reference's own View-toolbar toggle and its own shortcut
+    // (`core/mhmain.py:1733` and `:170`). Checkable and NOT in an action group,
+    // so the icon audit rightly demands a glyph; `spline` is the smoothed curve
+    // and was vendored and unused.
+    QAction* smooth =
+        bar->addAction(theme::icon("spline", theme::palette().textSecondary, 16), tr("Smooth"));
+    registerText(smooth, QT_TR_NOOP("Smooth"));
+    smooth->setObjectName(QStringLiteral("view.smooth"));
+    smooth->setCheckable(true);
+    smooth->setShortcut(QKeySequence(QStringLiteral("Alt+S")));
+    connect(smooth, &QAction::toggled, this, [this](bool on) {
+        if (d_->smooth == on) return;
+        d_->smooth = on;
+        // No QSettings: this belongs to the character, not to the application.
+        emit smoothChanged(on);
+    });
     bar->addSeparator();
 
     QAction* shot = bar->addAction(theme::icon("camera", theme::palette().textSecondary, 16),
@@ -499,6 +521,18 @@ Weight MainWindow::weightMode() const {
 
 Skinning MainWindow::skinning() const {
     return d_->skinning;
+}
+
+bool MainWindow::smooth() const {
+    return d_->smooth;
+}
+
+void MainWindow::setSmooth(bool on) {
+    // The toggled lambda above early-outs when the value already matches, so
+    // setChecked moves the tick without emitting smoothChanged -- and would
+    // still not emit if that early-out went, because this assigns first.
+    d_->smooth = on;
+    if (QAction* a = findChild<QAction*>(QStringLiteral("view.smooth"))) a->setChecked(on);
 }
 
 void MainWindow::setSkinning(Skinning method) {

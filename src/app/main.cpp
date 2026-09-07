@@ -2514,6 +2514,16 @@ int main(int argc, char** argv) {
         gUseDualQuaternion = method == mh::ui::Skinning::DualQuaternion;
         rebuildInto(window);
     });
+
+    // Smooth. `--subdivide` and a `.mhm` that carries one both arrive as
+    // `subdivided` before the window exists, so the button is told rather than
+    // asked -- a tick that disagreed with the body on screen would be worse
+    // than no button. `displayMesh` reads this flag on every rebuild.
+    window.setSmooth(subdivided);
+    QObject::connect(&window, &mh::ui::MainWindow::smoothChanged, [&](bool on) {
+        subdivided = on;
+        rebuildInto(window);
+    });
     panel = new mh::ui::ModifierPanel(views);
     for (const auto& [id, v] : presets)
         panel->setValue(id, v);
@@ -2634,6 +2644,9 @@ int main(int argc, char** argv) {
             window.viewport()->setCamera(c);
         }
         subdivided = loaded->subdivide;
+        // The file decides, so the button has to follow it. Without this,
+        // opening a subdivided character leaves Smooth reading "off".
+        window.setSmooth(subdivided);
 
         // The history belongs to the document that produced it. Kept, Ctrl+Z
         // would write the previous character's values into this one.

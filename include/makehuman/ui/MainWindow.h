@@ -136,6 +136,18 @@ public:
     /// run is dual.
     void setSkinning(Skinning method);
 
+    /// Whether the viewport draws the Catmull-Clark subdivided mesh.
+    ///
+    /// Not a preference: subdivision belongs to the CHARACTER and travels in
+    /// the `.mhm`, exactly as the reference stores it. A fresh window starts
+    /// unsubdivided whatever the last one was left at.
+    [[nodiscard]] bool smooth() const;
+
+    /// Shows @p on WITHOUT emitting. For `--subdivide` and for opening a
+    /// `.mhm` that carries it: the app has already applied it, and the button
+    /// would otherwise claim "off" over a subdivided body.
+    void setSmooth(bool on);
+
     /// Restores docks and geometry from QSettings, or lays out the defaults.
     void restoreWorkspace();
     void saveWorkspace() const;
@@ -179,6 +191,10 @@ signals:
     /// Settings > Skinning changed. The app owns the rig and the mesh, so it
     /// re-poses; this module only knows which method the user picked.
     void skinningChanged(Skinning method);
+
+    /// The Smooth toolbar toggle. Intent only: this module cannot subdivide a
+    /// mesh and must not learn how -- `core::Subdivider` is AGPL.
+    void smoothChanged(bool on);
 
     /// Edit > Randomise. Belongs with Undo rather than in File: it edits the
     /// character rather than producing a file, and it is the one command in the

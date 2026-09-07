@@ -4,6 +4,61 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (sixteenth) — Session · **Smooth: the one View-toolbar button that had its behaviour**
+
+### The chunk
+The next open item in milestone order was the reference's missing toolbar
+groups, filed as "they need the behaviour first". Measured rather than
+believed: of that whole group, **Smooth already had its behaviour**.
+`--subdivide`, `core::Subdivider` and the `.mhm`'s `subdivide` line have shipped
+for milestones, `displayMesh()` switches on the flag on every rebuild, and
+`applyLoaded` already read it out of an opened file. Only the window could not
+reach any of it.
+
+So: a checkable `view.smooth` on the toolbar with the reference's own Alt+S
+(`core/mhmain.py:1733` and `:170`), an icon (`spline`, vendored and unused), and
+two lines of app wiring.
+
+**Not a preference.** Subdivision belongs to the CHARACTER and travels in the
+`.mhm`, so nothing is written to QSettings and a new window starts unticked.
+The button is TOLD by `--subdivide` and by every `.mhm` open, because a tick
+that disagreed with the body on screen is worse than no button.
+
+Wireframe, grid, pose-toggle, symmetry and the body-part camera views stay out:
+each would be a painted no-op. `core::Material` has a `wireframe` flag no
+renderer reads, which is as close as any of them gets to a foundation.
+
+### Verified by running it
+- The toolbar toggle takes the body from **13,378 of 18,486 faces to 53,512 of
+  73,944**, and the resulting frame is **pixel-identical** to starting with
+  `--subdivide` (0 differing pixels of 2.6 M; 39,533 against unsubdivided).
+- Looked at the crop: jaw, ear and shoulder visibly smoother, no artefacts.
+- The button agrees with the character in all three entry paths — plain,
+  `--subdivide`, and `--load` of a `.mhm` carrying `subdivide True`, which I
+  wrote with `--save` and read back.
+- `--subdivide` had **no app-level test at all**; it has two now, the "what the
+  app said" / "what the file holds" pair, and both fail when the flag is forced
+  off.
+
+### The gate was decorative twice, and mutating it said so
+Five mutations, three killed immediately. The two survivors were both real:
+1. `setSmooth` written with `trigger()` instead of `setChecked()` passed
+   everything — because the test only ever called it on an UNticked button, and
+   `trigger()` TOGGLES. On an already-ticked button it would untick it, which is
+   exactly what `applyLoaded` does on every open. Fixed by calling it twice.
+2. A stray QSettings write passed, because "a second window starts unticked"
+   only proves nothing is READ. The test now asserts the key is absent — and
+   clears it first, since its first run failed on a key a MUTANT binary had
+   written into the developer's real preferences minutes earlier.
+
+### Next
+`memory/todo.md` in milestone order. The nearest named follow-ups are still the
+pair from the previous session: an assertion on a RENDERED posed body (which
+would kill the one live mutation `poseInPlace` has no gate for) and a
+blank-frame guard for `--render`, which exits 0 on a blank PNG today.
+
+---
+
 ## 2026-09-08 (fifteenth) — Session · **A skinning toggle, and the 70 cm defect it uncovered**
 
 ### The chunk as asked

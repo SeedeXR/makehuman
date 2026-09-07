@@ -2717,13 +2717,40 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
             reset workspace | grab screen. It SHARES the menus' QActions rather
             than building parallel ones, so there is one shortcut, one enabled
             state and one translation registration per command — asserted.
-      - [ ] **Toolbar groups still missing, and why.** The reference's mesh
-            display (smooth, wireframe, subdivide), symmetry (3) and body-part
-            camera views (~8) are NOT built: `src/ui/` has no wireframe, smooth,
-            subdivide or mirror anything, so every one of those buttons would be
-            a painted no-op. They need the behaviour first. The body-part views
-            additionally need CUSTOM icons — lucide has no anatomy glyphs, which
-            is what the empty `resources/icons/custom/` is for.
+      - [x] **Smooth** (2026-09-08), the first of the reference's View toolbar
+            (`core/mhmain.py:1733`) to arrive, because it is the only one of
+            that group whose BEHAVIOUR already shipped: `--subdivide`,
+            `core::Subdivider` and the `.mhm`'s `subdivide` line have all been
+            in the tree for milestones with nothing in the window able to reach
+            them. Alt+S, the reference's own binding, rebindable like every
+            other action.
+            - **Not a preference.** Subdivision belongs to the character and
+              travels in the `.mhm`, so it is not stored in QSettings and a new
+              window starts unticked. `applyLoaded` already read the file's
+              flag; the button is now told about it, or it would read "off" over
+              a subdivided body.
+            - Verified by running it: the toolbar toggle takes the body from
+              **13,378 of 18,486 faces to 53,512 of 73,944**, and the frame is
+              **pixel-identical** to starting with `--subdivide` (0 differing
+              pixels of 2.6 M, 39,533 against unsubdivided). Looked at the crop:
+              the jaw, ear and shoulder are visibly smoother, no artefacts.
+            - **`--subdivide` had no app-level test at all** before this. It has
+              two now (`app_subdivide`, `app_subdivide_obj_faces`) — what the
+              app says and what the file holds, which is the pair that caught
+              the OBJ face-mask defect.
+            - The gate's first version had two decorative assertions and both
+              were found by mutating it: `setSmooth` written with `trigger()`
+              instead of `setChecked()` passed everything, because the test
+              never called it on an ALREADY ticked button — and `trigger()`
+              toggles. A stray QSettings write passed too. Both are now pinned.
+      - [ ] **The rest of that toolbar, and why it is still missing.** Wireframe
+            (`Ctrl+F` there), grid, pose-toggle, symmetry (3) and the body-part
+            camera views (~8) are NOT built: nothing here can draw edges, lay
+            down a floor or mirror anything, so each would be a painted no-op.
+            `core::Material` carries a `wireframe` flag that no renderer reads,
+            which is the closest any of them has to a foundation. The body-part
+            views additionally need CUSTOM icons — lucide has no anatomy glyphs,
+            which is what the empty `resources/icons/custom/` is for.
       - [x] **Bottom stats line**, as a permanent status-bar widget (a transient
             `showMessage` would be wiped by the next "Saved workspace"). Format
             copied from `guimodifier.py:152-185`. Two rules there are NOT what a
