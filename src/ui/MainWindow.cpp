@@ -4,6 +4,7 @@
 #include "makehuman/ui/UndoCommands.h"
 
 #include "makehuman/ui/Language.h"
+#include "makehuman/ui/MouseBindings.h"
 #include "makehuman/ui/PanelTitleBar.h"
 #include "makehuman/ui/Shortcuts.h"
 #include "makehuman/ui/Theme.h"
@@ -409,6 +410,11 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     QSettings stored = workspaceSettings();
     for (const QString& problem : shortcuts::apply(*this, stored)) {
         std::fprintf(stderr, "shortcuts: %s\n", problem.toUtf8().constData());
+    }
+    // Same treatment for the camera gestures: applied here, reported rather
+    // than swallowed. A drag that silently does nothing is blamed on the mouse.
+    for (const QString& problem : d_->viewport->mouseBindings().apply(stored)) {
+        std::fprintf(stderr, "mouse: %s\n", problem.toUtf8().constData());
     }
 }
 

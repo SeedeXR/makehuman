@@ -3098,11 +3098,34 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         `90`, which the unknown-key guard catches anyway; only a small int like
         `5` gives the type guard teeth. **Sixth time a surviving mutation has
         pointed at the fixture rather than the code.**
-- [ ] **Mouse-button persistence, not done.** The symbolic FORMAT is settled by
-      the above and the mouse side inherits it, but `ViewportWidget` dispatches
-      on hardcoded buttons in `mouseMoveEvent` (LEFT orbits, MIDDLE pans, wheel
-      zooms) and would have to become table-driven first. That is its own chunk,
-      not a tail of this one.
+- [x] **Mouse-button persistence, symbolic** (2026-09-07). `ui::MouseBindings`:
+      a gesture table (`NavVerb::Orbit` / `Pan`) that `ViewportWidget` consults
+      instead of testing buttons inline. Settings group `[mouse]`, key = the
+      verb, value = `"Middle"` / `"Alt+Left"`. The reference writes
+      `'%d %d %s\n' % (modifier, buttonMask, methodName)` into `mouse.ini`
+      (`mhmain.py:1027`) — the same raw-int defect as its `shortcuts.ini`.
+      - **Getting the rule out of the event handler was half the value.** It
+        lived inside `mouseMoveEvent`, where it was neither configurable nor
+        testable without synthesising events.
+      - Same guards as the shortcuts, and the raw-int one reads the TEXT from
+        the start rather than only the QVariant type — the lesson from that
+        chunk, where a type-only check passed its unit test and let `5` through
+        in the application.
+      - Modifiers match **exactly**: "at least these" would make plain-Left fire
+        during an Alt+Left drag and leave no way to bind Alt+Left separately.
+      - Pan is checked before Orbit, preserving what the hardcoded handler did
+        (it tested MIDDLE first and fell through).
+      - **A latent bug fixed on the way**: `lastMouse` is now updated even when
+        no verb matches, so pressing a modifier part-way through a drag pauses
+        the motion instead of banking it and applying it in one jump on release.
+        Tested by yaw: 10 px of movement after Alt is released must move the
+        camera by 10 px, not by the 200 that happened while it was held.
+      - Right stays unbound. The reference zooms with it (`mhmain.py:198`); we
+        zoom on the wheel, so it is left free rather than given an invented job.
+      - Verified end to end against the real INI: three bad entries each
+        reported on stderr, `mouse: orbit: 4 is a raw Qt button mask ...`.
+      - Five mutations killed, including loose modifier matching and the
+        `lastMouse` regression.
 - [ ] **No rebinding UI yet**, so `shortcuts::save` and `reset` have tests but no
       caller — a recorded deferral, not dead code. The reference puts this in a
       Settings task view (`5_settings_shortcuts.py`): click a box, press the

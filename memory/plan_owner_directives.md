@@ -60,3 +60,34 @@ Build clean under `-Werror`; ctest green in debug, release, ASan and TSan;
 mutation-test the new logic; code review and ponytail review; SonarQube gate OK
 with 0 open issues; Blender harness green; CI green **before** the next push
 (the workflow sets `cancel-in-progress`, so an early push destroys the evidence).
+
+
+## Directive 10 — design authority for the remaining input UI (2026-09-07)
+
+Verbatim: *"for this choose the best design friendly approach but ensure
+eveyrthing is already locally so choose best design friendly approach and
+intuitive to user on best design implementation approach"*, in reply to the
+statement that the remaining M8 items are mouse-button persistence and the
+shortcut rebinding UI.
+
+**Reading:** the design call on these is mine to make, judged on how intuitive
+the result is, and built from what is already on this machine — no new
+dependency, no new asset pack, nothing to download. Do not come back for
+approval on layout or interaction detail; come back only for things that change
+a promise to the user (a CLI argument, a saved-file format, a licence).
+
+**The design that follows from it, for the rebinding UI:**
+- **ONE dialog for both keyboard and mouse.** The reference splits them across
+  `5_settings_shortcuts.py` and `5_settings_mouse.py`; a user asking "how do I
+  drive this thing" should not have to know which half their question is in.
+  Settings ▸ Shortcuts… covers both.
+- **Click a row, press the keys** — the reference's own interaction
+  (`5_settings_shortcuts.py:123`), and the one every DCC uses. No modal prompt
+  first; the hint goes in the dialog.
+- **Conflicts inline, not in an alert.** `shortcuts::apply` and
+  `MouseBindings::apply` already refuse a collision and name both sides; the
+  dialog shows that on the row rather than interrupting.
+- **Reset is per row and for all**, because "put this one back" is a different
+  wish from "start over" and the workspace menu already proves the pattern.
+- Applied live, written on accept: `shortcuts::save` / `MouseBindings::save`
+  already write only what differs from the shipped default.

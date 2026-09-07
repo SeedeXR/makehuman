@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "makehuman/ui/ViewportWidget.h"
 
+#include "makehuman/ui/MouseBindings.h"
+
 #include "makehuman/render/Picking.h"
 #include "makehuman/ui/Theme.h"
 
@@ -17,6 +19,8 @@
 namespace mh::ui {
 
 struct ViewportWidget::Impl {
+    /// Which drag orbits and which pans. See MouseBindings.h.
+    MouseBindings mouse;
     std::filesystem::path shaderDir;
     std::filesystem::path litsphere;  ///< the default, used by setMesh
     std::vector<render::MeshInstance> meshes;
@@ -204,17 +208,23 @@ void ViewportWidget::mouseDoubleClickEvent(QMouseEvent* e) {
 }
 
 void ViewportWidget::mouseMoveEvent(QMouseEvent* e) {
-    const Qt::MouseButtons held = e->buttons();
-    if ((held & (Qt::LeftButton | Qt::MiddleButton)) == 0) return;
+    // The gesture table decides, not this handler. It used to test MIDDLE and
+    // fall through to orbit, which was neither configurable nor testable
+    // without sending events.
+    const NavVerb verb = d_->mouse.verbFor(e->buttons(), e->modifiers());
 
     const QPoint delta = e->pos() - d_->lastMouse;
-    d_->lastMouse      = e->pos();
+    // Updated even when nothing is bound, so pressing a modifier part-way
+    // through a drag pauses the motion instead of banking it up and applying it
+    // in one jump when the modifier is released.
+    d_->lastMouse = e->pos();
+    if (verb == NavVerb::None) return;
 
     // MIDDLE drag pans, LEFT drags orbits. The reference binds pan to the arrow
     // keys (`core/mhmain.py:178-181`), but those already orbit here -- taking
     // them back would remove a working control to match a convention. Middle
     // drag was free, and is what every DCC uses.
-    if ((held & Qt::MiddleButton) != 0) {
+    if (verb == NavVerb::Pan) {
         // Scaled by distance so a drag moves the model the same fraction of the
         // screen at every zoom: pan is a world-space offset seen through a
         // perspective projection, so a fixed step crawls when far and leaps
@@ -270,6 +280,10 @@ void ViewportWidget::keyPressEvent(QKeyEvent* e) {
     d_->camera     = c;
     update();
     e->accept();
+}
+
+MouseBindings& ViewportWidget::mouseBindings() {
+    return d_->mouse;
 }
 
 }  // namespace mh::ui

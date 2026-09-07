@@ -4,6 +4,63 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-07 (twelfth) — Session · **Mouse gestures leave the event handler**
+
+### The chunk
+`ui::MouseBindings`: a gesture table (`NavVerb::Orbit` / `Pan`) that
+`ViewportWidget` consults, instead of testing buttons inline. Settings group
+`[mouse]`, key = the verb, value = `"Middle"` or `"Alt+Left"`. The reference
+writes `'%d %d %s\n' % (modifier, buttonMask, methodName)` into `mouse.ini`
+(`mhmain.py:1027`) — the same raw-int defect as its `shortcuts.ini`, and the
+same answer.
+
+**Getting the rule out of `mouseMoveEvent` was half the value.** It was neither
+configurable nor testable there; every question about it needed synthesised
+events. Now `verbFor(buttons, modifiers)` is a pure function with ten cases
+against it.
+
+Carried over from the shortcut chunk without having to relearn it: the raw-int
+guard reads the TEXT from the start, not only the QVariant type. That was the
+defect that passed its unit test and failed in the application last time.
+
+### A latent bug the rewrite exposed
+`lastMouse` was updated only on a bound drag. With modifiers now mattering, an
+Alt+Left drag matches nothing — so the pointer could travel 200 px while the
+camera stood still, and releasing Alt would apply all 200 at once. It is updated
+unconditionally now: the motion pauses rather than banking up. Pinned by yaw —
+10 px after release must move the camera by 10 px, not 200.
+
+That bug did not exist before this chunk (nothing was unbound), so it is one the
+change created and the tests caught, not one that shipped.
+
+### Decisions worth recording
+- Modifiers match **exactly**. "At least these" would make a plain-Left binding
+  fire during an Alt+Left drag and leave no way to bind Alt+Left separately.
+- Pan is checked before Orbit, preserving what the hardcoded handler did.
+- Right stays **unbound**. The reference zooms with it (`mhmain.py:198`); we
+  zoom on the wheel, so leaving it free is honest rather than inventing a job
+  for it.
+- A collision applies NOTHING rather than half the table.
+
+### Verified end to end
+Three bad entries in the real INI, each reported on stderr:
+`mouse: orbit: 4 is a raw Qt button mask ...`,
+`mouse: pan: "Sideways" is not a mouse gesture ...`,
+`mouse: teleport: no camera action has that name ...`. INI restored afterwards.
+
+Five mutations killed: loose modifier matching, orbit-before-pan, the raw-int
+guard reduced to a type check, collisions applied anyway, and the `lastMouse`
+regression.
+
+### Next
+The shortcut rebinding UI is the remaining actionable M8 item — it is what
+`shortcuts::save`/`reset` and now `MouseBindings::bind`/`save`/`reset` are
+waiting for. Everything else in M8 is owner-blocked (the seven proxy choosers;
+the `--workspace Materials` rename, a CLI argument) or content-blocked
+(`ExpressionTaskView`, no `.mhpose` files).
+
+---
+
 ## 2026-09-07 (eleventh) — Session · **Sub-tab labels, and a test that would have been decorative on CI**
 
 ### The chunk

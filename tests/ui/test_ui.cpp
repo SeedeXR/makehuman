@@ -8,6 +8,7 @@
 #include "makehuman/core/SliderLayout.h"
 #include "makehuman/ui/MainWindow.h"
 #include "makehuman/ui/ModifierPanel.h"
+#include "makehuman/ui/MouseBindings.h"
 #include "makehuman/ui/TaskRegistry.h"
 #include "makehuman/ui/ViewportWidget.h"
 #include "makehuman/ui/Workspace.h"
@@ -783,4 +784,62 @@ TEST_CASE("sub-tab labels are not elided into initials", "[ui][modifiers][tabs]"
                     << " needs " << fm.horizontalAdvance(text));
         CHECK(bar->tabRect(i).width() >= fm.horizontalAdvance(text));
     }
+}
+
+// The table has to reach the camera, or it is settings nobody reads.
+TEST_CASE("rebinding pan moves it to the new button", "[ui][mouse][nav]") {
+    mh::ui::ViewportWidget w(MH_SHADER_DIR);
+    w.resize(640, 480);
+
+    const auto dragWith = [&w](Qt::MouseButton button, QPoint from, QPoint to) {
+        QMouseEvent press(QEvent::MouseButtonPress, QPointF(from), QPointF(from), button, button,
+                          Qt::NoModifier);
+        QApplication::sendEvent(&w, &press);
+        QMouseEvent move(QEvent::MouseMove, QPointF(to), QPointF(to), Qt::NoButton, button,
+                         Qt::NoModifier);
+        QApplication::sendEvent(&w, &move);
+    };
+
+    // Shipped: middle pans, right does nothing.
+    const float panBefore = w.camera().panX;
+    dragWith(Qt::RightButton, {100, 100}, {160, 100});
+    CHECK(w.camera().panX == panBefore);
+    dragWith(Qt::MiddleButton, {100, 100}, {160, 100});
+    CHECK(w.camera().panX != panBefore);
+
+    // Move pan onto the right button.
+    REQUIRE(w.mouseBindings().bind(mh::ui::NavVerb::Pan, Qt::RightButton, Qt::NoModifier));
+    const float panRebound = w.camera().panX;
+    dragWith(Qt::RightButton, {100, 100}, {160, 100});
+    CHECK(w.camera().panX != panRebound);
+
+    // ...and the old button stops panning, rather than both working.
+    const float panAfter = w.camera().panX;
+    dragWith(Qt::MiddleButton, {100, 100}, {160, 100});
+    CHECK(w.camera().panX == panAfter);
+}
+
+TEST_CASE("a modifier held part-way through a drag pauses it, not banks it", "[ui][mouse][nav]") {
+    // With the gesture table, an Alt+Left drag matches nothing. The camera must
+    // simply not move -- and when Alt is released the motion must resume from
+    // where the pointer IS, not jump by everything that happened meanwhile.
+    mh::ui::ViewportWidget w(MH_SHADER_DIR);
+    w.resize(640, 480);
+
+    QMouseEvent press(QEvent::MouseButtonPress, QPointF(100, 100), QPointF(100, 100),
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&w, &press);
+
+    const float yawStart = w.camera().yawDegrees;
+    QMouseEvent held(QEvent::MouseMove, QPointF(300, 100), QPointF(300, 100), Qt::NoButton,
+                     Qt::LeftButton, Qt::AltModifier);
+    QApplication::sendEvent(&w, &held);
+    CHECK(w.camera().yawDegrees == yawStart);
+
+    // Alt released, pointer moves 10 more pixels: the yaw must change by those
+    // 10, not by the 200 that happened while Alt was down.
+    QMouseEvent resumed(QEvent::MouseMove, QPointF(310, 100), QPointF(310, 100), Qt::NoButton,
+                        Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&w, &resumed);
+    CHECK_THAT(d(w.camera().yawDegrees - yawStart), WithinAbs(10.0 * 0.5, 1e-4));
 }

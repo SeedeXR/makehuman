@@ -12,6 +12,8 @@
 
 namespace mh::ui {
 
+class MouseBindings;
+
 /// The interactive 3D view.
 ///
 /// It draws through the same `SceneResources` the offscreen renderer uses, so
@@ -51,6 +53,11 @@ public:
     /// litsphere. Safe before or after the RHI is initialised; the upload is
     /// deferred to the next frame either way.
     void setMesh(const foundation::RenderView& mesh);
+
+    /// Which mouse gesture orbits and which pans, so the application can apply
+    /// the user's stored overrides. Mutable on purpose: `MouseBindings::apply`
+    /// is how those overrides arrive.
+    [[nodiscard]] MouseBindings& mouseBindings();
 
     /// Replaces the geometry with several meshes, each with its own litsphere.
     /// This is what a dressed character needs: body plus every worn proxy.
