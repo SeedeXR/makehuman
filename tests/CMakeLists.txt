@@ -7,6 +7,7 @@ add_executable(mh_tests
     unit/test_mesh.cpp
     unit/test_random.cpp
     unit/test_obj_reader.cpp
+    unit/test_proxy_weights.cpp
     unit/test_tangents.cpp
     unit/test_render_mesh.cpp
     unit/test_subdivider.cpp

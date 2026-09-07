@@ -198,4 +198,70 @@ std::expected<VertexWeights, WeightsError> loadWeights(const std::filesystem::pa
     return vw;
 }
 
+CompiledWeights proxyWeights(const CompiledWeights& body,
+                             std::span<const std::array<uint32_t, 3>> refs,
+                             std::span<const std::array<float, 3>> fit) {
+    CompiledWeights out;
+    if (body.influences == 0 || refs.size() != fit.size()) return out;
+    const size_t bodyVertices = body.vertexCount();
+    if (bodyVertices == 0) return out;
+
+    out.influences = body.influences;
+    out.boneIndex.reserve(refs.size() * out.influences);
+    out.weight.reserve(refs.size() * out.influences);
+
+    // Reused across vertices: a proxy has tens of thousands and this is the
+    // only allocation in the loop.
+    std::vector<std::pair<uint32_t, float>> blended;
+
+    for (size_t p = 0; p < refs.size(); ++p) {
+        blended.clear();
+        for (size_t r = 0; r < 3; ++r) {
+            const uint32_t base = refs[p][r];
+            const float share   = fit[p][r];
+            if (base >= bodyVertices) return {};  // out of range: refuse the lot
+            if (share == 0.0F) continue;
+            for (uint8_t i = 0; i < body.influences; ++i) {
+                const size_t at = (static_cast<size_t>(base) * body.influences) + i;
+                const float w   = body.weight[at] * share;
+                if (w == 0.0F) continue;
+                const uint32_t bone = body.boneIndex[at];
+                // The three ref vertices routinely share bones, so accumulate
+                // rather than append: keeping duplicates would spend the four
+                // slots on one bone listed three times.
+                const auto found = std::ranges::find_if(
+                    blended, [bone](const auto& e) { return e.first == bone; });
+                if (found == blended.end()) {
+                    blended.emplace_back(bone, w);
+                } else {
+                    found->second += w;
+                }
+            }
+        }
+
+        if (blended.size() > out.influences) {
+            ++out.clampedVertices;
+        }
+        out.maxInfluences = std::max(out.maxInfluences,
+                                     static_cast<uint8_t>(std::min<size_t>(blended.size(), 255)));
+
+        // Strongest first, so truncating keeps the influences that matter.
+        std::ranges::sort(blended,
+                          [](const auto& a, const auto& b) { return a.second > b.second; });
+        blended.resize(std::min<size_t>(blended.size(), out.influences));
+
+        // Renormalise AFTER truncating. Dropping influences without it shrinks
+        // the vertex toward the origin by whatever weight was discarded.
+        float total = 0.0F;
+        for (const auto& [bone, w] : blended)
+            total += w;
+        for (uint8_t i = 0; i < out.influences; ++i) {
+            const bool present = i < blended.size();
+            out.boneIndex.push_back(present ? blended[i].first : 0U);
+            out.weight.push_back(present && total > 0.0F ? blended[i].second / total : 0.0F);
+        }
+    }
+    return out;
+}
+
 }  // namespace mh::rig

@@ -2140,6 +2140,55 @@ The byte-exact `.mhm` round-trip fixture is untouched — these lines live in
 
 ---
 
+## 2026-09-07 13:00:00 — Session 168 · **proxy skin weights, derived from the fitting that already defines them**
+
+### The chunk
+`rig::proxyWeights`. A `.mhclo` proxy vertex is a weighted blend of three base
+vertices -- that is what fitting IS -- so its skin weights are the same blend of
+those vertices' weights. Nothing here is a heuristic: the vertex is already
+defined as that combination, and skinning it any other way would move it off the
+surface it was fitted to.
+
+It takes spans rather than a `core::Proxy`, so `mh_rig` needs no dependency on
+`mh_core` for it and a test can state a fitting basis in three lines.
+
+### Two things that are easy to get wrong and invisible afterwards
+- **Shares accumulate per bone, they do not append.** Adjacent body vertices
+  almost always share bones, so a proxy vertex routinely sees the same bone from
+  two refs. Appending spends two of the four slots on one bone -- the totals
+  still sum to 1 and LBS still produces the same point, so a weight-sum check
+  cannot see it. What is lost is a slot a genuine third bone needed.
+- **Renormalise AFTER truncating.** Dropping influences without it shrinks the
+  vertex toward the origin by exactly the weight discarded.
+
+### The mutation found a fixture gap, again
+"Duplicates appended rather than accumulated" survived: every fixture bound its
+body vertices to DIFFERENT bones, so no duplicate ever arose -- the common case
+in a real mesh was the one case not covered. Added a test with two refs on one
+bone and a third on another, asserting the output uses two slots rather than
+three entries.
+
+That is the fourth fire running where a surviving mutation pointed at the
+fixture rather than the code. Worth naming as a habit: when writing a fixture,
+ask which values would let the wrong implementation pass.
+
+### Real data, not only arithmetic
+The shipped `eyes/high-poly.mhclo` -- the proxy that visibly detached from a
+posed body -- derives **1,064 vertices with 0 not fully weighted**.
+
+### Not wired yet, and saying so
+Both writers allow ONE skinned entry, and the joints must be SHARED rather than
+duplicated per proxy: 179 bones once, with each entry's clusters connecting to
+them. That is the next chunk and it ends with Maya confirming the eyes follow
+the pose. Until then the recorded defect stands.
+
+### Verification
+ctest green in debug, release, ASan and TSan. Format clean. Sonar OK. Mutations
+killed: no renormalisation, duplicates appended, unsorted before truncating, an
+out-of-range ref accepted, the fitting share ignored.
+
+---
+
 ## 2026-09-07 11:45:00 — Session 167 · **the app writes FBX itself now, and two defects the switch exposed**
 
 ### The chunk

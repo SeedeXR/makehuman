@@ -4,6 +4,7 @@
 #include "makehuman/foundation/Types.h"
 #include "makehuman/rig/Skeleton.h"
 
+#include <array>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -51,6 +52,34 @@ struct CompiledWeights {
         return influences != 0 ? boneIndex.size() / influences : 0;
     }
 };
+
+/// Skin weights for a fitted proxy, derived from the body's.
+///
+/// A `.mhclo` proxy vertex is a weighted blend of three base-mesh vertices --
+/// that is what fitting IS -- so its skin weights are the same blend of those
+/// vertices' weights. Nothing here is a heuristic: the vertex is already
+/// defined as that combination, and skinning it any other way would move it off
+/// the surface it was fitted to.
+///
+/// Why it matters: a live-rig export ships REST geometry and lets the consumer
+/// pose it, so anything shipped UNSKINNED stays where it was while the body
+/// moves. Measured 2026-09-07, before this existed: the eyes protruded from
+/// their sockets in both our glTF and our FBX, and the same export with no pose
+/// was clean.
+///
+/// Takes spans rather than a `core::Proxy` so `mh_rig` needs no dependency on
+/// `mh_core` for it -- and so a test can state a fitting basis in three lines.
+///
+/// @param body   per-BASE-MESH-vertex weights, i.e. before the render unweld.
+/// @param refs   three base vertices per proxy vertex (`Proxy::refVerts`).
+/// @param fit    their fitting weights (`Proxy::weights`), parallel to @p refs.
+/// @return weights with the same `influences` as @p body, strongest first and
+///         normalised; EMPTY if the inputs do not describe each other or a ref
+///         index is out of range. A silently truncated skin binds the rest to
+///         bone 0, which looks like a proxy glued to the hips.
+[[nodiscard]] CompiledWeights proxyWeights(const CompiledWeights& body,
+                                           std::span<const std::array<uint32_t, 3>> refs,
+                                           std::span<const std::array<float, 3>> fit);
 
 enum class WeightsErrorKind { NotFound, Unreadable, Malformed, VertexOutOfRange };
 

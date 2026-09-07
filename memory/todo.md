@@ -1994,11 +1994,24 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       format and re-fits the worn proxies to THAT body, then ships them
       **unskinned**. A consumer applying the pose moves the body and leaves the
       proxies where they were.
-      Fixing it means giving the proxies skin weights. They have none — the
-      viewport re-fits them every rebuild instead — so this is real work, not a
-      flag. Until then a live-rig export is correct for the body and wrong for
-      anything worn, which is worth saying out loud rather than shipping
-      quietly.
+      **`rig::proxyWeights` now derives them** (2026-09-07). A `.mhclo` proxy
+      vertex IS a weighted blend of three base vertices, so its skin weights are
+      the same blend of those vertices' weights — not a heuristic, the vertex is
+      already defined that way and skinning it otherwise would move it off the
+      surface it was fitted to.
+      - Shares are accumulated per bone, not appended: adjacent body vertices
+        almost always share bones, and duplicates spend two of the four slots on
+        one of them. The totals still sum to 1 and LBS still gives the same
+        point, so a weight-sum check cannot see it — what is lost is a slot a
+        genuine third bone needed.
+      - Renormalised AFTER truncating to four. Dropping influences without it
+        shrinks the vertex toward the origin by the discarded weight.
+      - Real data: the shipped `eyes/high-poly.mhclo` derives **1,064 vertices,
+        0 not fully weighted**.
+      - **Still to wire.** Both writers allow ONE skinned entry, and the joints
+        must be SHARED rather than duplicated per proxy — 179 bones once, with
+        each entry's clusters connecting to them. That is the next chunk, and it
+        ends with Maya confirming the eyes follow the pose.
 
 - [~] Texture packing (ORM), GLB embedding, KTX2/Basis, optional Draco — three
       of the four are settled.
