@@ -3943,8 +3943,24 @@ GPU here, or Colab) and it comes back to the owner first.
 ## M9 — MetaHuman-class character tooling
 
 - [ ] FACS-based facial rig extending the 60 existing pose units
-- [ ] **Translation-capable pose blending** (reference drops translations, so jaw
-      slide and lip pursing are currently inexpressible)
+- [x] **Translation-capable pose blending** (2026-09-08). `PoseUnits::blend`
+      turned every unit into a QUATERNION and back, so the translation part of a
+      unit was discarded without a word — a jaw slide or a lip purse was
+      inexpressible however it was authored. It now composes full rigid
+      transforms: rotation slerped from identity by the weight, translation
+      scaled by the same weight, and the two multiplied together so an earlier
+      unit's translation is carried through a later unit's rotation.
+      - **Nothing shipped changed, and that is measured.** Every position
+        channel in `face-poseunits.bvh` is zero on all 60 frames, so no existing
+        expression has a translation to gain — and the golden parity fixtures,
+        which blend the real units against the Python oracle both ways round,
+        still pass.
+      - Gated end to end rather than as arithmetic: a unit that slides one bone
+        by 1 dm moves the vertices that bone owns, and moves them **together**
+        (spread < 1e-4). A "did anything move?" assertion cannot see tearing;
+        this can, and the composition mutation trips it.
+      - Three mutations caught: translation unscaled by weight, translations
+        added independently of the rotations, and translation dropped again.
 - [ ] Pose-space deformation / correctives (does not exist in the reference)
 - [ ] LOD chain generation with weight and UV transfer
 - [ ] Groom / hair card and strand support

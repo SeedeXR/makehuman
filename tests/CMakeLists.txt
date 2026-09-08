@@ -7,6 +7,7 @@ add_executable(mh_tests
     unit/test_mesh.cpp
     unit/test_random.cpp
     unit/test_symmetry.cpp
+    unit/test_pose_blend.cpp
     unit/test_obj_reader.cpp
     unit/test_proxy_weights.cpp
     unit/test_tangents.cpp

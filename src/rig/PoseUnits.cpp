@@ -48,24 +48,41 @@ std::vector<Mat4> PoseUnits::blend(std::span<const size_t> unitIndices,
 
     std::vector<Mat4> out(boneCount, Mat4::identity());
 
+    // One unit's contribution as a rigid transform: its rotation slerped from
+    // identity by the weight, and its translation scaled by the same weight.
+    //
+    // Linear in the weight for the translation, because "half of this
+    // expression" has to mean half the slide; slerp is the rotational
+    // equivalent of the same idea.
+    const auto contribution = [this](size_t unitIndex, size_t bone, float weight) {
+        const Mat4& src = unit(unitIndex)[bone];
+        Mat4 m          = foundation::quaternionMatrix(foundation::quaternionSlerp(
+            kRest, foundation::quaternionFromMatrix(src), static_cast<double>(weight)));
+        m.m[0][3]       = src.m[0][3] * weight;
+        m.m[1][3]       = src.m[1][3] * weight;
+        m.m[2][3]       = src.m[2][3] * weight;
+        return m;
+    };
+
     for (size_t b = 0; b < boneCount; ++b) {
         // Each unit contributes a rotation scaled by its weight: slerping from
         // identity toward the unit's own rotation by `w` is how a fractional
-        // amount of a pose is expressed.
-        Quat acc = foundation::quaternionSlerp(
-            kRest, foundation::quaternionFromMatrix(unit(unitIndices[0])[b]),
-            static_cast<double>(weights[0]));
+        // amount of a pose is expressed. The TRANSLATION rides along in the
+        // same matrix -- until 2026-09-08 this went through a quaternion and
+        // back, which discarded it silently, so a jaw slide or a lip purse was
+        // inexpressible however it was authored (M9).
+        Mat4 acc = contribution(unitIndices[0], b, weights[0]);
 
         for (size_t k = 1; k < unitIndices.size(); ++k) {
-            const Quat q = foundation::quaternionSlerp(
-                kRest, foundation::quaternionFromMatrix(unit(unitIndices[k])[b]),
-                static_cast<double>(weights[k]));
             // Left-multiplied, so later units compose ON TOP of earlier ones.
-            // This is what makes the blend order-dependent.
-            acc = foundation::quaternionMultiply(q, acc);
+            // This is what makes the blend order-dependent. Multiplying the
+            // full 4x4 is what carries an earlier unit's translation through a
+            // later unit's rotation, which adding the two translations
+            // separately would get wrong in a plausible-looking way.
+            acc = contribution(unitIndices[k], b, weights[k]) * acc;
         }
 
-        out[b] = foundation::quaternionMatrix(acc);
+        out[b] = acc;
     }
     return out;
 }

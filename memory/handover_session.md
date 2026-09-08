@@ -4,6 +4,52 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (twenty-seventh) — Session · **M9 opens: pose blending learns to translate**
+
+### Reconciling first
+M8's remaining items are all owner-blocked or deliberate, so this is the first
+M9 chunk. I checked the milestone's items for what is actually buildable rather
+than taking the first line: a FACS rig needs authored content, and the todo's
+own framing of translation blending needed re-measuring, because our
+`poseToBoneLocal` and `computeSkinningMatrices` already carry translations. The
+gap was one function.
+
+### The chunk
+`PoseUnits::blend` turned every unit into a quaternion and back
+(`quaternionFromMatrix` → `quaternionMatrix`), so the translation part of a unit
+was **discarded without a word**. It now composes full rigid transforms: the
+rotation slerped from identity by the weight, the translation scaled by the same
+weight, and the two multiplied — so an earlier unit's translation is carried
+through a later unit's rotation, which adding the translations separately would
+get wrong in a plausible-looking way.
+
+### Nothing shipped changed, and that is measured
+Every position channel in `face-poseunits.bvh` is zero on all 60 frames — read
+out of the file before touching anything, not assumed. So no expression that
+exists today has a translation to gain, and the golden parity fixtures, which
+blend the real units against the **Python oracle** in both orders, still pass.
+This is enabling work, and it is honest to say so.
+
+### The assertion that stands in for looking
+There is nothing visual to look at: no shipped unit translates, so any picture
+would be of a synthetic pose. The equivalent is a shape assertion — a unit that
+slides one bone by 1 dm must move the vertices that bone owns, and move them
+**together** (spread < 1e-4). "Did anything move?" cannot see tearing; this can,
+and the composition mutation trips it.
+
+### Mutations
+Three, all caught: translation unscaled by weight, translations added
+independently of the rotations, and translation dropped again (the behaviour
+this replaces).
+
+### Next
+`memory/todo.md`, M9. The remaining items are larger and several need authored
+content (a FACS rig, groom, wrinkle maps). The two owner questions from the
+previous chunks still stand: the two-level tab bar versus the dockable layout,
+and the VoiceOver check for the duplicated slider readout.
+
+---
+
 ## 2026-09-08 (twenty-sixth) — Session · **The last of the `main.cpp` family**
 
 ### The chunk
