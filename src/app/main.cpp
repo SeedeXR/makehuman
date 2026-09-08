@@ -166,7 +166,108 @@ using PoseRig = mh::rig::PoseRig;
 /// `--rig mixamo_superset` with no `--pose` loaded no skeleton at all and the
 /// export could not have carried one -- the bind pose being precisely the most
 /// useful thing to export.
+/// Layers a `.mhpose` expression onto @p pose, in model space.
+///
+/// The recipe is the reference's and every step of it is parity-tested
+/// elsewhere: build the 60 face units from `face-poseunits.{bvh,json}`, blend
+/// the ones the file names at their weights, then `mixPoses` the result over
+/// the body pose for exactly the bones the blend moves.
+///
+/// **The bone list is derived, not configured.** It is every bone the BLEND
+/// leaves non-identity, so an expression touches the jaw and lips it actually
+/// uses and nothing else -- a hardcoded "face bones" list would go stale the
+/// first time a rig gained a bone.
+///
+/// @param pose empty for an unposed body, in which case the expression alone
+///        becomes the pose.
+bool applyExpression(const std::filesystem::path& file, const mh::rig::Skeleton& skel,
+                     std::vector<mh::foundation::Mat4>& pose) {
+    const auto expr = mh::rig::loadExpression(file);
+    if (!expr) {
+        std::fprintf(stderr, "cannot load expression: %s\n", expr.error().message().c_str());
+        return false;
+    }
+
+    const auto bvh = mh::io::readBvh(dataDir() / "poseunits" / "face-poseunits.bvh");
+    if (!bvh) {
+        std::fprintf(stderr, "cannot read the face pose units\n");
+        return false;
+    }
+    auto names = mh::rig::loadPoseUnitNames(dataDir() / "poseunits" / "face-poseunits.json");
+    if (!names) {
+        std::fprintf(stderr, "cannot read the pose unit names: %s\n",
+                     names.error().message().c_str());
+        return false;
+    }
+    const auto units = mh::rig::makePoseUnits(*bvh, skel, std::move(*names));
+    if (!units) {
+        std::fprintf(stderr, "cannot build the pose units: %s\n", units.error().message().c_str());
+        return false;
+    }
+
+    std::vector<size_t> indices;
+    std::vector<float> weights;
+    for (const mh::rig::WeightedUnit& u : expr->units) {
+        const auto at = units->indexOf(u.name);
+        if (!at) {
+            // Named, not skipped: a typo in an expression file otherwise
+            // produces a subtly wrong face and no way to find out why.
+            std::fprintf(stderr, "no such pose unit \"%s\" in the face library\n", u.name.c_str());
+            return false;
+        }
+        indices.push_back(*at);
+        weights.push_back(u.weight);
+    }
+
+    const auto blended = units->blend(indices, weights);
+    if (blended.size() != skel.boneCount()) {
+        std::fprintf(stderr, "the expression blend does not match the rig\n");
+        return false;
+    }
+
+    std::vector<size_t> faceBones;
+    for (size_t b = 0; b < blended.size(); ++b) {
+        const mh::foundation::Mat4 id = mh::foundation::Mat4::identity();
+        bool moved                    = false;
+        for (size_t r = 0; r < 4 && !moved; ++r) {
+            for (size_t c = 0; c < 4; ++c) {
+                if (std::abs(blended[b].m[r][c] - id.m[r][c]) > 1e-6F) {
+                    moved = true;
+                    break;
+                }
+            }
+        }
+        if (moved) faceBones.push_back(b);
+    }
+
+    if (pose.empty()) {
+        pose = blended;
+    } else {
+        const auto mixed = mh::rig::mixPoses(pose, blended, faceBones);
+        if (!mixed) {
+            std::fprintf(stderr, "cannot layer the expression onto the pose: %s\n",
+                         mixed.error().message().c_str());
+            return false;
+        }
+        pose = *mixed;
+    }
+    std::printf("expression %s (%zu units, %zu bones)\n", expr->name.c_str(), expr->units.size(),
+                faceBones.size());
+    return true;
+}
+
+/// The `--expression` file, or empty. Set once at start-up.
+///
+/// A file-scope value for the same reason as the skinning method: every
+/// `loadPoseRig` call site -- start-up, the Pose picker, the Skeleton picker --
+/// wants the same expression, and none of them has an opinion about it.
+std::filesystem::path& expressionFileRef() {
+    static std::filesystem::path path;
+    return path;
+}
+
 bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& out) {
+    const std::filesystem::path& expressionFile = expressionFileRef();
     const bool wantPose = !(pose == "rest" || pose == "apose" || pose == "a-pose");
 
     std::filesystem::path file = pose;
@@ -206,15 +307,28 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
                     out.weights.clampedVertices, mesh.vertexCount(), out.weights.maxInfluences);
     }
 
+    // The body pose and the expression are independent: either, both or
+    // neither. Both end up in ONE model-space pose that is converted to
+    // bone-local once, because converting twice would conjugate the second
+    // through the first's frame.
+    std::vector<mh::foundation::Mat4> modelPose;
     if (wantPose) {
         const auto bodyPose = mh::rig::loadBodyPose(file, *skel);
         if (!bodyPose) {
             std::fprintf(stderr, "cannot load pose: %s\n", bodyPose.error().message().c_str());
             return false;
         }
+        modelPose = *bodyPose;
+    }
+
+    if (!expressionFile.empty()) {
+        if (!applyExpression(expressionFile, *skel, modelPose)) return false;
+    }
+
+    if (!modelPose.empty()) {
         // The file's rotations are in model space; skinning wants them in each
         // bone's rest frame. Skipping this yields a plausible but wrong pose.
-        out.localPose = mh::rig::poseToBoneLocal(*skel, *bodyPose);
+        out.localPose = mh::rig::poseToBoneLocal(*skel, modelPose);
     }
     out.skeleton = std::move(*skel);
     return true;
@@ -1408,6 +1522,11 @@ int main(int argc, char** argv) {
         QStringLiteral("Render one frame to this PNG and exit -- how the window is checked "
                        "without a human looking at it"),
         QStringLiteral("path"));
+    const QCommandLineOption expressionOpt(
+        QStringLiteral("expression"),
+        QStringLiteral("A .mhpose expression file: named face pose units with weights. Layered "
+                       "onto whatever --pose gives, so the two are independent."),
+        QStringLiteral("file"));
     const QCommandLineOption poseOpt(
         QStringLiteral("pose"),
         QStringLiteral("rest (the authored A-pose, default), tpose, or a path to a "
@@ -1546,6 +1665,7 @@ int main(int argc, char** argv) {
     parser.addOption(shadingOpt);
     parser.addOption(rigOpt);
     parser.addOption(poseOpt);
+    parser.addOption(expressionOpt);
     parser.addOption(exportOpt);
     parser.addOption(languageOpt);
     parser.addOption(blendshapesOpt);
@@ -1719,6 +1839,10 @@ int main(int argc, char** argv) {
     // them produced. The spelling names both sides rather than just the target,
     // because "--symmetry r" reads as "make it right-handed" to everyone who
     // has not read `human.py:1238`.
+    if (parser.isSet(expressionOpt)) {
+        expressionFileRef() = parser.value(expressionOpt).toStdString();
+    }
+
     if (parser.isSet(symmetryOpt)) {
         const QString direction = parser.value(symmetryOpt).toLower();
         if (direction != QLatin1String("l2r") && direction != QLatin1String("r2l")) {

@@ -1,0 +1,8 @@
+{
+    "name": "Typo",
+    "description": "Names a unit the shipped library does not have.",
+    "unit_poses": {
+        "JawDrop": 0.5,
+        "NoSuchUnit": 1.0
+    }
+}

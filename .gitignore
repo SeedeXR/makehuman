@@ -48,14 +48,17 @@ __pycache__/
 # otherwise silently drop the app icon, leaving a clone with no Dock icon and
 # no error to explain it.
 !resources/**
-# And for tests/golden/: the parity fixtures ARE repo content, captured from the
-# Python oracle and committed so CI can compare against them. `*.mhpose` above
-# silently dropped `tests/golden/mhpose/smirk.mhpose` on its first commit --
-# `git add -A` says nothing about an ignored file -- so the .bin and cases.json
-# went in, the file the loader parses did not, and CI failed on a fresh checkout
-# while the local run passed. The third time these rules have swallowed
-# generated repo content; see the two notes above.
-!tests/golden/**
+# And for tests/: every fixture there is repo content -- parity data captured
+# from the Python oracle, and small hand-written files a refusal test needs.
+# `*.mhpose` above silently dropped `tests/golden/mhpose/smirk.mhpose` on its
+# first commit -- `git add -A` says nothing about an ignored file -- so the .bin
+# and cases.json went in, the file the loader parses did not, and CI failed on a
+# fresh checkout while the local run passed.
+#
+# Scoped to `tests/**` rather than `tests/golden/**` because the narrower rule
+# immediately caught the next one out: `tests/expression_bad_unit.mhpose`, a
+# refusal fixture one directory up, was ignored again the very next chunk.
+!tests/**
 base_1-1_contents.txt
 
 # Pydev Eclipse#

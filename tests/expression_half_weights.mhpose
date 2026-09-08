@@ -1,0 +1,11 @@
+{
+    "name": "Half Smirk",
+    "description": "The same units as golden/mhpose/smirk.mhpose at half strength. Its only job is to pin that the WEIGHTS reach the blend: with them ignored, this file and that one produce the same face.",
+    "unit_poses": {
+        "JawDrop": 0.45,
+        "LipsKiss": 0.35,
+        "UpperLipForward": 0.25,
+        "lowerLipBackward": 0.3,
+        "JawDropStretched": 0.2
+    }
+}

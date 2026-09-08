@@ -503,6 +503,102 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_grid_not_in_render PROPERTIES
         FIXTURES_REQUIRED "app_grid_render_png;app_solid_png")
 
+    # `--expression`: a `.mhpose` reaching the mesh. The loader landed with
+    # oracle parity but NOTHING in the shipped binary called it, so the format
+    # was still unusable -- machinery with a test, which is only half the
+    # objection the item raised.
+    #
+    # The fixture is the one the oracle wrote (`tools/capture_fixture.py
+    # mhpose`); it names four face units, so the face bones move and nothing
+    # else does. Asserting the bone COUNT is what gives this teeth: an
+    # expression that resolved to no units at all would still export happily.
+    add_test(NAME app_expression COMMAND makehuman
+             --expression ${CMAKE_CURRENT_SOURCE_DIR}/golden/mhpose/smirk.mhpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_expr.obj)
+    set_tests_properties(app_expression PROPERTIES
+        PASS_REGULAR_EXPRESSION "expression Fixture Smirk \\(5 units, [0-9]+ bones\\)"
+        FIXTURES_SETUP app_expr_obj)
+    # ...and it CHANGED the mesh. Compared against the same character exported
+    # without the expression: same basename in two directories, because an OBJ
+    # names its material library after itself and would differ on that line
+    # alone (the trap `app_skinning_dqs_differs` fell into).
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/expr_plain
+                        ${CMAKE_CURRENT_BINARY_DIR}/expr_face)
+    add_test(NAME app_expression_plain COMMAND makehuman
+             --export ${CMAKE_CURRENT_BINARY_DIR}/expr_plain/body.obj)
+    set_tests_properties(app_expression_plain PROPERTIES FIXTURES_SETUP app_expr_plain_obj)
+    add_test(NAME app_expression_posed COMMAND makehuman
+             --expression ${CMAKE_CURRENT_SOURCE_DIR}/golden/mhpose/smirk.mhpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/expr_face/body.obj)
+    set_tests_properties(app_expression_posed PROPERTIES FIXTURES_SETUP app_expr_face_obj)
+    add_test(NAME app_expression_differs COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/expr_plain/body.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/expr_face/body.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_expression_differs PROPERTIES
+        FIXTURES_REQUIRED "app_expr_plain_obj;app_expr_face_obj")
+    # Pose AND expression together -- the `mixPoses` path, which neither of the
+    # cases above reaches: with no `--pose` the expression simply BECOMES the
+    # pose, so a layering bug is invisible. This one must differ from the T-pose
+    # alone AND from the expression alone.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/expr_tpose
+                        ${CMAKE_CURRENT_BINARY_DIR}/expr_tpose_face)
+    add_test(NAME app_expression_tpose COMMAND makehuman
+             --pose tpose --export ${CMAKE_CURRENT_BINARY_DIR}/expr_tpose/body.obj)
+    set_tests_properties(app_expression_tpose PROPERTIES FIXTURES_SETUP app_expr_tpose_obj)
+    add_test(NAME app_expression_tpose_face COMMAND makehuman
+             --pose tpose
+             --expression ${CMAKE_CURRENT_SOURCE_DIR}/golden/mhpose/smirk.mhpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/expr_tpose_face/body.obj)
+    set_tests_properties(app_expression_tpose_face PROPERTIES
+        FIXTURES_SETUP app_expr_tpose_face_obj)
+    # Differs from the pose alone: the expression reached the face.
+    add_test(NAME app_expression_layers_on_pose COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/expr_tpose/body.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/expr_tpose_face/body.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_expression_layers_on_pose PROPERTIES
+        FIXTURES_REQUIRED "app_expr_tpose_obj;app_expr_tpose_face_obj")
+    # ...and differs from the expression alone: the BODY kept its pose. Without
+    # this, an implementation that threw the body pose away and used the
+    # expression as the whole pose would pass the check above.
+    add_test(NAME app_expression_keeps_the_pose COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/expr_face/body.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/expr_tpose_face/body.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_expression_keeps_the_pose PROPERTIES
+        FIXTURES_REQUIRED "app_expr_face_obj;app_expr_tpose_face_obj")
+
+    # The WEIGHTS reach the blend. Nothing above could see this: an
+    # implementation that applied every named unit at full strength still moves
+    # the face, still layers onto a pose, and still differs from every other
+    # export -- it passed all ten checks. Half the weights, the same five units,
+    # and the mesh must differ.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/expr_half)
+    add_test(NAME app_expression_half COMMAND makehuman
+             --expression ${CMAKE_CURRENT_SOURCE_DIR}/expression_half_weights.mhpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/expr_half/body.obj)
+    set_tests_properties(app_expression_half PROPERTIES FIXTURES_SETUP app_expr_half_obj)
+    add_test(NAME app_expression_weights_matter COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/expr_face/body.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/expr_half/body.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_expression_weights_matter PROPERTIES
+        FIXTURES_REQUIRED "app_expr_face_obj;app_expr_half_obj")
+
+    # A unit the library does not have is named, not ignored: a typo in an
+    # expression file otherwise produces a subtly wrong face.
+    add_test(NAME app_expression_unknown_unit COMMAND makehuman
+             --expression ${CMAKE_CURRENT_SOURCE_DIR}/expression_bad_unit.mhpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_never_expr.obj)
+    set_tests_properties(app_expression_unknown_unit PROPERTIES
+        PASS_REGULAR_EXPRESSION "NoSuchUnit")
+    add_test(NAME app_expression_missing_file COMMAND makehuman
+             --expression ${CMAKE_CURRENT_BINARY_DIR}/nope.mhpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_never_expr2.obj)
+    set_tests_properties(app_expression_missing_file PROPERTIES
+        PASS_REGULAR_EXPRESSION "cannot load expression")
+
     # Symmetry, end to end. The menu commands cannot be driven from a test --
     # `symmetryRequested` is wired in main.cpp -- so `--symmetry` is what makes
     # the whole path observable: one asymmetric modifier in, both sides equal

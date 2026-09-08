@@ -4,6 +4,65 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (thirtieth) — Session · **The `.mhpose` loader had no caller**
+
+### Reconciling first
+`loadExpression` landed two chunks ago with oracle parity — and nothing in the
+shipped binary called it. A loader with a passing test and no caller is still
+machinery; the original item's objection was only half answered. So:
+`--expression <file.mhpose>`, end to end.
+
+Load the file, build the 60 face units from `face-poseunits.{bvh,json}`, blend
+the named ones at their weights, and `mixPoses` the result over whatever
+`--pose` gave — every step of that recipe was already parity-tested
+individually; this is the wiring that makes them a feature.
+
+**The bone list is derived, not configured**: every bone the blend leaves
+non-identity. Measured: 34 bones for the fixture, all `jaw` / `oris*` /
+`levator*` / `risorius*` / `tongue*`. No root, no spine, so an expression cannot
+drag the body — which is the failure mode a hardcoded list would eventually hit.
+
+### The gate that survived eleven checks
+A mutation applying every unit at FULL strength passed all eleven app gates: the
+face still moved, it still layered onto a pose, and it still differed from every
+other export. Nothing was comparing two files that differ ONLY in weight.
+`tests/expression_half_weights.mhpose` — the same five units at half strength —
+is the twelfth gate, and it kills it.
+
+Three other mutations were caught: an unknown unit skipped instead of named, the
+expression replacing the pose instead of layering onto it, and an empty bone
+list.
+
+### Looked at it, twice, and the first look was misleading
+The differing-pixel BOUNDING BOX spanned the whole body, which looked like an
+expression dragging the torso. Measuring the distribution instead: 2,641 of
+2,781 pixels in the head band, 136 just above it, and exactly **4** elsewhere.
+Those four are MSAA edge noise and they were driving the entire bbox. A bounding
+box is a terrible summary statistic.
+
+The fixture's own render is an extreme funnel of a mouth — five overlapping
+units at 0.2–0.9, and the blend is additive, so that IS the right answer for
+that input (its pose matches the oracle to 1e-4). I rendered a mild file as well
+to see the pipeline at ordinary weights: a faint asymmetric half-smile, 659
+changed pixels, all in the face.
+
+### `.gitignore` bit again, and the narrow fix is why
+Last chunk's negation was `!tests/golden/**`. This chunk added a refusal fixture
+one directory up, at `tests/expression_bad_unit.mhpose`, and `*.mhpose` swallowed
+it again — caught this time by checking `git check-ignore` before committing
+rather than by CI. The negation is `!tests/**` now: the whole test tree is repo
+content, and scoping it to the directory that happened to hurt last time was
+the mistake.
+
+### Next
+`memory/todo.md`. What is left of the expression task views is an OWNER
+DECISION: zero `.mhpose` files ship, so a chooser would list nothing, and the
+mixer (this face rig) and `buildExpressionBlendshapes` (morph targets,
+`data/targets/expression/units/`) are two different systems. Which one the port
+offers is a design call.
+
+---
+
 ## 2026-09-08 (twenty-ninth) — Session · **Shear: the premise was wrong, and the reference said so**
 
 ### Reconciling first, again, and again it moved the work
