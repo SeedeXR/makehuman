@@ -3892,14 +3892,17 @@ agree today (geometry, UVs, and 169.5 cm under three unit conventions).
         cannot quietly stop running.
       - `--render` also PRINTS what it drew now, which makes a production render
         checkable from a log the way `--screenshot` always was.
-- [ ] **Ungated, `main.cpp` again: the symmetric edit's undo values.** The
-      defect above — reading `from` off the panel instead of the model — cannot
-      be caught by a test today, because the assembly of an undo entry lives in
-      the `valueChanged` connect. `core::mirroredEdit` and
-      `MultiValueChangeCommand::mergeWith` are both gated; what joins them is
-      not. Third entry in this family, after `poseInPlace` and `renderImage`;
-      the pattern that fixed those two is a function that takes the model and
-      returns the changes.
+- [x] **The symmetric edit's undo values** (2026-09-08), and with it the whole
+      family is closed: `poseInPlace` → `rig::poseMesh`, `renderImage` →
+      `ui::renderSettingsFor`, and now the edit assembly → `core::ModifierEdit`.
+      `mirroredEdit` returns what each modifier is REPLACING as well as what it
+      becomes, so the application cannot take that value from the wrong place —
+      which is exactly what it did, reading it off a slider panel that had
+      already moved. Two mutations kill it now: a `before` copied from the new
+      value, and a mirror reporting the edited side's `before`.
+      - Verified end to end afterwards, all four combinations: mode on gives
+        1.000/1.000 in ONE undo entry and undo returns both to 0.000; mode off
+        moves one side and undoes it.
 - [ ] **No UI toggle for skinning in the headless path.** The stored preference
       is a WINDOW preference: `--export` and `--render` build no window, never
       read it, and take `--skinning` alone. Deliberate — the flag is the

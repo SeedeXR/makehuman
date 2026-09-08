@@ -2568,7 +2568,7 @@ int main(int argc, char** argv) {
             // one value or several -- not about whether to mirror.
             const auto edit = window.symmetryMode()
                                   ? mh::core::mirroredEdit(human, id.toStdString(), value)
-                                  : std::vector<std::pair<std::string, float>>{};
+                                  : std::vector<mh::core::ModifierEdit>{};
             if (edit.size() < 2) {
                 window.undoStack()->push(
                     new mh::ui::ValueChangeCommand(id, before, value, mergeGroup, applyModifier));
@@ -2577,13 +2577,12 @@ int main(int argc, char** argv) {
 
             std::vector<mh::ui::MultiValueChangeCommand::Change> changes;
             changes.reserve(edit.size());
-            for (const auto& [name, to] : edit) {
-                // `human`, not `panel`: by the time this signal arrives the
-                // dragged slider has ALREADY moved, so the panel's value for it
-                // is the new one and undo would restore the edit rather than
-                // reverse it. `human` is only updated by applyModifiers, below.
-                // Caught by running an undo, not by any assertion here.
-                changes.push_back({QString::fromStdString(name), human.modifierValue(name), to});
+            // Every value comes from `mirroredEdit`, including what each modifier
+            // is REPLACING. This used to read the "before" off the panel, where
+            // the dragged slider has already moved -- so undo restored the edit
+            // instead of reversing it. There is nothing left here to get wrong.
+            for (const mh::core::ModifierEdit& e : edit) {
+                changes.push_back({QString::fromStdString(e.fullName), e.before, e.after});
             }
             // The SAME merge group the single-sided path uses, so a drag is one
             // undo entry either way and switching the mode mid-session does not

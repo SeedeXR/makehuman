@@ -45,7 +45,20 @@ namespace mh::core {
 ///         and puts nothing on the undo stack.
 [[nodiscard]] std::vector<std::pair<std::string, float>> symmetrise(Human& human, char targetSide);
 
-/// The values one edit should write when symmetry MODE is on: the edit itself,
+/// One modifier's move: what it holds now, and what an edit would make it.
+///
+/// `before` is here rather than left to the caller because the caller got it
+/// wrong: the application read those values off the slider panel, where the
+/// dragged slider has ALREADY moved by the time the signal arrives, so undo
+/// restored the edit instead of reversing it. The model is the only thing that
+/// knows, so the model is what answers.
+struct ModifierEdit {
+    std::string fullName;
+    float before{};
+    float after{};
+};
+
+/// The moves one edit should make when symmetry MODE is on: the edit itself,
 /// and the same value on the opposite side when there is one.
 ///
 /// The reference applies this rule inside the undoable action
@@ -60,8 +73,7 @@ namespace mh::core {
 ///
 /// @return the edit first, then its mirror; empty if @p fullName is not a
 ///         modifier this character has.
-[[nodiscard]] std::vector<std::pair<std::string, float>> mirroredEdit(const Human& human,
-                                                                      std::string_view fullName,
-                                                                      float value);
+[[nodiscard]] std::vector<ModifierEdit> mirroredEdit(const Human& human, std::string_view fullName,
+                                                     float value);
 
 }  // namespace mh::core

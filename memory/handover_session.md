@@ -4,6 +4,51 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (twenty-sixth) — Session · **The last of the `main.cpp` family**
+
+### The chunk
+`core::mirroredEdit` now returns `ModifierEdit{fullName, before, after}` instead
+of a name and a number. The value each modifier is REPLACING comes from the
+model, so the application cannot take it from anywhere else — which is precisely
+what it did last chunk, reading it off a slider panel that had already moved, so
+undo restored the edit instead of reversing it.
+
+**That closes the family.** Three defects in three chunks had the same shape —
+logic sitting in `main.cpp`, where no test can reach it:
+
+* `poseInPlace` → `rig::poseMesh` (the 70 cm double-pose)
+* `renderImage` → `ui::renderSettingsFor` (the wireframe flag that went missing)
+* the edit assembly → `core::ModifierEdit` (this one)
+
+Each fix has the same shape: a function that takes the model and returns what
+should happen, leaving the application with nothing to get wrong.
+
+### Two mutation results that were worth nothing
+Twice now a mutation has come back "all tests passed" because its ANCHOR did not
+match — once from shell escaping, once because clang-format had reflowed the
+line I was quoting. Both times the patch never applied. A mutation that does not
+apply is worth exactly as much as one that does not compile, and the honest
+response is to look at the file, fix the anchor and re-run: both then failed two
+assertions, as they should. Worth remembering that the mutation harness needs
+its own sanity check — "did this actually change the file?" — not just "did the
+tests fail?".
+
+### Verified end to end
+All four combinations, by driving a real slider in the running application:
+mode on gives 1.000/1.000 in ONE undo entry and undo returns both to 0.000; mode
+off moves one side and undoes it. The instrumentation was written fresh rather
+than reused — the previous chunk's script was still on disk and applying it
+twice produced two copies and four identical, meaningless lines of output.
+
+### Next
+`memory/todo.md` in milestone order. What remains in the owner request is a
+DECISION rather than work: the reference's two-level tab bar, left group boxes
+and right Category radios would mean throwing away the dockable layout chosen on
+2026-09-07. The accessibility item below it is blocked on VoiceOver on a real
+device, which is not something this loop can establish.
+
+---
+
 ## 2026-09-08 (twenty-fifth) — Session · **Symmetry as a mode, and an undo that undid the wrong way**
 
 ### The chunk

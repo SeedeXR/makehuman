@@ -174,10 +174,46 @@ TEST_CASE("a mirrored edit carries the opposite side with it", "[symmetry]") {
     REQUIRE(edit.size() == 2);
     // The edited modifier first: a caller that applies these in order must set
     // what the user touched before anything derived from it.
-    CHECK(edit[0].first == kLeft);
-    CHECK_THAT(edit[0].second, WithinAbs(0.7, 1e-6));
-    CHECK(edit[1].first == kRight);
-    CHECK_THAT(edit[1].second, WithinAbs(0.7, 1e-6));
+    CHECK(edit[0].fullName == kLeft);
+    CHECK_THAT(edit[0].after, WithinAbs(0.7, 1e-6));
+    CHECK(edit[1].fullName == kRight);
+    CHECK_THAT(edit[1].after, WithinAbs(0.7, 1e-6));
+}
+
+// Each edit carries the value it is REPLACING, and that is the whole reason
+// this returns a struct rather than a name and a number.
+//
+// The application built those "before" values from the slider panel, and by the
+// time a `valueChanged` signal arrives the dragged slider has already moved --
+// so the edited side's before was its AFTER, and undo restored the edit instead
+// of reversing it. Nothing could catch it: the rule was gated, the undo command
+// was gated, and the assembly between them lived in `main.cpp`. It cannot be
+// assembled wrongly now, because the model is the only thing that answers.
+TEST_CASE("a mirrored edit carries what it is replacing", "[symmetry]") {
+    const TargetIndex index = TargetIndex::build(std::filesystem::path(MH_DATA_DIR) / "targets");
+    Human human(&index, shippedModifiers());
+    REQUIRE(human.setModifierValue(kLeft, -0.4F));
+    REQUIRE(human.setModifierValue(kRight, 0.6F));
+
+    const auto edit = mirroredEdit(human, kLeft, 0.7F);
+    REQUIRE(edit.size() == 2);
+
+    // The two sides start at DIFFERENT values on purpose: a `before` copied
+    // from the edit, or taken from the wrong modifier, would pass if they
+    // matched.
+    CHECK_THAT(edit[0].before, WithinAbs(-0.4, 1e-6));
+    CHECK_THAT(edit[1].before, WithinAbs(0.6, 1e-6));
+    CHECK_THAT(edit[0].after, WithinAbs(0.7, 1e-6));
+    CHECK_THAT(edit[1].after, WithinAbs(0.7, 1e-6));
+
+    // ...and undoing an edit built from this returns both sides to where they
+    // were, which is the property the application actually needs.
+    for (const auto& e : edit)
+        REQUIRE(human.setModifierValue(e.fullName, e.after));
+    for (const auto& e : edit)
+        REQUIRE(human.setModifierValue(e.fullName, e.before));
+    CHECK_THAT(human.modifierValue(kLeft), WithinAbs(-0.4, 1e-6));
+    CHECK_THAT(human.modifierValue(kRight), WithinAbs(0.6, 1e-6));
 }
 
 TEST_CASE("an edit with no opposite is just itself", "[symmetry]") {
@@ -189,8 +225,8 @@ TEST_CASE("an edit with no opposite is just itself", "[symmetry]") {
     // being non-empty for exactly that reason.
     const auto edit = mirroredEdit(human, kMiddle, 0.3F);
     REQUIRE(edit.size() == 1);
-    CHECK(edit[0].first == kMiddle);
-    CHECK_THAT(edit[0].second, WithinAbs(0.3, 1e-6));
+    CHECK(edit[0].fullName == kMiddle);
+    CHECK_THAT(edit[0].after, WithinAbs(0.3, 1e-6));
 
     // A name this character does not have is not an edit at all.
     CHECK(mirroredEdit(human, "nosuch/modifier", 0.5F).empty());
@@ -206,7 +242,7 @@ TEST_CASE("mirroring reads the CURRENT edit, not the stored value", "[symmetry]"
     // and leave the two sides one step apart for the whole gesture.
     const auto edit = mirroredEdit(human, kLeft, 0.25F);
     REQUIRE(edit.size() == 2);
-    CHECK_THAT(edit[1].second, WithinAbs(0.25, 1e-6));
+    CHECK_THAT(edit[1].after, WithinAbs(0.25, 1e-6));
 
     // And it does not APPLY anything -- the caller owns that, because the undo
     // stack has to record both values before either moves.

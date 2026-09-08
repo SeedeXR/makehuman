@@ -58,17 +58,16 @@ std::vector<std::pair<std::string, float>> symmetrise(Human& human, char targetS
     return changed;
 }
 
-std::vector<std::pair<std::string, float>> mirroredEdit(const Human& human,
-                                                        std::string_view fullName, float value) {
+std::vector<ModifierEdit> mirroredEdit(const Human& human, std::string_view fullName, float value) {
     const Modifier* m = human.findModifier(fullName);
     if (m == nullptr) return {};
 
-    std::vector<std::pair<std::string, float>> edit{{m->fullName, value}};
+    std::vector<ModifierEdit> edit{{m->fullName, human.modifierValue(m->fullName), value}};
     const std::string opposite = symmetricOpposite(*m);
     // A modifier with no side has no mirror, and half a pair has none either --
     // 291 of the shipped modifiers are in the first case.
     if (!opposite.empty() && human.findModifier(opposite) != nullptr) {
-        edit.emplace_back(opposite, value);
+        edit.push_back({opposite, human.modifierValue(opposite), value});
     }
     return edit;
 }
