@@ -1466,13 +1466,10 @@ int main(int argc, char** argv) {
     // bundled copy has no assets at all unless it looks elsewhere first.
     setDataRoot(mh::foundation::resolveDataDir(
         QCoreApplication::applicationFilePath().toStdString(), MH_DATA_DIR));
-    if (!std::filesystem::exists(dataDir() / "3dobjs" / "base.obj")) {
-        std::fprintf(stderr,
-                     "cannot find the asset tree (looked last at %s)\n"
-                     "set MH_DATA_DIR to point at it\n",
-                     dataDir().string().c_str());
-        return 1;
-    }
+    // The tree is only CHECKED further down, after the command line is parsed:
+    // --version, --help and --inspect are answers about the binary or about a
+    // file they are given, and refusing them for want of assets is the one
+    // answer a bug report cannot use.
     QCoreApplication::setOrganizationName(QStringLiteral("MakeHuman"));
     QCoreApplication::setApplicationName(QStringLiteral("MakeHumanCpp"));
     // From /VERSION, through the generated header. `--version` did not work at
@@ -1700,6 +1697,17 @@ int main(int argc, char** argv) {
     // than about a character: no base mesh, no rig, no assets.
     if (parser.isSet(inspectOpt)) {
         return inspectFile(parser.value(inspectOpt).toStdString()) ? 0 : 1;
+    }
+
+    // Everything past here needs the asset tree, so this is where the check
+    // belongs -- not before the parser, where it also killed --version and
+    // --help, and where it made the promise three lines up false.
+    if (!std::filesystem::exists(dataDir() / "3dobjs" / "base.obj")) {
+        std::fprintf(stderr,
+                     "cannot find the asset tree (looked at %s)\n"
+                     "set MH_DATA_DIR to point at it\n",
+                     dataDir().string().c_str());
+        return 1;
     }
 
     // Set once, before anything loads a skeleton.

@@ -31,11 +31,15 @@ std::filesystem::path resolveDir(const std::filesystem::path& executable,
                                  const std::filesystem::path& compiledDefault, const char* envVar,
                                  const std::filesystem::path& bundleName,
                                  const std::filesystem::path& sentinel) {
-    std::vector<std::filesystem::path> candidates;
-
+    // An explicit override is AUTHORITATIVE, right or wrong. Searching past a
+    // typo would hand back the source tree of the machine that compiled the
+    // binary: the app works there and nowhere else, and nothing says which
+    // tree it read. Obeyed, the caller reports the directory the user named.
     if (const char* override = std::getenv(envVar); override != nullptr && *override != '\0') {
-        candidates.emplace_back(override);
+        return override;
     }
+
+    std::vector<std::filesystem::path> candidates;
 
     const std::filesystem::path binDir = executable.parent_path();
     // MakeHuman.app/Contents/MacOS/makehuman -> MakeHuman.app/Contents/Resources/<name>

@@ -4,6 +4,91 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (thirty-first) — Session · **`--version` died without an asset tree**
+
+*2026-09-08 — the smallest open M10 item, and it needed a resolver change to
+become testable at all.*
+
+### The bug
+`main()` checked for `data/3dobjs/base.obj` and `return 1`ed **before**
+`QCommandLineParser` was built. So on a machine with no asset tree, the two
+commands that have nothing to do with assets — `--version` and `--help` — both
+died with `cannot find the asset tree`. `--version` is the first thing a bug
+report asks for, and it was the one answer the binary could not give.
+
+`--inspect` came free. Its own comment (`src/app/main.cpp:1699`) already
+promised *"no base mesh, no rig, no assets"*, and the check upstream made that
+false. The comment was the bug report.
+
+The check now sits after `parser.process()` and after the `--inspect` early
+return — the first point where anything actually needs `data/`.
+
+### The test did not exist, and could not
+Every data-dir candidate is derived from the executable's own path or baked in
+at compile time (`src/foundation/DataDir.cpp:38-51`). Both exist on any machine
+that can build the binary, so there was **no way to run `makehuman` with no
+asset tree**. The `MH_DATA_DIR` override was one candidate in a search, so
+pointing it at an empty directory fell through and found the assets anyway.
+
+So `$MH_DATA_DIR` is now **authoritative** (`src/foundation/DataDir.cpp:34`):
+set and non-empty, it is the answer, right or wrong. That also removes the worse
+of the two failures it had — a packager whose override has a typo silently got
+the *source tree of the machine that compiled the binary*, so the app worked
+there and nowhere else, having reported nothing. The header's own rule for a
+candidate always applied to the override too: *"a directory that exists but
+holds nothing we need is worse than no candidate at all, because it stops the
+search and the failure surfaces later, somewhere less obvious."*
+
+One test had to change with it: `"an override pointing nowhere is ignored, not
+obeyed"` is now `"an explicit override is obeyed even when it holds nothing"`,
+and it pins the returned path exactly rather than pinning the fallback.
+
+### Decorative gate number three
+**The three new "without assets" ctests PASSED on the unfixed binary.** Empty
+`MH_DATA_DIR` → fall through → assets found → `--version` worked → green. They
+only went red once the override was obeyed, and only then did the reorder mean
+anything. This is the third gate this project has shipped that asserted nothing;
+the pattern each time is a test whose *premise* is unmet, not a test whose
+assertion is weak.
+
+### Mutations, all four killed
+| Mutation | Killed by |
+|---|---|
+| Guard back before the parser (the original bug) | the three `*_without_assets` app tests |
+| Guard deleted entirely | `app_without_assets_refuses` — falls through to `cannot load the base mesh`, which the expression does not match |
+| Override back to one-candidate-among-many | `[datadir]` — 2 cases, 3 assertions |
+| Empty `MH_DATA_DIR` treated as an instruction | the new empty-value assertion; resolves to `""`, i.e. the working directory |
+
+### Measured, by hand, with an empty `MH_DATA_DIR`
+```
+--version  → MakeHumanCpp 2.0.0                         exit 0
+--help     → Usage: … / MakeHuman (C++/Qt6) / Options:   exit 0
+--inspect tests/golden/obj/base_ref.obj
+           → base_ref.obj: 1 meshes, 19158 vertices…     exit 0
+--render   → cannot find the asset tree (looked at …)    exit 1
+```
+`looked last at` became `looked at`: with the override obeyed there is no
+search for it to be the last of.
+
+### Gates
+693/693 in debug, release, ASan and TSan, 0 warnings, `ALLDONE` read. CI's exact
+clang-format command clean (it caught one reflow). Nothing in CI or any script
+sets `MH_DATA_DIR` as an environment variable, so the resolver change reaches
+no existing test — checked before making it.
+
+### Also confirmed
+CI green on `5395c6e6` (`--expression`), the previous chunk.
+
+### Next
+`memory/todo.md`. The M10 neighbours of this item are the `--skin`→`--litsphere`
+rename and putting the version into FBX/glTF/USD/OBJ — both explicitly
+**owner's call** because they are CLI- and byte-visible. Still open from
+earlier: the two-level tab bar versus the dockable layout, the VoiceOver check
+on the duplicated slider readout, and which expression system the task views
+offer.
+
+---
+
 ## 2026-09-08 (thirtieth) — Session · **The `.mhpose` loader had no caller**
 
 ### Reconciling first

@@ -4100,11 +4100,34 @@ GPU here, or Colab) and it comes back to the owner first.
         `PROJECT_VERSION_PATCH` for `_MINOR` **survives at 2.0.0**, because minor
         and patch are both 0 — killed only at `9.8.7`. The surviving mutation was
         the fixture's fault, not the code's; the test says so.
-- [ ] **`--version` and `--help` still require the asset tree.** The data-dir
-      check in `main()` runs and `return 1`s *before* `QCommandLineParser` is
-      built, so both die on a machine with no `data/`. Pre-existing and unrelated
-      to the version wiring; fixing it means reordering start-up, which is its
-      own chunk.
+- [x] **`--version` and `--help` required the asset tree.** The check now sits
+      after `parser.process()` and after the `--inspect` early return
+      (`src/app/main.cpp:1702`), which is the first point where anything
+      actually needs `data/`. Measured with an empty `MH_DATA_DIR`:
+      `--version` prints `MakeHumanCpp 2.0.0` and exits 0, `--help` prints the
+      option list, `--inspect tests/golden/obj/base_ref.obj` reports
+      `1 meshes, 19158 vertices`, and `--render` still refuses with
+      `cannot find the asset tree (looked at …)` and exits 1.
+      - `--inspect` came free and was not planned: its own comment
+        (`src/app/main.cpp:1699`) already claimed "no base mesh, no rig, no
+        assets" while the check upstream made that false. The comment was the
+        bug report.
+      - **This was untestable until the resolver changed.** Every other data-dir
+        candidate is derived from the executable's path or baked in at compile
+        time, and both exist on any machine that can build the binary, so there
+        was no way to run it with no asset tree. `$MH_DATA_DIR` is now
+        AUTHORITATIVE (`src/foundation/DataDir.cpp:34`) instead of being one
+        candidate in a search — which also removes the worse of the two
+        failures it had: a packager whose override has a typo silently got the
+        SOURCE TREE OF THE MACHINE THAT BUILT THE BINARY, so the app worked
+        there and nowhere else and reported nothing. The header's own rule for
+        a candidate ("worse than no candidate at all, because it stops the
+        search and the failure surfaces later") always applied to the override
+        too.
+      - The three new "without assets" ctests PASSED before that resolver
+        change, on the unfixed binary, because the empty override fell through
+        to the compiled default and the assets were found after all. Decorative
+        gate number three. They only went red once the override was obeyed.
 - [ ] **Exported assets cannot be traced to a build.** `.mhm` carries the product
       version; FBX `Creator`, glTF `generator`, USD `doc` and the OBJ/MTL comment
       carry the product NAME only. Adding the version there is ~4 one-line

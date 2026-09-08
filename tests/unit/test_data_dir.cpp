@@ -41,7 +41,12 @@ struct Sandbox {
     ~Sandbox() {
         std::error_code ec;
         fs::remove_all(root, ec);
+        // All three, not just the data one: a case that sets the shader or
+        // resource override would otherwise leak it into every later test in
+        // this binary, and the leak reads as a resolver bug.
         ::unsetenv("MH_DATA_DIR");
+        ::unsetenv("MH_SHADER_DIR");
+        ::unsetenv("MH_RESOURCE_DIR");
     }
 };
 
@@ -99,16 +104,48 @@ TEST_CASE("a candidate that does not exist is skipped", "[foundation][datadir]")
     CHECK(foundation::resolveDataDir(exe, compiled) == compiled);
 }
 
-TEST_CASE("an override pointing nowhere is ignored, not obeyed", "[foundation][datadir]") {
+// This used to fall back to the compiled default, and the fallback was the
+// worse failure of the two. A packager or a script whose MH_DATA_DIR has a typo
+// silently got the SOURCE TREE OF THE MACHINE THAT BUILT THE BINARY: the app
+// works there and nowhere else, and nothing anywhere says which tree it read.
+// The header's own rule for a candidate applies to the override too -- "a
+// directory that exists but holds nothing we need is worse than no candidate at
+// all, because it stops the search and the failure surfaces later, somewhere
+// less obvious".
+//
+// Obeyed, `makehuman` reports the directory the user actually named and exits 1.
+// It is also what makes that branch reachable from a test at all: every other
+// candidate is derived from the executable's own path or baked in at compile
+// time, so an override that is honoured is the only way to run the binary with
+// no asset tree.
+TEST_CASE("an explicit override is obeyed even when it holds nothing", "[foundation][datadir]") {
     Sandbox sb("badenv");
     const auto compiled = makeAssetTree(sb.root / "srctree" / "data");
     const auto exe      = sb.root / "build" / "makehuman";
     fs::create_directories(exe.parent_path());
 
     ::setenv("MH_DATA_DIR", (sb.root / "nope").c_str(), 1);
-    // Obeying it would start the app with no assets and no explanation; the
-    // caller reports the miss instead.
+    CHECK(foundation::resolveDataDir(exe, compiled) == sb.root / "nope");
+
+    // An EMPTY value is not an instruction. `MH_DATA_DIR= makehuman` and an
+    // unset variable are the same wish, and obeying "" would resolve every
+    // asset against the process's working directory.
+    ::setenv("MH_DATA_DIR", "", 1);
     CHECK(foundation::resolveDataDir(exe, compiled) == compiled);
+}
+
+// One search, one policy: the override wins for the other two directories on
+// the same terms. Asserted because the shared `resolveDir` is the only reason
+// that is true, and a future special case for one of them would be silent.
+TEST_CASE("the shader and resource overrides are obeyed the same way", "[datadir]") {
+    Sandbox sb("badenv_others");
+    const auto exe = sb.root / "build" / "makehuman";
+    fs::create_directories(exe.parent_path());
+
+    ::setenv("MH_SHADER_DIR", (sb.root / "no-shaders").c_str(), 1);
+    ::setenv("MH_RESOURCE_DIR", (sb.root / "no-resources").c_str(), 1);
+    CHECK(foundation::resolveShaderDir(exe, sb.root / "compiled") == sb.root / "no-shaders");
+    CHECK(foundation::resolveResourceDir(exe, sb.root / "compiled") == sb.root / "no-resources");
 }
 
 // ---------------------------------------------------------------------------

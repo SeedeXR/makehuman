@@ -694,6 +694,46 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_version PROPERTIES
         PASS_REGULAR_EXPRESSION "${PROJECT_VERSION}")
 
+    # ...and it answers on a machine with NO asset tree, which is the whole
+    # point of `--version`: it is what a bug report is asked for, and it used to
+    # die with "cannot find the asset tree" because the data check ran before
+    # QCommandLineParser existed. Same for `--help`, and same for `--inspect`,
+    # whose own comment in main.cpp already promised "no base mesh, no rig, no
+    # assets" while the check upstream of it made that false.
+    #
+    # An empty directory named by MH_DATA_DIR is what makes "no asset tree"
+    # reachable at all: every other candidate comes from the executable's path
+    # or from the compile-time default, and both exist here. The override is
+    # authoritative -- see test_data_dir.cpp -- so this genuinely runs the
+    # binary with nowhere to load assets from.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/no_assets)
+    add_test(NAME app_version_without_assets COMMAND makehuman --version)
+    set_tests_properties(app_version_without_assets PROPERTIES
+        ENVIRONMENT "MH_DATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/no_assets"
+        PASS_REGULAR_EXPRESSION "${PROJECT_VERSION}")
+
+    add_test(NAME app_help_without_assets COMMAND makehuman --help)
+    set_tests_properties(app_help_without_assets PROPERTIES
+        ENVIRONMENT "MH_DATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/no_assets"
+        PASS_REGULAR_EXPRESSION "Usage")
+
+    add_test(NAME app_inspect_without_assets COMMAND makehuman
+             --inspect ${CMAKE_CURRENT_SOURCE_DIR}/golden/obj/base_ref.obj)
+    set_tests_properties(app_inspect_without_assets PROPERTIES
+        ENVIRONMENT "MH_DATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/no_assets"
+        PASS_REGULAR_EXPRESSION "base_ref.obj: 1 meshes")
+
+    # The guard still guards. Moving a check later is exactly the change that
+    # deletes it by accident, so anything that DOES need the assets must still
+    # refuse and must name the directory it looked in. Deleting the guard does
+    # not make this pass by falling through: the next failure is "cannot load
+    # the base mesh", which this expression does not match.
+    add_test(NAME app_without_assets_refuses COMMAND makehuman
+             --save ${CMAKE_CURRENT_BINARY_DIR}/app_no_assets.mhm)
+    set_tests_properties(app_without_assets_refuses PROPERTIES
+        ENVIRONMENT "MH_DATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/no_assets"
+        PASS_REGULAR_EXPRESSION "cannot find the asset tree.*no_assets")
+
     # ...and it reaches the one export format that has always carried it. The
     # .mhm header is written from foundation::kVersion; nothing asserted that
     # before, so the version could have been empty and every test stayed green.
