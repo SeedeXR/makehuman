@@ -9,6 +9,7 @@ add_library(mh_core STATIC
     ObjReader.cpp
     RenderMesh.cpp
     Subdivider.cpp
+    Decimator.cpp
     Blendshape.cpp
     Target.cpp
     Macro.cpp

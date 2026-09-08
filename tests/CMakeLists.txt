@@ -14,6 +14,7 @@ add_executable(mh_tests
     unit/test_tangents.cpp
     unit/test_render_mesh.cpp
     unit/test_subdivider.cpp
+    unit/test_decimator.cpp
     unit/test_target.cpp
     unit/test_macro.cpp
     unit/test_target_index.cpp

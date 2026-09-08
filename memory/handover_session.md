@@ -4,6 +4,128 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (thirty-third) — Session · **A decimator, and the render that saved it**
+
+*2026-09-08 — M9. PSD is next in the list and is genuinely owner-blocked; see
+the end. This is the item after it.*
+
+### What landed
+`core::decimate` — quadric-error-metric edge collapse, written from Garland &
+Heckbert (SIGGRAPH 1997). The reference has **no** simplification, LOD or
+corrective code (grepped `legacy/python/` for it), so this is the one subsystem
+here with no parity fixture. Its tests are invariants on meshes whose answer is
+known by construction: a plane must stay flat and keep its outline, a cylinder
+must keep its radius, a closed octahedron must stay closed.
+
+Measured on the base mesh, 18,486 quads → 36,972 triangles:
+
+| ratio | triangles | of 36,972 | vertices |
+|---|---|---|---|
+| 0.75 | 27,728 | 75.0% | 14,526 |
+| 0.50 | 18,485 | 50.0% | 9,888 |
+| 0.25 | **9,243** | 25.0% | 5,227 |
+| 0.10 | 5,451 | 14.7% | 3,280 |
+| 0.05 | 5,451 | 14.7% | 3,280 |
+
+Exact on target down to 25%, then a floor where the refusals and the error
+ceiling stop it. Asking for 5% gives the same mesh as 10%.
+
+### The whole chunk turned on one render
+Unbounded, it reduces to 4,373 triangles and **every numeric assertion in the
+test file passes**: the count is right, no triangle degenerate or duplicated,
+the bounding box within 5 mm, no normal flipped, the mesh manifold. Rendered in
+headless Blender, the chest and shoulders had collapsed into a flat triangular
+sheet, the legs were welded at the top and the head was a faceted wedge. It read
+as a figure in a cloak.
+
+`kMaxErrorFraction` exists because of that picture, and its value came from
+rendering the boundary rather than from taste: at **0.004** of the bbox diagonal
+the mesh floors at 5,451 and still reads as a body — separate legs, a
+head-shaped head, clean silhouette; at **0.008** it floors at 4,946 and the head
+is already a wedge with the shoulders flattening. Both were looked at.
+
+**Three framing errors before the first usable image**, each invisible except by
+looking: the camera on the wrong axis (empty frame, and three PNGs of *different
+byte length* that were all background — md5 difference is not evidence of
+content); then framing from LOCAL coordinates when Blender's OBJ importer
+converts Y-up to Z-up by rotating the OBJECT, so `v.co` is still Y-up and the
+render came out top-down; then a head crop so tight the near plane cut into the
+skull.
+
+### Findings while building it
+- **The UV rule was inverted and reported success.** The first version refused a
+  collapse when the two endpoints' UV *sets* differed — which on the base mesh
+  is every edge, since distinct vertices have distinct UV indices. It reduced
+  36,972 triangles to 36,972 and returned `ok`. The right rule is that a vertex
+  carrying MORE THAN ONE UV index sits on a seam and may not be merged.
+- **Boundary constraint planes are not optional.** Without them the decimator
+  eats its own silhouette: every triangle at an open edge is coplanar with its
+  neighbours, so the quadric has nothing to say about moving that edge inwards.
+  The plane's 16x16 outline shrank to 15.5.
+- **UVs are compacted too.** A quarter-size mesh still carrying all 21,334 of
+  the base mesh's UVs is not a level of detail.
+
+### Two textbook guards deleted, after measuring them
+| Guard | Measured | Outcome |
+|---|---|---|
+| Link condition | fired **170x** on the base mesh, but removing it changed neither triangle nor vertex count at any ratio and left every mesh manifold | **deleted** (three set allocations per candidate, buying nothing the flip test does not) |
+| Tetrahedron guard | fired **0x** — not on the base mesh, not on the closed octahedron the tests decimate by 90% to reach it | **deleted** (dead code) |
+| Face-group refusal | **0 of 19,158** base-mesh vertices belong to more than one of the 139 groups, so groups are separate vertex islands and it cannot fire there | **kept**, for meshes where that is untrue; mutation survives and the test says why |
+
+The invariants those guards protected are still asserted — manifoldness ("no
+edge in more than two triangles"), no duplicate triangle, no degenerate triangle
+— so if a mesh ever needs one back, a test fails rather than a file being
+quietly wrong.
+
+### Mutations: 12 run, 9 killed, 3 resolved by measurement
+Killed: the error ceiling loosened 0.004 -> 0.4; boundary planes removed;
+midpoint instead of the quadric minimiser (the cylinder-radius test, which
+exists for exactly that); flip test dropped; UV seam check dropped. Gate
+mutations: every triangle emitted twice (11 assertions), vertices not compacted
+(7), the UV table inherited whole (2).
+
+Survived and resolved: link condition and tetrahedron guard (both deleted after
+the measurements above); the group refusal (kept, gap documented). The queue
+tiebreak mutation is an equivalent mutant — replacing insertion order with
+vertex index is also deterministic.
+
+**A mutation that "passed" from a stale binary, again**: three of these first
+came back green with `-Werror` having failed the build (unused variable, unused
+function, unused const). Each was re-applied in a form that compiles. The
+build-failed line has to be read before the ctest line.
+
+### Deliberately NOT in this chunk, and why
+`--decimate` is not wired to the application, and the mask is the reason.
+Decimation belongs on the WELDED mesh, before the unweld — an unwelded seam is
+two coincident vertices with no edge between them, and the two sides would drift
+apart and crack open. But `bodyFaceMask` maps base-vertex visibility onto the
+shown mesh's faces, and after a collapse that correspondence is gone. The order
+has to be mask -> compact to visible faces -> decimate, which needs
+`Subdivider.cpp`'s file-local `compactToVisible` lifted onto `Mesh`. That, plus
+refusing skin and blendshapes the way a subdivided mesh already does, is the
+next chunk. Validated meanwhile by exporting real OBJs through `io::writeObjScene`
+and rendering them in Blender.
+
+### Gates
+732/732 in debug, release, ASan and TSan, 0 warnings, `ALLDONE` read (703 before
+this chunk's tests, 719 after the FACS chunk, 732 now). CI's exact clang-format
+command clean. `tools/audit_licences.py` and `tools/audit_version.py` re-run.
+
+### Next, and the one thing that is blocked
+**Pose-space deformation / correctives is next in M9 and needs a decision only
+the owner can make.** It has no oracle (the reference has nothing like it), no
+content (there are no authored correctives), and it needs a FILE FORMAT to carry
+them — which directive 10 puts explicitly on the owner's side of the line
+("come back only for things that change a promise to the user (a CLI argument, a
+saved-file format, a licence)"). Two shapes to choose between: correctives as
+extra `.target` morphs keyed by pose, which reuses the whole existing target
+pipeline; or a new `.mhpsd`-style file holding per-pose vertex deltas, which is
+cleaner but is a new format to support forever.
+
+Unblocked and next if that stays open: the LOD app wiring above.
+
+---
+
 ## 2026-09-08 (thirty-second) — Session · **FACS Action Units, derived not authored**
 
 *2026-09-08 — first open item of M9. M0–M7 have no open items left; every

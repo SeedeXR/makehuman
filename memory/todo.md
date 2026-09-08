@@ -4091,7 +4091,67 @@ GPU here, or Colab) and it comes back to the owner first.
       - Three mutations caught: translation unscaled by weight, translations
         added independently of the rotations, and translation dropped again.
 - [ ] Pose-space deformation / correctives (does not exist in the reference)
-- [ ] LOD chain generation with weight and UV transfer
+- [ ] **LOD chain generation with weight and UV transfer.** *The DECIMATOR
+      landed 2026-09-08; the chain and the app wiring are what is left.*
+      - [x] **`core::decimate`** — quadric-error-metric edge collapse, written
+            from Garland & Heckbert (SIGGRAPH 1997), not from anyone's code.
+            The reference has no simplification, LOD or corrective code at all
+            (checked), so this is the one subsystem with no parity fixture and
+            its tests are invariants on meshes whose answer is known by
+            construction: a plane must stay flat and keep its outline, a
+            cylinder must keep its radius.
+            **Measured on the base mesh** (18,486 quads → 36,972 triangles):
+            75% → 27,728, 50% → 18,485, 25% → **9,243 exactly**, then a floor
+            of 5,451 (14.7%) where the attribute refusals and the error ceiling
+            stop it. Asking for 5% gives the same mesh as 10%.
+            - **The chunk turned on ONE render.** Unbounded, it reduces to
+              4,373 triangles and *every numeric assertion passes*: the count
+              is right, no triangle degenerate or duplicated, the bounding box
+              within 5 mm, no normal flipped, the mesh manifold. In Blender the
+              chest and shoulders had collapsed into a flat triangular sheet,
+              the legs were welded at the top and the head was a faceted wedge.
+              `kMaxErrorFraction` exists because of that picture, and its value
+              was chosen by rendering the boundary: 0.004 of the bbox diagonal
+              floors at 5,451 and still reads as a body; 0.008 floors at 4,946
+              and the head is already a wedge. Both were looked at.
+            - **Attributes are kept by REFUSING collapses, not interpolating.**
+              A UV-seam vertex (more than one UV index) is never merged, so the
+              texture cannot smear. First version compared the two UV *sets*
+              for equality, which refused EVERY collapse on the base mesh —
+              36,972 triangles in, 36,972 out, reported as success.
+            - **Boundary constraint planes** were needed: without them the
+              decimator eats its own silhouette, because every triangle at an
+              open edge is coplanar with its neighbours and the quadric has
+              nothing to say about moving that edge inwards.
+            - **Two textbook guards were deleted after measuring them.** The
+              link condition fired 170 times on the base mesh yet changed
+              neither triangle nor vertex count at any ratio and left every
+              mesh manifold; the tetrahedron guard fired ZERO times, including
+              on the closed octahedron the tests decimate by 90% to reach it.
+              The invariants they protected are still asserted, so either
+              returns with a case that proves it. The face-group refusal is
+              kept but its mutation SURVIVES: 0 of the base mesh's 19,158
+              vertices belong to more than one of the 139 groups, so groups are
+              separate vertex islands there and the check cannot fire — it is
+              for meshes where that is not true.
+      - [ ] **The app wiring**, and the mask is what makes it a separate chunk.
+            Decimation belongs on the WELDED mesh, before the unweld, because
+            an unwelded seam is two coincident vertices with no edge between
+            them and the two sides would drift apart and crack open. But
+            `bodyFaceMask` maps base-vertex visibility onto the shown mesh's
+            faces, and after a collapse that correspondence is gone. So the
+            order has to be mask → compact to visible faces → decimate, which
+            needs `Subdivider.cpp`'s file-local `compactToVisible` lifted onto
+            `Mesh` (it is the same operation `Subdivider::build(parent, mask)`
+            already does). Skin and blendshapes must then be refused exactly as
+            a subdivided mesh already refuses them.
+      - [ ] **Weight transfer.** Weights live outside `Mesh`, in
+            `rig::VertexWeights`, so a decimated mesh carries none today. The
+            survivor keeping its own weights is the standard answer and needs
+            the wiring above first.
+      - [ ] **The chain itself** — LOD0/1/2 written as separate files or as
+            extra entries in one glTF/USD scene. Which of those is a FORMAT
+            decision and therefore the owner's.
 - [ ] Groom / hair card and strand support
 - [ ] Physically-based skin: SSS, multi-layer, tension maps
 - [ ] Eye, teeth, tongue rigging refinement
