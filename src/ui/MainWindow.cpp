@@ -431,6 +431,82 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     addSkinning(QT_TR_NOOP("Dual quaternion"), QStringLiteral("settings.skinning.dqs"),
                 Skinning::DualQuaternion);
 
+    // View: the reference's Camera toolbar (`core/mhmain.py:1750-1756`) on its
+    // own menu, with its own numpad bindings (`:184-190`).
+    //
+    // A menu rather than six toolbar buttons: lucide has no front/back/left/
+    // right glyphs, and six icons only distinguishable by hovering are worse
+    // than seven words -- the same call Symmetry made. Keypad shortcuts, not
+    // the number row: Qt matches shortcuts before the focus widget sees the
+    // key, so a bare "1" would be stolen from every spin box in the window.
+    QMenu* viewMenu = menuBar()->addMenu(tr("&View"));
+    registerText(viewMenu, QT_TR_NOOP("&View"));
+
+    const auto addAxisView = [&](const char* label, const QString& objectName,
+                                 const QKeySequence& key, float yaw) {
+        QAction* a =
+            viewMenu->addAction(theme::icon("rotate-3d", theme::palette().textSecondary, 16),
+                                QCoreApplication::translate("", label));
+        registerText(a, label);
+        a->setObjectName(objectName);
+        a->setShortcut(key);
+        connect(a, &QAction::triggered, this, [this, yaw] {
+            // Rotation only. Distance and pan are kept, because an axis view
+            // answers "show me this side", not "start again" -- that is Reset,
+            // below. The four of these are level by definition, so the pitch is
+            // written here rather than passed in as a 0 four times.
+            render::Camera c = d_->viewport->camera();
+            c.yawDegrees     = yaw;
+            c.pitchDegrees   = 0.0F;
+            d_->viewport->setCamera(c);
+        });
+    };
+    // The reference's own angles: front [0,0,0], right [0,90,0], top [90,0,0]
+    // and their opposites (`mhmain.py:1612-1628`). Top and bottom are clamped
+    // to the limit the MOUSE obeys, so the first drag after one does not jump.
+    addAxisView(QT_TR_NOOP("Front"), QStringLiteral("view.camera.front"),
+                QKeySequence(Qt::KeypadModifier | Qt::Key_1), 0.0F);
+    addAxisView(QT_TR_NOOP("Back"), QStringLiteral("view.camera.back"),
+                QKeySequence(Qt::ControlModifier | Qt::KeypadModifier | Qt::Key_1), 180.0F);
+    addAxisView(QT_TR_NOOP("Right"), QStringLiteral("view.camera.right"),
+                QKeySequence(Qt::KeypadModifier | Qt::Key_3), 90.0F);
+    addAxisView(QT_TR_NOOP("Left"), QStringLiteral("view.camera.left"),
+                QKeySequence(Qt::ControlModifier | Qt::KeypadModifier | Qt::Key_3), -90.0F);
+
+    // Top and bottom keep the current heading -- only the elevation changes --
+    // so looking down on the model does not also spin it back to front-on.
+    const auto addPitchView = [&](const char* label, const QString& objectName,
+                                  const QKeySequence& key, float pitch) {
+        QAction* a =
+            viewMenu->addAction(theme::icon("rotate-3d", theme::palette().textSecondary, 16),
+                                QCoreApplication::translate("", label));
+        registerText(a, label);
+        a->setObjectName(objectName);
+        a->setShortcut(key);
+        connect(a, &QAction::triggered, this, [this, pitch] {
+            render::Camera c = d_->viewport->camera();
+            c.pitchDegrees   = pitch;
+            d_->viewport->setCamera(c);
+        });
+    };
+    addPitchView(QT_TR_NOOP("Top"), QStringLiteral("view.camera.top"),
+                 QKeySequence(Qt::KeypadModifier | Qt::Key_7), ViewportWidget::kMaxPitchDegrees);
+    addPitchView(QT_TR_NOOP("Bottom"), QStringLiteral("view.camera.bottom"),
+                 QKeySequence(Qt::ControlModifier | Qt::KeypadModifier | Qt::Key_7),
+                 -ViewportWidget::kMaxPitchDegrees);
+
+    viewMenu->addSeparator();
+    QAction* resetCam = viewMenu->addAction(
+        theme::icon("focus", theme::palette().textSecondary, 16), tr("Reset Camera"));
+    registerText(resetCam, QT_TR_NOOP("Reset Camera"));
+    resetCam->setObjectName(QStringLiteral("view.camera.reset"));
+    resetCam->setShortcut(QKeySequence(QStringLiteral(".")));
+    connect(resetCam, &QAction::triggered, this, [this] {
+        // Rotation, pan AND zoom, which is what makes this different from
+        // Front (`resetView`, `mhmain.py:1631-1636`).
+        d_->viewport->setCamera(render::Camera{});
+    });
+
     buildLanguageMenu();
 
     // The top toolbar (owner directive 8; the reference has one and we had

@@ -2807,12 +2807,42 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
               draws quad edges. Not wrong, but visibly different from a
               MakeHuman 1.x screenshot; a quad-edge wireframe needs its own
               line-index buffer built from the quad faces.
-      - [ ] **The rest of that toolbar, and why it is still missing.** The grid,
-            the pose toggle and the body-part camera views (~8) are NOT built:
-            nothing here can lay down a floor or hide a pose, so each would be a
-            painted no-op. The body-part views additionally need CUSTOM icons —
-            lucide has no anatomy glyphs, which is what the empty
-            `resources/icons/custom/` is for.
+      - [x] **The camera views** (2026-09-08), as a **View menu**: Front, Back,
+            Left, Right, Top, Bottom and Reset Camera, on the reference's own
+            numpad bindings (`core/mhmain.py:184-190`, `:1750-1756`).
+            - **The entry above was wrong and reading the reference fixed it.**
+              It said "body-part camera views (~8) … need CUSTOM icons — lucide
+              has no anatomy glyphs". The reference's Camera toolbar is six AXIS
+              views plus reset; `setFaceCamera` / `setTargetCamera`, the
+              body-part framing, are bound to keys and are not on that toolbar
+              at all. So no anatomy glyphs were ever needed, and the group was
+              never blocked on `resources/icons/custom/`.
+            - A menu, not six buttons: lucide has no front/back/left/right pair
+              either, and six icons distinguishable only by hovering are worse
+              than seven words. Same call as Symmetry.
+            - **Keypad shortcuts, not the number row.** Qt matches a shortcut
+              before the focus widget sees the key, so a bare "1" would be
+              taken from every spin box in the window. `Num+1` and
+              `Ctrl+Num+1` round-trip through the settings text form —
+              measured with a probe before relying on it.
+            - Top and Bottom are **±89°, the limit the mouse obeys**
+              (`kMaxPitchDegrees`), not ±90: a preset that set a pitch the mouse
+              cannot hold would jump a degree on the first drag. They also keep
+              the current heading, so looking down does not also spin the model
+              front-on.
+            - An axis view **rotates only** — distance and pan survive it.
+              Reset is the one that undoes all three, as `resetView` does.
+            - Rendered all six through the real menu actions and looked: every
+              label matches what the camera shows, including that Right shows
+              the model's right side.
+      - [ ] **What is left of that toolbar: the grid and the pose toggle.**
+            Nothing here can lay down a floor, and nothing can draw a posed
+            character unposed, so both would still be painted no-ops. The pose
+            toggle is the cheaper of the two — `poseInPlace` is already a no-op
+            when no pose is loaded, so it wants a flag rather than new
+            machinery — but it needs a decision about whether it affects
+            `--export` as well as the screen, which `buildScene` and the export
+            path answer differently today.
       - [ ] **The symmetry MODE is not built.** The reference's third symmetry
             button is a toggle (`symmetryModeEnabled`, `core/mhmain.py:1524`)
             that mirrors every slider drag as it happens, rather than a one-shot

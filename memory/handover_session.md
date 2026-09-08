@@ -4,6 +4,61 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (nineteenth) — Session · **Six axis views, and a todo entry that was wrong**
+
+### The chunk
+A **View menu**: Front, Back, Left, Right, Top, Bottom, Reset Camera, on the
+reference's own numpad bindings.
+
+**The entry I was working from was wrong, and reading the reference is what
+caught it.** It described this group as "body-part camera views (~8)" needing
+"CUSTOM icons — lucide has no anatomy glyphs", which had it filed as blocked on
+an empty icons directory. The reference's Camera toolbar
+(`core/mhmain.py:1750-1756`) is six AXIS views plus reset; `setFaceCamera` and
+`setTargetCamera` — the body-part framing — are bound to keys and are not on
+that toolbar. Nothing was ever blocked on anatomy glyphs. The todo now says so.
+
+### Decisions worth keeping
+- **A menu, not six buttons.** lucide has no front/back/left/right glyph set
+  either, and six icons distinguishable only by hovering are worse than seven
+  words. The same call Symmetry made two sessions ago, for the same reason.
+- **Keypad shortcuts.** Qt matches a shortcut BEFORE the focus widget sees the
+  key, so a bare "1" would be taken from every spin box in the window. `Num+1`
+  and `Ctrl+Num+1` round-trip through the settings text form — checked with a
+  throwaway probe before relying on it, since the whole rebinding system stores
+  shortcuts as portable text.
+- **Top and Bottom are ±89°**, the limit the mouse obeys, not ±90. A preset that
+  set a pitch the mouse cannot hold would jump a degree on the first drag. They
+  keep the current heading too, so looking down does not also spin the model
+  front-on.
+- **An axis view rotates only.** Distance and pan survive it; Reset is the one
+  that undoes all three. Conflating those two is the obvious way to write this,
+  and the mutation that does it fails three assertions.
+
+### Looked at it
+Rendered all six through the real menu actions -- driven in-process, since
+osascript still has no assistive access here -- and looked at the grid of six.
+Every label matches what the camera shows, including that Right really does show
+the model's right side, which is a sign convention I derived and then checked
+rather than assumed.
+
+### Mutations
+Five, all killed: back wired to the same angle as front; an axis view that also
+recentres; Top asking for 90 past the mouse limit; Reset that only rotates; and
+Top zeroing the heading.
+
+### Cut from my own diff
+`addAxisView` took a `pitch` parameter that all four callers passed as 0. It is
+gone; the four level views write their own 0.
+
+### Next
+`memory/todo.md` in milestone order. What remains of that toolbar group is the
+grid and the pose toggle, both still painted no-ops; the pose toggle needs a
+decision about whether it affects `--export` as well as the screen. The named
+follow-ups from earlier sessions stand.
+
+---
+
 ## 2026-09-08 (eighteenth) — Session · **Wireframe, and an edit that never reached the disk**
 
 ### The chunk

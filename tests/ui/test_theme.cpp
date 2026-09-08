@@ -2474,3 +2474,94 @@ TEST_CASE("the Wireframe toggle reports intent and is not a preference", "[ui][w
     CHECK_FALSE(w2.wireframe());
     CHECK_FALSE(stored().contains(QStringLiteral("wireframe")));
 }
+
+// The reference's Camera toolbar (`core/mhmain.py:1750-1756`): six axis views
+// and a reset, on its Blender-style numpad bindings (`:184-190`).
+//
+// The todo filed this group as "body-part camera views (~8) needing CUSTOM
+// icons". Reading the reference rather than the screenshot corrected it: the
+// toolbar is SIX AXIS views plus reset, and `setFaceCamera`/`setTargetCamera`
+// -- the body-part framing -- are bound to keys and are not on it at all.
+TEST_CASE("the View menu frames the model from each axis", "[ui][camera]") {
+    theme::setIconDir(std::filesystem::path(MH_RESOURCE_DIR) / "icons" / "lucide");
+    mh::ui::MainWindow w(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+
+    const auto action = [&](const char* name) {
+        QAction* a = w.findChild<QAction*>(QString::fromLatin1(name));
+        REQUIRE(a != nullptr);
+        return a;
+    };
+    QAction* front = action("view.camera.front");
+    QAction* back  = action("view.camera.back");
+    QAction* left  = action("view.camera.left");
+    QAction* right = action("view.camera.right");
+    QAction* top   = action("view.camera.top");
+    QAction* below = action("view.camera.bottom");
+    QAction* reset = action("view.camera.reset");
+
+    // On one menu of their own. Not the toolbar: lucide has no front/back/
+    // left/right glyph pair, and six buttons that could only be told apart by
+    // hovering are worse than seven words -- the same call as Symmetry.
+    QMenu* view = nullptr;
+    for (QMenu* m : w.menuBar()->findChildren<QMenu*>()) {
+        if (m->actions().contains(front)) view = m;
+    }
+    REQUIRE(view != nullptr);
+    for (QAction* a : {back, left, right, top, below, reset})
+        CHECK(view->actions().contains(a));
+
+    // The reference's own bindings. Keypad, not the number row: a bare "1"
+    // would be swallowed from every spin box in the window, because Qt matches
+    // shortcuts before the focus widget sees the key.
+    CHECK(front->shortcut() == QKeySequence(Qt::KeypadModifier | Qt::Key_1));
+    CHECK(back->shortcut() == QKeySequence(Qt::ControlModifier | Qt::KeypadModifier | Qt::Key_1));
+    CHECK(right->shortcut() == QKeySequence(Qt::KeypadModifier | Qt::Key_3));
+    CHECK(left->shortcut() == QKeySequence(Qt::ControlModifier | Qt::KeypadModifier | Qt::Key_3));
+    CHECK(top->shortcut() == QKeySequence(Qt::KeypadModifier | Qt::Key_7));
+    CHECK(below->shortcut() == QKeySequence(Qt::ControlModifier | Qt::KeypadModifier | Qt::Key_7));
+    CHECK(reset->shortcut() == QKeySequence(QStringLiteral(".")));
+
+    // Scrambled first, so "it was already zero" cannot pass for "it was set".
+    mh::render::Camera scrambled;
+    scrambled.yawDegrees   = 37.0F;
+    scrambled.pitchDegrees = 12.0F;
+    scrambled.distance     = 80.0F;
+    scrambled.panX         = 3.0F;
+    scrambled.panY         = -2.0F;
+
+    const auto viewAfter = [&](QAction* a) {
+        w.viewport()->setCamera(scrambled);
+        a->trigger();
+        return w.viewport()->camera();
+    };
+
+    CHECK_THAT(viewAfter(front).yawDegrees, WithinAbs(0.0, 1e-4));
+    CHECK_THAT(viewAfter(front).pitchDegrees, WithinAbs(0.0, 1e-4));
+    CHECK_THAT(viewAfter(right).yawDegrees, WithinAbs(90.0, 1e-4));
+    CHECK_THAT(viewAfter(left).yawDegrees, WithinAbs(-90.0, 1e-4));
+    CHECK_THAT(viewAfter(back).yawDegrees, WithinAbs(180.0, 1e-4));
+
+    // 89, not 90: the limit the MOUSE obeys (`kMaxPitchDegrees`). A preset that
+    // set a pitch the mouse cannot hold would jump a degree on the first drag.
+    CHECK_THAT(viewAfter(top).pitchDegrees,
+               WithinAbs(static_cast<double>(mh::ui::ViewportWidget::kMaxPitchDegrees), 1e-4));
+    CHECK_THAT(viewAfter(below).pitchDegrees,
+               WithinAbs(-static_cast<double>(mh::ui::ViewportWidget::kMaxPitchDegrees), 1e-4));
+    CHECK_THAT(viewAfter(top).yawDegrees, WithinAbs(37.0, 1e-4));  // top keeps the heading
+
+    // An axis view ROTATES. It must not also zoom or recentre -- that is the
+    // reset's job, and conflating the two is the obvious way to write this.
+    const mh::render::Camera afterFront = viewAfter(front);
+    CHECK_THAT(afterFront.distance, WithinAbs(80.0, 1e-4));
+    CHECK_THAT(afterFront.panX, WithinAbs(3.0, 1e-4));
+    CHECK_THAT(afterFront.panY, WithinAbs(-2.0, 1e-4));
+
+    // Reset is the one that undoes all of it (`resetView`, `mhmain.py:1631`).
+    const mh::render::Camera afterReset = viewAfter(reset);
+    CHECK_THAT(afterReset.yawDegrees, WithinAbs(0.0, 1e-4));
+    CHECK_THAT(afterReset.pitchDegrees, WithinAbs(0.0, 1e-4));
+    CHECK_THAT(afterReset.panX, WithinAbs(0.0, 1e-4));
+    CHECK_THAT(afterReset.panY, WithinAbs(0.0, 1e-4));
+    CHECK_THAT(afterReset.distance,
+               WithinAbs(static_cast<double>(mh::render::Camera{}.distance), 1e-4));
+}
