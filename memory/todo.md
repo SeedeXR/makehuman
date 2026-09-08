@@ -4199,17 +4199,44 @@ GPU here, or Colab) and it comes back to the owner first.
               compaction, and glTF refused it as "skin does not describe this
               mesh". The LOD's skin now goes through the LOD's own
               `CompactedMesh::remap`.
-            - **Blendshapes are still refused** on a decimated mesh. The same
-              composed mapping would make them nearly free —
-              `buildExpressionBlendshapes` takes a vmap — but "the shape keys
-              are present" and "the shape keys move the right vertices" are two
-              claims, and the second needs its own Blender shape-key case.
+      - [x] **Blendshapes on a decimated LOD** (2026-09-08), through the same
+            composed mapping as the weights: `buildExpressionBlendshapes` takes
+            a vmap, so handing it the LOD's puts each delta on the vertex it
+            belongs to. All 34 expression keys reach the file.
+            - **It found a glTF writer bug that nothing else could reach.** A
+              target whose every delta is zero — `eyebrows-left-inner-up`, all
+              40 of whose vertices the decimation removes — fell out of the
+              sparse path because `sparseCount` doubled as the "is sparse"
+              flag. Zero moved vertices read as "dense", and the accessor came
+              out declaring 4,483 deltas against a bufferView of ZERO bytes.
+              Blender rejects the whole file: "buffer is smaller than requested
+              size". Fixed the way the spec already says — an accessor with
+              neither a bufferView nor a sparse block reads as all zeros
+              (glTF 2.0 5.1.1) — with a `bool allZero` distinct from
+              `sparseCount == 0`. **Nothing on the full mesh reaches this**:
+              every shipped target moves something there.
+            - **Blender counts the vertices each key moves, per key**, in
+              `expressions_lod.glb`. `--inspect` does not report a morph target
+              at all, so nothing in ctest can see a delta on the wrong vertex.
+              Measured: mouth keys 32–215, eye and brow keys 0–20, and the
+              left/right pairs agree (3/3, 20/20, 16/16, 7/7) even though the
+              decimation itself is not symmetric. 15/15 exports agree.
+            - One name, `written`, now selects the compaction for the geometry,
+              the skin AND the deltas. It was three separate `lod ? … : …`
+              choices, and glTF caught two of them being wrong while they were
+              being written.
             - Subdivision still refuses even with `--decimate`: a subdivided
               mesh's vertices are ones the weights know nothing about, which no
               provenance mapping through the decimator can fix. Tested.
-      - [ ] **The chain itself** — LOD0/1/2 written as separate files or as
-            extra entries in one glTF/USD scene. Which of those is a FORMAT
-            decision and therefore the owner's.
+      - [ ] **The chain itself. OWNER DECISION TAKEN (2026-09-08): separate
+            files, GLB and FBX.** Verbatim: *"for lods we can them as glb and
+            fbx"*. Not extra entries inside one scene.
+            What already exists, so the chunk is smaller than it looks:
+            `--decimate <ratio>` produces one level carrying its rig and its
+            blend shapes, `--export` is repeatable, and both writers take the
+            whole scene. What is missing is several ratios in ONE run and a
+            naming rule for the files — which is the only part still to
+            design, and it is a CLI-visible one.
 - [ ] Groom / hair card and strand support
 - [ ] Physically-based skin: SSS, multi-layer, tension maps
 - [ ] Eye, teeth, tongue rigging refinement

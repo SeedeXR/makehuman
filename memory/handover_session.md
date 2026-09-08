@@ -4,6 +4,82 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (thirty-sixth) — Session · **Blendshapes on an LOD, and the writer bug only they could reach**
+
+*2026-09-08 — the follow-up flagged last chunk. The owner also answered the LOD
+chain's format question mid-chunk; see the end.*
+
+### What landed
+All 34 expression keys now reach a decimated export, through the same composed
+mapping the weights use: `buildExpressionBlendshapes` takes a vmap, so handing
+it the LOD's puts each delta on the vertex it belongs to.
+
+One name, `written`, now selects the compaction for the geometry, the skin AND
+the deltas. It was three separate `lod ? … : …` choices, and glTF caught two of
+them being wrong while they were being written.
+
+### It found a glTF writer bug nothing else could reach
+`eyebrows-left-inner-up` moves 40 vertices on the full mesh, and the decimation
+removes **all** of them. That target's deltas are then entirely zero — a case no
+full-mesh export produces, because every shipped target moves something there.
+
+The writer got it wrong. `sparseCount` doubled as the "is this sparse" flag, so
+zero moved vertices read as "dense", and the accessor came out declaring 4,483
+deltas against a bufferView of **zero bytes**. Blender rejects the entire file:
+`ValueError: buffer is smaller than requested size`. Fixed the way the spec
+already says — an accessor with neither a bufferView nor a sparse block reads as
+all zeros (glTF 2.0 5.1.1) — with a `bool allZero` distinct from
+`sparseCount == 0`.
+
+### My first fix was half a fix, and two "surviving" mutations said so
+The accessor came out right, but the packer still wrote 21,833 zero deltas and a
+bufferView over them, orphaned. Two mutations survived because of it:
+
+- **min/max left at the infinities** — survived, because `extend()` ran 21,833
+  times over those zeros and set the bounds to zero anyway.
+- **an empty bufferView written for the target** — survived, because the view
+  was never empty; it held 262 KB of zeros.
+
+Both were pointing at the same flaw. An all-zero target now writes NO BYTES, and
+the test gained an assertion that **no bufferView is an orphan** — named by no
+accessor, no sparse block and no image. With the bytes gone, both mutations die
+(1 and 2 assertions).
+
+### Blender is the gate for "the right vertices", again
+`expressions_lod.glb` is a new harness case that counts the vertices every key
+moves, one number per key. `--inspect` does not report a morph target at all, so
+nothing in ctest can see a delta on the wrong vertex.
+
+Measured: mouth keys 32–215, eye and brow keys 0–20, and the left/right pairs
+agree — 3/3, 20/20, 16/16, 7/7 — even though the decimation itself is not
+symmetric. **15/15 exports agree with Blender.**
+
+Sensitivity, measured rather than assumed: building the deltas from the FULL
+mesh's vmap instead of the LOD's passes every ctest and fails **33 of the 34
+keys** in Blender.
+
+### Gates
+759/759 in debug, release, ASan and TSan, 0 warnings, `ALLDONE` read. CI's exact
+clang-format command clean. Blender harness 15/15, run before and after.
+
+### OWNER DECISION, mid-chunk: the LOD chain is GLB and FBX
+Verbatim: *"for lods we can them as glb and fbx"*. Recorded as directive 11 in
+`plan_owner_directives.md`. LOD0/1/2 are SEPARATE FILES in those two formats,
+not extra entries inside one scene. That unblocks "the chain itself", which is
+the next chunk.
+
+What already exists, so it is smaller than it looks: `--decimate <ratio>`
+produces one level carrying its rig and its blend shapes, `--export` is
+repeatable, and both writers take the whole scene. What is missing is several
+ratios in ONE run and a naming rule for the files — the only part still to
+design, and a CLI-visible one.
+
+### Still blocked
+Pose-space deformation: no oracle, no content, and it needs a file format for
+correctives.
+
+---
+
 ## 2026-09-08 (thirty-fifth) — Session · **A decimated LOD carries the rig**
 
 *2026-09-08 — the weight transfer, next in M9 after the wiring.*

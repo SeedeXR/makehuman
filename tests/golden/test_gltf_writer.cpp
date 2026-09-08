@@ -31,6 +31,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -1482,6 +1483,82 @@ SparseView readMorph0(const std::filesystem::path& p) {
 }
 
 }  // namespace
+
+TEST_CASE("a morph target that moves NOTHING is still a valid accessor", "[gltf][morph][sparse]") {
+    // A target where every delta is zero. Nothing on the full base mesh
+    // produces one -- every shipped expression moves something -- so this case
+    // was unreachable until a DECIMATED body arrived: reduce hard enough and a
+    // target's whole region can be collapsed away, which is what
+    // `eyebrows-left-inner-up` (40 vertices) does at 25%.
+    //
+    // The writer got it wrong. `sparseCount` doubled as the "is this sparse"
+    // flag, so zero moved vertices meant "not sparse", and the accessor came
+    // out DENSE against a bufferView of zero bytes while declaring one delta
+    // per vertex. Blender refuses the file outright -- "buffer is smaller than
+    // requested size" -- and the malformed accessor is the only thing wrong
+    // with it.
+    //
+    // The fix is what the spec already says: an accessor with no bufferView
+    // and no sparse block reads as all zeros (glTF 2.0 5.1.1). That is exactly
+    // the meaning wanted, and it is the smallest encoding of it.
+    const auto mesh = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+    const auto rm = core::RenderMesh::build(*mesh);
+
+    const std::vector<foundation::Vec3> nothing(rm.vertexCount(), foundation::Vec3{});
+    const std::vector<foundation::MorphTarget> morphs{{"moves-nothing", nothing}};
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_morph_zero.glb";
+    REQUIRE(io::writeGlb(out, rm.view(), {}, nullptr, nullptr, morphs).has_value());
+
+    const nlohmann::json j = nlohmann::json::parse(glbJson(out));
+    const auto& prim       = j["meshes"][0]["primitives"][0];
+    REQUIRE(prim.contains("targets"));
+    REQUIRE(prim["targets"].size() == 1);
+    const auto& acc = j["accessors"][prim["targets"][0]["POSITION"].get<size_t>()];
+
+    // One delta per vertex, logically -- the count does not shrink just because
+    // the values are zero.
+    CHECK(acc["count"].get<size_t>() == rm.vertexCount());
+    CHECK(acc["type"] == "VEC3");
+    // Neither of the two ways to point at data. That IS the encoding.
+    CHECK_FALSE(acc.contains("bufferView"));
+    CHECK_FALSE(acc.contains("sparse"));
+    // min/max are required on a POSITION accessor and must describe the
+    // effective values, which are all zero.
+    for (size_t k = 0; k < 3; ++k) {
+        CHECK(acc["min"][k].get<double>() == 0.0);
+        CHECK(acc["max"][k].get<double>() == 0.0);
+    }
+
+    // And NO bufferView anywhere may be empty: a zero-length view is what the
+    // broken version produced, and it is invalid regardless of who points at it.
+    for (const auto& bv : j["bufferViews"]) {
+        CHECK(bv["byteLength"].get<size_t>() > 0);
+    }
+
+    // Nor may there be an ORPHAN: a view no accessor names. The first fix here
+    // still wrote 21,833 zero deltas and a view over them, then emitted the
+    // accessor without a bufferView -- a valid file carrying 262 KB of nothing,
+    // and a shape where two further mistakes (an empty view, and min/max left
+    // at the infinities) were both invisible because the zeros happened to
+    // cover for them.
+    std::set<size_t> referenced;
+    for (const auto& a : j["accessors"]) {
+        if (a.contains("bufferView")) referenced.insert(a["bufferView"].get<size_t>());
+        if (a.contains("sparse")) {
+            referenced.insert(a["sparse"]["indices"]["bufferView"].get<size_t>());
+            referenced.insert(a["sparse"]["values"]["bufferView"].get<size_t>());
+        }
+    }
+    for (const auto& img : j.value("images", nlohmann::json::array())) {
+        if (img.contains("bufferView")) referenced.insert(img["bufferView"].get<size_t>());
+    }
+    for (size_t v = 0; v < j["bufferViews"].size(); ++v) {
+        INFO("bufferView " << v << " is named by no accessor");
+        CHECK(referenced.contains(v));
+    }
+}
 
 TEST_CASE("a sparse morph target says exactly what the dense one said", "[gltf][morph][sparse]") {
     const auto mesh = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");

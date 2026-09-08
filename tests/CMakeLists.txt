@@ -839,11 +839,34 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_decimate_subdivided_still_refuses PROPERTIES
         PASS_REGULAR_EXPRESSION "subdivided mesh cannot carry the rig")
 
-    add_test(NAME app_decimate_refuses_blendshapes COMMAND makehuman
+    # A decimated mesh CARRIES blendshapes now, through the same composed
+    # mapping that gave it a skin: `buildExpressionBlendshapes` takes a vmap,
+    # so handing it the LOD's puts each delta on the vertex it belongs to. The
+    # previous chunk's `app_decimate_refuses_blendshapes` is this test -- the
+    # behaviour changed deliberately, so the assertion did.
+    #
+    # FAIL on the two refusals as well as PASS on the count: "34 blendshapes"
+    # is printed before the writer runs, so on its own it cannot tell a written
+    # file from a refused one.
+    add_test(NAME app_decimate_blendshapes COMMAND makehuman
              --decimate 0.5 --blendshapes
              --export ${CMAKE_CURRENT_BINARY_DIR}/app_lod_shapes.glb)
-    set_tests_properties(app_decimate_refuses_blendshapes PROPERTIES
-        PASS_REGULAR_EXPRESSION "decimated mesh cannot carry blendshapes")
+    set_tests_properties(app_decimate_blendshapes PROPERTIES
+        PASS_REGULAR_EXPRESSION "34 blendshapes"
+        FAIL_REGULAR_EXPRESSION "export failed;cannot carry blendshapes")
+
+    # **Whether each shape key moves the RIGHT vertices is not decided here.**
+    # `--inspect` does not report morph targets at all, so nothing in this suite
+    # can see a delta that landed on the wrong vertex. Blender can, and does:
+    # `run_blender_validation.sh` exports `expressions_lod.glb` and counts the
+    # vertices each of the 34 keys moves, per key.
+
+    # Subdivision still refuses both, and refuses even WITH --decimate.
+    add_test(NAME app_decimate_subdivided_refuses_blendshapes COMMAND makehuman
+             --subdivide --decimate 0.5 --blendshapes
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_lod_subdiv_shapes.glb)
+    set_tests_properties(app_decimate_subdivided_refuses_blendshapes PROPERTIES
+        PASS_REGULAR_EXPRESSION "subdivided mesh cannot carry blendshapes")
 
     add_test(NAME app_decimate_bad_ratio COMMAND makehuman
              --decimate 2 --export ${CMAKE_CURRENT_BINARY_DIR}/app_never_lod.obj)

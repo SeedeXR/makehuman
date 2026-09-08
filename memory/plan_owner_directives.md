@@ -91,3 +91,21 @@ a promise to the user (a CLI argument, a saved-file format, a licence).
   wish from "start over" and the workspace menu already proves the pattern.
 - Applied live, written on accept: `shortcuts::save` / `MouseBindings::save`
   already write only what differs from the shipped default.
+
+## Directive 11 — the LOD chain ships as GLB and FBX (2026-09-08)
+
+Verbatim, in reply to the statement that the chain is a format question —
+LOD0/1/2 as separate files or as extra entries in one glTF/USD scene:
+
+*"for lods we can them as glb and fbx"*
+
+**Reading:** an LOD chain is written as SEPARATE FILES, in **GLB and FBX**, not
+as extra entries inside one scene. Those are the two formats that matter for the
+audience the LODs are for, and both already carry a skeleton and blend shapes
+through our own writers.
+
+Unblocks `memory/todo.md` M9, "the chain itself". What already exists, so the
+chunk is smaller than it looks: `--decimate <ratio>` produces one level with its
+rig (2026-09-08) and its blend shapes (2026-09-08), `--export` is repeatable,
+and both writers take the whole scene. What is missing is the CHAIN: several
+ratios in one run, and a naming rule for the files it writes.

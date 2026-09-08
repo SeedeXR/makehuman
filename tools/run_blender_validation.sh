@@ -75,6 +75,14 @@ if [ -x "$app" ]; then
     "$app" --pose tpose --decimate 0.25 --export "$out/posed_lod.glb" >/dev/null 2>&1 \
         && echo "posed_lod.glb: T-pose, live rig, body decimated to 25%" \
         || echo "warn: posed_lod.glb export failed"
+    # ...and the 34 expression blendshapes ON a decimated body. This is the one
+    # check that can say each delta landed on the vertex it belongs to: the
+    # deltas are built per render vertex through the same composed mapping the
+    # skin uses, and `--inspect` cannot see a morph target at all. Blender
+    # counts the vertices every key moves, per key.
+    "$app" --decimate 0.25 --blendshapes --export "$out/expressions_lod.glb" >/dev/null 2>&1 \
+        && echo "expressions_lod.glb: 34 expression keys on a body decimated to 25%" \
+        || echo "warn: expressions_lod.glb export failed"
 else
     echo "skip posed.glb: $app not built"
 fi
@@ -105,6 +113,6 @@ fi
     "$out/base.obj" "$out/posed.glb" "$out/posed.fbx" "$out/posed.usda" "$out/base.glb" \
     "$out/expressions.glb" "$out/expressions.fbx" "$out/expressions.usda" "$out/base.fbx" \
     "$out/rigged.glb" "$out/morphed.glb" "$out/rigged.fbx" "$out/base.usda" \
-    "$out/posed_lod.glb" 2>/dev/null |
+    "$out/posed_lod.glb" "$out/expressions_lod.glb" 2>/dev/null |
     grep '^BLENDER_VALIDATE:' | sed 's/^BLENDER_VALIDATE://' |
     python3 "$repo/tools/blender_check.py"

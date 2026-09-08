@@ -2327,6 +2327,14 @@ int main(int argc, char** argv) {
                          compact.remap.size(), compact.dropped());
         }
 
+        // Everything per-vertex below -- the skin, and the blendshape deltas --
+        // travels through the SAME compaction the geometry did. Named once
+        // rather than chosen three times: the LOD has its own, and mixing the
+        // two writes attributes whose vertex count does not match the mesh.
+        // glTF catches that and no other format would; it caught both of these
+        // while they were being written.
+        const mh::io::CompactedMesh& written = lod ? *lodCompact : compact;
+
         // The skin's joints and weights are per RENDER vertex, so they move
         // with them or every vertex past the first dropped one is weighted to
         // the wrong bone.
@@ -2339,9 +2347,8 @@ int main(int argc, char** argv) {
             // vertex count does not match the mesh -- which the glTF writer
             // catches ("skin does not describe this mesh") and every other
             // format would not.
-            const mh::io::CompactedMesh& forSkin = lod ? *lodCompact : compact;
-            std::tie(joints, weights)            = mh::io::compactSkinAttributes(
-                skinData->view(), forSkin.remap, forSkin.coord.size());
+            std::tie(joints, weights) = mh::io::compactSkinAttributes(
+                skinData->view(), written.remap, written.coord.size());
             skinView = mh::foundation::SkinView{.jointNames   = skinData->jointNames,
                                                  .jointParents = skinData->jointParents,
                                                  .globalRest   = skinData->globalRest,
@@ -2358,13 +2365,7 @@ int main(int argc, char** argv) {
         std::vector<std::vector<mh::foundation::Vec3>> shapeDeltas;
         std::vector<mh::foundation::MorphTarget> morphs;
         if (wantBlendshapes) {
-            if (lod) {
-                // Deltas are per render vertex of the mesh they were built
-                // for; the LOD has neither those vertices nor that count.
-                std::fprintf(stderr,
-                              "a decimated mesh cannot carry blendshapes; "
-                               "exporting without them\n");
-            } else if (subdivided) {
+            if (subdivided) {
                 // Targets index the BASE mesh; a subdivided vmap indexes
                 // subdivided vertices, so expanding them would move the wrong
                 // vertices. Same reason the rig is refused above.
@@ -2372,8 +2373,15 @@ int main(int argc, char** argv) {
                               "a subdivided mesh cannot carry blendshapes; "
                                "exporting without them\n");
             } else {
-                shapes = mh::core::buildExpressionBlendshapes(index, human.factors(), rm.vmap(),
-                                                               mesh->vertexCount());
+                // The same composed mapping the skin uses.
+                // `buildExpressionBlendshapes` expands per-BASE-vertex target
+                // deltas onto render vertices through a vmap, so handing it the
+                // LOD's puts each delta on the vertex it belongs to. The
+                // targets still index the base mesh, which is why the count
+                // stays `mesh->vertexCount()`.
+                shapes = mh::core::buildExpressionBlendshapes(
+                    index, human.factors(), lod ? std::span<const uint32_t>(lodVmap) : rm.vmap(),
+                    mesh->vertexCount());
                 shapeDeltas.reserve(shapes.size());
                 morphs.reserve(shapes.size());
                 for (auto& sh : shapes) {
@@ -2381,7 +2389,7 @@ int main(int argc, char** argv) {
                     // compaction or every one past the first dropped vertex
                     // lands on the wrong vertex.
                     shapeDeltas.push_back(
-                        mh::io::compactDeltas(sh.deltas, compact.remap, compact.coord.size()));
+                        mh::io::compactDeltas(sh.deltas, written.remap, written.coord.size()));
                     morphs.push_back({sh.name, shapeDeltas.back()});
                 }
                 std::printf("%zu blendshapes (34 expression units, ethnicity-blended)\n",
@@ -2392,8 +2400,7 @@ int main(int argc, char** argv) {
         // An EMPTY mask when decimating: the mask is already baked into the
         // geometry, and handing the old one over would index 13,378 faces of a
         // mesh that now has a few thousand.
-        const bool ok = exportMesh(outPath, lod ? *lod : displayMesh(),
-                                   lod ? lodCompact->view() : compact.view(), wornProxies,
+        const bool ok = exportMesh(outPath, lod ? *lod : displayMesh(), written.view(), wornProxies,
                                    lod ? std::span<const uint8_t>{} : std::span(bodyMask),
                                    skinView ? &*skinView : nullptr, rig, morphs, wantDraco);
 

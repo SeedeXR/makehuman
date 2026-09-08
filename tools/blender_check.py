@@ -191,6 +191,67 @@ EXPECT = {
     # is a stronger statement than either matching an expectation, and writing
     # the numbers twice would let them drift apart silently.
     "expressions.glb": dict(_EXPRESSION_MESH, shape_keys=_EXPRESSION_KEYS),
+
+    # The same 34 keys on a body decimated to 25%, from the application.
+    #
+    # This is the check that says each DELTA landed on the vertex it belongs
+    # to. `--inspect` does not report a morph target at all, so nothing in
+    # ctest can see a delta on the wrong vertex; Blender counts the vertices
+    # every key moves, one number per key. A shifted mapping does not change
+    # the key COUNT -- all 34 would still be there -- it changes which vertices
+    # each of them touches, and every one of these numbers with it.
+    "expressions_lod.glb": {
+        "vertices": 5559, "triangles": 8728, "tallest": 1.659603, "uv_layers": 1,
+        "bones": 179, "armatures": 1, "skinned": 5559, "vertex_groups": 358,
+        "shape_keys": {
+            # The eye and brow regions are decimated hardest, so their keys move
+            # a handful of vertices where the full mesh moves hundreds. LEFT and
+            # RIGHT agreeing -- 3/3, 20/20, 16/16, 7/7 -- is the signal worth
+            # reading here: the decimation is not symmetric, but the mapping is
+            # faithful enough that the symmetric targets still land symmetrically
+            # wherever both sides survived.
+            "eye-left-closure": 3,
+            "eye-left-opened-up": 20,
+            "eye-left-slit": 16,
+            "eye-right-closure": 3,
+            "eye-right-opened-up": 20,
+            "eye-right-slit": 16,
+            "eyebrows-left-down": 2,
+            "eyebrows-left-extern-up": 7,
+            # ZERO, and it is the case that found a writer bug: every delta of
+            # this target is on a vertex the decimation removed. The accessor
+            # then has neither a bufferView nor a sparse block, which glTF
+            # defines as all zeros -- the writer used to emit a DENSE accessor
+            # against a zero-length view instead, and Blender rejected the whole
+            # file. Nothing on the full mesh reaches this case.
+            "eyebrows-left-inner-up": 0,
+            "eyebrows-left-up": 2,
+            "eyebrows-right-down": 4,
+            "eyebrows-right-extern-up": 7,
+            "eyebrows-right-inner-up": 1,
+            "eyebrows-right-up": 4,
+            "mouth-compression": 110,
+            "mouth-corner-puller": 88,
+            "mouth-depression": 98,
+            "mouth-depression-retraction": 82,
+            "mouth-elevation": 69,
+            "mouth-eversion": 32,
+            "mouth-open": 215,
+            "mouth-parling": 44,
+            "mouth-part-later": 131,
+            "mouth-protusion": 120,
+            "mouth-pursing": 124,
+            "mouth-retraction": 103,
+            "mouth-upward-retraction": 122,
+            "neck-platysma": 167,
+            "nose-compression": 2,
+            "nose-depression": 8,
+            "nose-left-dilatation": 2,
+            "nose-left-elevation": 6,
+            "nose-right-dilatation": 2,
+            "nose-right-elevation": 8,
+        },
+    },
     "expressions.fbx": dict(_EXPRESSION_MESH, shape_keys=_EXPRESSION_KEYS),
     # The same set again through UsdSkel BlendShape, with NO skeleton --
     # the case the application cannot produce, because it always builds a rig.

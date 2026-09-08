@@ -160,6 +160,13 @@ struct Packed {
         /// Zero means dense: `val` then describes every vertex and there is no
         /// index block.
         size_t sparseCount{}, idxOffset{}, idxBytes{};
+
+        /// Every delta is zero, so the accessor gets NEITHER a bufferView nor a
+        /// sparse block: glTF 2.0 5.1.1 defines that as all zeros, which is
+        /// precisely what this target means. Distinct from `sparseCount == 0`
+        /// for a DENSE target, which is why it is its own flag -- conflating
+        /// the two wrote a dense accessor against an empty bufferView.
+        bool allZero{};
         Vec3 lo{}, hi{};
     };
 
@@ -487,7 +494,8 @@ Packed packEntry(std::vector<uint8_t>& bin, const GltfSceneEntry& entry,
         // target that moves most of the mesh is genuinely cheaper dense, so the
         // choice is made per target rather than once for the file.
         Packed::MorphBlock mb;
-        const bool sparse = nonZero.size() * 16U + 120U < t.deltas.size() * 12U;
+        mb.allZero        = nonZero.empty();
+        const bool sparse = !mb.allZero && nonZero.size() * 16U + 120U < t.deltas.size() * 12U;
 
         Vec3 tlo{std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(),
                  std::numeric_limits<float>::infinity()};
@@ -518,8 +526,14 @@ Packed packEntry(std::vector<uint8_t>& bin, const GltfSceneEntry& entry,
         }
 
         padTo4(bin);
-        mb.valOffset   = bin.size();
-        const size_t n = sparse ? nonZero.size() : t.deltas.size();
+        mb.valOffset = bin.size();
+        // An all-zero target writes NO BYTES. Writing them anyway is not
+        // merely wasteful -- 262 KB of zeros per target on the base mesh --
+        // it leaves an orphaned bufferView that no accessor points at, and it
+        // hides the case: with the zeros present, `extend` sets the bounds and
+        // the value view is non-empty, so two separate mistakes here look
+        // exactly like the correct output.
+        const size_t n = mb.allZero ? 0U : (sparse ? nonZero.size() : t.deltas.size());
         for (size_t k = 0; k < n; ++k) {
             const Vec3& d = t.deltas[sparse ? nonZero[k] : k];
             const Vec3 v{d.x * scale, d.y * scale, d.z * scale};
@@ -529,8 +543,10 @@ Packed packEntry(std::vector<uint8_t>& bin, const GltfSceneEntry& entry,
             extend(v);
         }
         mb.valBytes = bin.size() - mb.valOffset;
-        mb.lo       = tlo;
-        mb.hi       = thi;
+        // An all-zero target extends nothing, so the bounds are still the
+        // infinities they started as. Its effective values ARE all zero.
+        mb.lo = mb.allZero ? Vec3{} : tlo;
+        mb.hi = mb.allZero ? Vec3{} : thi;
         pk.morphs.push_back(mb);
     }
 
@@ -858,6 +874,13 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
         for (const Packed::MorphBlock& mb : pk.morphs) {
             // A sparse accessor's own bufferViews must NOT declare a target
             // (glTF 2.0 5.1.1); its index block is not vertex data at all.
+            if (mb.allZero) {
+                // No view: an accessor with neither a bufferView nor a sparse
+                // block reads as zeros, which is the whole content here. A
+                // zero-LENGTH view instead is invalid, and Blender rejects the
+                // entire file over it.
+                continue;
+            }
             if (mb.sparseCount != 0) {
                 view(mb.idxOffset, mb.idxBytes, -1);
                 view(mb.valOffset, mb.valBytes, -1);
@@ -949,7 +972,12 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
             pk.morphAcc.push_back(nextAcc++);
             int idxView = -1;
             int valView = -1;
-            if (mb.sparseCount != 0) {
+            if (mb.allZero) {
+                if (!firstAcc) j += ",";
+                firstAcc = false;
+                j += R"({"componentType":)" + std::to_string(kComponentFloat) + R"(,"count":)" +
+                     std::to_string(n) + R"(,"type":"VEC3")";
+            } else if (mb.sparseCount != 0) {
                 // No bufferView of its own: with `sparse` and no view the base
                 // values are all zero, which is what an unmoved vertex is. The
                 // two views written above are consumed here, in that order.
@@ -970,7 +998,7 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
             j += R"(,"min":[)" + fmtBound(mb.lo.x) + "," + fmtBound(mb.lo.y) + "," +
                  fmtBound(mb.lo.z) + R"(],"max":[)" + fmtBound(mb.hi.x) + "," + fmtBound(mb.hi.y) +
                  "," + fmtBound(mb.hi.z) + "]";
-            if (mb.sparseCount != 0) {
+            if (!mb.allZero && mb.sparseCount != 0) {
                 j += R"(,"sparse":{"count":)" + std::to_string(mb.sparseCount) +
                      R"(,"indices":{"bufferView":)" + std::to_string(idxView) +
                      R"(,"byteOffset":0,"componentType":)" + std::to_string(kComponentUnsignedInt) +
