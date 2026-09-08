@@ -464,6 +464,43 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_skinning_unknown PROPERTIES
         PASS_REGULAR_EXPRESSION "unknown skinning method")
 
+    # The grid reaches the VIEWPORT and nothing else. Two claims, and the
+    # second is the one the reference makes for us: its grids are
+    # `excludeFromProduction` (`core/mhmain.py:671,687`), so a production render
+    # must be identical with and without the flag while the window is not.
+    #
+    # --screenshot needs a real Metal device and a surface; it skips where
+    # app_screenshot does.
+    add_test(NAME app_grid_window COMMAND makehuman
+             --grid --screenshot ${CMAKE_CURRENT_BINARY_DIR}/app_grid.png)
+    set_tests_properties(app_grid_window PROPERTIES
+        SKIP_REGULAR_EXPRESSION "viewport error"
+        FIXTURES_SETUP app_grid_png)
+    add_test(NAME app_grid_window_plain COMMAND makehuman
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/app_nogrid.png)
+    set_tests_properties(app_grid_window_plain PROPERTIES
+        SKIP_REGULAR_EXPRESSION "viewport error"
+        FIXTURES_SETUP app_nogrid_png)
+    add_test(NAME app_grid_changes_the_window COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/app_grid.png
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/app_nogrid.png
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_grid_changes_the_window PROPERTIES
+        FIXTURES_REQUIRED "app_grid_png;app_nogrid_png")
+    # ...and --render ignores it. `--grid --render` must be byte-identical to
+    # `--render`, which is what stops the flag leaking into production output.
+    add_test(NAME app_grid_render COMMAND makehuman
+             --grid --render ${CMAKE_CURRENT_BINARY_DIR}/app_grid_render.png)
+    set_tests_properties(app_grid_render PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_SETUP app_grid_render_png)
+    add_test(NAME app_grid_not_in_render COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/app_grid_render.png
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/app_solid.png
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_match.cmake)
+    set_tests_properties(app_grid_not_in_render PROPERTIES
+        FIXTURES_REQUIRED "app_grid_render_png;app_solid_png")
+
     # Symmetry, end to end. The menu commands cannot be driven from a test --
     # `symmetryRequested` is wired in main.cpp -- so `--symmetry` is what makes
     # the whole path observable: one asymmetric modifier in, both sides equal

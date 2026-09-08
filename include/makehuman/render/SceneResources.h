@@ -239,6 +239,22 @@ public:
     /// Whether the device supports `QRhiGraphicsPipeline::Line`.
     [[nodiscard]] bool wireframeSupported() const;
 
+    /// Draws a ground grid on the XZ plane at y = 0, where the base mesh's
+    /// feet are (its Y range starts at exactly 0).
+    ///
+    /// Drawn BEFORE the meshes with depth write on, so the body occludes it
+    /// rather than the other way round -- a grid over the model reads as a
+    /// rendering fault, not as a floor.
+    void setGrid(bool on);
+    [[nodiscard]] bool grid() const;
+
+    /// How far the grid reaches and how fine it is, in mesh units
+    /// (decimetres). The figure is ~10.5 dm across and ~16.6 dm tall, so 12
+    /// reaches comfortably past it without turning the floor into a haze of
+    /// lines at a normal camera distance.
+    static constexpr float kGridExtent = 12.0F;
+    static constexpr float kGridStep   = 1.0F;
+
     /// Records one draw per uploaded mesh. `upload` must have run in an earlier
     /// or the same batch.
     void draw(QRhiCommandBuffer* cb, const QSize& pixelSize);

@@ -4,6 +4,72 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (twenty-third) — Session · **The grid, and two things the picture said the code did not**
+
+### The chunk
+The last item of the reference's View toolbar. `grid.vert`/`grid.frag` (original
+work, so Apache-2.0 rather than AGPL like the litsphere translation), a
+`Topology::Lines` pipeline, and an SRB binding only the camera block — the grid
+has no material, and the mesh layout would oblige it to carry four textures it
+never samples. It shares the scene's uniform block deliberately: this camera
+orbits by rotating the MODEL, so a grid with its own transform would drift out
+of step the first time the two were computed differently.
+
+Toolbar toggle with `grid-3x3` — the glyph the previous chunk took back from
+Wireframe — plus `--grid`. Four view modes now, in the order `design.md` 6.1
+draws them: smooth, wire, pose, grid.
+
+### Two things only the render showed
+1. **The floor was at hip height.** The mesh is CENTRED in memory (the shipped
+   base spans y −8.4 to +8.5); only the exporters put its feet on zero, which is
+   why every measurement I had taken from an exported OBJ said "Y starts at 0".
+   A grid at y = 0 therefore cut through the hips. It now sits at the lowest
+   vertex of everything on screen, so it follows a morph, a pose or a pair of
+   shoes.
+2. **One plane is invisible.** With only the ground plane, the default head-on
+   camera sees it EDGE-ON — the entire feature was a single faint line. The
+   reference has both a ground plane and a backplane
+   (`core/mhmain.py:646-692`), and now so do we.
+
+Both were caught by rendering it and looking, in the first minute. Neither would
+have failed a coverage assertion.
+
+### Excluded from production renders
+The reference marks both grids `excludeFromProduction` (`:671,687`) and it is
+right: a production render is the character; a floor grid is scaffolding for
+judging where the character stands. `--render` ignores the flag, and a test
+asserts `--grid --render` is byte-identical to `--render`.
+
+### Mutations
+The flag never reaching the scene, the floor back at y = 0, the toggle emitting
+nothing, and the grid drawn OVER the body — all caught. Two honest notes:
+`setDepthTest(false)` alone is an EQUIVALENT mutant, because the grid is drawn
+first and the body overwrites it regardless; and the "not in a production
+render" claim is gated only against flag leakage, since a `renderImage` that
+switched the grid on unconditionally would make both sides of that comparison
+equal. That is `main.cpp` again, the same seam `rig::poseMesh` fixed for posing.
+
+### `git checkout --` ate an uncommitted edit, for the second time
+Reverting one mutation with `git checkout -- src/render/OffscreenRenderer.cpp`
+restored the COMMITTED file and silently deleted `(*scene)->setGrid(s.grid)`,
+which was uncommitted work from ten minutes earlier. Exactly the session-fifteen
+mistake. It was caught by reading `git diff` on that file before running the
+gate, and the grid test fails without the line.
+
+**Rule, now written down: during mutation testing, copy the file to the
+scratchpad and restore from the copy. Never `git checkout` a file with
+uncommitted work in it.** The other four mutations in this chunk did use a
+backup copy; that one file did not have one because it was mutated from a
+different loop.
+
+### Next
+`memory/todo.md` in milestone order. The reference's View toolbar is complete;
+what remains in that owner request is the two-level tab bar, the left group
+boxes and the right Category radios — which is an OWNER DECISION, because
+matching the screenshot literally would mean throwing the dockable layout away.
+
+---
+
 ## 2026-09-08 (twenty-second) — Session · **The icon map was a document, not a gate**
 
 ### What I set out to do, and why I did something else

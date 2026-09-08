@@ -31,6 +31,7 @@ struct ViewportWidget::Impl {
     /// whenever the device or render pass changes.
     render::ShadingModel shading{render::ShadingModel::Litsphere};
     bool wireframe{false};
+    bool grid{false};
     QString error;
 
     /// What `scene` was built against. initialize() runs on every resize, but
@@ -103,6 +104,16 @@ bool ViewportWidget::wireframeSupported() const {
     return d_->scene && d_->scene->wireframeSupported();
 }
 
+void ViewportWidget::setGrid(bool on) {
+    d_->grid = on;
+    if (d_->scene) d_->scene->setGrid(on);
+    update();
+}
+
+bool ViewportWidget::grid() const {
+    return d_->grid;
+}
+
 render::Camera ViewportWidget::camera() const {
     return d_->camera;
 }
@@ -143,6 +154,7 @@ void ViewportWidget::initialize(QRhiCommandBuffer* cb) {
     // memory below it IS covered; this line is reviewed, not proven.
     d_->scene->setShadingModel(d_->shading);
     d_->scene->setWireframe(d_->wireframe);
+    d_->scene->setGrid(d_->grid);
     d_->builtAgainstRhi  = rhi();
     d_->builtAgainstPass = pass;
     d_->needsUpload      = true;

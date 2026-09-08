@@ -1563,3 +1563,87 @@ TEST_CASE("wireframe draws edges and leaves the faces empty", "[render][wirefram
     // filled render would give.
     CHECK(static_cast<double>(holes) / static_cast<double>(body) > 0.15);
 }
+
+// The ground grid, the last of the reference's View toolbar (`core/mhmain.py:
+// 1736`). Two properties, and the second is the one worth testing: it must
+// appear on the empty floor, and it must NOT appear on the body -- a grid drawn
+// over the model rather than under it looks like a rendering bug and would pass
+// any "the flag changed the picture" check.
+TEST_CASE("the grid draws on the floor and behind the body", "[render][grid]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    const std::vector<render::MeshInstance> one{{sc.rm.view(), settings().litsphere}};
+
+    render::RenderSettings plain = settings();
+    plain.width                  = 512;
+    plain.height                 = 512;
+    const auto without           = (*r)->render(one, plain);
+    REQUIRE(without.has_value());
+
+    render::RenderSettings gridded = plain;
+    gridded.grid                   = true;
+    const auto with                = (*r)->render(one, gridded);
+    REQUIRE(with.has_value());
+
+    const QColor bg = QColor::fromRgbF(plain.background.x, plain.background.y, plain.background.z);
+    const auto isBackground = [&](const QImage& img, int x, int y) {
+        const QColor c = img.pixelColor(x, y);
+        return std::abs(c.red() - bg.red()) <= 6 && std::abs(c.green() - bg.green()) <= 6 &&
+               std::abs(c.blue() - bg.blue()) <= 6;
+    };
+
+    // The body's bounding box, from the render WITHOUT a grid: everything
+    // outside it is floor or empty space.
+    int minX = without->width();
+    int maxX = 0;
+    int minY = without->height();
+    int maxY = 0;
+    for (int y = 0; y < without->height(); ++y) {
+        for (int x = 0; x < without->width(); ++x) {
+            if (isBackground(*without, x, y)) continue;
+            minX = std::min(minX, x);
+            maxX = std::max(maxX, x);
+            minY = std::min(minY, y);
+            maxY = std::max(maxY, y);
+        }
+    }
+    REQUIRE(maxX > minX);
+    REQUIRE(maxY > minY);
+
+    // Left of the figure, at its feet: floor in one render, nothing in the
+    // other. Counted rather than sampled -- one stray pixel is not a grid.
+    size_t drewOnFloor = 0;
+    size_t wasEmpty    = 0;
+    for (int y = minY + (maxY - minY) * 3 / 4; y < maxY; ++y) {
+        for (int x = 0; x < minX - 4; ++x) {
+            if (isBackground(*without, x, y)) ++wasEmpty;
+            if (isBackground(*without, x, y) && !isBackground(*with, x, y)) ++drewOnFloor;
+        }
+    }
+    REQUIRE(wasEmpty > 1000);
+    INFO("floor pixels lit by the grid: " << drewOnFloor << " of " << wasEmpty);
+    CHECK(drewOnFloor > 100);
+
+    // ...and the body is untouched. Interior pixels only: at the silhouette the
+    // two renders legitimately differ, because MSAA blends the edge against
+    // whatever is now behind it.
+    //
+    // The CHEST, not the centre of the bounding box. The box includes the
+    // spread arms, so its middle is the hip -- and a rectangle there straddles
+    // the gap between the legs, which is background. That is how the first
+    // version of this failed.
+    const int cx    = (minX + maxX) / 2;
+    const int cy    = minY + (maxY - minY) * 35 / 100;
+    size_t interior = 0;
+    for (int y = cy - 20; y <= cy + 20; ++y) {
+        for (int x = cx - 10; x <= cx + 10; ++x) {
+            REQUIRE_FALSE(isBackground(*without, x, y));
+            CHECK(with->pixelColor(x, y) == without->pixelColor(x, y));
+            ++interior;
+        }
+    }
+    CHECK(interior == 41 * 21);
+}

@@ -99,6 +99,10 @@ public:
     /// is built on first paint. Ask after showing the window.
     [[nodiscard]] bool wireframeSupported() const;
 
+    /// Draws the ground grid and the backplane behind the figure.
+    void setGrid(bool on);
+    [[nodiscard]] bool grid() const;
+
     /// Empty until a frame has been drawn; holds the reason if setup failed.
     [[nodiscard]] QString lastError() const;
 

@@ -1472,6 +1472,10 @@ int main(int argc, char** argv) {
         QStringLiteral("Randomise the character with this seed. Deterministic: the same seed "
                        "always gives the same person."),
         QStringLiteral("seed"));
+    const QCommandLineOption gridOpt(
+        QStringLiteral("grid"),
+        QStringLiteral("Show the ground grid and backplane in the viewport. Not drawn by "
+                       "--render, which produces the character alone."));
     const QCommandLineOption wireframeOpt(
         QStringLiteral("wireframe"),
         QStringLiteral("Draw edges instead of filled faces, in the viewport and in --render. "
@@ -1573,6 +1577,7 @@ int main(int argc, char** argv) {
     parser.addOption(randomOpt);
     parser.addOption(symmetryOpt);
     parser.addOption(wireframeOpt);
+    parser.addOption(gridOpt);
     const QCommandLineOption skinningOpt(
         QStringLiteral("skinning"),
         QStringLiteral("Skinning method: linear (default) or dqs. Dual quaternion skinning keeps "
@@ -2260,6 +2265,11 @@ int main(int argc, char** argv) {
         rs.transparentBackground = req.transparent;
         rs.shading               = req.shading;
         rs.wireframe             = req.wireframe;
+        // NOT the grid. The reference marks both of its grids
+        // `excludeFromProduction` (`core/mhmain.py:671,687`), and it is right:
+        // a production render is the character, and a floor grid is scaffolding
+        // for judging where the character stands. The viewport draws it; this
+        // does not.
 
         const auto scene = buildScene();
         if (scene.empty()) return std::unexpected(std::string{"nothing to draw"});
@@ -2545,6 +2555,14 @@ int main(int argc, char** argv) {
         gApplyPose = on;
         rebuildInto(window);
     });
+
+    // The grid. A view mode like wireframe: no rebuild, only a repaint.
+    if (parser.isSet(gridOpt)) {
+        window.viewport()->setGrid(true);
+        window.setGrid(true);
+    }
+    QObject::connect(&window, &mh::ui::MainWindow::gridChanged,
+                     [&](bool on) { window.viewport()->setGrid(on); });
 
     QObject::connect(&window, &mh::ui::MainWindow::wireframeChanged, [&](bool on) {
         window.viewport()->setWireframe(on);

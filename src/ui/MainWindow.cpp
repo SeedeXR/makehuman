@@ -107,6 +107,7 @@ struct MainWindow::Impl {
     /// True from the start, exactly as the reference's `_posed` is: what makes
     /// an unposed character unposed is having no pose, not this flag.
     bool poseEnabled{true};
+    bool grid{false};
     /// The reference's persistent macro line. A permanent status-bar widget,
     /// because showMessage is transient and every other message would wipe it.
     QLabel* macroStatus{};
@@ -591,6 +592,20 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
         d_->poseEnabled = on;
         emit poseEnabledChanged(on);
     });
+
+    // The grid, last of the four view modes and in the order `design.md` 6.1
+    // draws them. `grid-3x3` is its glyph in the icon map -- Wireframe borrowed
+    // it for two chunks, which is what led to that map being enforced.
+    QAction* gridToggle =
+        bar->addAction(theme::icon("grid-3x3", theme::palette().textSecondary, 16), tr("Grid"));
+    registerText(gridToggle, QT_TR_NOOP("Grid"));
+    gridToggle->setObjectName(QStringLiteral("view.grid"));
+    gridToggle->setCheckable(true);
+    connect(gridToggle, &QAction::toggled, this, [this](bool on) {
+        if (d_->grid == on) return;
+        d_->grid = on;
+        emit gridChanged(on);
+    });
     bar->addSeparator();
 
     QAction* shot = bar->addAction(theme::icon("camera", theme::palette().textSecondary, 16),
@@ -661,6 +676,16 @@ void MainWindow::setWireframe(bool on) {
     // Assign first, then setChecked: see setSmooth.
     d_->wireframe = on;
     if (QAction* a = findChild<QAction*>(QStringLiteral("view.wireframe"))) a->setChecked(on);
+}
+
+bool MainWindow::grid() const {
+    return d_->grid;
+}
+
+void MainWindow::setGrid(bool on) {
+    // Assign first, then setChecked: see setSmooth.
+    d_->grid = on;
+    if (QAction* a = findChild<QAction*>(QStringLiteral("view.grid"))) a->setChecked(on);
 }
 
 bool MainWindow::poseEnabled() const {

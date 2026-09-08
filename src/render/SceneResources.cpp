@@ -4,8 +4,11 @@
 #include <rhi/qrhi.h>
 #include <QFile>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 namespace mh::render {
@@ -156,6 +159,17 @@ struct SceneResources::Impl {
     std::array<Pipelines, 2> pipelines;
     ShadingModel model{ShadingModel::Litsphere};
     bool wireframe{false};
+    /// The ground grid: its own geometry, its own pipeline, and an SRB that
+    /// binds only the camera block. Null when the shaders are missing, which is
+    /// not fatal -- the scene still draws, without a floor.
+    bool grid{false};
+    /// Where the floor is. NaN until the first upload, so the first scene
+    /// always writes the buffer.
+    float gridFeetY{std::numeric_limits<float>::quiet_NaN()};
+    std::unique_ptr<QRhiBuffer> gridBuf;
+    std::unique_ptr<QRhiGraphicsPipeline> gridPipeline;
+    std::unique_ptr<QRhiShaderResourceBindings> gridSrb;
+    quint32 gridVertices{};
     std::vector<Drawable> drawables;
 
     [[nodiscard]] const Pipelines& active() const { return pipelines[static_cast<size_t>(model)]; }
@@ -223,6 +237,47 @@ struct SceneResources::Impl {
     // pipeline is null.
     if (!out.wire->create()) out.wire.reset();
     return true;
+}
+
+/// Line endpoints for the two grids the reference draws (`core/mhmain.py:
+/// 646-692`): a ground plane at the feet and a vertical backplane behind the
+/// figure. Both are needed, and the first render of only the ground one shows
+/// why -- at the default head-on camera a horizontal plane is EDGE-ON, so the
+/// whole feature was a single faint line across the hips.
+///
+/// Pairs, for `Topology::Lines`: a strip would join the end of one line to the
+/// start of the next and draw a staircase across the floor.
+///
+/// @param feetY where the ground is. The mesh is CENTRED in memory (the shipped
+///        base spans y -8.4 to +8.5) and only the exporters put its feet on
+///        zero, so a grid at y = 0 sits at hip height -- which is exactly what
+///        the first version of this drew.
+[[nodiscard]] std::vector<float> gridVertices(float feetY) {
+    std::vector<float> v;
+    const auto line = [&v](float x0, float y0, float z0, float x1, float y1, float z1) {
+        v.insert(v.end(), {x0, y0, z0, x1, y1, z1});
+    };
+    const int steps = static_cast<int>(SceneResources::kGridExtent / SceneResources::kGridStep);
+    const float e   = SceneResources::kGridExtent;
+    for (int i = -steps; i <= steps; ++i) {
+        const float at = static_cast<float>(i) * SceneResources::kGridStep;
+        // The ground, on the XZ plane at the feet.
+        line(at, feetY, -e, at, feetY, e);
+        line(-e, feetY, at, e, feetY, at);
+    }
+    // The backplane, on the XY plane behind the figure. It reaches from the
+    // ground to well over head height rather than being square, because a
+    // standing figure is twice as tall as it is wide.
+    const float top = feetY + 2.0F * e;
+    for (int i = -steps; i <= steps; ++i) {
+        const float at = static_cast<float>(i) * SceneResources::kGridStep;
+        line(at, feetY, -e, at, top, -e);
+    }
+    for (float y = feetY; y <= top + 0.5F * SceneResources::kGridStep;
+         y += SceneResources::kGridStep) {
+        line(-e, y, -e, e, y, -e);
+    }
+    return v;
 }
 
 SceneResources::SceneResources() : d_(std::make_unique<Impl>()) {}
@@ -309,6 +364,56 @@ std::expected<std::unique_ptr<SceneResources>, RenderError> SceneResources::crea
         return std::unexpected(RenderError{RenderErrorKind::Failed, "pbr pipelines"});
     }
 
+    // The ground grid: its own geometry, its own pipeline, and an SRB that
+    // binds only the camera block -- it has no material, no texture and no
+    // per-mesh uniforms, so the mesh layout would oblige it to carry four
+    // textures it never samples. Built here rather than in a helper because
+    // `Impl` is private and this is the one place that can see it.
+    //
+    // A missing shader pair is reported like any other rather than leaving the
+    // toggle inert: a Grid button that ticks and draws nothing is the painted
+    // no-op the whole toolbar group was held back to avoid.
+    auto gridVs = loadShader(shaderDir / "grid.vert.qsb");
+    if (!gridVs) return std::unexpected(gridVs.error());
+    auto gridFs = loadShader(shaderDir / "grid.frag.qsb");
+    if (!gridFs) return std::unexpected(gridFs.error());
+
+    // Dynamic, not Immutable: the floor follows the FEET, and a character who
+    // gets taller moves them. 1.9 kB re-uploaded only when that height changes.
+    const std::vector<float> verts = gridVertices(0.0F);
+    r->d_->gridVertices            = static_cast<quint32>(verts.size() / 3);
+    r->d_->gridBuf.reset(rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer,
+                                        static_cast<quint32>(verts.size() * sizeof(float))));
+    if (!r->d_->gridBuf->create()) {
+        return std::unexpected(RenderError{RenderErrorKind::Failed, "grid vertex buffer"});
+    }
+
+    r->d_->gridSrb.reset(rhi->newShaderResourceBindings());
+    r->d_->gridSrb->setBindings({QRhiShaderResourceBinding::uniformBuffer(
+        0, QRhiShaderResourceBinding::VertexStage, r->d_->ubuf.get())});
+    if (!r->d_->gridSrb->create()) {
+        return std::unexpected(RenderError{RenderErrorKind::Failed, "grid bindings"});
+    }
+
+    QRhiVertexInputLayout gridLayout;
+    gridLayout.setBindings({{3 * sizeof(float)}});
+    gridLayout.setAttributes({{0, 0, QRhiVertexInputAttribute::Float3, 0}});
+
+    r->d_->gridPipeline.reset(rhi->newGraphicsPipeline());
+    r->d_->gridPipeline->setShaderStages(
+        {{QRhiShaderStage::Vertex, *gridVs}, {QRhiShaderStage::Fragment, *gridFs}});
+    r->d_->gridPipeline->setVertexInputLayout(gridLayout);
+    r->d_->gridPipeline->setShaderResourceBindings(r->d_->gridSrb.get());
+    r->d_->gridPipeline->setRenderPassDescriptor(rp);
+    r->d_->gridPipeline->setTopology(QRhiGraphicsPipeline::Lines);
+    // Depth test AND write: the body must hide the lines behind it, and the
+    // lines must hide each other consistently where they cross.
+    r->d_->gridPipeline->setDepthTest(true);
+    r->d_->gridPipeline->setDepthWrite(true);
+    r->d_->gridPipeline->setSampleCount(sampleCount);
+    if (!r->d_->gridPipeline->create()) {
+        return std::unexpected(RenderError{RenderErrorKind::Failed, "grid pipeline"});
+    }
     return r;
 }
 
@@ -316,6 +421,22 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
                                                         std::span<const MeshInstance> meshes) {
     if (meshes.empty()) {
         return std::unexpected(RenderError{RenderErrorKind::EmptyMesh, "no meshes"});
+    }
+
+    // The floor sits at the lowest vertex of everything on screen, so it
+    // follows the feet through a morph, a pose or a pair of shoes. Re-uploaded
+    // only when that height actually moves -- a slider drag rebuilds the scene
+    // 60 times a second and the grid is the same 1.9 kB each time.
+    float lowest = std::numeric_limits<float>::max();
+    for (const MeshInstance& m : meshes) {
+        for (const foundation::Vec3& c : m.mesh.coord)
+            lowest = std::min(lowest, c.y);
+    }
+    if (std::isfinite(lowest) && lowest != d_->gridFeetY) {
+        d_->gridFeetY                  = lowest;
+        const std::vector<float> verts = gridVertices(lowest);
+        batch->updateDynamicBuffer(
+            d_->gridBuf.get(), 0, static_cast<quint32>(verts.size() * sizeof(float)), verts.data());
     }
 
     QRhi* rhi = d_->rhi;
@@ -584,6 +705,14 @@ bool SceneResources::wireframe() const {
     return d_->wireframe;
 }
 
+void SceneResources::setGrid(bool on) {
+    d_->grid = on;
+}
+
+bool SceneResources::grid() const {
+    return d_->grid;
+}
+
 bool SceneResources::wireframeSupported() const {
     // Asked of the pipeline that exists rather than of the QRhi feature flag: a
     // device can advertise the feature and still fail to CREATE the pipeline,
@@ -597,6 +726,17 @@ void SceneResources::draw(QRhiCommandBuffer* cb, const QSize& pixelSize) {
 
     cb->setViewport(
         {0, 0, static_cast<float>(pixelSize.width()), static_cast<float>(pixelSize.height())});
+
+    // The floor first: it is opaque and it is behind everything, so drawing it
+    // before the body lets the depth test do the occluding. Skipped entirely
+    // when off, which costs nothing when it is.
+    if (d_->grid && d_->gridPipeline) {
+        cb->setGraphicsPipeline(d_->gridPipeline.get());
+        cb->setShaderResources(d_->gridSrb.get());
+        const QRhiCommandBuffer::VertexInput gridIn(d_->gridBuf.get(), 0);
+        cb->setVertexInput(0, 1, &gridIn);
+        cb->draw(d_->gridVertices);
+    }
 
     // Opaque first, then blended. Order matters for the blend equation: a
     // transparent surface drawn BEFORE the opaque geometry behind it blends

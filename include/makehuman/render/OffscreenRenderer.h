@@ -53,6 +53,10 @@ struct RenderSettings {
     /// `core/mhmain.py:1734`). Ignored, with no error, on a device that cannot
     /// do it -- ask `wireframeSupported()` first if you need to know.
     bool wireframe{false};
+
+    /// Draw the ground grid under the figure (the reference's Grid toggle,
+    /// `core/mhmain.py:1736`).
+    bool grid{false};
 };
 
 class OffscreenRenderer {

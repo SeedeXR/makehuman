@@ -2665,6 +2665,7 @@ TEST_CASE("every action wears the glyph the design map gives it", "[ui][icons]")
         {QStringLiteral("view.smooth"), QStringLiteral("spline")},
         {QStringLiteral("view.wireframe"), QStringLiteral("box")},
         {QStringLiteral("view.pose"), QStringLiteral("person-standing")},
+        {QStringLiteral("view.grid"), QStringLiteral("grid-3x3")},
         {QStringLiteral("edit.symmetryLtoR"), QStringLiteral("flip-horizontal-2")},
         {QStringLiteral("edit.symmetryRtoL"), QStringLiteral("flip-horizontal-2")},
         {QStringLiteral("view.screenshot"), QStringLiteral("camera")},
@@ -2688,4 +2689,66 @@ TEST_CASE("every action wears the glyph the design map gives it", "[ui][icons]")
         REQUIRE_FALSE(want.isNull());
         CHECK(worn == want);
     }
+}
+
+// The grid, the last of the reference's View toolbar (`core/mhmain.py:1736`).
+// A view mode like Wireframe, so the same rules: not a preference, seeded by
+// `--grid`, and told rather than asked when the flag sets it.
+TEST_CASE("the Grid toggle reports intent and is not a preference", "[ui][grid]") {
+    theme::setIconDir(std::filesystem::path(MH_RESOURCE_DIR) / "icons" / "lucide");
+
+    const auto stored = [] {
+        return QSettings(QSettings::IniFormat, QSettings::UserScope, QStringLiteral("MakeHuman"),
+                         QStringLiteral("MakeHumanCpp"));
+    };
+    stored().remove(QStringLiteral("grid"));
+
+    mh::ui::MainWindow w(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+    auto* grid = w.findChild<QAction*>(QStringLiteral("view.grid"));
+    REQUIRE(grid != nullptr);
+    CHECK(grid->isCheckable());
+    CHECK_FALSE(grid->isChecked());
+    CHECK_FALSE(w.grid());
+
+    auto* bar = w.findChild<QToolBar*>(QStringLiteral("toolbar.main"));
+    REQUIRE(bar != nullptr);
+    CHECK(bar->actions().contains(grid));
+
+    // Beside the other three view modes, in the order design.md 6.1 draws the
+    // toolbar: smooth, wire, pose, grid.
+    const QStringList order{QStringLiteral("view.smooth"), QStringLiteral("view.wireframe"),
+                            QStringLiteral("view.pose"), QStringLiteral("view.grid")};
+    QStringList seen;
+    for (QAction* a : bar->actions()) {
+        if (order.contains(a->objectName())) seen << a->objectName();
+    }
+    CHECK(seen == order);
+
+    int emitted = 0;
+    bool state  = false;
+    QObject::connect(&w, &mh::ui::MainWindow::gridChanged, [&](bool on) {
+        ++emitted;
+        state = on;
+    });
+
+    grid->trigger();
+    CHECK(emitted == 1);
+    CHECK(state);
+    CHECK(w.grid());
+    grid->trigger();
+    CHECK(emitted == 2);
+    CHECK_FALSE(state);
+    CHECK_FALSE(w.grid());
+
+    // Seeded by --grid without emitting, and idempotent -- the trap the Smooth
+    // gate caught: anything that toggles rather than sets passes one call.
+    w.setGrid(true);
+    w.setGrid(true);
+    CHECK(emitted == 2);
+    CHECK(w.grid());
+    CHECK(grid->isChecked());
+
+    mh::ui::MainWindow w2(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+    CHECK_FALSE(w2.grid());
+    CHECK_FALSE(stored().contains(QStringLiteral("grid")));
 }

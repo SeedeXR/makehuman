@@ -2902,12 +2902,39 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
             - Looked at the toolbar before and after: a cube for wireframe, a
               figure for pose, a copy glyph for Save As, a revert arrow for
               reset. Every one reads better than what it replaced.
-      - [ ] **What is left of that toolbar: the grid.** Nothing here can lay
-            down a floor, so it would still be a painted no-op. It needs line
-            geometry and a minimal unlit shader pair — the litsphere and PBR
-            shaders both want normals, UVs and a litsphere texture that a grid
-            has no meaning for. `PolygonMode::Line` does not help: a grid is its
-            own geometry, not a fill mode.
+      - [x] **The grid** (2026-09-08), and with it the reference's View toolbar
+            is complete: smooth, wireframe, pose, grid. `grid.vert`/`grid.frag`
+            (original work, Apache-2.0, not translations), a `Topology::Lines`
+            pipeline, and its own SRB binding only the camera block — it has no
+            material and would otherwise carry four textures it never samples.
+            - **Two planes, because one is invisible.** The first version drew
+              only the ground and, at the default head-on camera, a horizontal
+              plane is EDGE-ON: the whole feature was a single faint line across
+              the hips. The reference has both a `groundplaneGrid` and a
+              `backplaneGrid` (`core/mhmain.py:646-692`) for exactly this
+              reason.
+            - **The floor follows the FEET, not y = 0.** The mesh is CENTRED in
+              memory — the shipped base spans y −8.4 to +8.5 — and only the
+              exporters ground it, so a grid at y = 0 sits at hip height. That
+              is literally what the first render showed. It is now the lowest
+              vertex of everything on screen, re-uploaded only when that moves.
+            - **Excluded from production renders**, as the reference marks both
+              of its grids (`excludeFromProduction`, `:671,687`): `--render`
+              gives the character alone, the viewport draws the scaffolding.
+            - Not ported: the reference's `lockRotation` on the backplane (ours
+              rotates with the scene, so orbiting always leaves one plane
+              face-on) and its sub-grid divisions.
+            - Mutations: the flag never reaching the scene, the floor back at
+              y = 0, the toggle emitting nothing, and the grid drawn OVER the
+              body — all caught. `setDepthTest(false)` alone is an equivalent
+              mutant: the grid is drawn FIRST, so the body overwrites it anyway.
+      - [ ] **Ungated, and it is `main.cpp` again: "the grid is not in a
+            production render".** `app_grid_not_in_render` compares
+            `--grid --render` against `--render`, which catches the flag LEAKING
+            into production output — the realistic regression — but not a
+            `renderImage` that switched the grid on unconditionally, since both
+            sides would then have it. Same seam as the `poseInPlace` family; the
+            fix is the same shape as `rig::poseMesh`.
       - [ ] **The symmetry MODE is not built.** The reference's third symmetry
             button is a toggle (`symmetryModeEnabled`, `core/mhmain.py:1524`)
             that mirrors every slider drag as it happens, rather than a one-shot
