@@ -2835,14 +2835,44 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
             - Rendered all six through the real menu actions and looked: every
               label matches what the camera shows, including that Right shows
               the model's right side.
-      - [ ] **What is left of that toolbar: the grid and the pose toggle.**
-            Nothing here can lay down a floor, and nothing can draw a posed
-            character unposed, so both would still be painted no-ops. The pose
-            toggle is the cheaper of the two — `poseInPlace` is already a no-op
-            when no pose is loaded, so it wants a flag rather than new
-            machinery — but it needs a decision about whether it affects
-            `--export` as well as the screen, which `buildScene` and the export
-            path answer differently today.
+      - [x] **The pose toggle** (2026-09-08). The last of that group with its
+            behaviour already in the tree. The note above said it "needs a
+            decision about whether it affects `--export`"; the reference answers
+            it — `setPosed` changes the MESH
+            (`shared/animation.py:986-991`), so the screen, `--render` and a
+            File ▸ Export from the window all follow it, while the command line
+            keeps `--pose rest` for the same effect. No owner decision needed.
+            - **Ported with the reference's two-part rule**: `isPosed()` is
+              `_posed AND isPoseable()` (`animation.py:993-997`), so the button
+              starts CHECKED and DISABLED, and enables only when a pose is
+              actually loaded. A tick that cannot change the picture is the
+              painted no-op this group exists to avoid.
+            - Availability never writes the state: switching posing off and then
+              picking a different pose leaves it off. That is the assertion a
+              mutation making `setPoseAvailable` set `checked` fails.
+            - Measured: toggling posing off is **pixel-identical inside the
+              viewport** to never posing (0 differing pixels; the 1,958 that do
+              differ are all in the toolbar band, y 9–323, and are the button's
+              own checked state), and differs from the posed frame by 174,448.
+              Rendered both and looked: T-pose versus the authored A-pose.
+            - `restCoords`/`globalPose` are CLEARED while posing is off, because
+              `exportTo` reads a non-empty `restCoords` as "swap this posed mesh
+              for the rest one" and those coordinates go stale on the next
+              slider move. Reasoned and commented; see the gap below.
+      - [ ] **Ungated, same root as the `setCoords` gap: `poseInPlace` lives in
+            `main.cpp`.** Neither `gApplyPose` nor the `restCoords` clearing can
+            be reached by a test — the toggle is a menu action and the export it
+            protects is a `QFileDialog` away. Both were verified by running the
+            app with the real action triggered in-process. The fix for the whole
+            family is to move `poseInPlace` behind a testable seam (it is
+            AGPL-compatible in `rig`, which would need a `core` dependency), and
+            that is its own chunk.
+      - [ ] **What is left of that toolbar: the grid.** Nothing here can lay
+            down a floor, so it would still be a painted no-op. It needs line
+            geometry and a minimal unlit shader pair — the litsphere and PBR
+            shaders both want normals, UVs and a litsphere texture that a grid
+            has no meaning for. `PolygonMode::Line` does not help: a grid is its
+            own geometry, not a fill mode.
       - [ ] **The symmetry MODE is not built.** The reference's third symmetry
             button is a toggle (`symmetryModeEnabled`, `core/mhmain.py:1524`)
             that mirrors every slider drag as it happens, rather than a one-shot

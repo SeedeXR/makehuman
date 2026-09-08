@@ -157,6 +157,20 @@ public:
     /// -- emitting there would ask for the render that has just been refused.
     void setWireframe(bool on);
 
+    /// Whether a loaded pose is applied to the mesh.
+    ///
+    /// The reference's two-part rule (`shared/animation.py:993-997`): being
+    /// posed is this flag AND a pose being loaded at all. This is only the
+    /// flag; `setPoseAvailable` carries the other half.
+    [[nodiscard]] bool poseEnabled() const;
+
+    /// Sets the flag WITHOUT emitting, for the app seeding the button.
+    void setPoseEnabled(bool on);
+
+    /// Whether there is a pose to apply. The button is disabled without one,
+    /// because a toggle that cannot change the picture is worse than no toggle.
+    void setPoseAvailable(bool available);
+
     /// Restores docks and geometry from QSettings, or lays out the defaults.
     void restoreWorkspace();
     void saveWorkspace() const;
@@ -207,6 +221,9 @@ signals:
 
     /// The Wireframe toolbar toggle.
     void wireframeChanged(bool on);
+
+    /// The pose toolbar toggle. The app owns the rig, so it re-poses.
+    void poseEnabledChanged(bool on);
 
     /// Edit > Symmetry. @p targetSide is the side to OVERWRITE -- `'r'` makes
     /// the right side match the left -- which is the reference's own

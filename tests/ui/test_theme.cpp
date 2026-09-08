@@ -2565,3 +2565,75 @@ TEST_CASE("the View menu frames the model from each axis", "[ui][camera]") {
     CHECK_THAT(afterReset.distance,
                WithinAbs(static_cast<double>(mh::render::Camera{}.distance), 1e-4));
 }
+
+// The pose toggle, the last of the reference's View toolbar that has its
+// behaviour (`core/mhmain.py:1735`). Ported with its own two-part rule:
+// `isPosed()` is `_posed AND isPoseable()`, and `isPoseable()` means a pose and
+// a skeleton are actually loaded (`shared/animation.py:993-997`). So the button
+// is DISABLED until there is a pose to switch off -- a tick that does nothing
+// is the painted no-op this whole toolbar group has been waiting to avoid.
+TEST_CASE("the pose toggle is disabled until there is a pose", "[ui][posetoggle]") {
+    theme::setIconDir(std::filesystem::path(MH_RESOURCE_DIR) / "icons" / "lucide");
+    mh::ui::MainWindow w(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+
+    auto* pose = w.findChild<QAction*>(QStringLiteral("view.pose"));
+    REQUIRE(pose != nullptr);
+    CHECK(pose->isCheckable());
+    auto* bar = w.findChild<QToolBar*>(QStringLiteral("toolbar.main"));
+    REQUIRE(bar != nullptr);
+    CHECK(bar->actions().contains(pose));
+
+    // Checked and disabled is the honest starting state, and it is the
+    // reference's own: `_posed` starts true, `isPoseable()` false.
+    CHECK(pose->isChecked());
+    CHECK(w.poseEnabled());
+    CHECK_FALSE(pose->isEnabled());
+
+    int emitted = 0;
+    bool seen   = true;
+    QObject::connect(&w, &mh::ui::MainWindow::poseEnabledChanged, [&](bool on) {
+        ++emitted;
+        seen = on;
+    });
+
+    // A pose arrives -- from `--pose`, or from the Pose picker at runtime.
+    w.setPoseAvailable(true);
+    CHECK(pose->isEnabled());
+    CHECK(emitted == 0);  // availability is not a request to re-pose anything
+
+    pose->trigger();
+    CHECK(emitted == 1);
+    CHECK_FALSE(seen);
+    CHECK_FALSE(w.poseEnabled());
+
+    pose->trigger();
+    CHECK(emitted == 2);
+    CHECK(seen);
+    CHECK(w.poseEnabled());
+
+    // setPoseEnabled seeds the button without asking for a rebuild, and is
+    // idempotent: `applyChoice` calls it on every pose change, including one
+    // that does not move it.
+    w.setPoseEnabled(false);
+    w.setPoseEnabled(false);
+    CHECK(emitted == 2);
+    CHECK_FALSE(w.poseEnabled());
+    CHECK_FALSE(pose->isChecked());
+
+    // A DIFFERENT pose arrives while posing is switched off. The button must
+    // stay unticked: someone who chose to see the character unposed did not ask
+    // for the next pose to be applied. This is the assertion that fails if
+    // availability is allowed to write the state.
+    w.setPoseAvailable(true);
+    CHECK_FALSE(w.poseEnabled());
+    CHECK_FALSE(pose->isChecked());
+    CHECK(pose->isEnabled());
+    CHECK(emitted == 2);
+
+    // The pose goes away again (Pose > none). The button greys out and KEEPS
+    // its state.
+    w.setPoseAvailable(false);
+    CHECK_FALSE(pose->isEnabled());
+    CHECK_FALSE(w.poseEnabled());
+    CHECK(emitted == 2);
+}

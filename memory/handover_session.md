@@ -4,6 +4,57 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (twentieth) — Session · **The pose toggle, disabled until it means something**
+
+### The chunk
+The last of the reference's View toolbar whose behaviour was already in the
+tree. My own previous note said it "needs a decision about whether it affects
+`--export`" — the reference answers that: `setPosed` changes the MESH
+(`shared/animation.py:986-991`), so the screen, `--render` and File ▸ Export all
+follow it, and the command line keeps `--pose rest` for the same effect. Not an
+owner decision after all.
+
+**Ported with the reference's two-part rule.** `isPosed()` is `_posed AND
+isPoseable()` (`animation.py:993-997`), so the button starts CHECKED and
+DISABLED and enables only when a pose is loaded. A tick that cannot change the
+picture is exactly the painted no-op this toolbar group exists to avoid.
+
+Availability never writes the state: switch posing off, pick a different pose,
+and it stays off. That is the property a mutation making `setPoseAvailable` also
+set `checked` fails — and the assertion for it was missing from my first draft
+of the gate, which is why I re-read the test before running the mutations.
+
+### Measured, then looked at
+- Toggling posing off is **pixel-identical inside the viewport** to never
+  posing: 0 differing pixels there. The 1,958 that do differ across the whole
+  window are all in the toolbar band (y 9–323) — the button's own checked state,
+  which is correct rather than a defect. I checked where they were before
+  concluding anything.
+- Against the posed frame: 174,448 differing pixels. Rendered both and looked —
+  T-pose versus the authored A-pose.
+- With no pose loaded the button reports `enabled=0`, confirmed by running the
+  app, not by reading the code.
+
+### The trap that is not visible from the test
+`restCoords`/`globalPose` are cleared while posing is off. `exportTo` reads a
+non-empty `restCoords` as "swap this posed mesh for the rest one", and those
+coordinates go stale on the next slider move — a live-rig export would have
+shipped a body from before the last edit. Reasoned, commented, and recorded as
+ungated: it sits in `main.cpp`'s `poseInPlace`, same as the `setCoords` gap from
+session fifteen.
+
+### Cut from my own diff
+A `setPoseAvailable` call in `applyLoaded` that could never do anything: a
+`.mhm` carries no pose line, so `rig` is unchanged there. Dead on arrival.
+
+### Next
+`memory/todo.md` in milestone order. The grid is what remains of that toolbar
+group and it needs real work — line geometry plus a minimal unlit shader pair,
+since both existing shaders want normals, UVs and a litsphere. The family gap
+worth closing before more of these: `poseInPlace` behind a testable seam.
+
+---
+
 ## 2026-09-08 (nineteenth) — Session · **Six axis views, and a todo entry that was wrong**
 
 ### The chunk

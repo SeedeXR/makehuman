@@ -293,9 +293,29 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
 /// -- the user does, once, at start-up.
 bool gUseDualQuaternion = false;
 
+/// Whether a loaded pose is APPLIED. The reference's `_posed`
+/// (`shared/animation.py:986-994`), driven by the toolbar's Pose toggle: being
+/// posed is this flag AND a pose being loaded, which is what `PoseRig::posed()`
+/// answers.
+///
+/// A file-scope flag for the same reason as the one above -- the pose helper is
+/// called from several places and none of them has an opinion.
+bool gApplyPose = true;
+
 /// Applies @p rig's pose to @p mesh in place. A no-op when no pose is loaded.
 bool poseInPlace(mh::core::Mesh& mesh, PoseRig& rig) {
     if (!rig.posed()) return true;
+
+    // Posing switched off. The mesh is already at its morph base -- applyStack
+    // put it there -- so there is nothing to undo, but the live-rig capture
+    // MUST be cleared: `exportTo` treats a non-empty `restCoords` as "this mesh
+    // is posed, swap it for the rest one", and those coordinates go stale the
+    // moment a slider moves.
+    if (!gApplyPose) {
+        rig.restCoords.clear();
+        rig.globalPose.clear();
+        return true;
+    }
 
     if (!rig.skeleton.updateJoints(mesh.coord()) || !rig.skeleton.buildRestMatrices()) {
         std::fprintf(stderr, "cannot re-fit the rig to the morphed mesh\n");
@@ -2473,6 +2493,10 @@ int main(int argc, char** argv) {
             return;
         }
         rig = std::move(next);
+        // A pose arriving or leaving is what enables the toolbar's Pose toggle.
+        // Its STATE is deliberately not touched: someone who switched posing
+        // off and then picks a different pose expects it to stay off.
+        shell->setPoseAvailable(rig.posed());
         rebuildInto(*shell);
     };
 
@@ -2566,6 +2590,14 @@ int main(int argc, char** argv) {
         window.viewport()->setWireframe(true);
         window.setWireframe(true);
     }
+    // The pose toggle. Availability, not state: the button starts checked and
+    // greys out when there is nothing to un-pose.
+    window.setPoseAvailable(rig.posed());
+    QObject::connect(&window, &mh::ui::MainWindow::poseEnabledChanged, [&](bool on) {
+        gApplyPose = on;
+        rebuildInto(window);
+    });
+
     QObject::connect(&window, &mh::ui::MainWindow::wireframeChanged, [&](bool on) {
         window.viewport()->setWireframe(on);
         // Refused rather than pretended. Without this the button ticks, the

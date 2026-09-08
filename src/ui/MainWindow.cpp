@@ -104,6 +104,9 @@ struct MainWindow::Impl {
     Skinning skinning{Skinning::Linear};
     bool smooth{false};
     bool wireframe{false};
+    /// True from the start, exactly as the reference's `_posed` is: what makes
+    /// an unposed character unposed is having no pose, not this flag.
+    bool poseEnabled{true};
     /// The reference's persistent macro line. A permanent status-bar widget,
     /// because showMessage is transient and every other message would wipe it.
     QLabel* macroStatus{};
@@ -574,6 +577,22 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
         d_->wireframe = on;
         emit wireframeChanged(on);
     });
+
+    // The pose toggle (`core/mhmain.py:1735`). Disabled until a pose is loaded:
+    // the reference's `isPosed()` is `_posed AND isPoseable()`, and a button
+    // that cannot change the picture is worse than no button.
+    QAction* poseToggle =
+        bar->addAction(theme::icon("bone", theme::palette().textSecondary, 16), tr("Pose"));
+    registerText(poseToggle, QT_TR_NOOP("Pose"));
+    poseToggle->setObjectName(QStringLiteral("view.pose"));
+    poseToggle->setCheckable(true);
+    poseToggle->setChecked(true);
+    poseToggle->setEnabled(false);
+    connect(poseToggle, &QAction::toggled, this, [this](bool on) {
+        if (d_->poseEnabled == on) return;
+        d_->poseEnabled = on;
+        emit poseEnabledChanged(on);
+    });
     bar->addSeparator();
 
     QAction* shot = bar->addAction(theme::icon("camera", theme::palette().textSecondary, 16),
@@ -644,6 +663,22 @@ void MainWindow::setWireframe(bool on) {
     // Assign first, then setChecked: see setSmooth.
     d_->wireframe = on;
     if (QAction* a = findChild<QAction*>(QStringLiteral("view.wireframe"))) a->setChecked(on);
+}
+
+bool MainWindow::poseEnabled() const {
+    return d_->poseEnabled;
+}
+
+void MainWindow::setPoseEnabled(bool on) {
+    // Assign first, then setChecked: see setSmooth.
+    d_->poseEnabled = on;
+    if (QAction* a = findChild<QAction*>(QStringLiteral("view.pose"))) a->setChecked(on);
+}
+
+void MainWindow::setPoseAvailable(bool available) {
+    // Only the enabled state. The flag is deliberately untouched: a user who
+    // switched posing off and then changes pose expects it to stay off.
+    if (QAction* a = findChild<QAction*>(QStringLiteral("view.pose"))) a->setEnabled(available);
 }
 
 void MainWindow::setSmooth(bool on) {
