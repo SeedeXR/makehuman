@@ -152,7 +152,8 @@ Sizes: **16 px** inline/toolbar-dense · **20 px** default toolbar · **24 px** 
 |---|---|---|---|---|
 | Load | `folder-open` | | Front view | `user` |
 | Save | `save` | | Back view | `rotate-3d` |
-| Export | `upload` | | Left / Right | `chevron-left` / `chevron-right` |
+| Save As | `copy` | | Left / Right | `chevron-left` / `chevron-right` |
+| Export | `upload` | | Randomise | `refresh-cw` |
 | Import | `download` | | Top / Bottom | `chevron-up` / `chevron-down` |
 | Undo / Redo | `undo-2` / `redo-2` | | Reset camera | `focus` |
 | Reset | `rotate-ccw` | | Grid | `grid-3x3` |
@@ -167,6 +168,24 @@ Sizes: **16 px** inline/toolbar-dense · **20 px** default toolbar · **24 px** 
 
 Custom icons are only for concepts Lucide lacks (e.g. a morph-target glyph); they
 are drawn on the same 24×24 grid at 1.5 px stroke and live in `resources/icons/custom/`.
+
+**This table is enforced, not merely written down** (`[ui][icons]`, "every action
+wears the glyph the design map gives it"). It compares the PIXELS an action's
+icon rasterises to against the mapped file, because an action does not remember
+where its icon came from and a name recorded beside it would only prove that the
+name was recorded. The two icon tests that predate it check that every mapped
+file exists and that it renders something — both pass while an action shows the
+wrong picture, which is how nine of them drifted:
+
+* Wireframe wore `grid-3x3`, which belongs to Grid; it is `box`.
+* Pose wore `bone`, which belongs to Rigging; it is `person-standing`.
+* All six axis views wore `rotate-3d`, which belongs to Back view alone.
+* Export wore `download`, which belongs to Import; Export writes OUT.
+
+Two glyphs are deliberately shared, and neither is a toolbar button that would
+have to be told apart by its icon alone: `person-standing` is Pose on the
+toolbar and Settings ▸ Real weight in a menu with its label beside it, and
+`flip-horizontal-2` is both symmetry directions, which differ only in wording.
 
 ---
 

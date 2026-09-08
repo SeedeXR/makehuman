@@ -2877,6 +2877,31 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
             - Behaviour-preserving, checked rather than assumed: the
               `--pose tpose` screenshot is **byte-identical** to the one taken
               before the move, and `main.cpp` is 52 lines shorter.
+      - [x] **The icon map is enforced now, and nine actions were wrong**
+            (2026-09-08). `design.md` 5 has named the glyph for each action all
+            along; the two icon tests that existed check that every mapped FILE
+            exists and that it rasterises, and both pass while an action shows
+            the wrong picture. Found by reading `design.md` before taking
+            `grid-3x3` for the Grid toggle — and discovering three of my own
+            recent chunks had drifted.
+            - Corrected: Wireframe `grid-3x3` → **`box`** (grid-3x3 is the
+              Grid's); Pose `bone` → **`person-standing`** (bone is Rigging's);
+              all six axis views `rotate-3d` → **`user` / `rotate-3d` /
+              `chevron-left|right|up|down`**, which the map gives per view;
+              Export `download` → **`upload`** (download is Import's, and
+              Export writes OUT); Reset Workspace `refresh-cw` →
+              **`rotate-ccw`**.
+            - Two entries the map never had are now in it: **Save As → `copy`**
+              (its old `upload` belongs to Export) and **Randomise →
+              `refresh-cw`**, so the document and the code agree in both
+              directions rather than one of them being silently ahead.
+            - The gate compares **pixels**, not a recorded name: an action does
+              not remember where its icon came from, and a name stored beside it
+              would only prove the name was stored. It catches a wrong glyph, a
+              swapped pair, and the right glyph in the wrong colour.
+            - Looked at the toolbar before and after: a cube for wireframe, a
+              figure for pose, a copy glyph for Save As, a revert arrow for
+              reset. Every one reads better than what it replaced.
       - [ ] **What is left of that toolbar: the grid.** Nothing here can lay
             down a floor, so it would still be a painted no-op. It needs line
             geometry and a minimal unlit shader pair — the litsphere and PBR

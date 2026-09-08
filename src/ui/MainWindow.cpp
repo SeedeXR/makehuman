@@ -201,13 +201,13 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     addFileAction(QStringLiteral("file.save"), QT_TR_NOOP("Save"), QKeySequence::Save, "save",
                   &MainWindow::saveRequested);
     addFileAction(QStringLiteral("file.saveAs"), QT_TR_NOOP("Save As…"), QKeySequence::SaveAs,
-                  "upload", &MainWindow::saveAsRequested);
+                  "copy", &MainWindow::saveAsRequested);
     file->addSeparator();
     // Separated from the three above because it writes a DIFFERENT kind of
     // file: Open/Save/Save As round-trip a `.mhm`, and this hands the character
     // to another tool and cannot be read back the same way.
     addFileAction(QStringLiteral("file.export"), QT_TR_NOOP("Export…"), QKeySequence::UnknownKey,
-                  "download", &MainWindow::exportRequested);
+                  "upload", &MainWindow::exportRequested);
     // A production render is a third kind of output: not a `.mhm` to reopen and
     // not a model for another tool, but a picture. `image` rather than `camera`
     // -- the toolbar's camera is Grab Screen, which captures the WINDOW, and
@@ -310,7 +310,7 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     // "Reset Workspace" word button between the icons -- visible in a
     // screenshot, invisible to the audit, because the audit exempted the whole
     // `workspace.` prefix rather than just the named layouts.
-    resetAction->setIcon(theme::icon("refresh-cw", theme::palette().textSecondary, 16));
+    resetAction->setIcon(theme::icon("rotate-ccw", theme::palette().textSecondary, 16));
     connect(resetAction, &QAction::triggered, this, &MainWindow::resetWorkspace);
 
     // Settings. The reference has a whole Settings tab; this holds the one
@@ -445,11 +445,10 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     QMenu* viewMenu = menuBar()->addMenu(tr("&View"));
     registerText(viewMenu, QT_TR_NOOP("&View"));
 
-    const auto addAxisView = [&](const char* label, const QString& objectName,
+    const auto addAxisView = [&](const char* label, const QString& objectName, const char* glyph,
                                  const QKeySequence& key, float yaw) {
-        QAction* a =
-            viewMenu->addAction(theme::icon("rotate-3d", theme::palette().textSecondary, 16),
-                                QCoreApplication::translate("", label));
+        QAction* a = viewMenu->addAction(theme::icon(glyph, theme::palette().textSecondary, 16),
+                                         QCoreApplication::translate("", label));
         registerText(a, label);
         a->setObjectName(objectName);
         a->setShortcut(key);
@@ -467,22 +466,21 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     // The reference's own angles: front [0,0,0], right [0,90,0], top [90,0,0]
     // and their opposites (`mhmain.py:1612-1628`). Top and bottom are clamped
     // to the limit the MOUSE obeys, so the first drag after one does not jump.
-    addAxisView(QT_TR_NOOP("Front"), QStringLiteral("view.camera.front"),
+    addAxisView(QT_TR_NOOP("Front"), QStringLiteral("view.camera.front"), "user",
                 QKeySequence(Qt::KeypadModifier | Qt::Key_1), 0.0F);
-    addAxisView(QT_TR_NOOP("Back"), QStringLiteral("view.camera.back"),
+    addAxisView(QT_TR_NOOP("Back"), QStringLiteral("view.camera.back"), "rotate-3d",
                 QKeySequence(Qt::ControlModifier | Qt::KeypadModifier | Qt::Key_1), 180.0F);
-    addAxisView(QT_TR_NOOP("Right"), QStringLiteral("view.camera.right"),
+    addAxisView(QT_TR_NOOP("Right"), QStringLiteral("view.camera.right"), "chevron-right",
                 QKeySequence(Qt::KeypadModifier | Qt::Key_3), 90.0F);
-    addAxisView(QT_TR_NOOP("Left"), QStringLiteral("view.camera.left"),
+    addAxisView(QT_TR_NOOP("Left"), QStringLiteral("view.camera.left"), "chevron-left",
                 QKeySequence(Qt::ControlModifier | Qt::KeypadModifier | Qt::Key_3), -90.0F);
 
     // Top and bottom keep the current heading -- only the elevation changes --
     // so looking down on the model does not also spin it back to front-on.
-    const auto addPitchView = [&](const char* label, const QString& objectName,
+    const auto addPitchView = [&](const char* label, const QString& objectName, const char* glyph,
                                   const QKeySequence& key, float pitch) {
-        QAction* a =
-            viewMenu->addAction(theme::icon("rotate-3d", theme::palette().textSecondary, 16),
-                                QCoreApplication::translate("", label));
+        QAction* a = viewMenu->addAction(theme::icon(glyph, theme::palette().textSecondary, 16),
+                                         QCoreApplication::translate("", label));
         registerText(a, label);
         a->setObjectName(objectName);
         a->setShortcut(key);
@@ -492,9 +490,9 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
             d_->viewport->setCamera(c);
         });
     };
-    addPitchView(QT_TR_NOOP("Top"), QStringLiteral("view.camera.top"),
+    addPitchView(QT_TR_NOOP("Top"), QStringLiteral("view.camera.top"), "chevron-up",
                  QKeySequence(Qt::KeypadModifier | Qt::Key_7), ViewportWidget::kMaxPitchDegrees);
-    addPitchView(QT_TR_NOOP("Bottom"), QStringLiteral("view.camera.bottom"),
+    addPitchView(QT_TR_NOOP("Bottom"), QStringLiteral("view.camera.bottom"), "chevron-down",
                  QKeySequence(Qt::ControlModifier | Qt::KeypadModifier | Qt::Key_7),
                  -ViewportWidget::kMaxPitchDegrees);
 
@@ -564,10 +562,10 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     });
 
     // Wireframe, beside Smooth and with the reference's own Ctrl+F
-    // (`core/mhmain.py:1498`). `grid-3x3` rather than a mesh glyph: lucide has
-    // no wireframe icon and a grid is what the mode actually draws.
-    QAction* wire = bar->addAction(theme::icon("grid-3x3", theme::palette().textSecondary, 16),
-                                   tr("Wireframe"));
+    // (`core/mhmain.py:1498`). `box` is what `design.md` 5 gives it; `grid-3x3`
+    // is the Grid toggle's and was taken by mistake here.
+    QAction* wire =
+        bar->addAction(theme::icon("box", theme::palette().textSecondary, 16), tr("Wireframe"));
     registerText(wire, QT_TR_NOOP("Wireframe"));
     wire->setObjectName(QStringLiteral("view.wireframe"));
     wire->setCheckable(true);
@@ -581,8 +579,8 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     // The pose toggle (`core/mhmain.py:1735`). Disabled until a pose is loaded:
     // the reference's `isPosed()` is `_posed AND isPoseable()`, and a button
     // that cannot change the picture is worse than no button.
-    QAction* poseToggle =
-        bar->addAction(theme::icon("bone", theme::palette().textSecondary, 16), tr("Pose"));
+    QAction* poseToggle = bar->addAction(
+        theme::icon("person-standing", theme::palette().textSecondary, 16), tr("Pose"));
     registerText(poseToggle, QT_TR_NOOP("Pose"));
     poseToggle->setObjectName(QStringLiteral("view.pose"));
     poseToggle->setCheckable(true);

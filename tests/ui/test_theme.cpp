@@ -248,6 +248,7 @@ TEST_CASE("every icon the design map names is present", "[theme]") {
                                           "palette",
                                           "bone",
                                           "globe",
+                                          "copy",
                                           "x"};
 
     for (const std::string& name : mapped) {
@@ -2636,4 +2637,55 @@ TEST_CASE("the pose toggle is disabled until there is a pose", "[ui][posetoggle]
     CHECK_FALSE(pose->isEnabled());
     CHECK_FALSE(w.poseEnabled());
     CHECK(emitted == 2);
+}
+
+// `design.md` 5 names the glyph for each action. Nothing checked that the
+// action actually WEARS it: the existing icon tests assert that every mapped
+// file exists and that it rasterises, both of which pass while an action shows
+// the wrong picture. Three chunks in a row drifted -- Wireframe took the Grid's
+// `grid-3x3`, Pose took `bone` (mapped to Rigging), and all six axis views took
+// `rotate-3d`, which the map gives to Back view alone.
+//
+// Compared as PIXELS, not as a recorded name: an action does not remember where
+// its icon came from, and a name stored beside it would only prove that the
+// name was stored.
+TEST_CASE("every action wears the glyph the design map gives it", "[ui][icons]") {
+    theme::setIconDir(std::filesystem::path(MH_RESOURCE_DIR) / "icons" / "lucide");
+    mh::ui::MainWindow w(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+
+    const std::vector<std::pair<QString, QString>> mapped{
+        {QStringLiteral("file.open"), QStringLiteral("folder-open")},
+        {QStringLiteral("file.save"), QStringLiteral("save")},
+        {QStringLiteral("file.saveAs"), QStringLiteral("copy")},
+        {QStringLiteral("edit.randomise"), QStringLiteral("refresh-cw")},
+        {QStringLiteral("file.export"), QStringLiteral("upload")},
+        {QStringLiteral("edit.undo"), QStringLiteral("undo-2")},
+        {QStringLiteral("edit.redo"), QStringLiteral("redo-2")},
+        {QStringLiteral("workspace.reset"), QStringLiteral("rotate-ccw")},
+        {QStringLiteral("view.smooth"), QStringLiteral("spline")},
+        {QStringLiteral("view.wireframe"), QStringLiteral("box")},
+        {QStringLiteral("view.pose"), QStringLiteral("person-standing")},
+        {QStringLiteral("edit.symmetryLtoR"), QStringLiteral("flip-horizontal-2")},
+        {QStringLiteral("edit.symmetryRtoL"), QStringLiteral("flip-horizontal-2")},
+        {QStringLiteral("view.screenshot"), QStringLiteral("camera")},
+        {QStringLiteral("view.camera.front"), QStringLiteral("user")},
+        {QStringLiteral("view.camera.back"), QStringLiteral("rotate-3d")},
+        {QStringLiteral("view.camera.left"), QStringLiteral("chevron-left")},
+        {QStringLiteral("view.camera.right"), QStringLiteral("chevron-right")},
+        {QStringLiteral("view.camera.top"), QStringLiteral("chevron-up")},
+        {QStringLiteral("view.camera.bottom"), QStringLiteral("chevron-down")},
+        {QStringLiteral("view.camera.reset"), QStringLiteral("focus")},
+    };
+
+    for (const auto& [name, glyph] : mapped) {
+        INFO("action " << name.toStdString() << " should wear " << glyph.toStdString());
+        QAction* a = w.findChild<QAction*>(name);
+        REQUIRE(a != nullptr);
+        const QImage worn = a->icon().pixmap(16, 16).toImage();
+        const QImage want = theme::icon(glyph.toStdString(), theme::palette().textSecondary, 16)
+                                .pixmap(16, 16)
+                                .toImage();
+        REQUIRE_FALSE(want.isNull());
+        CHECK(worn == want);
+    }
 }

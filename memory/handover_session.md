@@ -4,6 +4,57 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (twenty-second) — Session · **The icon map was a document, not a gate**
+
+### What I set out to do, and why I did something else
+The next open item is the grid. Before writing it I read `design.md` 5 to find
+the Grid's glyph — and found `grid-3x3` was already on the **Wireframe** button,
+because I had put it there two chunks ago without checking the map. Pulling that
+thread: **nine actions wear the wrong glyph**, four of them from my own last
+three chunks.
+
+Shipping the grid on top of that would have meant two toolbar buttons with the
+same picture. So this chunk is the repair, and the grid stays next.
+
+### Why nothing caught it
+Two icon tests already existed. One asserts every mapped file EXISTS, the other
+that a vendored SVG rasterises to something non-empty. Both pass while an action
+shows the wrong picture — they check the assets, never the assignment. That is
+the same shape as the decorative gates from session fourteen: an assertion
+satisfied by something other than the thing it is supposed to prove.
+
+### The new gate
+`[ui][icons]` "every action wears the glyph the design map gives it" compares
+**pixels**: `action->icon().pixmap(16,16)` against `theme::icon(mapped)`. Not a
+name recorded on the action as a property — that would only ever prove the name
+was recorded. Three mutations, three kills: the wrong glyph, a swapped
+left/right pair, and the RIGHT glyph in the wrong colour.
+
+### Corrected
+Wireframe `grid-3x3` → `box`. Pose `bone` → `person-standing` (bone is
+Rigging's). All six axis views `rotate-3d` → `user` / `rotate-3d` /
+`chevron-left|right|up|down`. Export `download` → `upload` — download is
+Import's, and Export writes OUT. Reset Workspace `refresh-cw` → `rotate-ccw`.
+
+Two actions the map never covered are now IN it rather than being exceptions to
+it: Save As → `copy` (its old `upload` belongs to Export) and Randomise →
+`refresh-cw`. `design.md` also records the two deliberately shared glyphs and
+why sharing is safe for those two: neither is a toolbar button that would have
+to be told apart by its picture alone.
+
+### Looked at it
+Cropped the toolbar band from a before and after screenshot and compared them
+side by side: a cube for wireframe, a figure for pose, a copy glyph for Save As,
+a revert arrow for reset. Every one reads better than what it replaced, which is
+the point of having a map at all.
+
+### Next
+The grid, with `grid-3x3` now free for it: line geometry plus a minimal unlit
+shader pair, since the litsphere and PBR shaders both want normals, UVs and a
+litsphere texture a floor has no meaning for.
+
+---
+
 ## 2026-09-08 (twenty-first) — Session · **The seam that makes the 70 cm defect catchable**
 
 ### The chunk
