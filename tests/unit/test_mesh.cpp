@@ -271,3 +271,37 @@ TEST_CASE("compactToFaces on a UV-less mesh keeps it UV-less", "[core][mesh][com
     CHECK(out->uvCount() == 0);
     CHECK(out->faceCount() == 1);
 }
+
+TEST_CASE("compactToFaces names the vertex each survivor came from", "[core][mesh][compact]") {
+    // The mapping exists so a caller can carry PER-VERTEX data across the
+    // compaction -- skin weights, in the one caller that needs it. Without it
+    // a decimated export has no honest way to weight anything and must refuse
+    // the rig, which is what it did.
+    const Mesh m = makeGrid();
+    std::vector<uint32_t> source;
+    const auto out = m.compactToFaces(std::vector<uint8_t>{1, 1, 0, 0}, &source);
+    REQUIRE(out.has_value());
+
+    REQUIRE(source.size() == out->vertexCount());
+    // Ascending, and a plain selection: that ordering is what the whole
+    // compaction is built around, and the caller composes two of these.
+    CHECK(std::ranges::is_sorted(source));
+    CHECK(source == std::vector<uint32_t>{0, 1, 2, 3, 4, 5});
+
+    // Positions agree, unlike after a decimation: nothing MOVES here.
+    for (size_t v = 0; v < out->vertexCount(); ++v) {
+        CHECK(out->coord()[v].x == m.coord()[source[v]].x);
+        CHECK(out->coord()[v].z == m.coord()[source[v]].z);
+    }
+}
+
+TEST_CASE("compactToFaces provenance skips the dropped vertices", "[core][mesh][compact]") {
+    // The two UPPER faces use vertices 3..8, so the mapping must start at 3. A
+    // mapping that was merely 0..N would satisfy every length check and be
+    // wrong by three.
+    const Mesh m = makeGrid();
+    std::vector<uint32_t> source;
+    const auto out = m.compactToFaces(std::vector<uint8_t>{0, 0, 1, 1}, &source);
+    REQUIRE(out.has_value());
+    CHECK(source == std::vector<uint32_t>{3, 4, 5, 6, 7, 8});
+}

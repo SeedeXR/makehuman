@@ -184,7 +184,8 @@ std::string DecimateError::message() const {
     return "unknown decimation error";
 }
 
-std::expected<Mesh, DecimateError> decimate(const Mesh& src, DecimateOptions options) {
+std::expected<Mesh, DecimateError> decimate(const Mesh& src, DecimateOptions options,
+                                            std::vector<uint32_t>* sourceVertex) {
     if (!std::isfinite(options.ratio) || options.ratio <= 0.0F || options.ratio > 1.0F) {
         return std::unexpected(DecimateError{.kind   = DecimateErrorKind::BadRatio,
                                              .detail = std::to_string(options.ratio)});
@@ -490,6 +491,7 @@ std::expected<Mesh, DecimateError> decimate(const Mesh& src, DecimateOptions opt
     // ---- compact ---------------------------------------------------------
     std::vector<uint32_t> remap(nv, std::numeric_limits<uint32_t>::max());
     std::vector<Vec3> outCoords;
+    if (sourceVertex != nullptr) sourceVertex->clear();
     for (size_t v = 0; v < nv; ++v) {
         bool referenced = false;
         for (const size_t t : vtris[v]) {
@@ -501,6 +503,7 @@ std::expected<Mesh, DecimateError> decimate(const Mesh& src, DecimateOptions opt
         if (!referenced || alive[v] == 0) continue;
         remap[v] = static_cast<uint32_t>(outCoords.size());
         outCoords.push_back(pos[v]);
+        if (sourceVertex != nullptr) sourceVertex->push_back(static_cast<uint32_t>(v));
     }
 
     std::vector<uint32_t> outFv;

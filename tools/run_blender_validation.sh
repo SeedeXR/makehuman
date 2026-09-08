@@ -67,6 +67,14 @@ if [ -x "$app" ]; then
     "$app" --pose tpose --export "$out/posed.usda" >/dev/null 2>&1 \
         && echo "posed.usda: T-pose, live rig, body and eyes on one skeleton" \
         || echo "warn: posed.usda export failed"
+    # A DECIMATED body on the same rig. This is the one check that can say the
+    # LOD's weights landed on the right vertices: the mesh is a quarter of the
+    # triangles and every vertex has been renumbered by the collapses, so if the
+    # provenance mapping were wrong Blender's own skinning would pull the body
+    # somewhere else entirely. "It has a skin of 179 bones" cannot see that.
+    "$app" --pose tpose --decimate 0.25 --export "$out/posed_lod.glb" >/dev/null 2>&1 \
+        && echo "posed_lod.glb: T-pose, live rig, body decimated to 25%" \
+        || echo "warn: posed_lod.glb export failed"
 else
     echo "skip posed.glb: $app not built"
 fi
@@ -96,6 +104,7 @@ fi
 "$BLENDER" --background --python "$repo/tools/blender_validate.py" -- \
     "$out/base.obj" "$out/posed.glb" "$out/posed.fbx" "$out/posed.usda" "$out/base.glb" \
     "$out/expressions.glb" "$out/expressions.fbx" "$out/expressions.usda" "$out/base.fbx" \
-    "$out/rigged.glb" "$out/morphed.glb" "$out/rigged.fbx" "$out/base.usda" 2>/dev/null |
+    "$out/rigged.glb" "$out/morphed.glb" "$out/rigged.fbx" "$out/base.usda" \
+    "$out/posed_lod.glb" 2>/dev/null |
     grep '^BLENDER_VALIDATE:' | sed 's/^BLENDER_VALIDATE://' |
     python3 "$repo/tools/blender_check.py"

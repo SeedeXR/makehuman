@@ -738,8 +738,17 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_decimate COMMAND makehuman
              --decimate 0.25
              --export ${CMAKE_CURRENT_BINARY_DIR}/lod_quarter/body.obj)
+    # FAIL_REGULAR_EXPRESSION alongside the PASS one, because PASS_REGULAR_
+    # EXPRESSION REPLACES the exit-code check: without it a run that printed
+    # this line and then failed to write the file still passes. That is not
+    # hypothetical -- the LOD's skin was compacted with the wrong mesh's remap,
+    # glTF refused it as "skin does not describe this mesh", the export exited
+    # 1, and both of these tests were green because the announcement had
+    # already been printed and the .glb from the previous run was still on
+    # disk for the inspect to read.
     set_tests_properties(app_decimate PROPERTIES
         PASS_REGULAR_EXPRESSION "decimated 13378 faces to 6688 triangles"
+        FAIL_REGULAR_EXPRESSION "export failed"
         FIXTURES_SETUP app_lod_quarter_obj)
 
     add_test(NAME app_decimate_differs COMMAND ${CMAKE_COMMAND}
@@ -790,27 +799,45 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_decimate_started_from_the_masked_body PROPERTIES
         PASS_REGULAR_EXPRESSION "decimated 13378 faces to ")
 
-    # A rig-carrying format is refused rather than written unrigged: weights are
-    # per BASE vertex and a collapse renumbers every one of them, so a skin
-    # written against the LOD would weight the wrong points. Same refusal a
-    # subdivided mesh already gets, and said out loud for the same reason.
-    add_test(NAME app_decimate_refuses_the_rig COMMAND makehuman
+    # A decimated mesh CARRIES the rig now. It could not until the decimator
+    # reported where each surviving vertex came from: weights are per base
+    # vertex, a collapse renumbers everything, and the honest answer without a
+    # mapping was to refuse. The previous chunk's `app_decimate_refuses_the_rig`
+    # is this test -- the behaviour changed deliberately, so the assertion did.
+    add_test(NAME app_decimate_carries_the_rig COMMAND makehuman
              --decimate 0.5 --export ${CMAKE_CURRENT_BINARY_DIR}/app_lod.glb)
-    set_tests_properties(app_decimate_refuses_the_rig PROPERTIES
-        PASS_REGULAR_EXPRESSION "decimated mesh cannot carry the rig"
+    set_tests_properties(app_decimate_carries_the_rig PROPERTIES
+        PASS_REGULAR_EXPRESSION "skin: 179 joints, 4 influences/vertex"
+        FAIL_REGULAR_EXPRESSION "export failed"
         FIXTURES_SETUP app_lod_glb)
 
-    # ...and the FILE carries none, which is a different claim. A mutation that
-    # deleted the refusal but left the message in place passed the line above:
-    # the export announced it was dropping the skeleton and wrote it anyway.
-    # `--inspect` prints ", skin of N bones" for a mesh that has one, so its
-    # ABSENCE is the assertion.
-    add_test(NAME app_decimate_glb_has_no_skin COMMAND makehuman
+    # ...and the FILE carries it, which is a different claim: the app printing
+    # a skin line and the writer accepting one are two things, and the writer
+    # rejected the first attempt here ("skin does not describe this mesh")
+    # because the skin was built per LOD render vertex while the geometry went
+    # through a further compaction.
+    add_test(NAME app_decimate_glb_has_a_skin COMMAND makehuman
              --inspect ${CMAKE_CURRENT_BINARY_DIR}/app_lod.glb)
-    set_tests_properties(app_decimate_glb_has_no_skin PROPERTIES
-        PASS_REGULAR_EXPRESSION "app_lod.glb: 2 meshes"
-        FAIL_REGULAR_EXPRESSION "skin of"
+    set_tests_properties(app_decimate_glb_has_a_skin PROPERTIES
+        PASS_REGULAR_EXPRESSION "skin of 179 bones"
         FIXTURES_REQUIRED app_lod_glb)
+
+    # **Whether the weights are RIGHT is not decided here.** A skin of 179
+    # bones built from a shifted mapping is still a skin of 179 bones, and
+    # nothing this suite can compute would tell the difference. Blender does:
+    # `tools/run_blender_validation.sh` exports `posed_lod.glb` and applies the
+    # armature itself, landing at 1.6849 x 0.3008 x 1.6634 against the full
+    # mesh's 1.6863 x 0.3009 x 1.663 -- within 1.4 mm. That harness is not in
+    # CI (no Blender on the runner), so this comment is the pointer to it.
+
+    # Subdivision still refuses, and refuses even WITH --decimate: a subdivided
+    # mesh's vertices are ones the weights know nothing about, which no
+    # provenance mapping through the decimator can fix.
+    add_test(NAME app_decimate_subdivided_still_refuses COMMAND makehuman
+             --subdivide --decimate 0.25
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_lod_subdiv.glb)
+    set_tests_properties(app_decimate_subdivided_still_refuses PROPERTIES
+        PASS_REGULAR_EXPRESSION "subdivided mesh cannot carry the rig")
 
     add_test(NAME app_decimate_refuses_blendshapes COMMAND makehuman
              --decimate 0.5 --blendshapes

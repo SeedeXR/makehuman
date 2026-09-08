@@ -222,6 +222,116 @@ TEST_CASE("a cylinder keeps its radius", "[core][decimate]") {
     CHECK(worst < 0.02);
 }
 
+// ---------------------------------------------------------------------------
+// Vertex provenance: which input vertex each surviving vertex descends from.
+//
+// This is what lets a decimated mesh carry a SKIN. Weights are per input
+// vertex and a collapse renumbers everything, so without a mapping the only
+// honest thing to do is refuse the rig -- which is what the exporter did.
+//
+// The survivor keeps its own weights: `a` survives a collapse of edge (a, b),
+// so the reduced mesh is weighted as `a` was.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("every surviving vertex names the input vertex it came from", "[core][decimate]") {
+    const core::Mesh src = cylinder(24, 6);
+    std::vector<uint32_t> source;
+    const auto out = core::decimate(src, {.ratio = 0.5F}, &source);
+    REQUIRE(out.has_value());
+
+    REQUIRE(source.size() == out->vertexCount());
+    for (const uint32_t v : source)
+        CHECK(v < src.vertexCount());
+
+    // Distinct: a survivor IS one of the input vertices, so two outputs cannot
+    // claim the same source. Sharing one would weight two different points
+    // identically, which is the shape a bug in the compaction takes.
+    std::set<uint32_t> seen;
+    for (const uint32_t v : source)
+        CHECK(seen.insert(v).second);
+
+    // Ascending, because the compaction walks the input in order. Not
+    // decoration: the caller composes this with a second mapping and relies on
+    // it being a plain selection rather than a shuffle.
+    CHECK(std::ranges::is_sorted(source));
+}
+
+TEST_CASE("at ratio 1 the provenance is the identity", "[core][decimate]") {
+    const core::Mesh src = plane(4, 4);
+    std::vector<uint32_t> source;
+    const auto out = core::decimate(src, {.ratio = 1.0F}, &source);
+    REQUIRE(out.has_value());
+    REQUIRE(source.size() == src.vertexCount());
+    for (size_t v = 0; v < src.vertexCount(); ++v)
+        CHECK(source[v] == v);
+}
+
+TEST_CASE("provenance is identity, not position", "[core][decimate]") {
+    // A survivor MOVES: it lands at the position minimising the quadric, which
+    // is neither endpoint. The mapping says which vertex this one IS, not
+    // where it was -- a test comparing positions would be asserting the
+    // decimator does nothing.
+    const core::Mesh src = cylinder(16, 4);
+    std::vector<uint32_t> source;
+    const auto out = core::decimate(src, {.ratio = 0.5F}, &source);
+    REQUIRE(out.has_value());
+
+    size_t moved = 0;
+    for (size_t i = 0; i < out->vertexCount(); ++i) {
+        const core::Vec3& a = out->coord()[i];
+        const core::Vec3& b = src.coord()[source[i]];
+        if (a.x != b.x || a.y != b.y || a.z != b.z) ++moved;
+    }
+    CHECK(moved > 0);
+}
+
+TEST_CASE("a survivor stays near the vertex it came from", "[core][decimate][slow]") {
+    // **This is the assertion that pins the mapping.** Length, range,
+    // distinctness and sortedness are all satisfied by the IDENTITY -- a
+    // mutation that reported the OUTPUT index instead of the input one passed
+    // every one of them, and passed every application test too, because a skin
+    // built from a wrong-but-in-range mapping is still a valid skin.
+    //
+    // What separates them is geometry. A survivor is the quadric minimiser of a
+    // chain of collapses that began at its source, so it stays in that
+    // neighbourhood. Measured on the base mesh: the true mapping's worst
+    // |survivor - source| is 2.02 dm at 50% and 2.14 dm at 25%, against a
+    // bounding-box diagonal of 19.85 dm. The identity mapping's worst is
+    // **16.79 dm** -- the height of the whole body.
+    const auto base = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(base.has_value());
+    const auto [lo, hi] = bounds(*base);
+    const auto dx       = static_cast<double>(hi.x - lo.x);
+    const auto dy       = static_cast<double>(hi.y - lo.y);
+    const auto dz       = static_cast<double>(hi.z - lo.z);
+    const double limit  = std::sqrt(dx * dx + dy * dy + dz * dz) * 0.20;
+
+    std::vector<uint32_t> source;
+    const auto out = core::decimate(*base, {.ratio = 0.25F}, &source);
+    REQUIRE(out.has_value());
+    REQUIRE(source.size() == out->vertexCount());
+
+    double worst = 0.0;
+    for (size_t i = 0; i < out->vertexCount(); ++i) {
+        const core::Vec3& a = out->coord()[i];
+        const core::Vec3& b = base->coord()[source[i]];
+        const auto ex       = static_cast<double>(a.x - b.x);
+        const auto ey       = static_cast<double>(a.y - b.y);
+        const auto ez       = static_cast<double>(a.z - b.z);
+        worst               = std::max(worst, std::sqrt(ex * ex + ey * ey + ez * ez));
+    }
+    INFO("worst survivor-to-source distance " << worst << ", limit " << limit);
+    CHECK(worst < limit);
+}
+
+TEST_CASE("provenance is optional and costs the caller nothing", "[core][decimate]") {
+    // Every other caller -- and every other test in this file -- passes
+    // nothing. The mapping exists for the exporter.
+    const auto out = core::decimate(plane(4, 4), {.ratio = 0.5F});
+    REQUIRE(out.has_value());
+    CHECK(out->faceCount() > 0);
+}
+
 TEST_CASE("decimation is deterministic", "[core][decimate]") {
     const core::Mesh src = cylinder(24, 6);
     const auto a         = core::decimate(src, {.ratio = 0.5F});

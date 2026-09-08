@@ -1232,8 +1232,13 @@ bool formatCarriesRig(std::string_view ext) {
 ///        place. They were two places for one chunk, and the mutation that
 ///        removed the refusal while leaving the message survived: the export
 ///        said it was dropping the skeleton and wrote it anyway.
+/// @param vmap render vertex -> BASE mesh vertex, or empty to use @p rm's own.
+///        A decimated mesh needs an explicit one: its render vmap points at ITS
+///        vertices, and the weights are compiled against the base mesh, so the
+///        caller composes the chain and hands the answer over.
 std::optional<mh::rig::SkinData> exportSkin(const PoseRig& rig, const mh::core::RenderMesh& rm,
-                                            const char* refuseBecause) {
+                                            const char* refuseBecause,
+                                            std::span<const uint32_t> vmap) {
     if (!rig.loaded()) return std::nullopt;
     if (refuseBecause != nullptr) {
         // Weights are per BASE vertex. A subdivided render mesh's vmap indexes
@@ -1245,7 +1250,8 @@ std::optional<mh::rig::SkinData> exportSkin(const PoseRig& rig, const mh::core::
         return std::nullopt;
     }
 
-    mh::rig::SkinData skin = mh::rig::buildSkinData(rig.skeleton, rig.weights, rm.vmap());
+    mh::rig::SkinData skin =
+        mh::rig::buildSkinData(rig.skeleton, rig.weights, vmap.empty() ? rm.vmap() : vmap);
     if (skin.jointNames.empty()) {
         std::fprintf(stderr,
                      "cannot expand the weights onto the render vertices; "
@@ -2242,13 +2248,19 @@ int main(int argc, char** argv) {
         std::optional<mh::core::Mesh> lod;
         std::optional<mh::core::RenderMesh> lodRm;
         std::optional<mh::io::CompactedMesh> lodCompact;
+        // LOD render vertex -> BASE mesh vertex, so the weights compiled
+        // against the base mesh still apply. Composed from the two mappings
+        // below; empty when nothing was decimated.
+        std::vector<uint32_t> lodVmap;
         if (decimateRatio > 0.0F) {
-            const auto masked = displayMesh().compactToFaces(bodyMask);
+            std::vector<uint32_t> maskSource;
+            std::vector<uint32_t> lodSource;
+            const auto masked = displayMesh().compactToFaces(bodyMask, &maskSource);
             if (!masked) {
                 std::fprintf(stderr, "cannot bake the face mask before decimating\n");
                 return false;
             }
-            auto reduced = mh::core::decimate(*masked, {.ratio = decimateRatio});
+            auto reduced = mh::core::decimate(*masked, {.ratio = decimateRatio}, &lodSource);
             if (!reduced) {
                 std::fprintf(stderr, "cannot decimate: %s\n", reduced.error().message().c_str());
                 return false;
@@ -2271,10 +2283,34 @@ int main(int argc, char** argv) {
             lod->calcVertexTangents();
             lodRm      = mh::core::RenderMesh::build(*lod);
             lodCompact = mh::io::compactUnusedVertices(lodRm->view());
+
+            // The weights survive the reduction by composing three mappings
+            // that each already exist:
+            //
+            //   LOD render vertex --lodRm.vmap()--> LOD mesh vertex
+            //                     --lodSource-----> masked mesh vertex
+            //                     --maskSource----> display mesh vertex
+            //
+            // and the display mesh IS the base mesh here, because a subdivided
+            // one is refused below for its own reason. Each step is a plain
+            // selection, so the composition is one lookup per vertex.
+            //
+            // What this MEANS is "the survivor keeps its own weights". A
+            // collapse of edge (a, b) leaves `a`, so the reduced mesh is
+            // weighted as `a` was -- the standard answer, and the only one
+            // that needs no rule for two endpoints on different bones.
+            for (const uint32_t r : lodRm->vmap()) {
+                lodVmap.push_back(maskSource[lodSource[r]]);
+            }
         }
 
-        const auto skinData =
-            exportSkin(rig, rm, lod ? "decimated" : (subdivided ? "subdivided" : nullptr));
+        // A decimated mesh CAN carry the rig now: its weights come from the
+        // vertices its own survived from. A subdivided one still cannot --
+        // its vmap indexes subdivided vertices the weights know nothing about
+        // -- and the two together are refused for the subdivision's reason.
+        const auto skinData = lod && !subdivided
+                                   ? exportSkin(rig, *lodRm, nullptr, lodVmap)
+                                   : exportSkin(rig, rm, subdivided ? "subdivided" : nullptr, {});
 
         // A third of the body's vertex buffer is not referenced by any visible
         // triangle: setFaceMask filters INDICES and leaves the vertex buffer
@@ -2298,8 +2334,14 @@ int main(int argc, char** argv) {
         std::vector<float> weights;
         std::optional<mh::foundation::SkinView> skinView;
         if (skinData) {
-            std::tie(joints, weights) = mh::io::compactSkinAttributes(
-                skinData->view(), compact.remap, compact.coord.size());
+            // Against the SAME compaction the geometry went through. The LOD
+            // has its own, and using the full mesh's here writes a skin whose
+            // vertex count does not match the mesh -- which the glTF writer
+            // catches ("skin does not describe this mesh") and every other
+            // format would not.
+            const mh::io::CompactedMesh& forSkin = lod ? *lodCompact : compact;
+            std::tie(joints, weights)            = mh::io::compactSkinAttributes(
+                skinData->view(), forSkin.remap, forSkin.coord.size());
             skinView = mh::foundation::SkinView{.jointNames   = skinData->jointNames,
                                                  .jointParents = skinData->jointParents,
                                                  .globalRest   = skinData->globalRest,

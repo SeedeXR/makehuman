@@ -41,9 +41,13 @@ namespace mh::core {
 /// (`wavefront.py:105-106`), so `vertsPerFaceForExport()` is 3 and every
 /// existing writer handles it unchanged.
 ///
-/// Skin weights are NOT carried over -- they are held outside `Mesh`, in
-/// `rig::VertexWeights`, and transferring them is its own step. A decimated
-/// mesh is geometry for now.
+/// Skin weights live outside `Mesh`, in `rig::VertexWeights`, so they are not
+/// in the result -- but `sourceVertex` lets a caller carry them itself, and the
+/// exporter does. **The survivor keeps its own weights**: `a` survives a
+/// collapse of edge (a, b), so the reduced mesh is weighted as `a` was. That is
+/// the standard answer; blending the two endpoints instead would need a rule
+/// for what to do when they are weighted to different bones, which is a
+/// judgement call with no obviously right side.
 struct DecimateOptions {
     /// Fraction of the *triangulated* input's triangles to keep, in (0, 1].
     /// The base mesh's 18,486 quads triangulate to 36,972, so 0.25 asks for
@@ -76,6 +80,12 @@ struct DecimateError {
 /// flip a triangle, break the surface's topology, or cross an attribute
 /// boundary is refused, and a mesh made mostly of such edges cannot reach an
 /// arbitrary target.
-[[nodiscard]] std::expected<Mesh, DecimateError> decimate(const Mesh& src, DecimateOptions options);
+/// @param sourceVertex optional: filled with the INPUT index each surviving
+///        vertex came from, ascending and distinct. It says which vertex this
+///        one IS, not where it was -- a survivor lands at the position
+///        minimising the quadric, which is neither endpoint. Skin weights are
+///        the reason it exists.
+[[nodiscard]] std::expected<Mesh, DecimateError> decimate(
+    const Mesh& src, DecimateOptions options, std::vector<uint32_t>* sourceVertex = nullptr);
 
 }  // namespace mh::core

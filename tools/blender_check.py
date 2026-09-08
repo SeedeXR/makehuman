@@ -141,6 +141,27 @@ EXPECT = {
         "live_rig": True, "evaluated": [1.6863, 0.3009, 1.663],
     },
 
+    # The DECIMATED body, on the same rig, read by the same third party.
+    #
+    # This is the check that says the LOD's WEIGHTS are right. Every vertex has
+    # been renumbered by the collapses, so the weights only land correctly if
+    # the provenance mapping composed through the mask compaction and the
+    # decimation is exact. `--inspect` reporting "skin of 179 bones" cannot see
+    # any of that: a skin built from a shifted mapping is still a skin.
+    #
+    # **Measured: 1.6849 x 0.3008 x 1.6634, against the full mesh's
+    # 1.6863 x 0.3009 x 1.663.** Within 1.4 mm on x, 0.1 mm on y and 0.4 mm on
+    # z, on a body 1.66 m tall -- Blender's own skinning of the reduced mesh
+    # lands where it lands the full one. It is not IDENTICAL because a quarter
+    # of the triangles is a slightly different silhouette, and it could not be
+    # close at all if the mapping were shifted: the weights would name whatever
+    # bones the wrong indices happen to point at and the surface would scatter.
+    "posed_lod.glb": {
+        "vertices": 5559, "triangles": 8728, "tallest": 1.659377, "uv_layers": 1,
+        "bones": 179, "armatures": 1, "skinned": 5559, "vertex_groups": 358,
+        "live_rig": True, "evaluated": [1.6849, 0.3008, 1.6634],
+    },
+
     # ...and the same character through our USD writer, read by the same third
     # party. Three formats, three importers and our own CPU LBS all landing on
     # 1.6863 x 0.3009 x 1.663 m is a much stronger statement than any one of

@@ -4,6 +4,79 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (thirty-fifth) — Session · **A decimated LOD carries the rig**
+
+*2026-09-08 — the weight transfer, next in M9 after the wiring.*
+
+### What landed
+`--decimate 0.25 --export lod.glb` writes a skin of **179 bones over 4,483 body
+vertices**. It could not before: a collapse renumbers every vertex the weights
+are indexed by, and without a mapping the only honest answer was to refuse.
+
+Both steps now report vertex provenance, as **optional out-parameters** on
+`Mesh::compactToFaces` and `core::decimate` — not a returned struct, because a
+struct holding a `Mesh` inside `Mesh` is an incomplete type, and because every
+other caller wants nothing. The exporter composes three mappings that already
+existed:
+
+```
+LOD render vertex --lodRm.vmap()--> LOD mesh vertex
+                  --lodSource-----> masked mesh vertex
+                  --maskSource----> base vertex
+```
+
+Each is a plain ascending selection, so it is one lookup per vertex. What it
+means is **"the survivor keeps its own weights"**: `a` survives a collapse of
+edge (a, b), so the reduced mesh is weighted as `a` was.
+
+### Only Blender can say the weights are RIGHT
+`posed_lod.glb` is a new case in `run_blender_validation.sh`. Blender applies
+the armature itself and lands at **1.6849 × 0.3008 × 1.6634** against the full
+mesh's 1.6863 × 0.3009 × 1.663 — within 1.4 mm on a 1.66 m body. 14/14 exports
+agree.
+
+That case is not decoration, and the mutations proved it: **feeding the skin the
+LOD's own vmap instead of the composed one passes every ctest** — the mesh gets
+a valid skin of 179 bones, the file loads, `--inspect` is happy — and Blender
+reports `[1.6417, 1.1481, 1.6544]`, a y extent nearly four times too deep.
+ctest structurally cannot see this: a skin built from a wrong-but-in-range
+mapping is still a well-formed skin.
+
+### Mutations: 5 run, 3 killed, 2 resolved by measurement
+| Mutation | Outcome |
+|---|---|
+| Decimator provenance reports the OUTPUT index (i.e. the identity) | **survived** — length, range, distinctness and sortedness are all true of the identity, and so is every app test. Killed by a new geometric assertion: a survivor is the quadric minimiser of a chain that began at its source, so it stays near it. Measured on the base mesh — worst 2.02 dm at 50% and 2.14 dm at 25% against a 19.85 dm diagonal, while the identity's worst is **16.79 dm**, the height of the body |
+| `compactToFaces` provenance reports the NEW index | killed by the unit test that pins `{3,4,5,6,7,8}` |
+| The LOD's skin compacted with the FULL mesh's remap | **survived** — and it is the bug I actually hit by hand. `PASS_REGULAR_EXPRESSION` REPLACES ctest's exit-code check, so a run that printed "skin: 179 joints" and then failed to write the file still passed, with the previous run's `.glb` left on disk for the inspect to read. Fixed with `FAIL_REGULAR_EXPRESSION "export failed"` on both export tests |
+| `exportSkin` ignores the composed vmap | survives ctest, **killed by Blender** as above |
+| The two mappings composed in the wrong order | **equivalent mutant on this asset.** Measured: the base mesh's 13,380 visible body vertices are exactly its FIRST 13,380, so `maskSource` is the identity and the composition step cannot be exercised by any data that ships. Both halves are individually gated; a mesh with interleaved groups would exercise the composition, and none exists here |
+
+### Notes
+- The glTF writer caught the first attempt itself — "skin does not describe this
+  mesh" — because the skin was built per LOD render vertex while the geometry
+  went through a further compaction. The LOD's skin now goes through the LOD's
+  own `CompactedMesh::remap`.
+- Subdivision still refuses even with `--decimate`: a subdivided mesh's vertices
+  are ones the weights know nothing about, which no provenance mapping through
+  the decimator can fix. Tested.
+- **Blendshapes are still refused** on a decimated mesh. The same composed
+  mapping would make them nearly free — `buildExpressionBlendshapes` takes a
+  vmap — but "the shape keys are present" and "the shape keys move the right
+  vertices" are two claims, and the second needs its own Blender shape-key case.
+
+### Gates
+756/756 in debug, release, ASan and TSan, 0 warnings, `ALLDONE` read. CI's exact
+clang-format command clean. Blender harness 14/14, run before and after.
+
+### Next
+`memory/todo.md`: the LOD **chain** is what remains, and it is a FORMAT question
+— LOD0/1/2 as separate files or as extra entries in one glTF/USD scene — so it
+is the owner's. Blendshapes on a decimated mesh is unblocked and small.
+**Pose-space deformation remains blocked**: no oracle, no content, and it needs
+a file format for correctives.
+
+---
+
 ## 2026-09-08 (thirty-fourth) — Session · **`--decimate`, and the mask that had to go first**
 
 *2026-09-08 — the app wiring I deferred last chunk, specified there and built

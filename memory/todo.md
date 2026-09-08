@@ -4170,10 +4170,43 @@ GPU here, or Colab) and it comes back to the owner first.
               written: it describes the full-resolution render mesh, which is
               not what goes in the file, and naming a vertex count no consumer
               will see is worse than saying nothing.
-      - [ ] **Weight transfer.** Weights live outside `Mesh`, in
-            `rig::VertexWeights`, so a decimated mesh carries none today. The
-            survivor keeping its own weights is the standard answer and needs
-            the wiring above first.
+      - [x] **Weight transfer: a decimated LOD carries the rig** (2026-09-08).
+            `--decimate 0.25 --export lod.glb` now writes a skin of 179 bones
+            over 4,483 body vertices. It could not before because a collapse
+            renumbers every vertex the weights are indexed by, and the honest
+            answer without a mapping was to refuse.
+            - **Both steps now report vertex provenance**, as optional
+              out-parameters (`Mesh::compactToFaces` and `core::decimate`), and
+              the exporter composes three mappings that each already existed:
+              LOD render vertex → LOD mesh vertex (`lodRm.vmap()`) → masked
+              mesh vertex (the decimator's) → base vertex (the mask
+              compaction's). Every step is a plain ascending selection, so the
+              composition is one lookup per vertex.
+            - **What it means is "the survivor keeps its own weights"**: `a`
+              survives a collapse of edge (a, b), so the reduced mesh is
+              weighted as `a` was. Blending the endpoints instead would need a
+              rule for two endpoints on different bones — a judgement call with
+              no obviously right side.
+            - **Blender is what says the weights are RIGHT**, and nothing in
+              ctest could. `posed_lod.glb` is a new case in
+              `run_blender_validation.sh`: Blender applies the armature itself
+              and lands at **1.6849 × 0.3008 × 1.6634** against the full mesh's
+              1.6863 × 0.3009 × 1.663 — within 1.4 mm on a 1.66 m body. A
+              shifted mapping would name whatever bones the wrong indices point
+              at and scatter the surface. 14/14 exports agree with Blender.
+            - The writer caught the first attempt: the skin was built per LOD
+              render vertex while the geometry went through a further
+              compaction, and glTF refused it as "skin does not describe this
+              mesh". The LOD's skin now goes through the LOD's own
+              `CompactedMesh::remap`.
+            - **Blendshapes are still refused** on a decimated mesh. The same
+              composed mapping would make them nearly free —
+              `buildExpressionBlendshapes` takes a vmap — but "the shape keys
+              are present" and "the shape keys move the right vertices" are two
+              claims, and the second needs its own Blender shape-key case.
+            - Subdivision still refuses even with `--decimate`: a subdivided
+              mesh's vertices are ones the weights know nothing about, which no
+              provenance mapping through the decimator can fix. Tested.
       - [ ] **The chain itself** — LOD0/1/2 written as separate files or as
             extra entries in one glTF/USD scene. Which of those is a FORMAT
             decision and therefore the owner's.

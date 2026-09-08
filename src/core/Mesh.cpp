@@ -119,7 +119,8 @@ std::expected<void, MeshError> Mesh::setFaces(std::vector<uint32_t> faceVerts,
     return {};
 }
 
-std::expected<Mesh, MeshError> Mesh::compactToFaces(std::span<const uint8_t> faceMask) const {
+std::expected<Mesh, MeshError> Mesh::compactToFaces(std::span<const uint8_t> faceMask,
+                                                    std::vector<uint32_t>* sourceVertex) const {
     const size_t vpp    = vertsPerPrimitive_;
     const size_t nFaces = faceCount();
     if (faceMask.size() != nFaces) return std::unexpected(MeshError::MaskSizeMismatch);
@@ -137,10 +138,12 @@ std::expected<Mesh, MeshError> Mesh::compactToFaces(std::span<const uint8_t> fac
         }
     }
     std::vector<Vec3> coords;
+    if (sourceVertex != nullptr) sourceVertex->clear();
     for (size_t v = 0; v < vertexOf.size(); ++v) {
         if (vertexOf[v] == UINT32_MAX) continue;
         vertexOf[v] = static_cast<uint32_t>(coords.size());
         coords.push_back(coord_[v]);
+        if (sourceVertex != nullptr) sourceVertex->push_back(static_cast<uint32_t>(v));
     }
     std::vector<Vec2> uvs;
     for (size_t t = 0; t < uvOf.size(); ++t) {

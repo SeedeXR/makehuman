@@ -190,8 +190,14 @@ public:
     /// @param faceMask one byte per face, nonzero = keep. Must be exactly
     ///        faceCount() long -- a short mask treated as "keep the rest"
     ///        would export geometry the caller had forgotten about.
+    /// @param sourceVertex optional: filled with the ORIGINAL index of each
+    ///        surviving vertex, ascending, so a caller can carry per-vertex
+    ///        data across the compaction. Skin weights are the one thing that
+    ///        needs it -- without it a decimated export has no honest way to
+    ///        weight anything and has to refuse the rig, which is what it did.
+    ///        Every other caller passes nothing.
     [[nodiscard]] std::expected<Mesh, MeshError> compactToFaces(
-        std::span<const uint8_t> faceMask) const;
+        std::span<const uint8_t> faceMask, std::vector<uint32_t>* sourceVertex = nullptr) const;
 
     /// Mutable positions, for morph-target application. Callers must call
     /// calcNormals() afterwards; this deliberately does not do it implicitly.
