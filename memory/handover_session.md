@@ -4,6 +4,64 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (twenty-fourth) — Session · **A production render that checks itself**
+
+### The chunk
+Two open items, both "ungated because it lives in `main.cpp`", both about the
+production render, closed by one seam.
+
+**`ui::renderSettingsFor`** turns what the user asked for into what the renderer
+runs with. A function rather than five assignments inside the application,
+because two claims live in it that nothing could otherwise check:
+
+* **`wireframe` reaches the renderer.** That exact line went missing once — an
+  edit lost in my own tooling — and `--wireframe --render` wrote a
+  byte-identical solid PNG while every test passed. Dropping it now fails a unit
+  test.
+* **`grid` does not.** The reference marks its grids `excludeFromProduction`,
+  and the app-level test could only catch the FLAG leaking, not a `renderImage`
+  that switched the grid on for everyone.
+
+**`ui::describeFrame`** is the blank-frame guard, and it is the real defect of
+the two. `describe` was a lambda in `main.cpp` reachable only from
+`--screenshot`, so `--render` never checked its own output: a production render
+of nothing at all saved a valid PNG and exited 0 — the failure that looks like
+success in a log. `--render` now refuses a blank frame and PRINTS what it drew,
+so a production render is as checkable from a log as a screenshot has always
+been.
+
+### The test was wrong before the code was
+The first version of the coverage test filled a white square from the origin and
+expected 25%. It read 75%, because `describe` takes **pixel (0, 0)** as the
+background — so the square became the background and the black surround became
+the subject. The code was right and my premise was wrong; the fix was to move
+the square off the corner, and the assumption is now stated in the header, since
+a frame whose top-left corner is part of the subject measures backwards.
+
+### Mutations
+Four, all killed: dropping `wireframe` (the shipped defect), setting `grid`,
+a flat fill reported as drawn, and removing the guard from `renderImage`.
+
+One of them came back "passed" the first time because the shell mangled the
+anchor and the patch never applied — a mutation that does not apply is worth
+exactly as much as one that does not compile. Re-run from a file, it fails as it
+should.
+
+### A stale entry corrected
+`memory/todo.md` still carried "reverting `changeCoords` to `setCoords` passes
+the whole suite". That stopped being true in session twenty-one when
+`rig::poseMesh` gave posing a testable seam — the mutation now fails four
+assertions. Reality beats memory, including my own.
+
+### Next
+`memory/todo.md` in milestone order. The next buildable item is the **symmetry
+MODE** — the reference's third symmetry button, a toggle that mirrors every
+slider drag as it happens (`symmetryModeEnabled`, `core/mhmain.py:1524`). After
+that the owner request needs a decision: the two-level tab bar would mean
+throwing the dockable layout away.
+
+---
+
 ## 2026-09-08 (twenty-third) — Session · **The grid, and two things the picture said the code did not**
 
 ### The chunk

@@ -15,6 +15,7 @@ add_library(mh_ui STATIC
     Language.cpp
     MainWindow.cpp
     MacroStatus.cpp
+    FrameStats.cpp
     ImageViewer.cpp
     MouseBindings.cpp
     RenderDialog.cpp

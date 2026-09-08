@@ -35,6 +35,7 @@
 #include "makehuman/rig/Skinning.h"
 #include "makehuman/rig/VertexWeights.h"
 #include "makehuman/ui/AssetPanel.h"
+#include "makehuman/ui/FrameStats.h"
 #include "makehuman/ui/ImageViewer.h"
 #include "makehuman/ui/Language.h"
 #include "makehuman/ui/MacroStatus.h"
@@ -147,48 +148,6 @@ std::string availableRigs() {
         out += st;
     }
     return out;
-}
-
-/// Pixel statistics for the rendered frame. A window that came up but drew
-/// nothing still saves a perfectly valid PNG, so "it ran" is not evidence --
-/// coverage and spread are.
-/// Returns false when the frame carries no drawn geometry at all.
-bool describe(const QImage& img, std::string& out) {
-    if (img.isNull()) {
-        out = "empty frame -- nothing was rendered";
-        return false;
-    }
-    const QImage rgb      = img.convertToFormat(QImage::Format_RGB32);
-    const QRgb bg         = rgb.pixel(0, 0);
-    const long long total = static_cast<long long>(rgb.width()) * rgb.height();
-    long long covered     = 0;
-    double sum            = 0.0;
-    int lo = 255, hi = 0;
-    for (int y = 0; y < rgb.height(); ++y) {
-        for (int x = 0; x < rgb.width(); ++x) {
-            const QRgb p = rgb.pixel(x, y);
-            if (p == bg) continue;
-            ++covered;
-            const int l = qGray(p);
-            sum += l;
-            lo = std::min(lo, l);
-            hi = std::max(hi, l);
-        }
-    }
-    char buf[256];
-    if (covered == 0) {
-        std::snprintf(buf, sizeof buf, "%dx%d frame is a flat fill -- nothing drew", rgb.width(),
-                      rgb.height());
-        out = buf;
-        return false;
-    }
-    std::snprintf(buf, sizeof buf,
-                  "%dx%d covered %lld of %lld pixels (%.1f%%) luminance min=%d max=%d mean=%.1f",
-                  rgb.width(), rgb.height(), covered, total,
-                  100.0 * static_cast<double>(covered) / static_cast<double>(total), lo, hi,
-                  sum / static_cast<double>(covered));
-    out = buf;
-    return true;
 }
 
 /// The rig, its pose and the live-rig capture. Moved into `mh::rig` so the
@@ -2258,23 +2217,20 @@ int main(int argc, char** argv) {
         auto renderer = mh::render::OffscreenRenderer::create(shaderDir);
         if (!renderer) return std::unexpected(renderer.error().message());
 
-        mh::render::RenderSettings rs;
-        rs.width                 = req.width;
-        rs.height                = req.height;
-        rs.litsphere             = skin;
-        rs.transparentBackground = req.transparent;
-        rs.shading               = req.shading;
-        rs.wireframe             = req.wireframe;
-        // NOT the grid. The reference marks both of its grids
-        // `excludeFromProduction` (`core/mhmain.py:671,687`), and it is right:
-        // a production render is the character, and a floor grid is scaffolding
-        // for judging where the character stands. The viewport draws it; this
-        // does not.
+        const mh::render::RenderSettings rs = mh::ui::renderSettingsFor(req, skin);
 
         const auto scene = buildScene();
         if (scene.empty()) return std::unexpected(std::string{"nothing to draw"});
         auto img = (*renderer)->render(scene, rs);
         if (!img) return std::unexpected(img.error().message());
+
+        // The same guard `--screenshot` has always had. A blank frame saves as
+        // a perfectly valid PNG, so without this a production render of nothing
+        // writes a file and exits 0 -- which is how a rendering regression
+        // passes CI. Reported rather than saved: the caller shows the message.
+        std::string stats;
+        if (!mh::ui::describeFrame(*img, stats)) return std::unexpected(stats);
+        std::printf("%s\n", stats.c_str());
         return std::move(*img);
     };
 
@@ -2938,7 +2894,7 @@ int main(int argc, char** argv) {
                 return;
             }
             std::string stats;
-            const bool drew = describe(frame, stats);
+            const bool drew = mh::ui::describeFrame(frame, stats);
             std::fprintf(drew ? stdout : stderr, "%s\n", stats.c_str());
             if (!drew) {
                 // A blank frame saves as a perfectly valid PNG. Exiting 0 here

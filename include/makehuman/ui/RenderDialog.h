@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include "makehuman/render/OffscreenRenderer.h"
 #include "makehuman/render/SceneResources.h"
 
 #include <QDialog>
 
+#include <filesystem>
 #include <memory>
 
 namespace mh::ui {
@@ -42,6 +44,21 @@ struct RenderRequest {
 /// it, so a checkbox would be a control that sometimes silently does nothing.
 /// The shading model takes its place, which is a real choice the reference
 /// could not offer because it has no PBR path.
+/// The settings a production render runs with, from what the user asked for.
+///
+/// A function rather than five assignments inside the application, because two
+/// claims live in it that nothing could otherwise check: that `wireframe`
+/// reaches the renderer -- the line that once went missing, so `--wireframe
+/// --render` wrote a solid image while every test passed -- and that `grid`
+/// does NOT, because a production render is the character and the grid is
+/// scaffolding (the reference's `excludeFromProduction`,
+/// `core/mhmain.py:671,687`).
+///
+/// The camera and the background are left at their defaults here: the caller
+/// owns those, because they come from what the viewport is already showing.
+[[nodiscard]] render::RenderSettings renderSettingsFor(const RenderRequest& request,
+                                                       std::filesystem::path litsphere);
+
 class RenderDialog : public QDialog {
     Q_OBJECT
 

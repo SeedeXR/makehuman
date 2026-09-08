@@ -2928,13 +2928,18 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
               y = 0, the toggle emitting nothing, and the grid drawn OVER the
               body — all caught. `setDepthTest(false)` alone is an equivalent
               mutant: the grid is drawn FIRST, so the body overwrites it anyway.
-      - [ ] **Ungated, and it is `main.cpp` again: "the grid is not in a
-            production render".** `app_grid_not_in_render` compares
-            `--grid --render` against `--render`, which catches the flag LEAKING
-            into production output — the realistic regression — but not a
-            `renderImage` that switched the grid on unconditionally, since both
-            sides would then have it. Same seam as the `poseInPlace` family; the
-            fix is the same shape as `rig::poseMesh`.
+      - [x] **Both render-path gaps closed by one seam** (2026-09-08).
+            `ui::renderSettingsFor` is the mapping from what the user asked for
+            to what the renderer runs with, and it is a tested function rather
+            than five assignments inside `main.cpp`. It gates two claims that
+            nothing could reach before:
+            - **`wireframe` reaches the renderer.** That line went missing once
+              — an edit lost in tooling — and `--wireframe --render` wrote a
+              byte-identical solid PNG with every test green. Dropping it now
+              fails a unit test.
+            - **`grid` does NOT.** A `renderImage` that switched the grid on
+              unconditionally used to be invisible, because the app-level
+              comparison had it on both sides.
       - [ ] **The symmetry MODE is not built.** The reference's third symmetry
             button is a toggle (`symmetryModeEnabled`, `core/mhmain.py:1524`)
             that mirrors every slider drag as it happens, rather than a one-shot
@@ -3861,15 +3866,18 @@ agree today (geometry, UVs, and 169.5 cm under three unit conventions).
       - Gate: `tests/regression/test_repose.cpp` rebuilds three times and
         demands bit-identical coordinates plus an intact morph base, and
         `tests/unit/test_mesh.cpp` pins `changeCoords` itself.
-- [ ] **Ungated: which `Mesh` method the app poses through.** Reverting
-      `main.cpp`'s `changeCoords` to `setCoords` — the exact defect above —
-      passes the whole suite, because `poseInPlace` lives in `main.cpp` and no
-      test can call it. Killing that mutation needs an assertion on a RENDERED
-      posed body; the two renders are unmistakable side by side (a clean T-pose
-      versus a torn one) but differ by only 8% in covered pixels, so a coverage
-      threshold would be brittle. `--render` also has **no blank-frame guard at
-      all** — `describe()` is only used by `--screenshot`, so a blank
-      production render exits 0. One chunk should close both.
+- [x] **Both halves of this are closed now** (2026-09-08), and the entry was
+      half stale before that: reverting `changeCoords` to `setCoords` stopped
+      passing the suite when `rig::poseMesh` gave posing a testable seam
+      (session twenty-one), and it now fails four assertions.
+      - The other half — **`--render` had no blank-frame guard at all** — is
+        fixed here. `describe` was a lambda in `main.cpp` reachable only from
+        `--screenshot`, so a production render of nothing saved a valid PNG and
+        exited 0. It is `ui::describeFrame` now, `--render` refuses a blank
+        frame, and `app_render_not_blank` asserts the coverage line so the guard
+        cannot quietly stop running.
+      - `--render` also PRINTS what it drew now, which makes a production render
+        checkable from a log the way `--screenshot` always was.
 - [ ] **No UI toggle for skinning in the headless path.** The stored preference
       is a WINDOW preference: `--export` and `--render` build no window, never
       read it, and take `--skinning` alone. Deliberate — the flag is the

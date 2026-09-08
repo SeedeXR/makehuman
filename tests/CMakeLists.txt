@@ -154,7 +154,8 @@ if(MH_HAVE_RENDER)
     add_executable(mh_ui_tests ui/test_ui.cpp ui/test_theme.cpp ui/test_language.cpp
                                ui/test_image_viewer.cpp ui/test_shortcuts.cpp
                                ui/test_mouse_bindings.cpp
-                               ui/test_shortcuts_dialog.cpp)
+                               ui/test_shortcuts_dialog.cpp
+                               ui/test_render_request.cpp)
     target_link_libraries(mh_ui_tests
         PRIVATE mh::ui mh::core Catch2::Catch2 mh::warnings mh::sanitize)
     target_compile_definitions(mh_ui_tests PRIVATE
@@ -1022,6 +1023,17 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
     set_tests_properties(app_wireframe_differs PROPERTIES
         FIXTURES_REQUIRED "app_wire_png;app_solid_png")
+
+    # `--render` checks its own frame now. It did not: `describe` was reachable
+    # only from `--screenshot`, so a production render of nothing at all saved a
+    # valid PNG and exited 0 -- the failure that looks like success in a log.
+    # Asserting the coverage line is what proves the guard RAN; the guard itself
+    # refuses to write the file when a frame is blank.
+    add_test(NAME app_render_not_blank COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_render_checked.png)
+    set_tests_properties(app_render_not_blank PROPERTIES
+        PASS_REGULAR_EXPRESSION "1024x1024 covered [0-9]+ of 1048576 pixels"
+        SKIP_REGULAR_EXPRESSION "cannot render")
 
     # Owner directive 4: the viewport shades with metallic-roughness as well as
     # with the reference matcap. --render goes through the SAME buildScene() and

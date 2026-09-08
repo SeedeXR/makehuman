@@ -9,6 +9,20 @@
 #include <QVBoxLayout>
 
 namespace mh::ui {
+
+render::RenderSettings renderSettingsFor(const RenderRequest& request,
+                                         std::filesystem::path litsphere) {
+    render::RenderSettings s;
+    s.width                 = request.width;
+    s.height                = request.height;
+    s.litsphere             = std::move(litsphere);
+    s.transparentBackground = request.transparent;
+    s.shading               = request.shading;
+    s.wireframe             = request.wireframe;
+    // `grid` is deliberately NOT set; see the header.
+    return s;
+}
+
 namespace {
 
 /// 64 to 8192. The floor keeps a stray keystroke from producing a 1x1 image
