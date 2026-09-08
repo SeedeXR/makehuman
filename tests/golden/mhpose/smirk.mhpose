@@ -1,0 +1,19 @@
+{
+    "name": "Fixture Smirk",
+    "description": "Captured from the reference for parity, not shipped as content.",
+    "tags": [
+        "fixture",
+        "parity"
+    ],
+    "unit_poses": {
+        "JawDrop": 0.9,
+        "LipsKiss": 0.7,
+        "UpperLipForward": 0.5,
+        "lowerLipBackward": 0.6,
+        "JawDropStretched": 0.4
+    },
+    "author": "MakeHuman C++ port fixture capture",
+    "copyright": "CC0",
+    "license": "CC0",
+    "homepage": ""
+}
