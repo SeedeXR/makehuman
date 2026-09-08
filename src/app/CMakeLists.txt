@@ -6,7 +6,10 @@
 add_executable(makehuman main.cpp)
 # mh::rig for posing, mh::io for the writers. Both are the legal direction:
 # this executable is AGPL, mh::io is Apache-2.0.
-target_link_libraries(makehuman PRIVATE mh::core mh::rig mh::ui mh::warnings)
+# mh::core is NOT listed: mh::rig PUBLIC-links it since PosedMesh, so naming it
+# here too makes the linker see libmh_core.a twice and warn -- the same trap the
+# comment above records for libmh_io.a.
+target_link_libraries(makehuman PRIVATE mh::rig mh::ui mh::warnings)
 target_compile_definitions(makehuman PRIVATE
     MH_DATA_DIR="${MH_DATA_DIR}"
     MH_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders"

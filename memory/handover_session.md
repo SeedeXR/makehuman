@@ -4,6 +4,59 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (twenty-first) — Session · **The seam that makes the 70 cm defect catchable**
+
+### The chunk
+`PoseRig` and `poseInPlace` moved out of `main.cpp` into `mh::rig::poseMesh`
+(`include/makehuman/rig/PosedMesh.h`). What stays in the application is the part
+that must: the two settings the user owns (`--skinning`, the Pose toggle) and
+the error messages. `main.cpp` is 52 lines shorter.
+
+`mh_rig` gained a PUBLIC dependency on `mh::core`. Checked before doing it, not
+after: LICENSING.md 4 forbids an **Apache-2.0** module depending on an AGPL one,
+and the CI gate enumerates exactly io, foundation, render and ui. rig and core
+are both AGPL-3.0, so rig -> core is legal, and it is the natural direction — a
+rig deforms a mesh.
+
+### Why this was worth a chunk
+Three behaviours had no test that could reach them, all for the same reason:
+`main.cpp` is not linkable. One of them had already shipped as a **70 cm
+defect** (session fifteen), and the mutation that reproduced it — posing through
+`setCoords` instead of `changeCoords` — passed the entire suite at the time. I
+recorded that survivor honestly rather than glossing it, and this chunk is the
+answer to it.
+
+Now: that same mutation fails four assertions. So do posing while the toggle is
+off, keeping the stale `restCoords` capture, ignoring the skinning method, and
+dropping the live-rig capture. Five mutations, five kills, on code that was
+untestable a chunk ago.
+
+`tests/regression/test_repose.cpp` no longer re-implements the rebuild loop — it
+calls the application's own helper. That distinction is the whole point: a test
+that re-implements the thing it checks can only ever agree with itself.
+
+### The gate found something the mutations could not
+The four-preset run came back 656/656 but with **4 warnings** where every
+previous chunk had 0 — `ld: warning: ignoring duplicate libraries:
+'src/core/libmh_core.a'`. Four targets named `mh::core` explicitly AND inherited
+it through `mh::rig`'s new PUBLIC link. It is the same trap this repo already
+documents for `libmh_io.a`, so the fix is the same: drop the redundant name and
+say why. Debug reported 0 only because it was an incremental build that never
+re-linked — the warning count is worth reading per preset, not once.
+
+### Behaviour-preserving, checked
+The `--pose tpose` screenshot after the move is **byte-identical** to the one
+taken before it — 0 differing pixels across the whole window, not just the
+viewport. A refactor that claims to change nothing should be able to prove it.
+
+### Next
+`memory/todo.md` in milestone order. The grid is what remains of the reference's
+View toolbar and it needs real work: line geometry plus a minimal unlit shader
+pair, since the litsphere and PBR shaders both want normals, UVs and a litsphere
+texture a grid has no meaning for.
+
+---
+
 ## 2026-09-08 (twentieth) — Session · **The pose toggle, disabled until it means something**
 
 ### The chunk

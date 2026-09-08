@@ -30,6 +30,7 @@
 #include "makehuman/render/OffscreenRenderer.h"
 #include "makehuman/rig/BvhPose.h"
 #include "makehuman/rig/PoseUnits.h"
+#include "makehuman/rig/PosedMesh.h"
 #include "makehuman/rig/Skeleton.h"
 #include "makehuman/rig/Skinning.h"
 #include "makehuman/rig/VertexWeights.h"
@@ -190,37 +191,11 @@ bool describe(const QImage& img, std::string& out) {
     return true;
 }
 
-/// Everything needed to re-pose a morphed mesh.
-///
-/// Held together because the rig has to be re-fitted after each morph:
-/// `updateJoints` makes the skeleton follow the body, and skinning a changed
-/// mesh with a stale rig rotates it about joints that have moved.
-struct PoseRig {
-    mh::rig::Skeleton skeleton;
-    mh::rig::CompiledWeights weights;
-    std::vector<mh::foundation::Mat4> localPose;
-
-    /// The mesh as it was BEFORE posing, and where the joints ended up after.
-    /// Both empty unless `poseInPlace` ran.
-    ///
-    /// A **live rig** export needs exactly this pair: rest vertices with bind
-    /// matrices from the rest skeleton, and joint nodes at `globalPose`. The
-    /// consumer then computes the deformation itself instead of receiving it
-    /// pre-applied.
-    std::vector<mh::foundation::Vec3> restCoords;
-    std::vector<mh::foundation::Mat4> globalPose;
-
-    /// The skeleton and weights are loaded. Independent of `posed()`: a rig
-    /// with no pose is still a rig, and it is exactly what an export wants --
-    /// the bind pose plus a usable skeleton.
-    ///
-    /// Derived rather than stored. A `loaded` flag beside `skeleton` is a
-    /// second copy of the same fact and a second thing to forget to set.
-    [[nodiscard]] bool loaded() const { return !skeleton.bones.empty(); }
-
-    /// There is a pose to apply; `localPose` is empty otherwise.
-    [[nodiscard]] bool posed() const { return !localPose.empty(); }
-};
+/// The rig, its pose and the live-rig capture. Moved into `mh::rig` so the
+/// posing it drives can be tested: `main.cpp` is not linkable, and the one
+/// mutation that survived session fifteen was inside the helper that used to
+/// live here. Aliased rather than renamed at every use.
+using PoseRig = mh::rig::PoseRig;
 
 /// Loads the rig, and the pose named by @p pose if there is one.
 ///
@@ -302,59 +277,32 @@ bool gUseDualQuaternion = false;
 /// called from several places and none of them has an opinion.
 bool gApplyPose = true;
 
-/// Applies @p rig's pose to @p mesh in place. A no-op when no pose is loaded.
+/// Applies @p rig's pose to @p mesh in place, and says why if it cannot.
+///
+/// The posing itself is `rig::poseMesh`; what is left here is the two settings
+/// the user owns and the reporting, which is the part that must not live in a
+/// library.
 bool poseInPlace(mh::core::Mesh& mesh, PoseRig& rig) {
-    if (!rig.posed()) return true;
+    const mh::rig::PoseOptions options{.method = gUseDualQuaternion
+                                                     ? mh::rig::SkinningMethod::DualQuaternion
+                                                     : mh::rig::SkinningMethod::Linear,
+                                       .apply  = gApplyPose};
+    const auto ok = mh::rig::poseMesh(mesh, rig, options);
+    if (ok) return true;
 
-    // Posing switched off. The mesh is already at its morph base -- applyStack
-    // put it there -- so there is nothing to undo, but the live-rig capture
-    // MUST be cleared: `exportTo` treats a non-empty `restCoords` as "this mesh
-    // is posed, swap it for the rest one", and those coordinates go stale the
-    // moment a slider moves.
-    if (!gApplyPose) {
-        rig.restCoords.clear();
-        rig.globalPose.clear();
-        return true;
+    switch (ok.error()) {
+        case mh::rig::PoseError::RefitFailed:
+            std::fprintf(stderr, "cannot re-fit the rig to the morphed mesh\n");
+            break;
+        case mh::rig::PoseError::SkinningFailed:
+            std::fprintf(stderr, "skinning failed (%s)\n",
+                         gUseDualQuaternion ? "dual quaternion" : "linear blend");
+            break;
+        case mh::rig::PoseError::StoreFailed:
+            std::fprintf(stderr, "cannot store the posed mesh: it has a different vertex count\n");
+            break;
     }
-
-    if (!rig.skeleton.updateJoints(mesh.coord()) || !rig.skeleton.buildRestMatrices()) {
-        std::fprintf(stderr, "cannot re-fit the rig to the morphed mesh\n");
-        return false;
-    }
-    const auto skinning = mh::rig::computeSkinningMatrices(rig.skeleton, rig.localPose);
-
-    // Kept for a live-rig export, which ships THESE vertices and lets the
-    // consumer pose them. Captured before skinning, because afterwards the
-    // rest positions are gone.
-    rig.restCoords.assign(mesh.coord().begin(), mesh.coord().end());
-    rig.globalPose.clear();
-    rig.globalPose.reserve(rig.skeleton.bones.size());
-    for (size_t b = 0; b < rig.skeleton.bones.size(); ++b) {
-        const mh::foundation::Mat4& rest = rig.skeleton.bones[b].matRestGlobal;
-        rig.globalPose.push_back(b < skinning.size() ? skinning[b] * rest : rest);
-    }
-
-    // LBS by default, DQS when asked. DQS costs more and is indistinguishable
-    // wherever the bones do not disagree much -- which is most of a body most
-    // of the time -- so it is opt-in rather than a silent change to every
-    // existing export.
-    std::vector<mh::foundation::Vec3> posed;
-    const bool skinned = gUseDualQuaternion
-                             ? mh::rig::skinPositionsDqs(mesh.coord(), rig.weights, skinning, posed)
-                             : mh::rig::skinPositions(mesh.coord(), rig.weights, skinning, posed);
-    if (!skinned) {
-        std::fprintf(stderr, "skinning failed (%s)\n",
-                     gUseDualQuaternion ? "dual quaternion" : "linear blend");
-        return false;
-    }
-    // changeCoords, not setCoords: posing must not redefine the morph base that
-    // applyStack resets to, or every rebuild poses on top of the last one.
-    if (const auto ok = mesh.changeCoords(std::move(posed)); !ok) {
-        std::fprintf(stderr, "cannot store the posed mesh (MeshError %d)\n",
-                     static_cast<int>(ok.error()));
-        return false;
-    }
-    return true;
+    return false;
 }
 
 /// Files of one extension in @p dir, sorted.

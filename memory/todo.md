@@ -2859,14 +2859,24 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
               `exportTo` reads a non-empty `restCoords` as "swap this posed mesh
               for the rest one" and those coordinates go stale on the next
               slider move. Reasoned and commented; see the gap below.
-      - [ ] **Ungated, same root as the `setCoords` gap: `poseInPlace` lives in
-            `main.cpp`.** Neither `gApplyPose` nor the `restCoords` clearing can
-            be reached by a test — the toggle is a menu action and the export it
-            protects is a `QFileDialog` away. Both were verified by running the
-            app with the real action triggered in-process. The fix for the whole
-            family is to move `poseInPlace` behind a testable seam (it is
-            AGPL-compatible in `rig`, which would need a `core` dependency), and
-            that is its own chunk.
+      - [x] **The pose seam** (2026-09-08). `PoseRig` and the posing itself are
+            now `mh::rig::poseMesh` (`rig/PosedMesh.h`); `main.cpp` keeps only
+            the two user settings and the error messages. `mh_rig` gained a
+            PUBLIC dependency on `mh::core` — both AGPL-3.0, so not the
+            direction LICENSING.md 4 forbids, and the CI boundary gate lists
+            only io, foundation, render and ui.
+            - **This closes the family of gaps, and the proof is a mutation.**
+              Reverting the posed write to `setCoords` — the exact 70 cm defect
+              of session fifteen, which passed the ENTIRE suite back then —
+              now fails four assertions. So do: posing while switched off,
+              keeping the stale `restCoords`, ignoring the skinning method, and
+              dropping the live-rig capture.
+            - `tests/regression/test_repose.cpp` drives the application's own
+              helper now instead of re-implementing it, which is what makes
+              those mutations reachable at all.
+            - Behaviour-preserving, checked rather than assumed: the
+              `--pose tpose` screenshot is **byte-identical** to the one taken
+              before the move, and `main.cpp` is 52 lines shorter.
       - [ ] **What is left of that toolbar: the grid.** Nothing here can lay
             down a floor, so it would still be a painted no-op. It needs line
             geometry and a minimal unlit shader pair — the litsphere and PBR

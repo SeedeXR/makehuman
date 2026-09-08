@@ -60,14 +60,15 @@ add_executable(mh_tests
     regression/test_review_findings.cpp
     regression/test_io_review_findings.cpp)
 
-# Both are listed because mh::io no longer PUBLIC-links mh::core -- that
-# inversion was the licence bug (LICENSING.md 4). The tests legitimately use
-# both sides of the boundary: core to build a mesh, io to write it.
-# mh::rig PUBLIC-links mh::io (PoseUnits.h takes a BvhFile), so listing io here
-# too makes the linker see libmh_io.a twice and warn. AGPL -> Apache is the
-# legal dependency direction, so inheriting it is correct.
+# mh::rig alone. It PUBLIC-links mh::io (PoseUnits.h takes a BvhFile) and, since
+# PosedMesh.h took a `core::Mesh&`, mh::core as well -- so the tests get both
+# sides of the boundary by inheritance. Naming either of them here as well makes
+# the linker see the archive twice and warn:
+#   ld: warning: ignoring duplicate libraries: 'src/core/libmh_core.a'
+# AGPL -> Apache is the legal direction and AGPL -> AGPL is unconstrained, so
+# inheriting both is correct rather than merely convenient.
 target_link_libraries(mh_tests
-    PRIVATE mh::core mh::rig mh_json Catch2::Catch2WithMain mh::warnings mh::sanitize)
+    PRIVATE mh::rig mh_json Catch2::Catch2WithMain mh::warnings mh::sanitize)
 
 # MH_HAVE_DRACO reaches here through mh_io's PUBLIC definition; the DECODER is
 # what the test needs on top of that, and it lives in the same library.
@@ -119,7 +120,10 @@ catch_discover_tests(mh_tests PROPERTIES ENVIRONMENT "TMPDIR=${MH_TEST_TMPDIR}")
 # check them in a third implementation. Not a test target: it produces files for
 # another process rather than asserting anything.
 add_executable(mh_export_fixture mh_export_fixture.cpp)
-target_link_libraries(mh_export_fixture PRIVATE mh::core mh::rig mh::warnings)
+# mh::core is NOT listed: mh::rig PUBLIC-links it since PosedMesh, so naming it
+# here too makes the linker see libmh_core.a twice and warn -- the same trap the
+# comment above records for libmh_io.a.
+target_link_libraries(mh_export_fixture PRIVATE mh::rig mh::warnings)
 target_compile_definitions(mh_export_fixture PRIVATE MH_DATA_DIR="${MH_DATA_DIR}")
 set_target_properties(mh_export_fixture PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
 
