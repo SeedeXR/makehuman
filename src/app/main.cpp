@@ -5,6 +5,7 @@
 // Apache-2.0.
 #include "makehuman/core/AssetIndex.h"
 #include "makehuman/core/Blendshape.h"
+#include "makehuman/core/Decimator.h"
 #include "makehuman/core/Material.h"
 #include "makehuman/core/Mesh.h"
 #include "makehuman/core/Mhm.h"
@@ -1225,15 +1226,22 @@ bool formatCarriesRig(std::string_view ext) {
 ///
 /// Formats with no skeleton (OBJ, STL, 3MF) still get the baked posed mesh:
 /// there is nothing in the file to apply a pose with.
+/// @param refuseBecause null to build the skin, or the word for WHY this mesh
+///        cannot carry one -- "subdivided", "decimated". Taking the REASON
+///        rather than a bool keeps the refusal and its announcement in one
+///        place. They were two places for one chunk, and the mutation that
+///        removed the refusal while leaving the message survived: the export
+///        said it was dropping the skeleton and wrote it anyway.
 std::optional<mh::rig::SkinData> exportSkin(const PoseRig& rig, const mh::core::RenderMesh& rm,
-                                            bool subdivided) {
+                                            const char* refuseBecause) {
     if (!rig.loaded()) return std::nullopt;
-    if (subdivided) {
-        // Weights are per BASE vertex while a subdivided render mesh's vmap
-        // indexes subdivided vertices, so buildSkinData would silently weight
-        // the wrong points.
-        std::fprintf(stderr,
-                     "a subdivided mesh cannot carry the rig; exporting without a skeleton\n");
+    if (refuseBecause != nullptr) {
+        // Weights are per BASE vertex. A subdivided render mesh's vmap indexes
+        // subdivided vertices, and a decimated one has had every vertex
+        // renumbered by the collapses, so buildSkinData would silently weight
+        // the wrong points either way.
+        std::fprintf(stderr, "a %s mesh cannot carry the rig; exporting without a skeleton\n",
+                     refuseBecause);
         return std::nullopt;
     }
 
@@ -1664,6 +1672,14 @@ int main(int argc, char** argv) {
     const QCommandLineOption subdivOpt(
         QStringLiteral("subdivide"),
         QStringLiteral("Draw and export the Catmull-Clark subdivided mesh."));
+    const QCommandLineOption decimateOpt(
+        QStringLiteral("decimate"),
+        QStringLiteral("Write a level of detail: keep this fraction of the BODY's triangles, in "
+                       "(0, 1]. Worn proxies keep their own resolution. EXPORT only -- the "
+                       "viewport and --render always draw the full mesh. Carries no skeleton and "
+                       "no blendshapes, because an edge collapse renumbers every vertex they are "
+                       "indexed by."),
+        QStringLiteral("ratio"));
     const QCommandLineOption workspaceOpt(
         QStringLiteral("workspace"),
         QStringLiteral("Start in a workspace preset: Modelling, Rigging, Materials or Export."),
@@ -1676,6 +1692,7 @@ int main(int argc, char** argv) {
 
     parser.addOption(workspaceOpt);
     parser.addOption(subdivOpt);
+    parser.addOption(decimateOpt);
     parser.addOption(loadOpt);
     parser.addOption(saveOpt);
     parser.addOption(skinOpt);
@@ -1878,6 +1895,21 @@ int main(int argc, char** argv) {
             return 1;
         }
         presets.emplace_back(halves[0], v);
+    }
+
+    // Refused rather than clamped: 0 asks for no triangles at all and 2 asks
+    // for twice as many, and neither is a level of detail. QString::toFloat
+    // also accepts "nan", which would pass every comparison it is put through.
+    float decimateRatio = 0.0F;
+    if (parser.isSet(decimateOpt)) {
+        bool ok           = false;
+        const float ratio = parser.value(decimateOpt).toFloat(&ok);
+        if (!ok || !std::isfinite(ratio) || ratio <= 0.0F || ratio > 1.0F) {
+            std::fprintf(stderr, "--decimate wants a fraction in (0, 1], got \"%s\"\n",
+                         parser.value(decimateOpt).toStdString().c_str());
+            return 1;
+        }
+        decimateRatio = ratio;
     }
 
     // Symmetry LAST, so it mirrors whatever --load, --random and --set between
@@ -2199,7 +2231,50 @@ int main(int argc, char** argv) {
         // be written rather than the ones that were on screen.
         if (liveRig) rm.refreshPositions(displayMesh());
 
-        const auto skinData = exportSkin(rig, rm, subdivided);
+        // The LOD, if one was asked for. Built HERE and not earlier for two
+        // reasons: the live-rig swap above decides which vertices get written,
+        // and the face mask has to be baked into the geometry BEFORE the
+        // collapse. A mask is a per-face array, and an edge collapse destroys
+        // the face-to-face correspondence it is expressed in -- so the order is
+        // mask, then compact, then decimate. Decimating first and masking
+        // afterwards is not a slower way to the same file; it is a crash on a
+        // mask of the wrong length.
+        std::optional<mh::core::Mesh> lod;
+        std::optional<mh::core::RenderMesh> lodRm;
+        std::optional<mh::io::CompactedMesh> lodCompact;
+        if (decimateRatio > 0.0F) {
+            const auto masked = displayMesh().compactToFaces(bodyMask);
+            if (!masked) {
+                std::fprintf(stderr, "cannot bake the face mask before decimating\n");
+                return false;
+            }
+            auto reduced = mh::core::decimate(*masked, {.ratio = decimateRatio});
+            if (!reduced) {
+                std::fprintf(stderr, "cannot decimate: %s\n", reduced.error().message().c_str());
+                return false;
+            }
+            // Announced with BOTH counts, and in the units each one is
+            // actually in. The input is what says the mask was applied first:
+            // 13,378 faces is the masked BODY, against 18,486 for the whole
+            // mesh including the 138 helper cages.
+            //
+            // Faces in, triangles out, rather than triangles in: converting
+            // would mean re-deriving the decimator's own triangulation rule
+            // here -- a quad is two triangles unless corner 3 repeats corner 0
+            // -- and a second copy of that rule is a number that goes quietly
+            // wrong on a mesh mixing the two.
+            std::printf("decimated %zu faces to %zu triangles (%.0f%% asked for)\n",
+                         masked->faceCount(), reduced->faceCount(),
+                         static_cast<double>(decimateRatio) * 100.0);
+            lod = std::move(*reduced);
+            lod->calcNormals();
+            lod->calcVertexTangents();
+            lodRm      = mh::core::RenderMesh::build(*lod);
+            lodCompact = mh::io::compactUnusedVertices(lodRm->view());
+        }
+
+        const auto skinData =
+            exportSkin(rig, rm, lod ? "decimated" : (subdivided ? "subdivided" : nullptr));
 
         // A third of the body's vertex buffer is not referenced by any visible
         // triangle: setFaceMask filters INDICES and leaves the vertex buffer
@@ -2208,7 +2283,10 @@ int main(int argc, char** argv) {
         // written for nothing -- and a consumer that bounds the buffer sees the
         // hidden helper cages rather than the body.
         const auto compact = mh::io::compactUnusedVertices(rm.view());
-        if (compact.dropped() > 0) {
+        // Not announced when a LOD is being written: this describes `rm`, the
+        // full-resolution mesh, which is not what is about to be exported. The
+        // line would name a vertex count no consumer of the file will see.
+        if (!lod && compact.dropped() > 0) {
             std::printf("compacted %zu of %zu vertices (%zu unreferenced)\n", compact.coord.size(),
                          compact.remap.size(), compact.dropped());
         }
@@ -2238,7 +2316,13 @@ int main(int argc, char** argv) {
         std::vector<std::vector<mh::foundation::Vec3>> shapeDeltas;
         std::vector<mh::foundation::MorphTarget> morphs;
         if (wantBlendshapes) {
-            if (subdivided) {
+            if (lod) {
+                // Deltas are per render vertex of the mesh they were built
+                // for; the LOD has neither those vertices nor that count.
+                std::fprintf(stderr,
+                              "a decimated mesh cannot carry blendshapes; "
+                               "exporting without them\n");
+            } else if (subdivided) {
                 // Targets index the BASE mesh; a subdivided vmap indexes
                 // subdivided vertices, so expanding them would move the wrong
                 // vertices. Same reason the rig is refused above.
@@ -2263,7 +2347,12 @@ int main(int argc, char** argv) {
             }
         }
 
-        const bool ok = exportMesh(outPath, displayMesh(), compact.view(), wornProxies, bodyMask,
+        // An EMPTY mask when decimating: the mask is already baked into the
+        // geometry, and handing the old one over would index 13,378 faces of a
+        // mesh that now has a few thousand.
+        const bool ok = exportMesh(outPath, lod ? *lod : displayMesh(),
+                                   lod ? lodCompact->view() : compact.view(), wornProxies,
+                                   lod ? std::span<const uint8_t>{} : std::span(bodyMask),
                                    skinView ? &*skinView : nullptr, rig, morphs, wantDraco);
 
         // Put the character back the way it was. The CLI exits straight after

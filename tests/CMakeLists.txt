@@ -716,6 +716,118 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_facs_and_expression PROPERTIES
         PASS_REGULAR_EXPRESSION "both describe the face")
 
+    # ---------------------------------------------------------------------
+    # --decimate: the LOD reaches a FILE.
+    #
+    # The decimator itself is covered by [core][decimate] invariants. What only
+    # the application can show is the interaction that made this a separate
+    # chunk: the face mask has to be baked into the geometry BEFORE the
+    # collapse, because an edge collapse destroys the face-to-face
+    # correspondence a mask is expressed in. If that order is wrong the export
+    # either carries the helper cages or crashes on a mask of the wrong length.
+    #
+    # Same basename in separate directories, for the mtllib reason the
+    # expression tests give.
+    # ---------------------------------------------------------------------
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lod_full)
+    add_test(NAME app_decimate_full COMMAND makehuman
+             --export ${CMAKE_CURRENT_BINARY_DIR}/lod_full/body.obj)
+    set_tests_properties(app_decimate_full PROPERTIES FIXTURES_SETUP app_lod_full_obj)
+
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lod_quarter)
+    add_test(NAME app_decimate COMMAND makehuman
+             --decimate 0.25
+             --export ${CMAKE_CURRENT_BINARY_DIR}/lod_quarter/body.obj)
+    set_tests_properties(app_decimate PROPERTIES
+        PASS_REGULAR_EXPRESSION "decimated 13378 faces to 6688 triangles"
+        FIXTURES_SETUP app_lod_quarter_obj)
+
+    add_test(NAME app_decimate_differs COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/lod_full/body.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/lod_quarter/body.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_decimate_differs PROPERTIES
+        FIXTURES_REQUIRED "app_lod_full_obj;app_lod_quarter_obj")
+
+    # ...and the FILE holds what the app said it wrote. "the app printed 6,688"
+    # and "the OBJ has 6,688 f lines" are different claims, and it was the
+    # second that was false the last time an export lost its mask.
+    #
+    # 6,688 and not 6,689: a quarter of 26,756 is 6,689, and a collapse removes
+    # exactly TWO triangles, so the count can only land on the same parity as
+    # the input. This test was written expecting 6,689 and the measurement
+    # corrected it.
+    #
+    # **7,708 and not 6,688**, because this helper counts every `f` line and the
+    # scene has two objects: the body at 6,688 and the EYE PROXY at 1,020,
+    # undecimated. Measured per group: full = body 13,378 + eyes 1,020 = 14,398,
+    # quarter = body 6,688 + eyes 1,020 = 7,708. A worn proxy is a separate mesh
+    # with its own fit and its own mask, and eyes are the last geometry anyone
+    # wants to simplify, so `--decimate` reduces the BODY. The total is the
+    # better gate for it either way: it moves if the body is wrong AND if the
+    # eyes are ever decimated by accident.
+    add_test(NAME app_decimate_obj_faces COMMAND ${CMAKE_COMMAND}
+             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/lod_quarter/body.obj -DEXPECT=7708
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_body_faces.cmake)
+    set_tests_properties(app_decimate_obj_faces PROPERTIES
+        FIXTURES_REQUIRED app_lod_quarter_obj)
+
+    # The undecimated total, from the same helper, so the pair is a comparison
+    # rather than one number in isolation.
+    add_test(NAME app_decimate_full_obj_faces COMMAND ${CMAKE_COMMAND}
+             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/lod_full/body.obj -DEXPECT=14398
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_body_faces.cmake)
+    set_tests_properties(app_decimate_full_obj_faces PROPERTIES
+        FIXTURES_REQUIRED app_lod_full_obj)
+
+    # The mask really is baked in, and this is the assertion that says so: the
+    # masked body is 13,378 faces. Built from the UNMASKED mesh the line would
+    # say 18,486 -- which is the bug of exporting the helper cages, in numeric
+    # form.
+    add_test(NAME app_decimate_started_from_the_masked_body COMMAND makehuman
+             --decimate 0.5
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_lod_half.obj)
+    set_tests_properties(app_decimate_started_from_the_masked_body PROPERTIES
+        PASS_REGULAR_EXPRESSION "decimated 13378 faces to ")
+
+    # A rig-carrying format is refused rather than written unrigged: weights are
+    # per BASE vertex and a collapse renumbers every one of them, so a skin
+    # written against the LOD would weight the wrong points. Same refusal a
+    # subdivided mesh already gets, and said out loud for the same reason.
+    add_test(NAME app_decimate_refuses_the_rig COMMAND makehuman
+             --decimate 0.5 --export ${CMAKE_CURRENT_BINARY_DIR}/app_lod.glb)
+    set_tests_properties(app_decimate_refuses_the_rig PROPERTIES
+        PASS_REGULAR_EXPRESSION "decimated mesh cannot carry the rig"
+        FIXTURES_SETUP app_lod_glb)
+
+    # ...and the FILE carries none, which is a different claim. A mutation that
+    # deleted the refusal but left the message in place passed the line above:
+    # the export announced it was dropping the skeleton and wrote it anyway.
+    # `--inspect` prints ", skin of N bones" for a mesh that has one, so its
+    # ABSENCE is the assertion.
+    add_test(NAME app_decimate_glb_has_no_skin COMMAND makehuman
+             --inspect ${CMAKE_CURRENT_BINARY_DIR}/app_lod.glb)
+    set_tests_properties(app_decimate_glb_has_no_skin PROPERTIES
+        PASS_REGULAR_EXPRESSION "app_lod.glb: 2 meshes"
+        FAIL_REGULAR_EXPRESSION "skin of"
+        FIXTURES_REQUIRED app_lod_glb)
+
+    add_test(NAME app_decimate_refuses_blendshapes COMMAND makehuman
+             --decimate 0.5 --blendshapes
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_lod_shapes.glb)
+    set_tests_properties(app_decimate_refuses_blendshapes PROPERTIES
+        PASS_REGULAR_EXPRESSION "decimated mesh cannot carry blendshapes")
+
+    add_test(NAME app_decimate_bad_ratio COMMAND makehuman
+             --decimate 2 --export ${CMAKE_CURRENT_BINARY_DIR}/app_never_lod.obj)
+    set_tests_properties(app_decimate_bad_ratio PROPERTIES
+        PASS_REGULAR_EXPRESSION "--decimate wants a fraction in")
+
+    add_test(NAME app_decimate_bad_ratio_text COMMAND makehuman
+             --decimate half --export ${CMAKE_CURRENT_BINARY_DIR}/app_never_lod2.obj)
+    set_tests_properties(app_decimate_bad_ratio_text PROPERTIES
+        PASS_REGULAR_EXPRESSION "--decimate wants a fraction in")
+
     # Symmetry, end to end. The menu commands cannot be driven from a test --
     # `symmetryRequested` is wired in main.cpp -- so `--symmetry` is what makes
     # the whole path observable: one asymmetric modifier in, both sides equal

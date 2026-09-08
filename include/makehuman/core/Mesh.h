@@ -165,6 +165,34 @@ public:
     [[nodiscard]] std::expected<std::vector<uint8_t>, MeshError> faceMaskForVisibleVertices(
         std::span<const uint8_t> vertexVisible) const;
 
+    /// A copy holding only the faces @p faceMask keeps, with vertices, UVs and
+    /// per-face groups renumbered.
+    ///
+    /// This is the reference's `face_map`/`vtx_map` remap
+    /// (`catmull_clark_subdivision.py:95-110`) done once, up front, so an
+    /// algorithm downstream runs unchanged on a smaller mesh instead of
+    /// threading a mask through itself.
+    ///
+    /// Two callers need it for the same reason -- a mask cannot survive the
+    /// operation that follows. `Subdivider::build(parent, mask)` would have to
+    /// remap the mask through every generated face; `decimate` cannot carry one
+    /// at all, because an edge collapse destroys the face-to-face
+    /// correspondence a mask is expressed in. Baking it into the geometry first
+    /// is the answer in both cases.
+    ///
+    /// Vertices and UVs keep ASCENDING order, which is what `np.argwhere` on
+    /// the masks yields and what the subdivision output order depends on.
+    ///
+    /// Every face group is carried over by name even when it lost all its
+    /// faces: the group ID is what `staticFaceMask` and the `.mhm` key on, so
+    /// renumbering them would break a saved character.
+    ///
+    /// @param faceMask one byte per face, nonzero = keep. Must be exactly
+    ///        faceCount() long -- a short mask treated as "keep the rest"
+    ///        would export geometry the caller had forgotten about.
+    [[nodiscard]] std::expected<Mesh, MeshError> compactToFaces(
+        std::span<const uint8_t> faceMask) const;
+
     /// Mutable positions, for morph-target application. Callers must call
     /// calcNormals() afterwards; this deliberately does not do it implicitly.
     [[nodiscard]] std::span<Vec3> mutableCoord() noexcept { return coord_; }

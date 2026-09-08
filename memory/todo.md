@@ -4134,17 +4134,42 @@ GPU here, or Colab) and it comes back to the owner first.
               vertices belong to more than one of the 139 groups, so groups are
               separate vertex islands there and the check cannot fire — it is
               for meshes where that is not true.
-      - [ ] **The app wiring**, and the mask is what makes it a separate chunk.
-            Decimation belongs on the WELDED mesh, before the unweld, because
-            an unwelded seam is two coincident vertices with no edge between
-            them and the two sides would drift apart and crack open. But
-            `bodyFaceMask` maps base-vertex visibility onto the shown mesh's
-            faces, and after a collapse that correspondence is gone. So the
-            order has to be mask → compact to visible faces → decimate, which
-            needs `Subdivider.cpp`'s file-local `compactToVisible` lifted onto
-            `Mesh` (it is the same operation `Subdivider::build(parent, mask)`
-            already does). Skin and blendshapes must then be refused exactly as
-            a subdivided mesh already refuses them.
+      - [x] **The app wiring: `--decimate <ratio>`** (2026-09-08). Export only
+            — the viewport and `--render` always draw the full mesh, because an
+            LOD is for a downstream consumer and a viewport that silently drew
+            one would be lying about what is being edited.
+            - **The order is mask → compact → decimate**, and that is what made
+              it a separate chunk. `Subdivider.cpp`'s file-local
+              `compactToVisible` is now `Mesh::compactToFaces`, used by both
+              callers for the same reason: a face mask is a per-face array and
+              neither subdivision nor an edge collapse can carry one through.
+              Its byte-parity coverage (`test_subdiv_masked_parity.cpp`) still
+              passes, which is what made the move safe, and it has five direct
+              tests now including the corner-to-UV pairing that two independent
+              index spaces make easy to break.
+            - **The ordering turned out to improve QUALITY, not just
+              correctness.** Decimating the masked body (13,378 faces of pure
+              body) is far better conditioned than decimating all 18,486: at
+              10% the body still reads correctly, where last chunk's unmasked
+              run at a similar count was the flat-sheet cloak. The collapse
+              budget was being spent around helper cages and their seams.
+            - **Measured**: `--decimate 0.25` gives `decimated 13378 faces to
+              6688 triangles`, and the OBJ holds 7,708 `f` lines — body 6,688
+              plus the eye proxy's 1,020, undecimated. Full export: 14,398 =
+              13,378 + 1,020. 6,688 and not 6,689 because a collapse removes
+              exactly two triangles, so the count keeps the input's parity; the
+              test was written expecting 6,689 and the measurement corrected it.
+            - **Worn proxies keep their own resolution.** Each is a separate
+              mesh with its own fit and its own mask, and eyes are the last
+              geometry anyone wants to simplify. Stated in `--decimate`'s help
+              rather than left to be discovered.
+            - **Skin and blendshapes are refused out loud**, exactly as a
+              subdivided mesh already refuses them: weights and deltas are
+              indexed by vertices a collapse renumbers.
+            - The `compacted N of M vertices` line is suppressed when a LOD is
+              written: it describes the full-resolution render mesh, which is
+              not what goes in the file, and naming a vertex count no consumer
+              will see is worse than saying nothing.
       - [ ] **Weight transfer.** Weights live outside `Mesh`, in
             `rig::VertexWeights`, so a decimated mesh carries none today. The
             survivor keeping its own weights is the standard answer and needs

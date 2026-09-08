@@ -119,6 +119,61 @@ std::expected<void, MeshError> Mesh::setFaces(std::vector<uint32_t> faceVerts,
     return {};
 }
 
+std::expected<Mesh, MeshError> Mesh::compactToFaces(std::span<const uint8_t> faceMask) const {
+    const size_t vpp    = vertsPerPrimitive_;
+    const size_t nFaces = faceCount();
+    if (faceMask.size() != nFaces) return std::unexpected(MeshError::MaskSizeMismatch);
+    const bool uv = hasUV();
+
+    std::vector<uint32_t> vertexOf(vertexCount(), UINT32_MAX);
+    std::vector<uint32_t> uvOf(uv ? texco_.size() : 0, UINT32_MAX);
+
+    // Ascending order, so walk the arrays rather than the faces.
+    for (size_t f = 0; f < nFaces; ++f) {
+        if (!faceMask[f]) continue;
+        for (size_t c = 0; c < vpp; ++c) {
+            vertexOf[fvert_[f * vpp + c]] = 0;
+            if (uv) uvOf[fuvs_[f * vpp + c]] = 0;
+        }
+    }
+    std::vector<Vec3> coords;
+    for (size_t v = 0; v < vertexOf.size(); ++v) {
+        if (vertexOf[v] == UINT32_MAX) continue;
+        vertexOf[v] = static_cast<uint32_t>(coords.size());
+        coords.push_back(coord_[v]);
+    }
+    std::vector<Vec2> uvs;
+    for (size_t t = 0; t < uvOf.size(); ++t) {
+        if (uvOf[t] == UINT32_MAX) continue;
+        uvOf[t] = static_cast<uint32_t>(uvs.size());
+        uvs.push_back(texco_[t]);
+    }
+
+    std::vector<uint32_t> fvert;
+    std::vector<uint32_t> fuvs;
+    std::vector<uint16_t> groups;
+    for (size_t f = 0; f < nFaces; ++f) {
+        if (!faceMask[f]) continue;
+        for (size_t c = 0; c < vpp; ++c) {
+            fvert.push_back(vertexOf[fvert_[f * vpp + c]]);
+            if (uv) fuvs.push_back(uvOf[fuvs_[f * vpp + c]]);
+        }
+        groups.push_back(group_.empty() ? uint16_t{0} : group_[f]);
+    }
+
+    Mesh out(name_, static_cast<uint8_t>(vpp));
+    for (const auto& g : faceGroups_)
+        out.addFaceGroup(g.name);
+    if (const auto ok = out.setCoords(std::move(coords)); !ok) return std::unexpected(ok.error());
+    if (uv) {
+        if (const auto ok = out.setUVs(std::move(uvs)); !ok) return std::unexpected(ok.error());
+    }
+    if (const auto ok = out.setFaces(std::move(fvert), std::move(fuvs), std::move(groups)); !ok) {
+        return std::unexpected(ok.error());
+    }
+    return out;
+}
+
 uint16_t Mesh::addFaceGroup(std::string name) {
     if (const auto it = groupsByName_.find(name); it != groupsByName_.end()) {
         return it->second;

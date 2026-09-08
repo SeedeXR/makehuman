@@ -4,6 +4,87 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (thirty-fourth) — Session · **`--decimate`, and the mask that had to go first**
+
+*2026-09-08 — the app wiring I deferred last chunk, specified there and built
+here.*
+
+### What landed
+`--decimate <ratio>`: export only. The viewport and `--render` always draw the
+full mesh, because an LOD is for a downstream consumer and a viewport that
+silently drew one would be lying about what is being edited.
+
+`Subdivider.cpp`'s file-local `compactToVisible` is now **`Mesh::compactToFaces`**,
+used by both callers for the same reason: a face mask is a per-face array, and
+neither subdivision nor an edge collapse can carry one through. Its byte-parity
+coverage (`test_subdiv_masked_parity.cpp`) still passes, which is what made the
+move safe, and it has five direct tests now.
+
+### The ordering turned out to improve QUALITY, not just correctness
+Mask → compact → decimate was forced by correctness: a mask cannot survive a
+collapse. But decimating the masked body (13,378 faces of pure body) is a far
+better-conditioned problem than decimating all 18,486. **At 10% the body still
+reads correctly**, where last chunk's unmasked run at a similar count was the
+flat-sheet cloak. The collapse budget had been going on and around 138 helper
+cages and their seams.
+
+Rendered the app's own exports in Blender and looked: 25% is a clean body with a
+recognisable face; 10% is still a body. The eye proxy stays full-resolution and
+shows as the bright highlights in the head render, which is the documented
+behaviour.
+
+### Measured
+```
+--decimate 0.25  ->  decimated 13378 faces to 6688 triangles (25% asked for)
+OBJ contents: body 6,688 + eyes 1,020 = 7,708 f lines
+full export:  body 13,378 + eyes 1,020 = 14,398
+```
+6,688 and not 6,689 because a collapse removes exactly two triangles, so the
+count keeps the input's parity. The test was written expecting 6,689 and the
+measurement corrected it.
+
+### Two mutations survived, and both were the TEST's fault
+| Mutation | Why it survived | Fix |
+|---|---|---|
+| The rig not refused for a decimated mesh | the test asserted the MESSAGE, printed by a separate line from the refusal itself — two sources of truth for one decision | `exportSkin` takes the REASON (`"decimated"`, `"subdivided"`, or null) instead of a bool, so the message cannot be right while the effect is wrong; plus `--inspect` on the GLB with `FAIL_REGULAR_EXPRESSION "skin of"`, which asserts the FILE |
+| `compactToFaces` renumbering UVs through the vertex map | the grid fixture had `setFaces(fv, fv, ...)` — UV indices EQUAL to vertex indices, so the two index spaces coincided and no confusion between them was observable | UV j now belongs to vertex 8-j, as on the base mesh (21,334 UVs for 19,158 vertices), and each UV still carries its vertex's position so the pairing stays checkable. Kills it with 13 assertions |
+
+Killed outright: decimating the UNMASKED mesh (4 assertions); the stale
+`bodyMask` handed to `exportMesh` alongside the LOD; blendshapes not refused;
+the mask-length check weakened from `!=` to `>`; per-face groups forgotten;
+ascending vertex order lost. Gate mutation: `--decimate` silently doing nothing
+(ratio forced to 1) fails three tests.
+
+**A stale binary reported "100% passed" twice more.** Both times `-Werror` had
+failed the build — a string literal converted to bool, and an earlier
+`AssertionError` in the patch script meaning nothing was written at all. The
+build line has to be read before the ctest line, every time.
+
+### Small honesty fixes
+- The `compacted N of M vertices` line is suppressed when a LOD is written: it
+  describes the full-resolution render mesh, not what goes in the file.
+- The announcement is **faces in, triangles out** rather than triangles in.
+  Converting would have meant re-deriving the decimator's own triangulation
+  rule in a second place, and a second copy of that rule is a number that goes
+  quietly wrong on a mesh mixing quads and degenerate triangles — and it is a
+  number a test pins, so it would have been pinned wrong.
+- Worn proxies keep their own resolution: each is a separate mesh with its own
+  fit and mask, and eyes are the last geometry anyone wants to simplify. Said in
+  `--decimate`'s help rather than left to be discovered.
+
+### Gates
+748/748 in debug, release, ASan and TSan, 0 warnings, `ALLDONE` read. CI's exact
+clang-format command clean.
+
+### Next
+`memory/todo.md`: weight transfer for a decimated mesh, then the LOD chain
+itself — and the chain is a FORMAT question (separate files vs extra entries in
+one glTF/USD scene), so that half is the owner's. **Pose-space deformation
+remains blocked** for the reasons the previous entry gives: no oracle, no
+content, and it needs a file format to carry correctives.
+
+---
+
 ## 2026-09-08 (thirty-third) — Session · **A decimator, and the render that saved it**
 
 *2026-09-08 — M9. PSD is next in the list and is genuinely owner-blocked; see
