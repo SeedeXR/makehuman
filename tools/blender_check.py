@@ -200,6 +200,24 @@ EXPECT = {
     # every key moves, one number per key. A shifted mapping does not change
     # the key COUNT -- all 34 would still be there -- it changes which vertices
     # each of them touches, and every one of these numbers with it.
+    # A decimated level through OUR FBX writer, posed. glTF has carried a
+    # decimated rig since posed_lod.glb; this says the second format the owner
+    # named for LOD delivery (directive 11) carries one too, read by a third
+    # party.
+    #
+    # **1.6849 x 0.3008 x 1.6633 against posed_lod.glb's 1.6849 x 0.3008 x
+    # 1.6634** -- two formats, two importers and our own CPU LBS agreeing on
+    # where a DECIMATED body lands, to a tenth of a millimetre. Neither writer
+    # knows what the other emitted.
+    #
+    # 132 vertex groups, not 358: Blender's FBX importer makes a group only for
+    # a cluster that weights something, exactly as posed.fbx records.
+    "chain_lod1.fbx": {
+        "vertices": 5559, "triangles": 8728, "tallest": 1.659602, "uv_layers": 1,
+        "bones": 179, "armatures": 1, "skinned": 5559, "vertex_groups": 132,
+        "live_rig": True, "evaluated": [1.6849, 0.3008, 1.6633],
+    },
+
     "expressions_lod.glb": {
         "vertices": 5559, "triangles": 8728, "tallest": 1.659603, "uv_layers": 1,
         "bones": 179, "armatures": 1, "skinned": 5559, "vertex_groups": 358,

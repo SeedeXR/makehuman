@@ -4203,11 +4203,12 @@ GPU here, or Colab) and it comes back to the owner first.
             composed mapping as the weights: `buildExpressionBlendshapes` takes
             a vmap, so handing it the LOD's puts each delta on the vertex it
             belongs to. All 34 expression keys reach the file.
-            - **It found a glTF writer bug that nothing else could reach.** A
-              target whose every delta is zero — `eyebrows-left-inner-up`, all
-              40 of whose vertices the decimation removes — fell out of the
-              sparse path because `sparseCount` doubled as the "is sparse"
-              flag. Zero moved vertices read as "dense", and the accessor came
+            - **It found a glTF writer bug that nothing else could reach**, and
+              the FIRST fix for it was wrong in a way only a second reader
+              showed: see 2026-09-09 below. A target whose every delta is zero
+              — `eyebrows-left-inner-up`, all 40 of whose vertices the
+              decimation removes — fell out of the sparse path because
+              `sparseCount` doubled as the "is sparse" flag. Zero moved vertices read as "dense", and the accessor came
               out declaring 4,483 deltas against a bufferView of ZERO bytes.
               Blender rejects the whole file: "buffer is smaller than requested
               size". Fixed the way the spec already says — an accessor with
@@ -4225,18 +4226,48 @@ GPU here, or Colab) and it comes back to the owner first.
               the skin AND the deltas. It was three separate `lod ? … : …`
               choices, and glTF caught two of them being wrong while they were
               being written.
+
+      - [x] **An all-zero morph target is ONE SPARSE ENTRY, not an accessor
+            with no data** (2026-09-09). The fix committed a day earlier wrote
+            the accessor with neither a bufferView nor a sparse block, which
+            glTF 2.0 5.1.1 does define as all zeros — and Blender reads it.
+            **assimp does not**: `--inspect` fails with "data is null when
+            extracting data from accessors[15]", so the previous chunk shipped
+            a file one of the two readers this project checks against could not
+            open. Found by running `--inspect` on a chain level by hand, not by
+            any test.
+            One sparse entry whose delta is zero says the same thing in 16
+            bytes and both readers take it. The `allZero` flag and its three
+            branches are gone with it, and the test now READS THE FILE BACK
+            with assimp — the assertion that would have caught the first
+            version, since every structural check passed on a file assimp
+            refused outright.
             - Subdivision still refuses even with `--decimate`: a subdivided
               mesh's vertices are ones the weights know nothing about, which no
               provenance mapping through the decimator can fix. Tested.
-      - [ ] **The chain itself. OWNER DECISION TAKEN (2026-09-08): separate
-            files, GLB and FBX.** Verbatim: *"for lods we can them as glb and
-            fbx"*. Not extra entries inside one scene.
-            What already exists, so the chunk is smaller than it looks:
-            `--decimate <ratio>` produces one level carrying its rig and its
-            blend shapes, `--export` is repeatable, and both writers take the
-            whole scene. What is missing is several ratios in ONE run and a
-            naming rule for the files — which is the only part still to
-            design, and it is a CLI-visible one.
+      - [x] **The chain: `--lod <ratio>`, repeatable** (2026-09-09), per owner
+            directive 11 — separate files, GLB and FBX.
+            `--lod 1.0 --lod 0.5 --lod 0.25 --export body.glb` writes
+            `body_lod0.glb`, `body_lod1.glb`, `body_lod2.glb` at 26,756 /
+            13,378 / 6,688 triangles, each with its skin of 179 bones.
+            - **The level number is the ORDER given**, not the sorted ratio, so
+              a caller who decides level 1 is the coarse one is obeyed rather
+              than corrected.
+            - **Ratio 1.0 takes the ordinary export path**, not a decimation
+              that removes nothing: the decimator still triangulates and
+              recompacts, so level 0 would otherwise be the same shape in a
+              different vertex order. It is now byte-identical to what
+              `--export` alone writes, and a test compares the two files.
+            - Three refusals, each naming its own mistake: `--lod` with
+              `--decimate` (two ways to say one thing), `--lod` without
+              `--export`, and a chain into anything but `.glb`/`.fbx` — the
+              formats ARE the decision, so a chain of OBJs is refused rather
+              than quietly widened.
+            - **Blender reads a chain level from our own FBX writer**:
+              `chain_lod1.fbx` lands at 1.6849 × 0.3008 × 1.6633 against
+              `posed_lod.glb`'s 1.6849 × 0.3008 × 1.6634. Two formats, two
+              importers and our own CPU LBS agreeing on a DECIMATED body to a
+              tenth of a millimetre. 16/16 exports agree.
 - [ ] Groom / hair card and strand support
 - [ ] Physically-based skin: SSS, multi-layer, tension maps
 - [ ] Eye, teeth, tongue rigging refinement

@@ -1521,9 +1521,20 @@ TEST_CASE("a morph target that moves NOTHING is still a valid accessor", "[gltf]
     // the values are zero.
     CHECK(acc["count"].get<size_t>() == rm.vertexCount());
     CHECK(acc["type"] == "VEC3");
-    // Neither of the two ways to point at data. That IS the encoding.
+    // **The encoding is a ONE-ENTRY sparse block, and that is a corrected
+    // answer.** The first version wrote the accessor with neither a bufferView
+    // nor a sparse block, which glTF 2.0 5.1.1 does define as all zeros -- and
+    // Blender reads it. **assimp does not**: `--inspect` on such a file fails
+    // with "data is null when extracting data from accessors[15]", so the
+    // export was unreadable by one of the two readers this project checks
+    // against, and by anything else built on assimp.
+    //
+    // One sparse entry whose delta is zero says the same thing, costs 16
+    // bytes, and both readers take it -- assimp already reads the 34 sparse
+    // targets of an ordinary export.
     CHECK_FALSE(acc.contains("bufferView"));
-    CHECK_FALSE(acc.contains("sparse"));
+    REQUIRE(acc.contains("sparse"));
+    CHECK(acc["sparse"]["count"].get<size_t>() == 1);
     // min/max are required on a POSITION accessor and must describe the
     // effective values, which are all zero.
     for (size_t k = 0; k < 3; ++k) {
@@ -1558,6 +1569,16 @@ TEST_CASE("a morph target that moves NOTHING is still a valid accessor", "[gltf]
         INFO("bufferView " << v << " is named by no accessor");
         CHECK(referenced.contains(v));
     }
+
+    // And the assertion that would have caught the first version: an
+    // INDEPENDENT reader opens it. Every structural check above passed on a
+    // file assimp refused outright.
+    Assimp::Importer importer;
+    const aiScene* scene = importer.ReadFile(out.string(), 0);
+    INFO("assimp: " << importer.GetErrorString());
+    REQUIRE(scene != nullptr);
+    REQUIRE(scene->mNumMeshes == 1);
+    CHECK(scene->mMeshes[0]->mNumAnimMeshes == 1);
 }
 
 TEST_CASE("a sparse morph target says exactly what the dense one said", "[gltf][morph][sparse]") {

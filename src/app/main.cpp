@@ -1678,6 +1678,13 @@ int main(int argc, char** argv) {
     const QCommandLineOption subdivOpt(
         QStringLiteral("subdivide"),
         QStringLiteral("Draw and export the Catmull-Clark subdivided mesh."));
+    const QCommandLineOption lodOpt(
+        QStringLiteral("lod"),
+        QStringLiteral("One level of an LOD chain, as the fraction of the body's triangles to "
+                       "keep. Repeatable, and the level NUMBER is the order given: the files are "
+                       "named <export>_lod0, _lod1, ... Needs --export, and the chain is written "
+                       "as .glb or .fbx."),
+        QStringLiteral("ratio"));
     const QCommandLineOption decimateOpt(
         QStringLiteral("decimate"),
         QStringLiteral("Write a level of detail: keep this fraction of the BODY's triangles, in "
@@ -1699,6 +1706,7 @@ int main(int argc, char** argv) {
     parser.addOption(workspaceOpt);
     parser.addOption(subdivOpt);
     parser.addOption(decimateOpt);
+    parser.addOption(lodOpt);
     parser.addOption(loadOpt);
     parser.addOption(saveOpt);
     parser.addOption(skinOpt);
@@ -1916,6 +1924,44 @@ int main(int argc, char** argv) {
             return 1;
         }
         decimateRatio = ratio;
+    }
+
+    // An LOD CHAIN. The level number is the ORDER given rather than the sorted
+    // ratio, so a caller deciding that level 1 is the coarse one and level 2
+    // the fine one is obeyed rather than corrected.
+    std::vector<float> lodRatios;
+    for (const QString& value : parser.values(lodOpt)) {
+        bool ok           = false;
+        const float ratio = value.toFloat(&ok);
+        if (!ok || !std::isfinite(ratio) || ratio <= 0.0F || ratio > 1.0F) {
+            std::fprintf(stderr, "--lod wants a fraction in (0, 1], got \"%s\"\n",
+                         value.toStdString().c_str());
+            return 1;
+        }
+        lodRatios.push_back(ratio);
+    }
+    if (!lodRatios.empty()) {
+        // Two ways to say "reduce the body", and no reading of the pair that is
+        // not either a contradiction or a repetition.
+        if (parser.isSet(decimateOpt)) {
+            std::fprintf(stderr, "--lod and --decimate both reduce the body; give one\n");
+            return 1;
+        }
+        if (!parser.isSet(exportOpt)) {
+            std::fprintf(stderr, "--lod writes a chain of files, so it needs --export\n");
+            return 1;
+        }
+        // Owner decision, 2026-09-08: a chain ships as separate GLB and FBX
+        // files. Refused rather than widened here, because the formats are the
+        // decision -- a chain of OBJs is a different product question.
+        for (const QString& path : parser.values(exportOpt)) {
+            const std::string ext = lowerExtension(path.toStdString());
+            if (ext != ".glb" && ext != ".fbx") {
+                std::fprintf(stderr, "an LOD chain is written as .glb or .fbx, not %s\n",
+                             ext.c_str());
+                return 1;
+            }
+        }
     }
 
     // Symmetry LAST, so it mirrors whatever --load, --random and --set between
@@ -2205,7 +2251,11 @@ int main(int argc, char** argv) {
     // file, and there are ~90 lines of live-rig restore, vertex compaction,
     // skin remapping and blendshape building to disagree about.
     const bool wantDraco = parser.isSet(dracoOpt);
-    const auto exportTo  = [&](const std::filesystem::path& outPath, bool wantBlendshapes) -> bool {
+    // @param decimateTo the fraction of the body's triangles to keep, or 0 for
+    //        none. A parameter rather than the captured flag because an LOD
+    //        chain calls this once per level with a different one each time.
+    const auto exportTo = [&](const std::filesystem::path& outPath, bool wantBlendshapes,
+                              float decimateTo) -> bool {
         // A LIVE RIG ships REST geometry with a POSED armature, so for the
         // formats that carry a skeleton the mesh goes back to its unposed
         // positions before it is written. Normals and tangents are recomputed
@@ -2227,7 +2277,7 @@ int main(int argc, char** argv) {
             mesh->calcNormals();
             mesh->calcVertexTangents();
             std::printf("live rig: rest geometry + posed armature (%zu joints)\n",
-                         rig.globalPose.size());
+                        rig.globalPose.size());
         }
 
         for (auto& [group, worn] : wornProxies)
@@ -2252,7 +2302,7 @@ int main(int argc, char** argv) {
         // against the base mesh still apply. Composed from the two mappings
         // below; empty when nothing was decimated.
         std::vector<uint32_t> lodVmap;
-        if (decimateRatio > 0.0F) {
+        if (decimateTo > 0.0F) {
             std::vector<uint32_t> maskSource;
             std::vector<uint32_t> lodSource;
             const auto masked = displayMesh().compactToFaces(bodyMask, &maskSource);
@@ -2260,7 +2310,7 @@ int main(int argc, char** argv) {
                 std::fprintf(stderr, "cannot bake the face mask before decimating\n");
                 return false;
             }
-            auto reduced = mh::core::decimate(*masked, {.ratio = decimateRatio}, &lodSource);
+            auto reduced = mh::core::decimate(*masked, {.ratio = decimateTo}, &lodSource);
             if (!reduced) {
                 std::fprintf(stderr, "cannot decimate: %s\n", reduced.error().message().c_str());
                 return false;
@@ -2276,8 +2326,8 @@ int main(int argc, char** argv) {
             // -- and a second copy of that rule is a number that goes quietly
             // wrong on a mesh mixing the two.
             std::printf("decimated %zu faces to %zu triangles (%.0f%% asked for)\n",
-                         masked->faceCount(), reduced->faceCount(),
-                         static_cast<double>(decimateRatio) * 100.0);
+                        masked->faceCount(), reduced->faceCount(),
+                        static_cast<double>(decimateTo) * 100.0);
             lod = std::move(*reduced);
             lod->calcNormals();
             lod->calcVertexTangents();
@@ -2309,8 +2359,8 @@ int main(int argc, char** argv) {
         // its vmap indexes subdivided vertices the weights know nothing about
         // -- and the two together are refused for the subdivision's reason.
         const auto skinData = lod && !subdivided
-                                   ? exportSkin(rig, *lodRm, nullptr, lodVmap)
-                                   : exportSkin(rig, rm, subdivided ? "subdivided" : nullptr, {});
+                                  ? exportSkin(rig, *lodRm, nullptr, lodVmap)
+                                  : exportSkin(rig, rm, subdivided ? "subdivided" : nullptr, {});
 
         // A third of the body's vertex buffer is not referenced by any visible
         // triangle: setFaceMask filters INDICES and leaves the vertex buffer
@@ -2324,7 +2374,7 @@ int main(int argc, char** argv) {
         // line would name a vertex count no consumer of the file will see.
         if (!lod && compact.dropped() > 0) {
             std::printf("compacted %zu of %zu vertices (%zu unreferenced)\n", compact.coord.size(),
-                         compact.remap.size(), compact.dropped());
+                        compact.remap.size(), compact.dropped());
         }
 
         // Everything per-vertex below -- the skin, and the blendshape deltas --
@@ -2350,12 +2400,12 @@ int main(int argc, char** argv) {
             std::tie(joints, weights) = mh::io::compactSkinAttributes(
                 skinData->view(), written.remap, written.coord.size());
             skinView = mh::foundation::SkinView{.jointNames   = skinData->jointNames,
-                                                 .jointParents = skinData->jointParents,
-                                                 .globalRest   = skinData->globalRest,
-                                                 .globalPose   = skinData->globalPose,
-                                                 .joints       = joints,
-                                                 .weights      = weights,
-                                                 .influences   = skinData->influences};
+                                                .jointParents = skinData->jointParents,
+                                                .globalRest   = skinData->globalRest,
+                                                .globalPose   = skinData->globalPose,
+                                                .joints       = joints,
+                                                .weights      = weights,
+                                                .influences   = skinData->influences};
         }
 
         // Blendshapes: 34 expression units, each blended across the three
@@ -2370,8 +2420,8 @@ int main(int argc, char** argv) {
                 // subdivided vertices, so expanding them would move the wrong
                 // vertices. Same reason the rig is refused above.
                 std::fprintf(stderr,
-                              "a subdivided mesh cannot carry blendshapes; "
-                               "exporting without them\n");
+                             "a subdivided mesh cannot carry blendshapes; "
+                             "exporting without them\n");
             } else {
                 // The same composed mapping the skin uses.
                 // `buildExpressionBlendshapes` expands per-BASE-vertex target
@@ -2393,7 +2443,7 @@ int main(int argc, char** argv) {
                     morphs.push_back({sh.name, shapeDeltas.back()});
                 }
                 std::printf("%zu blendshapes (34 expression units, ethnicity-blended)\n",
-                             morphs.size());
+                            morphs.size());
             }
         }
 
@@ -2428,7 +2478,27 @@ int main(int argc, char** argv) {
         // if that restore is exact -- which is what makes it observable at all
         // (`app_restore_matches`).
         for (const QString& path : parser.values(exportOpt)) {
-            if (!exportTo(path.toStdString(), parser.isSet(blendshapesOpt))) return 1;
+            if (lodRatios.empty()) {
+                if (!exportTo(path.toStdString(), parser.isSet(blendshapesOpt), decimateRatio)) {
+                    return 1;
+                }
+                continue;
+            }
+            // A chain: one file per level, named by the level's INDEX. The
+            // suffix goes before the extension so the format still reads from
+            // it -- `body_lod2.glb`, not `body.glb_lod2`.
+            for (size_t level = 0; level < lodRatios.size(); ++level) {
+                std::filesystem::path out = path.toStdString();
+                out.replace_filename(out.stem().string() + "_lod" + std::to_string(level) +
+                                     out.extension().string());
+                // Ratio 1.0 takes the ORDINARY path rather than a decimation
+                // that removes nothing: the decimator still triangulates and
+                // recompacts, so level 0 would otherwise be the same shape in a
+                // different vertex order. This way it is byte-identical to what
+                // `--export` alone writes.
+                const float ratio = lodRatios[level] >= 1.0F ? 0.0F : lodRatios[level];
+                if (!exportTo(out, parser.isSet(blendshapesOpt), ratio)) return 1;
+            }
         }
         return 0;
     }
@@ -3086,7 +3156,7 @@ int main(int argc, char** argv) {
                         "USD (*.usd *.usda *.usdz);;FBX (*.fbx);;Collada (*.dae)"));
         if (file.isEmpty()) return;
         const std::filesystem::path out = file.toStdString();
-        if (exportTo(out, parser.isSet(blendshapesOpt))) {
+        if (exportTo(out, parser.isSet(blendshapesOpt), decimateRatio)) {
             window.statusBar()->showMessage(QObject::tr("Exported %1").arg(file), 3000);
             // The live rig restore inside exportTo moved the mesh back, so the
             // viewport has to be told: it holds spans over those vertices.

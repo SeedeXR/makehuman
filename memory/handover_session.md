@@ -4,6 +4,83 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-09 (thirty-seventh) — Session · **The LOD chain, and a file only one reader could open**
+
+*2026-09-09 — owner directive 11 unblocked this: separate files, GLB and FBX.*
+
+### What landed
+`--lod <ratio>`, repeatable:
+
+```
+--lod 1.0 --lod 0.5 --lod 0.25 --export body.glb
+  -> body_lod0.glb  26,756 tris   2.3 MB
+     body_lod1.glb  13,378 tris   1.5 MB
+     body_lod2.glb   6,688 tris   1.2 MB
+```
+each with its skin of 179 bones, and with its 34 blend shapes when
+`--blendshapes` is given.
+
+- **The level number is the ORDER given**, not the sorted ratio: a caller who
+  decides level 1 is the coarse one is obeyed rather than corrected.
+- **Ratio 1.0 takes the ordinary export path.** The decimator at 1.0 still
+  triangulates and recompacts, so level 0 would otherwise be the same shape in
+  a different vertex order; this way it is byte-identical to what `--export`
+  alone writes, and a test compares the two files.
+- Three refusals, each naming its own mistake: `--lod` with `--decimate`,
+  `--lod` without `--export`, and a chain into anything but `.glb`/`.fbx` —
+  the formats ARE the decision, so a chain of OBJs is refused rather than
+  quietly widened.
+
+### Yesterday's fix was wrong, and only a SECOND reader showed it
+The all-zero morph target fixed on 2026-09-08 was encoded as an accessor with
+neither a bufferView nor a sparse block. glTF 2.0 5.1.1 does define that as all
+zeros, and **Blender reads it** — which is why the harness went green and the
+chunk shipped.
+
+**assimp does not.** `--inspect` on a chain level fails with
+`data is null when extracting data from accessors[15]`, so that commit shipped
+a file one of the two readers this project checks against could not open. Found
+by running `--inspect` on a chain level BY HAND, not by any test.
+
+The encoding is now **one sparse entry whose delta is zero**: same meaning, 16
+bytes, and both readers take it — assimp already reads the 34 sparse targets of
+an ordinary export. The `allZero` flag and its three branches are gone with it,
+so the fix is smaller than the thing it replaced.
+
+**The test now reads the file back with assimp**, and that assertion is
+load-bearing on its own: with the structural sparse checks removed and
+yesterday's encoding restored, it still fails —
+`GLTF: Accessor with offset/length (0/87332) is out of range`. Every structural
+check had passed on a file assimp refused outright.
+
+### Two formats agree on a decimated rig
+`chain_lod1.fbx` is a new harness case — a chain level through OUR FBX writer,
+posed. Blender lands it at **1.6849 × 0.3008 × 1.6633** against
+`posed_lod.glb`'s **1.6849 × 0.3008 × 1.6634**. Two formats, two importers and
+our own CPU LBS agreeing on where a DECIMATED body goes, to a tenth of a
+millimetre, with neither writer knowing what the other emitted. **16/16.**
+
+### Mutations: 7 run, 7 killed
+Sorted levels instead of ordered (4 tests); ratio 1.0 through the decimator (the
+byte-identity test); the suffix after the extension instead of before (7 tests);
+the `.glb`/`.fbx` restriction dropped; `--lod` with `--decimate` accepted; and
+two against the gate — yesterday's encoding restored (3 assertions, the assimp
+read-back among them) and a level written at the wrong ratio (2 count tests).
+
+### Gates
+771/771 in debug, release, ASan and TSan, 0 warnings, `ALLDONE` read. CI's exact
+clang-format command clean. Blender harness 16/16. **Docker's daemon was down**
+at the start of the previous chunk's Sonar run and was started rather than the
+gate skipped; it stayed up for this one.
+
+### Next
+M9's LOD item is complete: decimator, app wiring, weights, blend shapes, chain.
+What remains in M9 needs authored content — groom, PBR skin, wrinkle maps, eye
+and teeth rigging — or is blocked: **pose-space deformation** still has no
+oracle, no content, and needs a file format for correctives.
+
+---
+
 ## 2026-09-08 (thirty-sixth) — Session · **Blendshapes on an LOD, and the writer bug only they could reach**
 
 *2026-09-08 — the follow-up flagged last chunk. The owner also answered the LOD

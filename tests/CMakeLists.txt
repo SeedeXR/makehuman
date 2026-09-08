@@ -878,6 +878,91 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_decimate_bad_ratio_text PROPERTIES
         PASS_REGULAR_EXPRESSION "--decimate wants a fraction in")
 
+    # ---------------------------------------------------------------------
+    # --lod: a CHAIN of levels from one run.
+    #
+    # OWNER DECISION 2026-09-08 (directive 11): separate files, GLB and FBX.
+    # The level index comes from the ORDER the ratios were given, not from
+    # sorting them, so the caller decides which level is which.
+    # ---------------------------------------------------------------------
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/chain)
+    add_test(NAME app_lod_chain COMMAND makehuman
+             --lod 1.0 --lod 0.5 --lod 0.25
+             --export ${CMAKE_CURRENT_BINARY_DIR}/chain/body.glb)
+    set_tests_properties(app_lod_chain PROPERTIES
+        PASS_REGULAR_EXPRESSION "chain/body_lod2.glb"
+        FAIL_REGULAR_EXPRESSION "export failed"
+        FIXTURES_SETUP app_lod_chain_glb)
+
+    # Each level is a FILE, and each is smaller than the one before. Reading
+    # the triangle counts back is what says the ratios reached the geometry
+    # rather than three copies of the same mesh under three names.
+    add_test(NAME app_lod_chain_level0 COMMAND makehuman
+             --inspect ${CMAKE_CURRENT_BINARY_DIR}/chain/body_lod0.glb)
+    set_tests_properties(app_lod_chain_level0 PROPERTIES
+        PASS_REGULAR_EXPRESSION "26756 tris"
+        FIXTURES_REQUIRED app_lod_chain_glb)
+    add_test(NAME app_lod_chain_level1 COMMAND makehuman
+             --inspect ${CMAKE_CURRENT_BINARY_DIR}/chain/body_lod1.glb)
+    set_tests_properties(app_lod_chain_level1 PROPERTIES
+        PASS_REGULAR_EXPRESSION "13378 tris"
+        FIXTURES_REQUIRED app_lod_chain_glb)
+    add_test(NAME app_lod_chain_level2 COMMAND makehuman
+             --inspect ${CMAKE_CURRENT_BINARY_DIR}/chain/body_lod2.glb)
+    set_tests_properties(app_lod_chain_level2 PROPERTIES
+        PASS_REGULAR_EXPRESSION "6688 tris"
+        FIXTURES_REQUIRED app_lod_chain_glb)
+
+    # **Level 0 at ratio 1.0 is not "decimation that removed nothing" -- it is
+    # the ORDINARY export.** The decimator at 1.0 still triangulates and
+    # recompacts, so it would produce the same shape in a different vertex
+    # order; taking the plain path instead makes LOD0 byte-identical to what
+    # `--export` alone writes, which is the property a chain wants and the
+    # cheapest way to get it.
+    add_test(NAME app_lod_chain_plain COMMAND makehuman
+             --export ${CMAKE_CURRENT_BINARY_DIR}/chain/plain.glb)
+    set_tests_properties(app_lod_chain_plain PROPERTIES FIXTURES_SETUP app_lod_chain_plain_glb)
+    add_test(NAME app_lod0_is_the_plain_export COMMAND ${CMAKE_COMMAND} -E compare_files
+             ${CMAKE_CURRENT_BINARY_DIR}/chain/body_lod0.glb
+             ${CMAKE_CURRENT_BINARY_DIR}/chain/plain.glb)
+    set_tests_properties(app_lod0_is_the_plain_export PROPERTIES
+        FIXTURES_REQUIRED "app_lod_chain_glb;app_lod_chain_plain_glb")
+
+    # FBX too, through OUR OWN writer -- the second format the owner named, and
+    # the one no third party wrote for us.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/chain_fbx)
+    add_test(NAME app_lod_chain_fbx COMMAND makehuman
+             --lod 1.0 --lod 0.25
+             --export ${CMAKE_CURRENT_BINARY_DIR}/chain_fbx/body.fbx)
+    set_tests_properties(app_lod_chain_fbx PROPERTIES
+        PASS_REGULAR_EXPRESSION "chain_fbx/body_lod1.fbx"
+        FAIL_REGULAR_EXPRESSION "export failed"
+        FIXTURES_SETUP app_lod_chain_fbx)
+    add_test(NAME app_lod_chain_fbx_level1 COMMAND makehuman
+             --inspect ${CMAKE_CURRENT_BINARY_DIR}/chain_fbx/body_lod1.fbx)
+    set_tests_properties(app_lod_chain_fbx_level1 PROPERTIES
+        PASS_REGULAR_EXPRESSION "6688 tris"
+        FIXTURES_REQUIRED app_lod_chain_fbx)
+
+    # The three refusals. Each says which mistake was made, because a shared
+    # "bad --lod" would not.
+    add_test(NAME app_lod_needs_export COMMAND makehuman --lod 0.5
+             --save ${CMAKE_CURRENT_BINARY_DIR}/app_never_chain.mhm)
+    set_tests_properties(app_lod_needs_export PROPERTIES
+        PASS_REGULAR_EXPRESSION "--lod writes a chain of files, so it needs --export")
+    add_test(NAME app_lod_with_decimate COMMAND makehuman --lod 0.5 --decimate 0.5
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_never_chain.glb)
+    set_tests_properties(app_lod_with_decimate PROPERTIES
+        PASS_REGULAR_EXPRESSION "--lod and --decimate both reduce the body; give one")
+    add_test(NAME app_lod_wrong_format COMMAND makehuman --lod 0.5
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_never_chain.obj)
+    set_tests_properties(app_lod_wrong_format PROPERTIES
+        PASS_REGULAR_EXPRESSION "an LOD chain is written as .glb or .fbx")
+    add_test(NAME app_lod_bad_ratio COMMAND makehuman --lod 0 --lod 0.5
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_never_chain.glb)
+    set_tests_properties(app_lod_bad_ratio PROPERTIES
+        PASS_REGULAR_EXPRESSION "--lod wants a fraction in")
+
     # Symmetry, end to end. The menu commands cannot be driven from a test --
     # `symmetryRequested` is wired in main.cpp -- so `--symmetry` is what makes
     # the whole path observable: one asymmetric modifier in, both sides equal

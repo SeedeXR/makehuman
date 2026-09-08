@@ -83,6 +83,12 @@ if [ -x "$app" ]; then
     "$app" --decimate 0.25 --blendshapes --export "$out/expressions_lod.glb" >/dev/null 2>&1 \
         && echo "expressions_lod.glb: 34 expression keys on a body decimated to 25%" \
         || echo "warn: expressions_lod.glb export failed"
+    # An LOD CHAIN, in the second format the owner named (directive 11) and the
+    # one no third party wrote for us. Level 1 is the reduced one; level 0 is
+    # the ordinary export, already covered by posed.fbx.
+    "$app" --lod 1.0 --lod 0.25 --pose tpose --export "$out/chain.fbx" >/dev/null 2>&1 \
+        && echo "chain_lod1.fbx: LOD chain level 1, T-pose, live rig, through our FBX writer" \
+        || echo "warn: chain.fbx export failed"
 else
     echo "skip posed.glb: $app not built"
 fi
@@ -113,6 +119,6 @@ fi
     "$out/base.obj" "$out/posed.glb" "$out/posed.fbx" "$out/posed.usda" "$out/base.glb" \
     "$out/expressions.glb" "$out/expressions.fbx" "$out/expressions.usda" "$out/base.fbx" \
     "$out/rigged.glb" "$out/morphed.glb" "$out/rigged.fbx" "$out/base.usda" \
-    "$out/posed_lod.glb" "$out/expressions_lod.glb" 2>/dev/null |
+    "$out/posed_lod.glb" "$out/expressions_lod.glb" "$out/chain_lod1.fbx" 2>/dev/null |
     grep '^BLENDER_VALIDATE:' | sed 's/^BLENDER_VALIDATE://' |
     python3 "$repo/tools/blender_check.py"
