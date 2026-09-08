@@ -155,3 +155,61 @@ TEST_CASE("a modifier whose opposite is not installed is skipped", "[symmetry]")
     CHECK(symmetrise(human, 'r').empty());
     CHECK_THAT(human.modifierValue(kLeft), WithinAbs(0.8, 1e-6));
 }
+
+// Symmetry MODE: the reference's third symmetry button
+// (`symmetryModeEnabled`, `core/mhmain.py:1526`). Unlike the two one-shot
+// commands above it does not mirror the whole character -- it mirrors the ONE
+// modifier the user is dragging, as they drag it.
+//
+// The reference puts this in the undoable ACTION rather than in `setValue`
+// (`apps/humanmodifier.py:120-129`), and its randomiser switches the mode off
+// while assigning values (`0_modeling_8_random.py:60-68`). Both say the same
+// thing: this is a rule about a user EDIT, not about the model. So it is a
+// function of an edit, and the batch paths simply never call it.
+TEST_CASE("a mirrored edit carries the opposite side with it", "[symmetry]") {
+    const TargetIndex index = TargetIndex::build(std::filesystem::path(MH_DATA_DIR) / "targets");
+    Human human(&index, shippedModifiers());
+
+    const auto edit = mirroredEdit(human, kLeft, 0.7F);
+    REQUIRE(edit.size() == 2);
+    // The edited modifier first: a caller that applies these in order must set
+    // what the user touched before anything derived from it.
+    CHECK(edit[0].first == kLeft);
+    CHECK_THAT(edit[0].second, WithinAbs(0.7, 1e-6));
+    CHECK(edit[1].first == kRight);
+    CHECK_THAT(edit[1].second, WithinAbs(0.7, 1e-6));
+}
+
+TEST_CASE("an edit with no opposite is just itself", "[symmetry]") {
+    const TargetIndex index = TargetIndex::build(std::filesystem::path(MH_DATA_DIR) / "targets");
+    Human human(&index, shippedModifiers());
+
+    // 291 of the shipped modifiers have no side. Mirroring one would have to
+    // invent a target, and the reference guards on `getSymmetricOpposite()`
+    // being non-empty for exactly that reason.
+    const auto edit = mirroredEdit(human, kMiddle, 0.3F);
+    REQUIRE(edit.size() == 1);
+    CHECK(edit[0].first == kMiddle);
+    CHECK_THAT(edit[0].second, WithinAbs(0.3, 1e-6));
+
+    // A name this character does not have is not an edit at all.
+    CHECK(mirroredEdit(human, "nosuch/modifier", 0.5F).empty());
+}
+
+TEST_CASE("mirroring reads the CURRENT edit, not the stored value", "[symmetry]") {
+    const TargetIndex index = TargetIndex::build(std::filesystem::path(MH_DATA_DIR) / "targets");
+    Human human(&index, shippedModifiers());
+    REQUIRE(human.setModifierValue(kLeft, -0.9F));
+
+    // The opposite takes the value being SET, not the one the modifier still
+    // holds. Reading `human` instead would mirror the previous frame of a drag
+    // and leave the two sides one step apart for the whole gesture.
+    const auto edit = mirroredEdit(human, kLeft, 0.25F);
+    REQUIRE(edit.size() == 2);
+    CHECK_THAT(edit[1].second, WithinAbs(0.25, 1e-6));
+
+    // And it does not APPLY anything -- the caller owns that, because the undo
+    // stack has to record both values before either moves.
+    CHECK_THAT(human.modifierValue(kLeft), WithinAbs(-0.9, 1e-6));
+    CHECK_THAT(human.modifierValue(kRight), WithinAbs(0.0, 1e-6));
+}

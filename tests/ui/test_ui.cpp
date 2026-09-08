@@ -10,6 +10,7 @@
 #include "makehuman/ui/ModifierPanel.h"
 #include "makehuman/ui/MouseBindings.h"
 #include "makehuman/ui/TaskRegistry.h"
+#include "makehuman/ui/UndoCommands.h"
 #include "makehuman/ui/ViewportWidget.h"
 #include "makehuman/ui/Workspace.h"
 
@@ -842,4 +843,86 @@ TEST_CASE("a modifier held part-way through a drag pauses it, not banks it", "[u
                         Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(&w, &resumed);
     CHECK_THAT(d(w.camera().yawDegrees - yawStart), WithinAbs(10.0 * 0.5, 1e-4));
+}
+
+// A symmetric slider drag pushes a MULTI-value command per mouse move -- both
+// sides move together, so one command cannot express it. Without merging that
+// is one undo entry per pixel of travel, which is the same defect
+// `ValueChangeCommand::mergeWith` exists to prevent for the single-sided case.
+//
+// Randomise must NOT merge: it also uses this command, and two randomisations
+// in a row are two separate acts. That is what the default merge id of -1 means
+// -- QUndoStack does not even attempt a merge on it.
+TEST_CASE("multi-value edits merge within one drag and not across acts", "[ui][undo]") {
+    QUndoStack stack;
+    std::vector<std::pair<QString, float>> applied;
+    const auto apply = [&](const std::vector<std::pair<QString, float>>& values) {
+        applied = values;
+    };
+
+    const auto drag = [&](float to, int mergeId) {
+        std::vector<mh::ui::MultiValueChangeCommand::Change> changes{
+            {QStringLiteral("eyes/l-eye-bag"), 0.0F, to},
+            {QStringLiteral("eyes/r-eye-bag"), 0.0F, to}};
+        stack.push(new mh::ui::MultiValueChangeCommand(QStringLiteral("Edit"), std::move(changes),
+                                                       apply, mergeId));
+    };
+
+    drag(0.2F, 7);
+    drag(0.5F, 7);
+    drag(0.9F, 7);
+    CHECK(stack.count() == 1);
+
+    // ...and undo goes all the way back to where the drag STARTED, not to the
+    // previous mouse position.
+    stack.undo();
+    REQUIRE(applied.size() == 2);
+    CHECK(applied[0].second == 0.0F);
+    CHECK(applied[1].second == 0.0F);
+    stack.redo();
+    REQUIRE(applied.size() == 2);
+    CHECK(applied[0].second == 0.9F);
+
+    // A different group is a different act.
+    drag(0.4F, 8);
+    CHECK(stack.count() == 2);
+
+    // The default never merges, however many arrive in a row.
+    QUndoStack batch;
+    for (int i = 0; i < 3; ++i) {
+        std::vector<mh::ui::MultiValueChangeCommand::Change> changes{
+            {QStringLiteral("a"), 0.0F, static_cast<float>(i)}};
+        batch.push(new mh::ui::MultiValueChangeCommand(QStringLiteral("Randomise"),
+                                                       std::move(changes), apply));
+    }
+    CHECK(batch.count() == 3);
+}
+
+// Two commands in the same group that touch DIFFERENT sliders must not merge:
+// the second would silently inherit the first's starting values and undo would
+// put the wrong number back.
+//
+// This is refused by `id()`, which mixes the keys into the hash, so QUndoStack
+// never offers the pair to `mergeWith` at all. The size and key comparisons
+// INSIDE `mergeWith` are therefore collision defence -- deleting either of them
+// leaves this test green, which was checked rather than assumed. That is the
+// same arrangement, and the same reasoning, as `ValueChangeCommand::id`.
+TEST_CASE("multi-value edits of different keys never merge", "[ui][undo]") {
+    QUndoStack stack;
+    const auto apply = [](const std::vector<std::pair<QString, float>>&) {};
+
+    std::vector<mh::ui::MultiValueChangeCommand::Change> first{
+        {QStringLiteral("eyes/l-eye-bag"), 0.0F, 0.5F},
+        {QStringLiteral("eyes/r-eye-bag"), 0.0F, 0.5F}};
+    stack.push(
+        new mh::ui::MultiValueChangeCommand(QStringLiteral("Edit"), std::move(first), apply, 3));
+
+    // The same number of changes, different keys.
+    std::vector<mh::ui::MultiValueChangeCommand::Change> other{
+        {QStringLiteral("nose/nose-scale"), 0.0F, 0.5F},
+        {QStringLiteral("nose/nose-width"), 0.0F, 0.5F}};
+    stack.push(
+        new mh::ui::MultiValueChangeCommand(QStringLiteral("Edit"), std::move(other), apply, 3));
+
+    CHECK(stack.count() == 2);
 }

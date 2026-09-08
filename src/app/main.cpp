@@ -2561,8 +2561,35 @@ int main(int argc, char** argv) {
         panel, &mh::ui::ModifierPanel::valueChanged, [&](const QString& id, float value) {
             const float before = human.modifierValue(id.toStdString());
             if (before == value) return;  // nothing to record
-            window.undoStack()->push(
-                new mh::ui::ValueChangeCommand(id, before, value, mergeGroup, applyModifier));
+
+            // Symmetry mode mirrors the edit onto the opposite side as it
+            // happens. `mirroredEdit` returns just the edit when there is no
+            // opposite, so the branch below is about which COMMAND to push --
+            // one value or several -- not about whether to mirror.
+            const auto edit = window.symmetryMode()
+                                  ? mh::core::mirroredEdit(human, id.toStdString(), value)
+                                  : std::vector<std::pair<std::string, float>>{};
+            if (edit.size() < 2) {
+                window.undoStack()->push(
+                    new mh::ui::ValueChangeCommand(id, before, value, mergeGroup, applyModifier));
+                return;
+            }
+
+            std::vector<mh::ui::MultiValueChangeCommand::Change> changes;
+            changes.reserve(edit.size());
+            for (const auto& [name, to] : edit) {
+                // `human`, not `panel`: by the time this signal arrives the
+                // dragged slider has ALREADY moved, so the panel's value for it
+                // is the new one and undo would restore the edit rather than
+                // reverse it. `human` is only updated by applyModifiers, below.
+                // Caught by running an undo, not by any assertion here.
+                changes.push_back({QString::fromStdString(name), human.modifierValue(name), to});
+            }
+            // The SAME merge group the single-sided path uses, so a drag is one
+            // undo entry either way and switching the mode mid-session does not
+            // change how undo behaves.
+            window.undoStack()->push(new mh::ui::MultiValueChangeCommand(
+                QObject::tr("Symmetric edit"), std::move(changes), applyModifiers, mergeGroup));
         });
 
     // The Materials dock: skin and pose. Both re-run the same rebuild the

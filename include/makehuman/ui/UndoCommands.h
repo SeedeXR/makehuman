@@ -68,12 +68,21 @@ public:
 
     /// @param apply called ONCE per undo or redo with every key and the value
     ///        it should take. It must not push further commands.
+    /// @param mergeId consecutive commands sharing this id AND the same set of
+    ///        keys collapse into one. **-1, the default, never merges**, which
+    ///        is what Randomise wants: two randomisations in a row are two
+    ///        acts. A symmetric slider drag wants the opposite -- both sides
+    ///        move on every mouse event, and without merging that is one undo
+    ///        entry per pixel of travel.
     MultiValueChangeCommand(
         QString text, std::vector<Change> changes,
-        std::function<void(const std::vector<std::pair<QString, float>>&)> apply);
+        std::function<void(const std::vector<std::pair<QString, float>>&)> apply, int mergeId = -1);
 
     void undo() override;
     void redo() override;
+
+    [[nodiscard]] int id() const override;
+    bool mergeWith(const QUndoCommand* other) override;
 
     [[nodiscard]] const std::vector<Change>& changes() const { return changes_; }
 
@@ -82,6 +91,7 @@ private:
 
     std::vector<Change> changes_;
     std::function<void(const std::vector<std::pair<QString, float>>&)> apply_;
+    int mergeId_{-1};
 };
 
 /// One named choice, undoable -- a skin, a pose, later a garment.

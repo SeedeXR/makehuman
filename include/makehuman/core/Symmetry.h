@@ -45,4 +45,23 @@ namespace mh::core {
 ///         and puts nothing on the undo stack.
 [[nodiscard]] std::vector<std::pair<std::string, float>> symmetrise(Human& human, char targetSide);
 
+/// The values one edit should write when symmetry MODE is on: the edit itself,
+/// and the same value on the opposite side when there is one.
+///
+/// The reference applies this rule inside the undoable action
+/// (`apps/humanmodifier.py:120-129`) rather than inside `setValue`, and its
+/// randomiser switches the mode off while assigning
+/// (`0_modeling_8_random.py:60-68`). Both mean the same thing: it is a rule
+/// about a USER EDIT, so batch paths — loading a `.mhm`, randomising — simply
+/// never ask for it.
+///
+/// Nothing is applied. The caller owns that, because an undo entry has to
+/// record both old values before either moves.
+///
+/// @return the edit first, then its mirror; empty if @p fullName is not a
+///         modifier this character has.
+[[nodiscard]] std::vector<std::pair<std::string, float>> mirroredEdit(const Human& human,
+                                                                      std::string_view fullName,
+                                                                      float value);
+
 }  // namespace mh::core

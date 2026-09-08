@@ -108,6 +108,9 @@ struct MainWindow::Impl {
     /// an unposed character unposed is having no pose, not this flag.
     bool poseEnabled{true};
     bool grid{false};
+    /// The reference keeps this on the human rather than in its settings, and
+    /// so do we: a session mode, not a stored preference.
+    bool symmetryMode{false};
     /// The reference's persistent macro line. A permanent status-bar widget,
     /// because showMessage is transient and every other message would wipe it.
     QLabel* macroStatus{};
@@ -260,6 +263,17 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     };
     addSymmetry(QT_TR_NOOP("Symmetry Left \u2192 Right"), QStringLiteral("edit.symmetryLtoR"), 'r');
     addSymmetry(QT_TR_NOOP("Symmetry Right \u2192 Left"), QStringLiteral("edit.symmetryRtoL"), 'l');
+
+    // ...and the same idea as a MODE (`core/mhmain.py:1524`): with it on,
+    // dragging one side's slider drags the other. Checkable, and the only one
+    // of the three that is not a one-shot command.
+    QAction* symmetryMode =
+        edit->addAction(theme::icon("flip-horizontal-2", theme::palette().textSecondary, 16),
+                        QCoreApplication::translate("", QT_TR_NOOP("Symmetry While Editing")));
+    registerText(symmetryMode, QT_TR_NOOP("Symmetry While Editing"));
+    symmetryMode->setObjectName(QStringLiteral("edit.symmetryMode"));
+    symmetryMode->setCheckable(true);
+    connect(symmetryMode, &QAction::toggled, this, [this](bool on) { d_->symmetryMode = on; });
 
     QMenu* workspace = menuBar()->addMenu(tr("&Workspace"));
     registerText(workspace, QT_TR_NOOP("&Workspace"));
@@ -676,6 +690,10 @@ void MainWindow::setWireframe(bool on) {
     // Assign first, then setChecked: see setSmooth.
     d_->wireframe = on;
     if (QAction* a = findChild<QAction*>(QStringLiteral("view.wireframe"))) a->setChecked(on);
+}
+
+bool MainWindow::symmetryMode() const {
+    return d_->symmetryMode;
 }
 
 bool MainWindow::grid() const {

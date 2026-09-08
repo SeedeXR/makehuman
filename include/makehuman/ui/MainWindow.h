@@ -157,6 +157,15 @@ public:
     /// -- emitting there would ask for the render that has just been refused.
     void setWireframe(bool on);
 
+    /// Whether an edit to one side of a symmetric pair is mirrored onto the
+    /// other as it happens (the reference's `symmetryModeEnabled`).
+    ///
+    /// Read at edit time rather than signalled: the app asks when it is about
+    /// to record a change, which is the only moment the answer matters. A
+    /// session mode, not a stored preference -- the reference keeps it on the
+    /// human, not in its settings.
+    [[nodiscard]] bool symmetryMode() const;
+
     /// Whether the viewport draws the ground grid and the backplane. A view
     /// mode, not a preference: a fresh window starts without it.
     [[nodiscard]] bool grid() const;

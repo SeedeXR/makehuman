@@ -4,6 +4,53 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (twenty-fifth) — Session · **Symmetry as a mode, and an undo that undid the wrong way**
+
+### The chunk
+The reference's third symmetry button: Edit ▸ Symmetry While Editing. With it
+on, dragging one side's slider drags the other.
+
+**Where the rule lives is the whole design.** The reference applies it inside
+the undoable ACTION (`apps/humanmodifier.py:120-129`), not inside `setValue`,
+and its randomiser switches the mode off while assigning values
+(`0_modeling_8_random.py:60-68`). Both say the same thing: this is a rule about
+a user EDIT. So `core::mirroredEdit` is a function OF an edit — it returns the
+values one edit should write and applies nothing — and the batch paths (loading
+a `.mhm`, randomising) simply never call it.
+
+`MultiValueChangeCommand` learned to merge, defaulting to "never" so Randomise
+is untouched. Without that, a symmetric drag is one undo entry per mouse event;
+with it, one per drag, exactly like the single-sided path.
+
+### The bug only running found
+The `from` values were read from the PANEL. By the time `valueChanged` arrives
+the dragged slider has already moved, so the edited side's "before" was its
+AFTER — and undo restored the edit instead of reversing it. Both sides went to
+1.000 and undo left the left one at 1.000.
+
+Nothing in the suite could see it: `mirroredEdit` is gated, `mergeWith` is
+gated, and what joins them lives in `main.cpp`. I found it by driving a real
+slider in the running application and pressing undo. `human` is the pre-edit
+truth and is what the values come from now; recorded as the third entry in the
+`poseInPlace` / `renderImage` family.
+
+### The gate was decorative and the code was not wrong
+A mutation deleting the key comparison in `mergeWith` survived. I first assumed
+my test was too weak and made the change lists the same length — it survived
+that too. The reason is that `id()` already mixes the keys into the hash, so
+QUndoStack never offers two different edits to `mergeWith` at all: that
+comparison is **collision defence**, exactly as `ValueChangeCommand` documents
+for itself. The honest outcome was not to force a kill but to say so, in the
+test and in the code. Three other mutations were caught.
+
+### Next
+`memory/todo.md` in milestone order. The remaining owner-request item is a
+DECISION, not work: the reference's two-level tab bar, left group boxes and
+right Category radios would mean throwing away the dockable layout chosen on
+2026-09-07.
+
+---
+
 ## 2026-09-08 (twenty-fourth) — Session · **A production render that checks itself**
 
 ### The chunk

@@ -2752,3 +2752,48 @@ TEST_CASE("the Grid toggle reports intent and is not a preference", "[ui][grid]"
     CHECK_FALSE(w2.grid());
     CHECK_FALSE(stored().contains(QStringLiteral("grid")));
 }
+
+// The reference's THIRD symmetry button (`core/mhmain.py:1524-1526`): a mode,
+// not a command. With it on, dragging one side's slider drags the other.
+//
+// It sits with the two one-shot symmetry commands in the Edit menu -- they are
+// one idea and a user who finds one has found the others -- and it is a
+// session mode rather than a stored preference, exactly as the reference keeps
+// it on the human rather than in its settings.
+TEST_CASE("Edit offers symmetry as a mode as well as a command", "[ui][symmetry]") {
+    theme::setIconDir(std::filesystem::path(MH_RESOURCE_DIR) / "icons" / "lucide");
+
+    const auto stored = [] {
+        return QSettings(QSettings::IniFormat, QSettings::UserScope, QStringLiteral("MakeHuman"),
+                         QStringLiteral("MakeHumanCpp"));
+    };
+    stored().remove(QStringLiteral("symmetryMode"));
+
+    mh::ui::MainWindow w(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+    auto* mode = w.findChild<QAction*>(QStringLiteral("edit.symmetryMode"));
+    REQUIRE(mode != nullptr);
+    CHECK(mode->isCheckable());
+    CHECK_FALSE(mode->isChecked());
+    CHECK_FALSE(w.symmetryMode());
+
+    // With the two commands it belongs to.
+    QMenu* edit = nullptr;
+    for (QMenu* m : w.menuBar()->findChildren<QMenu*>()) {
+        if (m->actions().contains(mode)) edit = m;
+    }
+    REQUIRE(edit != nullptr);
+    CHECK(edit->actions().contains(w.findChild<QAction*>(QStringLiteral("edit.symmetryLtoR"))));
+
+    mode->trigger();
+    CHECK(w.symmetryMode());
+    mode->trigger();
+    CHECK_FALSE(w.symmetryMode());
+
+    // A session mode, not a preference: a second window starts with it off
+    // however this one was left, and nothing is written to the settings file.
+    mode->trigger();
+    REQUIRE(w.symmetryMode());
+    mh::ui::MainWindow w2(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+    CHECK_FALSE(w2.symmetryMode());
+    CHECK_FALSE(stored().contains(QStringLiteral("symmetryMode")));
+}

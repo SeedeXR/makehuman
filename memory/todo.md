@@ -2940,12 +2940,26 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
             - **`grid` does NOT.** A `renderImage` that switched the grid on
               unconditionally used to be invisible, because the app-level
               comparison had it on both sides.
-      - [ ] **The symmetry MODE is not built.** The reference's third symmetry
-            button is a toggle (`symmetryModeEnabled`, `core/mhmain.py:1524`)
-            that mirrors every slider drag as it happens, rather than a one-shot
-            command. It wants a hook inside `Human::setModifierValue` or the
-            panel's `valueChanged`, and an undo entry that carries both sides;
-            the two one-shot commands are the useful half and are done.
+      - [x] **The symmetry MODE** (2026-09-08). Edit ▸ Symmetry While Editing,
+            beside the two one-shot commands. With it on, dragging one side's
+            slider drags the other.
+            - **Where the rule lives is the design.** The reference puts it in
+              the undoable ACTION (`apps/humanmodifier.py:120-129`), not in
+              `setValue`, and switches it OFF while the randomiser assigns
+              (`0_modeling_8_random.py:60-68`). Both say it is a rule about a
+              user EDIT, so `core::mirroredEdit` is a function OF an edit and
+              the batch paths — loading a `.mhm`, randomising — never ask.
+            - `MultiValueChangeCommand` learned to merge, with a default of
+              "never" so Randomise is unaffected. Without it a symmetric drag is
+              one undo entry per mouse event; with it, one per drag, the same as
+              the single-sided path.
+            - **A bug only running found:** the `from` values were read from the
+              PANEL, which has already moved for the slider being dragged, so
+              undo restored the edit instead of reversing it. They come from
+              `human` now. Verified by driving a real slider and pressing undo:
+              both sides go to 1.000 and back to 0.000, in ONE undo entry.
+            - Rendered it: with the mode off one upper arm thickens, with it on
+              both do.
       - [x] **Bottom stats line**, as a permanent status-bar widget (a transient
             `showMessage` would be wiped by the next "Saved workspace"). Format
             copied from `guimodifier.py:152-185`. Two rules there are NOT what a
@@ -3878,6 +3892,14 @@ agree today (geometry, UVs, and 169.5 cm under three unit conventions).
         cannot quietly stop running.
       - `--render` also PRINTS what it drew now, which makes a production render
         checkable from a log the way `--screenshot` always was.
+- [ ] **Ungated, `main.cpp` again: the symmetric edit's undo values.** The
+      defect above — reading `from` off the panel instead of the model — cannot
+      be caught by a test today, because the assembly of an undo entry lives in
+      the `valueChanged` connect. `core::mirroredEdit` and
+      `MultiValueChangeCommand::mergeWith` are both gated; what joins them is
+      not. Third entry in this family, after `poseInPlace` and `renderImage`;
+      the pattern that fixed those two is a function that takes the model and
+      returns the changes.
 - [ ] **No UI toggle for skinning in the headless path.** The stored preference
       is a WINDOW preference: `--export` and `--render` build no window, never
       read it, and take `--skinning` alone. Deliberate — the flag is the

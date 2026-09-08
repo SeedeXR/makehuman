@@ -9,9 +9,40 @@ namespace mh::ui {
 
 MultiValueChangeCommand::MultiValueChangeCommand(
     QString text, std::vector<Change> changes,
-    std::function<void(const std::vector<std::pair<QString, float>>&)> apply)
-    : changes_(std::move(changes)), apply_(std::move(apply)) {
+    std::function<void(const std::vector<std::pair<QString, float>>&)> apply, int mergeId)
+    : changes_(std::move(changes)), apply_(std::move(apply)), mergeId_(mergeId) {
     setText(text);
+}
+
+int MultiValueChangeCommand::id() const {
+    // -1 tells QUndoStack not to try at all, which is what Randomise wants.
+    if (mergeId_ < 0) return -1;
+    // Mixed with the KEYS, for the reason ValueChangeCommand::id gives: two
+    // different edits in the same group must not be offered to each other.
+    // mergeWith compares the keys as well, so a hash collision is a refused
+    // merge rather than a wrong one.
+    size_t seed = static_cast<size_t>(mergeId_);
+    for (const Change& c : changes_)
+        seed = qHash(c.key, seed);
+    return static_cast<int>(seed & 0x7fffffffU);
+}
+
+bool MultiValueChangeCommand::mergeWith(const QUndoCommand* other) {
+    const auto* next = dynamic_cast<const MultiValueChangeCommand*>(other);
+    if (next == nullptr || next->mergeId_ != mergeId_ || mergeId_ < 0) return false;
+    // Collision defence, not reachable in a test: `id()` already mixes the keys
+    // in, so QUndoStack does not offer two different edits to each other. If a
+    // hash ever collides, this makes it a REFUSED merge rather than a wrong
+    // one -- the same arrangement ValueChangeCommand uses.
+    if (next->changes_.size() != changes_.size()) return false;
+    for (size_t i = 0; i < changes_.size(); ++i) {
+        if (next->changes_[i].key != changes_[i].key) return false;
+    }
+    // Keep this command's `from` values -- they are where the drag started --
+    // and take the newer `to`s, so one undo goes all the way back.
+    for (size_t i = 0; i < changes_.size(); ++i)
+        changes_[i].to = next->changes_[i].to;
+    return true;
 }
 
 void MultiValueChangeCommand::applyDirection(bool forward) {
