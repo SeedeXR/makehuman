@@ -4,6 +4,77 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (twenty-ninth) — Session · **Shear: the premise was wrong, and the reference said so**
+
+### Reconciling first, again, and again it moved the work
+The `.mhpose` entry had said its call was "the same as the proxy shear forms" —
+so I looked at that one next. It is an M4 item, earlier still, and it carried
+two claims: that no shipped asset uses shear (true), and that implementing it
+needs "a general SVD-based affine solve" (**false**).
+
+Reading `matrixFromShear` (`shared/proxy.py:921-943`) closely, both boxes it
+hands to Gohlke's `affine_matrix_from_points` are **axis-aligned** — the source
+corners come from the two authored coordinates per axis, the target corners from
+one component of two base vertices. The exact affine map between two
+axis-aligned boxes is diagonal. I then RAN the reference's own solve to check
+rather than reason my way in: worst off-diagonal **4.6e-15**, and the diagonal
+is `(t1 - t0) / (s1 - s0)` every time. MakeHuman's "shear" keys cannot express
+shear; they are a signed per-axis scale.
+
+What they express that `x_scale` cannot is the SIGN: the scale form takes an
+absolute difference, so it can never mirror an axis.
+
+### The measurement that saved a NaN mesh
+A zero authored span yields **0**, not an infinity — the least-squares solve
+collapses that axis. The obvious ratio would have divided by zero and every
+fitted vertex would have been NaN. That is a fixture case now, and it is exactly
+the kind of thing deriving a formula on paper gets wrong.
+
+### The bug this chunk shipped, and what caught it
+My key matcher was `key.size() > 7 && key.find("shear_") != npos`. `shear_x` is
+**seven** characters, so the three unsided spellings were silently dropped while
+the six sided ones worked. The per-spelling test caught it immediately — the one
+that used to assert "every one of the nine is refused" and now asserts "every
+one reaches its own slot". Keeping that test's INTENT while inverting its
+expectation is what made the difference; deleting it would have shipped the bug.
+
+Matching now strips an optional side prefix and compares the remainder exactly.
+
+### Mutations
+Six, all caught: the zero-span guard, signed becoming absolute, scale losing its
+precedence, the sided forms reordered, the `size() > 7` bug, and the partial-spec
+refusal. One first came back as a BUILD failure (an unused variable under
+-Werror) — no test at all — and was re-run in a form that compiles.
+
+### CI went red on the PREVIOUS chunk, and the cause was `.gitignore`
+`.mhpose` failed CI in three jobs while the local gate was 673/673 green. The
+cause: `.gitignore` carries `*.mhpose` among the asset-extension rules, so
+`tests/golden/mhpose/smirk.mhpose` — the file the loader parses — was silently
+left out of its own commit. The `.bin` and `cases.json` went in; `git add -A`
+says nothing about an ignored file.
+
+`!tests/golden/**` fixes it, beside the two existing notes saying the same
+thing happened to `data/` and `resources/`. **Habit to keep: after adding a
+fixture, `git ls-files` it — "the file is on disk" and "the file is in the
+commit" are different claims, and only one of them is what CI sees.**
+
+Un-ignoring the tree then revealed a second, older casualty:
+`tests/golden/obj/base_ref.obj` was never committed either, and the three OBJ
+parity tests SKIP when it is absent. They have been reporting success by not
+running on every CI run since they were written. Recorded as its own item, not
+fixed here: committing the fixture is one line, but it turns three skips into
+three byte-for-byte comparisons, and CI's charconv-fallback job uses a different
+float formatter — which is an investigation, not a ride-along.
+
+### Next
+`memory/todo.md` in milestone order. The OBJ fixture above is the first item.
+The remaining `[~]` items in M4/M5 are deliberate refusals with reasons that
+still hold (the w=0 skin-normal path, body pose units that do not fit our rig). The two owner questions stand: the
+two-level tab bar versus the dockable layout, and the VoiceOver check for the
+duplicated slider readout.
+
+---
+
 ## 2026-09-08 (twenty-eighth) — Session · **`.mhpose`: the blocker was liftable all along**
 
 ### Reconciling first, and it moved the work

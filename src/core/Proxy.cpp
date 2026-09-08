@@ -83,17 +83,48 @@ Vec3 TMatrix::diagonal(std::span<const Vec3> humanCoords) const {
     Vec3 d{1.0F, 1.0F, 1.0F};
     if (isIdentity()) return d;
 
-    // matrix[n][n] = |co1[n] - co2[n]| / den   (proxy.py:902-909)
-    float* comp[3] = {&d.x, &d.y, &d.z};
-    for (size_t n = 0; n < 3; ++n) {
-        if (!scale[n]) continue;
-        const Scale& s = *scale[n];
-        if (s.v1 >= humanCoords.size() || s.v2 >= humanCoords.size() || s.den == 0.0F) continue;
-        const Vec3& a     = humanCoords[s.v1];
-        const Vec3& b     = humanCoords[s.v2];
+    float* comp[3]  = {&d.x, &d.y, &d.z};
+    const auto axis = [&humanCoords](uint32_t v1, uint32_t v2, size_t n) -> std::optional<float> {
+        if (v1 >= humanCoords.size() || v2 >= humanCoords.size()) return std::nullopt;
+        const Vec3& a     = humanCoords[v1];
+        const Vec3& b     = humanCoords[v2];
         const float av[3] = {a.x, a.y, a.z};
         const float bv[3] = {b.x, b.y, b.z};
-        *comp[n]          = std::abs(av[n] - bv[n]) / s.den;
+        return bv[n] - av[n];
+    };
+
+    // The scale form wins outright, and per `getMatrix` it is consulted alone:
+    // `if self.scaleData:` returns before the shear branches are reached
+    // (proxy.py:900-918), so an axis it does not name stays identity rather
+    // than falling through to a shear entry.
+    if (scale[0] || scale[1] || scale[2]) {
+        // matrix[n][n] = |co1[n] - co2[n]| / den   (proxy.py:902-909)
+        for (size_t n = 0; n < 3; ++n) {
+            if (!scale[n]) continue;
+            const Scale& s = *scale[n];
+            if (s.den == 0.0F) continue;
+            const auto span = axis(s.v1, s.v2, n);
+            if (!span) continue;
+            *comp[n] = std::abs(*span) / s.den;
+        }
+        return d;
+    }
+
+    // ...then the unsided shear form, then the sided ones, first present wins.
+    for (const auto* form : {&shear, &leftShear, &rightShear}) {
+        if (!(*form)[0] && !(*form)[1] && !(*form)[2]) continue;
+        for (size_t n = 0; n < 3; ++n) {
+            if (!(*form)[n]) continue;
+            const Shear& sh    = *(*form)[n];
+            const float source = sh.x2 - sh.x1;
+            const auto target  = axis(sh.v1, sh.v2, n);
+            if (!target) continue;
+            // A zero authored span collapses the axis to 0. The reference's
+            // least-squares solve does this rather than dividing; the obvious
+            // ratio would be an infinity and every fitted vertex a NaN.
+            *comp[n] = source == 0.0F ? 0.0F : *target / source;
+        }
+        return d;
     }
     return d;
 }
@@ -232,19 +263,42 @@ std::expected<Proxy, ProxyError> loadProxy(const std::filesystem::path& path) {
             block          = Block::None;
             continue;
         }
-        // The reference builds the fit matrix from an affine solve over point
-        // correspondences when shear is present (`shared/proxy.py:476-492`,
-        // `matrixFromShear` -> `affine_matrix_from_points`); this parser
-        // implements only the three diagonal `*_scale` forms.
+        // The nine shear spellings (`proxy.py:476-492`). Refused by name until
+        // 2026-09-08, on the grounds that implementing them needed the general
+        // affine solve `matrixFromShear` calls. Measuring that solve showed it
+        // is DIAGONAL -- both boxes it receives are axis-aligned -- so the form
+        // is a signed per-axis scale and needs no decomposition. See
+        // `TMatrix::Shear`.
         //
-        // No shipped asset uses shear -- all four .mhclo/.proxy files here are
-        // scale-only -- so implementing it would be untested machinery. Silently
-        // dropping it, though, fits the proxy with the wrong transform and
-        // reports success, so it is refused by name instead.
-        if (key.size() > 6 && key.find("shear_") != std::string::npos) {
-            return std::unexpected(
-                ProxyError{ProxyErrorKind::Unsupported, path.string(), lineNo,
-                           key + " is not implemented; only x_scale/y_scale/z_scale are"});
+        // Matched by stripping an optional side prefix and comparing the rest
+        // EXACTLY. A "contains shear_ and ends with an axis" test looks
+        // equivalent and is not: `shear_x` is seven characters, so a
+        // `size() > 7` guard silently passed the sided spellings and dropped
+        // the unsided ones -- which the per-spelling test caught.
+        const std::string_view sideless = (key.starts_with("l_") || key.starts_with("r_"))
+                                              ? std::string_view{key}.substr(2)
+                                              : std::string_view{key};
+        if (sideless == "shear_x" || sideless == "shear_y" || sideless == "shear_z") {
+            if (tok.size() < 5) {
+                return std::unexpected(ProxyError{ProxyErrorKind::MalformedLine, path.string(),
+                                                  lineNo, key + " wants two verts and two spans"});
+            }
+            const size_t axis = key.back() == 'x' ? 0 : key.back() == 'y' ? 1 : 2;
+            TMatrix::Shear sh;
+            if (!parseUint(tok[1], sh.v1) || !parseUint(tok[2], sh.v2) ||
+                !parseFloat(tok[3], sh.x1) || !parseFloat(tok[4], sh.x2)) {
+                return std::unexpected(ProxyError{ProxyErrorKind::MalformedLine, path.string(),
+                                                  lineNo, key + " has a non-numeric field"});
+            }
+            if (key.starts_with("l_")) {
+                p.tmatrix.leftShear[axis] = sh;
+            } else if (key.starts_with("r_")) {
+                p.tmatrix.rightShear[axis] = sh;
+            } else {
+                p.tmatrix.shear[axis] = sh;
+            }
+            block = Block::None;
+            continue;
         }
         if ((key == "x_scale" || key == "y_scale" || key == "z_scale") && tok.size() >= 4) {
             const size_t axis = (key[0] == 'x') ? 0 : (key[0] == 'y') ? 1 : 2;
@@ -345,6 +399,24 @@ std::expected<Proxy, ProxyError> loadProxy(const std::filesystem::path& path) {
     // for "absent", which is why an unseen key takes the same branch.
     if (!sawZDepth || p.zDepth == -1) p.zDepth = 50;
     p.exactFitOnly = !anyTriple;
+
+    // A shear form must name all three axes. `matrixFromShear` unpacks
+    // `shear[0..2]` unconditionally (`proxy.py:927-930`), so the reference
+    // raises a TypeError on a file that names only one -- it is a broken file,
+    // and refusing it beats fitting with two silently identity axes. Checked
+    // here rather than per line because completeness is a property of the whole
+    // file.
+    for (const auto* form : {&p.tmatrix.shear, &p.tmatrix.leftShear, &p.tmatrix.rightShear}) {
+        const size_t named = static_cast<size_t>((*form)[0].has_value()) +
+                             static_cast<size_t>((*form)[1].has_value()) +
+                             static_cast<size_t>((*form)[2].has_value());
+        if (named != 0 && named != 3) {
+            return std::unexpected(ProxyError{
+                ProxyErrorKind::Unsupported, path.string(), 0,
+                "a shear form names " + std::to_string(named) +
+                    " of 3 axes; the reference requires all three and raises otherwise"});
+        }
+    }
     return p;
 }
 

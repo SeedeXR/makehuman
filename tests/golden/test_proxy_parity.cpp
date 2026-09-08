@@ -15,6 +15,8 @@
 #include "makehuman/core/Modifier.h"
 #include "makehuman/core/ObjReader.h"
 
+#include <nlohmann/json.hpp>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -239,16 +241,17 @@ TEST_CASE("proxy fitting matches the reference on two bodies", "[golden][parity]
     CHECK(compared == 18);  // 3 proxies x 6 bodies
 }
 
-// The reference parses nine shear keys (`shared/proxy.py:476-492`) and builds
-// the fit matrix from an affine solve over point correspondences
-// (`matrixFromShear` -> `affine_matrix_from_points`). We implement only the
-// three diagonal `*_scale` forms.
+// The nine shear keys used to be REFUSED here, and that refusal was right for
+// as long as the form was unimplemented: a `.mhclo` using shear once parsed
+// "successfully" with the shear silently dropped, which fitted the proxy with
+// the wrong transform and reported success.
 //
-// Until this, a `.mhclo` using shear parsed "successfully" and the shear was
-// silently dropped -- the proxy then fitted with the wrong transform and
-// nothing said so. Refusing is worse than supporting it and far better than
-// pretending.
-TEST_CASE("a proxy using shear is refused, not silently mis-fitted", "[proxy][shear]") {
+// They are implemented now (2026-09-08), so these two cases assert the opposite
+// of what they used to -- kept rather than deleted, because the thing worth
+// pinning is unchanged: **every one of the nine spellings is handled, and none
+// is silently dropped.** A left/right asset that slipped through would mis-fit
+// exactly as before.
+TEST_CASE("a proxy using shear loads, and scale still wins", "[proxy][shear]") {
     const auto path = std::filesystem::temp_directory_path() / "mh_shear.mhclo";
     {
         std::ofstream f(path);
@@ -256,32 +259,56 @@ TEST_CASE("a proxy using shear is refused, not silently mis-fitted", "[proxy][sh
           << "basemesh hm08\n"
           << "x_scale 5399 11998 1.4800\n"
           << "shear_x 5399 11998 0.1 0.9\n"
+          << "shear_y 5399 11998 0.1 0.9\n"
+          << "shear_z 5399 11998 0.1 0.9\n"
           << "verts 0\n"
           << "0\n";
     }
 
     const auto proxy = mh::core::loadProxy(path);
-    REQUIRE_FALSE(proxy.has_value());
-    INFO(proxy.error().message());
-    CHECK(proxy.error().detail.find("shear_x") != std::string::npos);
+    REQUIRE(proxy.has_value());
+    // Both forms are recorded, and `getMatrix`'s precedence decides which is
+    // used -- scale, because it is present at all (`proxy.py:900-918`).
+    REQUIRE(proxy->tmatrix.scale[0].has_value());
+    REQUIRE(proxy->tmatrix.shear[0].has_value());
 
     std::error_code ec;
     std::filesystem::remove(path, ec);
 }
 
-// Every one of the nine spellings must be caught, not just the unprefixed set:
-// a left/right asset that slipped through would mis-fit exactly as before.
-TEST_CASE("every shear spelling is refused", "[proxy][shear]") {
-    for (const char* key : {"shear_x", "shear_y", "shear_z", "l_shear_x", "l_shear_y", "l_shear_z",
-                            "r_shear_x", "r_shear_y", "r_shear_z"}) {
+TEST_CASE("every shear spelling reaches its own slot", "[proxy][shear]") {
+    struct Case {
+        const char* key;
+        int form;  // 0 = unsided, 1 = left, 2 = right
+        size_t axis;
+    };
+
+    for (const Case& c :
+         {Case{"shear_x", 0, 0}, Case{"shear_y", 0, 1}, Case{"shear_z", 0, 2},
+          Case{"l_shear_x", 1, 0}, Case{"l_shear_y", 1, 1}, Case{"l_shear_z", 1, 2},
+          Case{"r_shear_x", 2, 0}, Case{"r_shear_y", 2, 1}, Case{"r_shear_z", 2, 2}}) {
         const auto path = std::filesystem::temp_directory_path() / "mh_shear_each.mhclo";
         {
+            // All three axes of the form under test, so the file is complete --
+            // a partial spec is refused, which its own case covers.
+            const std::string prefix = std::string(c.key).substr(0, std::string(c.key).size() - 1);
             std::ofstream f(path);
-            f << "name T\nbasemesh hm08\n" << key << " 1 2 0.1 0.9\nverts 0\n0\n";
+            f << "name T\nbasemesh hm08\n";
+            for (const char* ax : {"x", "y", "z"})
+                f << prefix << ax << " 1 2 0.1 0.9\n";
+            f << "verts 0\n0\n";
         }
         const auto proxy = mh::core::loadProxy(path);
-        INFO(key);
-        CHECK_FALSE(proxy.has_value());
+        INFO(c.key);
+        REQUIRE(proxy.has_value());
+        const auto& t = proxy->tmatrix;
+        const std::array<std::optional<mh::core::TMatrix::Shear>, 3>& slot =
+            c.form == 0 ? t.shear : (c.form == 1 ? t.leftShear : t.rightShear);
+        CHECK(slot[c.axis].has_value());
+        // ...and nothing landed in the other two forms.
+        CHECK((c.form == 0) == t.shear[c.axis].has_value());
+        CHECK((c.form == 1) == t.leftShear[c.axis].has_value());
+        CHECK((c.form == 2) == t.rightShear[c.axis].has_value());
         std::error_code ec;
         std::filesystem::remove(path, ec);
     }
@@ -326,4 +353,168 @@ TEST_CASE("the low-poly eye proxy fits exactly onto body vertices", "[core][prox
         CHECK(p->offsets[i].y == 0.0F);
         CHECK(p->offsets[i].z == 0.0F);
     }
+}
+
+// `TMatrix` shear, against the reference's own solve.
+//
+// The nine `shear_*` keys were REFUSED rather than implemented, on the grounds
+// that no shipped `.mhclo` uses them and that implementing needed "a general
+// SVD-based affine solve". Measuring the reference settled both halves of that:
+//
+//  * both boxes its solve receives are AXIS-ALIGNED -- source corners built per
+//    axis from the two authored coordinates, target corners from one component
+//    of two base vertices -- so the exact affine map is DIAGONAL. Off-diagonal
+//    terms come back at 4.6e-15, which is float noise. No SVD is needed and no
+//    shear is expressible; the keys are a signed per-axis scale.
+//  * the fixture is generated by the oracle
+//    (`tools/capture_fixture.py shear`), so "untestable machinery" no longer
+//    applies -- the same call as `.mhpose`.
+//
+// The degenerate cases are why this is a fixture and not a formula I derived: a
+// zero source extent yields **0**, not an infinity, because the least-squares
+// solve collapses that axis. The obvious ratio would give inf and a mesh of
+// NaNs.
+TEST_CASE("the shear diagonal matches the reference's affine solve",
+          "[core][proxy][shear][golden][parity]") {
+    std::ifstream in(std::filesystem::path(MH_GOLDEN_DIR) / "shear" / "cases.json");
+    REQUIRE(in);
+    nlohmann::json spec;
+    in >> spec;
+
+    // The reference's own measure of how far from diagonal its solve lands.
+    CHECK(spec["worst_off_diagonal"].get<double>() < 1e-12);
+    REQUIRE(spec["cases"].size() == 5);
+
+    for (const auto& c : spec["cases"]) {
+        const std::string label = c["label"].get<std::string>();
+        CAPTURE(label);
+
+        std::vector<mh::foundation::Vec3> coords;
+        for (const auto& co : c["coords"]) {
+            coords.push_back({co[0].get<float>(), co[1].get<float>(), co[2].get<float>()});
+        }
+
+        mh::core::TMatrix t;
+        for (size_t n = 0; n < 3; ++n) {
+            const auto& e = c["shear"][n];
+            t.shear[n]    = mh::core::TMatrix::Shear{e[0].get<uint32_t>(), e[1].get<uint32_t>(),
+                                                  e[2].get<float>(), e[3].get<float>()};
+        }
+        CHECK_FALSE(t.isIdentity());
+
+        const mh::foundation::Vec3 got = t.diagonal(coords);
+        const float want[3] = {c["diagonal"][0].get<float>(), c["diagonal"][1].get<float>(),
+                               c["diagonal"][2].get<float>()};
+        CHECK(std::abs(got.x - want[0]) < 1e-5F);
+        CHECK(std::abs(got.y - want[1]) < 1e-5F);
+        CHECK(std::abs(got.z - want[2]) < 1e-5F);
+    }
+}
+
+// Scale wins over shear, and the sided forms come after the unsided one --
+// `getMatrix`'s own order (`shared/proxy.py:900-918`). A file carrying both is
+// odd, but the precedence has to be the reference's or the same asset fits
+// differently in the two applications.
+TEST_CASE("scale takes precedence over shear, and unsided over sided", "[core][proxy][shear]") {
+    const std::vector<mh::foundation::Vec3> coords{{0.0F, 0.0F, 0.0F}, {4.0F, 4.0F, 4.0F}};
+
+    mh::core::TMatrix t;
+    for (size_t n = 0; n < 3; ++n) {
+        t.shear[n]      = mh::core::TMatrix::Shear{0, 1, 0.0F, 1.0F};  // -> 4
+        t.leftShear[n]  = mh::core::TMatrix::Shear{0, 1, 0.0F, 2.0F};  // -> 2
+        t.rightShear[n] = mh::core::TMatrix::Shear{0, 1, 0.0F, 4.0F};  // -> 1
+    }
+    CHECK(std::abs(t.diagonal(coords).x - 4.0F) < 1e-5F);
+
+    mh::core::TMatrix sided;
+    for (size_t n = 0; n < 3; ++n) {
+        sided.leftShear[n]  = mh::core::TMatrix::Shear{0, 1, 0.0F, 2.0F};
+        sided.rightShear[n] = mh::core::TMatrix::Shear{0, 1, 0.0F, 4.0F};
+    }
+    CHECK(std::abs(sided.diagonal(coords).x - 2.0F) < 1e-5F);
+
+    mh::core::TMatrix withScale = t;
+    withScale.scale[0]          = mh::core::TMatrix::Scale{0, 1, 8.0F};  // -> |0-4|/8 = 0.5
+    CHECK(std::abs(withScale.diagonal(coords).x - 0.5F) < 1e-5F);
+    // The scale form is per-axis and the others are not consulted at all once
+    // any scale entry exists, exactly as `getMatrix` reads `if self.scaleData`.
+    CHECK(std::abs(withScale.diagonal(coords).y - 1.0F) < 1e-5F);
+}
+
+// The nine keys, parsed. They were refused by name until 2026-09-08; the
+// refusal was honest but it turned away files MakeHuman itself reads.
+TEST_CASE("a .mhclo declaring shear parses and fits", "[core][proxy][shear]") {
+    const auto dir = std::filesystem::temp_directory_path() / "mh_shear_proxy";
+    std::filesystem::create_directories(dir);
+    const auto write = [&](const char* stem, std::string_view body) {
+        const auto p = dir / stem;
+        std::ofstream out(p);
+        out << body;
+        out.close();
+        return p;
+    };
+
+    // All three axes, unsided. `verts` is required or the file has no mapping.
+    const auto full   = write("full.mhclo", R"(name shearful
+obj_file x.obj
+shear_x 0 1 -1.0 1.0
+shear_y 0 1 -1.0 1.0
+shear_z 0 1 -1.0 1.0
+verts
+0
+)");
+    const auto loaded = mh::core::loadProxy(full);
+    REQUIRE(loaded.has_value());
+    REQUIRE(loaded->tmatrix.shear[0].has_value());
+    REQUIRE(loaded->tmatrix.shear[2].has_value());
+    CHECK(loaded->tmatrix.shear[0]->v1 == 0);
+    CHECK(loaded->tmatrix.shear[0]->v2 == 1);
+    CHECK(std::abs(loaded->tmatrix.shear[0]->x1 + 1.0F) < 1e-6F);
+    CHECK(std::abs(loaded->tmatrix.shear[0]->x2 - 1.0F) < 1e-6F);
+    CHECK_FALSE(loaded->tmatrix.isIdentity());
+
+    // ...and it reaches the fit: a body twice the authored span doubles it.
+    const std::vector<mh::foundation::Vec3> coords{{-2.0F, -2.0F, -2.0F}, {2.0F, 2.0F, 2.0F}};
+    const mh::foundation::Vec3 d = loaded->tmatrix.diagonal(coords);
+    CHECK(std::abs(d.x - 2.0F) < 1e-5F);
+
+    // The sided spellings land in the sided slots, and only there.
+    const auto sided = mh::core::loadProxy(write("sided.mhclo", R"(name sided
+obj_file x.obj
+l_shear_x 0 1 -1.0 1.0
+l_shear_y 0 1 -1.0 1.0
+l_shear_z 0 1 -1.0 1.0
+r_shear_x 0 1 -2.0 2.0
+r_shear_y 0 1 -2.0 2.0
+r_shear_z 0 1 -2.0 2.0
+verts
+0
+)"));
+    REQUIRE(sided.has_value());
+    CHECK_FALSE(sided->tmatrix.shear[0].has_value());
+    REQUIRE(sided->tmatrix.leftShear[1].has_value());
+    REQUIRE(sided->tmatrix.rightShear[1].has_value());
+    CHECK(std::abs(sided->tmatrix.rightShear[1]->x2 - 2.0F) < 1e-6F);
+
+    // A PARTIAL spec is refused. The reference unpacks all three axes
+    // unconditionally (`matrixFromShear`, `proxy.py:927-930`), so a file naming
+    // only `shear_x` raises a TypeError there -- it is a broken file, and
+    // saying so beats fitting it with two identity axes.
+    const auto partial = mh::core::loadProxy(write("partial.mhclo", R"(name partial
+obj_file x.obj
+shear_x 0 1 -1.0 1.0
+verts
+0
+)"));
+    REQUIRE_FALSE(partial.has_value());
+    CHECK(partial.error().kind == mh::core::ProxyErrorKind::Unsupported);
+
+    // A shear line missing its numbers is malformed, not ignored.
+    const auto short_line = mh::core::loadProxy(write("short.mhclo", R"(name short
+obj_file x.obj
+shear_x 0 1
+verts
+0
+)"));
+    REQUIRE_FALSE(short_line.has_value());
 }

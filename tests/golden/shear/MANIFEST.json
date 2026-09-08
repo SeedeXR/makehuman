@@ -1,0 +1,13 @@
+{
+  "subsystem": "shear",
+  "captured_at": "2026-09-08T08:06:07.983272+00:00",
+  "reference_commit": "44bfe3dcdfb27f425a65f2139d782d9a93fb67e7",
+  "python": "3.14.6",
+  "numpy": "2.5.2",
+  "platform": "darwin",
+  "entries": {},
+  "source": "shared/proxy.py:921-943 + core/transformations.py (affine_matrix_from_points)",
+  "cases": 5,
+  "worst_off_diagonal": 4.595465875567565e-15,
+  "note": "the solve is diagonal: both boxes are axis-aligned, so MakeHuman's shear keys express a signed per-axis scale and nothing more."
+}

@@ -1080,6 +1080,93 @@ def capture_bvh() -> None:
     })
 
 
+def capture_shear() -> None:
+    """`TMatrix` shear: the reference's own 3x3, for specs no shipped asset has.
+
+    The nine `shear_*` keys were refused rather than implemented, on the grounds
+    that no shipped `.mhclo` uses them and implementing needed "a general
+    SVD-based affine solve" (`shared/proxy.py:921-943`, via Gohlke's
+    `affine_matrix_from_points`).
+
+    Measured here rather than believed: BOTH boxes that solve feeds are
+    AXIS-ALIGNED -- source corners are built per axis from the two authored
+    coordinates, target corners from one component of two base vertices -- so
+    the exact affine map is DIAGONAL. Off-diagonal terms come back at 1e-15,
+    which is float noise, and the diagonal is `(t1 - t0) / (s1 - s0)` per axis.
+    MakeHuman's "shear" cannot express shear.
+
+    The degenerate cases are the reason this is captured rather than derived: a
+    zero source extent yields **0**, not an infinity, because the least-squares
+    solve collapses that axis. The obvious ratio would produce inf and a mesh of
+    NaNs.
+    """
+    import sys as _sys
+    _sys.path.insert(0, str(REPO / "legacy/python/core"))
+    from transformations import affine_matrix_from_points
+
+    print("capturing: shear")
+
+    def verts_to_numpy(verts):
+        r = np.asarray(verts)
+        return np.asarray([r[:, 0], r[:, 1], r[:, 2]], dtype=np.float32)
+
+    def matrix_from_shear(shear, hcoord):
+        """`Proxy.matrixFromShear`, verbatim (`shared/proxy.py:921-943`)."""
+        sfaces = np.zeros((3, 2), float)
+        tfaces = np.zeros((3, 2), float)
+        for n in range(3):
+            (vn1, vn2, sfaces[n, 0], sfaces[n, 1]) = shear[n]
+            tfaces[n, 0] = hcoord[vn1][n]
+            tfaces[n, 1] = hcoord[vn2][n]
+        sverts = []
+        tverts = []
+        for i in (0, 1):
+            for j, k in ((0, 0), (0, 1), (1, 1), (1, 0)):
+                sverts.append(np.array((sfaces[0, i], sfaces[1, j], sfaces[2, k])))
+                tverts.append(np.array((tfaces[0, i], tfaces[1, j], tfaces[2, k])))
+        return affine_matrix_from_points(verts_to_numpy(sverts), verts_to_numpy(tverts))[:3, :3]
+
+    # Two base vertices are enough: every case reads one component from each.
+    cases = [
+        {"label": "plain", "shear": [[0, 1, -1.0, 1.0], [0, 1, -2.0, 2.0], [0, 1, -0.5, 0.5]],
+         "coords": [[-3.0, -4.0, -1.0], [3.0, 4.0, 1.0]]},
+        {"label": "offset source and target",
+         "shear": [[0, 1, 0.0, 2.0], [0, 1, 1.0, 3.0], [0, 1, -1.0, 0.0]],
+         "coords": [[5.0, 2.0, 7.0], [9.0, 8.0, 8.0]]},
+        {"label": "target inverted on x -- a MIRROR, which the scale form's abs() cannot express",
+         "shear": [[0, 1, -1.0, 1.0], [0, 1, -1.0, 1.0], [0, 1, -1.0, 1.0]],
+         "coords": [[2.0, -1.0, -1.0], [-2.0, 1.0, 1.0]]},
+        {"label": "zero SOURCE extent on x -- collapses to 0, not infinity",
+         "shear": [[0, 1, 1.0, 1.0], [0, 1, -1.0, 1.0], [0, 1, -1.0, 1.0]],
+         "coords": [[-1.0, -1.0, -1.0], [1.0, 1.0, 1.0]]},
+        {"label": "zero TARGET extent on x",
+         "shear": [[0, 1, -1.0, 1.0], [0, 1, -1.0, 1.0], [0, 1, -1.0, 1.0]],
+         "coords": [[0.0, -1.0, -1.0], [0.0, 1.0, 1.0]]},
+    ]
+
+    worst_off_diagonal = 0.0
+    for case in cases:
+        coords = {i: np.asarray(c, dtype=float) for i, c in enumerate(case["coords"])}
+        m = matrix_from_shear([tuple(e) for e in case["shear"]], coords)
+        off = m - np.diag(np.diag(m))
+        worst_off_diagonal = max(worst_off_diagonal, float(np.abs(off).max()))
+        case["diagonal"] = [float(v) for v in np.diag(m)]
+
+    out = GOLDEN / "shear"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / CASES_JSON).write_text(json.dumps({
+        "cases": cases,
+        "worst_off_diagonal": worst_off_diagonal,
+    }, indent=2))
+    _finish("shear", {}, {
+        "source": "shared/proxy.py:921-943 + core/transformations.py (affine_matrix_from_points)",
+        "cases": len(cases),
+        "worst_off_diagonal": worst_off_diagonal,
+        "note": "the solve is diagonal: both boxes are axis-aligned, so MakeHuman's "
+                "shear keys express a signed per-axis scale and nothing more.",
+    })
+
+
 def _face_pose_units():
     """The 60 face units mapped onto the shipped rig, as the reference builds them.
 
@@ -1489,6 +1576,7 @@ SUBSYSTEMS = {
     "bvh": capture_bvh,
     "poseunits": capture_poseunits,
     "mhpose": capture_mhpose,
+    "shear": capture_shear,
 }
 
 

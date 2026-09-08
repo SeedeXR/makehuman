@@ -39,13 +39,46 @@ struct TMatrix {
         float den{1.0F};
     };
 
+    /// The `shear_*` form: two base vertices and the span the asset was
+    /// authored against, per axis (`proxy.py:880-897`).
+    ///
+    /// **It cannot express shear**, despite the name. The reference feeds two
+    /// AXIS-ALIGNED boxes to a general affine solve
+    /// (`matrixFromShear`, `:921-943`, via Gohlke's
+    /// `affine_matrix_from_points`), and the exact map between two axis-aligned
+    /// boxes is diagonal -- measured off-diagonal 4.6e-15, float noise. What it
+    /// expresses that `Scale` cannot is a SIGNED ratio: `Scale` takes an
+    /// absolute difference, so it can never mirror an axis.
+    struct Shear {
+        uint32_t v1{}, v2{};
+        /// The authored span on this axis. A zero span yields a scale of 0
+        /// rather than an infinity -- the least-squares solve collapses the
+        /// axis, and that is measured, not assumed.
+        float x1{}, x2{};
+    };
+
     /// One entry per axis; absent axes stay identity.
     std::array<std::optional<Scale>, 3> scale{};
 
-    [[nodiscard]] bool isIdentity() const noexcept { return !scale[0] && !scale[1] && !scale[2]; }
+    /// The unsided form and the two sided ones. `getMatrix` consults them in
+    /// this order and takes the FIRST that is present (`proxy.py:900-918`), so
+    /// a file carrying several fits by the first alone.
+    std::array<std::optional<Shear>, 3> shear{};
+    std::array<std::optional<Shear>, 3> leftShear{};
+    std::array<std::optional<Shear>, 3> rightShear{};
 
-    /// Evaluates against the body's current vertex positions. Returns the
-    /// diagonal, since only the scale form is used by the shipped assets.
+    [[nodiscard]] bool isIdentity() const noexcept {
+        const auto empty = [](const std::array<std::optional<Shear>, 3>& a) {
+            return !a[0] && !a[1] && !a[2];
+        };
+        return !scale[0] && !scale[1] && !scale[2] && empty(shear) && empty(leftShear) &&
+               empty(rightShear);
+    }
+
+    /// Evaluates against the body's current vertex positions.
+    ///
+    /// Returns a diagonal because every form MakeHuman can express is diagonal;
+    /// see `Shear`.
     [[nodiscard]] Vec3 diagonal(std::span<const Vec3> humanCoords) const;
 };
 
