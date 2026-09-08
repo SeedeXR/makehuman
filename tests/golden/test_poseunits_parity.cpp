@@ -373,3 +373,123 @@ TEST_CASE("a face expression layers onto a body pose", "[rig][poseunits][mix][go
                 CHECK((*mixed)[i].m[r][c] == want.m[r][c]);
     }
 }
+
+// `.mhpose`: a named, weighted reference to pose units. The expression mixer
+// writes it (`plugins/7_expression_mixer.py:221-238`) and `Pose.fromPoseUnit`
+// reads it (`shared/animation.py:286-309`) -- the same JSON either way, which
+// is why `.mhpose` and the todo's separate `.mhupb` entry are one format.
+//
+// This was filed as unimplementable for want of an asset: none ships with
+// MakeHuman. The blocker is lifted by GENERATING one with the oracle -- written
+// in the reference's own shape and blended by the reference's own
+// `getBlendedPose` -- so the loader is checked against the reference rather
+// than against my reading of it. See `tools/capture_fixture.py mhpose`.
+TEST_CASE("an expression file loads the units and weights it names",
+          "[poseunits][mhpose][golden][parity]") {
+    const auto dir = std::filesystem::path(MH_GOLDEN_DIR) / "mhpose";
+    std::ifstream casesIn(dir / "cases.json");
+    REQUIRE(casesIn);
+    nlohmann::json spec;
+    casesIn >> spec;
+
+    const auto expr = rig::loadExpression(dir / spec["file"].get<std::string>());
+    REQUIRE(expr.has_value());
+
+    CHECK(expr->name == spec["name"].get<std::string>());
+    CHECK(expr->description == spec["description"].get<std::string>());
+    REQUIRE(expr->tags.size() == spec["tags"].size());
+    for (size_t i = 0; i < expr->tags.size(); ++i) {
+        CHECK(expr->tags[i] == spec["tags"][i].get<std::string>());
+    }
+
+    // ORDER matters, and this is the assertion that pins it: the blend
+    // multiplies quaternions, so feeding the same units in another order gives
+    // another face. The reference hands `list(dict.keys())` to the blend, so
+    // the file's own order is the contract -- a loader that returned a sorted
+    // map would produce a different, plausible, wrong expression.
+    REQUIRE(expr->units.size() == spec["unit_names"].size());
+    for (size_t i = 0; i < expr->units.size(); ++i) {
+        CHECK(expr->units[i].name == spec["unit_names"][i].get<std::string>());
+        CHECK(std::abs(expr->units[i].weight - spec["unit_weights"][i].get<float>()) < 1e-6F);
+    }
+}
+
+TEST_CASE("an expression blends to what the reference produced",
+          "[poseunits][mhpose][golden][parity]") {
+    const auto dir = std::filesystem::path(MH_GOLDEN_DIR) / "mhpose";
+    std::ifstream casesIn(dir / "cases.json");
+    REQUIRE(casesIn);
+    nlohmann::json spec;
+    casesIn >> spec;
+
+    const auto expr = rig::loadExpression(dir / spec["file"].get<std::string>());
+    REQUIRE(expr.has_value());
+
+    const auto units = build();
+    std::vector<size_t> idx;
+    std::vector<float> weights;
+    for (const rig::WeightedUnit& u : expr->units) {
+        const auto i = units.indexOf(u.name);
+        REQUIRE(i.has_value());
+        idx.push_back(*i);
+        weights.push_back(u.weight);
+    }
+
+    const auto got  = units.blend(idx, weights);
+    const auto want = readFloats(dir / "blended.bin");
+    REQUIRE(got.size() == kBones);
+    REQUIRE(want.size() == kBones * 12);
+
+    float worst = 0.0F;
+    for (size_t b = 0; b < kBones; ++b) {
+        const float* w = &want[b * 12];
+        for (size_t r = 0; r < 3; ++r) {
+            for (size_t c = 0; c < 4; ++c)
+                worst = std::max(worst, std::abs(got[b].m[r][c] - w[r * 4 + c]));
+        }
+    }
+    INFO("worst delta against the reference's own blend of this file: " << worst);
+    CHECK(worst < kTol);
+}
+
+// The reference's two refusals, kept: `mhupb['name']` raises a KeyError when the
+// key is absent, and an empty `unit_poses` raises "needs to contain at least one
+// entry" (`animation.py:296,301-302`). A file that names no units is not a
+// neutral expression -- it is a file someone meant to fill in.
+TEST_CASE("an expression file that says nothing is refused", "[poseunits][mhpose]") {
+    const auto tmp = std::filesystem::temp_directory_path() / "mh_mhpose_refusals";
+    std::filesystem::create_directories(tmp);
+
+    const auto write = [&](const char* stem, std::string_view text) {
+        const auto p = tmp / stem;
+        std::ofstream out(p);
+        out << text;
+        out.close();
+        return p;
+    };
+
+    CHECK_FALSE(rig::loadExpression(write("noname.mhpose", R"({"unit_poses": {"JawDrop": 1.0}})"))
+                    .has_value());
+    CHECK_FALSE(rig::loadExpression(write("empty.mhpose", R"({"name": "x", "unit_poses": {}})"))
+                    .has_value());
+    CHECK_FALSE(rig::loadExpression(write("nounits.mhpose", R"({"name": "x"})")).has_value());
+    CHECK_FALSE(rig::loadExpression(write("notjson.mhpose", "{ this is not json")).has_value());
+    // A weight that is not a number is a malformed file, not a zero.
+    CHECK_FALSE(rig::loadExpression(
+                    write("badweight.mhpose", R"({"name": "x", "unit_poses": {"JawDrop": "1.0"}})"))
+                    .has_value());
+    CHECK_FALSE(rig::loadExpression(tmp / "does-not-exist.mhpose").has_value());
+
+    // ...and the minimum that IS valid: a name and one unit. Everything else in
+    // the reference's file -- description, tags, author, licence -- is optional
+    // there (`mhupb.get(...)`) and must be optional here.
+    const auto ok = rig::loadExpression(
+        write("minimal.mhpose", R"({"name": "x", "unit_poses": {"JawDrop": 1}})"));
+    REQUIRE(ok.has_value());
+    CHECK(ok->name == "x");
+    CHECK(ok->description.empty());
+    CHECK(ok->tags.empty());
+    REQUIRE(ok->units.size() == 1);
+    CHECK(ok->units[0].name == "JawDrop");
+    CHECK(std::abs(ok->units[0].weight - 1.0F) < 1e-6F);
+}

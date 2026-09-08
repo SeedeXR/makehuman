@@ -686,11 +686,26 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `src/io/BvhReader.cpp:224` builds the convention with
       `foundation::eulerOrderFromString`, and `:336` builds the matrix with
       `foundation::eulerMatrix`. No duplicated rotation maths to drift.
-- [ ] `.mhpose` loading — **no asset to verify against.** `find . -name '*.mhpose'`
-      returns nothing; the format is referenced only by reference *plugins*
-      (`7_expression_mixer.py`, `2_posing_expression.py`). Implementing it now
-      would be unverifiable machinery, the same call as the proxy shear forms.
-      Reopen when a `.mhpose` file exists to test against.
+- [x] **`.mhpose` loading** (2026-09-08). The blocker was "no asset to verify
+      against"; it is lifted by GENERATING one with the oracle rather than
+      waiting for one to appear. `tools/capture_fixture.py mhpose` writes a file
+      in the shape the reference's own writer produces
+      (`7_expression_mixer.py:221-238`) and blends it with the reference's own
+      `getBlendedPose`, so the loader is checked against MakeHuman, not against
+      my reading of it.
+      - **`.mhpose` and `.mhupb` are one format**, which the two todo entries
+        had as two things: the mixer writes `.mhpose`, `Pose.fromPoseUnit` reads
+        it (`animation.py:286-309`), same JSON.
+      - **File order is a contract, and the first implementation broke it.**
+        `nlohmann::json` keeps object members in a `std::map` and hands them
+        back SORTED; the blend multiplies quaternions and does not commute, so
+        that produced a different, plausible, wrong expression. Measured on the
+        fixture: **0.0245** against a tolerance of 1e-4. `ordered_json` fixes
+        it, and the fixture's units were chosen to OVERLAP on jaw and lip bones
+        so the blend itself proves the ordering — disjoint units would blend the
+        same either way and the assertion would have been decorative.
+      - Both of the reference's refusals kept: a missing `name` and an empty
+        `unit_poses`. Four mutations caught, including the sorted-order one.
 - [x] **CPU LBS — parity on all 19,158 vertices** under a real pose (7 bones
       rotated, 18,069 vertices moved, 3.2 dm max displacement). Worst vertex
       delta **3.8e-6 dm (0.38 um)**; worst pose-matrix delta 6.7e-6 — float32
@@ -730,8 +745,11 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       the two differ — without the second, a symmetrising implementation would
       pass by accident.
       Weights are **not** normalised: the blend is additive.
-- [ ] `.mhupb` expression files (weighted unit references) — the consumer of
-      the blend above
+- [x] `.mhupb` expression files — **the same format as `.mhpose`**, done with
+      it above. The reference's parser is named for `.mhupb`
+      (`animation.py:286`) and its writer emits `.mhpose`
+      (`7_expression_mixer.py:136`); the JSON is identical, so there is one
+      loader, not two.
 - [~] **Body pose units: investigated, and the asset does not fit our rig.**
       Format confirmed — 61 poses, each bone -> `[w,x,y,z]` quaternion directly,
       no BVH frames. But it was authored against a richer, differently-named

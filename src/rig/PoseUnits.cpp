@@ -87,6 +87,64 @@ std::vector<Mat4> PoseUnits::blend(std::span<const size_t> unitIndices,
     return out;
 }
 
+std::expected<Expression, PoseUnitsError> loadExpression(const std::filesystem::path& path) {
+    // openForRead rather than exists()+ifstream, for the reason the names
+    // loader below gives: a DIRECTORY satisfies both and then parses as empty.
+    auto opened = foundation::openForRead(path);
+    if (!opened) {
+        const auto kind = opened.error() == foundation::FileReadErrorKind::NotFound
+                              ? PoseUnitsErrorKind::NotFound
+                              : PoseUnitsErrorKind::Unreadable;
+        return std::unexpected(PoseUnitsError{kind, path.string(), {}});
+    }
+
+    // ordered_json, NOT json: the default keeps object members in a std::map and
+    // hands them back SORTED. The blend multiplies quaternions and does not
+    // commute, and the reference feeds it `list(unit_poses.keys())` in file
+    // order -- so a sorted reader produces a different, plausible, wrong
+    // expression. Measured on the fixture: 0.0245, against a tolerance of 1e-4.
+    // The first version of this used `json` and the parity test caught it.
+    nlohmann::ordered_json root;
+    try {
+        root = nlohmann::ordered_json::parse(*opened);
+    } catch (const nlohmann::ordered_json::parse_error& e) {
+        return std::unexpected(
+            PoseUnitsError{PoseUnitsErrorKind::Malformed, path.string(), e.what()});
+    }
+    const auto malformed = [&path](const char* why) {
+        return std::unexpected(PoseUnitsError{PoseUnitsErrorKind::Malformed, path.string(), why});
+    };
+    if (!root.is_object()) return malformed("not a JSON object");
+
+    // The reference reads `mhupb['name']` unguarded, so a file without one
+    // raises there; it is an error here for the same reason.
+    if (!root.contains("name") || !root["name"].is_string()) return malformed("no \"name\"");
+    if (!root.contains("unit_poses") || !root["unit_poses"].is_object()) {
+        return malformed("no \"unit_poses\" object");
+    }
+
+    Expression expr;
+    expr.name = root["name"].get<std::string>();
+    if (root.contains("description") && root["description"].is_string()) {
+        expr.description = root["description"].get<std::string>();
+    }
+    if (root.contains("tags") && root["tags"].is_array()) {
+        for (const auto& t : root["tags"]) {
+            if (t.is_string()) expr.tags.push_back(t.get<std::string>());
+        }
+    }
+
+    // In the FILE's order. nlohmann::json preserves insertion order for objects
+    // parsed from text, which is what the reference relies on when it hands
+    // `list(unit_poses.keys())` to a blend that does not commute.
+    for (const auto& [unitName, weight] : root["unit_poses"].items()) {
+        if (!weight.is_number()) return malformed("a unit weight is not a number");
+        expr.units.push_back({unitName, weight.get<float>()});
+    }
+    if (expr.units.empty()) return malformed("\"unit_poses\" is empty");
+    return expr;
+}
+
 std::expected<std::vector<std::string>, PoseUnitsError> loadPoseUnitNames(
     const std::filesystem::path& path) {
     // openForRead, not exists()+ifstream: a DIRECTORY satisfies both and

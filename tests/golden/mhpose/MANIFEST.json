@@ -1,0 +1,25 @@
+{
+  "subsystem": "mhpose",
+  "captured_at": "2026-09-08T05:17:39.079118+00:00",
+  "reference_commit": "56734500e7543aa87ca8e471a49d736760d3fedd",
+  "python": "3.14.6",
+  "numpy": "2.5.2",
+  "platform": "darwin",
+  "entries": {
+    "blended": {
+      "file": "blended.bin",
+      "dtype": "f4",
+      "shape": [
+        163,
+        3,
+        4
+      ],
+      "count": 1956,
+      "sha256": "cb2572f720757ec5bc8c972aad5de71b345dfee55a7c74c04c5ebadd7167ab3b"
+    }
+  },
+  "source": "written by the reference's own saveCurrentPose shape, blended by PoseUnit.getBlendedPose",
+  "units_referenced": 5,
+  "bones": 163,
+  "note": "no .mhpose ships with MakeHuman; this one is generated so the loader has a real file, in the reference's own format, to parse."
+}

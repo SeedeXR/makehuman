@@ -4,6 +4,66 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (twenty-eighth) — Session · **`.mhpose`: the blocker was liftable all along**
+
+### Reconciling first, and it moved the work
+Before starting another M9 item I re-read the earlier milestones for anything
+unblocked, because milestone order says M5 beats M9. Two entries there said
+`.mhpose` and `.mhupb` were unimplementable for want of an asset — "reopen when
+a `.mhpose` file exists to test against".
+
+That blocker was liftable. No `.mhpose` ships, but the format is defined by two
+pieces of the reference we have: the expression mixer's writer
+(`7_expression_mixer.py:221-238`, a plain `json.dump`) and `Pose.fromPoseUnit`
+(`animation.py:286-309`). So `tools/capture_fixture.py mhpose` **generates**
+one in the writer's shape and blends it with the reference's own
+`getBlendedPose`. The loader is now checked against MakeHuman rather than
+against my reading of it — parity, not machinery.
+
+The two entries were also one thing: the parser is named for `.mhupb`, the
+writer emits `.mhpose`, and the JSON is identical.
+
+### The defect the gate caught, in the first run
+`nlohmann::json` keeps object members in a `std::map` and returns them
+**sorted**. The blend multiplies quaternions and does not commute, and the
+reference hands it `list(unit_poses.keys())` in file order — so the first
+implementation produced a different, plausible, wrong expression from the same
+file. `ordered_json` fixes it.
+
+Two things made that catchable rather than lucky:
+
+* the loader test compares the units **positionally** against the file's own
+  order, instead of checking set membership;
+* the fixture's units were chosen to OVERLAP on jaw and lip bones, so the
+  order actually changes the blend. I measured that before relying on it —
+  **0.0245** between file order and sorted order, against a 1e-4 tolerance.
+  My first fixture used a brow, a jaw and a lip unit, which are disjoint and
+  blend identically in any order; that assertion would have been decorative.
+
+### Mutations
+Four, all caught: plain `json` for `ordered_json` (the defect above, 9
+assertions), and dropping each of the three refusals — empty `unit_poses`, a
+missing `name`, and a non-numeric weight.
+
+### SonarQube failed, and it was right
+The gate came back ERROR on one new violation: my capture function had copied
+~25 lines of stub-human setup out of `capture_poseunits`, along with a third
+use of the `face-poseunits.bvh` literal. Extracting `_face_pose_units()` and two
+path constants fixed both the violation and the 1.13% duplication it caused.
+
+Re-running the capture afterwards reproduced **byte-identical** blobs — only the
+manifest's timestamp and reference commit changed — which is the reproducibility
+claim the fixture tooling exists to make, checked rather than assumed.
+
+### Next
+`memory/todo.md` in milestone order. What remains in M9 needs authored content
+(a FACS rig, groom, wrinkle maps) or is a multi-chunk feature (LOD generation
+with weight and UV transfer, which needs a decimator). The two owner questions
+stand: the two-level tab bar versus the dockable layout, and the VoiceOver check
+for the duplicated slider readout.
+
+---
+
 ## 2026-09-08 (twenty-seventh) — Session · **M9 opens: pose blending learns to translate**
 
 ### Reconciling first

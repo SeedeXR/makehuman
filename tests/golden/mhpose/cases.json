@@ -1,0 +1,25 @@
+{
+  "file": "smirk.mhpose",
+  "name": "Fixture Smirk",
+  "description": "Captured from the reference for parity, not shipped as content.",
+  "tags": [
+    "fixture",
+    "parity"
+  ],
+  "unit_names": [
+    "JawDrop",
+    "LipsKiss",
+    "UpperLipForward",
+    "lowerLipBackward",
+    "JawDropStretched"
+  ],
+  "unit_weights": [
+    0.9,
+    0.7,
+    0.5,
+    0.6,
+    0.4
+  ],
+  "bone_count": 163,
+  "sorted_order_differs_by": 0.024464640766382217
+}
