@@ -3788,19 +3788,21 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       so the local run passed and **CI failed on a fresh checkout**. Third time
       these rules have swallowed repo content — see the `data/` and `resources/`
       notes beside the new `!tests/golden/**`.
-- [ ] **Three OBJ parity tests have been SKIPPING on CI, not passing.**
+- [x] **Three OBJ parity tests were SKIPPING on CI; they run now** (2026-09-08).
       Un-ignoring the tree revealed `tests/golden/obj/base_ref.obj` (2.5 MB) was
       never committed either, and `test_obj_writer_parity.cpp:70,99,137` each
-      begin `if (!exists(ref)) SKIP("obj fixture not present")`. So they run
-      locally and skip in CI — a parity gate that reports success by not
-      running, which is the decorative-gate pattern in its purest form.
-      **Committing the fixture is one line; the risk is what it then reveals.**
-      Those tests compare our OBJ against the oracle's byte for byte, and CI's
-      `forced charconv fallback` job builds with a different float formatter
-      (`-DMH_HAVE_FP_CHARCONV=OFF`, reproducible locally). Turning three skips
-      into three real comparisons may surface a formatting difference that is
-      its own investigation, so it gets its own chunk rather than riding along
-      with an unrelated one.
+      begin `if (!exists(ref)) SKIP("obj fixture not present")`. So they ran
+      locally and skipped in CI — a parity gate reporting success by not
+      running.
+      - I had planned to defer this, because those tests compare our OBJ
+        against the oracle's byte for byte and CI's `forced charconv fallback`
+        job uses a different float formatter. Then `git add -A` committed the
+        fixture anyway, in a commit whose own message says it did not
+        (`5b82cf0b`) — so the risk got taken rather than scheduled.
+      - **Verified afterwards rather than hoped for**: rebuilt locally with
+        `-DMH_HAVE_FP_CHARCONV=OFF`, the exact flag that job uses, and the three
+        cases RUN and pass — 14 assertions, where a skip yields none. Both float
+        formatters agree with the oracle byte for byte.
 
 ## Third-party validation (Blender) — wired in 2026-08-29
 

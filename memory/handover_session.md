@@ -61,10 +61,18 @@ commit" are different claims, and only one of them is what CI sees.**
 Un-ignoring the tree then revealed a second, older casualty:
 `tests/golden/obj/base_ref.obj` was never committed either, and the three OBJ
 parity tests SKIP when it is absent. They have been reporting success by not
-running on every CI run since they were written. Recorded as its own item, not
-fixed here: committing the fixture is one line, but it turns three skips into
-three byte-for-byte comparisons, and CI's charconv-fallback job uses a different
-float formatter — which is an investigation, not a ride-along.
+running on every CI run since they were written. I decided to defer it — and then `git add -A`
+committed the fixture anyway, in the very commit whose message says it did not
+(`5b82cf0b`). The decision was right and the execution did not honour it; `-A`
+does not know what I meant to leave out.
+
+So the risk got taken rather than scheduled, and the honest response was to
+verify it immediately instead of waiting for CI to tell me: rebuilt with
+`-DMH_HAVE_FP_CHARCONV=OFF`, the exact flag that job uses, and the three cases
+RUN and pass (14 assertions, where a skip yields none). Both float formatters
+agree with the oracle byte for byte, so the outcome is strictly better than the
+skip — but the commit message is wrong about its own contents, which is recorded
+here because a message that misdescribes a diff is worse than a noisy one.
 
 ### Next
 `memory/todo.md` in milestone order. The OBJ fixture above is the first item.
