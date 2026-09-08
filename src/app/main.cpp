@@ -29,6 +29,7 @@
 #include "makehuman/io/UsdWriter.h"
 #include "makehuman/render/OffscreenRenderer.h"
 #include "makehuman/rig/BvhPose.h"
+#include "makehuman/rig/Facs.h"
 #include "makehuman/rig/PoseUnits.h"
 #include "makehuman/rig/PosedMesh.h"
 #include "makehuman/rig/Skeleton.h"
@@ -156,38 +157,26 @@ std::string availableRigs() {
 /// live here. Aliased rather than renamed at every use.
 using PoseRig = mh::rig::PoseRig;
 
-/// Loads the rig, and the pose named by @p pose if there is one.
-///
-/// "A-pose" is not a file: the MakeHuman base mesh is authored in one, so the
-/// rest mesh IS the A-pose and posing it would be posing it twice. Only a pose
-/// that differs from the authored rest needs a BVH.
-///
-/// **The rig loads either way.** It used to return here for "rest", so
-/// `--rig mixamo_superset` with no `--pose` loaded no skeleton at all and the
-/// export could not have carried one -- the bind pose being precisely the most
-/// useful thing to export.
-/// Layers a `.mhpose` expression onto @p pose, in model space.
+/// Layers an expression onto @p pose, in model space.
 ///
 /// The recipe is the reference's and every step of it is parity-tested
 /// elsewhere: build the 60 face units from `face-poseunits.{bvh,json}`, blend
-/// the ones the file names at their weights, then `mixPoses` the result over
-/// the body pose for exactly the bones the blend moves.
+/// the ones the expression names at their weights, then `mixPoses` the result
+/// over the body pose for exactly the bones the blend moves.
 ///
 /// **The bone list is derived, not configured.** It is every bone the BLEND
 /// leaves non-identity, so an expression touches the jaw and lips it actually
 /// uses and nothing else -- a hardcoded "face bones" list would go stale the
 /// first time a rig gained a bone.
 ///
+/// Takes an `Expression` rather than a path, so that `--expression`, which
+/// reads one from a `.mhpose`, and `--facs`, which derives one from Action
+/// Units, cannot end up applying it differently.
+///
 /// @param pose empty for an unposed body, in which case the expression alone
 ///        becomes the pose.
-bool applyExpression(const std::filesystem::path& file, const mh::rig::Skeleton& skel,
-                     std::vector<mh::foundation::Mat4>& pose) {
-    const auto expr = mh::rig::loadExpression(file);
-    if (!expr) {
-        std::fprintf(stderr, "cannot load expression: %s\n", expr.error().message().c_str());
-        return false;
-    }
-
+bool applyExpressionUnits(const mh::rig::Expression& expr, const mh::rig::Skeleton& skel,
+                          std::vector<mh::foundation::Mat4>& pose) {
     const auto bvh = mh::io::readBvh(dataDir() / "poseunits" / "face-poseunits.bvh");
     if (!bvh) {
         std::fprintf(stderr, "cannot read the face pose units\n");
@@ -207,7 +196,7 @@ bool applyExpression(const std::filesystem::path& file, const mh::rig::Skeleton&
 
     std::vector<size_t> indices;
     std::vector<float> weights;
-    for (const mh::rig::WeightedUnit& u : expr->units) {
+    for (const mh::rig::WeightedUnit& u : expr.units) {
         const auto at = units->indexOf(u.name);
         if (!at) {
             // Named, not skipped: a typo in an expression file otherwise
@@ -251,9 +240,30 @@ bool applyExpression(const std::filesystem::path& file, const mh::rig::Skeleton&
         }
         pose = *mixed;
     }
-    std::printf("expression %s (%zu units, %zu bones)\n", expr->name.c_str(), expr->units.size(),
+    std::printf("expression %s (%zu units, %zu bones)\n", expr.name.c_str(), expr.units.size(),
                 faceBones.size());
     return true;
+}
+
+bool applyExpression(const std::filesystem::path& file, const mh::rig::Skeleton& skel,
+                     std::vector<mh::foundation::Mat4>& pose) {
+    const auto expr = mh::rig::loadExpression(file);
+    if (!expr) {
+        std::fprintf(stderr, "cannot load expression: %s\n", expr.error().message().c_str());
+        return false;
+    }
+    return applyExpressionUnits(*expr, skel, pose);
+}
+
+bool applyFacs(std::span<const mh::rig::ActionUnit> aus, const mh::rig::Skeleton& skel,
+               std::vector<mh::foundation::Mat4>& pose) {
+    const auto expr = mh::rig::facsExpression(aus);
+    if (!expr) {
+        std::fprintf(stderr, "cannot build the FACS expression: %s\n",
+                     expr.error().message().c_str());
+        return false;
+    }
+    return applyExpressionUnits(*expr, skel, pose);
 }
 
 /// The `--expression` file, or empty. Set once at start-up.
@@ -266,6 +276,23 @@ std::filesystem::path& expressionFileRef() {
     return path;
 }
 
+/// The `--facs` request, or empty. Set once at start-up, for the same reason as
+/// `expressionFileRef`.
+std::vector<mh::rig::ActionUnit>& facsRef() {
+    static std::vector<mh::rig::ActionUnit> aus;
+    return aus;
+}
+
+/// Loads the rig, and the pose named by @p pose if there is one.
+///
+/// "A-pose" is not a file: the MakeHuman base mesh is authored in one, so the
+/// rest mesh IS the A-pose and posing it would be posing it twice. Only a pose
+/// that differs from the authored rest needs a BVH.
+///
+/// **The rig loads either way.** It used to return here for "rest", so
+/// `--rig mixamo_superset` with no `--pose` loaded no skeleton at all and the
+/// export could not have carried one -- the bind pose being precisely the most
+/// useful thing to export.
 bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& out) {
     const std::filesystem::path& expressionFile = expressionFileRef();
     const bool wantPose = !(pose == "rest" || pose == "apose" || pose == "a-pose");
@@ -323,6 +350,9 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
 
     if (!expressionFile.empty()) {
         if (!applyExpression(expressionFile, *skel, modelPose)) return false;
+    }
+    if (!facsRef().empty()) {
+        if (!applyFacs(facsRef(), *skel, modelPose)) return false;
     }
 
     if (!modelPose.empty()) {
@@ -1524,6 +1554,12 @@ int main(int argc, char** argv) {
         QStringLiteral("A .mhpose expression file: named face pose units with weights. Layered "
                        "onto whatever --pose gives, so the two are independent."),
         QStringLiteral("file"));
+    const QCommandLineOption facsOpt(
+        QStringLiteral("facs"),
+        QStringLiteral("A FACS Action Unit and its intensity, as <AU>=<0..1>. Repeatable, and "
+                       "applied in the order given. AU12 is both mouth corners; AU12L and "
+                       "AU12R are one side each. Layered onto --pose like --expression."),
+        QStringLiteral("AU=weight"));
     const QCommandLineOption poseOpt(
         QStringLiteral("pose"),
         QStringLiteral("rest (the authored A-pose, default), tpose, or a path to a "
@@ -1663,6 +1699,7 @@ int main(int argc, char** argv) {
     parser.addOption(rigOpt);
     parser.addOption(poseOpt);
     parser.addOption(expressionOpt);
+    parser.addOption(facsOpt);
     parser.addOption(exportOpt);
     parser.addOption(languageOpt);
     parser.addOption(blendshapesOpt);
@@ -1849,6 +1886,31 @@ int main(int argc, char** argv) {
     // has not read `human.py:1238`.
     if (parser.isSet(expressionOpt)) {
         expressionFileRef() = parser.value(expressionOpt).toStdString();
+    }
+
+    // Both at once is refused rather than resolved. They are two spellings of
+    // one thing, and each applies its own blend and then REPLACES the face
+    // bones, so whichever ran second would silently be the only one that
+    // showed -- a face missing half of what was asked for, exit 0.
+    if (parser.isSet(expressionOpt) && parser.isSet(facsOpt)) {
+        std::fprintf(stderr, "--expression and --facs both describe the face; give one\n");
+        return 1;
+    }
+    for (const QString& assignment : parser.values(facsOpt)) {
+        const QStringList halves = assignment.split(QLatin1Char('='));
+        bool ok                  = false;
+        const float w            = halves.size() == 2 ? halves[1].toFloat(&ok) : 0.0F;
+        // Range-checked, unlike --set: an Action Unit is a muscle contraction,
+        // graded A to E between none and full, so 5.0 is not a strong request
+        // but a meaningless one -- and the blend would extrapolate it into a
+        // face nobody asked for.
+        if (halves.size() != 2 || halves[0].isEmpty() || !ok || !std::isfinite(w) || w < 0.0F ||
+            w > 1.0F) {
+            std::fprintf(stderr, "--facs wants <AU>=<weight in 0..1>, got \"%s\"\n",
+                         assignment.toStdString().c_str());
+            return 1;
+        }
+        facsRef().push_back({halves[0].toStdString(), w});
     }
 
     if (parser.isSet(symmetryOpt)) {

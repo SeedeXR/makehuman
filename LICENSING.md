@@ -122,6 +122,28 @@ Re-derived rather than trusted: `tools/audit_licences.py` scans every bundled
 text file for a GPL or non-commercial grant and fails on any not recorded here.
 It found this one.
 
+### 3.5 FACS is a taxonomy used as fact, not as text
+
+`src/rig/Facs.cpp` holds a table of 30 Facial Action Coding System Action
+Units. What it takes from FACS is the **AU number, the short action name, and
+the muscle FACS attributes the action to** — "AU12, Lip Corner Puller,
+zygomaticus major". Those are facts about faces and about a numbering scheme in
+universal scientific use; no sentence, table, scoring rule or intensity
+criterion is reproduced from the FACS manual, which is a copyrighted work we do
+not hold and have not copied.
+
+The other half of each row is MakeHuman's own: the unit names come from
+`data/poseunits/face-poseunits.json`, CC0 like the rest of `data/`. The mapping
+between the two halves is anatomy — the AU names a muscle and the unit is named
+after the same muscle — which is why `ActionUnitInfo` stores the muscle in the
+row. It is there so the next reader can re-derive the mapping instead of
+trusting it, the same discipline §3.4 applies to the xray shader from the other
+direction.
+
+**Nothing is linked and nothing is a dependency**, so §5 has no row to gain.
+This section exists because "where did 30 rows of Action Units come from" is a
+provenance question, and this is the file the project answers those from.
+
 ## 4. The Apache-2.0 clean-room boundary
 
 To give downstream users genuine commercial reuse of the parts that are ours to

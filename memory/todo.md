@@ -4021,7 +4021,57 @@ GPU here, or Colab) and it comes back to the owner first.
 
 ## M9 — MetaHuman-class character tooling
 
-- [ ] FACS-based facial rig extending the 60 existing pose units
+- [x] **FACS Action Units over the 60 existing pose units** (2026-09-08).
+      `rig::Facs` — 30 Action Units, `facsExpression()`, and `--facs <AU>=<0..1>`
+      (repeatable). Not a new rig: it returns the same `rig::Expression` a
+      `.mhpose` produces, so `PoseUnits::blend` and `mixPoses` do the work they
+      already did.
+      - **The table is DERIVED, and that is what makes it checkable.** FACS
+        numbers an action and names the muscle that produces it (AU12 = Lip
+        Corner Puller = zygomaticus major); MakeHuman's units are named after
+        the same anatomy (`levator`, `risorius`, `platysma`, `oris`). The AU
+        gives the muscle and the muscle picks the unit, so each row is two
+        published vocabularies meeting rather than a preference. The muscle is
+        recorded in the row for exactly that reason.
+      - **The load-bearing gate is a byte comparison.**
+        `tests/facs_au12.mhpose` holds the two units AU12 resolves to, at the
+        same weights, in the same order, written by hand.
+        `app_facs_equals_the_units` demands the two exported OBJs be IDENTICAL.
+        A second blend, a normalisation or a reordering shows up there and
+        nowhere else — every other check ("it moved", "it layers", "it differs")
+        passes on all of those.
+      - **Sides**: `AU12` is both mouth corners, `AU12L`/`AU12R` one each.
+        FACS's own notation is `L12`/`R12`; the suffix is used instead so the
+        base code is always a prefix of its sided spellings and the parser needs
+        no special case. An AU with one midline muscle REFUSES a side rather
+        than quietly applying the whole thing — `--facs AU9L` is an error.
+      - **`--facs` and `--expression` together are refused.** Each blends and
+        then REPLACES the face bones, so whichever ran second would silently be
+        the only one that showed: a face missing half of what was asked for,
+        exit 0.
+      - **The weight is range-checked, unlike `--set`.** An AU is a muscle
+        contraction graded A–E between none and full, so `AU12=5` is not a
+        strong request but a meaningless one, and the blend would extrapolate
+        it.
+      - **The gap is measured, not hidden.** Eleven of the 59 non-Rest units
+        have no AU: the seven tongue shapes past Tongue Show,
+        `UpperLipStretched`, `ChinDown`, and the two lateral mouth shifts. FACS
+        codes none of those as a single-muscle AU, and inventing a number would
+        put a fictional AU in a user's file. A test pins that exact list, so a
+        table edit cannot change coverage silently. The AUs with no row are
+        listed in `Facs.h` with the reason (AU13, 21, 24, 25, 28, 31, 32, 34,
+        36, 37, 38, 39, 45 and the head-movement AU51–58).
+      - **Looked at four renders.** AU12 is a clear symmetric smile (847 changed
+        pixels left of centre, 792 right); AU12L is a one-sided smirk (273 left,
+        782 right — and the character faces the camera, so image-right IS the
+        character's left); AU27 opens the mouth wide with the tongue visible;
+        AU43 closes the eyes, the dark eye slits of the rest render gone. The
+        differing-pixel BOUNDING BOX again spanned the whole body while 1,632 of
+        1,639 pixels sat in the head band — seven MSAA stragglers driving it, the
+        same misleading statistic as the `--expression` chunk.
+      - Fixed in passing: `loadPoseRig`'s doc comment had been stranded above
+        `applyExpression` by the previous chunk's extraction, so it documented
+        the wrong function. Moved back.
 - [x] **Translation-capable pose blending** (2026-09-08). `PoseUnits::blend`
       turned every unit into a QUATERNION and back, so the translation part of a
       unit was discarded without a word — a jaw slide or a lip purse was

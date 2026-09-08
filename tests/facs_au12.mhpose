@@ -1,0 +1,16 @@
+{
+    "name": "AU12 by hand",
+    "description": "The pose units AU12 resolves to, written out by hand. Exists so that a FACS request and the equivalent .mhpose can be compared byte for byte -- FACS is a naming layer over these units, and this is what proves it did not become a second blend.",
+    "tags": [
+        "fixture",
+        "facs"
+    ],
+    "unit_poses": {
+        "MouthLeftPullUp": 1.0,
+        "MouthRightPullUp": 1.0
+    },
+    "author": "MakeHuman C++ port fixture",
+    "copyright": "CC0",
+    "license": "CC0",
+    "homepage": ""
+}

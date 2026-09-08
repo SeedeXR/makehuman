@@ -8,6 +8,7 @@ add_executable(mh_tests
     unit/test_random.cpp
     unit/test_symmetry.cpp
     unit/test_pose_blend.cpp
+    unit/test_facs.cpp
     unit/test_obj_reader.cpp
     unit/test_proxy_weights.cpp
     unit/test_tangents.cpp
@@ -598,6 +599,121 @@ if(MH_HAVE_RENDER)
              --export ${CMAKE_CURRENT_BINARY_DIR}/app_never_expr2.obj)
     set_tests_properties(app_expression_missing_file PROPERTIES
         PASS_REGULAR_EXPRESSION "cannot load expression")
+
+    # ---------------------------------------------------------------------
+    # FACS Action Units. The unit tests cover the table and the resolver; what
+    # only the application can show is that an AU reaches the MESH, and that it
+    # reaches it through the SAME path a .mhpose does.
+    #
+    # Same basename in different directories throughout: an OBJ names its
+    # material library after itself, so `au12.obj` and `plain.obj` would differ
+    # on the mtllib line and nowhere else, and every comparison below would
+    # pass for that reason instead of the one it is asking about.
+    # ---------------------------------------------------------------------
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/facs_au12)
+    add_test(NAME app_facs COMMAND makehuman
+             --facs AU12=1.0 --export ${CMAKE_CURRENT_BINARY_DIR}/facs_au12/body.obj)
+    set_tests_properties(app_facs PROPERTIES
+        PASS_REGULAR_EXPRESSION "expression FACS \\(2 units, 23 bones\\)"
+        FIXTURES_SETUP app_facs_obj)
+
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/facs_plain)
+    add_test(NAME app_facs_plain COMMAND makehuman
+             --export ${CMAKE_CURRENT_BINARY_DIR}/facs_plain/body.obj)
+    set_tests_properties(app_facs_plain PROPERTIES FIXTURES_SETUP app_facs_plain_obj)
+
+    add_test(NAME app_facs_moves_the_face COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/facs_plain/body.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/facs_au12/body.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_facs_moves_the_face PROPERTIES
+        FIXTURES_REQUIRED "app_facs_plain_obj;app_facs_obj")
+
+    # THE test of this chunk. `tests/facs_au12.mhpose` holds the two pose units
+    # AU12 resolves to, at the same weights, in the same order, written by hand.
+    # The two meshes must be BYTE-IDENTICAL: FACS is a naming layer over the
+    # existing units, and anything else -- a second blend, a normalisation, a
+    # different order -- shows up here and nowhere else.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/facs_by_hand)
+    add_test(NAME app_facs_by_hand COMMAND makehuman
+             --expression ${CMAKE_CURRENT_SOURCE_DIR}/facs_au12.mhpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/facs_by_hand/body.obj)
+    set_tests_properties(app_facs_by_hand PROPERTIES FIXTURES_SETUP app_facs_by_hand_obj)
+    add_test(NAME app_facs_equals_the_units COMMAND ${CMAKE_COMMAND} -E compare_files
+             ${CMAKE_CURRENT_BINARY_DIR}/facs_au12/body.obj
+             ${CMAKE_CURRENT_BINARY_DIR}/facs_by_hand/body.obj)
+    set_tests_properties(app_facs_equals_the_units PROPERTIES
+        FIXTURES_REQUIRED "app_facs_obj;app_facs_by_hand_obj")
+
+    # One side only. Bilateral and unilateral both move the face, so "it moved"
+    # cannot tell them apart; the meshes have to differ from each other.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/facs_left)
+    add_test(NAME app_facs_sided COMMAND makehuman
+             --facs AU12L=1.0 --export ${CMAKE_CURRENT_BINARY_DIR}/facs_left/body.obj)
+    set_tests_properties(app_facs_sided PROPERTIES
+        PASS_REGULAR_EXPRESSION "expression FACS \\(1 units, 15 bones\\)"
+        FIXTURES_SETUP app_facs_left_obj)
+    add_test(NAME app_facs_one_side_differs COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/facs_au12/body.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/facs_left/body.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_facs_one_side_differs PROPERTIES
+        FIXTURES_REQUIRED "app_facs_obj;app_facs_left_obj")
+
+    # The intensity reaches the blend. Same lesson as app_expression_half: a
+    # resolver that ignored the weight and applied every AU at full strength
+    # passes every check above.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/facs_weak)
+    add_test(NAME app_facs_weak COMMAND makehuman
+             --facs AU12=0.35 --export ${CMAKE_CURRENT_BINARY_DIR}/facs_weak/body.obj)
+    set_tests_properties(app_facs_weak PROPERTIES FIXTURES_SETUP app_facs_weak_obj)
+    add_test(NAME app_facs_intensity_matters COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/facs_au12/body.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/facs_weak/body.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_facs_intensity_matters PROPERTIES
+        FIXTURES_REQUIRED "app_facs_obj;app_facs_weak_obj")
+
+    # Two AUs at once, in the order asked for. PoseUnits::blend multiplies and
+    # does not commute, so the reverse must give a different face -- if it did
+    # not, the resolver would be sorting or de-duplicating behind the caller.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/facs_ab)
+    add_test(NAME app_facs_two COMMAND makehuman
+             --facs AU12=0.8 --facs AU26=0.6
+             --export ${CMAKE_CURRENT_BINARY_DIR}/facs_ab/body.obj)
+    set_tests_properties(app_facs_two PROPERTIES FIXTURES_SETUP app_facs_ab_obj)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/facs_ba)
+    add_test(NAME app_facs_two_reversed COMMAND makehuman
+             --facs AU26=0.6 --facs AU12=0.8
+             --export ${CMAKE_CURRENT_BINARY_DIR}/facs_ba/body.obj)
+    set_tests_properties(app_facs_two_reversed PROPERTIES FIXTURES_SETUP app_facs_ba_obj)
+    add_test(NAME app_facs_order_survives COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/facs_ab/body.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/facs_ba/body.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_facs_order_survives PROPERTIES
+        FIXTURES_REQUIRED "app_facs_ab_obj;app_facs_ba_obj")
+
+    # The four refusals, each with its own message, because a shared "bad
+    # --facs" would not say which mistake was made.
+    add_test(NAME app_facs_unknown COMMAND makehuman
+             --facs AU99=1.0 --export ${CMAKE_CURRENT_BINARY_DIR}/app_never_facs.obj)
+    set_tests_properties(app_facs_unknown PROPERTIES
+        PASS_REGULAR_EXPRESSION "no such Action Unit \"AU99\"")
+    add_test(NAME app_facs_unsided COMMAND makehuman
+             --facs AU9L=1.0 --export ${CMAKE_CURRENT_BINARY_DIR}/app_never_facs2.obj)
+    set_tests_properties(app_facs_unsided PROPERTIES
+        PASS_REGULAR_EXPRESSION "\"AU9\" has one midline muscle")
+    add_test(NAME app_facs_bad_weight COMMAND makehuman
+             --facs AU12=5 --export ${CMAKE_CURRENT_BINARY_DIR}/app_never_facs3.obj)
+    set_tests_properties(app_facs_bad_weight PROPERTIES
+        PASS_REGULAR_EXPRESSION "--facs wants <AU>=<weight in 0..1>")
+    add_test(NAME app_facs_and_expression COMMAND makehuman
+             --facs AU12=1.0
+             --expression ${CMAKE_CURRENT_SOURCE_DIR}/facs_au12.mhpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/app_never_facs4.obj)
+    set_tests_properties(app_facs_and_expression PROPERTIES
+        PASS_REGULAR_EXPRESSION "both describe the face")
 
     # Symmetry, end to end. The menu commands cannot be driven from a test --
     # `symmetryRequested` is wired in main.cpp -- so `--symmetry` is what makes

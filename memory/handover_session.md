@@ -4,6 +4,106 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-08 (thirty-second) — Session · **FACS Action Units, derived not authored**
+
+*2026-09-08 — first open item of M9. M0–M7 have no open items left; every
+remaining M8 item is an owner decision or was deliberately deferred.*
+
+### What landed
+`rig::Facs` — 30 FACS Action Units over the 60 shipped face pose units, plus
+`--facs <AU>=<0..1>`, repeatable. **Not a new rig.** `facsExpression()` returns
+the same `rig::Expression` a `.mhpose` produces, so `PoseUnits::blend` and
+`mixPoses` do work they already did and were already parity-tested.
+
+### Why this is derivation and not invention
+FACS numbers a visible facial action and names the muscle that makes it — AU12
+is the Lip Corner Puller, zygomaticus major. MakeHuman's units are named after
+the same anatomy: `levator`, `risorius`, `platysma`, `oris`. **The AU gives the
+muscle and the muscle picks the unit.** Each row is two published vocabularies
+meeting. The muscle is stored in the row precisely so the next reader can check
+it rather than trust it.
+
+### The gate that carries the chunk
+`tests/facs_au12.mhpose` holds, by hand, the two units AU12 resolves to — same
+weights, same order. `app_facs_equals_the_units` demands the two exported OBJs
+be **byte-identical**. That is the only check that can see a second blend, a
+normalisation, or a reordering; "it moved", "it layers onto a pose" and "it
+differs from everything else" all pass on every one of those. Confirmed real by
+mutating the FIXTURE: one weight 1.0 → 0.9 and the comparison fails.
+
+### Ten mutations, ten killed
+| Mutation | Killed by |
+|---|---|
+| The AU weight ignored, everything at full strength | `app_facs_intensity_matters` |
+| A sided request applies both sides | `app_facs_sided` (bone count) |
+| The resolver sorts its output | `app_facs_order_survives` + `[facs]` |
+| A typo in the table (unit that does not exist) | `[facs]` alone — **all 16 app tests passed**, because no app test uses AU2 |
+| A right side pointing at the LEFT unit (exists, wrong) | 5 app tests + `[facs]` |
+| `--facs` and `--expression` both accepted | `app_facs_and_expression` |
+| The weight range check dropped | `app_facs_bad_weight` |
+| **GATE**: an AU added for a tongue unit | the unreached-units list |
+| **GATE**: one weight changed in the hand-written fixture | the byte comparison |
+| **GATE**: the table walk truncated to one row | assertions 110 → 64, `checked > 40` |
+
+The typo mutation is the one worth remembering: the unit test caught it and the
+whole application suite was blind, which is the division of labour the two
+layers were built for.
+
+**One mutation was worthless on its first run** and said so: `-Werror` rejected
+the unused lambda capture, the build failed, and ctest happily reported
+"100% passed" from the stale binary. Re-applied by dropping the capture instead.
+
+### Looked at four renders
+- **AU12** — a clear symmetric smile. 847 changed pixels left of centre, 792
+  right.
+- **AU12L** — a one-sided smirk. 273 left, 782 right; the character faces the
+  camera, so image-right IS the character's left, which is what the numbers say.
+- **AU27** — mouth wide open, tongue visible. Right for Mouth Stretch.
+- **AU43** — eyes closed; the dark eye slits of the rest render are gone.
+
+The differing-pixel **bounding box** again spanned the whole body while 1,632 of
+1,639 pixels sat in the head band — seven MSAA stragglers driving it. Same
+misleading statistic as the `--expression` chunk, and the same fix: measure the
+distribution, not the extremes.
+
+### Decisions taken, with reasons
+- **Sides** are `AU12L`/`AU12R`. FACS's own notation is `L12`/`R12`; the suffix
+  keeps the base code a prefix of its sided spellings, so the parser needs no
+  special case. An AU with one midline muscle **refuses** a side — `--facs AU9L`
+  is an error, because applying the whole AU would look like it worked.
+- **`--facs` with `--expression` is refused.** Each blends and then REPLACES the
+  face bones, so whichever ran second would silently be the only one visible.
+- **The weight is range-checked**, unlike `--set`: an AU is a muscle contraction
+  graded A–E between none and full, so `AU12=5` is meaningless and the blend
+  would extrapolate it.
+- **The gap is measured.** Eleven of the 59 non-Rest units have no AU — seven
+  tongue shapes past Tongue Show, `UpperLipStretched`, `ChinDown`, and the two
+  lateral mouth shifts. FACS codes none as a single-muscle AU and inventing a
+  number would put a fictional AU in a user's file. A test pins that exact list.
+  The AUs with no row are listed in `Facs.h` with reasons (AU13, 21, 24, 25, 28,
+  31, 32, 34, 36, 37, 38, 39, 45, and AU51–58, which are head movement).
+
+### Fixed in passing
+`loadPoseRig`'s doc comment had been stranded above `applyExpression` by the
+previous chunk's extraction, documenting the wrong function. Moved back.
+
+### Gates
+719/719 in debug, release, ASan and TSan, 0 warnings, `ALLDONE` read. The tree
+had 703 registered ctests before this chunk and 719 after — the 16 new ones,
+nothing removed, checked by diffing the two name lists rather than trusting the
+totals. CI's exact clang-format command clean. Both new fixture files verified
+NOT gitignored with `git ls-files --others --exclude-standard` before committing
+— `git check-ignore -v` prints the *negating* `!tests/**` pattern and exits 0,
+which reads like exclusion and is not.
+
+### Next
+`memory/todo.md` M9. What is left there needs authored content (groom, wrinkle
+maps, PBR skin) or has no oracle (pose-space deformation), except **LOD chain
+generation**, which needs a decimator and is pure geometry — the next chunk that
+can be done without asking anyone anything.
+
+---
+
 ## 2026-09-08 (thirty-first) — Session · **`--version` died without an asset tree**
 
 *2026-09-08 — the smallest open M10 item, and it needed a resolver change to
