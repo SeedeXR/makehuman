@@ -14,6 +14,7 @@ add_library(mh_core STATIC
     Blendshape.cpp
     Target.cpp
     Correctives.cpp
+    CorrectiveManifest.cpp
     Macro.cpp
     TargetIndex.cpp
     Modifier.cpp

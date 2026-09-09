@@ -98,4 +98,11 @@ check:
    has never seen this codebase. 7/7 exports currently agree.
 
 Per-format pages: [target](target.md) · [mhclo](mhclo.md) · [mhmat](mhmat.md) ·
-[mhskel](mhskel.md) · [mhw](mhw.md) · [mhm](mhm.md) · [bvh](bvh.md)
+[mhskel](mhskel.md) · [mhw](mhw.md) · [mhm](mhm.md) · [bvh](bvh.md) ·
+[corrective-manifest](corrective-manifest.md)
+
+**One format here is OURS**, with no Python ancestor:
+[`correctives.json`](corrective-manifest.md), the pose-space corrective
+authoring manifest. It is specified rather than reverse-engineered, and owner
+directive 12.4 asks for it to be versioned conservatively — so unlike the
+formats above, its document is the definition rather than a record of one.

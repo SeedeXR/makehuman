@@ -4,6 +4,110 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-09 (forty-sixth) — Session · **The manifest, and a format that is ours**
+
+*2026-09-09 — directive 12 step 4 begins. Its three layers are authoring,
+compile and runtime; this is the first, and it is the contract the other two get
+written against.*
+
+### What landed
+`core::loadCorrectiveManifest` and `docs/formats/corrective-manifest.md`.
+9 cases, 95 assertions.
+
+The manifest names what an author writes: the joints that drive correctives,
+which component of each, where every sculpted example sits in signal space, and
+which `.target` payload belongs to it. Nothing more — it is a reader, not a
+solver.
+
+**JSON rather than TOML, and that is a licensing consequence rather than a
+taste.** Directive 12.4 offers either. nlohmann/json is already a recorded
+dependency (LICENSING.md §5.1); a TOML library would be a new one under hard
+rule 6, and TOML buys nothing here that would justify the entry.
+
+**Versioned conservatively**, which is the directive's word: an unknown OR
+missing `formatVersion` is refused rather than read for the parts this build
+recognises. Silently ignoring a field a newer version added means geometry that
+quietly does not appear — the failure nobody reports because nothing looks
+broken.
+
+**`dimension()` is derived, never declared.** Three numbers per swing driver
+(the rotation vector), one per twist. So a manifest cannot claim a dimension its
+own drivers do not add up to, and that number is exactly what `rbfSolve` and
+every pose's `signal` are shaped by.
+
+### The refusals are the substance
+Every field is required and there are no defaults, because a corrective that
+silently does not appear — or appears in the wrong place because a delta was
+applied to a renumbered mesh — is worse than a file that will not load.
+
+- Unknown kernel. Thin-plate is a *different shape*; falling back to gaussian
+  would produce something plausible and not what was authored. It is also the
+  case that would finally justify the Eigen use cleared two chunks ago.
+- `radius` ≤ 0; no drivers; no poses.
+- Unknown component, with `"euler"` tested **by name** — directive 12.3 rules it
+  out and it is the word an author coming from another rig reaches for.
+- The same joint and component **twice**: it would count that joint twice in the
+  signal, and every distance in RBF space would be wrong in a way that still
+  solves and still renders. The same joint under *different* components is the
+  ordinary case and is allowed.
+- A signal of the wrong length, **naming the pose** — "a pose has the wrong
+  signal length" in a forty-pose file is not a bug report anyone can act on.
+- Two poses at the same point in signal space. That is the realistic authoring
+  mistake and it makes the interpolation matrix singular; `rbfSolve` would refuse
+  it as "not solvable", which is true and useless, so it is caught here where
+  both poses can be named.
+- A payload path that is empty, absolute, or contains `..`. A manifest is data,
+  and a shipped asset must not be able to name any file on the machine.
+
+### The content hash, which is what makes the blob a cache
+Directive 12.4 wants the compiled blob invalidated on manifest hash mismatch, so
+the manifest has to hash. FNV-1a over the content in a canonical order.
+
+Deliberately NOT content: whitespace, key order, the manifest's own location,
+and the printed form of a number — reformatting a file, moving a checkout, or
+writing `0.90` instead of `0.9` must not discard a compiled blob. Four cases
+check the hash MOVES (radius, joint name, a signal value, a payload path, a pose
+name) and two check it does not (byte-identical content in a different
+directory; the same content reflowed with keys reordered).
+
+### Mutations
+Nineteen on the code, all caught, including four on the hash itself: drop the
+radius, drop the delta path, drop the pose name, or fold the FILE PATH into it.
+Two build-failed on `-Werror` first (an unused function, an unused parameter)
+and were redone — a mutation that does not compile proves nothing.
+
+**The gate mutation mattered here more than usual.** The tests build each bad
+manifest by string surgery on a good one, and a botched `replace` produces
+garbage JSON that fails as `Malformed` — which several cases legitimately
+expect. So: making every load return `Malformed` immediately failed **8 of the
+9 cases**. The ninth is the file-readability case, which correctly still passes
+because its expectations sit before the mutation point. And the five sections
+asserting a bare `Malformed` were checked a second way, by printing the error
+DETAIL from a scratch probe: each says what it should ("topologyHash is
+required, as sixteen hex digits", "a pose has no name") rather than a JSON parse
+error.
+
+The base mesh hash quoted in the spec, `e38c060123b5d0db`, was RUN rather than
+copied from memory — a scratch program loaded `base.obj` and printed it.
+
+### Not in version 1, and each is a reason the version field exists
+Composition rules (the directive lists them; there is no consumer, so guessing
+the shape would be worse than omitting it), poses given as `.bvh` files instead
+of literal signal values, and a per-pose radius.
+
+### Gates
+Four presets one at a time, `ALLDONE` read. CI's exact clang-format command
+clean. SonarQube read only after `api/ce/task` reports SUCCESS.
+
+### Next
+**The compiler**: manifest plus `.target` payloads → `rbfSolve` → an mmap-able
+blob carrying the format version, the manifest hash, a joint name table, the
+solved weight matrix and sparse delta arrays. Versioned cheaply and
+aggressively, because a blob can always be rebuilt. The Blender round-trip and
+the app wiring both need content that compiler produces, so they follow it.
+
+---
+
 ## 2026-09-09 (forty-fifth) — Session · **Geometry finally moves, and the render earned it**
 
 *2026-09-09 — directive 12 step 3's last stage, and the first chunk on this line

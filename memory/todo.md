@@ -4486,10 +4486,63 @@ GPU here, or Colab) and it comes back to the owner first.
             - [ ] **Nothing consumes the signal yet**, which is why this chunk
                   has no render: there is no geometry moving. The first visual
                   gate arrives with the corrective application.
-      - [ ] **4. Authoring format, compiler, Blender round-trip.** Manifest
+      - [~] **4. Authoring format, compiler, Blender round-trip.** Manifest
             (TOML/JSON) + sparse `.target` payloads → offline RBF solve → an
             mmap-able blob that is a disposable cache, invalidated on manifest
             hash mismatch.
+            - [x] **The manifest and its written spec** (2026-09-09).
+                  `core::loadCorrectiveManifest` plus
+                  `docs/formats/corrective-manifest.md`. 9 cases, 95 assertions.
+                  - **JSON, and that is a licensing consequence.** The directive
+                    offers TOML or JSON; nlohmann/json is already recorded
+                    (LICENSING.md §5.1) and a TOML library would be a new
+                    dependency under hard rule 6, for nothing TOML buys here.
+                  - **Versioned conservatively**, which is what directive 12.4
+                    asks: an unknown or missing `formatVersion` is REFUSED, not
+                    read for the parts it recognises. Ignoring a field a newer
+                    version added means geometry that quietly does not appear.
+                  - **`dimension()` is derived, never declared** — 3 per swing
+                    (the rotation vector), 1 per twist — so a manifest cannot
+                    claim a dimension its own drivers do not add up to. That
+                    number is what `rbfSolve` and every pose's `signal` are
+                    shaped by.
+                  - **Refusals worth having**: unknown kernel (thin-plate is a
+                    different shape, and falling back to gaussian would look
+                    plausible); radius ≤ 0; no drivers; unknown component (with
+                    `"euler"` tested by name, since 12.3 rules it out and it is
+                    what an author from another rig would write); the SAME joint
+                    and component twice (double-counts the signal and still
+                    solves); a signal of the wrong length, NAMED; two poses at
+                    the same point (singular matrix — `rbfSolve` would say
+                    "not solvable", which tells the author nothing); duplicate
+                    names; and a payload path that is absolute or contains `..`.
+                  - **The content hash** is the cache key directive 12.4 needs.
+                    Whitespace, key order and the manifest's own location are
+                    deliberately NOT content — reformatting a file or moving a
+                    checkout must not throw away a compiled blob — and numbers
+                    hash by value, so `0.9` and `0.90` agree. Four "the hash
+                    must move" cases and two "must not" cases.
+                  - **Nineteen mutations, all caught**, including four on the
+                    hash itself (drop the radius, the delta path or the pose
+                    name from it; fold the file path INTO it).
+                  - **Gate mutation**: making every load return `Malformed`
+                    failed 8 of the 9 cases, which is what says the tests'
+                    JSON surgery produces the intended defect rather than
+                    garbage that happens to fail. The ninth is the
+                    file-readability case, which legitimately expects those
+                    kinds. The five cases asserting a bare `Malformed` were
+                    additionally checked by printing the error DETAIL: each
+                    says what it should ("topologyHash is required", "a pose
+                    has no name") rather than a JSON parse error.
+                  - The base mesh hash quoted in the spec, `e38c060123b5d0db`,
+                    was RUN rather than copied from memory.
+            - [ ] **The compiler**: manifest + `.target` payloads → `rbfSolve` →
+                  an mmap-able blob with a header carrying the format version
+                  and the manifest hash, a joint name table, the solved weight
+                  matrix and sparse delta arrays. Versioned cheaply and
+                  aggressively, because a blob can always be rebuilt.
+            - [ ] **The Blender round-trip** the step is named for, and the app
+                  wiring, which both need content the compiler produces.
       - [ ] **5. Content**: groom, PBR skin, wrinkle maps THROUGH THE SHARED
             DRIVER, eye/teeth rig.
       Two structural consequences to hold onto: proxies and clothing bind as
