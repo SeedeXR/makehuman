@@ -4,6 +4,101 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-09 (thirty-eighth) — Session · **The headless contract, and the ethnicity exception**
+
+*2026-09-09 — M9's remainder was blocked or content-bound, so this is M10's
+first item. The owner then answered the block mid-chunk with a whole
+architecture; see the end.*
+
+### What landed
+M10 opens with "headless deterministic `parameters → mesh` API (no Qt in
+`mh-core`)". **Both halves were already TRUE and neither was gated** — the same
+position `<charconv>` was in when it reached CI twice.
+
+- **`tools/audit_headless.py`**: `foundation`, `core`, `rig` and `io` are free
+  of Qt, now enforced as a ctest and a CI step. `render` is excluded
+  deliberately — it draws through QRhi and is Qt by design.
+- **`tests/regression/test_determinism.cpp`**: the same parameters give a
+  bit-identical mesh, and so does any ORDER of setting them.
+
+### The measurement found the exception
+Not a foregone conclusion: `applyStack` sums each target's contribution into a
+vertex, float addition is not associative, and the stack is an `unordered_map`.
+288 modifiers forward, reversed and three shuffles all agree **to the bit** —
+because `setModifierValue` ends in `rebuildStack()`, which recomputes every
+entry from the scalars rather than patching the previous stack.
+
+Then all 291: **19,158 of 19,158 vertices differ, by up to 3 cm.** The worst
+stack entry is off by 0.547 on `macrodetails/caucasian-female-young.target`.
+
+**It is not a bug.** Excluding the three ETHNICITY sliders, forward and
+reversed give an identical stack — 0 differences of 364 entries. African, Asian
+and Caucasian are a normalised triple: setting one rescales the other two
+(`MacroFactors::setEthnicVals`), and the reference does exactly the same
+(`human.py:811-822`). Checked before reporting it, because "the modifier system
+is order-dependent" would have been a false alarm.
+
+So the exception is pinned in the direction that matters — a test asserts it
+KEEPS differing. Making the triple order-free would be changing the character
+model, not fixing a bug, and that test is where the argument has to be had.
+
+**What it means for M10:** a parameter vector is an ordered list where
+ethnicity is concerned, or ethnicity is sampled as the normalised triple it
+already is. A plain unordered map of slider values is not a complete
+specification of a body.
+
+### Mutations: 3 run, 3 killed, 2 against the gate
+- `setModifierValue` patching the stack incrementally instead of rebuilding →
+  the order-independence test, 4 assertions.
+- **GATE**: the ethnicity triple made order-free (all three `setEthnicVals`
+  calls removed) → the exception test, both assertions. Removing only
+  `setAfrican`'s was too weak and passed: the other two still renormalised.
+- **GATE**: `audit_headless.py`'s module list emptied. It passed — an audit
+  that scans nothing is silent forever. It now counts what it scanned (82
+  files) and fails below a floor of 50.
+
+Also verified the audit's include branch fires in a `.cpp` AND in a header, and
+that prose mentioning Qt does NOT trip it — the trap `ci.yml` documents twice.
+
+### Gates
+775/775 in debug, release, ASan and TSan, 0 warnings, `ALLDONE` read. CI's exact
+clang-format command clean.
+
+### OWNER DIRECTIVE 12, mid-chunk: the correctives architecture
+The owner answered "PSD is blocked on you" with the whole design, and the line
+that matters is: **"you aren't blocked on content, you're blocked on having
+decided the contracts."** Recorded in full in `plan_owner_directives.md` §12
+and restructured into `todo.md`'s M9. The headlines:
+
+- **Naming**: legacy by default, `--naming=modern` opt-in, canonical IDs
+  inside. Two name tables as DATA FILES; resolution tries the active profile,
+  falls back to the other, warns once. **Canonical IDs are what save files
+  persist** — profile affects display and scanning only. The
+  `--workspace Materials` rename happens in step 1 as a modern-only name.
+- **Correctives apply PRE-SKIN, in rest space.** Proxies and clothing bind as
+  barycentric offsets and inherit shape, correctives and pose for free —
+  clothing gets no corrective system of its own.
+- **One pose-signal evaluator**: swing-twist decomposition (not Euler) → one
+  RBF → a weight vector consumed by geometry correctives, wrinkle maps and
+  future masks. **This collapses two M9 content items into one pipeline.**
+- **Eye/teeth rigging is skeleton and constraint work, NOT correctives** — "a
+  trap".
+- **Format stack**: manifest + sparse payloads → offline RBF solve → mmap-able
+  blob that is a disposable cache. **Two version numbers in every export**:
+  application and content-format.
+- **Determinism warning that lands on today's work**: parallel scatter-add
+  reorders float additions, so the same input can differ across thread counts.
+  This chunk's tests are the single-threaded baseline that one will be measured
+  against.
+
+### Next
+**Directive 12 step 1: freeze contracts.** Canonical ID registry, the two
+naming tables as data files, base topology hash, and version injection into
+FBX/glTF/USD/OBJ — which also closes the long-open "exported assets cannot be
+traced to a build" item, now with a second number for the content format.
+
+---
+
 ## 2026-09-09 (thirty-seventh) — Session · **The LOD chain, and a file only one reader could open**
 
 *2026-09-09 — owner directive 11 unblocked this: separate files, GLB and FBX.*

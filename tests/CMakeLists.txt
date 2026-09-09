@@ -61,7 +61,8 @@ add_executable(mh_tests
     golden/test_roundtrip.cpp
     regression/test_repose.cpp
     regression/test_review_findings.cpp
-    regression/test_io_review_findings.cpp)
+    regression/test_io_review_findings.cpp
+    regression/test_determinism.cpp)
 
 # mh::rig alone. It PUBLIC-links mh::io (PoseUnits.h takes a BvhFile) and, since
 # PosedMesh.h took a `core::Mesh&`, mh::core as well -- so the tests get both
@@ -1047,6 +1048,13 @@ if(MH_HAVE_RENDER)
     # -- is found by a user reading an About box, not by a compiler.
     add_test(NAME audit_version
              COMMAND python3 ${CMAKE_SOURCE_DIR}/tools/audit_version.py)
+
+    # foundation, core, rig and io must build without a GUI stack -- that is
+    # what makes the headless `parameters -> mesh` path (M10) usable from a
+    # batch sampler or a server. They are Qt-free today and nothing enforced
+    # it, which is the position `<charconv>` was in when it reached CI twice.
+    add_test(NAME audit_headless
+             COMMAND python3 ${CMAKE_SOURCE_DIR}/tools/audit_headless.py)
 
     # `makehuman --version` did not work at all: no addVersionOption(), and the
     # version was a PRIVATE macro in mh_core that main.cpp could not read.

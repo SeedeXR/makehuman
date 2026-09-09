@@ -316,6 +316,11 @@ jobs:
       - name: Runtime asset paths are resolved, not compiled in
         run: python3 tools/audit_runtime_paths.py
 
+      # foundation, core, rig and io stay free of Qt, so the headless
+      # parameters -> mesh path can be used without a GUI stack (M10).
+      - name: The headless modules do not depend on Qt
+        run: python3 tools/audit_headless.py
+
       # The six eye colours are GENERATED from brown_eye.png by recolouring the
       # iris, and the tool rests on a measured assumption: every pixel with
       # saturation > 0.35 is inside one of the two iris discs, so the sclera's

@@ -4090,9 +4090,40 @@ GPU here, or Colab) and it comes back to the owner first.
         this can, and the composition mutation trips it.
       - Three mutations caught: translation unscaled by weight, translations
         added independently of the rotations, and translation dropped again.
-- [ ] Pose-space deformation / correctives (does not exist in the reference)
-- [ ] **LOD chain generation with weight and UV transfer.** *The DECIMATOR
-      landed 2026-09-08; the chain and the app wiring are what is left.*
+- [ ] **Pose-space deformation / correctives — UNBLOCKED 2026-09-09 by owner
+      directive 12.** The reference has none of this; the architecture is the
+      owner's and is recorded in full in `plan_owner_directives.md` §12. The
+      answer to "blocked on you" was: *"you aren't blocked on content, you're
+      blocked on having decided the contracts."*
+      The owner's order of work, which replaces the old M9 ordering:
+      - [ ] **1. Freeze contracts.** Canonical ID registry, the two naming
+            tables as DATA files, base topology hash, and version injection
+            into FBX/glTF/USD/OBJ — **two** numbers, application version and
+            content-format version. Includes the `--workspace Materials`
+            rename as a modern-profile-only name, legacy default. Small, and
+            everything else depends on it. **This is the next chunk.**
+      - [ ] **2. Fix skinning.** Optimised centres of rotation, or dual
+            quaternion at minimum (DQS already ships behind `--skinning dqs`
+            and Settings ▸ Skinning). Kills a large share of the artifacts
+            correctives would otherwise patch, at zero art cost.
+      - [ ] **3. PSD runtime + synthetic oracle.** Swing-twist decomposition
+            (NOT Euler) → one RBF evaluator → a weight vector. Analytic
+            corrective function as ground truth, verified AT and BETWEEN
+            example poses. Correctives apply PRE-SKIN in rest space. No art
+            needed.
+      - [ ] **4. Authoring format, compiler, Blender round-trip.** Manifest
+            (TOML/JSON) + sparse `.target` payloads → offline RBF solve → an
+            mmap-able blob that is a disposable cache, invalidated on manifest
+            hash mismatch.
+      - [ ] **5. Content**: groom, PBR skin, wrinkle maps THROUGH THE SHARED
+            DRIVER, eye/teeth rig.
+      Two structural consequences to hold onto: proxies and clothing bind as
+      barycentric offsets and therefore get shape, correctives and pose for
+      free — **clothing gets no corrective system of its own**; and eye/teeth
+      rigging is skeleton and constraint work, **not** correctives ("a trap").
+- [x] **LOD chain generation with weight and UV transfer** — COMPLETE
+      2026-09-09. Decimator, app wiring, weight transfer, blend shapes and the
+      chain itself all landed; the sub-items below record each.
       - [x] **`core::decimate`** — quadric-error-metric edge collapse, written
             from Garland & Heckbert (SIGGRAPH 1997), not from anyone's code.
             The reference has no simplification, LOD or corrective code at all
@@ -4270,12 +4301,42 @@ GPU here, or Colab) and it comes back to the owner first.
               tenth of a millimetre. 16/16 exports agree.
 - [ ] Groom / hair card and strand support
 - [ ] Physically-based skin: SSS, multi-layer, tension maps
-- [ ] Eye, teeth, tongue rigging refinement
-- [ ] Wrinkle/detail normal blending driven by expression
+- [ ] Eye, teeth, tongue rigging refinement — **skeleton and constraint work,
+      NOT correctives** (directive 12.3: expressing them as correctives is "a
+      trap"). Stays in the rig layer.
+- [ ] Wrinkle/detail normal blending — **now a CONSUMER of the shared pose
+      driver** (directive 12.3), not a parallel system with its own keying
+      convention. Blocked behind PSD steps 1-4, deliberately.
 
 ## M10 — Data-driven character generation
 
-- [ ] Headless deterministic `parameters → mesh` API (no Qt in `mh-core`)
+- [x] **Headless deterministic `parameters → mesh`, now enforced** (2026-09-09).
+      Both halves of this item were already TRUE and neither was gated, which
+      is the same position `<charconv>` was in when it reached CI twice.
+      - **No Qt in the headless modules.** `foundation`, `core`, `rig` and `io`
+        are free of Qt — measured, then gated by `tools/audit_headless.py`, a
+        ctest and a CI step. `render` is excluded deliberately: it draws
+        through QRhi and is Qt by design.
+      - **The same parameters give a bit-identical mesh**, and so does any
+        ORDER of setting them: 288 modifiers forward, reversed and three
+        shuffles all agree to the bit. Not a foregone conclusion —
+        `applyStack` sums into a vertex, float addition is not associative and
+        the stack is an `unordered_map`. What saves it is that
+        `setModifierValue` ends in `rebuildStack()`, which recomputes every
+        entry from the scalars rather than patching the previous stack.
+      - **The exception, found by measuring rather than assuming:** the
+        ETHNICITY triple is order-dependent, because African/Asian/Caucasian
+        are normalised — setting one rescales the other two
+        (`MacroFactors::setEthnicVals`, and the reference does the same at
+        `human.py:811-822`). Including all three in the sweep moves **19,158 of
+        19,158 vertices by up to 3 cm**, and the worst stack entry differs by
+        0.547 on `macrodetails/caucasian-female-young.target`. A test pins that
+        it KEEPS differing: making the triple order-free would be changing the
+        character model, not fixing a bug.
+      - **What this means for the rest of M10**: a parameter vector is an
+        ordered list where ethnicity is concerned, or ethnicity is sampled as
+        the normalised triple it already is. A plain unordered map of slider
+        values is not a complete specification of a body.
 - [ ] Parameter-space definition and sampling
 - [ ] **Licence audit of every candidate dataset before any use** — record in `LICENSING.md`
 - [ ] Generative model over the modifier vector
