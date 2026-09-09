@@ -4389,10 +4389,67 @@ GPU here, or Colab) and it comes back to the owner first.
                     next run's first poll came back PENDING, so the wait is
                     load-bearing. `api/ce/activity_status` needs privileges the
                     local token lacks; `api/ce/task` does not.
-            - [ ] **Correctives applied pre-skin, in rest space** is what makes
-                  it visible: sparse vertex deltas scaled by the weight vector
-                  above, added to the rest mesh BEFORE skinning (directive
-                  12.2). That chunk has a render and a Blender check.
+            - [x] **Correctives applied pre-skin, in rest space** (2026-09-09).
+                  `core::CorrectiveBuffer` — `setRest` from the character-static
+                  path, `apply(correctives, weights)` per frame. 11 cases.
+                  - **A corrective IS a `core::Target`.** That type is already
+                    the sparse index+offset primitive the whole modelling system
+                    runs on, so nothing new was invented: no second loader, no
+                    second validator, no second way to be wrong about vertex
+                    order. What is new is only the per-frame shape.
+                  - **Directive 12.5's dirty-index list.** A dense scratch, the
+                    union of the active correctives recorded as it accumulates,
+                    and an undo that touches only those vertices. `touched()`
+                    exposes the count, without which the optimisation is
+                    invisible and a buffer resetting all 19,158 vertices every
+                    frame passes every correctness test.
+                  - **A generation counter was the first version and was
+                    replaced.** Clearing `marked_` alongside the undo costs the
+                    same, needs one member fewer, and has nothing to wrap —
+                    the counter wrapped to the value an untouched vertex holds
+                    after 2^32 frames, dropping a vertex for one frame.
+                  - **LOOKED AT IT, and it shows the design decision rather
+                    than just movement.** A synthetic deltoid bulge (442 of
+                    19,158 vertices, smoothstep falloff around `shoulder01.L`)
+                    driven through the real code path, skinned with DQS in the
+                    T-pose, exported and rendered in Blender at 6x:
+                    - PLAIN: thin deltoid, flat underside where arm meets torso.
+                    - PRE-SKIN: the mass swells smoothly into the upper arm and
+                      sits ON the arm — the skinning transform carried it.
+                    - POST-SKIN: the same delta lands at the ARMPIT instead and
+                      the arm's contour barely changes, because it is added
+                      after the arm has been rotated away. 3,727 pixels differ
+                      between the two orders.
+                    That is exactly directive 12.2's reason for pre-skin, and
+                    it is the kind of thing no assertion would have shown.
+                  - **Three test premises were unmet and mutation testing found
+                    all three**: the no-rest-mesh guard was shadowed by the
+                    index guard (fixed with an empty-corrective case), the
+                    out-of-range guard was reached only via another, and
+                    "nothing was written before the refusal" was checked on a
+                    FRESH buffer where the undo pass has nothing to undo — so
+                    moving validation after the undo passed all 11 cases. Now
+                    checked from a deformed buffer, where a refusal must leave
+                    the last good frame rather than snapping to rest.
+                  - **A 100-frame drift loop was cut to 3.** The comment claimed
+                    one round trip would not catch a subtract-undo; measured, it
+                    does, because the comparison is bit-exact. The extra 97
+                    iterations were 38,400 assertions and no coverage.
+                  - **The render itself needed three attempts and the first two
+                    lied.** Looping three OBJs in one Blender process with
+                    `read_factory_settings(use_empty=True)` rendered the FIRST
+                    mesh three times — the PNGs were pixel-identical in RGB and
+                    alpha while the OBJs differed by up to 0.55 units. Caught
+                    by comparing the images rather than trusting the loop. One
+                    process per file now, and the camera is aimed from the
+                    measured bounding box of the moved vertices rather than at
+                    the driving joint: `shoulder01.L` is a clavicle near the
+                    spine, and aiming there framed the hip.
+            - [ ] **Wiring it into the app** waits for the authoring manifest
+                  (step 4): a corrective needs a driving joint, example poses
+                  and sculpted deltas, and all three are manifest content.
+                  Hardcoding a demo corrective in `main.cpp` would be
+                  scaffolding for something the next step deletes.
                   - **The runtime stays hand-written** — directive 12.5 fixes
                     the per-vertex accumulation order, and Eigen's vectorised
                     reductions reorder float additions by design. Not a

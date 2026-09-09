@@ -4,6 +4,114 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-09 (forty-fifth) — Session · **Geometry finally moves, and the render earned it**
+
+*2026-09-09 — directive 12 step 3's last stage, and the first chunk on this line
+with something to look at. SwingTwist gives a signal, Rbf gives a weight vector,
+and this turns the weight vector into moved vertices.*
+
+### What landed
+`core::CorrectiveBuffer`: `setRest` from the character-static path,
+`apply(correctives, weights)` per frame. 11 cases.
+
+**A corrective IS a `core::Target`.** That type is already the sparse
+index-plus-offset primitive the entire modelling system runs on
+(`algos3d.py:67` in the reference, ported long ago), so a corrective is one and
+nothing was invented for it — no second loader, no second validator, no second
+way to be wrong about vertex ordering. What is genuinely new is only the
+per-frame shape from directive 12.5: a dense scratch buffer, a dirty-index list
+built as the union of the active correctives, and an undo that touches only
+those vertices. `touched()` exposes the count, and without it the optimisation
+would be untestable — a buffer resetting all 19,158 vertices every frame passes
+every correctness test in the file.
+
+A generation counter was the first version of the membership test and was
+replaced during self-review: clearing `marked_` alongside the undo costs the
+same, needs one member fewer, and has nothing to wrap. The counter wrapped after
+2^32 frames to exactly the value an untouched vertex holds, which would drop
+that vertex from the dirty list for one frame.
+
+### Looked at it, and it shows the DECISION, not just movement
+A synthetic deltoid bulge — 442 of 19,158 vertices, smoothstep falloff around
+`shoulder01.L` — pushed through the real code path, skinned with DQS in the
+T-pose, exported and rendered in Blender at 6x magnification:
+
+| | what it shows |
+|---|---|
+| **plain** | thin deltoid, flat underside where the arm meets the torso |
+| **pre-skin** | the mass swells smoothly into the upper arm and sits ON the arm — the skinning transform carried it |
+| **post-skin** | the same delta lands at the ARMPIT and the arm's contour barely changes |
+
+3,727 pixels differ between the two orders. That is directive 12.2's reason for
+pre-skin made visible: applied after skinning, a rest-space delta stays where
+the REST pose put it, because the arm has since been rotated away. No assertion
+in the file would have shown that.
+
+### The render lied twice before it told the truth
+Worth recording, because it is a gate failing quietly rather than loudly.
+
+1. **Three OBJs in one Blender process rendered the FIRST mesh three times.**
+   `bpy.ops.wm.read_factory_settings(use_empty=True)` did not clear the scene in
+   background mode the way the loop assumed. The three PNGs came out
+   pixel-identical in RGB *and* alpha while the OBJs differed by up to 0.55
+   units. Only comparing the images caught it; the loop printed "rendered" three
+   times and "verts 19158" three times throughout. One process per file now.
+2. **Removing the scene clear made it render Blender's default CUBE** — "verts
+   8, dims (2,2,2)" — because the object picker took the first mesh in the
+   scene. It now diffs the object set before and after import and asserts
+   exactly one new mesh.
+3. **The camera was aimed at the driving joint and framed the hip.**
+   `shoulder01.L` is a clavicle, near the spine; in a T-pose the surface it
+   moves sits well out from it. The aim point is now computed from the measured
+   bounding box of the moved vertices AFTER skinning, printed by the scratch
+   tool as `AFFECTED_BBOX`, and the final crop is chosen from where the pixels
+   actually differ rather than guessed.
+
+An exaggerated corrective (amount 3.0 instead of 0.55) on a full-body view is
+what separated "the pipeline is broken" from "the framing is wrong" — 9,794
+pixels moved, so the renderer was fine all along.
+
+### Mutations: fourteen, and three premises were unmet
+| Mutation | Result |
+|---|---|
+| the undo loop removed | 3 cases red |
+| dirty list never cleared | 1 red |
+| inactive correctives not skipped | 2 red |
+| duplicate-vertex check removed | 1 red |
+| `marked_` not cleared during the undo | 1 red |
+| null corrective tolerated | segfault — caught loudly |
+| ragged target check removed | 1 red |
+| pairing check removed | 1 red |
+| assignment instead of accumulation | 1 red |
+| `setRest` keeps the old dirty list | 1 red |
+| `setRest` does not seed the positions | segfault |
+| undo by SUBTRACTING the delta | 2 red |
+| **no-rest-mesh guard removed** | **passed all 11** — shadowed by the index guard, since every index is past the end of an empty mesh. Fixed with an empty-corrective case. |
+| **out-of-range index guard removed** | **passed** — same shadowing. |
+| **validation moved AFTER the undo** | **passed all 11** — because that case ran on a FRESH buffer, where the undo has nothing to undo. Now checked from a deformed buffer: a refusal must leave the LAST GOOD FRAME, not snap to rest, or one bad frame is a visible pop. |
+
+Gate mutations: neutering `checkIdentical` let a broken undo pass the whole file
+at 474 assertions instead of 39,042, so it carries them. And the 100-frame drift
+loop turned out NOT to be load-bearing — the subtract-undo mutation is caught
+with the loop cut to a single frame, because the comparison is bit-exact. Cut to
+three; the other 97 iterations were 38,400 assertions and no coverage.
+
+### Gates
+Four presets one at a time, `ALLDONE` read. CI's exact clang-format command
+clean. SonarQube read only after `api/ce/task` reports SUCCESS, as the previous
+entry's correction requires.
+
+### Next
+**Step 4: the authoring format** — manifest plus sparse `.target` payloads, an
+offline compile that solves the RBF and bakes an mmap-able blob, invalidated on
+manifest hash mismatch. That is also when the app wiring lands: a corrective
+needs a driving joint, example poses and sculpted deltas, and all three are
+manifest content. Hardcoding a demo corrective in `main.cpp` now would be
+scaffolding for something step 4 deletes. And it is where Eigen's cleared use
+(LICENSING.md 5.1.1) may finally apply, if a thin-plate kernel is wanted.
+
+---
+
 ## 2026-09-09 (forty-fourth) — Session · **The interpolator, and three numbers I made up**
 
 *2026-09-09 — directive 12 step 3's second stage. SwingTwist turns a joint

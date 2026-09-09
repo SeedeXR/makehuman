@@ -13,6 +13,7 @@ add_library(mh_core STATIC
     TopologyHash.cpp
     Blendshape.cpp
     Target.cpp
+    Correctives.cpp
     Macro.cpp
     TargetIndex.cpp
     Modifier.cpp
