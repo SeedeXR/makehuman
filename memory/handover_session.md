@@ -4,6 +4,114 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-09 (forty-second) — Session · **Dual quaternion is the default now**
+
+*2026-09-09 — directive 12 step 2, "fix skinning". The owner named optimised
+centres of rotation with DQS as the floor. I took the floor first, because it
+is a one-token change to a path that already ships and is already tested, and
+because OCR's naive precompute (19,158 vertices × 36,972 triangles of
+similarity evaluation) needs its own chunk and its own cache format.*
+
+### What landed
+`--skinning` defaults to `dqs`, and a fresh install's Settings ▸ Skinning starts
+on **Dual quaternion**. `--skinning linear` still gets exactly what the
+reference did, which is now the only thing linear is for.
+
+**The default lives in one place.** It is `--skinning`'s own option literal:
+main() assigns `gUseDualQuaternion` from the parsed value unconditionally, so
+the file-scope initialiser is unobservable — I mutated it and the whole suite
+stayed green. `MainWindow::Impl::skinning` is the same story, overwritten by the
+constructor's stored-value read before anything can see it. Both kept aligned
+with the shipped default, because an initialiser that CONTRADICTS the effective
+default is a trap for the next reader, but each now carries a comment saying
+which of the two is the authority. That is the honest version: aligned, not
+load-bearing, and labelled.
+
+The stored preference inverted rather than being widened: only the literal word
+`linear` opts out, so a missing key reads as DQS.
+
+### Cost, measured
+`LBS 0.12 ms → DQS 0.28 ms` for 19,158 verts × 4 influences, from `mh_bench` in
+RELEASE, repeatable to the printed precision over three runs. 2.3×, of a number
+that is 1.7% of a 60 Hz frame. A scratch probe earlier in the chunk said
+0.151 → 0.412 and I had written that into four comments; the release benchmark
+is the number that counts, so all four now quote it. A DQS entry now sits
+beside the LBS one in
+`benchmarks/bench_core.cpp`. Neither has a Python baseline to trip, and cannot:
+the reference has no DQS path at all.
+
+### Looked at it
+`--pose tpose` under both methods differ in **18,641 pixels** of a 1024² frame,
+densest at (421,217) — the deltoid and the armpit fold, which is where a T-pose
+rotates most. Cropped that window 4× and put LBS, DQS and an 8×-amplified
+difference side by side: **the DQS deltoid is the fuller one, the LBS armpit is
+the pinched one, and DQS adds no bulge and no candy-wrapper.** Volume
+preservation is the entire point of the change and it is visible. A pixel count
+alone would not have told me which direction it moved.
+
+### Parity stays pinned to LBS, and now says so
+`Skeleton.skinMesh` accumulates matrices and is documented as linear blend
+skinning (`legacy/python/shared/skeleton.py:605-622`) — there is no reference
+result for DQS to be compared against. `test_skinning_parity.cpp` and
+`test_body_pose.cpp` call `rig::skinPositions` by name, so flipping the app
+default could not have touched them; both now carry a header comment saying
+they must not follow it, or the comparison retires silently. DQS's own
+correctness is `tests/unit/test_dqs.cpp` — seven cases, including
+single-influence equivalence with LBS and the non-rigid refusal.
+
+### The gate, and mutating the gate
+"The default is DQS" is only testable as an EFFECT. `app_skinning_default`
+exports with no flag at all; `app_skinning_default_is_dqs` asserts that file is
+byte-identical to the `--skinning dqs` export. That claim means something only
+because `app_skinning_dqs_differs` already proves dqs ≠ linear. Asserting a
+printed word would have survived the default being flipped back.
+`tests/files_identical.cmake` is the mirror of `files_differ.cmake`, with the
+same empty-file guard for the same reason. `PASS_REGULAR_EXPRESSION` on the
+export is paired with `FAIL_REGULAR_EXPRESSION "export failed"`, because PASS
+replaces the exit-code check and a stale file from the previous run would
+otherwise satisfy the comparison.
+
+Both gates were watched RED before the fix: `app_skinning_default_is_dqs`
+failed, and seven assertions in the UI test failed.
+
+Then the mutations, code and gate:
+
+| Mutation | Result |
+|---|---|
+| option default back to `linear` | `app_skinning_default_is_dqs` red |
+| stored-value read back to its old sense | 7 assertions red in the UI test |
+| file-scope `gUseDualQuaternion` initialiser | **survived** — reported, not hidden |
+| `MainWindow::Impl::skinning` initialiser | **survived** — same reason |
+| `files_identical.cmake` comparison → `if(FALSE)`, code still broken | test went **GREEN** — which is what proves the comparison carries it |
+| empty pair / missing file fed to the gate | exit 1 both |
+
+### Gates
+Four presets, one at a time, 817/817 each with 0 warnings, `ALLDONE` read — and
+run TWICE, because the first pass predated the comment corrections below and a
+gate that did not run on the committed tree has not run. CI's exact
+clang-format command clean (it caught one reflow, fixed). SonarQube gate OK,
+0 open issues, `new_violations` 0.
+
+`tools/run_blender_validation.sh` still reports **16/16**, and it is fair to say
+that number did not move: `tests/mh_export_fixture.cpp` exports rest geometry
+with a live rig and never calls CPU skinning at all, so the harness cannot see
+this change. It is evidence the exporters still work, not evidence about DQS.
+
+### I had the cost wrong for most of the chunk
+A scratch probe said `0.151 ms → 0.412 ms`, 2.7×, and I wrote that into four
+comments before running the actual benchmark. `mh_bench` in RELEASE says
+**0.12 ms → 0.28 ms**, 2.3×, repeatable to the printed precision over three
+runs. All four comments now quote the release number. The conclusion is
+unchanged and the reported figure was not.
+
+### Next
+Step 2's remaining rung is **optimised centres of rotation** (Le & Hodgins
+2016), and it is a chunk of its own for the precompute reason above. Step 3
+(PSD runtime + synthetic oracle: swing-twist → RBF, correctives pre-skin in
+rest space) is unblocked and needs no art.
+
+---
+
 ## 2026-09-09 (forty-first) — Session · **The menu reads the profile**
 
 *2026-09-09 — finishing directive 12 step 1's naming half. The CLI resolved

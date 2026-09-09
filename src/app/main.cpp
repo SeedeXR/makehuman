@@ -422,7 +422,11 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
 /// A file-scope flag rather than a parameter threaded through: the pose helper
 /// is called from four places and none of them has an opinion about the method
 /// -- the user does, once, at start-up.
-bool gUseDualQuaternion = false;
+///
+/// Initialised to match `--skinning`'s own default so the two cannot disagree,
+/// but the option is the authority: main() assigns this from the parsed value
+/// unconditionally, and nothing reads it before then.
+bool gUseDualQuaternion = true;
 
 /// Whether a loaded pose is APPLIED. The reference's `_posed`
 /// (`shared/animation.py:986-994`), driven by the toolbar's Pose toggle: being
@@ -1787,11 +1791,23 @@ int main(int argc, char** argv) {
     parser.addOption(symmetryOpt);
     parser.addOption(wireframeOpt);
     parser.addOption(gridOpt);
+    // DUAL QUATERNION is the default, and this literal is where that default
+    // actually lives -- gUseDualQuaternion is assigned from it below.
+    //
+    // Linear blending collapses a twisted limb, and on the base mesh that is
+    // visible rather than theoretical: a T-pose render differs in 18,641 pixels
+    // concentrated on the deltoid and the armpit fold, and the DQS deltoid is
+    // the fuller of the two (measured and looked at). It costs 0.28 ms against
+    // LBS's 0.12 ms for 19,158 vertices x 4 influences -- benchmarks/bench_core,
+    // release, repeatable to the printed precision. 2.3x of a number that is
+    // 1.7% of a 60 Hz frame. `linear` stays for anyone who wants exactly what
+    // the reference did, which is the only thing it is now for.
     const QCommandLineOption skinningOpt(
         QStringLiteral("skinning"),
-        QStringLiteral("Skinning method: linear (default) or dqs. Dual quaternion skinning keeps "
-                       "a twisted limb's volume where linear blending collapses it."),
-        QStringLiteral("method"), QStringLiteral("linear"));
+        QStringLiteral("Skinning method: dqs (default) or linear. Dual quaternion skinning keeps "
+                       "a twisted limb's volume where linear blending collapses it; linear is "
+                       "what the reference did."),
+        QStringLiteral("method"), QStringLiteral("dqs"));
     parser.addOption(skinningOpt);
     parser.addOption(shadingOpt);
     parser.addOption(rigOpt);

@@ -4,6 +4,11 @@
 // as success: makePoseUnits leaves identity wherever the BVH has no matching
 // joint, so a name mismatch yields a complete, valid, entirely unposed rig.
 // These tests measure the mesh instead of trusting the call.
+//
+// Linear blending throughout, pinned by name and staying that way now that the
+// application defaults to dual quaternion: the reference has only LBS
+// (`shared/skeleton.py:605-622`), so these extents are the reference's extents
+// and following the app's default would silently retire the comparison.
 #include "makehuman/core/Mesh.h"
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/rig/PoseUnits.h"

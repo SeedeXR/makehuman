@@ -101,7 +101,10 @@ struct MainWindow::Impl {
     QUndoStack* undo{};
     Units units{Units::Metric};
     Weight weight{Weight::Percent};
-    Skinning skinning{Skinning::Linear};
+    // Aligned with the shipped default so the two cannot contradict each other,
+    // but the constructor's stored-value read is the authority: it assigns this
+    // unconditionally before anything can observe it.
+    Skinning skinning{Skinning::DualQuaternion};
     bool smooth{false};
     bool wireframe{false};
     /// True from the start, exactly as the reference's `_posed` is: what makes
@@ -418,12 +421,14 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
 
     // Restored before the actions are built, so the right one starts checked.
     // Stored as the word `--skinning` takes rather than an int: someone reading
-    // the ini file sees the same spelling they would type. Anything else reads
-    // as linear, which is the shipped default and the safe one.
+    // the ini file sees the same spelling they would type. Anything else --
+    // including a fresh install with no stored value -- reads as dual
+    // quaternion, which is the shipped default; only the literal word `linear`
+    // opts out.
     d_->skinning =
-        workspaceSettings().value(QStringLiteral("skinning")).toString() == QLatin1String("dqs")
-            ? Skinning::DualQuaternion
-            : Skinning::Linear;
+        workspaceSettings().value(QStringLiteral("skinning")).toString() == QLatin1String("linear")
+            ? Skinning::Linear
+            : Skinning::DualQuaternion;
 
     auto* skinningGroup = new QActionGroup(this);
     skinningGroup->setExclusive(true);

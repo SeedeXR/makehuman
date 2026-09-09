@@ -472,6 +472,30 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_skinning_unknown PROPERTIES
         PASS_REGULAR_EXPRESSION "unknown skinning method")
 
+    # Dual quaternion is the DEFAULT: no flag at all must produce the dqs file
+    # and not the linear one. Tested as an effect rather than as a printed word,
+    # because a message would still print with the default flipped back -- and
+    # `app_skinning_dqs_differs` above is what makes this claim mean something,
+    # since it proves the two files are not equal to begin with.
+    #
+    # Same basename again, for the mtllib reason spelled out above.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/skin_default)
+    add_test(NAME app_skinning_default COMMAND makehuman
+             --rig mixamo_superset --pose tpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/skin_default/pose.obj)
+    # FAIL alongside PASS for the reason spelled out further down: PASS
+    # REPLACES the exit-code check, so the previous run's file would do.
+    set_tests_properties(app_skinning_default PROPERTIES
+        PASS_REGULAR_EXPRESSION "wrote .*pose\\.obj"
+        FAIL_REGULAR_EXPRESSION "export failed"
+        FIXTURES_SETUP app_default_obj)
+    add_test(NAME app_skinning_default_is_dqs COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/skin_default/pose.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/skin_dqs/pose.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_identical.cmake)
+    set_tests_properties(app_skinning_default_is_dqs PROPERTIES
+        FIXTURES_REQUIRED "app_default_obj;app_dqs_obj")
+
     # The grid reaches the VIEWPORT and nothing else. Two claims, and the
     # second is the one the reference makes for us: its grids are
     # `excludeFromProduction` (`core/mhmain.py:671,687`), so a production render

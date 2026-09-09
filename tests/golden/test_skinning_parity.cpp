@@ -2,6 +2,17 @@
 //
 // Linear blend skinning, against the reference's own posed result.
 //
+// Pinned to `rig::skinPositions` BY NAME, deliberately, and it stays that way
+// now that the application defaults to dual quaternion skinning: the reference
+// has no DQS path at all -- `Skeleton.skinMesh` accumulates matrices and is
+// documented as "linear blend skinning" (`shared/skeleton.py:605-622`) -- so
+// there is no reference result for DQS to be compared against. This file is
+// parity with what the reference did, and `--skinning linear` is what still
+// exposes that path to a user. DQS's own correctness is tests/unit/test_dqs.cpp
+// (seven cases: identity, single-influence equivalence with LBS, volume under
+// twist, antipodality, weight-ratio invariance, the non-rigid refusal, and the
+// shared input contract).
+//
 // Regenerate with:
 //     ./.venv-mh/bin/python tools/capture_fixture.py skinning
 

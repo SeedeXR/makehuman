@@ -134,6 +134,17 @@ int main() {
                      medianMs([&] { (void)mh::rig::skinPositions(mesh->coord(), cw, sm, skinned); },
                               20),
                      0.0});
+                // DQS is what the app now does by default, so the number that
+                // matters per frame is this one and not the LBS line above.
+                // Neither has a Python baseline and neither can: the reference
+                // has no DQS path (`legacy/python/shared/skeleton.py:605-622`
+                // accumulates matrices and says "linear blend skinning").
+                results.push_back(
+                    {"skinPositionsDqs (DQS, 19158 verts x 4)",
+                     medianMs(
+                         [&] { (void)mh::rig::skinPositionsDqs(mesh->coord(), cw, sm, skinned); },
+                         20),
+                     0.0});
             }
             results.push_back({"Skeleton::buildRestMatrices (163 bones)",
                                medianMs(

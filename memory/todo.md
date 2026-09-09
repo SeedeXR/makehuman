@@ -3985,8 +3985,11 @@ agree today (geometry, UVs, and 169.5 cm under three unit conventions).
 - [ ] **No UI toggle for skinning in the headless path.** The stored preference
       is a WINDOW preference: `--export` and `--render` build no window, never
       read it, and take `--skinning` alone. Deliberate — the flag is the
-      headless spelling — but a user who picks DQS in the menu and then scripts
-      an export gets LBS without being told.
+      headless spelling. The direction that hurt is gone as of 2026-09-09: DQS
+      is now the default on both paths, so picking it in the menu and then
+      scripting an export agrees. What is left is the mirror, and it is the
+      rarer choice: a user who picks LINEAR in the menu and then scripts an
+      export gets DQS without being told.
 
 **SMPL / SMPL-X is licence-blocked for us** — see `LICENSING.md` §5.2. The full
 parametric model is research-only; the CC-BY subset deliberately omits the shape
@@ -4169,10 +4172,72 @@ GPU here, or Colab) and it comes back to the owner first.
                   eyes, poses, litspheres) and material slots. Nothing is being
                   renamed there yet, so a registry for them now would be
                   machinery with no name to change — do it when there is one.
-      - [ ] **2. Fix skinning.** Optimised centres of rotation, or dual
-            quaternion at minimum (DQS already ships behind `--skinning dqs`
-            and Settings ▸ Skinning). Kills a large share of the artifacts
+      - [~] **2. Fix skinning.** Optimised centres of rotation, or dual
+            quaternion at minimum. Kills a large share of the artifacts
             correctives would otherwise patch, at zero art cost.
+            - [x] **DQS is the default** (2026-09-09). The owner's stated floor,
+                  taken first because it is a one-token change to a path that
+                  already shipped and tested. What was actually done:
+                  - The default lives in ONE place, `--skinning`'s own option
+                    literal (`src/app/main.cpp`, `skinningOpt`): main() assigns
+                    `gUseDualQuaternion` from the parsed value unconditionally,
+                    so the file-scope initialiser is unobservable — mutated it
+                    and every test still passed. Kept aligned with a comment
+                    saying which of the two is the authority, rather than left
+                    contradicting it. Same for `MainWindow::Impl::skinning`,
+                    for the same measured reason.
+                  - The window's stored preference inverted: only the literal
+                    word `linear` opts out now, so a fresh install with no
+                    stored value reads as DQS (`src/ui/MainWindow.cpp`).
+                  - **Cost, measured**: LBS 0.12 ms → DQS 0.28 ms for 19,158
+                    verts × 4 influences, from `mh_bench` in RELEASE and
+                    repeatable to the printed precision over three runs. 2.3×,
+                    of a number that is 1.7% of a 60 Hz frame. An earlier
+                    scratch probe said 0.151 → 0.412; the release benchmark is
+                    the number that counts and the comments quote it.
+                    A DQS entry now sits beside the LBS one in
+                    `benchmarks/bench_core.cpp`; neither has a Python baseline,
+                    because the reference has no DQS at all.
+                  - **Looked at it**: `--pose tpose` renders differ in 18,641
+                    pixels, densest at (421,217) in a 1024² frame — the
+                    deltoid and the armpit fold. Cropped 4× side by side with
+                    an 8× amplified difference: the DQS deltoid is the fuller
+                    one and the LBS armpit is the pinched one. No new bulge,
+                    no candy-wrapper. Volume preservation is exactly what the
+                    change is for, and it is visible.
+                  - **Parity stays pinned to LBS, explicitly.** The reference's
+                    `Skeleton.skinMesh` accumulates matrices and says so
+                    (`legacy/python/shared/skeleton.py:605-622`) — there is no
+                    reference result for DQS to be compared against. Both
+                    golden files now carry a header comment saying they must
+                    NOT follow the app default. DQS's own correctness is
+                    `tests/unit/test_dqs.cpp`, seven cases.
+                  - **The gate**: `app_skinning_default` exports with no flag
+                    at all and `app_skinning_default_is_dqs` asserts that file
+                    is byte-identical to the `--skinning dqs` export, which
+                    means something only because `app_skinning_dqs_differs`
+                    already proves dqs ≠ linear. Asserting a printed word
+                    instead would survive the default being flipped back.
+                    `tests/files_identical.cmake` is the mirror of
+                    `files_differ.cmake`, with the same empty-file guard.
+                  - **Mutation-tested, gate included.** Option default back to
+                    `linear` → `app_skinning_default_is_dqs` red. Stored-value
+                    read back to its old sense → seven assertions red in the
+                    UI test. Then, with the code still broken, `files_identical
+                    .cmake`'s comparison neutered to `if(FALSE)` → the test
+                    went GREEN, which is what proves the comparison and not
+                    something else is carrying it. Its empty-pair and
+                    missing-file guards exit 1 when fed those inputs.
+                  - **What the Blender harness does NOT tell us.** It still
+                    reports 16/16, and that number cannot move on this change:
+                    `tests/mh_export_fixture.cpp` exports rest geometry with a
+                    live rig and never calls CPU skinning. Evidence the
+                    exporters still work; not evidence about DQS.
+            - [ ] **Optimised centres of rotation** (Le & Hodgins 2016) is the
+                  rung above, and it is a chunk of its own: the naive
+                  precompute is 19,158 vertices × 36,972 triangles of
+                  similarity evaluation, which needs its own budget and its
+                  own cache format.
       - [ ] **3. PSD runtime + synthetic oracle.** Swing-twist decomposition
             (NOT Euler) → one RBF evaluator → a weight vector. Analytic
             corrective function as ground truth, verified AT and BETWEEN

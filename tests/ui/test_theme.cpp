@@ -2216,8 +2216,17 @@ TEST_CASE("the skinning setting persists and is exclusive", "[ui][skinning]") {
                          QStringLiteral("MakeHumanCpp"));
     };
 
-    // A fresh install has no stored value, and LBS is the documented default:
-    // it is what the reference does and what every export already carries.
+    // A fresh install has no stored value, and DUAL QUATERNION is the shipped
+    // default. It keeps a twisted limb's volume where linear blending collapses
+    // it, and on the base mesh that is not academic: a T-pose render differs in
+    // 18,641 pixels, concentrated on the deltoid and the armpit fold, and the
+    // DQS deltoid is the fuller of the two (measured and looked at, this
+    // session). The cost is 0.12 ms -> 0.28 ms for 19,158 vertices x 4
+    // influences, which is 2.3x of a number that is 1.7% of a 60 Hz frame.
+    //
+    // The reference has only linear blending, so every parity fixture stays
+    // pinned to `rig::skinPositions` by name rather than following this
+    // default (tests/golden/test_skinning_parity.cpp, test_body_pose.cpp).
     stored().remove(QStringLiteral("skinning"));
     {
         mh::ui::MainWindow w(MH_SHADER_DIR, mh::ui::TaskRegistry{});
@@ -2227,64 +2236,65 @@ TEST_CASE("the skinning setting persists and is exclusive", "[ui][skinning]") {
         REQUIRE(dqs != nullptr);
         CHECK(linear->isCheckable());
         CHECK(dqs->isCheckable());
-        CHECK(w.skinning() == mh::ui::Skinning::Linear);
-        CHECK(linear->isChecked());
-        CHECK_FALSE(dqs->isChecked());
+        CHECK(w.skinning() == mh::ui::Skinning::DualQuaternion);
+        CHECK(dqs->isChecked());
+        CHECK_FALSE(linear->isChecked());
 
         int emitted           = 0;
-        mh::ui::Skinning seen = mh::ui::Skinning::Linear;
+        mh::ui::Skinning seen = mh::ui::Skinning::DualQuaternion;
         QObject::connect(&w, &mh::ui::MainWindow::skinningChanged, [&](mh::ui::Skinning m) {
             ++emitted;
             seen = m;
         });
 
-        dqs->trigger();
+        linear->trigger();
         CHECK(emitted == 1);
-        CHECK(seen == mh::ui::Skinning::DualQuaternion);
-        CHECK(w.skinning() == mh::ui::Skinning::DualQuaternion);
+        CHECK(seen == mh::ui::Skinning::Linear);
+        CHECK(w.skinning() == mh::ui::Skinning::Linear);
 
         // Exclusive: choosing one unchecks the other, or both read as active.
-        CHECK(dqs->isChecked());
-        CHECK_FALSE(linear->isChecked());
+        CHECK(linear->isChecked());
+        CHECK_FALSE(dqs->isChecked());
 
         // Re-triggering the SAME method must not emit again -- the app re-poses
         // 19,158 vertices on this signal, and a redundant rebuild every time the
         // menu is opened is a real cost.
-        dqs->trigger();
+        linear->trigger();
         CHECK(emitted == 1);
     }
 
     // A second window reads the stored value.
     {
         mh::ui::MainWindow w2(MH_SHADER_DIR, mh::ui::TaskRegistry{});
-        CHECK(w2.skinning() == mh::ui::Skinning::DualQuaternion);
-        CHECK(w2.findChild<QAction*>(QStringLiteral("settings.skinning.dqs"))->isChecked());
+        CHECK(w2.skinning() == mh::ui::Skinning::Linear);
+        CHECK(w2.findChild<QAction*>(QStringLiteral("settings.skinning.linear"))->isChecked());
 
         // `--skinning` is a decision about ONE run: it moves the tick so the
-        // menu cannot claim linear while the run is dual, and it neither emits
-        // (the app has already applied it, and asking it to re-pose a scene it
-        // has not built yet is a crash waiting to happen) nor overwrites the
-        // preference the user chose in the menu.
+        // menu cannot name one method while the run uses the other, and it
+        // neither emits (the app has already applied it, and asking it to
+        // re-pose a scene it has not built yet is a crash waiting to happen)
+        // nor overwrites the preference the user chose in the menu.
         int emitted = 0;
         QObject::connect(&w2, &mh::ui::MainWindow::skinningChanged,
                          [&](mh::ui::Skinning) { ++emitted; });
-        w2.setSkinning(mh::ui::Skinning::Linear);
+        w2.setSkinning(mh::ui::Skinning::DualQuaternion);
         CHECK(emitted == 0);
-        CHECK(w2.skinning() == mh::ui::Skinning::Linear);
-        CHECK(w2.findChild<QAction*>(QStringLiteral("settings.skinning.linear"))->isChecked());
-        CHECK_FALSE(w2.findChild<QAction*>(QStringLiteral("settings.skinning.dqs"))->isChecked());
-        CHECK(stored().value(QStringLiteral("skinning")).toString() == QLatin1String("dqs"));
+        CHECK(w2.skinning() == mh::ui::Skinning::DualQuaternion);
+        CHECK(w2.findChild<QAction*>(QStringLiteral("settings.skinning.dqs"))->isChecked());
+        CHECK_FALSE(
+            w2.findChild<QAction*>(QStringLiteral("settings.skinning.linear"))->isChecked());
+        CHECK(stored().value(QStringLiteral("skinning")).toString() == QLatin1String("linear"));
     }
 
     // ...and a third window still restores what the MENU last chose, not what
     // the flag last showed.
     {
         mh::ui::MainWindow w3(MH_SHADER_DIR, mh::ui::TaskRegistry{});
-        CHECK(w3.skinning() == mh::ui::Skinning::DualQuaternion);
+        CHECK(w3.skinning() == mh::ui::Skinning::Linear);
         // Put the shipped default back, so this test does not leave the
         // developer's own preference flipped and does not depend on run order.
-        w3.findChild<QAction*>(QStringLiteral("settings.skinning.linear"))->trigger();
-        CHECK(w3.skinning() == mh::ui::Skinning::Linear);
+        w3.findChild<QAction*>(QStringLiteral("settings.skinning.dqs"))->trigger();
+        CHECK(w3.skinning() == mh::ui::Skinning::DualQuaternion);
     }
 }
 
