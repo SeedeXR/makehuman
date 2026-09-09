@@ -4536,11 +4536,60 @@ GPU here, or Colab) and it comes back to the owner first.
                     has no name") rather than a JSON parse error.
                   - The base mesh hash quoted in the spec, `e38c060123b5d0db`,
                     was RUN rather than copied from memory.
-            - [ ] **The compiler**: manifest + `.target` payloads → `rbfSolve` →
-                  an mmap-able blob with a header carrying the format version
-                  and the manifest hash, a joint name table, the solved weight
-                  matrix and sparse delta arrays. Versioned cheaply and
-                  aggressively, because a blob can always be rebuilt.
+            - [x] **The compiler and the blob** (2026-09-10).
+                  `core::compileCorrectives` and `readCorrectiveBlob`.
+                  12 cases, 556 assertions.
+                  - **The values solved for are the IDENTITY matrix**, which is
+                    the whole compile-time idea: at example pose i the weight
+                    vector is the i-th basis vector, so a sculpted pose
+                    reproduces exactly what was sculpted. Measured in scratch
+                    BEFORE it was built — at a pose `1.0000 -0.0000 -0.0000
+                    -0.0000`, midway `0.5133 0.5133 0.0000 -0.0000`. The sums
+                    are 1.03–1.05, NOT 1: a Gaussian RBF is not a partition of
+                    unity and nothing claims it is.
+                  - **Host-endian and host-layout on purpose.** A blob is a
+                    cache rebuilt on hash mismatch, not an interchange format;
+                    the magic and version refuse a stale one rather than making
+                    it portable. That is why 12.4 versions the blob cheaply and
+                    the manifest conservatively.
+                  - **Section offsets are COMPUTED from the header's counts,
+                    not stored** — a stored offset pointing outside the buffer
+                    is the classic blob exploit, and there is nothing to
+                    validate if there is nothing to store. No padding is needed
+                    either: the header is 64 bytes, the double sections are
+                    multiples of 8 from there and everything after is a
+                    multiple of 4, so every section lands aligned for ANY
+                    counts. The reader checks anyway.
+                  - **Fourteen mutations. FIVE survived at first and every one
+                    was a shadowed guard, not a decorative one.** Single-field
+                    corruption never reached past the first check, so the four
+                    behind it did nothing observable. Crafted TWO-field
+                    corruptions that keep the computed length right reach each
+                    in turn: poseCount 3→0 with nameBytes 46→239 hits the
+                    zero-count check; dimension 4→8 with totalVerts 6→0 hits
+                    the drivers-vs-dimension cross-check; one NUL overwritten
+                    in the name table hits the name scan; a component byte of 7
+                    hits the component check. All four then die under mutation.
+                  - **The fifth is caught by ASan, not by the debug preset.**
+                    The computed-layout length check is what keeps every later
+                    section read IN BOUNDS; with it removed the name scan reads
+                    off the end. Verified under `macos-arm64-asan`:
+                    heap-buffer-overflow, exit 134. Same shape as the
+                    zero-dimension guard in the Rbf chunk.
+                  - **A guessed number failed again, and the fix is a
+                    measurement worth keeping.** The "unsolvable" case used
+                    radius 900, which this fixture solves perfectly well.
+                    Bisected: three poses at spacing 0.5 solve up to radius
+                    **707,115**. The 25-pose grid in `test_rbf.cpp` collapses
+                    at about 12× its spacing — so "too large a radius" is not a
+                    fixed multiple, it depends on how many poses there are,
+                    which is why the check belongs in the solver rather than as
+                    a rule in the manifest reader.
+                  - Deterministic: compiling the same manifest twice gives the
+                    same bytes, or the cache rebuilds for ever.
+            - [ ] **A compiler entry point** — a `tools/` binary or an app flag
+                  that writes the blob beside the manifest. Deferred with the
+                  app wiring, since neither has content to run on yet.
             - [ ] **The Blender round-trip** the step is named for, and the app
                   wiring, which both need content the compiler produces.
       - [ ] **5. Content**: groom, PBR skin, wrinkle maps THROUGH THE SHARED

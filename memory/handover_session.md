@@ -4,6 +4,105 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-10 (forty-seventh) — Session · **The compiler, and five guards that were only shadowed**
+
+*2026-09-10 — directive 12.4's second and third layers. The manifest was the
+contract; this bakes it into the thing a runtime reads.*
+
+### What landed
+`core::compileCorrectives` and `core::readCorrectiveBlob`. 12 cases, 556
+assertions.
+
+**The values the RBF is solved for are the IDENTITY matrix**, and that is the
+whole compile-time idea: at example pose i the weight vector is the i-th basis
+vector — that pose fully on, every other off — so a sculpted pose reproduces
+exactly what the artist sculpted. Measured in scratch BEFORE building anything:
+
+    at pose 0:  1.0000 -0.0000 -0.0000 -0.0000
+    midway 0-1: 0.5133  0.5133  0.0000 -0.0000    sum 1.0266
+    centre:     0.2635  0.2635  0.2635  0.2635    sum 1.0539
+
+The sums are near 1 and not 1. A Gaussian RBF is not a partition of unity, and
+the header says so rather than implying otherwise.
+
+**The blob is host-endian and host-layout on purpose.** It is a cache rebuilt
+whenever the manifest hash moves, not an interchange format, so portability
+would buy nothing; the magic and version exist to refuse a stale or foreign one.
+That is exactly why 12.4 versions the blob cheaply and the manifest
+conservatively — bumping the blob costs a recompile, bumping the manifest costs
+an author an afternoon.
+
+**Section offsets are computed from the header's counts, never stored.** A
+stored offset pointing outside the buffer is the classic way a blob reader is
+exploited, and there is nothing to validate if there is nothing to store. No
+padding is needed either: the header is 64 bytes, the two double sections are
+whole multiples of 8 from there, and everything after them is a multiple of 4 —
+so every section lands on its own alignment for any counts. The reader checks
+anyway, because a blob is an input.
+
+### Five mutations survived, and not one was decorative
+This is the interesting part. Fourteen mutations; five passed the whole file at
+first. Every one turned out to be a guard that was **shadowed**, not one that
+did nothing — single-field corruption never got past the first check, so the
+four behind it were unreachable.
+
+The fix was crafted TWO-field corruptions that keep the computed length right,
+so the guard under test is the one that fires:
+
+| Craft | Guard it reaches |
+|---|---|
+| poseCount 3→0, nameBytes 46→239 | the zero-count check |
+| dimension 4→8, totalVerts 6→0 | drivers-vs-dimension cross-check |
+| one NUL in the name table → `'x'` | the name-table scan |
+| a component byte set to 7 | the component check |
+
+All four die under mutation now. I checked each was reachable by printing the
+error message from a scratch probe first, rather than assuming.
+
+**The fifth is caught by ASan and not by the debug preset.** The
+computed-layout length check is what keeps every LATER section read in bounds;
+without it the name scan runs off the end. Verified under `macos-arm64-asan`:
+`heap-buffer-overflow`, exit 134. Same shape as the zero-dimension guard two
+chunks ago — a guard whose job is preventing undefined behaviour has nothing to
+assert in a normal build.
+
+And a gate mutation to close the loop: with the crafted-corruption case's
+assertions removed, the drivers-vs-dimension mutation survives again. So that
+case is what carries it.
+
+### A guessed number failed again
+The "cannot be solved" case used radius 900, and this fixture solves that
+perfectly well — the test failed on its first run. Bisected: **three poses at
+spacing 0.5 solve up to radius 707,115** and are refused above.
+
+That is worth keeping rather than just fixing. The 25-pose grid in
+`test_rbf.cpp` collapses at about 12× its spacing; three poses tolerate a
+million times theirs, because a small matrix stays well conditioned far longer.
+"Too large a radius" is not a fixed multiple — it depends on how many example
+poses there are, which is why the check belongs in the solver and not as a rule
+in the manifest reader.
+
+### Two self-review fixes
+The header claimed joint names "point into the buffer; the strings are not
+copied" — false, since `Driver::joint` is a `std::string` and the reader
+constructs one. Corrected, with the reason for reusing the manifest's type
+rather than adding a near-identical view struct. And `<algorithm>` was included
+and unused.
+
+### Gates
+Four presets one at a time, `ALLDONE` read. CI's exact clang-format command
+clean. SonarQube read only after `api/ce/task` reports SUCCESS.
+
+### Next
+Step 4's remaining piece is an entry point — a `tools/` binary or an app flag
+that writes the blob beside its manifest — and it is deferred alongside the app
+wiring, because neither has content to run on yet. That makes **step 5,
+content**, the thing standing between this pipeline and something visible:
+sculpted correctives for a real joint. Everything under it is now built and
+tested: signal, interpolation, application, manifest, compiler, blob.
+
+---
+
 ## 2026-09-09 (forty-sixth) — Session · **The manifest, and a format that is ours**
 
 *2026-09-09 — directive 12 step 4 begins. Its three layers are authoring,

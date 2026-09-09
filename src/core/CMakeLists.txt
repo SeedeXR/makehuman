@@ -15,6 +15,7 @@ add_library(mh_core STATIC
     Target.cpp
     Correctives.cpp
     CorrectiveManifest.cpp
+    CorrectiveBlob.cpp
     Macro.cpp
     TargetIndex.cpp
     Modifier.cpp
