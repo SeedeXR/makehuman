@@ -6,6 +6,7 @@
 #pragma once
 
 #include "makehuman/foundation/Geometry.h"
+#include "makehuman/foundation/Provenance.h"
 #include "makehuman/io/Transform.h"  // Unit, unitScale, Transform
 
 #include <cstdint>
@@ -19,6 +20,12 @@
 namespace mh::io {
 
 struct ObjWriteOptions {
+    /// What this file says about itself: the product version, the
+    /// content-format version and the base topology hash. Default-constructed
+    /// means "not supplied" and writes only the format's own writer name, so
+    /// every existing caller and test keeps the string it had.
+    foundation::Provenance provenance{};
+
     Unit unit{Unit::Decimeter};
     /// Extra scale on top of the unit conversion.
     float scale{1.0F};

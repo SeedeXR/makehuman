@@ -176,7 +176,7 @@ std::expected<ObjWriteResult, ObjWriteError> writeObjScene(const std::filesystem
     std::string buf;
     buf.reserve(1u << 20);
 
-    buf += "# Wavefront OBJ written by MakeHuman\n";
+    buf += "# Wavefront OBJ written by MakeHuman" + options.provenance.stamp() + "\n";
     buf += "# units: ";
     buf += unitName(options.unit);
     buf += '\n';
@@ -347,7 +347,7 @@ std::expected<ObjWriteResult, ObjWriteError> writeObjScene(const std::filesystem
             return src.filename().string();
         };
 
-        mtl << "# MTL written by MakeHuman\n";
+        mtl << "# MTL written by MakeHuman" << options.provenance.stamp() << "\n";
         for (const foundation::MaterialDesc* material : materials) {
             mtl << "newmtl " << material->name << '\n';
             mtl << "Ka " << fixed(material->ambient.x, 6) << ' ' << fixed(material->ambient.y, 6)

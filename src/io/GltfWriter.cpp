@@ -760,7 +760,8 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
     // ---- JSON -------------------------------------------------------------
     std::string j;
     j.reserve(2048);
-    j += R"({"asset":{"version":"2.0","generator":"MakeHuman C++ glTF writer"},)";
+    j += R"({"asset":{"version":"2.0","generator":"MakeHuman C++ glTF writer)" +
+         jsonEscape(options.provenance.stamp()) + R"("},)";
     // REQUIRED, not merely used. The geometry exists in no other form in the
     // file, so a consumer without a Draco decoder has to refuse it rather than
     // open an empty scene -- which is what `extensionsUsed` alone would invite.

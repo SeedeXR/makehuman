@@ -199,7 +199,7 @@ Node doubleProperty(std::string_view name, double value) {
     return p;
 }
 
-Node headerExtension() {
+Node headerExtension(const FbxWriteOptions& options) {
     Node h("FBXHeaderExtension");
     Node v("FBXHeaderVersion");
     v.addI32(1003);
@@ -230,7 +230,7 @@ Node headerExtension() {
     h.add(std::move(stamp));
 
     Node c("Creator");
-    c.addString("MakeHuman C++ FBX writer");
+    c.addString("MakeHuman C++ FBX writer" + options.provenance.stamp());
     h.add(std::move(c));
     return h;
 }
@@ -1188,7 +1188,7 @@ std::expected<FbxWriteResult, FbxWriteError> writeFbxScene(const std::filesystem
         objects.add(bindPose(allocate(), meshModelIds, jointModelIds, bindGlobal));
     }
 
-    headerExtension().writeTo(out);
+    headerExtension(options).writeTo(out);
     // Maya and assimp both write these three between the header extension and
     // the settings. Cheap, and the kind of thing a strict reader looks for.
     Node fileId("FileId");
@@ -1198,7 +1198,7 @@ std::expected<FbxWriteResult, FbxWriteError> writeFbxScene(const std::filesystem
     created.addString(kCreationTime);
     created.writeTo(out);
     Node creator("Creator");
-    creator.addString("MakeHuman C++ FBX writer");
+    creator.addString("MakeHuman C++ FBX writer" + options.provenance.stamp());
     creator.writeTo(out);
 
     globalSettings(options).writeTo(out);

@@ -8,6 +8,7 @@
 #pragma once
 
 #include "makehuman/foundation/Geometry.h"
+#include "makehuman/foundation/Provenance.h"
 
 #include "makehuman/io/ObjWriter.h"  // Unit
 
@@ -20,6 +21,12 @@
 namespace mh::io {
 
 struct GltfWriteOptions {
+    /// What this file says about itself: the product version, the
+    /// content-format version and the base topology hash. Default-constructed
+    /// means "not supplied" and writes only the format's own writer name, so
+    /// every existing caller and test keeps the string it had.
+    foundation::Provenance provenance{};
+
     /// glTF's unit is the **metre**, and MakeHuman's is the decimetre, so the
     /// default converts. Writing decimetres would make every model ten times
     /// too large in every engine that honours the spec.

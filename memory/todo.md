@@ -4096,12 +4096,40 @@ GPU here, or Colab) and it comes back to the owner first.
       answer to "blocked on you" was: *"you aren't blocked on content, you're
       blocked on having decided the contracts."*
       The owner's order of work, which replaces the old M9 ordering:
-      - [ ] **1. Freeze contracts.** Canonical ID registry, the two naming
-            tables as DATA files, base topology hash, and version injection
-            into FBX/glTF/USD/OBJ — **two** numbers, application version and
-            content-format version. Includes the `--workspace Materials`
-            rename as a modern-profile-only name, legacy default. Small, and
-            everything else depends on it. **This is the next chunk.**
+      - [ ] **1. Freeze contracts.** Half done 2026-09-09.
+            - [x] **Base topology hash** — `core::topologyHash`, FNV-1a written
+                  out rather than `std::hash` because the number goes into
+                  files and has to be identical on every platform. Positions
+                  are deliberately EXCLUDED: every character is the base mesh
+                  with different positions, so a hash that moved with the
+                  sliders would mark every body incompatible with every other.
+                  In go the counts, the vertex and UV index arrays, the
+                  per-face group ids and the group NAMES — `staticFaceMask`
+                  hides groups by name, so a rename changes what is visible
+                  without touching an index. The base mesh is
+                  `0xe38c060123b5d0db`, written down so an edit to
+                  `data/3dobjs/base.obj` fails with a name.
+            - [x] **Version injection, two numbers**, into all four formats.
+                  `foundation::Provenance` and ONE `stamp()`, because the four
+                  writers already said "MakeHuman C++ glTF writer", "…FBX
+                  writer", "…USD writer" and "Wavefront OBJ written by
+                  MakeHuman" — four spellings of one fact, which is the drift
+                  this exists to stop. `kContentFormatVersion = 1` is a
+                  separate constant from the product version and answers a
+                  different question: not "which build wrote this" but "what do
+                  the bytes MEAN".
+                  A DECIMATED export stamps the BASE topology, not its own —
+                  the number says what the deltas and weights in the file are
+                  indexed AGAINST, and an LOD is still indexed against the
+                  base. Tested, and the mutation that hashes the written mesh
+                  instead is killed by it.
+                  This also closes the long-open M10 item "exported assets
+                  cannot be traced to a build".
+            - [ ] **Canonical ID registry and the two naming tables as DATA
+                  files**, with `--naming=modern` opt-in and legacy default,
+                  plus the `--workspace Materials` rename as a modern-only
+                  name. **This is the next chunk**, and it is the CLI-visible
+                  half.
       - [ ] **2. Fix skinning.** Optimised centres of rotation, or dual
             quaternion at minimum (DQS already ships behind `--skinning dqs`
             and Settings ▸ Skinning). Kills a large share of the artifacts
@@ -4415,7 +4443,14 @@ GPU here, or Colab) and it comes back to the owner first.
         change, on the unfixed binary, because the empty override fell through
         to the compiled default and the assets were found after all. Decorative
         gate number three. They only went red once the override was obeyed.
-- [ ] **Exported assets cannot be traced to a build.** `.mhm` carries the product
+- [x] **Exported assets can be traced to a build** (2026-09-09). Every format
+      now carries the product version, the content-format version and the base
+      topology hash, from one `foundation::Provenance::stamp()`. The cost this
+      entry worried about — "it makes every export byte-differ on a version
+      bump" — is real and accepted: owner directive 12.4 asks for both numbers
+      in every export, and no byte-golden comparison depends on the header.
+      *Original note follows.*
+- [ ] ~~**Exported assets cannot be traced to a build.**~~ `.mhm` carries the product
       version; FBX `Creator`, glTF `generator`, USD `doc` and the OBJ/MTL comment
       carry the product NAME only. Adding the version there is ~4 one-line
       changes and no test pins those strings today — but it makes every export

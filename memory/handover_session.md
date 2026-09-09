@@ -4,6 +4,85 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-09 (thirty-ninth) — Session · **Every export says what it is**
+
+*2026-09-09 — owner directive 12, step 1: freeze contracts. Two of its four
+parts, the two that are provenance stamped into files.*
+
+### What landed
+- **`core::topologyHash`** — the identity of a mesh's topology as one 64-bit
+  number. FNV-1a written out rather than `std::hash`, because the value goes
+  INTO files and has to be identical on every platform and standard library.
+- **`foundation::Provenance` + one `stamp()`** — the product version, the
+  content-format version and the base topology hash, in one spelling, in all
+  four formats.
+
+```
+# Wavefront OBJ written by MakeHuman 2.0.0 (content-format 1, topology e38c060123b5d0db)
+  doc = "MakeHuman C++ USD writer 2.0.0 (content-format 1, topology e38c060123b5d0db)"
+  "generator": "MakeHuman C++ glTF writer 2.0.0 (content-format 1, topology e38c060123b5d0db)"
+  Creator: MakeHuman C++ FBX writer 2.0.0 (content-format 1, topology e38c060123b5d0db)
+```
+
+They were four separate strings saying only "MakeHuman C++ <format> writer" —
+four spellings of one fact, which is exactly the drift a shared `stamp()`
+prevents. The `.mtl` gets it too: it is a file a consumer may keep without the
+`.obj`.
+
+### The two design decisions worth the words
+**Positions are excluded from the hash.** Every character IS the base mesh with
+different positions, so a hash that moved with the sliders would mark every body
+incompatible with every other. What goes in is what a delta or a face mask is
+expressed in terms of: counts, the vertex AND UV index arrays, per-face group
+ids, and the group NAMES — `staticFaceMask` hides groups by name, so a rename
+changes what is visible without touching a single index.
+
+**A decimated export stamps the BASE topology, not its own.** The number's job
+is to say what the deltas, weights and correctives in the file are indexed
+AGAINST, and an LOD is still indexed against the base. Hashing the mesh being
+written would give every level a different number and make the field useless for
+the one thing it is for.
+
+`kContentFormatVersion = 1` is a separate constant from the product version and
+answers a different question: not "which build wrote this" but "what do the
+bytes MEAN". A rebuild changes the first and must not change the second.
+
+### Mutations: 7 run, 7 killed, 4 against the gate
+Positions folded into the hash (2 assertions — the "moving vertices changes
+nothing" test and the golden); the group NAMES dropped; the UV indices dropped.
+Gate: a decimated export stamping its own topology (the test written for exactly
+that); the OBJ writer no longer stamping (3 tests); the content-format number
+made to follow the product version (7 tests); and the hash spelled without
+padding — which **passed every application test**, because the base mesh's hash
+happens to have no leading zero, and was killed only by the unit case that
+stamps `topologyHash = 1`.
+
+Two mutations first came back green from a stale binary with `-Werror` having
+failed the build (an unused function, then an unused variable). Read the build
+line before the ctest line.
+
+### Gates
+797/797 in debug, release, ASan and TSan, 0 warnings, `ALLDONE` read. CI's exact
+clang-format command clean. `audit_version`, `audit_headless` and
+`audit_licences` all re-run — the version audit matters here, since the
+expectation in `tests/CMakeLists.txt` interpolates `${PROJECT_VERSION}` rather
+than repeating the number.
+
+### Also closed
+"Exported assets cannot be traced to a build", open since 2026-09-07. Its
+objection — "it makes every export byte-differ on a version bump" — is real and
+now accepted: directive 12.4 asks for both numbers in every export, and no
+byte-golden comparison depends on a header line.
+
+### Next
+The other half of step 1, and it is the CLI-visible half: the **canonical ID
+registry and the two naming tables as DATA files**, `--naming=modern` opt-in
+with legacy default, and the `--workspace Materials` rename as a modern-only
+name. Resolution order per directive 12.1: the active profile's table, fall back
+to the other, warn once — so old- and new-named assets coexist in one workspace.
+
+---
+
 ## 2026-09-09 (thirty-eighth) — Session · **The headless contract, and the ethnicity exception**
 
 *2026-09-09 — M9's remainder was blocked or content-bound, so this is M10's

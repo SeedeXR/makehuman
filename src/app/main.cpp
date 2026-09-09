@@ -19,6 +19,7 @@
 #include "makehuman/core/Symmetry.h"
 #include "makehuman/core/Target.h"
 #include "makehuman/core/TargetIndex.h"
+#include "makehuman/core/TopologyHash.h"
 #include "makehuman/foundation/DataDir.h"
 #include "makehuman/foundation/Version.h"
 #include "makehuman/io/BvhWriter.h"
@@ -1285,11 +1286,15 @@ std::optional<mh::rig::SkinData> exportSkin(const PoseRig& rig, const mh::core::
 ///        `GltfSceneEntry` has a morphTargets field and `io::SceneEntry` does
 ///        not, so the assimp and USD paths say what they are dropping rather
 ///        than writing an expressionless mesh in silence.
+/// @param provenance what the file says about itself: the product version, the
+///        content-format version and the BASE topology hash. Built once by the
+///        caller and handed to all four writers, so the four formats cannot
+///        drift into four spellings of the same three facts.
 bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
                 const mh::foundation::RenderView& body, const std::map<QString, WornProxy>& worn,
                 std::span<const uint8_t> bodyMask, const mh::foundation::SkinView* skin,
-                const PoseRig& rig, std::span<const mh::foundation::MorphTarget> morphs = {},
-                bool draco = false) {
+                const PoseRig& rig, const mh::foundation::Provenance& provenance,
+                std::span<const mh::foundation::MorphTarget> morphs = {}, bool draco = false) {
     const std::string ext = lowerExtension(path);
 
     // OBJ is the only format left with no blendshape channel -- its format
@@ -1337,11 +1342,14 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     // is why this is four assignments rather than one.
     mh::io::ObjWriteOptions objOpts;
     objOpts.feetOnGround = true;
+    objOpts.provenance   = provenance;
     mh::io::GltfWriteOptions gltfOpts;
     gltfOpts.feetOnGround = true;
     gltfOpts.draco        = draco;
+    gltfOpts.provenance   = provenance;
     mh::io::UsdWriteOptions usdOpts;
     usdOpts.feetOnGround = true;
+    usdOpts.provenance   = provenance;
     mh::io::SceneExportOptions sceneOpts;
     sceneOpts.feetOnGround = true;
 
@@ -1478,6 +1486,7 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
         }
         mh::io::FbxWriteOptions fbxOpts;
         fbxOpts.feetOnGround = true;
+        fbxOpts.provenance   = provenance;
         const auto r         = mh::io::writeFbxScene(path, scene, fbxOpts);
         return report(r ? std::string{} : r.error().message());
     }
@@ -2450,9 +2459,15 @@ int main(int argc, char** argv) {
         // An EMPTY mask when decimating: the mask is already baked into the
         // geometry, and handing the old one over would index 13,378 faces of a
         // mesh that now has a few thousand.
-        const bool ok = exportMesh(outPath, lod ? *lod : displayMesh(), written.view(), wornProxies,
-                                   lod ? std::span<const uint8_t>{} : std::span(bodyMask),
-                                   skinView ? &*skinView : nullptr, rig, morphs, wantDraco);
+        // The BASE mesh's topology, not the one being written: a decimated LOD
+        // has its own, and the number's job is to say which topology the
+        // deltas, weights and correctives in the file are INDEXED AGAINST.
+        const mh::foundation::Provenance provenance{.application  = mh::foundation::kVersion,
+                                                    .topologyHash = mh::core::topologyHash(*mesh)};
+        const bool ok =
+            exportMesh(outPath, lod ? *lod : displayMesh(), written.view(), wornProxies,
+                       lod ? std::span<const uint8_t>{} : std::span(bodyMask),
+                       skinView ? &*skinView : nullptr, rig, provenance, morphs, wantDraco);
 
         // Put the character back the way it was. The CLI exits straight after
         // this so it never noticed, but File > Export happens with the window

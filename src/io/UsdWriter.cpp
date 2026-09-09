@@ -167,7 +167,7 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
 
     out << "#usda 1.0\n(\n";
     out << "    defaultPrim = \"" << options.primName << "\"\n";
-    out << "    doc = \"MakeHuman C++ USD writer\"\n";
+    out << "    doc = \"MakeHuman C++ USD writer" << options.provenance.stamp() << "\"\n";
     out << "    metersPerUnit = " << num(options.metersPerUnit()) << "\n";
     // USD stores the up axis, so a consumer never has to guess it from the
     // geometry the way a BVH reader must.

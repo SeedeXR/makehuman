@@ -15,6 +15,8 @@ add_executable(mh_tests
     unit/test_render_mesh.cpp
     unit/test_subdivider.cpp
     unit/test_decimator.cpp
+    unit/test_topology_hash.cpp
+    unit/test_provenance.cpp
     unit/test_target.cpp
     unit/test_macro.cpp
     unit/test_target_index.cpp
@@ -963,6 +965,71 @@ if(MH_HAVE_RENDER)
              --export ${CMAKE_CURRENT_BINARY_DIR}/app_never_chain.glb)
     set_tests_properties(app_lod_bad_ratio PROPERTIES
         PASS_REGULAR_EXPRESSION "--lod wants a fraction in")
+
+    # ---------------------------------------------------------------------
+    # Provenance: every export says what it is (owner directive 12.4).
+    #
+    # Three facts, one spelling, four formats: the product version, the
+    # CONTENT-FORMAT version, and the base topology hash. They were four
+    # different strings saying only "MakeHuman C++ <format> writer", which is
+    # the drift this exists to stop.
+    #
+    # `${PROJECT_VERSION}` is interpolated so the expectation derives from
+    # /VERSION too -- a literal here would be the second declaration
+    # `tools/audit_version.py` exists to forbid.
+    # ---------------------------------------------------------------------
+    set(MH_STAMP "${PROJECT_VERSION} (content-format 1, topology e38c060123b5d0db)")
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/prov)
+    foreach(fmt obj glb usda fbx)
+        add_test(NAME app_provenance_${fmt} COMMAND makehuman
+                 --export ${CMAKE_CURRENT_BINARY_DIR}/prov/body.${fmt})
+        set_tests_properties(app_provenance_${fmt} PROPERTIES
+            FIXTURES_SETUP app_prov_${fmt}
+            FAIL_REGULAR_EXPRESSION "export failed")
+        add_test(NAME app_provenance_${fmt}_stamped COMMAND ${CMAKE_COMMAND}
+                 -DFILE=${CMAKE_CURRENT_BINARY_DIR}/prov/body.${fmt}
+                 "-DKEYS=${MH_STAMP}"
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+        set_tests_properties(app_provenance_${fmt}_stamped PROPERTIES
+            FIXTURES_REQUIRED app_prov_${fmt})
+    endforeach()
+
+    # The .mtl too: it is a separate file a consumer may keep without the .obj.
+    add_test(NAME app_provenance_mtl COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/prov/body.mtl "-DKEYS=${MH_STAMP}"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_provenance_mtl PROPERTIES FIXTURES_REQUIRED app_prov_obj)
+
+    # **A DECIMATED export carries the BASE topology hash, not its own.** The
+    # number's job is to say which topology the deltas, weights and correctives
+    # in the file are INDEXED AGAINST, and an LOD is still indexed against the
+    # base. Hashing the mesh being written would give every level a different
+    # number and make the field useless for exactly the thing it is for.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/prov_lod)
+    add_test(NAME app_provenance_lod COMMAND makehuman --decimate 0.25
+             --export ${CMAKE_CURRENT_BINARY_DIR}/prov_lod/body.obj)
+    set_tests_properties(app_provenance_lod PROPERTIES
+        FIXTURES_SETUP app_prov_lod FAIL_REGULAR_EXPRESSION "export failed")
+    add_test(NAME app_provenance_lod_uses_the_base_topology COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/prov_lod/body.obj "-DKEYS=${MH_STAMP}"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_provenance_lod_uses_the_base_topology PROPERTIES
+        FIXTURES_REQUIRED app_prov_lod)
+
+    # ...and a MORPHED character carries the same hash as an unmorphed one.
+    # Positions are not topology; if they were, every character would claim to
+    # be incompatible with every other.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/prov_morph)
+    add_test(NAME app_provenance_morphed COMMAND makehuman
+             --set "macrodetails/Gender=0.9" --set "macrodetails-universal/Muscle=0.8"
+             --export ${CMAKE_CURRENT_BINARY_DIR}/prov_morph/body.obj)
+    set_tests_properties(app_provenance_morphed PROPERTIES
+        FIXTURES_SETUP app_prov_morph FAIL_REGULAR_EXPRESSION "export failed")
+    add_test(NAME app_provenance_morph_keeps_the_topology COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/prov_morph/body.obj "-DKEYS=${MH_STAMP}"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_provenance_morph_keeps_the_topology PROPERTIES
+        FIXTURES_REQUIRED app_prov_morph)
 
     # Symmetry, end to end. The menu commands cannot be driven from a test --
     # `symmetryRequested` is wired in main.cpp -- so `--symmetry` is what makes

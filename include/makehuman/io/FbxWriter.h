@@ -13,6 +13,7 @@
 #pragma once
 
 #include "makehuman/foundation/Geometry.h"
+#include "makehuman/foundation/Provenance.h"
 #include "makehuman/io/Transform.h"
 
 #include <cstdint>
@@ -24,6 +25,12 @@
 namespace mh::io {
 
 struct FbxWriteOptions {
+    /// What this file says about itself: the product version, the
+    /// content-format version and the base topology hash. Default-constructed
+    /// means "not supplied" and writes only the format's own writer name, so
+    /// every existing caller and test keeps the string it had.
+    foundation::Provenance provenance{};
+
     /// FBX's conventional unit is the centimetre, and every DCC assumes it
     /// unless the file says otherwise. `GlobalSettings.UnitScaleFactor` says
     /// otherwise, and is written to match.

@@ -2,6 +2,7 @@
 #pragma once
 
 #include "makehuman/foundation/Geometry.h"
+#include "makehuman/foundation/Provenance.h"
 #include "makehuman/io/Transform.h"  // Unit, unitScale, Transform
 
 #include <expected>
@@ -24,6 +25,12 @@ namespace mh::io {
 /// implementation with no stake in our conventions.
 
 struct UsdWriteOptions {
+    /// What this file says about itself: the product version, the
+    /// content-format version and the base topology hash. Default-constructed
+    /// means "not supplied" and writes only the format's own writer name, so
+    /// every existing caller and test keeps the string it had.
+    foundation::Provenance provenance{};
+
     /// USD records real-world scale explicitly, so unlike OBJ there is no
     /// ambiguity to inherit. Derived from `unit` rather than set separately:
     /// two independent knobs for the same physical fact is how a file ends up
