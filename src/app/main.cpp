@@ -292,9 +292,18 @@ std::filesystem::path& expressionFileRef() {
 ///
 /// A name the table does not know is returned unchanged, so the window reports
 /// "no such workspace preset" with what the user actually typed.
-QString resolveWorkspaceName(mh::foundation::NamingProfile profile, const QString& name) {
+/// The shipped workspace name table, read once.
+///
+/// One read for two consumers -- this resolver and the window's menu labels --
+/// so the file cannot be present for one and missing for the other.
+const std::expected<mh::foundation::NameTable, mh::foundation::NameError>& workspaceNames() {
     static const auto table =
         mh::foundation::loadNameTable(dataDir() / "naming" / "workspace.names");
+    return table;
+}
+
+QString resolveWorkspaceName(mh::foundation::NamingProfile profile, const QString& name) {
+    const auto& table = workspaceNames();
     if (!table) {
         // The table is data and can be missing; the presets still work under
         // their legacy names, which is the default profile anyway.
@@ -3346,6 +3355,18 @@ int main(int argc, char** argv) {
         }
         writeTo(documentPath);
     });
+
+    // Before restoreWorkspace and before show(): the menu is built in the
+    // constructor with the legacy labels, and this is what makes the profile
+    // visible in the half of the application a user actually reads.
+    if (workspaceNames()) {
+        const QStringList shown = window.setWorkspaceNames(*workspaceNames(), namingProfile);
+        // The NAMES, not a count: it tells the user exactly what the Workspace
+        // menu will read, and it is the only thing here a mutation cannot fake
+        // -- "5 workspace names" passed on a hardcoded 5.
+        std::printf("naming: %s profile (%s)\n", namingName.toStdString().c_str(),
+                    shown.join(QStringLiteral(", ")).toStdString().c_str());
+    }
 
     window.restoreWorkspace();
     // After restoreWorkspace, so an explicit preset wins over the saved layout.

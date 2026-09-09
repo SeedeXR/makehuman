@@ -4,6 +4,71 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-09 (forty-first) — Session · **The menu reads the profile**
+
+*2026-09-09 — finishing directive 12 step 1's naming half. The CLI resolved
+both spellings already; the menu still said "Materials" whatever the profile,
+and the menu is the half a user actually reads.*
+
+### What landed
+`MainWindow::setWorkspaceNames(table, profile)` relabels the Workspace actions.
+Under `--naming modern`, ⌘3 reads **Assets** where legacy reads **Materials** —
+everything else identical.
+
+**Looked at it.** Grabbed the open Workspace menu to PNG in both profiles and
+compared: same five items, same ⌘1–⌘5, same Saved Layouts / Save Workspace As… /
+Reset Workspace below the separator, one word different. A count in a log could
+not have told me the accelerators survived.
+
+The ui/app boundary needed no thought after all: the table lives in
+`foundation`, which `ui` may depend on, so the app reads the file **once** and
+hands the table down. One read, two consumers.
+
+**The profile moves the label and nothing else.** Each action's `objectName`
+stays `workspace.<legacy name>` — `saveState` keys on it and the icon audit
+looks it up — and `applyWorkspacePreset` still takes that legacy name. Both
+pinned; so is flipping back, because modern must not be a one-way door.
+
+### Two mutations survived and both were mine to fix
+**The count was a fakeable gate.** `setWorkspaceNames` returned how many labels
+it set, the app printed `naming: modern profile, 5 workspace names`, and a
+mutation replacing the call with a hardcoded `5` **passed every test**. It now
+returns the LABELS and the app prints them:
+`naming: modern profile (Modelling, Rigging, Assets, Export, Tabbed)`. Faking
+that requires reproducing the list, and the legacy and modern tests demand
+different lists — so the only way to satisfy both is to actually relabel with
+the profile. Re-run, the mutation dies.
+
+**A comment of mine was wrong.** It said resolving the preset in the ACTIVE
+profile "would miss every row whose modern name differs". It would not:
+`resolve` falls back to the other column, so "Materials" is found under modern
+too, and the mutation proved it changes nothing. The explicit legacy lookup
+stays — relying on the fallback would make a deliberate lookup read as an
+accident, and the fallback is there for what a USER typed — but the comment now
+says that instead of something false.
+
+Killed outright: the objectName following the label (2 assertions), and the
+shortcut cleared by relabelling.
+
+### Gates
+815/815 in debug, release, ASan and TSan, 0 warnings, `ALLDONE` read. CI's exact
+clang-format command clean. `audit_headless` re-run — `ui` gained a
+`foundation` include, which is the legal direction.
+
+### Next
+Step 1 is done except the domains nothing is renaming yet: asset stems (skins,
+rigs, eyes, poses, litspheres) and material slots. A registry for them now
+would be machinery with no name to change, so it waits for one.
+
+That leaves **directive 12 step 2: fix skinning** — optimised centres of
+rotation, or DQS as the floor. DQS already ships behind `--skinning dqs` and
+Settings ▸ Skinning, so the work is making it the default or going further, and
+the owner's reason for putting it before the corrective runtime is that it
+"kills a large share of the artifacts you'd otherwise author correctives to
+patch, at zero art cost".
+
+---
+
 ## 2026-09-09 (fortieth) — Session · **Naming profiles, and the table that is data**
 
 *2026-09-09 — the other half of directive 12 step 1, the CLI-visible one.*

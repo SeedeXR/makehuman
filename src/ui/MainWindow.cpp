@@ -917,6 +917,31 @@ QString MainWindow::workspaceDirectory() {
            QStringLiteral("/workspaces");
 }
 
+QStringList MainWindow::setWorkspaceNames(const foundation::NameTable& table,
+                                          foundation::NamingProfile profile) {
+    QStringList shownNames;
+    for (const WorkspacePreset& preset : workspacePresets()) {
+        QAction* action = findChild<QAction*>(QStringLiteral("workspace.") + preset.name);
+        if (action == nullptr) continue;
+        // The preset list is keyed by LEGACY names, so the legacy column is
+        // what it is looked up in. Resolving in the ACTIVE profile would
+        // happen to work -- `resolve` falls back to the other column, so
+        // "Materials" is found under the modern profile too -- and a mutation
+        // confirmed it changes nothing. The column is named anyway: relying on
+        // the fallback here would make a deliberate lookup read as an
+        // accident, and the fallback is there for what a USER typed.
+        const auto hit = foundation::resolve(table, foundation::NamingProfile::Legacy,
+                                             preset.name.toStdString());
+        if (!hit) continue;
+        const auto shown = foundation::displayName(table, profile, hit->canonical);
+        if (!shown) continue;
+        const QString label = QString::fromStdString(std::string(*shown));
+        action->setText(label);
+        shownNames.push_back(label);
+    }
+    return shownNames;
+}
+
 bool MainWindow::applyWorkspacePreset(const QString& name) {
     const auto& presets = workspacePresets();
     const auto found =

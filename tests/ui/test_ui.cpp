@@ -6,6 +6,7 @@
 // draws is checked by the render tests and by `makehuman --screenshot`, which
 // needs a real device and so cannot run on a build box.
 #include "makehuman/core/SliderLayout.h"
+#include "makehuman/foundation/Naming.h"
 #include "makehuman/ui/MainWindow.h"
 #include "makehuman/ui/ModifierPanel.h"
 #include "makehuman/ui/MouseBindings.h"
@@ -23,6 +24,7 @@
 #include <vector>
 
 #include <QAccessible>
+#include <QAction>
 #include <QApplication>
 #include <QDockWidget>
 #include <QFontMetrics>
@@ -925,4 +927,88 @@ TEST_CASE("multi-value edits of different keys never merge", "[ui][undo]") {
         new mh::ui::MultiValueChangeCommand(QStringLiteral("Edit"), std::move(other), apply, 3));
 
     CHECK(stack.count() == 2);
+}
+
+// ---------------------------------------------------------------------------
+// Naming profiles reach the MENU (owner directive 12.1).
+//
+// The CLI resolves `--workspace Assets` and `--workspace Materials` to the same
+// preset already. The menu still said "Materials" whatever the profile, which
+// is the half a user actually reads -- and the directive's rule is that the
+// profile affects what is DISPLAYED and never what is persisted.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+mh::foundation::NameTable workspaceNameTable() {
+    auto table = mh::foundation::loadNameTable(std::filesystem::path(MH_DATA_DIR) / "naming" /
+                                               "workspace.names");
+    REQUIRE(table.has_value());
+    return std::move(*table);
+}
+
+QAction* presetAction(const mh::ui::MainWindow& w, const char* legacyName) {
+    return w.findChild<QAction*>(QStringLiteral("workspace.") + QLatin1String(legacyName));
+}
+
+}  // namespace
+
+TEST_CASE("the workspace menu shows the legacy names by default", "[ui][naming]") {
+    // Legacy is the default so nothing existing breaks; a user who never asks
+    // for a profile sees exactly what they saw before.
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
+    QAction* assets = presetAction(w, "Materials");
+    REQUIRE(assets != nullptr);
+    CHECK(assets->text() == QStringLiteral("Materials"));
+}
+
+TEST_CASE("the modern profile relabels the menu without moving identity", "[ui][naming]") {
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
+    const auto table = workspaceNameTable();
+
+    QAction* assets = presetAction(w, "Materials");
+    REQUIRE(assets != nullptr);
+    const QKeySequence shortcut = assets->shortcut();
+    REQUIRE_FALSE(shortcut.isEmpty());
+
+    (void)w.setWorkspaceNames(table, mh::foundation::NamingProfile::Modern);
+
+    CHECK(assets->text() == QStringLiteral("Assets"));
+    // The objectName is IDENTITY -- `saveState` keys on it and the icon audit
+    // looks it up -- so it must not follow the label.
+    CHECK(assets->objectName() == QStringLiteral("workspace.Materials"));
+    // And relabelling must not disturb the accelerator.
+    CHECK(assets->shortcut() == shortcut);
+}
+
+TEST_CASE("a name that is the same in both profiles is left alone", "[ui][naming]") {
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
+    (void)w.setWorkspaceNames(workspaceNameTable(), mh::foundation::NamingProfile::Modern);
+    QAction* modelling = presetAction(w, "Modelling");
+    REQUIRE(modelling != nullptr);
+    CHECK(modelling->text() == QStringLiteral("Modelling"));
+}
+
+TEST_CASE("the profile flips back", "[ui][naming]") {
+    // "Anyone migrating flips one flag and can flip it back." A relabelling
+    // that only went one way would make modern a one-way door.
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
+    const auto table = workspaceNameTable();
+    QAction* assets  = presetAction(w, "Materials");
+    REQUIRE(assets != nullptr);
+
+    (void)w.setWorkspaceNames(table, mh::foundation::NamingProfile::Modern);
+    REQUIRE(assets->text() == QStringLiteral("Assets"));
+    (void)w.setWorkspaceNames(table, mh::foundation::NamingProfile::Legacy);
+    CHECK(assets->text() == QStringLiteral("Materials"));
+}
+
+TEST_CASE("a relabelled preset still applies", "[ui][naming]") {
+    // The window keys presets by their legacy name -- that is what
+    // `workspacePresets()` and every saved workspace file say. Relabelling the
+    // menu must not touch that, or the modern profile would break the thing it
+    // renames.
+    mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
+    (void)w.setWorkspaceNames(workspaceNameTable(), mh::foundation::NamingProfile::Modern);
+    CHECK(w.applyWorkspacePreset(QStringLiteral("Materials")));
 }

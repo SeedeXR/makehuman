@@ -4147,12 +4147,28 @@ GPU here, or Colab) and it comes back to the owner first.
                   - The `--workspace Materials` rename the owner asked for is
                     IN THE DATA, not in code: legacy keeps `Materials`, modern
                     reads `Assets`, and the canonical id is `workspace.assets`.
-            - [ ] **The registry's other domains.** Only workspace presets go
-                  through the resolver today. Asset stems (skins, rigs, eyes,
-                  poses, litspheres), material slots and the Workspace MENU
-                  labels are the rest — the menu is the one that needs the
-                  ui/app boundary thought through, since `ui` is Apache and may
-                  not read an AGPL registry.
+            - [x] **The MENU reads the profile too** (2026-09-09).
+                  `MainWindow::setWorkspaceNames(table, profile)` relabels the
+                  Workspace actions; under `--naming modern` ⌘3 reads **Assets**
+                  where legacy reads **Materials**, and everything else is
+                  identical. **Looked at both**: the menus were grabbed to PNG
+                  and compared — same five items, same ⌘1–⌘5, one word
+                  different.
+                  The ui/app boundary needed no thought in the end: the table
+                  lives in `foundation`, which `ui` may depend on, so the app
+                  reads the file once and hands the table down.
+                  - **The profile moves the LABEL and nothing else.** Each
+                    action's `objectName` stays `workspace.<legacy name>` —
+                    `saveState` keys on it and the icon audit looks it up — and
+                    `applyWorkspacePreset` still takes that legacy name. Both
+                    pinned, and the mutation that lets the objectName follow the
+                    label is killed.
+                  - It flips back: relabelling is idempotent in either
+                    direction, so modern is not a one-way door.
+            - [ ] **The registry's other domains**: asset stems (skins, rigs,
+                  eyes, poses, litspheres) and material slots. Nothing is being
+                  renamed there yet, so a registry for them now would be
+                  machinery with no name to change — do it when there is one.
       - [ ] **2. Fix skinning.** Optimised centres of rotation, or dual
             quaternion at minimum (DQS already ships behind `--skinning dqs`
             and Settings ▸ Skinning). Kills a large share of the artifacts

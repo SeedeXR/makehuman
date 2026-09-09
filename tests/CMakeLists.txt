@@ -1095,6 +1095,25 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION "no such workspace preset"
         SKIP_REGULAR_EXPRESSION "viewport error")
 
+    # The table reaches the MENU, which is the half a user reads. The LABELS
+    # are the assertion, not a count: "5 workspace names" passed on a hardcoded
+    # 5, so the count could not tell a relabelling that happened from one that
+    # never did. The names can -- and legacy vs modern differ in exactly one of
+    # them, which is the whole point of the profile.
+    #
+    # The label itself is asserted in `[ui][naming]`, which builds a window and
+    # reads the QAction; nothing the application prints can show text on a menu.
+    add_test(NAME app_naming_reaches_the_menu COMMAND makehuman
+             --naming modern --screenshot ${CMAKE_CURRENT_BINARY_DIR}/app_name_menu.png)
+    set_tests_properties(app_naming_reaches_the_menu PROPERTIES
+        PASS_REGULAR_EXPRESSION "naming: modern profile \\(Modelling, Rigging, Assets, Export, Tabbed\\)"
+        SKIP_REGULAR_EXPRESSION "viewport error")
+    add_test(NAME app_naming_default_reaches_the_menu COMMAND makehuman
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/app_name_menu_legacy.png)
+    set_tests_properties(app_naming_default_reaches_the_menu PROPERTIES
+        PASS_REGULAR_EXPRESSION "naming: legacy profile \\(Modelling, Rigging, Materials, Export, Tabbed\\)"
+        SKIP_REGULAR_EXPRESSION "viewport error")
+
     # Symmetry, end to end. The menu commands cannot be driven from a test --
     # `symmetryRequested` is wired in main.cpp -- so `--symmetry` is what makes
     # the whole path observable: one asymmetric modifier in, both sides equal

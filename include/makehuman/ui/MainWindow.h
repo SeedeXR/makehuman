@@ -2,6 +2,7 @@
 #pragma once
 
 #include "makehuman/foundation/Geometry.h"
+#include "makehuman/foundation/Naming.h"
 #include "makehuman/render/SceneResources.h"
 #include "makehuman/ui/MacroStatus.h"
 #include "makehuman/ui/TaskRegistry.h"
@@ -196,6 +197,23 @@ public:
     /// Applies a shipped preset by name (`design.md` §6.4).
     /// @return false if no preset has that name.
     bool applyWorkspacePreset(const QString& name);
+
+    /// Relabels the Workspace menu for a naming profile (owner directive 12.1).
+    ///
+    /// The profile decides what is DISPLAYED and never what is persisted: each
+    /// action's `objectName` stays `workspace.<legacy name>`, which is what
+    /// `saveState` keys on and what the icon audit looks up, and
+    /// `applyWorkspacePreset` keeps taking that same legacy name. Only the
+    /// visible text moves.
+    ///
+    /// Callable any number of times and in either direction — "anyone
+    /// migrating flips one flag and can flip it back".
+    /// @return the labels it set, in menu order. Returned rather than void, and
+    ///         as the NAMES rather than a count, so a caller can say what the
+    ///         user will read. A count alone is a weak claim: a test asserting
+    ///         "5 names" passes on a hardcoded 5, which a mutation proved.
+    [[nodiscard]] QStringList setWorkspaceNames(const foundation::NameTable& table,
+                                                foundation::NamingProfile profile);
 
     /// Writes the current layout to the user's workspace directory.
     [[nodiscard]] bool saveWorkspaceAs(const QString& name) const;
