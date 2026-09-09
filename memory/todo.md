@@ -4311,6 +4311,39 @@ GPU here, or Colab) and it comes back to the owner first.
                   verified AT and BETWEEN example poses against an analytic
                   corrective function. It consumes `(twistAngle,
                   rotationVector(swing))` from above.
+                  - **The runtime stays hand-written** — directive 12.5 fixes
+                    the per-vertex accumulation order, and Eigen's vectorised
+                    reductions reorder float additions by design. Not a
+                    preference; a determinism requirement.
+                  - **Eigen is CLEARED for the OFFLINE solve** (LICENSING.md
+                    §5.1.1, decided 2026-09-09 at the owner's request). MPL-2.0,
+                    header-only, zero GPL/LGPL files in the tree, `unsupported/`
+                    excluded, no Eigen type crossing into ours. Use it when the
+                    step-4 compiler needs the solve, and move the row into §5.1
+                    then. Ceres, FFTW, NLopt and Boost.Math were refused, with
+                    reasons recorded.
+                  - **Recording that broke a CI gate, and running it caught
+                    the break.** The inline "dependencies are recorded in
+                    LICENSING.md" step grepped the WHOLE file per name, so
+                    naming FFTW as refused made `find_package(FFTW)` pass —
+                    measured, exit 0 with a GPL-2+ dependency in the build.
+                    Now `tools/audit_dependencies.py`, which checks the
+                    SECTION a name is in: allow-list 5.1 and its subsections,
+                    forbidden set the 5.2 table itself. Not 5.2.1 (engineering
+                    refusals) or 5.2a (cleared alternatives) or 5.3 (prose that
+                    names assimp — matching it reported assimp as forbidden on
+                    the tool's first run). A ctest as well as a CI job, because
+                    the hole was opened by a DOCUMENTATION edit and only a
+                    runnable gate catches that. Six behaviours run, three
+                    mutations of the gate: the forbidden-section branch is what
+                    catches a dep whose name also appears in 5.1 prose (with
+                    it, exit 1; without, exit 0 and "all recorded"), the
+                    MINIMUM_DEPS floor fires on an emptied scan, and a blind
+                    matcher fails CLOSED.
+                  - Thin-plate-spline matrices are only CONDITIONALLY positive
+                    definite, so plain Cholesky is the wrong algorithm; a
+                    pivoted LDLT or QR is what keeps a clustered set of example
+                    poses from silently returning garbage.
             - [ ] **Nothing consumes the signal yet**, which is why this chunk
                   has no render: there is no geometry moving. The first visual
                   gate arrives with the corrective application.

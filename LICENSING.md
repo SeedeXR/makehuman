@@ -241,6 +241,18 @@ must permit relinking against a modified Qt. The macOS bundle ships Qt as
 frameworks and includes this notice. Static Qt would require the commercial
 licence or full GPL relinking provisions.
 
+### 5.1.1 Cleared for use, no caller yet
+
+A library recorded here has had its licence verified and may be depended on; it
+simply has none of our code calling it so far. `tools/audit_dependencies.py`
+treats 5.1 and its subsections as the allow-list, so adding the `find_package`
+does not need this file changed again -- move the row up into 5.1 when it lands,
+with the version and linkage as verified on the build machine at that time.
+
+| Library | Licence, as verified 2026-09-09 | Cleared for | Conditions |
+|---|---|---|---|
+| **Eigen** 5.0.1 (installed) | `Eigen/` is **MPL-2.0** — `COPYING.MPL2`, and the notice in `include/eigen3/Eigen/src/Core/Matrix.h`. A grep for "GNU Lesser General Public" and "GNU General Public" across the whole of `include/eigen3` returns **nothing**. The only non-MPL files are MINPACK-BSD, and every one is under `unsupported/Eigen/src/LevenbergMarquardt/`. | The **offline** RBF solve (directive 12 step 4) and, later, the per-vertex 3x3 SVD that optimised centres of rotation needs. | Header-only, so no linking obligation. MPL-2.0 is file-level copyleft and does not reach our files, so it sits under both the Apache-2.0 and the AGPL-3.0 modules. **`unsupported/` is excluded.** Offline tooling only — see the runtime note in 5.2.1. **No Eigen type crosses into ours**: `.coeffs()` is `[x,y,z,w]` against our `[w,x,y,z]`, the trap `CLAUDE.md` already names. |
+
 ### 5.2 Forbidden
 
 | Item | Reason |
@@ -249,33 +261,43 @@ licence or full GPL relinking provisions.
 | **Epic MetaHuman** assets, SDK, DNA, or exported data | EULA restricts use to the Unreal ecosystem |
 | GPL-2.0-**only** code | Incompatible with AGPL-3.0 |
 | Anything non-commercial or field-of-use restricted | Conflicts with the freedoms we promise |
+| **FFTW** | GPL-2.0-or-later without the paid MIT licence; would put GPL behind the Apache-2.0 modules. No FFT in the roadmap either — see 5.2.1 |
+| **Ceres Solver**, as packaged | BSD-3 core, but links SuiteSparse (SPQR is GPL-2.0-or-later), METIS and OpenBLAS — see 5.2.1 |
 | Anything with an unidentifiable licence | Cannot be audited |
 
 *Note:* Epic's **MetaHuman DNA Calibration** tooling is partly Apache-2.0. Any use
 requires verifying the specific repository and version at the time of use and
 recording it here first.
 
+### 5.2.1 Numerical libraries refused, decided 2026-09-09
 
-**SMPL / SMPL-X / SMPL+H (Max Planck).** Researched 2026-08-29 because it is
-the obvious thing to reach for in M10 (character generation): a 10,475-vertex
-parametric body with learned corrective blendshapes, articulated hands (MANO)
-and an expressive face (FLAME).
+Asked by the owner before directive 12 step 4 (the offline RBF compiler) needs a
+linear solve. Every licence below was read from the copy installed on this
+machine, or recorded as not installed. Eigen was the one cleared, and it is in
+5.1.1 rather than here so the dependency gate reads it as allowed.
 
-**We cannot use it.** The full model — including the *shape blendshapes*, which
-are the entire point of a parametric generator — is licensed for **research
-purposes only** and requires registration. The permissively licensed
-"SMPL-X Body" subset (CC-BY-4.0) explicitly **excludes** the shape blendshapes
-and the tools to create bodies with them, so it is a mesh and a rig, not a
-generator.
+| Library | Licence, as verified | Why refused |
+|---|---|---|
+| **Ceres Solver** 2.2.0 (installed) | Core is BSD-3-Clause (`include/ceres/ceres.h`), but `otool -L lib/libceres.dylib` shows it linking **SuiteSparse** (`libcholmod`, `libspqr` — SPQR is GPL-2.0-or-later), plus METIS, OpenBLAS, glog, gflags and TBB. | Linking it would put a GPL-2.0-or-later library behind the Apache-2.0 modules, which rule 1 of section 4 forbids in that direction. It also solves a problem we do not have: nothing in the roadmap is non-linear — corrective fitting is linear least-squares and optimised centres of rotation is a similarity precompute. Revisit only with a real non-linear problem AND a SuiteSparse-free build. Recorded in 5.2 as forbidden **as currently built**. |
+| **NLopt** (not installed) | Mixed MIT and LGPL-2.1. | No non-linear problem exists to solve. Not a licence refusal; if one ever appears, the MIT-licensed subset would need identifying first. |
+| **Boost.Math** 1.90 (installed) | BSL-1.0, permissive, no obstacle at all. | Refused on **engineering** grounds only. The RBF kernels are `exp`, `sqrt` and `log`; it would save zero lines for a large dependency. |
 
-Since a stated objective is that others can build commercial derivatives
-(§1, `project_context.md` §4.2), SMPL-family models are forbidden for the same
-reason as the FBX SDK: the licence blocks the downstream use we promise. The
-*techniques* in the published papers are fair to learn from; the models and
-data are not.
+**FFTW** is in the 5.2 forbidden table rather than here: it is GPL-2.0-or-later
+without the paid MIT licence, so it is a licence refusal, and there is no FFT
+anywhere in the roadmap in any case — wrinkle maps are texture blending, not
+frequency-domain.
 
-MakeHuman's own 1,280 targets are CC0 and already give us a parametric body.
-That is the asset base to build M10 on.
+**The RBF runtime stays hand-written regardless of any of this**, and that is a
+requirement rather than a preference: directive 12.5 fixes the per-vertex
+accumulation order because "parallel scatter-add reorders float additions", and
+a vectorised library reduction reorders float additions by design. A library
+there would fight the determinism test.
+
+**Why Eigen is worth it offline.** Thin-plate-spline interpolation matrices are
+only *conditionally* positive definite, so plain Cholesky is the wrong
+algorithm, and they become ill-conditioned when example poses cluster. A pivoted
+`LDLT` or `ColPivHouseholderQR` is the difference between a solve that reports
+trouble and one that silently returns something plausible and wrong.
 
 ### 5.2a Licence-cleared alternatives to SMPL-X (owner-supplied, 2026-09-07)
 

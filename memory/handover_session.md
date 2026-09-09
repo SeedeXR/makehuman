@@ -138,10 +138,80 @@ application.
 Four presets one at a time, 828/828, 0 warnings, `ALLDONE` read. CI's exact
 clang-format command clean. SonarQube gate OK, 0 open issues.
 
+### Numerical libraries, asked and answered mid-chunk
+The owner asked whether Eigen, FFTW, NLopt/Ceres or Boost.Math should be brought
+in. Every licence was read off the copy installed here. **Eigen 5.0.1 is
+cleared** for the OFFLINE solve only — `Eigen/` is MPL-2.0, a grep for GPL/LGPL
+across the whole include tree returns nothing, and the only non-MPL files are
+MINPACK-BSD under `unsupported/`. **Ceres is refused**: its core is BSD-3 but
+`otool -L libceres.dylib` shows it linking SuiteSparse (SPQR is GPL-2.0-or-later)
+plus METIS, OpenBLAS and TBB, which would put GPL behind the Apache-2.0 modules.
+**FFTW refused** (GPL-2+, and nothing here is frequency-domain). **NLopt
+refused** (no non-linear problem exists in the roadmap). **Boost.Math refused on
+engineering grounds** — the kernels are `exp`/`sqrt`/`log`.
+
+The runtime stays hand-written either way, and that is directive 12.5's
+determinism requirement rather than taste. Nothing was added to the build: a
+dependency with no caller is the case for not adding it yet.
+
+**Writing that down broke an existing CI gate, and I caught it by running it.**
+The inline "dependencies are recorded in LICENSING.md" step grepped the WHOLE
+file for each dependency name. That held only while the file never named a
+library it had turned down. Naming four refusals made the gate blind to all
+four: with `find_package(FFTW)` appended to CMakeLists.txt the old check
+**exited 0**, matching the very row that forbids it. Measured, not reasoned
+about.
+
+Fixed structurally rather than by wording the docs around it:
+
+- `tools/audit_dependencies.py` reads LICENSING.md's numbered sections and
+  checks the SECTION a name appears in. Allow-list is 5.1 and its subsections;
+  the forbidden set is the 5.2 table itself.
+- Not every section numbered 5.2*: 5.2.1 holds engineering refusals that are
+  not licence refusals, and 5.2a holds licence-CLEARED alternatives. And not
+  5.3, which is prose about the FBX SDK that names assimp as the accepted
+  alternative in passing — matching it reported **assimp** as forbidden the
+  first time the tool ran, which is how I found that out.
+- LICENSING.md restructured to match: Eigen moved to a new **5.1.1 "Cleared for
+  use, no caller yet"** so the gate reads it as allowed, 5.2.1 now holds only
+  refusals, and FFTW and Ceres-as-packaged joined the 5.2 forbidden table since
+  those two are licence refusals rather than engineering ones.
+- Wired as a **ctest as well as** a CI step, like the other audits, so it can
+  be run and mutated locally. That is the point: the hole was opened by a
+  documentation edit, and only a runnable gate catches that class.
+
+Eight behaviours checked by running them, all after the comment fix below:
+FFTW → forbidden (exit 1); Ceres → forbidden (1); **Eigen3 → passes (0), which
+is what 5.1.1 is for**; NLopt → unrecorded (1), correct since it was refused
+rather than cleared; SomeRandomLib → unrecorded (1); a forbidden dependency in
+a `#` comment → 0; the same in a `#[[ ]]` bracket comment → 0; clean tree → 0.
+
+**And the new tool immediately made the same mistake it was written to fix.**
+On a clean tree it reported FFTW as a forbidden dependency — because the ctest
+registration I had just written for it contains the literal
+`find_package(FFTW)` inside an explanatory comment. The sibling "legacy tree is
+not part of the build" gate carries a note that it matched its own prose three
+separate times before comment-stripping was made uniform, and this repeated it
+within the hour. Comments are stripped now, and a forbidden dependency written
+into a `#` comment or a `#[[ ]]` bracket comment both pass, verified by running
+them. It was found by running the gate on the tree I was about to commit, which
+is the only reason it did not ship.
+
+And three mutations of the gate itself. Simulating the likeliest future edit —
+a 5.1 row's prose saying "we solve small systems by hand rather than pulling in
+Ceres" — the forbidden-section check is what catches `find_package(Ceres)`:
+with it, exit 1; with the branch removed, **exit 0 and "all recorded"**. So it
+is load-bearing rather than a nicer error message. The `MINIMUM_DEPS` floor
+fires on an emptied scan. And a `named_in` that always returns true fails
+CLOSED rather than passing — every dependency then matches the forbidden
+section first — which was not what I expected and is the better failure.
+
 ### Next
 The RBF evaluator: kernel plus a solved weight matrix, verified AT and BETWEEN
 example poses against an analytic corrective function, consuming
 `(twistAngle, rotationVector(swing))` from this chunk. Still no art needed.
+Thin-plate-spline matrices are only conditionally positive definite, so the
+solve wants a pivoted LDLT or QR rather than plain Cholesky.
 
 ---
 

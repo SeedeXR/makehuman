@@ -1231,6 +1231,14 @@ if(MH_HAVE_RENDER)
     add_test(NAME audit_headless
              COMMAND python3 ${CMAKE_SOURCE_DIR}/tools/audit_headless.py)
 
+    # Every dependency recorded in LICENSING.md 5.1, and none that 5.2 forbids.
+    # A ctest as well as a CI job because the hole it closes was opened by a
+    # DOCUMENTATION edit: the inline shell it replaces grepped the whole file,
+    # so recording FFTW as refused made `find_package(FFTW)` pass the gate.
+    # Measured at the time -- exit 0 with a GPL-2+ dependency in the build.
+    add_test(NAME audit_dependencies
+             COMMAND python3 ${CMAKE_SOURCE_DIR}/tools/audit_dependencies.py)
+
     # `makehuman --version` did not work at all: no addVersionOption(), and the
     # version was a PRIVATE macro in mh_core that main.cpp could not read.
     #
