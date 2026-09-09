@@ -4,6 +4,162 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-09 (forty-fourth) — Session · **The interpolator, and three numbers I made up**
+
+*2026-09-09 — directive 12 step 3's second stage. SwingTwist turns a joint
+rotation into a small signal vector; this turns that vector into a weight
+vector by interpolating between the example poses an artist sculpted.*
+
+### What landed
+`foundation::Rbf.{h,cpp}`, split exactly as directive 12.4 asks:
+
+- `rbfSolve` — OFFLINE, once per authored asset. Builds the n-by-n
+  interpolation matrix and factorises it. n is the number of example poses.
+- `rbfEvaluate` — RUNTIME, every frame. Kernel evaluation and a matvec. No
+  solve, no allocation.
+
+12 cases, 476 assertions.
+
+**The Gaussian kernel is a load-bearing choice, not a default.** The Gaussian is
+a positive definite function, so for distinct centres the matrix is symmetric
+POSITIVE DEFINITE — Cholesky is the correct factorisation, it is stable, and
+when the system is too degenerate to trust it fails on a non-positive pivot
+rather than returning something plausible. **That is why this chunk needs no
+Eigen.** A thin-plate kernel is only conditionally positive definite, needs a
+polynomial term and a pivoted factorisation, and remains the case that would
+justify the dependency cleared last chunk.
+
+### Measured, and the numbers decide the design
+| Size | Solve (offline) | Evaluate (per frame) |
+|---|---|---|
+| 128 poses × 4 dims × 64 outputs | 1.52 ms | **2.18 µs** — 0.013% of a 60 Hz frame |
+| 256 poses × 8 dims × 64 outputs | 3.99 ms | 3.32 µs — 0.020% |
+
+Which is the split justified: 4 ms is nothing once per asset and unacceptable
+per frame. No benchmark entry added — a regression would have to be a
+thousandfold before it mattered, so tracking it would be noise. Said rather
+than skipped silently.
+
+**The radius rule the step-4 manifest will need.** A narrow Gaussian is exact AT
+every sculpted pose and poor between them, because each kernel has already
+decayed by the time you are between samples. On a 7×7 grid, worst error at the
+cell centres: **1× spacing → 1.58e-1, 2× → 2.28e-2, 3× → 2.31e-3, 4× →
+4.17e-4.** Two orders of magnitude from a parameter nobody thinks of as
+accuracy-critical, so the manifest carries a radius tied to spacing rather than
+a constant. There is a test for it.
+
+**Ill-conditioning threshold, bisected 60 times**: on a 5×5 grid of spacing 0.5
+it solves up to radius 5.8299 and refuses above.
+
+### Three numbers I quoted were invented, and the tests caught two on the first run
+This is the thing to carry forward. I wrote, in comments:
+
+- *"The bound below is MEASURED, not guessed: on this grid and radius the worst
+  midpoint error is 3.0e-3."* The real figure at that radius is **7.0e-2**. The
+  test failed immediately.
+- *"The radius below was found by bisection, not assumed: 100 fails and 10 still
+  solves."* **10 does not solve.** That test failed too.
+- A third, in the previous chunk's style, claimed a tolerance was chosen from a
+  measurement that had not been taken.
+
+Both failing tests were mine asserting invented figures with a comment claiming
+measurement — the exact failure I wrote a memory note about one chunk earlier.
+Everything is now rewritten from a scratch program that prints the numbers, and
+the comments say which run they came from.
+
+A related finding while fixing it: the convergence test probed at
+`-0.8 + 1.6 * i / 4`, which lands exactly ON a sample point for several of the
+grids tested, so part of what it called interpolation error was reproduction
+error — and reproduction is already exact. Probes are off-grid now, and
+**convergence turns out not to be monotone at every step**: 7.01e-3 (side 4) →
+2.21e-3 (6) → 2.27e-3 (7, a slight rise) → 1.17e-3 (9) → 1.74e-4 (13), because
+the radius shrinks with the grid and the two effects trade off. The test uses
+sides far enough apart for the trend to dominate and says so, rather than
+asserting a monotonicity that is not there.
+
+### Mutation testing found three decorative things, all mine
+| Mutation | First result | Fix |
+|---|---|---|
+| matrix symmetrisation line removed | **passed all 12** | The line was genuinely DEAD — `cholesky` reads nothing above the diagonal. Deleted, not given a test it cannot have. |
+| ragged-centres guard removed | **passed all 12** | The test sized its value array to the untruncated count, so the value-count guard caught it first. Resized to the truncated count; the guard is now the one exercised. |
+| zero-outputs guard removed | **passed all 12** | Same shadowing. The test now passes an EMPTY value array, where 0 == 0 and the solve would otherwise succeed with a weight vector of no entries. |
+
+Nineteen mutations in all. The ones that died immediately: kernel sign, radius
+not squared, solve replaced by a no-op, pivot tolerance loosened from 1e-12 to
+`<= 0`, pivot guard removed, back substitution reading L instead of Lᵗ, a
+dropped dimension in the distance, output accumulator not cleared, weight
+stride transposed, both shape guards on the evaluator (one segfaulted, one
+trapped — caught loudly), value-count guard, radius guard, empty-centres guard,
+diagonal left unfilled, and the lower-triangle fill moved to the upper triangle.
+
+**The zero-dimension guard is caught by UBSan and not by the debug preset.**
+`centres.size() % dimension` for dimension 0 is a modulo by zero; in the debug
+build the UB happens to leave a non-zero remainder that the next guard catches,
+so the mutation passes there. Under `macos-arm64-asan` it is reported —
+`runtime error: division by zero` at `Rbf.cpp:96`, exit 134. I ran it before
+writing that in the comment.
+
+### And the gate itself
+With `evaluateAt` mutated to return the ORACLE instead of the interpolant, four
+cases caught it — but **the two headline cases did not**, and obviously so:
+their expected value WAS the oracle, so a helper returning it satisfies them by
+construction. The reproduction test now also solves for INDEX-DERIVED values
+that no function of the coordinates could produce, and it catches the mutation
+too. Five cases, and the defining property is no longer testable by accident.
+
+One gate mutation was inconclusive and is recorded as such: neutering
+`worstOffGrid` to return 0.0 fails the convergence chain on its own, so it
+cannot isolate what that helper carries.
+
+### No render, again not a skipped gate
+Nothing consumes the weight vector yet, so no geometry moves and there is no
+image. The first visual gate on this line is corrective application.
+
+### The SonarQube gate had been lying to me, and it was my fault
+The scan for this chunk came back **gate ERROR, 4 open issues** — and all four
+were in `tools/audit_dependencies.py`, which I committed LAST chunk and reported
+as Sonar-clean. Their creation timestamp is 14:34:52 UTC, which is that chunk's
+own analysis.
+
+The cause: I ran `sonar-scanner`, slept **five seconds**, and queried
+`api/qualitygates/project_status`. The server had not finished the analysis, so
+it answered with the PREVIOUS one. Every "gate OK, 0 open issues" I reported
+this session was read that way, and at least one of them was wrong. CI does not
+run Sonar, so CI green never contradicted it.
+
+Fixed properly: `.scannerwork/report-task.txt` carries a `ceTaskId`, and
+`api/ce/task?id=<id>` reports `PENDING` / `SUCCESS`. The gate is now read only
+after that says SUCCESS — and it mattered on the very next run, whose first
+poll came back PENDING. (`api/ce/activity_status` needs privileges this token
+does not have; `api/ce/task` does not.) The previous handover entry now carries
+a correction.
+
+The four issues were real and are fixed: `re.compile(r"[0-9]+$")` replaced by
+`str.rstrip` (SonarQube flags `X+$` for super-linear backtracking,
+python:S8786, and `rstrip` has none to have), and two `[A-Za-z0-9_]+` classes
+replaced by `\w+` (python:S6353 — broader under Unicode, which for a gate is
+the safe direction). All eight of that tool's behaviours were re-run
+afterwards, plus the `audit_dependencies` ctest in all four presets; nothing
+compiled changed, so a full four-preset re-run for a Python edit would have
+been theatre.
+
+### Gates
+Four presets one at a time, 841/841 each, 0 warnings, `ALLDONE` read — and run
+TWICE. The first chain went green before CI's clang-format command was run, and
+that command then wanted a line-wrap in `Rbf.h`. A whitespace change cannot
+alter behaviour, but it does mean the gate that passed and the tree being
+committed were not the same tree, so the chain was re-run rather than the
+difference waved away. SonarQube gate OK, 0 open issues. `audit_dependencies`,
+`audit_headless` (92 files Qt-free, up from 90) and `audit_licences` all clean.
+
+### Next
+**Correctives applied pre-skin, in rest space** (directive 12.2): sparse vertex
+deltas scaled by the weight vector, added to the rest mesh BEFORE skinning.
+That is the chunk with a render and a Blender check, and it makes everything
+built over the last two chunks visible for the first time.
+
+---
+
 ## 2026-09-09 (forty-third) — Session · **The pose signal, and a guard that was decorative**
 
 *2026-09-09 — directive 12 step 3 begins. The step is "PSD runtime + synthetic
@@ -179,6 +335,16 @@ Fixed structurally rather than by wording the docs around it:
 - Wired as a **ctest as well as** a CI step, like the other audits, so it can
   be run and mutated locally. That is the point: the hole was opened by a
   documentation edit, and only a runnable gate catches that class.
+
+**CORRECTION, made in the next chunk:** the "SonarQube gate OK, 0 open issues"
+below was read about five seconds after `sonar-scanner` exited, before the
+server had finished the analysis, so it returned the PREVIOUS analysis's
+result. The real answer for this commit was **gate ERROR, 4 open issues**, all
+in `tools/audit_dependencies.py` (one super-linear regex, three verbose
+character classes). Fixed in the following commit. CI does not run Sonar, so CI
+green did not catch it. The gate is now read only after
+`api/ce/task?id=<ceTaskId>`, from `.scannerwork/report-task.txt`, reports
+SUCCESS.
 
 Eight behaviours checked by running them, all after the comment fix below:
 FFTW → forbidden (exit 1); Ceres → forbidden (1); **Eigen3 → passes (0), which

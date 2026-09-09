@@ -4307,10 +4307,92 @@ GPU here, or Colab) and it comes back to the owner first.
                     Widening every tolerance to 1.0 did NOT hide a broken
                     implementation, which says those four cases are carried by
                     their structure rather than by tight tolerances.
-            - [ ] **The RBF evaluator** is next: kernel + solved weight matrix,
-                  verified AT and BETWEEN example poses against an analytic
-                  corrective function. It consumes `(twistAngle,
-                  rotationVector(swing))` from above.
+            - [x] **The RBF evaluator** (2026-09-09).
+                  `foundation::Rbf.{h,cpp}` — `rbfSolve` offline,
+                  `rbfEvaluate` per frame, split exactly as directive 12.4
+                  asks. 12 cases, 476 assertions, the analytic oracle of 12.7.
+                  - **Gaussian kernel, and that is load-bearing.** The Gaussian
+                    is a positive definite function, so for distinct centres
+                    the matrix is symmetric POSITIVE DEFINITE: Cholesky is the
+                    correct factorisation, it is stable, and when the system is
+                    too degenerate to trust it FAILS on a non-positive pivot
+                    rather than returning something plausible. **No Eigen
+                    needed for this chunk** — a thin-plate kernel is only
+                    conditionally positive definite and needs a pivoted
+                    factorisation, and that is still the case that would
+                    justify it (LICENSING.md §5.1.1).
+                  - **Measured, per frame**: 128 example poses × 4 signal
+                    dimensions × 64 outputs evaluates in **2.18 µs, 0.013% of a
+                    60 Hz frame**; 256 × 8 × 64 in 3.32 µs. The offline solve at
+                    those sizes is 1.52 ms and 3.99 ms — nothing once per
+                    asset, unacceptable per frame, which is the split. No
+                    benchmark entry added: a regression would have to be a
+                    thousandfold to matter, so tracking it would be noise.
+                  - **The radius rule the manifest will need.** A narrow
+                    Gaussian is exact AT every sculpted pose and poor between
+                    them, because each kernel has already decayed. Measured on
+                    a 7×7 grid, worst error at the cell centres: 1× spacing →
+                    1.58e-1, 2× → 2.28e-2, 3× → 2.31e-3, 4× → 4.17e-4. Two
+                    orders of magnitude from a parameter no author would think
+                    of as accuracy-critical, so the manifest carries a radius
+                    tied to spacing rather than a constant. Pinned by a test.
+                  - **Ill-conditioning is refused, and the threshold is
+                    bisected** (60 iterations): on a 5×5 grid of spacing 0.5 it
+                    solves up to radius 5.8299 and refuses above — about twelve
+                    times the spacing, well past anything an author would pick.
+                  - **Convergence is not monotone at every step**, measured:
+                    at 3× spacing the worst off-grid error goes 7.01e-3 (side 4)
+                    → 2.21e-3 (6) → 2.27e-3 (7, a slight RISE) → 1.17e-3 (9) →
+                    1.74e-4 (13), because the radius shrinks with the grid and
+                    the two effects trade off. The test uses sides far enough
+                    apart for the trend to dominate and says so.
+                  - **Three numbers I quoted were invented and the tests caught
+                    two of them on the first run.** A comment said "MEASURED,
+                    not guessed: worst midpoint error 3.0e-3" — the real figure
+                    at that radius is 7.0e-2 — and another said "found by
+                    bisection: 100 fails and 10 still solves", where 10 does
+                    not solve. Both rewritten from the measurement.
+                  - **Mutation testing found three decorative things**, all
+                    mine: the matrix symmetrisation line was DEAD (Cholesky
+                    reads only the lower triangle) and was deleted rather than
+                    given a test it cannot have; the ragged-centres guard was
+                    reached only through the value-count guard, because the
+                    test sized its value array to the untruncated count; and
+                    the zero-outputs guard was likewise shadowed. Both tests
+                    rewritten so each guard is the one being exercised.
+                  - **The zero-dimension guard is caught by UBSan, not by the
+                    debug preset** — `centres.size() % dimension` for
+                    dimension 0 is a modulo by zero, and the debug build's UB
+                    happens to leave a non-zero remainder that the next guard
+                    catches. Verified by running the mutation under
+                    `macos-arm64-asan`: "runtime error: division by zero" at
+                    `Rbf.cpp:96`, exit 134. The comment says that because it
+                    was run, not because it seemed likely.
+                  - **The gate was mutated too.** With `evaluateAt` returning
+                    the ORACLE instead of the interpolant, four cases caught it
+                    but the two headline cases did not — of course they did
+                    not, since their expected value WAS the oracle. The
+                    reproduction test now also solves for INDEX-DERIVED values
+                    that no function of the coordinates could produce, and it
+                    then catches the mutation too (five cases).
+                  - Nothing consumes the weight vector yet, so again no render:
+                    no geometry moves. The first visual gate is corrective
+                    application.
+                  - **The Sonar gate had been read too early all session.**
+                    `sonar-scanner` exiting does NOT mean the analysis is done;
+                    querying the gate five seconds later returns the PREVIOUS
+                    analysis. That is how the previous chunk was reported clean
+                    while actually leaving 4 open issues in
+                    `tools/audit_dependencies.py` (fixed here). Read the gate
+                    only after `api/ce/task?id=<ceTaskId>` — the id is in
+                    `.scannerwork/report-task.txt` — reports SUCCESS. The very
+                    next run's first poll came back PENDING, so the wait is
+                    load-bearing. `api/ce/activity_status` needs privileges the
+                    local token lacks; `api/ce/task` does not.
+            - [ ] **Correctives applied pre-skin, in rest space** is what makes
+                  it visible: sparse vertex deltas scaled by the weight vector
+                  above, added to the rest mesh BEFORE skinning (directive
+                  12.2). That chunk has a render and a Blender check.
                   - **The runtime stays hand-written** — directive 12.5 fixes
                     the per-vertex accumulation order, and Eigen's vectorised
                     reductions reorder float additions by design. Not a

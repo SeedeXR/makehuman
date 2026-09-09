@@ -36,10 +36,15 @@ REFUSING_SECTION = "5.2"
 # What may be depended on: section 5.1 and any subsection of it.
 ALLOWING_PREFIX = "5.1"
 
-# `find_package(Qt6)` against a LICENSING.md row that says "Qt": strip a
-# trailing version digit before matching, or the project's oldest and
-# best-documented dependency reports as unrecorded.
-VERSION_SUFFIX = re.compile(r"[0-9]+$")
+# `find_package(Qt6)` against a LICENSING.md row that says "Qt": strip trailing
+# version digits before matching, or the project's oldest and best-documented
+# dependency reports as unrecorded.
+#
+# `str.rstrip` rather than a regex. `re.compile(r"[0-9]+$")` was flagged by
+# SonarQube for super-linear backtracking (python:S8786) -- a real property of
+# `X+$`, even if no dependency name is long enough for it to matter -- and this
+# has no backtracking to have.
+DIGITS = "0123456789"
 
 # Guards against this gate silently checking nothing, which is the failure mode
 # of the version it replaces. Today it finds exactly five: Catch2,
@@ -84,16 +89,19 @@ def code(path: Path) -> str:
 def declared_dependencies() -> set[str]:
     """Both ways a dependency arrives: fetched, or found on the system."""
     deps: set[str] = set()
-    deps |= set(re.findall(r"FetchContent_Declare\(([A-Za-z0-9_]+)", code(ROOT / "CMakeLists.txt")))
+    # `\w` rather than the explicit class (SonarQube python:S6353). Under
+    # Unicode it is broader than `[A-Za-z0-9_]`, which for a gate is the safe
+    # direction: a stranger name is still reported rather than skipped.
+    deps |= set(re.findall(r"FetchContent_Declare\((\w+)", code(ROOT / "CMakeLists.txt")))
     for f in ROOT.rglob("CMakeLists.txt"):
         if "build" in f.relative_to(ROOT).parts:
             continue
-        deps |= set(re.findall(r"find_package\(([A-Za-z0-9_]+)", code(f)))
+        deps |= set(re.findall(r"find_package\((\w+)", code(f)))
     return deps
 
 
 def named_in(section: str, dep: str) -> bool:
-    stem = VERSION_SUFFIX.sub("", dep)
+    stem = dep.rstrip(DIGITS)
     low = section.lower()
     return dep.lower() in low or (bool(stem) and stem.lower() in low)
 
