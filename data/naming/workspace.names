@@ -1,0 +1,29 @@
+# Workspace preset names, per naming profile (owner directive 12.1).
+#
+# One row per CANONICAL id, three whitespace-separated columns:
+#
+#     <canonical id>    <legacy name>    <modern name>
+#
+# The canonical id is the identity and NEVER changes, whatever either column
+# says or how the thing is displayed. It is what `.mhm` and workspace files
+# persist, so a file written under one profile opens under the other.
+#
+# LEGACY is the default profile. `--naming modern` opts in, and either
+# profile still accepts the other's names -- with a warning the first time --
+# so old- and new-named things coexist in one workspace.
+#
+# Names may not contain whitespace; the parser refuses a row that is not
+# exactly three fields rather than guessing where a name ends.
+
+workspace.modelling    Modelling    Modelling
+workspace.rigging      Rigging      Rigging
+
+# The rename the owner asked for. The dock itself became "Assets" on
+# 2026-09-07 -- `TaskRegistry::add(id, title)` split identity from label -- and
+# this is the preset catching up. The canonical id says "assets" because that
+# is what the layout is FOR; the legacy column keeps the CLI argument that has
+# always worked.
+workspace.assets       Materials    Assets
+
+workspace.export       Export       Export
+workspace.tabbed       Tabbed       Tabbed

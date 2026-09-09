@@ -17,6 +17,7 @@ add_executable(mh_tests
     unit/test_decimator.cpp
     unit/test_topology_hash.cpp
     unit/test_provenance.cpp
+    unit/test_naming.cpp
     unit/test_target.cpp
     unit/test_macro.cpp
     unit/test_target_index.cpp
@@ -1030,6 +1031,69 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
     set_tests_properties(app_provenance_morph_keeps_the_topology PROPERTIES
         FIXTURES_REQUIRED app_prov_morph)
+
+    # ---------------------------------------------------------------------
+    # Naming profiles (owner directive 12.1): legacy by default, modern opt-in,
+    # canonical ids underneath, and either profile still accepting the other's
+    # names with a warning.
+    #
+    # The resolver and its table are unit-tested in `[naming]`; these say the
+    # APPLICATION goes through it. `--screenshot` needs a real device, so each
+    # skips where `app_screenshot` skips.
+    # ---------------------------------------------------------------------
+    add_test(NAME app_naming_legacy_default COMMAND makehuman
+             --workspace Materials --screenshot ${CMAKE_CURRENT_BINARY_DIR}/app_name_legacy.png)
+    set_tests_properties(app_naming_legacy_default PROPERTIES
+        SKIP_REGULAR_EXPRESSION "viewport error"
+        FAIL_REGULAR_EXPRESSION "no such workspace preset;other profile's name")
+
+    # The MODERN name in the DEFAULT profile: it works, and it says so once.
+    # This is the pair that makes migration painless -- refusing it would make
+    # a workspace holding both kinds of name unusable.
+    add_test(NAME app_naming_modern_name_in_legacy COMMAND makehuman
+             --workspace Assets --screenshot ${CMAKE_CURRENT_BINARY_DIR}/app_name_ml.png)
+    set_tests_properties(app_naming_modern_name_in_legacy PROPERTIES
+        PASS_REGULAR_EXPRESSION "\"Assets\" is the other profile's name for this; Materials"
+        SKIP_REGULAR_EXPRESSION "viewport error"
+        FAIL_REGULAR_EXPRESSION "no such workspace preset")
+
+    add_test(NAME app_naming_modern COMMAND makehuman
+             --naming modern --workspace Assets
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/app_name_modern.png)
+    set_tests_properties(app_naming_modern PROPERTIES
+        SKIP_REGULAR_EXPRESSION "viewport error"
+        FAIL_REGULAR_EXPRESSION "no such workspace preset;other profile's name")
+
+    add_test(NAME app_naming_legacy_name_in_modern COMMAND makehuman
+             --naming modern --workspace Materials
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/app_name_lm.png)
+    set_tests_properties(app_naming_legacy_name_in_modern PROPERTIES
+        PASS_REGULAR_EXPRESSION "\"Materials\" is the other profile's name for this; Assets"
+        SKIP_REGULAR_EXPRESSION "viewport error"
+        FAIL_REGULAR_EXPRESSION "no such workspace preset")
+
+    # A CANONICAL id works in either profile and warns in neither: it is what
+    # save files persist, so reading one back is the normal case.
+    add_test(NAME app_naming_canonical_id COMMAND makehuman
+             --workspace workspace.assets
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/app_name_canon.png)
+    set_tests_properties(app_naming_canonical_id PROPERTIES
+        SKIP_REGULAR_EXPRESSION "viewport error"
+        FAIL_REGULAR_EXPRESSION "no such workspace preset;other profile's name")
+
+    # Refused rather than defaulted: `--naming moderm` silently giving the old
+    # names would look like the flag did nothing.
+    add_test(NAME app_naming_unknown_profile COMMAND makehuman
+             --naming moderm --workspace Assets
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/app_never_name.png)
+    set_tests_properties(app_naming_unknown_profile PROPERTIES
+        PASS_REGULAR_EXPRESSION "unknown --naming profile")
+
+    add_test(NAME app_naming_unknown_preset COMMAND makehuman
+             --workspace Nonsense --screenshot ${CMAKE_CURRENT_BINARY_DIR}/app_never_name2.png)
+    set_tests_properties(app_naming_unknown_preset PROPERTIES
+        PASS_REGULAR_EXPRESSION "no such workspace preset"
+        SKIP_REGULAR_EXPRESSION "viewport error")
 
     # Symmetry, end to end. The menu commands cannot be driven from a test --
     # `symmetryRequested` is wired in main.cpp -- so `--symmetry` is what makes

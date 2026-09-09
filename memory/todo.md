@@ -4125,11 +4125,34 @@ GPU here, or Colab) and it comes back to the owner first.
                   instead is killed by it.
                   This also closes the long-open M10 item "exported assets
                   cannot be traced to a build".
-            - [ ] **Canonical ID registry and the two naming tables as DATA
-                  files**, with `--naming=modern` opt-in and legacy default,
-                  plus the `--workspace Materials` rename as a modern-only
-                  name. **This is the next chunk**, and it is the CLI-visible
-                  half.
+            - [x] **Naming profiles: `--naming legacy|modern`, tables as DATA**
+                  (2026-09-09). `data/naming/workspace.names` is three
+                  whitespace-separated columns —
+                  `<canonical id> <legacy name> <modern name>` — with `#`
+                  comments. Three columns rather than two files because a
+                  canonical id present in one table and absent from the other is
+                  a name that stops resolving, and one row per id makes that
+                  impossible to write rather than something a test must notice.
+                  No new dependency: it is `foundation`, parsed with
+                  `openForRead` and `>>`.
+                  - **Legacy is the default**, modern is opt-in, and either
+                    profile still accepts the other's names — warning once —
+                    so old- and new-named things coexist in one workspace.
+                    `--workspace Materials` and `--workspace Assets` both reach
+                    the preset in both profiles.
+                  - **A canonical id resolves to itself in every profile and is
+                    never a fallback**: canonical ids are what save files
+                    persist, so reading one back is the normal case rather than
+                    a migration. `--workspace workspace.assets` works.
+                  - The `--workspace Materials` rename the owner asked for is
+                    IN THE DATA, not in code: legacy keeps `Materials`, modern
+                    reads `Assets`, and the canonical id is `workspace.assets`.
+            - [ ] **The registry's other domains.** Only workspace presets go
+                  through the resolver today. Asset stems (skins, rigs, eyes,
+                  poses, litspheres), material slots and the Workspace MENU
+                  labels are the rest — the menu is the one that needs the
+                  ui/app boundary thought through, since `ui` is Apache and may
+                  not read an AGPL registry.
       - [ ] **2. Fix skinning.** Optimised centres of rotation, or dual
             quaternion at minimum (DQS already ships behind `--skinning dqs`
             and Settings ▸ Skinning). Kills a large share of the artifacts

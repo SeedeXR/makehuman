@@ -21,6 +21,7 @@
 #include "makehuman/core/TargetIndex.h"
 #include "makehuman/core/TopologyHash.h"
 #include "makehuman/foundation/DataDir.h"
+#include "makehuman/foundation/Naming.h"
 #include "makehuman/foundation/Version.h"
 #include "makehuman/io/BvhWriter.h"
 #include "makehuman/io/Compact.h"
@@ -276,6 +277,47 @@ bool applyFacs(std::span<const mh::rig::ActionUnit> aus, const mh::rig::Skeleton
 std::filesystem::path& expressionFileRef() {
     static std::filesystem::path path;
     return path;
+}
+
+/// A user-facing workspace name to the preset the window knows, through the
+/// shipped name table.
+///
+/// Owner directive 12.1: one resolver, and the table is DATA. The window still
+/// keys presets by their LEGACY name -- that is what `workspacePresets()` and
+/// every saved workspace file already say -- so this maps whatever the user
+/// typed onto the canonical id and back to that legacy spelling. The profile
+/// decides which column is tried first; the other is the fallback, and the
+/// fallback warns ONCE per name so a user learns the new word without being
+/// stopped by it.
+///
+/// A name the table does not know is returned unchanged, so the window reports
+/// "no such workspace preset" with what the user actually typed.
+QString resolveWorkspaceName(mh::foundation::NamingProfile profile, const QString& name) {
+    static const auto table =
+        mh::foundation::loadNameTable(dataDir() / "naming" / "workspace.names");
+    if (!table) {
+        // The table is data and can be missing; the presets still work under
+        // their legacy names, which is the default profile anyway.
+        return name;
+    }
+    const auto hit = mh::foundation::resolve(*table, profile, name.toStdString());
+    if (!hit) return name;
+    if (hit->viaFallback) {
+        // Once per name is the directive; once per RUN is what happens, because
+        // `--workspace` takes a single value and this is its only caller. A
+        // `static std::set` of already-warned names was written here and a
+        // mutation showed it could never fire twice -- so it went, and the
+        // de-duplication belongs with the second caller when there is one.
+        const auto display = mh::foundation::displayName(*table, profile, hit->canonical);
+        if (display) {
+            std::fprintf(stderr,
+                         "\"%s\" is the other profile's name for this; %s is the one to use\n",
+                         name.toStdString().c_str(), std::string(*display).c_str());
+        }
+    }
+    const auto legacy =
+        mh::foundation::displayName(*table, mh::foundation::NamingProfile::Legacy, hit->canonical);
+    return legacy ? QString::fromStdString(std::string(*legacy)) : name;
 }
 
 /// The `--facs` request, or empty. Set once at start-up, for the same reason as
@@ -1702,6 +1744,12 @@ int main(int argc, char** argv) {
                        "no blendshapes, because an edge collapse renumbers every vertex they are "
                        "indexed by."),
         QStringLiteral("ratio"));
+    const QCommandLineOption namingOpt(
+        QStringLiteral("naming"),
+        QStringLiteral("Which set of user-facing names to use: legacy (the default, so nothing "
+                       "existing breaks) or modern. Either profile still accepts the other's "
+                       "names, warning once, so old- and new-named things coexist."),
+        QStringLiteral("profile"), QStringLiteral("legacy"));
     const QCommandLineOption workspaceOpt(
         QStringLiteral("workspace"),
         QStringLiteral("Start in a workspace preset: Modelling, Rigging, Materials or Export."),
@@ -1713,6 +1761,7 @@ int main(int argc, char** argv) {
         QStringLiteral("name"), QString::fromLatin1(kDefaultEyes));
 
     parser.addOption(workspaceOpt);
+    parser.addOption(namingOpt);
     parser.addOption(subdivOpt);
     parser.addOption(decimateOpt);
     parser.addOption(lodOpt);
@@ -1934,6 +1983,19 @@ int main(int argc, char** argv) {
         }
         decimateRatio = ratio;
     }
+
+    // Refused rather than defaulted, like --shading and --skinning: silently
+    // falling back to legacy would make `--naming moderm` produce the old names
+    // and look like the flag did nothing.
+    const QString namingName = parser.value(namingOpt).toLower();
+    if (namingName != QLatin1String("legacy") && namingName != QLatin1String("modern")) {
+        std::fprintf(stderr, "unknown --naming profile \"%s\" (legacy or modern)\n",
+                     namingName.toStdString().c_str());
+        return 1;
+    }
+    const auto namingProfile = namingName == QLatin1String("modern")
+                                   ? mh::foundation::NamingProfile::Modern
+                                   : mh::foundation::NamingProfile::Legacy;
 
     // An LOD CHAIN. The level number is the ORDER given rather than the sorted
     // ratio, so a caller deciding that level 1 is the coarse one and level 2
@@ -3289,7 +3351,12 @@ int main(int argc, char** argv) {
     // After restoreWorkspace, so an explicit preset wins over the saved layout.
     if (parser.isSet(workspaceOpt)) {
         const QString name = parser.value(workspaceOpt);
-        if (!window.applyWorkspacePreset(name)) {
+        // Through the name table, so `--workspace Assets` and
+        // `--workspace Materials` both reach the same preset whatever the
+        // profile -- and so the preset a user names is resolved in exactly one
+        // place rather than compared against a list of display strings.
+        const QString resolved = resolveWorkspaceName(namingProfile, name);
+        if (!window.applyWorkspacePreset(resolved)) {
             std::fprintf(stderr, "no such workspace preset: \"%s\"\n", name.toStdString().c_str());
             return 1;
         }

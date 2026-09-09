@@ -4,6 +4,85 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-09 (fortieth) — Session · **Naming profiles, and the table that is data**
+
+*2026-09-09 — the other half of directive 12 step 1, the CLI-visible one.*
+
+### What landed
+`--naming legacy|modern`, legacy by default, with the mapping in
+`data/naming/workspace.names`:
+
+```
+# <canonical id>       <legacy name>  <modern name>
+workspace.assets       Materials      Assets
+workspace.modelling    Modelling      Modelling
+```
+
+Measured, by hand, all six paths:
+
+| invocation | result |
+|---|---|
+| `--workspace Materials` | works, silent |
+| `--workspace Assets` | works, **warns**: *"Assets" is the other profile's name for this; Materials is the one to use* |
+| `--naming modern --workspace Assets` | works, silent |
+| `--naming modern --workspace Materials` | works, warns the other way |
+| `--workspace workspace.assets` | works in either profile, silent |
+| `--naming moderm` | refused, names the mistake |
+
+### Three columns, not two files
+The directive says "two name tables map legacy names and modern names onto
+canonical IDs". One row per canonical id with two name columns IS those two
+tables, and it makes the failure they invite impossible: an id present in one
+table and missing from the other is a name that silently stops resolving. One
+row per id cannot express that.
+
+**No new dependency.** It is `foundation`, read with the existing `openForRead`
+— which matters because a directory opens fine and would otherwise parse into a
+valid, EMPTY table.
+
+**A canonical id resolves to itself in every profile and is never a fallback.**
+Canonical ids are what save files persist, so reading one back is the normal
+case, not a migration.
+
+### The tests found a design bug before the code shipped
+The first duplicate check rejected `Modelling Modelling` — a name that is the
+SAME in both profiles, which is the common case; only Materials/Assets differs.
+Collisions have to be checked ACROSS rows, not within one. Caught by the good
+table failing to parse, which is what tests-first is for.
+
+### Mutations: 8 run, 7 killed, 1 exposed dead code
+Killed: no fallback; a silent fallback; the profile ignored; a canonical id not
+accepted; a duplicate name across rows accepted; a row with the wrong column
+count accepted; and — **against the gate** — the shipped table losing the
+Materials/Assets distinction, which fails 1 unit and 3 app tests.
+
+**Survived, and rightly**: turning warn-once into warn-every-time changed
+nothing, because `--workspace` takes a single value and is the resolver's only
+caller — so "once" is what happens anyway. The `static std::set` of
+already-warned names could never fire twice. It is gone, with a comment saying
+the de-duplication belongs with the second caller when there is one.
+
+Two mutations first came back green from a stale binary (`-Werror`: an unused
+parameter, then an unused variable). Read the build line before the ctest line.
+
+### Gates
+813/813 in debug, release, ASan and TSan, 0 warnings, `ALLDONE` read. CI's exact
+clang-format command clean. `audit_headless` and `audit_licences` re-run. The
+new data file verified trackable with `git ls-files --others --exclude-standard`
+before committing.
+
+### Next
+Step 1 has one part left: **the registry's other domains** — asset stems
+(skins, rigs, eyes, poses, litspheres), material slots, and the Workspace MENU
+labels. The menu is the one needing thought: `ui` is Apache-2.0 and may not
+read an AGPL registry, so either the table lives where it is (foundation, which
+ui may use) or the app hands display names down.
+
+Then step 2, **fix skinning** — optimised centres of rotation, or DQS as the
+minimum, which already ships behind `--skinning dqs`.
+
+---
+
 ## 2026-09-09 (thirty-ninth) — Session · **Every export says what it is**
 
 *2026-09-09 — owner directive 12, step 1: freeze contracts. Two of its four
