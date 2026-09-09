@@ -4,6 +4,147 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-09 (forty-third) — Session · **The pose signal, and a guard that was decorative**
+
+*2026-09-09 — directive 12 step 3 begins. The step is "PSD runtime + synthetic
+oracle"; this chunk is its first stage, the pose signal every corrective will
+key on. Nothing downstream exists yet, so the chunk is deliberately just the
+signal and its oracle.*
+
+### What landed
+`foundation::SwingTwist.{h,cpp}` — three functions:
+
+- `swingTwist(q, twistAxis)` → `{swing, twist}`, composing back as
+  `quaternionMultiply(swing, twist)`.
+- `twistAngle(twist, axis)` → the signed scalar on `(-pi, pi]`.
+- `rotationVector(q)` → the log map, angle times axis, which is the swing half
+  of the signal as something an RBF can measure distance in. Identity maps to
+  the ORIGIN, so the rest pose is the natural centre.
+
+Together that is one scalar along the axis and a vector across it: 3 numbers
+for 3 degrees of freedom, with no redundant fourth making two identical poses
+look different.
+
+**A new file rather than Transform.h**, and the reason is licensing.
+Transform.h's own header says it is a port of `transformations.py` and it is
+BSD-3-Clause for exactly that reason; putting a function there that is not a
+port would make the licence note wrong about its own contents. `SwingTwist` is
+Apache-2.0 like the rest of foundation. `audit_licences.py` (1,366 files, 0
+unaccounted) and `audit_headless.py` (90 files Qt-free) both re-run clean.
+
+**Why not Euler**, per directive 12.3: three sequential angles gimbal-lock, and
+near the lock the twist reading jumps 180 degrees while the rotation barely
+moves — an RBF then sees a discontinuity that is not in the pose. Swing-twist
+has one singularity, and it is a genuine ambiguity rather than a coordinate
+artefact.
+
+### The oracle, since there is no reference
+`grep -ri 'swing\|twist' legacy/python` returns nothing. So no parity fixture,
+and the tests are the analytic oracle directive 12.7 asks for: 11 cases, 1,063
+assertions, every answer following from the definition rather than measured off
+an implementation.
+
+Two of them earn their place specifically:
+
+- **Composition order is hand-computed.** q = Rz(90)·Ry(90) = (0.5, -0.5, 0.5,
+  0.5) about Y must decompose into exactly those two factors. So `q = swing *
+  twist` is asserted, not described — reversing it in the source fails this
+  case and the recomposition sweep.
+- **Recomposition alone is not the test.** Infinitely many factorisations
+  recompose. Only one has the swing's axis perpendicular to the twist axis, and
+  that is asserted separately — as is the all-twist case, where a rotation
+  about the axis must leave swing EXACTLY identity, because leaking part of it
+  into swing still recomposes perfectly.
+
+**Cross-checked against an independent formulation.** A numpy script took the
+geometric route rather than the algebraic one: the twist fixes the axis, so the
+swing is the SHORTEST-ARC rotation from `a` to `q·a` and the twist is
+`swing⁻¹·q`. Over 147 grid points across three twist axes it agreed on every
+swing and every twist, worst twist-angle difference 1.8e-15. That is what
+rules out having implemented a self-consistent but wrong definition. Left as
+scratch rather than committed: the property tests already pin the
+decomposition uniquely and killed 10 of 10 code mutations, so a second
+implementation in the suite would be confirmation, not coverage.
+
+### atan2 everywhere, and the reason is measured not asserted
+Relative error of `2*acos(w)` against the angle the quaternion was built from,
+on this machine:
+
+| angle | 2*acos(w) | 2*atan2(\|v\|,w) |
+|---|---|---|
+| 1e-1 rad | 1.5e-14 | 0 |
+| 1e-3 rad | 1.7e-10 | 2.2e-16 |
+| 1e-5 rad | 4.1e-8 | 0 |
+| 1e-7 rad | **1.2e-2** | 0 |
+| 1e-8 rad | **1.0** | 0 |
+
+At a hundredth of a degree acos is 1% wrong; below that it returns zero. That
+is precisely the range a pose near rest lives in, and the twist angle is the
+number an RBF keys on. I had also written that a product of unit quaternions
+reaches `w > 1` and makes acos NaN — **measured, it got to exactly 1.0 and no
+further**, so the comment now says atan2 has no domain to leave rather than
+claiming an observed failure.
+
+### The singularity guard was decorative, and I only know because I mutated it
+Removing `if (norm < kEps)` passed all 11 cases. The reason: `std::cos(kPi/2.0)`
+is 6.1e-17, not 0, so a half turn built from cos/sin never produces a zero norm
+— and normalising 6.1e-17 by itself gives exactly identity, which is the same
+answer the guard returns. The test's premise was simply unmet, which is the
+third time that pattern has cost me a real gate here.
+
+Rewritten as three sections: the EXACT quaternion `(0, 1, 0, 0)` where the norm
+really is zero; a case where both parts are below tolerance but NOT in
+proportion (dividing through would report over 140 degrees of twist from a
+rotation that is a half turn to one part in 1e16 — so the threshold is doing
+work, not just avoiding a NaN); and continuity approaching pi from both sides,
+which is what makes "no twist" the right resolution rather than an arbitrary
+one. The mutation then dies.
+
+### Mutations
+Ten on the code, all caught, each read after confirming the build succeeded:
+
+| Mutation | Result |
+|---|---|
+| composition order reversed | 2 cases red |
+| twist left un-normalised | 3 cases red |
+| projection dropped (whole vector part as twist) | 4 cases red |
+| scalar part zeroed in the twist | 4 cases red |
+| singularity guard removed | 1 case red (only after the test was fixed) |
+| zero-axis guard removed | 1 case red |
+| `twistAngle` drops the q/-q handling | 2 cases red |
+| `twistAngle` loses the factor of 2 | 3 cases red |
+| `rotationVector` drops the shortest-path flip | 1 case red |
+| `rotationVector` drops the axis normalisation | 1 case red |
+
+One of them build-failed first on `-Werror` (unused variable) and was redone
+with a `(void)` — a mutation that does not compile proves nothing, and reading
+the build line before the test line is the only way to notice.
+
+And two on the gate:
+
+- **`checkSameRotation` neutered to assert nothing**: a reversed composition
+  order then passed the whole file, at 341 assertions instead of 1,063. The
+  helper carries 722 of them, so it is load-bearing.
+- **Every tolerance widened to 1.0**: a broken implementation still failed 4
+  cases. Those are carried by their structure, not by tight tolerances — worth
+  knowing, and the honest reading is that the tolerances are not the gate there.
+
+### No render, and that is not a skipped gate
+Nothing consumes the signal yet — there is no geometry moving, so there is no
+image to look at. The first visual gate on this line arrives with corrective
+application.
+
+### Gates
+Four presets one at a time, 828/828, 0 warnings, `ALLDONE` read. CI's exact
+clang-format command clean. SonarQube gate OK, 0 open issues.
+
+### Next
+The RBF evaluator: kernel plus a solved weight matrix, verified AT and BETWEEN
+example poses against an analytic corrective function, consuming
+`(twistAngle, rotationVector(swing))` from this chunk. Still no art needed.
+
+---
+
 ## 2026-09-09 (forty-second) — Session · **Dual quaternion is the default now**
 
 *2026-09-09 — directive 12 step 2, "fix skinning". The owner named optimised

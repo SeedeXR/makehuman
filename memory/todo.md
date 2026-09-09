@@ -4238,11 +4238,82 @@ GPU here, or Colab) and it comes back to the owner first.
                   precompute is 19,158 vertices × 36,972 triangles of
                   similarity evaluation, which needs its own budget and its
                   own cache format.
-      - [ ] **3. PSD runtime + synthetic oracle.** Swing-twist decomposition
+      - [~] **3. PSD runtime + synthetic oracle.** Swing-twist decomposition
             (NOT Euler) → one RBF evaluator → a weight vector. Analytic
             corrective function as ground truth, verified AT and BETWEEN
             example poses. Correctives apply PRE-SKIN in rest space. No art
             needed.
+            - [x] **The pose signal: swing-twist decomposition** (2026-09-09).
+                  `foundation::swingTwist(q, twistAxis)` → `{swing, twist}`,
+                  `twistAngle(twist, axis)` → the signed scalar, and
+                  `rotationVector(q)` → the log map, which is the swing half of
+                  the signal as something an RBF can measure distance in.
+                  Together: one scalar along the axis, a vector across it,
+                  3 numbers for 3 degrees of freedom.
+                  - **A new file, not Transform.h.** That file's header says it
+                    is a port of `transformations.py` and is BSD-3-Clause for
+                    exactly that reason; adding a function that is not a port
+                    would make the licence note wrong about its own contents.
+                    `SwingTwist.{h,cpp}` are Apache-2.0 like the rest of
+                    foundation. `tools/audit_licences.py` and
+                    `tools/audit_headless.py` both re-run clean.
+                  - **The reference has none of it.** `grep -ri
+                    'swing\|twist' legacy/python` returns nothing, so there is
+                    no parity fixture and the tests are the analytic oracle
+                    directive 12.7 asks for: cases whose answer follows from
+                    the definition. 11 cases, 1,063 assertions.
+                  - **Composition order is pinned by a hand-computed case.**
+                    q = Rz(90)·Ry(90) = (0.5, -0.5, 0.5, 0.5) about Y must
+                    decompose into exactly those two factors, so `q = swing *
+                    twist` is asserted rather than described.
+                  - **Recomposition alone is not the test.** Infinitely many
+                    factorisations recompose; only one has the swing's axis
+                    perpendicular to the twist axis. That perpendicularity is
+                    asserted separately, and so is the all-twist case (a
+                    rotation about the axis must leave swing EXACTLY identity —
+                    leaking part of it into swing still recomposes).
+                  - **Cross-checked against an independent formulation.** A
+                    numpy script took the geometric route instead of the
+                    algebraic one: twist fixes the axis, so the swing is the
+                    SHORTEST-ARC rotation from `a` to `q·a`, and the twist is
+                    `swing⁻¹·q`. Over 147 grid points × 3 twist axes it agreed
+                    on every swing and twist, worst twist-angle difference
+                    1.8e-15. Scratch, not committed: the property tests already
+                    pin the decomposition uniquely and caught 10 of 10
+                    mutations, so a second implementation in the suite would be
+                    confirmation rather than coverage.
+                  - **atan2 everywhere, and the reason is measured.** Relative
+                    error of `2*acos(w)` against the angle the quaternion was
+                    built from: 1.5e-14 at 0.1 rad, 4.1e-8 at 1e-5, **1.2e-2 at
+                    1e-7, and 1.0 at 1e-8** — at a hundredth of a degree acos
+                    is 1% wrong and below that it returns zero. That is exactly
+                    the range a pose near rest lives in. atan2 was exact to the
+                    last bit at all of them.
+                  - **The singularity guard was DECORATIVE and mutation
+                    testing caught it.** Removing `if (norm < kEps)` passed the
+                    whole file, because `std::cos(kPi/2)` is 6.1e-17 rather
+                    than 0: the built half-turn never reaches a zero norm, and
+                    normalising 6.1e-17 by itself gives exactly identity — the
+                    same answer the guard returns. Rewritten with the EXACT
+                    quaternion `(0, 1, 0, 0)`, plus a case where both parts are
+                    below tolerance but NOT in proportion (dividing through
+                    would report 140° of twist from a rotation that is a half
+                    turn to one part in 1e16), plus a continuity check
+                    approaching π from both sides. The mutation then dies.
+                  - **The gate was mutated too.** With `checkSameRotation`
+                    neutered to assert nothing, a deliberately reversed
+                    composition order passed the whole file — 341 assertions
+                    instead of 1,063, so the helper carries 722 of them.
+                    Widening every tolerance to 1.0 did NOT hide a broken
+                    implementation, which says those four cases are carried by
+                    their structure rather than by tight tolerances.
+            - [ ] **The RBF evaluator** is next: kernel + solved weight matrix,
+                  verified AT and BETWEEN example poses against an analytic
+                  corrective function. It consumes `(twistAngle,
+                  rotationVector(swing))` from above.
+            - [ ] **Nothing consumes the signal yet**, which is why this chunk
+                  has no render: there is no geometry moving. The first visual
+                  gate arrives with the corrective application.
       - [ ] **4. Authoring format, compiler, Blender round-trip.** Manifest
             (TOML/JSON) + sparse `.target` payloads → offline RBF solve → an
             mmap-able blob that is a disposable cache, invalidated on manifest

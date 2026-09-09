@@ -29,6 +29,7 @@ add_executable(mh_tests
     unit/test_compact.cpp
     unit/test_transform.cpp
     unit/test_dqs.cpp
+    unit/test_swing_twist.cpp
     unit/test_version.cpp
     golden/test_base_mesh_parity.cpp
     golden/test_mesh_fixture_parity.cpp
