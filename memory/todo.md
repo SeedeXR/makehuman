@@ -3792,13 +3792,39 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       would hand a dangling range to the next QSlider at the same address.
       Two mutations verified (factory returns nullptr; announce the raw tick) —
       both fail 3 assertions.
-- [ ] **Known gap, re-measured 2026-09-02:** the readout label beside each
-      slider is still offered under its own accessible name, so the number is
-      announced twice. An empty `accessibleName` does NOT suppress it — Qt falls
-      back to `QLabel::text()`. Suppressing it means reporting the label's
-      interface invisible, and **whether macOS then drops it cannot be
-      established from the Qt API** — it needs VoiceOver on a real device. Not
-      shipped rather than shipped unverifiable.
+- [x] **The slider readout is no longer announced twice** (2026-09-10). The
+      value label beside each slider now reports its accessibility interface
+      `invisible`, via a `ReadoutAccessible` claimed by the same factory that
+      already fixes the slider's value. It stays on SCREEN — this changes what
+      is exported to the platform, not what is drawn — and the CAPTION is
+      deliberately untouched, because it is the only thing that says which
+      modifier the row is.
+      - **"Cannot be established from the Qt API" was true, and the wrong place
+        to look.** It is established from Qt's COCOA BRIDGE:
+        `qtbase/src/plugins/platforms/cocoa/qcocoaaccessibility.mm` opens
+        `shouldBeIgnored()` with *"Cocoa accessibility does not have an
+        attribute that corresponds to the Invisible/Offscreen state. Ignore
+        interfaces with those flags set"*, returning true on `state.invisible`.
+        Read on the 6.8 branch and on dev; we build against 6.11.1. An interface
+        reporting invisible never reaches NSAccessibility at all.
+      - **The obvious test was decorative twice over, both measured.**
+        `QAccessibleWidget::state()` derives `invisible` from the widget's own
+        visibility, so in an UNSHOWN panel every label reports invisible and the
+        case passes for a reason unrelated to accessibility — the caption came
+        back invisible too. And even shown, the panel is a 7-tab `QTabWidget`:
+        of **291 readouts only the 9 on the current tab are visible**, so taking
+        the first match in the tree takes a hidden one. The case now requires a
+        readout that is on screen and asserts the caption beside it is NOT
+        hidden — which is what proves the flag is an override rather than a
+        widget being off screen.
+      - **STILL OPEN, and it needs the owner: the real macOS AX tree.** Directive
+        13.2 said to test on this device. I built an `AXUIElement` walker and it
+        reported zero elements — **permission denial reported as silence**, not
+        evidence: `AXIsProcessTrusted() == false`, every call -25211. This
+        session runs under **Zed**, so Zed needs Accessibility in System
+        Settings → Privacy & Security. With that granted the walk takes a
+        minute and settles the platform half by observation rather than by
+        citation.
 
 ## Fixtures the ignore rules swallowed (found 2026-09-08)
 

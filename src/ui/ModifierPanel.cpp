@@ -47,6 +47,10 @@ float fromTick(const foundation::SliderSpec& s, int tick) {
 constexpr auto kMinProperty = "mh.sliderMin";
 constexpr auto kMaxProperty = "mh.sliderMax";
 
+/// Marks the value label beside a slider, so the accessibility factory can tell
+/// it from every other QLabel in the panel -- the captions must stay readable.
+constexpr auto kReadoutProperty = "mh.sliderReadout";
+
 /// A DATA string as the user should read it.
 ///
 /// Slider captions, section headings and tab names come from
@@ -88,12 +92,51 @@ public:
     }
 };
 
-/// Claims only the sliders this panel built -- the ones carrying the range
-/// properties. Anything else falls through to Qt's own interface.
-QAccessibleInterface* sliderAccessibleFactory(const QString& className, QObject* object) {
-    if (className != QLatin1String("QSlider")) return nullptr;
-    if (!object->property(kMinProperty).isValid()) return nullptr;
-    return new SliderAccessible(qobject_cast<QSlider*>(object));
+/// The readout label, hidden from the accessibility tree.
+///
+/// The number is already the SLIDER's value (see `SliderAccessible`), so a
+/// static text beside it saying the same thing is heard twice. An empty
+/// `accessibleName` does not suppress it -- Qt falls back to `QLabel::text()`
+/// -- and there is no widget-level "ignore me" flag.
+///
+/// **`invisible` is what macOS acts on**, and this was recorded as
+/// unverifiable ("needs VoiceOver on a real device") until the right file was
+/// read. Qt's Cocoa bridge,
+/// `qtbase/src/plugins/platforms/cocoa/qcocoaaccessibility.mm`, opens
+/// `shouldBeIgnored()` with:
+///
+///     // Cocoa accessibility does not have an attribute that corresponds to
+///     // the Invisible/Offscreen state. Ignore interfaces with those flags set.
+///     if (state.invisible || state.offscreen || state.invalid)
+///         return true;
+///
+/// Identical on the 6.8 branch and on dev; we build against 6.11.1. So an
+/// interface reporting invisible never reaches NSAccessibility, which is the
+/// tree VoiceOver reads. The label stays on SCREEN -- this changes what is
+/// exported to the platform, not what is drawn.
+class ReadoutAccessible : public QAccessibleWidget {
+public:
+    explicit ReadoutAccessible(QWidget* label)
+        : QAccessibleWidget(label, QAccessible::StaticText) {}
+
+    QAccessible::State state() const override {
+        QAccessible::State s = QAccessibleWidget::state();
+        s.invisible          = true;
+        return s;
+    }
+};
+
+/// Claims only what this panel built -- the sliders carrying the range
+/// properties, and the readouts carrying theirs. Anything else, including every
+/// caption, falls through to Qt's own interface.
+QAccessibleInterface* modifierAccessibleFactory(const QString& className, QObject* object) {
+    if (className == QLatin1String("QSlider") && object->property(kMinProperty).isValid()) {
+        return new SliderAccessible(qobject_cast<QSlider*>(object));
+    }
+    if (className == QLatin1String("QLabel") && object->property(kReadoutProperty).isValid()) {
+        return new ReadoutAccessible(qobject_cast<QWidget*>(object));
+    }
+    return nullptr;
 }
 
 }  // namespace
@@ -106,7 +149,7 @@ ModifierPanel::ModifierPanel(std::span<const foundation::TaskViewSpec> views, QW
     // twice; the first non-null wins, so a second registration is harmless but
     // pointless.
     [[maybe_unused]] static const bool installed = [] {
-        QAccessible::installFactory(&sliderAccessibleFactory);
+        QAccessible::installFactory(&modifierAccessibleFactory);
         return true;
     }();
 
@@ -188,6 +231,7 @@ ModifierPanel::ModifierPanel(std::span<const foundation::TaskViewSpec> views, QW
                 auto* readout = new QLabel(rowWidget);
                 readout->setObjectName(QStringLiteral("modifiers.readout"));
                 readout->setAlignment(Qt::AlignRight);
+                readout->setProperty(kReadoutProperty, true);
 
                 auto* head    = new QWidget(rowWidget);
                 auto* headRow = new QHBoxLayout(head);

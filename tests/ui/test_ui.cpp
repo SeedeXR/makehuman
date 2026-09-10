@@ -322,6 +322,60 @@ int main(int argc, char** argv) {
 // `text(QAccessible::Value)` is not a proxy for what VoiceOver reads: it is the
 // string Qt's Cocoa accessibility bridge hands over. What is NOT verified here
 // is VoiceOver's own behaviour, which needs a real device.
+TEST_CASE("the slider readout is not announced twice", "[ui][a11y]") {
+    const auto views = shippedModifierViews();
+    if (views.empty()) return;  // no data dir on this machine
+
+    mh::ui::ModifierPanel panel(views);
+    // SHOWN, and on a row that is actually on screen. Both halves were learned
+    // the hard way while writing this.
+    //
+    // `QAccessibleWidget::state()` derives `invisible` from the widget's own
+    // visibility, so in an UNSHOWN panel every label reports invisible and this
+    // case passes for a reason with nothing to do with accessibility --
+    // measured, the caption came back invisible too. And even shown, the panel
+    // is a 7-tab QTabWidget: of 291 readouts only the 9 on the current tab are
+    // visible, so taking the first match found anywhere in the tree takes a
+    // hidden one.
+    panel.show();
+    QApplication::processEvents();
+
+    QLabel* readout = nullptr;
+    for (QLabel* l : panel.findChildren<QLabel*>(QString(), Qt::FindChildrenRecursively)) {
+        if (l->objectName() == QStringLiteral("modifiers.readout") && l->isVisible()) {
+            readout = l;
+            break;
+        }
+    }
+    REQUIRE(readout != nullptr);
+
+    QAccessibleInterface* iface = QAccessible::queryAccessibleInterface(readout);
+    REQUIRE(iface != nullptr);
+    INFO("readout \"" << readout->text().toStdString()
+                      << "\" is on screen and reports invisible=" << iface->state().invisible);
+    CHECK(iface->state().invisible);
+
+    // The CAPTION in the same row must NOT be hidden: it is the only thing that
+    // says which modifier this is, and suppressing every label in the row would
+    // trade one duplicate announcement for an unnavigable panel. It is also
+    // what proves the flag above is a deliberate override rather than the
+    // widget being off screen.
+    QLabel* caption = nullptr;
+    for (QLabel* l :
+         readout->parentWidget()->findChildren<QLabel*>(QString(), Qt::FindChildrenRecursively)) {
+        if (l != readout && l->isVisible() && !l->text().isEmpty()) {
+            caption = l;
+            break;
+        }
+    }
+    REQUIRE(caption != nullptr);
+    QAccessibleInterface* capIface = QAccessible::queryAccessibleInterface(caption);
+    REQUIRE(capIface != nullptr);
+    INFO("caption \"" << caption->text().toStdString()
+                      << "\" reports invisible=" << capIface->state().invisible);
+    CHECK_FALSE(capIface->state().invisible);
+}
+
 TEST_CASE("a slider announces its value, not its tick", "[ui][a11y]") {
     const auto views = shippedModifierViews();
     if (views.empty()) return;  // no data dir on this machine

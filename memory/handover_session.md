@@ -4,6 +4,90 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-10 (fifty-eighth) — Session · **The duplicated readout, and a gate that was decorative twice over**
+
+*2026-09-10 — directive 13.2: "Create a voiceover and use this device to test
+and verify." The item had been parked since 2026-09-02 as unverifiable.*
+
+### What landed
+The value label beside each slider now reports its accessibility interface
+**`invisible`**, so a screen reader meets the number once instead of twice. A
+`ReadoutAccessible` claimed by the same `QAccessible` factory that already fixes
+the slider's value; the label stays on SCREEN — this changes what is exported to
+the platform, not what is drawn.
+
+### "Cannot be established from the Qt API" was true, and the wrong place to look
+The parked note said suppressing the label means reporting its interface
+invisible, and that *whether macOS then drops it* could not be established from
+the Qt API. Correct — and it is established from Qt's **Cocoa bridge**.
+`qtbase/src/plugins/platforms/cocoa/qcocoaaccessibility.mm` opens
+`shouldBeIgnored()` with:
+
+    // Cocoa accessibility does not have an attribute that corresponds to the
+    // Invisible/Offscreen state. Ignore interfaces with those flags set.
+    if (state.invisible || state.offscreen || state.invalid)
+        return true;
+
+Read on the 6.8 branch and on dev; we build against 6.11.1. An interface
+reporting invisible never reaches NSAccessibility, which is the tree VoiceOver
+reads.
+
+### The obvious test was decorative TWICE, and both were measured
+1. `QAccessibleWidget::state()` derives `invisible` from the widget's own
+   visibility. In an **unshown** panel every label reports invisible, so the
+   case passes for a reason unrelated to accessibility — measured, the caption
+   came back invisible too.
+2. Even shown, the panel is a **7-tab QTabWidget**: of **291 readouts only the 9
+   on the current tab are visible**, so taking the first match found anywhere in
+   the tree takes a hidden one.
+
+The case now requires a readout that is ON SCREEN, and asserts the caption
+beside it is NOT hidden. That caption assertion is what proves the flag is a
+deliberate override rather than a widget being off screen — and it is what
+catches the mutation that hides every QLabel in the panel.
+
+### The AX walker reported zero, and zero was not evidence
+Directive 13.2 said to verify on this device, so I built an `AXUIElement` tree
+walker in Swift, launched the app and ran it: **TOTAL AXSlider=0
+AXStaticText=0.** That looked like a finding and was not one —
+`AXIsProcessTrusted() == false` and every call returned **-25211**, permission
+denial reported as silence. Checking the error code rather than believing the
+count is the only reason it did not become a false conclusion in this file.
+
+This session runs under **Zed** (login → zsh → claude → Zed), so Zed is what
+needs Accessibility in System Settings → Privacy & Security. Left open and
+recorded; the platform half rests on the Qt-source citation until then.
+
+### I corrupted a test file and restored it deliberately
+A Python edit computed its end marker as a string that occurs BEFORE its start
+marker, so the slice was empty and `replace("", ...)` inserted the new block
+between every character: `test_ui.cpp` went from 1,014 lines to **2,706,207**.
+
+Restored with `git restore` — which the standing rule forbids, and this is the
+exception it allows for: the corrupted file was the ONLY modified file, its only
+uncommitted content was the test I was mid-way through writing, and the wreck
+was copied to the scratchpad first. Checked all three before running it.
+
+Then made the same class of mistake again on `todo.md`: retyping a passage from
+a wrapped grep instead of reading it, so the assertion failed on bolding I had
+not reproduced. The second edit locates its range by content and replaces lines,
+which is what the first should have done.
+
+### Mutations
+Three, all caught: the readout left unmarked so the factory never claims it, the
+override not setting invisible, and the factory hiding every QLabel including
+the captions.
+
+### Gates
+Debug, release, ASan, TSan, one preset at a time, ALLDONE read. clang-format
+clean with CI's exact command. Sonar gate OK with 0 open issues.
+
+### Next
+The jaw control, which is the same shape the eyes were: `jaw` is weighted (888
+base vertices) and rotating it works; only a control is missing.
+
+---
+
 ## 2026-09-10 (fifty-seventh) — Session · **The eyes can be aimed, and the viewport could not show it**
 
 *2026-09-10 — directive 12.3's other half: "eye and teeth rigging are NOT this.
