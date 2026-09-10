@@ -348,11 +348,28 @@ attribution goes in §6 the moment anything derived from it ships. The dataset
 card also declares biometric identification, medical diagnosis and surveillance
 out of scope; none of those are things we do.
 
-**Quaternius — NOT verified, do not use yet.**
-Reported as CC0. The site's licence page did not yield terms to either of the
-two fetches attempted on 2026-09-07, and Quaternius has historically had both a
-free and a patron tier. CC0 is *plausible* and unconfirmed, so by hard rule 6 it
-stays out until someone reads the actual licence text and records it here. An
+**Quaternius — READ 2026-09-10. NOT CC0, and REFUSED.**
+The caution above was right for the wrong reason. The licence page
+(`quaternius.com/license.html`) yields terms now, and they are not CC0: it is a
+custom **Quaternius Asset License (QAL) v1.0**. It grants commercial use and
+modification with no attribution — but it also says you may not *"extract,
+repackage, sublicense, sell, or otherwise redistribute the Assets (in original or
+modified form) as a standalone asset"*.
+
+**That is exactly what bundling them in `data/` would be.** An asset committed to
+a public repository can be taken back out of it, in original or modified form, as
+a standalone asset — so shipping one would breach the licence no matter what the
+surrounding application does. It is also incompatible with the freedoms this
+project promises its own users under AGPL-3.0.
+
+**The site contradicts itself, and the licence page governs.** `quaternius.com/faq.html`
+still says *"All models are under the CC0 License"*. Both were read on the same
+day. A FAQ is not a licence grant, and the document headed "License" is; where
+they disagree the restrictive, specific one is the one to obey. Recording the
+contradiction rather than the convenient half of it, because the next person to
+check will find the FAQ first.
+
+An
 asset whose licence we assumed is the one that has to be torn out later.
 
 **Also re-confirmed as forbidden**, matching §5.2 and the owner's own reading:

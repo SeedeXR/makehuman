@@ -356,3 +356,93 @@ the next thing: build-from-source on an arbitrary machine is. The compile-time
 absolute `MH_DATA_DIR` is still wrong, but it is wrong because it assumes THIS
 checkout, not because a DMG needs relocating. Universal binary and auto-update
 drop further down; the DMG work waits for "we will then add nuances".
+
+
+## Directive 14 — follow-ups to directive 13 (2026-09-10)
+
+### 14.1 A character-definition format of our own
+
+> "can we find a way to create our own meta human dna calibration, custom"
+
+Yes, and the pieces already exist — but **clean-room is not optional here.** We
+read Epic's licence and refused it (§5.2), so their format must not be
+consulted: not the spec, not the headers, not the repo. Anything we build is
+designed from OUR needs and OUR existing formats, and says so. Reading a format
+we have formally refused would be the one way to turn a good idea into a
+licensing problem.
+
+What it would be: today a character is spread across `.mhm` + `.mhskel` + `.mhw`
++ `.target` files + `.mhcorr` + proxies, and only the app knows how to assemble
+them. One self-describing, versioned, hash-keyed container would make a character
+a single artefact that any tool can read.
+
+**We have already built this shape once.** `CorrectiveBlob` is exactly the
+pattern the directive is reaching for: a 64-byte header, a format version, an
+FNV-1a content hash, computed rather than stored section offsets, mmap-able, and
+a disposable cache rebuilt on mismatch. Extending that pattern to the whole
+character is the work; inventing it is not.
+
+Not named "DNA". Our own name, our own layout.
+
+### 14.2 Datasets — answered, and one changed
+
+> "you got access to internet get the names yourself"
+
+They were already recorded: `LICENSING.md` §5.2a, owner-supplied 2026-09-07 —
+**NVIDIA SOMA-X** (Apache-2.0 code AND weights, but ONLY the SOMA/MHR/Anny/
+GarmentMeasurements backends; the SMPL ones re-import a research-only licence
+through an Apache front door) and **HSRD-100** (CC-BY-4.0, 246 GB, attribution
+goes in §6 the moment anything derived ships).
+
+The third changed. **Quaternius is NOT CC0 and is refused** — read 2026-09-10:
+the licence page is a custom *Quaternius Asset License v1.0* forbidding
+redistribution of the assets "in original or modified form as a standalone
+asset", which is precisely what committing them to `data/` would be. Its own FAQ
+still says CC0; the licence page governs and the contradiction is recorded.
+
+### 14.3 Expression system — already solved by the export
+
+> "if we can export the makehuman to blendshapes, that will be solved because we
+> will work with exported"
+
+We already do: `--blendshapes` writes the 34 expression units through glTF, FBX
+and USD, each gated (`app_blendshapes`, `app_blendshapes_fbx`,
+`app_blendshapes_usda`). So the morph-target path is the one that travels, and
+the pose-unit mixer is internal. The task-view question from 13.4 is closed.
+
+### 14.4 Versioning — this version forward, not backward
+
+> "let's deal with our current version going forward, make it custom for this
+> current version going forward, that's more easier"
+
+Narrower than 13.1 and simpler: no machinery for hypothetical older variants.
+Each format declares its version, this build reads what it wrote, and a version
+it does not know is REFUSED rather than guessed at. That is what the corrective
+manifest already does. Backward compatibility is added only when a real older
+file exists to be compatible with.
+
+### 14.5 `MH_DATA_DIR` — already the modern way; the todo was stale
+
+> "make it relative path, or what the modern way to approach this"
+
+The modern way is not a relative path — a relative path breaks the moment the
+working directory changes. It is **runtime resolution against the executable**,
+and it is already built, wired and tested:
+
+`foundation::resolveDataDir` (and the shader/resource siblings) take `argv[0]`
+and search, first match wins: `$MH_DATA_DIR` if set → `<exe>/../Resources/data`
+(macOS bundle) → `<exe>/../share/makehuman/data` (Unix prefix) →
+`~/Library/Application Support/MakeHuman/data` → the compile-time default. A
+candidate counts only if it EXISTS and looks like an asset tree — the sentinel
+check, so "found a directory" cannot stand in for "found the assets". Called
+from `main.cpp:1781/1801/1826`; covered by `tests/unit/test_data_dir.cpp`,
+including that a bundle copy beats the compiled default.
+
+`src/app/CMakeLists.txt` copies all three trees into
+`MakeHuman.app/Contents/Resources/`, which is the first candidate.
+
+**So the todo's "the bundle is NOT relocatable ... runs on THIS machine only" is
+stale** — written before the resolver landed. What is genuinely unverified is
+narrower: the DMG has not been rebuilt and run from a machine with no source
+tree since. That is a packaging check, not a design gap, and directive 13.12
+puts it after compile-from-source anyway.
