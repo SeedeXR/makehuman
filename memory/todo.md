@@ -5412,17 +5412,35 @@ GPU here, or Colab) and it comes back to the owner first.
 
 ## Research and open questions
 
-- [ ] **Confirm the typeface.** Instruction was "red 42 dot sans"; `42dot Sans`
-      (SIL OFL 1.1) is the assumed match. Needs a one-word confirmation.
-- [ ] **Clarify "open rig".** The instruction mentioned integrating "open rig".
-      Candidate readings: (a) the existing open `.mhskel` rig format, (b) OpenSim
-      rigs — `legacy/python/apps/compat.py:181-188` references `opensim.mhskel`
-      as a downloadable community asset, (c) a specific third-party project.
-      **Not guessing.** Blocked on clarification; does not block M1–M8.
-- [ ] Evaluate MetaHuman **DNA Calibration** (parts are Apache-2.0) — licence-verify
-      the exact repo and version before any use.
-- [ ] Decide runtime data location on macOS (bundle Resources vs Application Support)
-- [ ] Decide Widgets vs QML for panel content (leaning Widgets)
+- [x] **Typeface confirmed** (owner, 2026-09-10): it is **42dot Sans**. The
+      assumption was right. Still to do, and NOT settled by the confirmation:
+      fonts are bundled, so the SIL OFL 1.1 text must be verified against the
+      copy we ship and recorded in `LICENSING.md` §5.4 before it goes in.
+- [x] **"Open rig" clarified** (owner, 2026-09-10): *"a rig that is available
+      for you to inspect, modify, and use, rather than being locked or
+      proprietary."* So it is a PROPERTY, not reading (b) or (c) — no third-party
+      project to integrate. The `.mhskel` rigs already satisfy it. What it asks
+      of us going forward: keep the rig inspectable and modifiable, with no
+      opaque baked-only skeleton path.
+- [x] **MetaHuman DNA Calibration — read and REFUSED** (2026-09-10, at the
+      owner's instruction). The premise of this item was wrong: it is not
+      "partly Apache-2.0". `EpicGames/MetaHuman-DNA-Calibration` carries ONE
+      `LICENSE` at the root — Epic's own *MetaHuman DNA Calibration License
+      Agreement*, no version, not OSI-approved — and the README points to that
+      single file for the whole repository. Field-of-use restricted to the
+      Unreal ecosystem, forbids distributing the Software, terminable "at any
+      time for convenience". Refused by `LICENSING.md` §5.2 twice over, and hard
+      rule 5 forbids the content regardless. Recorded there; question closed.
+- [~] **Runtime data location on macOS** — reframed by directive 13.12, not
+      answered. The owner's answer to "the DMG only runs on this machine" was
+      *"everyone will compile on their machine, that's why it's open source"*,
+      so a RELOCATABLE bundle is not the driver. But `MH_DATA_DIR`,
+      `MH_SHADER_DIR` and `MH_RESOURCE_DIR` are still compile-time absolute
+      paths into THIS CHECKOUT, which is a different defect: a fresh clone on
+      someone else's machine has to work. That is the real item, and it comes
+      before anything else in M11.
+- [x] **Widgets, not QML**, for panel content (owner, 2026-09-10). The lean was
+      right; it is now a decision.
 - [ ] Survey current research: neural morphable body models, PSD/corrective learning,
       differentiable skinning, LOD auto-generation
 

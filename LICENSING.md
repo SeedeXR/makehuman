@@ -265,9 +265,20 @@ with the version and linkage as verified on the build machine at that time.
 | **Ceres Solver**, as packaged | BSD-3 core, but links SuiteSparse (SPQR is GPL-2.0-or-later), METIS and OpenBLAS — see 5.2.1 |
 | Anything with an unidentifiable licence | Cannot be audited |
 
-*Note:* Epic's **MetaHuman DNA Calibration** tooling is partly Apache-2.0. Any use
-requires verifying the specific repository and version at the time of use and
-recording it here first.
+*Note:* **MetaHuman DNA Calibration — checked, and the note that used to sit
+here was wrong.** It said the tooling was "partly Apache-2.0". Read at the
+owner's instruction on 2026-09-10: `EpicGames/MetaHuman-DNA-Calibration` carries
+ONE `LICENSE` at the repository root, the *MetaHuman DNA Calibration License
+Agreement* — Epic's own, no version, not OSI-approved — and the README points to
+that single file for the whole repository. No Apache-2.0 component is visible at
+the top level.
+
+Its terms are refused twice over by the rows above: use is limited to tools for
+Epic's proprietary DNA format, the characters "may only be used in conjunction
+with Unreal Engine and Unreal Engine-based products" (field-of-use), it forbids
+distributing the Software, and Epic may terminate "at any time for convenience".
+So it is not a licence this project can build on even for CODE, and hard rule 5
+forbids the content regardless. **The question is closed: not usable.**
 
 ### 5.2.1 Numerical libraries refused, decided 2026-09-09
 
@@ -465,13 +476,18 @@ nothing in the build depends on it.
 
 ## 7. Open licence questions
 
-1. **Typeface.** The instruction was *"red 42 dot sans"*. **42dot Sans**
-   (SIL OFL 1.1, Google Fonts) is the assumed match; the leading "red" is
-   unexplained. Confirm the family, then verify and record its licence here
-   before bundling. Fonts are bundled, so this is a redistribution question.
+1. ~~**Typeface.**~~ **Confirmed by the owner 2026-09-10: it is 42dot Sans.**
+   The assumption was right. What REMAINS is the redistribution step, which the
+   confirmation does not settle: fonts are bundled, so the SIL OFL 1.1 text has
+   to be verified against the copy we actually ship and recorded in §5.4 before
+   it goes in.
 2. **Training data** for Objective O6 (character generation). Every dataset must
    be licence-audited and recorded here **before** any use. A model trained on
    licence-incompatible data contaminates the output.
+   **Owner, 2026-09-10: "we have already gotten alternative data sets, that the
+   licenses align."** So the sourcing is settled and the recording is not — this
+   section still needs each dataset NAMED with its licence, which only the owner
+   can supply. See §5.2a for the SMPL-X alternatives already recorded that way.
 3. **Community assets** downloaded at runtime carry per-asset licences from the
    server as free text, with no validation and nothing written into the installed
    file (`legacy/python/plugins/8_asset_downloader/remoteasset.py:97`). The port

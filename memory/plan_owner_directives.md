@@ -255,3 +255,104 @@ later".
 - **Round-trip test**: save in the legacy profile, load in modern, compare
   canonical IDs.
 
+
+## Directive 13 — the twelve open decisions, answered (2026-09-10)
+
+Asked "what's remaining, and what still requires your intervention or decision"
+and got all twelve back. Recorded verbatim where the wording carries the intent,
+because several are architecture commitments rather than yes/no answers.
+
+### 13.1 Versioning is a system-design property, not a stamp
+
+> "for version, should be able to work with older versions and new versions as
+> we keep upgrading, that should be in system design."
+
+So the export version stamp is approved, but the directive is larger than the
+four one-line changes it was raised as: **every format this project reads must
+handle both older and newer versions on purpose.** The corrective manifest
+already does it (reads 1 and 2, refuses 3+); the blob refuses an unknown version
+because it is a rebuildable cache. That pattern becomes the rule, and the
+byte-golden objection is answered: goldens accommodate the version, not the
+other way round.
+
+### 13.2 VoiceOver — test it here
+
+> "Create a voiceover and use this device to test and verify."
+
+The duplicated slider readout stops being "not shippable because unverifiable".
+This IS the device. Verify what the accessibility tree actually exposes and
+whether suppressing the label's interface makes macOS drop it.
+
+### 13.3 Datasets — alternatives already secured
+
+> "we have already gotten alternative data sets, that the licenses align."
+
+M10's licence audit is answered in principle. **Still needed from the owner:
+WHICH datasets and where**, because `LICENSING.md` has to name each one and its
+licence before any of it is used (hard rule 6).
+
+### 13.4 Expression system — pick the one that interoperates
+
+> "choose the best modern day approach that will work best with makehuman port
+> and other technologies like blender, maya, metahuman etc"
+
+Not "keep both". The criterion is INTERCHANGE, which points at the morph-target
+path: blend shapes are what glTF, FBX and USD all carry, and what Blender and
+Maya read without a translation layer. The pose-unit mixer drives our own face
+rig and travels nowhere.
+
+### 13.5 The seven proxy choosers — generate them
+
+> "if there are no assets or data from legacy, procedurally generate and wire
+> through."
+
+Same answer as the eight skin textures. Check legacy for each slot first; where
+it ships nothing, generate and wire the chooser.
+
+### 13.6 `--skin` / `--litsphere` — rename WITH aliases
+
+> "ensure interoperability and aliases to ensure systems works and can
+> interoperate both new users and old users who are used in certain ways."
+
+So: rename to the honest name, keep the old spelling working as an alias, and
+the same discipline everywhere else a name changes. Old habits keep working.
+
+### 13.7 Typeface — confirmed
+
+> "it's 42 dot sans"
+
+`42dot Sans` (SIL OFL 1.1). The assumption was right; it is now a fact.
+
+### 13.8 Panel content — Widgets
+
+> "go with widgets"
+
+### 13.9 "Open rig" — clarified
+
+> "open rig generally means a rig that is available for you to inspect, modify,
+> and use, rather than being locked or proprietary."
+
+A PROPERTY, not a named third-party project. The `.mhskel` rigs already satisfy
+it. What it asks of us is that the rig stay inspectable and modifiable — no
+opaque baked-only skeleton path.
+
+### 13.10 MetaHuman DNA Calibration — go read the licence
+
+> "you can go in the repo and read the license and confirm."
+
+Delegated to me. Hard rule 5 still stands regardless of what the licence says:
+reading it settles whether the CODE is usable, never whether Epic's CONTENT is.
+
+### 13.11 and 13.12 Distribution — compiled per machine, open source
+
+> "This is open source everyone will compile on their own hardware macos or any
+> other machine in the future"
+> "everyone will compile on their machine ... when works on each machine when
+> compiled we will then add nuances if distributing a dmg that works in
+> different macos machines."
+
+**This reorders M11.** Codesigning, notarisation and a relocatable DMG are NOT
+the next thing: build-from-source on an arbitrary machine is. The compile-time
+absolute `MH_DATA_DIR` is still wrong, but it is wrong because it assumes THIS
+checkout, not because a DMG needs relocating. Universal binary and auto-update
+drop further down; the DMG work waits for "we will then add nuances".
