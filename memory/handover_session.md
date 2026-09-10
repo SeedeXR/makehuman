@@ -4,6 +4,111 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-10 (fifty-third) — Session · **Wrinkle maps reach the screen, and a claim that had been written down for weeks turns out to be untested**
+
+*2026-09-10 — directive 12 step 5 opens with its one piece of code: the
+texture-space consumer of the pose-signal driver.*
+
+### What landed
+`MeshInstance::wrinkleMap` and `wrinkleWeight`, blended in BOTH fragment
+shaders from the spare `material.w` slot. 8 new render cases, 5 mutations, all
+caught. The ctest count stays 908 because every render case lives inside the one
+`render` entry; the Catch2 assertion count is what moved.
+
+### Added, not mixed — and only one test can tell
+A wrinkle map is DETAIL over the base normal map, so the two combine by adding
+tangent-space slopes and keeping the base's Z (the UDN blend).
+`mix(base, wrinkle, w)` at full weight IS the wrinkle map: it throws away the
+pores and skin structure the base carries exactly where the crease is deepest,
+which is where they read most.
+
+Measured: under `mix`, "a wrinkle map adds to the base normal map rather than
+replacing it" reports **0 differing pixels**. Every other assertion in the file
+passes under either blend, so that one case carries the whole design decision.
+
+### The weight is the entire gate
+One number, meaning both "no map" and "not fired", and forced to zero on the CPU
+when no texture was created. A positive weight with nothing bound would blend
+the shared 1x1 white stand-in, which unpacks to a hard (1,1,1) tangent-space
+slope — a bright diagonal crease across the whole body. Nothing else in the file
+reaches that line, so it got its own case.
+
+Zero is BYTE-identical, not close: `base.xy + 0.0 * crease.xy` is `base.xy` for
+any finite sample. The `if (w > 0.0)` branch is there to skip a texture fetch,
+not to make that true, and the comment says so rather than implying the branch
+is load-bearing.
+
+### A recorded claim with no test, and my own change made it easy to break
+The litsphere's no-map path deliberately keeps the RAW interpolated normal while
+the mapped path normalizes — the shipped matcaps were authored against the
+un-normalized vector. "A flat 1x1 placeholder cannot replace the branch" has
+been in `todo.md` since normal mapping landed, and **nothing tested it**.
+
+Found by mutating my own new branch condition to one that is always true: the
+whole render suite stayed green, **2,153 assertions**, with the no-map path
+gone. Now pinned — and the pin had to be built twice, because the obvious
+version was decorative:
+
+- Differing-pixel count: **4,086 correct against 3,355 mutated**, 18% apart. No
+  threshold separates that. The two renders touch nearly the same pixels and
+  differ in how FAR they move them.
+- Mean channel delta: **0.19519 against 0.02433**, 8x, and 0.10 sits between
+  with room either side. That is the assertion that shipped, plus a
+  `meanChannelDelta` helper beside `differingPixels`.
+
+The residual under the mutation is not noise: an 8-bit "flat" normal map is
+128/255, so it unpacks to a 0.0039 tilt rather than zero. There is no
+exactly-flat tangent normal map in 8 bits, which is why this is a magnitude test
+rather than an equality one.
+
+### Rendered it and looked, and the picture found a missing test
+With a real crease sheet — sharpened sine ridges converted to a normal map by
+their own gradient — not a flat test colour. **52,093 pixels differ between
+weight 0 and weight 1.** The creases light correctly with the surface (bright
+upper edge, dark lower), and the anatomy still reads THROUGH them, which is the
+additive blend being visible as an addition.
+
+At weight 0.5 they are visibly shallower. That is what made it obvious that
+nothing tested the weight as a DIAL rather than a switch: treating any positive
+weight as fully on passes "inert at zero" and "changes shading at one" both.
+"The wrinkle weight scales the crease" now covers it, and the mutation that
+drops the multiply gives 0 differing pixels.
+
+### Mutations
+Five, all caught: UDN → `mix` (0 pixels), the CPU weight guard removed, the
+wrinkle-alone branch condition removed, the branch condition made always true
+(caught only after the gate was rebuilt around mean delta), and the weight
+multiply dropped.
+
+### What reviewing my own diff caught
+The base normal map was still being SAMPLED outside its own guard, so a
+wrinkle-only mesh fetched the white placeholder and threw the unpacked result
+away — and litsphere.frag and pbr.frag disagreed about it, because I had written
+the second one the better way. Both now sample inside `if (material.y > 0.5)`.
+Behaviour-neutral, and confirmed so: every pixel count in the file is identical
+either side of the change (5,466 / 5,464 / 5,455 / 5,363, mean delta 0.19519).
+
+The fix landed AFTER a full green gate run, so the gates were run twice — the
+review came too late in the order. Editing source mid-run would have produced
+exactly the mixed binary the standing rule warns about, so the second cycle was
+the price of reviewing late rather than early.
+
+### Gates
+Debug, release, ASan, TSan: **908/908**, 0 warnings, one preset at a time,
+ALLDONE read. Run twice, for the reason above. clang-format clean with CI's
+exact command. Sonar gate OK with 0 open issues and 0 new violations, read after
+`api/ce/task` reported SUCCESS for this analysis.
+
+### Next
+**The driver still has to set the weight.** This is the consumer; firing it from
+the RBF weights the geometry correctives already read is where directive 12.3's
+"one evaluator, several consumers" is actually demonstrated. It needs a wrinkle
+payload in the manifest — a `formatVersion` 2 question, since version 1 states
+in writing that it has no optional fields — the path through the blob, and
+`wrinkleWeight` set per frame.
+
+---
+
 ## 2026-09-10 (fifty-second) — Session · **A third party looks at a corrective, and finds the app was keeping quiet**
 
 *2026-09-10 — the Blender round-trip, the last named piece of directive 12 step

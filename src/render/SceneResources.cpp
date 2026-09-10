@@ -18,8 +18,8 @@ namespace {
 /// built and where the litsphere texture is replaced, or the two disagree about
 /// which texture is at which slot.
 void bindAll(QRhiShaderResourceBindings* srb, QRhiBuffer* ubuf, QRhiTexture* lit,
-             QRhiTexture* diffuse, QRhiTexture* normalMap, QRhiTexture* aoMap, QRhiSampler* sampler,
-             QRhiBuffer* meshBuf) {
+             QRhiTexture* diffuse, QRhiTexture* normalMap, QRhiTexture* aoMap,
+             QRhiTexture* wrinkleMap, QRhiSampler* sampler, QRhiBuffer* meshBuf) {
     srb->setBindings({
         QRhiShaderResourceBinding::uniformBuffer(
             0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
@@ -37,6 +37,10 @@ void bindAll(QRhiShaderResourceBindings* srb, QRhiBuffer* ubuf, QRhiTexture* lit
                                                  meshBuf),
         QRhiShaderResourceBinding::sampledTexture(5, QRhiShaderResourceBinding::FragmentStage,
                                                   aoMap, sampler),
+        // Always bound too, for the same reason as slot 3. The shader gates on
+        // the weight in `material.w` rather than on whether this is real.
+        QRhiShaderResourceBinding::sampledTexture(6, QRhiShaderResourceBinding::FragmentStage,
+                                                  wrinkleMap, sampler),
     });
 }
 
@@ -120,9 +124,16 @@ struct Drawable {
     std::unique_ptr<QRhiTexture> normalTex;
     /// Null when the instance named no AO map; the shader then skips it.
     std::unique_ptr<QRhiTexture> aoTex;
+    /// Null when the instance named no wrinkle map. See MeshInstance.
+    std::unique_ptr<QRhiTexture> wrinkleTex;
     /// Per-mesh material parameters; `Buf` is per frame and cannot hold them.
     std::unique_ptr<QRhiBuffer> meshBuf;
     float normalMapIntensity{1.0F};
+    /// How far the wrinkle map is faded in. Forced to zero when `wrinkleTex` is
+    /// null, so the shader's gate is ONE number rather than a number and a flag
+    /// that can disagree -- a positive weight with nothing bound would blend the
+    /// shared white stand-in, which unpacks to a hard (1,1,1) slope.
+    float wrinkleWeight{0.0F};
     /// Read only by the PBR shader; see MeshInstance.
     float metallic{0.0F};
     float roughness{0.6F};
@@ -337,7 +348,7 @@ std::expected<std::unique_ptr<SceneResources>, RenderError> SceneResources::crea
     }
     bindAll(r->d_->layoutSrb.get(), r->d_->ubuf.get(), r->d_->diffuseTex.get(),
             r->d_->diffuseTex.get(), r->d_->diffuseTex.get(), r->d_->diffuseTex.get(),
-            r->d_->sampler.get(), r->d_->layoutMeshBuf.get());
+            r->d_->diffuseTex.get(), r->d_->sampler.get(), r->d_->layoutMeshBuf.get());
     if (!r->d_->layoutSrb->create()) {
         return std::unexpected(RenderError{RenderErrorKind::Failed, "shader resource bindings"});
     }
@@ -451,9 +462,10 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
         Drawable drawable;
         std::vector<float> verts;
         QImage lit;
-        QImage diffuse;    ///< null when the instance named no diffuse map
-        QImage normalMap;  ///< null when the instance named no normal map
-        QImage aoMap;      ///< null when the instance named no AO map
+        QImage diffuse;     ///< null when the instance named no diffuse map
+        QImage normalMap;   ///< null when the instance named no normal map
+        QImage aoMap;       ///< null when the instance named no AO map
+        QImage wrinkleMap;  ///< null when the instance named no wrinkle map
     };
 
     std::vector<Pending> pending;
@@ -524,6 +536,16 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
             aoMap = bottomUp(aoMap.convertToFormat(QImage::Format_RGBA8888));
         }
 
+        QImage wrinkleMap;
+        if (!instance.wrinkleMap.empty()) {
+            wrinkleMap = QImage(QString::fromStdString(instance.wrinkleMap.string()));
+            if (wrinkleMap.isNull()) {
+                return std::unexpected(
+                    RenderError{RenderErrorKind::TextureMissing, instance.wrinkleMap.string()});
+            }
+            wrinkleMap = bottomUp(wrinkleMap.convertToFormat(QImage::Format_RGBA8888));
+        }
+
         // Interleaved, because that is what the vertex layout declares and one
         // buffer is one binding instead of three.
         std::vector<float> verts;
@@ -588,7 +610,15 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
                     RenderError{RenderErrorKind::TextureMissing, instance.aoMap.string()});
             }
         }
+        if (!wrinkleMap.isNull()) {
+            dr.wrinkleTex.reset(rhi->newTexture(QRhiTexture::RGBA8, wrinkleMap.size()));
+            if (!dr.wrinkleTex->create()) {
+                return std::unexpected(
+                    RenderError{RenderErrorKind::TextureMissing, instance.wrinkleMap.string()});
+            }
+        }
         dr.normalMapIntensity = instance.normalMapIntensity;
+        dr.wrinkleWeight      = dr.wrinkleTex ? instance.wrinkleWeight : 0.0F;
         dr.metallic           = instance.metallic;
         dr.roughness          = instance.roughness;
         dr.baseColour         = instance.baseColour;
@@ -601,7 +631,8 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
         bindAll(dr.srb.get(), d_->ubuf.get(), dr.litTex.get(),
                 dr.diffuseTex ? dr.diffuseTex.get() : d_->diffuseTex.get(),
                 dr.normalTex ? dr.normalTex.get() : d_->diffuseTex.get(),
-                dr.aoTex ? dr.aoTex.get() : d_->diffuseTex.get(), d_->sampler.get(),
+                dr.aoTex ? dr.aoTex.get() : d_->diffuseTex.get(),
+                dr.wrinkleTex ? dr.wrinkleTex.get() : d_->diffuseTex.get(), d_->sampler.get(),
                 dr.meshBuf.get());
         if (!dr.srb->create()) {
             return std::unexpected(
@@ -610,7 +641,8 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
 
         dr.indexCount = static_cast<quint32>(mesh.indexCount());
         pending.push_back(Pending{std::move(dr), std::move(verts), std::move(lit),
-                                  std::move(diffuse), std::move(normalMap), std::move(aoMap)});
+                                  std::move(diffuse), std::move(normalMap), std::move(aoMap),
+                                  std::move(wrinkleMap)});
     }
 
     // Every mesh built, so it is now safe to queue: no early return remains.
@@ -630,11 +662,17 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
         if (p.drawable.diffuseTex) batch->uploadTexture(p.drawable.diffuseTex.get(), p.diffuse);
         if (p.drawable.normalTex) batch->uploadTexture(p.drawable.normalTex.get(), p.normalMap);
         if (p.drawable.aoTex) batch->uploadTexture(p.drawable.aoTex.get(), p.aoMap);
-        // x = intensity, y = 1 when a normal map is bound. Written per mesh
-        // because whether one exists is a material property, not a frame one.
+        if (p.drawable.wrinkleTex) batch->uploadTexture(p.drawable.wrinkleTex.get(), p.wrinkleMap);
+        // x = intensity, y = 1 when a normal map is bound, z = 1 for an AO map,
+        // w = the wrinkle weight. Written per mesh because whether a map exists
+        // is a material property, not a frame one.
         const float material[12] = {p.drawable.normalMapIntensity,
                                     p.drawable.normalTex ? 1.0F : 0.0F,
-                                    p.drawable.aoTex ? 1.0F : 0.0F, 0.0F,
+                                    p.drawable.aoTex ? 1.0F : 0.0F,
+                                    // w is the wrinkle weight, and it is the
+                                    // whole gate: zero means both "no map" and
+                                    // "not fired", which are the same frame.
+                                    p.drawable.wrinkleWeight,
                                     // The second vec4 is `pbr`: metallic, then
                                     // roughness. The litsphere shader declares
                                     // it and never reads it, which keeps one

@@ -58,7 +58,7 @@ ubuf;
 /// live in `Buf`, which is shared by every draw in the frame.
 layout(std140, binding = 4) uniform MeshBuf {
     // x = normalmapIntensity, y = 1 when a normal map is bound, z = 1 when an
-    // AO map is bound, w unused.
+    // AO map is bound, w = the wrinkle map's blend weight (0 = none or unfired).
     vec4 material;
     // x = metallic, y = roughness, zw unused.
     vec4 pbr;
@@ -71,6 +71,7 @@ mbuf;
 layout(binding = 2) uniform sampler2D albedoTexture;
 layout(binding = 3) uniform sampler2D normalTexture;
 layout(binding = 5) uniform sampler2D aoTexture;
+layout(binding = 6) uniform sampler2D wrinkleTexture;
 
 const float kPi = 3.14159265359;
 
@@ -149,9 +150,26 @@ void main() {
     // the un-normalized vector); a microfacet BRDF has no such excuse, because
     // an interpolated short normal biases every dot product in the model.
     vec3 n = normalize(vNormal);
-    if (mbuf.material.y > 0.5) {
-        const vec3 unpacked = 2.0 * texture(normalTexture, vTexCoord).rgb - 1.0;
-        const vec3 tangentSpace = vec3(unpacked.xy * mbuf.material.x, unpacked.z);
+    // Either map is reason enough to build the tangent frame; see litsphere.frag.
+    //
+    // The condition is a FETCH GATE here and nothing more. This path already
+    // normalizes in both branches, so entering it with neither map yields the
+    // same `n` -- unlike the litsphere, where the no-map path deliberately
+    // keeps the raw interpolated normal and entering the branch changes the
+    // image. That asymmetry is why "a flat normal map is not the same as no
+    // normal map" is a litsphere test.
+    if (mbuf.material.y > 0.5 || mbuf.material.w > 0.0) {
+        vec3 tangentSpace = vec3(0.0, 0.0, 1.0);
+        if (mbuf.material.y > 0.5) {
+            const vec3 unpacked = 2.0 * texture(normalTexture, vTexCoord).rgb - 1.0;
+            tangentSpace = vec3(unpacked.xy * mbuf.material.x, unpacked.z);
+        }
+        // The wrinkle blend: an ADDITION of tangent-space slopes, not a
+        // `mix`. See litsphere.frag for why, and for what pins it.
+        if (mbuf.material.w > 0.0) {
+            const vec3 crease = 2.0 * texture(wrinkleTexture, vTexCoord).rgb - 1.0;
+            tangentSpace = vec3(tangentSpace.xy + mbuf.material.w * crease.xy, tangentSpace.z);
+        }
         const vec3 t = normalize(vTangent - n * dot(n, vTangent));  // Gram-Schmidt
         const vec3 b = cross(n, t) * vHanded;
         n = normalize(mat3(t, b, n) * tangentSpace);

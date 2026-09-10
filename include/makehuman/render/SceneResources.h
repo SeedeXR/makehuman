@@ -140,6 +140,26 @@ struct MeshInstance {
     /// tangent-space vector.
     float normalMapIntensity{1.0F};
 
+    /// A second tangent-space normal map that fades IN, and the weight it fades
+    /// in at. Empty path or a weight of zero means none, and then the frame is
+    /// byte-identical to one rendered without it.
+    ///
+    /// Owner directive 12.3 calls wrinkle maps "the texture-space sibling of
+    /// PSD" and makes them a SECOND CONSUMER of the pose-signal driver the
+    /// geometry correctives already read -- not a parallel system with its own
+    /// keying convention. This is that consumer. What sets `wrinkleWeight` from
+    /// the RBF weights is the wiring above it, and is deliberately not this
+    /// struct's business: the renderer takes a number, not a rig.
+    ///
+    /// **Blended by adding tangent-space slopes, not by `mix`.** A wrinkle map
+    /// is DETAIL over the base normal map: `mix` at full weight discards the
+    /// pores and skin structure the base map carries exactly where the crease
+    /// is deepest, which is where they read most. Pinned by the render test "a
+    /// wrinkle map adds to the base normal map rather than replacing it", which
+    /// is the only assertion in the suite that can tell the two blends apart.
+    std::filesystem::path wrinkleMap{};
+    float wrinkleWeight{0.0F};
+
     /// The material declares itself transparent, so this mesh is drawn with
     /// alpha blending after the opaque ones.
     ///

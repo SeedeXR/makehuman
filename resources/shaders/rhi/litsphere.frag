@@ -57,9 +57,9 @@ ubuf;
 /// in the frame.
 layout(std140, binding = 4) uniform MeshBuf {
     // x = normalmapIntensity, y = 1 when a normal map is bound, z = 1 when an
-    // AO map is bound. At 0 the corresponding map is NOT sampled: the slot
-    // holds a placeholder only because a declared binding must point at a live
-    // texture.
+    // AO map is bound, w = the wrinkle map's blend weight. At 0 the
+    // corresponding map is NOT sampled: the slot holds a placeholder only
+    // because a declared binding must point at a live texture.
     vec4 material;
     // x = metallic, y = roughness. DECLARED BUT NEVER READ here: a matcap has
     // no material response to apply them to. It is declared so this block has
@@ -81,6 +81,7 @@ layout(binding = 1) uniform sampler2D litsphereTexture;
 layout(binding = 2) uniform sampler2D diffuseTexture;
 layout(binding = 3) uniform sampler2D normalTexture;
 layout(binding = 5) uniform sampler2D aoTexture;
+layout(binding = 6) uniform sampler2D wrinkleTexture;
 
 void main() {
     // With a normal map: the reference's NORMALMAP path
@@ -94,22 +95,52 @@ void main() {
     // normalize(TBN * (0,0,1)) == normalize(vNormal), and normalizing is
     // exactly what the no-map path must not do.
     vec3 normal;
-    if (mbuf.material.y > 0.5) {
-        const vec3 packed = texture(normalTexture, vTexCoord).rgb;
-        const vec3 unpacked = 2.0 * packed - 1.0;
-        // Intensity scales XY only, keeping Z.
+    // A wrinkle map perturbs the surface even with no base normal map, so the
+    // tangent frame is needed whenever EITHER is in play. With neither, the
+    // reference's raw interpolated normal is used unchanged -- see the header.
+    if (mbuf.material.y > 0.5 || mbuf.material.w > 0.0) {
+        // Flat when no base map is bound, so a wrinkle map alone still has
+        // something to add to. The base map is sampled INSIDE its own guard: a
+        // wrinkle-only mesh would otherwise fetch the white placeholder and
+        // throw the result away.
+        vec3 tangentSpace = vec3(0.0, 0.0, 1.0);
+        if (mbuf.material.y > 0.5) {
+            const vec3 unpacked = 2.0 * texture(normalTexture, vTexCoord).rgb - 1.0;
+            // Intensity scales XY only, keeping Z.
+            //
+            // The reference writes `(2.0*normalH - 1.0) * normalmapIntensity`
+            // and then normalizes (litsphere_fragment_shader.txt:74-77). A
+            // uniform scale followed by a normalize CANCELS EXACTLY, so its
+            // `normalmapIntensity` uniform does nothing at all -- it only bites
+            // under CALC_NORMAL_Z, which the reference leaves commented out at
+            // :64.
+            //
+            // Porting that would ship a control that silently does nothing, so
+            // this diverges deliberately: flattening XY against a fixed Z is
+            // the standard normal-map strength idiom and is what the
+            // CALC_NORMAL_Z branch was reaching for. Verified by test: 1.0 vs
+            // 0.01 changes the image.
+            tangentSpace = vec3(unpacked.xy * mbuf.material.x, unpacked.z);
+        }
+        // THE WRINKLE BLEND, and why it is an addition rather than a mix.
         //
-        // The reference writes `(2.0*normalH - 1.0) * normalmapIntensity` and
-        // then normalizes (litsphere_fragment_shader.txt:74-77). A uniform
-        // scale followed by a normalize CANCELS EXACTLY, so its
-        // `normalmapIntensity` uniform does nothing at all -- it only bites
-        // under CALC_NORMAL_Z, which the reference leaves commented out at :64.
+        // A wrinkle map is DETAIL laid over the base normal map, so the two are
+        // combined by adding tangent-space slopes and keeping the base's Z --
+        // the UDN blend. `mix(base, wrinkle, w)` at full weight IS the wrinkle
+        // map: it discards the pores and skin structure the base carries
+        // exactly where the crease is deepest, which is where they read most.
+        // Pinned by the render test "a wrinkle map adds to the base normal map
+        // rather than replacing it"; every other assertion in that file passes
+        // under either blend.
         //
-        // Porting that would ship a control that silently does nothing, so this
-        // diverges deliberately: flattening XY against a fixed Z is the standard
-        // normal-map strength idiom and is what the CALC_NORMAL_Z branch was
-        // reaching for. Verified by test: 1.0 vs 0.01 changes the image.
-        const vec3 tangentSpace = vec3(unpacked.xy * mbuf.material.x, unpacked.z);
+        // Weight zero is EXACT, not approximate: `base.xy + 0.0 * crease.xy` is
+        // `base.xy` for any finite sample, so a bound-but-unfired wrinkle set
+        // leaves the frame byte-identical. The branch below is there to skip a
+        // texture fetch, not to make that true.
+        if (mbuf.material.w > 0.0) {
+            const vec3 crease = 2.0 * texture(wrinkleTexture, vTexCoord).rgb - 1.0;
+            tangentSpace = vec3(tangentSpace.xy + mbuf.material.w * crease.xy, tangentSpace.z);
+        }
         // Handedness applied here; the reference drops it. See litsphere.vert.
         const vec3 n = normalize(vNormal);
         const vec3 t = normalize(vTangent - n * dot(n, vTangent));  // Gram-Schmidt

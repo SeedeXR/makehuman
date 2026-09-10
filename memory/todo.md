@@ -4801,8 +4801,65 @@ GPU here, or Colab) and it comes back to the owner first.
                     invisible anywhere else, and honest about being a snapshot.
                     **Not done here** — it is an exporter feature across three
                     writers, not part of a validation chunk.
-      - [ ] **5. Content**: groom, PBR skin, wrinkle maps THROUGH THE SHARED
+      - [~] **5. Content**: groom, PBR skin, wrinkle maps THROUGH THE SHARED
             DRIVER, eye/teeth rig.
+            - [x] **Wrinkle maps reach the screen** (2026-09-10) —
+                  `MeshInstance::wrinkleMap` and `wrinkleWeight`, blended in
+                  BOTH fragment shaders. 8 render cases, 5 mutations.
+                  - **Added, not mixed.** A wrinkle map is DETAIL over the base
+                    normal map, so the two combine by adding tangent-space
+                    slopes and keeping the base's Z (the UDN blend).
+                    `mix(base, wrinkle, w)` at full weight IS the wrinkle map —
+                    it discards the pores the base carries exactly where the
+                    crease is deepest. Measured: under `mix` the "adds rather
+                    than replaces" case reports **0 differing pixels**, and it
+                    is the ONLY assertion in the file that can tell the two
+                    blends apart.
+                  - **The weight is the whole gate**, one number meaning both
+                    "no map" and "not fired", forced to zero on the CPU when no
+                    texture was created. A positive weight with nothing bound
+                    would blend the shared 1x1 white stand-in, which unpacks to
+                    a hard (1,1,1) slope — a bright diagonal crease over the
+                    entire body. Nothing else in the file reaches that line.
+                  - **Inert at zero is BYTE-identical**, not close:
+                    `base.xy + 0.0 * crease.xy` is `base.xy` for any finite
+                    sample.
+                  - **Both shaders, from one uniform.** `material.w` was the
+                    spare slot. A blend in only one of them is a feature that
+                    appears and vanishes as the viewport's shading model
+                    changes.
+                  - **A recorded claim had no test, and my own change made it
+                    easy to break.** The litsphere's no-map path deliberately
+                    keeps the RAW interpolated normal while the mapped path
+                    normalizes, and "a flat 1x1 placeholder cannot replace the
+                    branch" was written down when normal mapping landed —
+                    untested. Mutating the branch condition to one always true
+                    left the WHOLE render suite green, 2,153 assertions. Now
+                    pinned by "a flat normal map is not the same as no normal
+                    map", and it had to measure **mean channel delta, not
+                    differing pixels**: 4,086 pixels correct against 3,355
+                    mutated is 18% apart and no threshold separates it, while
+                    0.19519 against 0.02433 mean delta is 8x. The residual is
+                    not noise — an 8-bit "flat" map is 128/255, a 0.0039 tilt,
+                    and no exactly-flat tangent normal map exists in 8 bits.
+                  - **RENDERED IT AND LOOKED**, with a real crease sheet
+                    (sharpened sine ridges converted to a normal map by their
+                    own gradient) rather than a flat test colour. 52,093 pixels
+                    differ between weight 0 and 1; the creases light correctly
+                    with the surface, and the anatomy still reads THROUGH them
+                    — which is the additive blend being visible as such. At 0.5
+                    they are visibly shallower, which is what made the missing
+                    "the weight scales the crease" case obvious.
+            - [ ] **The driver still has to set the weight.** This is the
+                  consumer; what fires it from the RBF weights the geometry
+                  correctives already read is the next chunk, and is where
+                  directive 12.3's "one evaluator, several consumers" is
+                  actually demonstrated. Needs: a wrinkle payload in the
+                  manifest (a `formatVersion` 2 question — version 1 says in
+                  writing that it has no optional fields), the path through the
+                  blob, and `wrinkleWeight` set per frame.
+            - [ ] Groom, PBR skin assets, eye/teeth rig (skeleton and
+                  constraint work, NOT correctives — "a trap").
       Two structural consequences to hold onto: proxies and clothing bind as
       barycentric offsets and therefore get shape, correctives and pose for
       free — **clothing gets no corrective system of its own**; and eye/teeth

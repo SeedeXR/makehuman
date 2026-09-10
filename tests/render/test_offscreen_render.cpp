@@ -57,6 +57,26 @@ size_t differingPixels(const QImage& a, const QImage& b) {
     return n;
 }
 
+/// Mean absolute per-channel difference between two renders, in 0-255 units.
+///
+/// The companion to `differingPixels`, and the answer to a case that count
+/// cannot see: two effects can touch the same pixels and differ by an order of
+/// magnitude in how far they move them. See "a flat normal map is not the same
+/// as no normal map".
+double meanChannelDelta(const QImage& a, const QImage& b) {
+    if (a.size() != b.size()) return -1.0;
+    double sum = 0.0;
+    for (int y = 0; y < a.height(); ++y) {
+        for (int x = 0; x < a.width(); ++x) {
+            const QColor p = a.pixelColor(x, y);
+            const QColor q = b.pixelColor(x, y);
+            sum += std::abs(p.red() - q.red()) + std::abs(p.green() - q.green()) +
+                   std::abs(p.blue() - q.blue());
+        }
+    }
+    return sum / (3.0 * a.width() * a.height());
+}
+
 void requireDevice() {
     static const bool ok = render::OffscreenRenderer::create(MH_SHADER_DIR).has_value();
     if (!ok) SKIP("no Metal device on this machine -- renderer not exercised");
@@ -605,6 +625,319 @@ TEST_CASE("a normal map that will not load is reported", "[render][normalmap]") 
     const auto img = (*r)->render(one, settings());
     REQUIRE_FALSE(img.has_value());
     CHECK(img.error().kind == render::RenderErrorKind::TextureMissing);
+}
+
+// --- Wrinkle maps: the texture-space sibling of PSD --------------------------
+//
+// Owner directive 12.3 names wrinkle maps as a SECOND CONSUMER of the same
+// pose-signal driver the geometry correctives read, "not a second parallel
+// system with its own keying convention". This is the consumer; the wiring that
+// drives `wrinkleWeight` from the RBF weights comes next.
+//
+// A wrinkle map is a tangent-space normal map that fades IN, so it is blended
+// against the base normal map rather than replacing it. That distinction is
+// what "a wrinkle map adds to the base normal map" below exists to pin.
+namespace {
+
+/// Writes a flat RGBA png of one colour and returns its path.
+std::filesystem::path writeMap(const char* stem, QColor colour) {
+    const auto path = std::filesystem::temp_directory_path() / stem;
+    QImage img(64, 64, QImage::Format_RGBA8888);
+    img.fill(colour);
+    REQUIRE(img.save(QString::fromStdString(path.string())));
+    return path;
+}
+
+}  // namespace
+
+TEST_CASE("a flat normal map is not the same as no normal map", "[render][normalmap]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    // The litsphere's no-map path uses the RAW interpolated normal; the mapped
+    // path normalizes, because a TBN basis needs a unit normal. That divergence
+    // is deliberate and load-bearing -- the shipped matcaps were authored
+    // against the un-normalized vector -- and it is why a flat 1x1 placeholder
+    // cannot stand in for the branch.
+    //
+    // It was RECORDED and not tested. Found by mutating the branch condition to
+    // one that is always true: the whole render suite stayed green, 2,153
+    // assertions, with the no-map path gone. This is the assertion that was
+    // missing, and it is here rather than with the wrinkle cases because it
+    // belongs to the older feature -- the wrinkle blend just made the condition
+    // easy to get wrong.
+    const Scene sc  = bodyScene();
+    const auto s    = settings();
+    const auto flat = writeMap("mh_test_normal_flat.png", QColor(128, 128, 255));
+
+    render::MeshInstance mapped;
+    mapped.mesh      = sc.rm.view();
+    mapped.litsphere = s.litsphere;
+    mapped.normalMap = flat;
+
+    const std::vector<render::MeshInstance> none{{sc.rm.view(), s.litsphere}};
+    const std::vector<render::MeshInstance> flatMap{mapped};
+
+    const auto a = (*r)->render(none, s);
+    const auto b = (*r)->render(flatMap, s);
+    REQUIRE(a.has_value());
+    REQUIRE(b.has_value());
+    // MEAN CHANNEL DELTA, not a count of differing pixels, and that is the
+    // whole point of the case. Measured both ways against the mutation that
+    // makes the branch condition always true: 4,086 differing pixels correct
+    // against 3,355 mutated -- 18% apart, which no threshold separates. The two
+    // effects touch nearly the same pixels and differ by how FAR they move
+    // them. Mean delta is 0.19519 correct against 0.02433 mutated, 8x, and
+    // 0.10 sits between them with room on both sides.
+    //
+    // The residual under the mutation is not noise: an 8-bit "flat" map is
+    // 128/255, so it unpacks to a 0.0039 tilt rather than to zero. There is no
+    // exactly-flat tangent normal map in 8 bits, which is why this is a
+    // magnitude test and not an equality one.
+    const double delta = meanChannelDelta(*a, *b);
+    INFO("flat map vs no map: mean channel delta " << delta);
+    CHECK(delta > 0.10);
+
+    std::filesystem::remove(flat);
+}
+
+TEST_CASE("a wrinkle map at full weight changes shading", "[render][wrinkle]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc     = bodyScene();
+    const auto s       = settings();
+    const auto wrinkle = writeMap("mh_test_wrinkle.png", QColor(40, 220, 60));
+
+    render::MeshInstance creased;
+    creased.mesh          = sc.rm.view();
+    creased.litsphere     = s.litsphere;
+    creased.wrinkleMap    = wrinkle;
+    creased.wrinkleWeight = 1.0F;
+
+    const std::vector<render::MeshInstance> plain{{sc.rm.view(), s.litsphere}};
+    const std::vector<render::MeshInstance> lined{creased};
+
+    const auto a = (*r)->render(plain, s);
+    const auto b = (*r)->render(lined, s);
+    REQUIRE(a.has_value());
+    REQUIRE(b.has_value());
+    const size_t changed = differingPixels(*a, *b);
+    INFO("a wrinkle map at weight 1 changes " << changed << " pixels");
+    CHECK(changed > 1000);
+
+    std::filesystem::remove(wrinkle);
+}
+
+TEST_CASE("a wrinkle map at zero weight changes nothing", "[render][wrinkle]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    // The inert-when-off gate, and it is the one that matters most here: a
+    // wrinkle set that is bound but not fired must leave the frame EXACTLY as
+    // it was. Anything less and every character pays for a feature nobody
+    // switched on -- and the difference would be too small to notice and too
+    // large to explain.
+    //
+    // Byte-identical, not "close": the no-map path in the litsphere shader
+    // deliberately does NOT normalize the interpolated normal, so a wrinkle
+    // branch that ran at weight 0 and normalized would shift 0.98% of the frame
+    // while every threshold assertion in this file still passed.
+    const Scene sc     = bodyScene();
+    const auto s       = settings();
+    const auto wrinkle = writeMap("mh_test_wrinkle_off.png", QColor(40, 220, 60));
+
+    render::MeshInstance bound;
+    bound.mesh          = sc.rm.view();
+    bound.litsphere     = s.litsphere;
+    bound.wrinkleMap    = wrinkle;
+    bound.wrinkleWeight = 0.0F;
+
+    const std::vector<render::MeshInstance> plain{{sc.rm.view(), s.litsphere}};
+    const std::vector<render::MeshInstance> off{bound};
+
+    const auto a = (*r)->render(plain, s);
+    const auto b = (*r)->render(off, s);
+    REQUIRE(a.has_value());
+    REQUIRE(b.has_value());
+    CHECK(differingPixels(*a, *b) == 0);
+
+    std::filesystem::remove(wrinkle);
+}
+
+TEST_CASE("a wrinkle map adds to the base normal map rather than replacing it",
+          "[render][wrinkle]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    // THE BLEND CHOICE, pinned. A detail normal map is combined with the base
+    // one by adding tangent-space slopes (the UDN blend), not by `mix`.
+    //
+    // `mix(base, wrinkle, w)` at w = 1 IS the wrinkle map: it discards the
+    // pores and skin structure the base map carries exactly where the crease
+    // is deepest, which is where they are most visible. So a shader written
+    // that way renders A identically to B below, and this test is the only
+    // thing in the suite that can tell the two blends apart -- every other
+    // assertion here passes under either.
+    const Scene sc     = bodyScene();
+    const auto s       = settings();
+    const auto base    = writeMap("mh_test_wrinkle_base.png", QColor(230, 40, 200));
+    const auto wrinkle = writeMap("mh_test_wrinkle_add.png", QColor(40, 220, 60));
+
+    render::MeshInstance blended;
+    blended.mesh          = sc.rm.view();
+    blended.litsphere     = s.litsphere;
+    blended.normalMap     = base;
+    blended.wrinkleMap    = wrinkle;
+    blended.wrinkleWeight = 1.0F;
+
+    // The same wrinkle map as the ONLY normal map: what `mix` at weight 1
+    // collapses to.
+    render::MeshInstance replaced;
+    replaced.mesh      = sc.rm.view();
+    replaced.litsphere = s.litsphere;
+    replaced.normalMap = wrinkle;
+
+    const std::vector<render::MeshInstance> add{blended};
+    const std::vector<render::MeshInstance> sub{replaced};
+    const auto a = (*r)->render(add, s);
+    const auto b = (*r)->render(sub, s);
+    REQUIRE(a.has_value());
+    REQUIRE(b.has_value());
+    const size_t changed = differingPixels(*a, *b);
+    INFO("adding vs replacing differs by " << changed << " pixels");
+    CHECK(changed > 1000);
+
+    std::filesystem::remove(base);
+    std::filesystem::remove(wrinkle);
+}
+
+TEST_CASE("the wrinkle weight scales the crease", "[render][wrinkle]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    // The weight is a DIAL, not a switch, because that is the whole reason it
+    // exists: an RBF returns a continuous number and the crease has to deepen
+    // with it. Without this, treating any positive weight as fully on passes
+    // every other case in this file -- "inert at zero" still holds and "changes
+    // shading at one" still holds.
+    //
+    // Confirmed by eye as well as by count: at 0.4 the creases are shallow and
+    // the anatomy reads through them; at 1.0 they are deep.
+    const Scene sc     = bodyScene();
+    const auto s       = settings();
+    const auto wrinkle = writeMap("mh_test_wrinkle_dial.png", QColor(40, 220, 60));
+
+    render::MeshInstance deep;
+    deep.mesh          = sc.rm.view();
+    deep.litsphere     = s.litsphere;
+    deep.wrinkleMap    = wrinkle;
+    deep.wrinkleWeight = 1.0F;
+
+    render::MeshInstance shallow = deep;
+    shallow.wrinkleWeight        = 0.4F;
+
+    const std::vector<render::MeshInstance> hi{deep};
+    const std::vector<render::MeshInstance> lo{shallow};
+    const auto a = (*r)->render(hi, s);
+    const auto b = (*r)->render(lo, s);
+    REQUIRE(a.has_value());
+    REQUIRE(b.has_value());
+    const size_t changed = differingPixels(*a, *b);
+    INFO("weight 1.0 vs 0.4 changes " << changed << " pixels");
+    CHECK(changed > 1000);
+
+    std::filesystem::remove(wrinkle);
+}
+
+TEST_CASE("a weight with no wrinkle map behind it is inert", "[render][wrinkle]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    // The weight is the shader's ONLY gate, so the one number has to mean both
+    // "no map" and "not fired". A driver that sets a weight before the material
+    // names a map is the ordinary case -- the pose fires, the skin has no
+    // wrinkle texture -- and every declared sampler slot still holds the shared
+    // 1x1 white stand-in, which unpacks to a hard (1,1,1) tangent-space slope.
+    // Blending THAT in is a bright diagonal crease over the whole body.
+    //
+    // So the weight is forced to zero on the CPU when no texture was created.
+    // Nothing else in this file reaches that line: the map-that-will-not-load
+    // case below fails the render before it, and every other case has a map.
+    const Scene sc = bodyScene();
+    const auto s   = settings();
+
+    render::MeshInstance weightOnly;
+    weightOnly.mesh          = sc.rm.view();
+    weightOnly.litsphere     = s.litsphere;
+    weightOnly.wrinkleWeight = 1.0F;  // ...and no wrinkleMap.
+
+    const std::vector<render::MeshInstance> plain{{sc.rm.view(), s.litsphere}};
+    const std::vector<render::MeshInstance> weighted{weightOnly};
+
+    const auto a = (*r)->render(plain, s);
+    const auto b = (*r)->render(weighted, s);
+    REQUIRE(a.has_value());
+    REQUIRE(b.has_value());
+    CHECK(differingPixels(*a, *b) == 0);
+}
+
+TEST_CASE("a wrinkle map that will not load is reported", "[render][wrinkle]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    const Scene sc = bodyScene();
+    render::MeshInstance bad;
+    bad.mesh          = sc.rm.view();
+    bad.litsphere     = settings().litsphere;
+    bad.wrinkleMap    = "/definitely/not/a/wrinkle.png";
+    bad.wrinkleWeight = 1.0F;
+
+    const std::vector<render::MeshInstance> one{bad};
+    const auto img = (*r)->render(one, settings());
+    REQUIRE_FALSE(img.has_value());
+    CHECK(img.error().kind == render::RenderErrorKind::TextureMissing);
+}
+
+TEST_CASE("the PBR path blends wrinkles too", "[render][wrinkle][pbr]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    // Two shaders unpack a normal map, and a wrinkle blend in only one of them
+    // is a feature that appears or vanishes when the viewport's shading model
+    // changes. Both are checked, from one set of uniforms.
+    auto s    = settings();
+    s.shading = render::ShadingModel::Pbr;
+
+    const Scene sc     = bodyScene();
+    const auto wrinkle = writeMap("mh_test_wrinkle_pbr.png", QColor(40, 220, 60));
+
+    render::MeshInstance creased;
+    creased.mesh          = sc.rm.view();
+    creased.litsphere     = s.litsphere;
+    creased.wrinkleMap    = wrinkle;
+    creased.wrinkleWeight = 1.0F;
+
+    const std::vector<render::MeshInstance> plain{{sc.rm.view(), s.litsphere}};
+    const std::vector<render::MeshInstance> lined{creased};
+
+    const auto a = (*r)->render(plain, s);
+    const auto b = (*r)->render(lined, s);
+    REQUIRE(a.has_value());
+    REQUIRE(b.has_value());
+    const size_t changed = differingPixels(*a, *b);
+    INFO("PBR: a wrinkle map at weight 1 changes " << changed << " pixels");
+    CHECK(changed > 1000);
+
+    std::filesystem::remove(wrinkle);
 }
 
 // --- Ambient occlusion ------------------------------------------------------
