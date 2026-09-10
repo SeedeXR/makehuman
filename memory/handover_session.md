@@ -4,6 +4,109 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-10 (fifty-seventh) — Session · **The eyes can be aimed, and the viewport could not show it**
+
+*2026-09-10 — directive 12.3's other half: "eye and teeth rigging are NOT this.
+They are skeleton and constraint work, and expressing them as correctives is a
+trap."*
+
+### What landed
+`rig::aimEyes` (`include/makehuman/rig/EyeAim.h`) and `--look-at X,Y,Z`:
+given a point in model space, the two eye rotations written into the bone-local
+pose the skinning already consumes. 6 unit cases, 4 app tests, 9 mutations.
+936 -> 946 tests.
+
+### The skeleton was already there, and I checked rather than assumed
+My first hypothesis was that the eyes could not move at all — that the eye proxy
+would inherit `head` weights from the socket it is fitted to, so rotating
+`eye.L` would do nothing. **Wrong**, and measuring took two minutes:
+`eye.L`/`eye.R` exist in both shipped rigs, 141 base vertices are weighted to
+each, and the shipped high-poly eye proxy references 96 distinct base vertices of
+which **all 96** carry an eye weight.
+
+So the bones worked. What was missing was any way to aim them: the only route was
+hand-authoring a pose file with two rotations, and getting the convergence right
+by hand is exactly what a constraint is for.
+
+### Each eye from its own position
+The eyes share a target but not a position — 0.6156 dm apart, which is a real
+6.2 cm interpupillary distance. Measured convergence between the two gaze
+directions: **17.46° at a 2 dm target, 0.35° at 100 dm.** That is geometry rather
+than a tuned threshold — atan(0.3078/2.0) is 8.73° per eye — and it is the one
+assertion a midpoint implementation fails. It passes every other case in the
+file.
+
+**A pure swing, twist measured at exactly 0** with `foundation::swingTwist`. An
+eyeball's roll about its own line of sight is unobservable on a sphere, so the
+usual look-at built from an up-vector — which produces roll as a matter of
+course — would be invisible in a render and wrong in every export that reads the
+bone.
+
+### Reading my own diff found a latent wrong answer
+Limits are now refused outside [0, 90], and the upper bound is load-bearing, not
+tidiness: past 90° the aimed direction leaves the forward hemisphere and the
+minimal-rotation construction stops being defined — an exactly antiparallel
+target has no rotation axis at all, and `swingTo` would hand back the IDENTITY.
+An eye told to look directly backwards, quietly looking straight ahead.
+
+Unreachable through the human defaults (the aimed y never drops below
+cos35·cos25 = 0.742) and perfectly reachable through the parameter — my own M2
+mutation had used 1000× limits. Caught by reading, before the gates ran, which
+saved the cycle that reviewing late cost last chunk. Two mutations had to be
+rewritten around the new bound and both are caught again.
+
+### `--look-at` was parsed five lines too late
+After `loadPoseRig` had already run, so the app rendered a character staring
+straight ahead and reported nothing at all. Moved above the call, with the reason
+in a comment.
+
+### Rendered it and looked — and the app's own viewport could not show it
+At 1024² full-body the eye aperture is a few pixels of dark slit. **71 pixels
+changed**, and cropping to them was unreadable even with the eye proxy explicitly
+worn — the crop with and without the aim looks identical.
+
+The geometry said otherwise: **1,144 vertices moved by up to 6.6 mm**, all in a
+band at y 15.38–15.68 spanning both sides. 6.6 mm on a 16.6 dm body at 1024 px is
+about 3.6 px, on something that renders as a slit.
+
+So the look happened where it could: the exported OBJs rendered in Blender with
+the camera framed ON the eyes. **6,052 pixels differ**, both corneal bulges have
+shifted toward the character's left, and both eyes point the same way. That is
+the visual confirmation; the app's viewport is simply the wrong instrument for
+it, and saying so beats calling 71 scattered pixels a verification.
+
+### The app's angles differ from the unit test's, and that was worth chasing
+14.9°/24.9° from the app against 6.8°/16.9° in `test_eye_aim.cpp` for the same
+target. Not a discrepancy: the unit test rigs the raw `base.obj` and the app
+poses the default CHARACTER, so `updateJoints` puts the eyes somewhere else.
+Confirmed rather than assumed — `--rig default` and `--rig mixamo_superset` both
+report 14.9/24.9, so it is the mesh and not the skeleton.
+
+### One test of mine was interchangeable
+`leftDegrees` and `rightDegrees` could have been filled the other way round and
+all six cases passed. The clamp case now uses an off-centre target and asserts
+the left eye turns LESS — measured 6.81 against 16.85, because eye.L sits at
+x = +0.3078 and the target is off to the character's left.
+
+### Mutations
+Nine, all caught: one rotation from the midpoint, the heading clamp made
+ineffective, a roll added on top of the swing, the target-on-an-eye guard
+removed, NaN limits slipping through, the rotation written to the other eye, the
+report's two eyes filled the other way round, and two rewritten around the new
+90° bound.
+
+### Gates
+Debug, release, ASan, TSan, one preset at a time, ALLDONE read. clang-format
+clean with CI's exact command. Sonar gate OK with 0 open issues.
+
+### Next
+The jaw is the same shape of gap: `jaw` is weighted (888 base vertices,
+measured) and rotating it already works, so what is missing is a control. Lower
+teeth and tongue would ride it and neither ships as a proxy — `data/` has eyes
+only. Groom and PBR skin are authored CONTENT rather than code.
+
+---
+
 ## 2026-09-10 (fifty-sixth) — Session · **The wrinkle survives an export, and three gates of mine were decorative in one chunk**
 
 *2026-09-10 — closing the gap the last chunk opened: the app was reporting a

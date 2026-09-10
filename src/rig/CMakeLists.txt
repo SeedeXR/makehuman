@@ -5,7 +5,7 @@
 
 add_library(mh_rig STATIC Skeleton.cpp VertexWeights.cpp Skinning.cpp PoseUnits.cpp
                          BvhPose.cpp PosedMesh.cpp Facs.cpp PoseSignal.cpp CorrectiveRuntime.cpp
-                         Wrinkles.cpp)
+                         Wrinkles.cpp EyeAim.cpp)
 add_library(mh::rig ALIAS mh_rig)
 
 target_include_directories(mh_rig PUBLIC

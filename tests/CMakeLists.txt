@@ -38,6 +38,7 @@ add_executable(mh_tests
     unit/test_corrective_runtime.cpp
     unit/test_wrinkles.cpp
     unit/test_normal_blend.cpp
+    unit/test_eye_aim.cpp
     unit/test_corrective_cache.cpp
     unit/test_posed_correctives.cpp
     unit/test_version.cpp
@@ -688,6 +689,50 @@ if(MH_HAVE_RENDER)
     # RE-ENCODED PNG, so it differs from the source byte-for-byte whatever its
     # pixels say. Measured -- a bake mutated to copy the base through unchanged
     # passed it. The texel count in the regex above is what replaced it.
+
+    # AIMING THE EYES, through the application.
+    #
+    # Directive 12.3 puts eyes in the rig layer as skeleton and constraint work,
+    # and this is the constraint reaching a character: `--look-at` writes the
+    # two eye rotations into the bone-local pose the skinning already consumes.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lookat)
+    add_test(NAME app_look_at COMMAND makehuman
+             --look-at 1.5,7.8,6.0
+             --render ${CMAKE_CURRENT_BINARY_DIR}/lookat/at.png)
+    set_tests_properties(app_look_at PROPERTIES
+        # Both figures, and they must DIFFER: the target is off to the
+        # character's own left, so the left eye is already closer to it and
+        # turns less. A single number here, or two equal ones, would be a
+        # look-at computed from the midpoint between the eyes rather than from
+        # each eye -- which is the whole thing a convergence constraint is for.
+        #
+        # 14.9 and 24.9, where test_eye_aim.cpp measures 6.8 and 16.9 for the
+        # same target. Not a discrepancy: the unit test rigs the RAW base.obj
+        # and the app poses the default CHARACTER, so `updateJoints` puts the
+        # eyes somewhere else. Checked rather than assumed -- `--rig default`
+        # and `--rig mixamo_superset` both report 14.9/24.9, so it is the mesh
+        # and not the skeleton.
+        PASS_REGULAR_EXPRESSION "look-at: eyes turned 14\\.9 and 24\\.9 degrees"
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FAIL_REGULAR_EXPRESSION "cannot aim;nothing to draw"
+        FIXTURES_SETUP app_look_at)
+    add_test(NAME app_look_at_baseline COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/lookat/ahead.png)
+    set_tests_properties(app_look_at_baseline PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_SETUP app_look_at_off)
+    # The eyes have to actually MOVE in the frame. Printing two angles proves
+    # the constraint ran, not that its output reached the skinning.
+    add_test(NAME app_look_at_moves_the_eyes COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/lookat/ahead.png
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/lookat/at.png
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_look_at_moves_the_eyes PROPERTIES
+        FIXTURES_REQUIRED "app_look_at;app_look_at_off")
+    add_test(NAME app_look_at_bad COMMAND makehuman
+             --look-at nonsense --render ${CMAKE_CURRENT_BINARY_DIR}/lookat/never.png)
+    set_tests_properties(app_look_at_bad PROPERTIES
+        PASS_REGULAR_EXPRESSION "--look-at wants three numbers")
 
     add_test(NAME app_correctives_missing COMMAND makehuman
              --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/nope.json

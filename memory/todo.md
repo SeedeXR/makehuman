@@ -4989,8 +4989,70 @@ GPU here, or Colab) and it comes back to the owner first.
                     formats' limitation, and unlike the correctives' rest
                     capture there is no better alternative to refuse in favour
                     of. Stated in the header rather than left to be found.
-            - [ ] Groom, PBR skin assets, eye/teeth rig (skeleton and
+            - [~] Groom, PBR skin assets, eye/teeth rig (skeleton and
                   constraint work, NOT correctives — "a trap").
+                  - [x] **The eyes can be aimed** (2026-09-10) —
+                        `rig::aimEyes` and `--look-at X,Y,Z`. 6 unit cases,
+                        4 app tests, 9 mutations.
+                        - **The skeleton was already there, and I checked
+                          rather than assumed.** `eye.L`/`eye.R` in both
+                          shipped rigs, 141 base vertices weighted to each, and
+                          the shipped high-poly eye proxy fitted ENTIRELY onto
+                          eye-weighted vertices — all 96 base vertices it
+                          references carry an eye weight. My first hypothesis
+                          was the opposite (that the proxy would inherit `head`
+                          weights and the eyes could not move at all); it was
+                          wrong, and measuring took two minutes.
+                        - **What was missing was the constraint.** The eyes
+                          share a target but not a position — 0.6156 dm apart,
+                          a real 6.2 cm interpupillary distance — so each needs
+                          its OWN rotation. Measured convergence: 17.46° between
+                          the gaze directions at a 2 dm target, 0.35° at 100 dm.
+                          Geometry, not a tuned threshold: atan(0.3078/2.0) is
+                          8.73° per eye.
+                        - **A pure swing, no twist**, measured at exactly 0 with
+                          `foundation::swingTwist`. An eyeball's roll about its
+                          own line of sight is unobservable on a sphere, so a
+                          look-at built from an up-vector — which produces roll
+                          as a matter of course — would be invisible in a render
+                          and wrong in every export that reads the bone.
+                        - **Limits in [0, 90], and the upper bound is
+                          load-bearing.** Found by reading my own diff, not by a
+                          failing test: past 90° the aimed direction leaves the
+                          forward hemisphere and the minimal-rotation
+                          construction stops being defined — an exactly
+                          antiparallel target has no rotation axis, and the eye
+                          would quietly stay at rest. Unreachable through the
+                          human defaults (aimed y never drops below
+                          cos35·cos25 = 0.742) and perfectly reachable through
+                          the parameter.
+                        - **The app numbers differ from the unit test's, and
+                          that was worth chasing**: 14.9°/24.9° against
+                          6.8°/16.9° for the same target. Not a discrepancy —
+                          the unit test rigs the raw `base.obj` and the app
+                          poses the default CHARACTER, so `updateJoints` puts
+                          the eyes elsewhere. Confirmed by running both rigs:
+                          `default` and `mixamo_superset` agree, so it is the
+                          mesh.
+                        - **`--look-at` was parsed five lines too late**, after
+                          `loadPoseRig` had already run, and the app rendered a
+                          character staring ahead while reporting nothing.
+                        - **RENDERED IT AND LOOKED — and the app's own viewport
+                          could not show it.** At 1024² full-body the eye
+                          aperture is a few pixels of dark slit; 71 pixels
+                          changed and the crop was unreadable even with the eye
+                          proxy worn. The geometry said otherwise: 1,144
+                          vertices moved by up to 6.6 mm in a band at
+                          y 15.38–15.68, both sides. Rendering the exported OBJs
+                          in Blender with the camera framed ON the eyes showed
+                          it plainly — 6,052 pixels, both corneas shifted toward
+                          the character's left, both eyes pointing the same way.
+                  - [ ] Groom and PBR skin assets: authored CONTENT, not code.
+                  - [ ] The jaw. `jaw` is weighted (888 base vertices, measured)
+                        and rotating it already works; what is missing is the
+                        same thing the eyes were missing — a control. Lower
+                        teeth and tongue would ride it, and neither exists as a
+                        shipped proxy yet (`data/` has eyes only).
       Two structural consequences to hold onto: proxies and clothing bind as
       barycentric offsets and therefore get shape, correctives and pose for
       free — **clothing gets no corrective system of its own**; and eye/teeth

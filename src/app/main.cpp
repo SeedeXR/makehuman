@@ -36,6 +36,7 @@
 #include "makehuman/render/OffscreenRenderer.h"
 #include "makehuman/rig/BvhPose.h"
 #include "makehuman/rig/CorrectiveRuntime.h"
+#include "makehuman/rig/EyeAim.h"
 #include "makehuman/rig/Facs.h"
 #include "makehuman/rig/PoseUnits.h"
 #include "makehuman/rig/PosedMesh.h"
@@ -342,6 +343,13 @@ std::vector<mh::rig::ActionUnit>& facsRef() {
     return aus;
 }
 
+/// Where the eyes are looking, or nothing. Set once from `--look-at`.
+///
+/// A file-scope value for the same reason as `gUseDualQuaternion`: every
+/// `loadPoseRig` call site -- start-up, the Pose picker, the Skeleton picker --
+/// has to apply it, and none of them has an opinion about it.
+std::optional<mh::foundation::Vec3> gLookAt;
+
 /// Loads the rig, and the pose named by @p pose if there is one.
 ///
 /// "A-pose" is not a file: the MakeHuman base mesh is authored in one, so the
@@ -419,6 +427,28 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
         // bone's rest frame. Skipping this yields a plausible but wrong pose.
         out.localPose = mh::rig::poseToBoneLocal(*skel, modelPose);
     }
+
+    // The eye aim goes on AFTER the conversion, because `aimEyes` already works
+    // in each bone's own rest frame -- putting it in `modelPose` would send it
+    // through `poseToBoneLocal` and conjugate it a second time.
+    //
+    // It writes only the two eye entries, so it composes onto whatever pose was
+    // loaded rather than replacing it. With no pose at all the array is filled
+    // with identities first: looking at something IS a pose, and `PoseRig` is
+    // only "posed" when there is one.
+    if (gLookAt.has_value()) {
+        if (out.localPose.empty()) {
+            out.localPose.assign(skel->boneCount(), mh::foundation::Mat4::identity());
+        }
+        const auto aim = mh::rig::aimEyes(*skel, *gLookAt, out.localPose);
+        if (!aim) {
+            std::fprintf(stderr, "cannot aim the eyes: %s\n", aim.error().message().c_str());
+            return false;
+        }
+        std::printf("look-at: eyes turned %.1f and %.1f degrees%s\n", aim->leftDegrees,
+                    aim->rightDegrees, aim->clamped ? " (clamped to the eye's range)" : "");
+    }
+
     out.skeleton = std::move(*skel);
     return true;
 }
@@ -1992,6 +2022,13 @@ int main(int argc, char** argv) {
                        "beside it and reused until the manifest changes."),
         QStringLiteral("manifest"));
     parser.addOption(correctivesOpt);
+    const QCommandLineOption lookAtOpt(
+        QStringLiteral("look-at"),
+        QStringLiteral("Aim the eyes at a point in model space, as X,Y,Z in decimetres "
+                       "(Y-up, the model facing +Z). Each eye is aimed from its OWN position, "
+                       "so a near target converges them. Clamped to the human range."),
+        QStringLiteral("x,y,z"));
+    parser.addOption(lookAtOpt);
     parser.addOption(shadingOpt);
     parser.addOption(rigOpt);
     parser.addOption(poseOpt);
@@ -2340,6 +2377,28 @@ int main(int argc, char** argv) {
             }
         }
     }
+    // Parsed BEFORE the rig is loaded, because `loadPoseRig` is what applies it.
+    // It was five lines below this call first time out, and the app rendered a
+    // character staring straight ahead while reporting nothing at all.
+    if (parser.isSet(lookAtOpt)) {
+        const QStringList parts = parser.value(lookAtOpt).split(QLatin1Char(','));
+        bool ok                 = parts.size() == 3;
+        mh::foundation::Vec3 at{};
+        if (ok) {
+            bool okX = false;
+            bool okY = false;
+            bool okZ = false;
+            at       = mh::foundation::Vec3{parts[0].toFloat(&okX), parts[1].toFloat(&okY),
+                                      parts[2].toFloat(&okZ)};
+            ok       = okX && okY && okZ;
+        }
+        if (!ok) {
+            std::fprintf(stderr, "--look-at wants three numbers, as X,Y,Z\n");
+            return 1;
+        }
+        gLookAt = at;
+    }
+
     if (!loadPoseRig(*mesh, poseChoice, rig)) return 1;
 
     // Correctives, after the rig: binding needs the skeleton the drivers name
