@@ -4,6 +4,72 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-11 (sixtieth) — Session · **The jaw already had a control, and so did the eyes**
+
+*2026-09-11 — the loop's first fire, on an item whose premise I had written
+myself and got wrong.*
+
+### The chunk was supposed to be a jaw control. It was not needed
+`todo.md` said "`jaw` is weighted (888 base vertices, measured) and rotating it
+already works, so only a control is missing". I wrote that from the bone's
+weights alone, without checking whether anything already drove it.
+
+**FACS does.** AU26 Jaw Drop, AU27 Mouth Stretch, AU29 Jaw Thrust, AU30 Jaw
+Sideways, backed by the shipped pose units `JawDrop`, `JawDropStretched`,
+`ChinForward`, `ChinLeft/Right/Down`. Measured through the app:
+**`--facs AU26=1.0` moves 2,030 vertices by up to 0.353 dm** across the lower
+face. Building `rig::openJaw` would have been the second parallel system
+directive 12.3 rules out — two keying conventions for one bone — and the only
+reason it did not get built is that "does this need to exist" ran before the
+editor did.
+
+### The same check found something about LAST chunk's work
+The eyes had a driver before `--look-at`: **AU61-64** (Eyes Turn Left/Right, Up,
+Down) rotate the same two bones.
+
+They are not the same capability, so `aimEyes` still earns its place — an action
+unit is a blended direction at a weight applied equally to both eyes, while a
+look-at solves for a TARGET, per eye, and converges them. FACS cannot express
+"look at that".
+
+**But they collided silently.** Measured:
+
+| | vertices moved | max |
+|---|---|---|
+| `--facs AU61=1.0` | 1,721 | 0.0508 dm |
+| `--look-at 1.5,7.8,6.0` | 1,144 | 0.0664 dm |
+| both | **1,722** | 0.0664 dm |
+
+Together they equal NEITHER. AU61 drives 6 bones and the aim writes 2, so the
+eyelids follow the action unit while the eyeballs ignore it — a partial
+application with nothing said. `EyeAimReport::replacedExistingPose` now reports
+it and the app warns. Overriding is correct, since a look-at is a constraint;
+the silence was not.
+
+### Mutations
+Three, all caught: only the left eye checked (AU61 is sided, so a one-eyed check
+misses half), the check moved AFTER the write so it always sees the aim's own
+rotation, and the warning made unconditional. The last two are both caught by
+`app_look_at_alone_is_quiet`, which is the gate that makes the first case mean
+anything.
+
+### A habit worth naming
+Three times now I have retyped a passage from a wrapped `grep` into a
+string-match edit and had the assertion fail — twice this session, once on
+`todo.md` and once on `EyeAim.cpp`. Locating the line by content and splicing by
+index works every time. The rule: read the file, do not retype it.
+
+### Gates
+Debug, release, ASan, TSan, one preset at a time, ALLDONE read. clang-format
+clean with CI's exact command. Sonar gate OK with 0 open issues.
+
+### Next
+Recorded rather than started: anything that WRITES a bone-local entry rather
+than composing into it will do this to whatever set that entry first. Worth a
+rule before a third constraint lands.
+
+---
+
 ## 2026-09-10 (fifty-ninth) — Session · **The accessibility grant paid for itself in ten minutes**
 
 *2026-09-10 — the owner enabled Accessibility for Zed, which unblocked the

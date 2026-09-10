@@ -241,6 +241,53 @@ TEST_CASE("aiming adds no roll", "[rig][eyeaim]") {
     }
 }
 
+TEST_CASE("aiming says when it has overwritten an existing eye pose", "[rig][eyeaim]") {
+    // The eyes already had a driver before this one existed: FACS AU61-64
+    // ("Eyes Turn Left/Right", "Eyes Up", "Eyes Down") rotate the same two
+    // bones through pose units. `aimEyes` WRITES those entries, so combining
+    // the two silently discards the action unit's contribution to the eyeballs
+    // while every other bone it touches survives.
+    //
+    // Measured through the app: `--facs AU61=1.0` alone moves 1,721 vertices,
+    // `--look-at` alone moves 1,144, and the two together move 1,722 -- equal
+    // to neither. AU61 drives 6 bones; the aim replaces 2 of them, so the
+    // eyelids follow the action unit and the eyeballs ignore it.
+    //
+    // Overriding is the right behaviour -- a look-at is a constraint and
+    // constraints win -- but doing it in silence is not. Same reasoning as the
+    // live-rig corrective warning.
+    const auto skel = shippedRig();
+
+    SECTION("a rest pose is not an override") {
+        auto pose    = restPose(skel);
+        const auto r = rig::aimEyes(skel, foundation::Vec3{1.0F, 7.4F, 6.0F}, pose);
+        REQUIRE(r.has_value());
+        CHECK_FALSE(r->replacedExistingPose);
+    }
+
+    SECTION("an eye already rotated IS an override") {
+        auto pose = restPose(skel);
+        // Anything non-identity on either eye entry. A quarter-turn about the
+        // bone's own axis is what a pose unit would have left there.
+        pose[indexOf(skel, "eye.L")] =
+            foundation::rotationMatrix(0.3, foundation::Vec3{1.0F, 0.0F, 0.0F});
+        const auto r = rig::aimEyes(skel, foundation::Vec3{1.0F, 7.4F, 6.0F}, pose);
+        REQUIRE(r.has_value());
+        CHECK(r->replacedExistingPose);
+    }
+
+    SECTION("the OTHER eye alone is enough") {
+        // Both entries are checked, not just the first. AU61 is sided, so a
+        // one-eyed check would miss half of what it is meant to report.
+        auto pose = restPose(skel);
+        pose[indexOf(skel, "eye.R")] =
+            foundation::rotationMatrix(0.3, foundation::Vec3{1.0F, 0.0F, 0.0F});
+        const auto r = rig::aimEyes(skel, foundation::Vec3{1.0F, 7.4F, 6.0F}, pose);
+        REQUIRE(r.has_value());
+        CHECK(r->replacedExistingPose);
+    }
+}
+
 TEST_CASE("aiming refuses what it cannot do", "[rig][eyeaim]") {
     const auto skel = shippedRig();
 

@@ -102,6 +102,20 @@ std::expected<EyeAimReport, EyeAimError> aimEyes(const Skeleton& skeleton, found
     const double hLimit = limits.horizontalDegrees * std::numbers::pi / 180.0;
     const double vLimit = limits.verticalDegrees * std::numbers::pi / 180.0;
 
+    // Checked BEFORE anything is written, and for BOTH eyes: the aim replaces
+    // whatever was there, and a caller that combined it with a FACS gaze unit
+    // deserves to hear so. See `EyeAimReport::replacedExistingPose`.
+    const auto rotated = [](const foundation::Mat4& m) {
+        const foundation::Mat4 id = foundation::Mat4::identity();
+        for (size_t r = 0; r < 3; ++r) {
+            for (size_t c = 0; c < 3; ++c) {
+                if (m.m[r][c] != id.m[r][c]) return true;
+            }
+        }
+        return false;
+    };
+    report.replacedExistingPose = rotated(localPose[*left]) || rotated(localPose[*right]);
+
     for (const bool isLeft : {true, false}) {
         const size_t at  = isLeft ? *left : *right;
         const Bone& bone = skeleton.bones[at];

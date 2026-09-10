@@ -729,6 +729,30 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
     set_tests_properties(app_look_at_moves_the_eyes PROPERTIES
         FIXTURES_REQUIRED "app_look_at;app_look_at_off")
+    # A FACS gaze unit AND a look-at is a silent partial application, so it is
+    # not silent any more.
+    #
+    # The eyes had a driver before --look-at existed: AU61-64 rotate the same
+    # two bones. Measured: --facs AU61=1.0 alone moves 1,721 vertices,
+    # --look-at alone 1,144, and together 1,722 -- neither. AU61 drives 6 bones
+    # and the aim replaces 2, so the eyelids follow the unit while the eyeballs
+    # ignore it. Overriding is correct; announcing it is the fix.
+    add_test(NAME app_look_at_over_facs COMMAND makehuman
+             --facs AU61=1.0 --look-at 1.5,7.8,6.0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/lookat/over.obj)
+    set_tests_properties(app_look_at_over_facs PROPERTIES
+        PASS_REGULAR_EXPRESSION "look-at replaced an eye rotation")
+    # ...and a look-at with nothing under it must NOT claim to have replaced
+    # anything. Without this the warning could be unconditional and the case
+    # above would still pass.
+    add_test(NAME app_look_at_alone_is_quiet COMMAND makehuman
+             --look-at 1.5,7.8,6.0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/lookat/alone.obj)
+    set_tests_properties(app_look_at_alone_is_quiet PROPERTIES
+        PASS_REGULAR_EXPRESSION "look-at: eyes turned"
+        FAIL_REGULAR_EXPRESSION "replaced an eye rotation")
+
+
     add_test(NAME app_look_at_bad COMMAND makehuman
              --look-at nonsense --render ${CMAKE_CURRENT_BINARY_DIR}/lookat/never.png)
     set_tests_properties(app_look_at_bad PROPERTIES

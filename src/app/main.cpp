@@ -447,6 +447,22 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
         }
         std::printf("look-at: eyes turned %.1f and %.1f degrees%s\n", aim->leftDegrees,
                     aim->rightDegrees, aim->clamped ? " (clamped to the eye's range)" : "");
+        // The eyes already had a driver: FACS AU61-64 rotate the same two
+        // bones through pose units, and this REPLACES those entries while
+        // every other bone the unit touches survives. Measured:
+        // `--facs AU61=1.0` alone moves 1,721 vertices, `--look-at` alone
+        // 1,144, together 1,722 -- neither. The eyelids follow the unit and the
+        // eyeballs ignore it.
+        //
+        // Overriding is right, since a look-at is a constraint, but a silent
+        // partial application is how someone spends an afternoon wondering why
+        // half an expression took.
+        if (aim->replacedExistingPose) {
+            std::fprintf(stderr,
+                         "warning: look-at replaced an eye rotation already in the pose "
+                         "(a FACS gaze unit, or a pose file) -- the constraint wins for the "
+                         "eyeballs, and everything else that pose set is unaffected\n");
+        }
     }
 
     out.skeleton = std::move(*skel);

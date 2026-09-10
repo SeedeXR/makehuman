@@ -5100,11 +5100,22 @@ GPU here, or Colab) and it comes back to the owner first.
                           it plainly — 6,052 pixels, both corneas shifted toward
                           the character's left, both eyes pointing the same way.
                   - [ ] Groom and PBR skin assets: authored CONTENT, not code.
-                  - [ ] The jaw. `jaw` is weighted (888 base vertices, measured)
-                        and rotating it already works; what is missing is the
-                        same thing the eyes were missing — a control. Lower
-                        teeth and tongue would ride it, and neither exists as a
-                        shipped proxy yet (`data/` has eyes only).
+                  - [x] **The jaw needs no new control — one already exists,
+                        and my note here was wrong.** I wrote "rotating it works
+                        so a control is missing" from the bone's weights alone,
+                        without checking whether anything already drove it.
+                        **FACS does**: AU26 Jaw Drop, AU27 Mouth Stretch, AU29
+                        Jaw Thrust, AU30 Jaw Sideways, backed by the shipped
+                        pose units `JawDrop`, `JawDropStretched`, `ChinForward`,
+                        `ChinLeft/Right/Down`. Measured through the app —
+                        `--facs AU26=1.0` moves **2,030 vertices by up to 0.353
+                        dm** across the lower face (y 13.82–15.71, x ±0.808).
+                        Building `openJaw` would have been the second parallel
+                        system directive 12.3 rules out, with two keying
+                        conventions for one bone.
+                  - [ ] Lower teeth and tongue would ride the jaw, and neither
+                        ships as a proxy (`data/` has eyes only) — content, per
+                        directive 13.5.
       Two structural consequences to hold onto: proxies and clothing bind as
       barycentric offsets and therefore get shape, correctives and pose for
       free — **clothing gets no corrective system of its own**; and eye/teeth
@@ -5511,6 +5522,35 @@ ovary/gonadal, thyroid).
 - [ ] **No way to see what a slider does before moving it.** Every entry above
       had to be found by reading `data/modifiers/*.json`. A thumbnail or a
       hover preview is the reference's own answer and we have not ported it.
+
+## The eyes had TWO drivers, and now they say so (2026-09-11)
+
+`--look-at` (2026-09-10) was not the eyes' first driver. FACS **AU61-64** —
+Eyes Turn Left/Right, Eyes Up, Eyes Down — rotate the same two bones through
+pose units, and have all along.
+
+**They are not the same capability**, which is why `aimEyes` still earns its
+place: an action unit is a blended direction at a weight, applied equally to both
+eyes; a look-at solves for a TARGET POINT, per eye, and converges them. FACS
+cannot express "look at that", and nothing else could.
+
+**But they collide, and did so silently.** Measured through the app:
+
+| | vertices moved | max |
+|---|---|---|
+| `--facs AU61=1.0` | 1,721 | 0.0508 dm |
+| `--look-at 1.5,7.8,6.0` | 1,144 | 0.0664 dm |
+| both | **1,722** | 0.0664 dm |
+
+Together they equal NEITHER. AU61 drives 6 bones; the aim writes 2 of them, so
+the eyelids follow the action unit while the eyeballs ignore it — a partial
+application with nothing said. The aim now reports `replacedExistingPose` and
+the app warns. Overriding is correct (a constraint wins); the silence was not.
+
+- [ ] **The same question is unasked for every other constraint we add.**
+      Anything that WRITES a bone-local entry rather than composing into it will
+      do this to whatever set that entry first. Worth a rule before the third
+      one lands.
 
 ## Research and open questions
 

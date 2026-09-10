@@ -58,6 +58,20 @@ struct EyeAimReport {
     /// it. Worth surfacing: an eye that stops short looks like a bug in
     /// whatever set the target.
     bool clamped{false};
+    /// Either eye already carried a rotation, and this replaced it.
+    ///
+    /// The eyes had a driver before this one: FACS **AU61-64** ("Eyes Turn
+    /// Left/Right", "Eyes Up", "Eyes Down") rotate the same two bones through
+    /// pose units. Aiming WRITES those entries, so the action unit's
+    /// contribution to the eyeballs is discarded while every other bone it
+    /// touches survives -- measured through the app, `--facs AU61=1.0` moves
+    /// 1,721 vertices, `--look-at` moves 1,144, and together they move 1,722,
+    /// which is neither. AU61 drives 6 bones and the aim replaces 2, so the
+    /// eyelids follow the unit and the eyeballs ignore it.
+    ///
+    /// Overriding is right -- a look-at is a constraint and constraints win --
+    /// but doing it silently is not.
+    bool replacedExistingPose{false};
 };
 
 enum class EyeAimErrorKind : uint8_t {
