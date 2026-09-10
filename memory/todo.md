@@ -4587,9 +4587,43 @@ GPU here, or Colab) and it comes back to the owner first.
                     a rule in the manifest reader.
                   - Deterministic: compiling the same manifest twice gives the
                     same bytes, or the cache rebuilds for ever.
-            - [ ] **A compiler entry point** — a `tools/` binary or an app flag
-                  that writes the blob beside the manifest. Deferred with the
-                  app wiring, since neither has content to run on yet.
+            - [x] **The blob as a CACHE, and the entry point** (2026-09-10).
+                  `core::loadOrCompileCorrectives`. 6 cases.
+                  - **No separate compiler tool, deliberately.** This IS the
+                    entry point: the app calls it, a batch script calls it, and
+                    both get the same rebuild-when-stale behaviour rather than
+                    two implementations that can disagree about when a blob is
+                    current.
+                  - **DISPOSABLE, taken literally.** Failing to WRITE the cache
+                    does not fail the load — a read-only asset directory or a
+                    full disk costs the rebuild time on every load, not the
+                    character. Tested by chmod-ing the directory read-only.
+                    Written via a sibling `.tmp` and renamed, so a crash leaves
+                    the old blob or the new one, never half of one.
+                  - **INVALIDATED on the manifest hash**, and every way of not
+                    matching is a cache MISS rather than an error: stale,
+                    truncated, empty, not a blob at all, a blob format this
+                    build no longer reads, or a valid blob belonging to another
+                    manifest. Six of those are tested.
+                  - **The manifest is read FIRST, always**, even when a good
+                    blob sits beside it. That costs a JSON parse per call and
+                    buys the property that matters: a manifest that no longer
+                    loads is an error, not a character that silently keeps
+                    working and cannot be rebuilt — a breakage that would
+                    surface on someone else's machine when their cache is cold.
+                    Pinned by its own case.
+                  - `.mhcorr` added to `.gitignore`: derived, host-endian, and
+                    rebuilt from what is committed.
+                  - **Five mutations caught, one survives and cannot be caught
+                    here.** Dropping the `!blob` half of the cache-validity
+                    check reads `manifestHash` off a FAILED `std::expected` —
+                    undefined behaviour that libc++ does not trap, and that
+                    ASan+UBSan does not see either (verified by running it):
+                    the value comes out of the error union, compares unequal,
+                    and the cache misses exactly as it should. Folded into one
+                    condition and recorded, rather than left looking tested.
+                  - Two mutations build-failed on `-Werror` first and were
+                    rewritten; one segfaulted, which is a catch.
       - [x] **The pose-signal evaluator** (2026-09-10) — `rig::planPoseSignal`
             and `rig::evaluatePoseSignal`. Directive 12.3's "one pose-signal
             evaluator, several consumers", and the piece that had been MISSING:

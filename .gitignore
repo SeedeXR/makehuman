@@ -147,3 +147,10 @@ references/**/*.abc
 # Regenerable from resources/branding/makehuman-logo.png by
 # tools/make_appicon.py; only the .icns and the 1024 PNG are consumed.
 resources/branding/AppIcon.iconset/
+
+# Compiled corrective blobs, written beside their manifest. A DERIVED,
+# host-endian cache (docs/formats/corrective-manifest.md, directive 12.4):
+# rebuilt whenever the manifest hash moves, so committing one would put a
+# machine-specific artefact under review for no benefit.
+*.mhcorr
+*.mhcorr.tmp

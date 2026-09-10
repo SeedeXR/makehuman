@@ -4,6 +4,88 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-10 (fiftieth) — Session · **The blob becomes a cache**
+
+*2026-09-10 — directive 12.4's third layer says the blob is "a DISPOSABLE CACHE,
+invalidated on manifest hash mismatch". The format and the compiler existed;
+nothing wrote a blob to disk, checked whether it was stale, or rebuilt it.*
+
+### What landed
+`core::loadOrCompileCorrectives`. 6 cases.
+
+**There is no separate compiler tool, and that is the decision.** This is the
+entry point: the app calls it, a batch script calls it, and both get the same
+rebuild-when-stale behaviour rather than two implementations that can disagree
+about when a blob is current. The `tools/` binary I had listed as pending is
+not needed.
+
+Two words in the directive carried the whole design:
+
+- **DISPOSABLE.** Failing to WRITE the cache does not fail the load. A
+  read-only asset directory, a full disk or a sandbox costs the rebuild time on
+  every load, not the character — tested by chmod-ing the fixture directory to
+  read-only and asserting the load still succeeds with no blob on disk. The
+  write goes to a sibling `.tmp` and is renamed, so a crash leaves the old blob
+  or the new one and never half of one.
+- **INVALIDATED.** Every way of not matching is a cache MISS rather than an
+  error: stale, truncated, empty, not a blob at all, a blob format this build no
+  longer reads, or a perfectly valid blob belonging to a different manifest. All
+  six are tested, and the last is the realistic one — the file parses, its
+  version is right, and only the hash says it is someone else's.
+
+**The manifest is read FIRST, always**, even when a good blob is sitting beside
+it. That costs a JSON parse per call and buys the property that matters: a
+manifest that no longer loads is an ERROR, not a character that silently keeps
+working and nobody can rebuild. Returning the cached blob instead would hide the
+breakage until someone else's cache was cold. It has its own case.
+
+`.mhcorr` went into `.gitignore` — derived, host-endian, rebuilt from what is
+committed. I had written "it is in `.gitignore`" in the header before it was,
+which is the kind of doc lie that only stays true if you check; caught by
+grepping for it.
+
+### Mutations
+Five caught. Two build-failed on `-Werror` first and were rewritten, one
+segfaulted (a catch).
+
+**One survives and cannot be caught here.** Dropping the `!blob` half of the
+cache-validity check reads `manifestHash` off a FAILED `std::expected`. That is
+undefined behaviour, and libc++ does not trap it — the value comes out of the
+error union's storage, compares unequal to any real hash, and the cache misses
+exactly as it should. It survives ASan+UBSan too; I ran it rather than assuming.
+Folded into one condition and recorded in the code, rather than left as a line
+that looks tested and is not.
+
+**That is the fourth time this session** a guard has turned out to protect
+against UB rather than behaviour: the zero-dimension check in `Rbf`, the
+layout-length check in the blob reader, the twist-half in `PoseSignal`, and now
+this. Two of those ASan caught and two it did not. The pattern is worth carrying:
+when a mutation survives, ask whether the guard has observable behaviour at all
+before assuming the test is weak.
+
+### Gate mutation
+Removing the `Reused` status assertion still leaves a never-reuse mutation
+caught by two other cases — the untouched-mtime check and the third-call-reuses
+assertion in the invalidation test. So that assertion is not uniquely
+load-bearing, which is worth saying rather than implying otherwise.
+
+### Not visual
+The cache is file I/O; nothing renders differently, and the geometry path it
+feeds was rendered last chunk. No image this time, said rather than skipped.
+
+### Gates
+Four presets one at a time, `ALLDONE` read. CI's exact clang-format command
+clean. SonarQube read only after `api/ce/task` reports SUCCESS.
+
+### Next
+The app wiring is now the only mechanical piece left in step 4: a
+`--correctives <manifest>` flag that calls `loadOrCompileCorrectives`, binds a
+`CorrectiveRuntime`, and skins `positions()`. Everything it needs exists. After
+that, **step 5 content** — sculpted correctives for a real joint — is the only
+thing this pipeline cannot supply for itself.
+
+---
+
 ## 2026-09-10 (forty-ninth) — Session · **The whole chain runs, and there is a picture of it**
 
 *2026-09-10 — every piece of directive 12's deformer existed and none of them

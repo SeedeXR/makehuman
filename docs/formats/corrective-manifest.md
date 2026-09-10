@@ -24,8 +24,15 @@ direction of flow:
 | **Compile** | solve the RBF once, bake a blob | build artefact |
 | **Runtime** | the blob only | disposable cache, rebuilt on hash mismatch |
 
-Only the authoring layer exists today. The manifest is the contract the other
-two are written against.
+All three exist now. The manifest is the contract the other two are written
+against, and `core::loadOrCompileCorrectives` is the entry point that ties them
+together: it reads this file, looks for `<stem>.mhcorr` beside it, and rebuilds
+whenever the blob is missing, stale, corrupt, or in a blob format the build no
+longer reads.
+
+**The blob is derived and gitignored.** Deleting it costs a recompile and
+nothing else, and failing to WRITE it does not fail a load -- a read-only asset
+directory costs the rebuild time on every load, not the character.
 
 ## Why JSON and not TOML
 
@@ -163,7 +170,7 @@ which tells the author nothing; refused here, both poses can be named.
 
 `CorrectiveManifest::hash` is FNV-1a over the manifest's **content in a
 canonical order**. It is what makes the compiled blob a disposable cache: the
-blob records this hash, and a mismatch means rebuild.
+blob records this hash, and `loadOrCompileCorrectives` rebuilds on a mismatch.
 
 Deliberately **not** part of the hash:
 

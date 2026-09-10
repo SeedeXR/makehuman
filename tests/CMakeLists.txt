@@ -36,6 +36,7 @@ add_executable(mh_tests
     unit/test_corrective_blob.cpp
     unit/test_pose_signal.cpp
     unit/test_corrective_runtime.cpp
+    unit/test_corrective_cache.cpp
     unit/test_version.cpp
     golden/test_base_mesh_parity.cpp
     golden/test_mesh_fixture_parity.cpp
