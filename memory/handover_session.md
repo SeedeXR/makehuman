@@ -4,6 +4,97 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-10 (forty-eighth) — Session · **The link that was missing all along**
+
+*2026-09-10 — the pipeline had every piece except the one that feeds it. Before
+starting I grepped for a consumer of `swingTwist` and found none outside its own
+tests: nothing walked a posed skeleton and produced a point in signal space.
+That is directive 12.3's "one pose-signal evaluator", and I had only ever built
+its primitive.*
+
+### What landed
+`rig::planPoseSignal` and `rig::evaluatePoseSignal`. 9 cases.
+
+A posed skeleton goes in; a point in signal space comes out, laid out in the
+order the manifest's drivers are listed. `rbfEvaluate` turns that into a weight
+vector and `CorrectiveBuffer` turns the weights into moved geometry. The chain
+is now complete end to end, in code if not yet in content.
+
+### The fact it all rests on, measured rather than assumed
+**In a bone's own frame the bone points along +Y.** `buildRestMatrices` writes
+each bone's axes as COLUMNS with the normalised bone direction in column 1
+(`src/rig/Skeleton.cpp`), and `poseToBoneLocal` conjugates a pose into that
+frame — so the twist axis is not per-bone data to be looked up, it is the
+constant `(0,1,0)`.
+
+I checked that on the shipped rig before writing anything: **163 bones, worst
+L1 error 1.2e-7** against their own normalised directions. The first test case
+re-measures it, because a silent change to that convention would leave every
+signal finite, plausible and about the wrong axis — the failure mode nothing
+reports.
+
+The same probe showed `swingY` is exactly zero for every bone of the T-pose,
+which is the defining property of a swing, and that the pose is real:
+upperarm01.L swings 0.5003 rad about Z, spine01 and head are unposed.
+
+### Plan once, evaluate per frame
+Same split as everywhere else here. An unknown joint fails when a corrective is
+BOUND to a skeleton, not in the middle of an animation, and the per-frame call
+allocates nothing.
+
+### Nine mutations, one survived, and it was RIGHT to survive
+Taking the twist from the whole rotation instead of the twist half passes the
+whole file. That is not a test gap: `twistAngle` measures only the component
+about the axis, so for any ordinary rotation the two are **identical** —
+measured worst difference 2.2e-16 over a sweep of swing/twist combinations.
+
+They part company only where `swingTwist`'s singularity guard fires, with the
+scalar part and the projection both below about 1e-15. There the whole rotation
+gives **2.498 rad of twist for a rotation that has none**, while the twist half
+correctly reports zero. A float `Mat4` cannot produce numbers that small, so the
+mutation is unreachable through this pipeline.
+
+Recorded in the code as expected rather than papered over, and the safer
+expression kept — it costs one normalisation per twist driver and removes the
+question. This is the first mutation this session that survived for a good
+reason; the previous five all turned out to be shadowed guards.
+
+### Two things the first run caught
+- **A tolerance that was too tight, for a real reason.** `Mat4` is FLOAT, so an
+  angle round-tripping through a rotation matrix arrives with float precision
+  however carefully the decomposition is done in double. Measured worst 7.6e-9,
+  so the tolerance is 1e-6 — and the components that are exactly zero keep 1e-9,
+  since they are exact.
+- **A shadowed guard, again.** Checking only that the DRIVER bones are in range
+  accepted a pose array from a different skeleton, whose indices mean different
+  bones entirely. The plan now carries the bone count and insists on one matrix
+  per bone; tested both short and long.
+
+### Gate mutations
+Loosening the T-pose case's measured tolerances to 1.0, and separately
+neutering the swing-has-no-Y assertion, both still leave a wrong twist axis
+caught by four and three other cases respectively. So neither assertion is
+uniquely load-bearing — the suite has real redundancy there, which is worth
+saying rather than claiming otherwise.
+
+### Gates
+Four presets one at a time, `ALLDONE` read. CI's exact clang-format command
+clean. SonarQube read only after `api/ce/task` reports SUCCESS.
+
+Note for the next fire: the scratchpad directory is wiped between fires, and
+`gates.sh` lives in it. It is recreated at the top of this entry's work; if it
+is missing again, rebuild it rather than assuming the gates ran.
+
+### Next
+Everything under content is now built and tested: signal, interpolation,
+application, manifest, compiler, blob, and now the evaluator that feeds them.
+What remains for step 4 is an entry point (a `tools/` binary writing the blob
+beside its manifest) and the app wiring; both are small once there is something
+to run them on. **Step 5, content** — a sculpted corrective for one real joint —
+is the thing standing between this and something visible.
+
+---
+
 ## 2026-09-10 (forty-seventh) — Session · **The compiler, and five guards that were only shadowed**
 
 *2026-09-10 — directive 12.4's second and third layers. The manifest was the

@@ -4590,6 +4590,46 @@ GPU here, or Colab) and it comes back to the owner first.
             - [ ] **A compiler entry point** — a `tools/` binary or an app flag
                   that writes the blob beside the manifest. Deferred with the
                   app wiring, since neither has content to run on yet.
+      - [x] **The pose-signal evaluator** (2026-09-10) — `rig::planPoseSignal`
+            and `rig::evaluatePoseSignal`. Directive 12.3's "one pose-signal
+            evaluator, several consumers", and the piece that had been MISSING:
+            `swingTwist` had no caller outside its own tests, so nothing could
+            turn a posed skeleton into a point in signal space. 9 cases.
+            - **The twist axis is a constant, not per-bone data.**
+              `buildRestMatrices` writes each bone's axes as COLUMNS with the
+              normalised bone direction in column 1 (`src/rig/Skeleton.cpp`),
+              and `poseToBoneLocal` conjugates into that frame — so in a bone's
+              own frame the bone points along +Y, always. Measured on the
+              shipped rig: 163 bones, worst L1 error 1.2e-7. A test re-measures
+              it, because a silent change there leaves every signal finite,
+              plausible and about the wrong axis.
+            - **Plan once, evaluate per frame**, like everything else in this
+              pipeline: an unknown joint fails when a corrective is BOUND to a
+              skeleton, not mid-animation.
+            - **Pinned to the shipped T-pose's real values** — upperarm01.L
+              swing (0.0307, 0, 0.5003), lowerarm01.L swing (−0.6744, 0,
+              0.1246). Not round numbers, which is the point: they are what the
+              data says, and a change to the pose loader, the rest matrices or
+              the decomposition moves them.
+            - **The rest pose is EXACTLY the origin**, bit-exact, which is what
+              lets the RBF treat rest as the natural centre.
+            - **Nine mutations. One survived and it was correct to survive**:
+              taking the twist from the whole rotation instead of the twist half
+              is IDENTICAL for anything a float `Mat4` can produce — measured
+              worst difference 2.2e-16 — and differs only when the scalar part
+              and the projection are both below ~1e-15, where the whole rotation
+              gives 2.498 rad of twist for a rotation that has none. Recorded in
+              the code as expected rather than papered over; the safer
+              expression is kept because it costs one normalisation.
+            - **A tolerance was too tight and the reason is a real ceiling**:
+              `Mat4` is FLOAT, so an angle round-tripping through a rotation
+              matrix arrives with float precision however careful the
+              decomposition is. Measured worst 7.6e-9, so 1e-6; the components
+              that are exactly zero keep 1e-9.
+            - **A guard was shadowed**: checking only that the DRIVER bones are
+              in range accepted a pose array from a different skeleton, whose
+              indices mean different bones. The plan now carries the bone count
+              and insists on one matrix per bone, tested both short and long.
             - [ ] **The Blender round-trip** the step is named for, and the app
                   wiring, which both need content the compiler produces.
       - [ ] **5. Content**: groom, PBR skin, wrinkle maps THROUGH THE SHARED

@@ -4,7 +4,7 @@
 # depend on the permissive modules; never the reverse. See LICENSING.md 4.
 
 add_library(mh_rig STATIC Skeleton.cpp VertexWeights.cpp Skinning.cpp PoseUnits.cpp
-                         BvhPose.cpp PosedMesh.cpp Facs.cpp)
+                         BvhPose.cpp PosedMesh.cpp Facs.cpp PoseSignal.cpp)
 add_library(mh::rig ALIAS mh_rig)
 
 target_include_directories(mh_rig PUBLIC
