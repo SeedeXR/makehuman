@@ -4630,8 +4630,47 @@ GPU here, or Colab) and it comes back to the owner first.
               in range accepted a pose array from a different skeleton, whose
               indices mean different bones. The plan now carries the bone count
               and insists on one matrix per bone, tested both short and long.
+            - [x] **The runtime binding, and the seam it needed** (2026-09-10).
+                  `rig::CorrectiveRuntime::bind` / `update`. The whole chain
+                  runs: posed skeleton → signal → RBF weights → sparse deltas →
+                  pre-skin geometry. 7 cases.
+                  - **The seam.** `CorrectiveBuffer::apply` took `const Target*`
+                    — an OWNING type — while the blob hands out spans into its
+                    own bytes. They could not be joined without copying every
+                    delta out of the blob, which is what a mappable layout
+                    exists to avoid. Both now speak `core::TargetView`, and the
+                    "a null corrective" test is GONE because a view cannot be
+                    null — the guard it tested no longer exists.
+                  - **The topology-hash guard finally does something.** The
+                    manifest has recorded which base mesh a corrective was
+                    authored against since it was written, and nothing compared
+                    it until `bind`. Directive 12.7, closed.
+                  - **Everything that can fail happens at BIND** — unknown
+                    joint, wrong topology, a delta past the mesh. `update` can
+                    only fail on a pose of the wrong shape.
+                  - **A measured find: the dirty list was doing nothing.** A
+                    Gaussian RBF never returns exactly zero — a pose that is
+                    fully OFF comes out at 2.7e-16, measured — and
+                    `CorrectiveBuffer` skips only exact zeros, deliberately. So
+                    every corrective was "active" every frame and the dirty list
+                    was the whole mesh. The runtime now zeroes weights below
+                    1e-6, chosen against what a float vertex can represent: a
+                    delta of a few decimetres scaled by 1e-6 moves a coordinate
+                    by 1e-7 dm, below the float ulp near 17. Nothing it drops
+                    could have moved anything. `weights()` still reports the RAW
+                    values, so the threshold is a decision about what to apply
+                    rather than a rounding of what is reported.
+                  - **RENDERED IT.** A 442-vertex deltoid bulge authored AT the
+                    T-pose's own signal, compiled to a 7,270-byte blob, bound,
+                    driven by the real pose: weights `[-0.0000, 1.0000]`, 442
+                    vertices touched, 4,499 pixels different at the shoulder.
+                    Plain has a thin deltoid and a flat armpit; driven has a
+                    full rounded deltoid with the crease filled. First image the
+                    complete pipeline has produced.
             - [ ] **The Blender round-trip** the step is named for, and the app
-                  wiring, which both need content the compiler produces.
+                  wiring. The runtime is what the app will call; what is left is
+                  a `--correctives` flag, a compiler entry point, and shipped
+                  content for them to run on.
       - [ ] **5. Content**: groom, PBR skin, wrinkle maps THROUGH THE SHARED
             DRIVER, eye/teeth rig.
       Two structural consequences to hold onto: proxies and clothing bind as

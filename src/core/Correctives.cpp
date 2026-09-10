@@ -15,7 +15,7 @@ void CorrectiveBuffer::setRest(std::span<const Vec3> rest) {
     marked_.assign(rest_.size(), 0);
 }
 
-bool CorrectiveBuffer::apply(std::span<const Target* const> correctives,
+bool CorrectiveBuffer::apply(std::span<const TargetView> correctives,
                              std::span<const float> weights) {
     if (correctives.size() != weights.size()) return false;
     if (rest_.empty()) return false;
@@ -26,10 +26,9 @@ bool CorrectiveBuffer::apply(std::span<const Target* const> correctives,
     // and noticing it only when an animation activates the corrective is the
     // worst time.
     const auto vertexCount = static_cast<uint32_t>(rest_.size());
-    for (const Target* c : correctives) {
-        if (c == nullptr) return false;
-        if (c->verts.size() != c->offsets.size()) return false;
-        if (!c->verts.empty() && c->maxVertexIndex >= vertexCount) return false;
+    for (const TargetView& c : correctives) {
+        if (!c.consistent()) return false;
+        if (!c.empty() && c.maxVertexIndex >= vertexCount) return false;
     }
 
     // Undo the last frame, and only where it happened. `dirty_` holds each
@@ -47,7 +46,7 @@ bool CorrectiveBuffer::apply(std::span<const Target* const> correctives,
         const float w = weights[c];
         if (w == 0.0F) continue;
 
-        const Target& t = *correctives[c];
+        const TargetView& t = correctives[c];
         for (size_t i = 0; i < t.verts.size(); ++i) {
             const uint32_t v = t.verts[i];
             const Vec3& d    = t.offsets[i];

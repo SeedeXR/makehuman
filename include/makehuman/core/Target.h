@@ -14,6 +14,29 @@
 
 namespace mh::core {
 
+/// A non-owning view of a sparse delta: the shape `Target` has, without the
+/// ownership.
+///
+/// This exists because a compiled corrective blob hands out spans into its own
+/// bytes (`core::CompiledCorrectives`) while a `.target` read from disk owns
+/// vectors. `CorrectiveBuffer` used to take `const Target*` and the two could
+/// not meet without copying every delta out of the blob -- which is exactly
+/// what a mappable layout exists to avoid. Both speak this instead.
+///
+/// `maxVertexIndex` is carried rather than recomputed: the consumer validates
+/// it against a mesh, and rescanning every index to find it would turn an O(1)
+/// check into an O(vertices) one on a path that runs per frame.
+struct TargetView {
+    std::span<const uint32_t> verts;
+    std::span<const Vec3> offsets;
+    uint32_t maxVertexIndex{};
+
+    [[nodiscard]] bool empty() const noexcept { return verts.empty(); }
+
+    /// True if the two arrays describe the same number of vertices.
+    [[nodiscard]] bool consistent() const noexcept { return verts.size() == offsets.size(); }
+};
+
 /// A sparse morph: a list of vertex indices and the offset each one moves by.
 ///
 /// This is MakeHuman's entire modelling primitive. Every slider in the
@@ -35,6 +58,12 @@ struct Target {
     /// Largest vertex index referenced, or 0 when empty. Lets a caller check a
     /// target against a mesh once rather than per application.
     uint32_t maxVertexIndex{};
+
+    /// A non-owning view of this target, for consumers that also accept deltas
+    /// read in place out of a compiled blob.
+    [[nodiscard]] TargetView view() const noexcept {
+        return TargetView{.verts = verts, .offsets = offsets, .maxVertexIndex = maxVertexIndex};
+    }
 };
 
 enum class TargetErrorKind {

@@ -4,6 +4,89 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-10 (forty-ninth) — Session · **The whole chain runs, and there is a picture of it**
+
+*2026-09-10 — every piece of directive 12's deformer existed and none of them
+met. This binds them to a character and drives them from a real pose.*
+
+### What landed
+`rig::CorrectiveRuntime::bind` and `update`. Per frame: posed skeleton →
+`evaluatePoseSignal` → `rbfEvaluate` → `CorrectiveBuffer::apply` → moved
+rest-space vertices, with the deltas read in place out of a compiled blob.
+7 cases.
+
+**The seam had to close first.** `CorrectiveBuffer::apply` took `const Target*`
+— an OWNING type — while `CompiledCorrectives` hands out spans into its own
+bytes. The two could not be joined without copying every delta out of the blob,
+which is exactly what a mappable layout exists to avoid. Both now speak
+`core::TargetView`. One consequence worth noting: the "a null corrective" test
+is **gone**, because a view cannot be null — the guard it tested no longer
+exists to be tested. Only `test_correctives.cpp` called `apply`, so the change
+cost 17 mechanical declarations.
+
+**The topology-hash guard finally does something.** The manifest has recorded
+which base mesh a corrective was authored against since it was written, and
+nothing compared it. `bind` compares and refuses. Directive 12.7, closed.
+
+Everything that can fail happens at bind — unknown driving joint, wrong
+topology, a delta reaching past the mesh. `update` can only fail on a pose of
+the wrong shape, because mid-animation is the worst time to find out.
+
+### A measured find: the dirty list was doing nothing
+Two tests failed on `touched()` — 3 where I expected 1. Not a bug in the
+runtime: **a Gaussian RBF never returns exactly zero.** Measured on the fixture,
+a pose that is fully OFF comes out at 2.7e-16. `CorrectiveBuffer` skips only
+exact zeros — deliberately, from the chunk that built it, because a magnitude
+threshold is a policy with a visible consequence and did not belong in a buffer.
+So every corrective was "active" every frame and the dirty list was the whole
+mesh. The optimisation directive 12.5 asked for was buying nothing.
+
+The runtime now zeroes weights below **1e-6** before handing them over, and the
+threshold is chosen against what a float vertex can represent rather than by
+taste: a delta of a few decimetres scaled by 1e-6 moves a coordinate by 1e-7 dm,
+below the float ulp near 17 dm. Nothing it drops could have moved anything, so
+there is no threshold to pop across. `weights()` still reports the RAW values,
+so this is a decision about what to APPLY rather than a rounding of what is
+reported — and a test asserts exactly that: weight[1] is non-zero and below
+1e-12 while `touched()` is 1.
+
+My test expectations were right about intent and wrong about the arithmetic; the
+fix went in the runtime rather than the test.
+
+### Rendered it, and it is the first picture of the whole thing
+A 442-vertex deltoid bulge authored AT the T-pose's own signal — measured
+(0.0307, 0, 0.5003) by the evaluator itself — compiled to a **7,270-byte blob**,
+bound, and driven by the real pose off disk. Weights came out `[-0.0000,
+1.0000]`: the pose lands exactly on its example. 442 vertices touched, exactly
+the bulge.
+
+**4,499 pixels differ, all at the shoulder.** Plain has a thin deltoid and a
+flat underside where the arm meets the torso; driven has a full rounded deltoid
+with the armpit crease filled. Nothing about that is visible in an assertion.
+
+### Mutations
+Nine on the code, all caught. Four build-failed on `-Werror` first (unused
+parameter, unused variable, tautological self-comparison) and were rewritten —
+a mutation that does not compile proves nothing, and this is the fourth chunk
+where that has cost a retry.
+
+Both gate mutations landed: neutering the topology-mismatch assertion lets the
+guard's removal pass, and neutering the two `touched()` assertions lets the
+threshold's removal pass. So those specific assertions are what carry them.
+
+### Gates
+Four presets one at a time, `ALLDONE` read. CI's exact clang-format command
+clean. SonarQube read only after `api/ce/task` reports SUCCESS.
+
+### Next
+The app wiring: a `--correctives` flag that binds a blob and skins
+`positions()`, plus a compiler entry point that writes the blob beside its
+manifest. Both are small now — the runtime is exactly what the app calls. After
+that it is **content**, which is the only thing left that this pipeline cannot
+supply for itself.
+
+---
+
 ## 2026-09-10 (forty-eighth) — Session · **The link that was missing all along**
 
 *2026-09-10 — the pipeline had every piece except the one that feeds it. Before

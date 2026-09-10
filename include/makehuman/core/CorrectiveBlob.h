@@ -26,6 +26,7 @@
 #pragma once
 
 #include "makehuman/core/CorrectiveManifest.h"
+#include "makehuman/core/Target.h"
 #include "makehuman/core/Types.h"
 #include "makehuman/foundation/Rbf.h"
 
@@ -114,14 +115,11 @@ struct CompiledCorrectives {
     foundation::RbfCoefficients coefficients;
 
     /// One sparse delta per pose, parallel to `poseNames`, in the order a
-    /// weight vector comes out of `rbfEvaluate` -- so they hand straight to
-    /// `CorrectiveBuffer::apply`.
-    struct Delta {
-        std::span<const uint32_t> verts;
-        std::span<const Vec3> offsets;
-    };
-
-    std::vector<Delta> deltas;
+    /// weight vector comes out of `rbfEvaluate` -- so they hand STRAIGHT to
+    /// `CorrectiveBuffer::apply`, which takes the same view type. That is the
+    /// point of the layout: the deltas are the bulk, and they are consumed
+    /// where they lie rather than copied into an owning type.
+    std::vector<TargetView> deltas;
 };
 
 /// Loads every payload the manifest names, solves the RBF, and bakes the blob.

@@ -25,6 +25,7 @@
 
 #include "makehuman/core/Target.h"
 
+#include <algorithm>
 #include <cstring>
 
 namespace mh::core {
@@ -331,8 +332,16 @@ std::expected<CompiledCorrectives, CorrectiveBlobError> readCorrectiveBlob(
             return blobFail(CorrectiveBlobErrorKind::Inconsistent,
                             "delta " + std::to_string(i) + " runs outside the vertex table");
         }
-        c.deltas.push_back(CompiledCorrectives::Delta{.verts   = std::span(verts + first, count),
-                                                      .offsets = std::span(offset + first, count)});
+        // The largest index, found once here rather than per frame: the view
+        // carries it so `CorrectiveBuffer::apply` can range-check a corrective
+        // in O(1). Scanning once is the cost of not spending four bytes per
+        // pose in the format on something derivable from what is already there.
+        uint32_t largest = 0;
+        for (size_t v = 0; v < count; ++v)
+            largest = std::max(largest, verts[first + v]);
+        c.deltas.push_back(TargetView{.verts          = std::span(verts + first, count),
+                                      .offsets        = std::span(offset + first, count),
+                                      .maxVertexIndex = largest});
     }
     return c;
 }

@@ -64,15 +64,20 @@ public:
     /// interpolant overshoots between example poses, and clamping here would
     /// quietly change what was authored.
     ///
+    /// Takes VIEWS rather than owning targets, so a corrective read in place
+    /// out of a compiled blob and one loaded from a `.target` file are the same
+    /// thing here. Copying the blob's deltas to satisfy an owning type would
+    /// defeat the mappable layout they are stored in.
+    ///
     /// @return false, having written nothing, if the arrays do not pair up, a
-    ///         corrective is null or ragged, or one indexes past the rest mesh.
+    ///         corrective is ragged, or one indexes past the rest mesh.
     ///         Refused as a whole rather than per vertex -- a corrective
     ///         sculpted against a different topology is an authoring error, and
     ///         applying the part of it that happens to fit gives a character
     ///         that is subtly wrong with nothing reported. Checked for EVERY
     ///         corrective including inactive ones, or the error surfaces only
     ///         once an animation happens to activate it.
-    [[nodiscard]] bool apply(std::span<const Target* const> correctives,
+    [[nodiscard]] bool apply(std::span<const TargetView> correctives,
                              std::span<const float> weights);
 
     /// The deformed positions. Empty until `setRest`.

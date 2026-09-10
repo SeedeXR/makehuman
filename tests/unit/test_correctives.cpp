@@ -26,6 +26,11 @@
 // The determinism directive 12.5 warns about is the reason the accumulation
 // order is fixed and stated: "parallel scatter-add reorders float additions, so
 // the same input can give different output across thread counts."
+//
+// `apply` takes VIEWS, not owning targets, so a corrective read in place out of
+// a compiled blob and one loaded from a `.target` file are the same thing to it.
+// A case for "a null corrective" used to live here and is gone: a view cannot be
+// null, so the guard it tested no longer exists to be tested.
 #include "makehuman/core/Correctives.h"
 
 #include "makehuman/core/Target.h"
@@ -93,7 +98,7 @@ TEST_CASE("with no correctives the rest mesh comes back untouched", "[core][corr
 TEST_CASE("a weight of zero is the same as no corrective at all", "[core][correctives]") {
     const auto rest = restLine(8);
     const Target t  = sparse({2, 5}, {Vec3{1.0F, 0.0F, 0.0F}, Vec3{0.0F, 2.0F, 0.0F}});
-    const Target* ts[]{&t};
+    const TargetView ts[]{t.view()};
 
     CorrectiveBuffer buffer;
     buffer.setRest(rest);
@@ -109,7 +114,7 @@ TEST_CASE("a weight of zero is the same as no corrective at all", "[core][correc
 TEST_CASE("one corrective moves exactly its own vertices", "[core][correctives]") {
     const auto rest = restLine(8);
     const Target t  = sparse({2, 5}, {Vec3{1.0F, 0.0F, 0.0F}, Vec3{0.0F, 2.0F, 0.0F}});
-    const Target* ts[]{&t};
+    const TargetView ts[]{t.view()};
 
     CorrectiveBuffer buffer;
     buffer.setRest(rest);
@@ -132,7 +137,7 @@ TEST_CASE("overlapping correctives add rather than replace", "[core][correctives
     const auto rest = restLine(8);
     const Target a  = sparse({3, 4}, {Vec3{1.0F, 0.0F, 0.0F}, Vec3{1.0F, 0.0F, 0.0F}});
     const Target b  = sparse({3}, {Vec3{0.0F, 0.0F, 4.0F}});
-    const Target* ts[]{&a, &b};
+    const TargetView ts[]{a.view(), b.view()};
 
     CorrectiveBuffer buffer;
     buffer.setRest(rest);
@@ -153,7 +158,7 @@ TEST_CASE("a negative weight moves the other way", "[core][correctives]") {
     // quietly change what was authored.
     const auto rest = restLine(4);
     const Target t  = sparse({1}, {Vec3{0.0F, 3.0F, 0.0F}});
-    const Target* ts[]{&t};
+    const TargetView ts[]{t.view()};
 
     CorrectiveBuffer buffer;
     buffer.setRest(rest);
@@ -170,7 +175,7 @@ TEST_CASE("the previous frame is undone, and only where it was applied", "[core]
     const auto rest = restLine(8);
     const Target a  = sparse({1, 2}, {Vec3{5.0F, 0.0F, 0.0F}, Vec3{5.0F, 0.0F, 0.0F}});
     const Target b  = sparse({6}, {Vec3{0.0F, 0.0F, 7.0F}});
-    const Target* ts[]{&a, &b};
+    const TargetView ts[]{a.view(), b.view()};
 
     CorrectiveBuffer buffer;
     buffer.setRest(rest);
@@ -215,7 +220,7 @@ TEST_CASE("repeated frames of the same corrective do not drift", "[core][correct
         t.offsets.push_back(Vec3{0.1F, 0.3F, -0.7F});
         t.maxVertexIndex = v;
     }
-    const Target* ts[]{&t};
+    const TargetView ts[]{t.view()};
 
     CorrectiveBuffer buffer;
     buffer.setRest(rest);
@@ -242,7 +247,7 @@ TEST_CASE("the same input gives the same bits", "[core][correctives]") {
     const auto rest = restLine(32);
     const Target a  = sparse({4, 9}, {Vec3{0.1F, 0.2F, 0.3F}, Vec3{0.4F, 0.5F, 0.6F}});
     const Target b  = sparse({9, 4}, {Vec3{0.7F, 0.8F, 0.9F}, Vec3{1.1F, 1.2F, 1.3F}});
-    const Target* ts[]{&a, &b};
+    const TargetView ts[]{a.view(), b.view()};
     const float w[]{0.37F, 0.61F};
 
     CorrectiveBuffer one;
@@ -270,7 +275,7 @@ TEST_CASE("a corrective is refused when it does not fit the mesh", "[core][corre
 
     SECTION("one weight per corrective, or the pairing is guesswork") {
         const Target t = sparse({1}, {Vec3{1.0F, 0.0F, 0.0F}});
-        const Target* ts[]{&t};
+        const TargetView ts[]{t.view()};
         const float two[]{1.0F, 1.0F};
         CorrectiveBuffer buffer;
         buffer.setRest(rest);
@@ -283,7 +288,7 @@ TEST_CASE("a corrective is refused when it does not fit the mesh", "[core][corre
         // error, and applying the part of it that happens to fit produces a
         // character that is subtly wrong in a way nothing reports.
         const Target t = sparse({1, 99}, {Vec3{1.0F, 0.0F, 0.0F}, Vec3{1.0F, 0.0F, 0.0F}});
-        const Target* ts[]{&t};
+        const TargetView ts[]{t.view()};
         const float one[]{1.0F};
         CorrectiveBuffer buffer;
         buffer.setRest(rest);
@@ -304,13 +309,13 @@ TEST_CASE("a corrective is refused when it does not fit the mesh", "[core][corre
 
         CorrectiveBuffer buffer;
         buffer.setRest(rest);
-        const Target* first[]{&good};
+        const TargetView first[]{good.view()};
         const float one[]{1.0F};
         REQUIRE(buffer.apply(first, one));
         const std::vector<Vec3> deformed(buffer.positions().begin(), buffer.positions().end());
         REQUIRE(deformed[1].x != rest[1].x);
 
-        const Target* second[]{&good, &bad};
+        const TargetView second[]{good.view(), bad.view()};
         const float two[]{1.0F, 1.0F};
         CHECK_FALSE(buffer.apply(second, two));
         checkIdentical(buffer.positions(), deformed);
@@ -321,19 +326,11 @@ TEST_CASE("a corrective is refused when it does not fit the mesh", "[core][corre
         // Otherwise the error appears only once an animation happens to
         // activate it, which is the worst time to find out.
         const Target t = sparse({99}, {Vec3{1.0F, 0.0F, 0.0F}});
-        const Target* ts[]{&t};
+        const TargetView ts[]{t.view()};
         const float zero[]{0.0F};
         CorrectiveBuffer buffer;
         buffer.setRest(rest);
         CHECK_FALSE(buffer.apply(ts, zero));
-    }
-
-    SECTION("a null corrective") {
-        const Target* ts[]{nullptr};
-        const float one[]{1.0F};
-        CorrectiveBuffer buffer;
-        buffer.setRest(rest);
-        CHECK_FALSE(buffer.apply(ts, one));
     }
 
     SECTION("a target whose index and offset arrays disagree") {
@@ -342,7 +339,7 @@ TEST_CASE("a corrective is refused when it does not fit the mesh", "[core][corre
         t.verts = {1, 2};
         t.offsets.push_back(Vec3{1.0F, 0.0F, 0.0F});
         t.maxVertexIndex = 2;
-        const Target* ts[]{&t};
+        const TargetView ts[]{t.view()};
         const float one[]{1.0F};
         CorrectiveBuffer buffer;
         buffer.setRest(rest);
@@ -351,7 +348,7 @@ TEST_CASE("a corrective is refused when it does not fit the mesh", "[core][corre
 
     SECTION("and the good case still works, so the guards refuse the right things") {
         const Target t = sparse({1}, {Vec3{1.0F, 0.0F, 0.0F}});
-        const Target* ts[]{&t};
+        const TargetView ts[]{t.view()};
         const float one[]{1.0F};
         CorrectiveBuffer buffer;
         buffer.setRest(rest);
@@ -374,14 +371,14 @@ TEST_CASE("a buffer with no rest mesh has nothing to deform", "[core][corrective
 
     SECTION("a corrective that moves nothing") {
         const Target empty;
-        const Target* ts[]{&empty};
+        const TargetView ts[]{empty.view()};
         const float one[]{1.0F};
         CHECK_FALSE(buffer.apply(ts, one));
     }
 
     SECTION("a corrective that moves something") {
         const Target t = sparse({0}, {Vec3{1.0F, 0.0F, 0.0F}});
-        const Target* ts[]{&t};
+        const TargetView ts[]{t.view()};
         const float one[]{1.0F};
         CHECK_FALSE(buffer.apply(ts, one));
     }
@@ -395,7 +392,7 @@ TEST_CASE("changing the rest mesh clears what the last frame did", "[core][corre
     // across that would undo deltas against vertices that no longer hold them.
     const auto rest = restLine(8);
     const Target t  = sparse({1}, {Vec3{9.0F, 0.0F, 0.0F}});
-    const Target* ts[]{&t};
+    const TargetView ts[]{t.view()};
 
     CorrectiveBuffer buffer;
     buffer.setRest(rest);
