@@ -64,6 +64,12 @@ std::expected<CorrectiveRuntime, CorrectiveBindError> CorrectiveRuntime::bind(
     return rt;
 }
 
+bool CorrectiveRuntime::setRest(std::span<const foundation::Vec3> rest) {
+    if (rest.size() != buffer_.positions().size()) return false;
+    buffer_.setRest(rest);
+    return true;
+}
+
 bool CorrectiveRuntime::update(std::span<const foundation::Mat4> localPose) {
     if (!evaluatePoseSignal(plan_, localPose, signal_)) return false;
     if (!foundation::rbfEvaluate(coefficients_, signal_, weights_)) return false;

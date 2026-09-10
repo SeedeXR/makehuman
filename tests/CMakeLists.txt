@@ -37,6 +37,7 @@ add_executable(mh_tests
     unit/test_pose_signal.cpp
     unit/test_corrective_runtime.cpp
     unit/test_corrective_cache.cpp
+    unit/test_posed_correctives.cpp
     unit/test_version.cpp
     golden/test_base_mesh_parity.cpp
     golden/test_mesh_fixture_parity.cpp
@@ -475,6 +476,48 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
     set_tests_properties(app_skinning_dqs_differs PROPERTIES
         FIXTURES_REQUIRED "app_lbs_obj;app_dqs_obj")
+    # Pose-space correctives through the application, end to end: manifest ->
+    # compile -> blob -> bind -> signal -> weights -> deltas -> skinning.
+    #
+    # The fixture is committed (tests/correctives/) and its bulge is keyed at
+    # the shipped T-pose's OWN signal, so the pose lands on the example and the
+    # corrective is fully on. Same basename in two directories, for the mtllib
+    # reason spelled out above.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/corr_off
+                        ${CMAKE_CURRENT_BINARY_DIR}/corr_on)
+    add_test(NAME app_correctives_off COMMAND makehuman
+             --rig mixamo_superset --pose tpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/corr_off/pose.obj)
+    set_tests_properties(app_correctives_off PROPERTIES
+        PASS_REGULAR_EXPRESSION "wrote .*pose\\.obj"
+        FAIL_REGULAR_EXPRESSION "export failed"
+        FIXTURES_SETUP app_corr_off)
+    add_test(NAME app_correctives_on COMMAND makehuman
+             --rig mixamo_superset --pose tpose
+             --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/correctives.json
+             --export ${CMAKE_CURRENT_BINARY_DIR}/corr_on/pose.obj)
+    set_tests_properties(app_correctives_on PROPERTIES
+        PASS_REGULAR_EXPRESSION "correctives: 2 poses, 1 drivers"
+        FAIL_REGULAR_EXPRESSION "export failed;correctives could not be applied"
+        FIXTURES_SETUP app_corr_on)
+    # The flag has to CHANGE the geometry. Asserting only that the export
+    # succeeded passes with the correctives silently doing nothing, which is
+    # exactly what a weight of zero everywhere would look like -- measured: with
+    # the runtime not handed to poseMesh, the two exports are identical and
+    # every other assertion here still passes.
+    add_test(NAME app_correctives_move_the_mesh COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/corr_off/pose.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/corr_on/pose.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_correctives_move_the_mesh PROPERTIES
+        FIXTURES_REQUIRED "app_corr_off;app_corr_on")
+
+    add_test(NAME app_correctives_missing COMMAND makehuman
+             --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/nope.json
+             --export ${CMAKE_CURRENT_BINARY_DIR}/corr_never.obj)
+    set_tests_properties(app_correctives_missing PROPERTIES
+        PASS_REGULAR_EXPRESSION "correctives: cannot read the manifest")
+
     add_test(NAME app_skinning_unknown COMMAND makehuman
              --skinning nonsense --export ${CMAKE_CURRENT_BINARY_DIR}/app_never.obj)
     set_tests_properties(app_skinning_unknown PROPERTIES

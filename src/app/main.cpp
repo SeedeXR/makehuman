@@ -5,6 +5,8 @@
 // Apache-2.0.
 #include "makehuman/core/AssetIndex.h"
 #include "makehuman/core/Blendshape.h"
+#include "makehuman/core/CorrectiveBlob.h"
+#include "makehuman/core/CorrectiveCache.h"
 #include "makehuman/core/Decimator.h"
 #include "makehuman/core/Material.h"
 #include "makehuman/core/Mesh.h"
@@ -32,6 +34,7 @@
 #include "makehuman/io/UsdWriter.h"
 #include "makehuman/render/OffscreenRenderer.h"
 #include "makehuman/rig/BvhPose.h"
+#include "makehuman/rig/CorrectiveRuntime.h"
 #include "makehuman/rig/Facs.h"
 #include "makehuman/rig/PoseUnits.h"
 #include "makehuman/rig/PosedMesh.h"
@@ -73,6 +76,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <map>
+#include <memory>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -437,16 +441,33 @@ bool gUseDualQuaternion = true;
 /// called from several places and none of them has an opinion.
 bool gApplyPose = true;
 
+/// The corrective set `--correctives` bound, or nothing.
+///
+/// A file-scope owner for the same reason as the two flags above: `poseInPlace`
+/// is called from several places and none of them has an opinion about it.
+///
+/// The three parts must live together and in this order. `runtime` holds spans
+/// into `bytes` -- that is the point of the mappable blob layout -- so the bytes
+/// have to outlive it, and `blob` is the view that produced those spans.
+struct BoundCorrectives {
+    std::vector<std::byte> bytes;
+    mh::core::CompiledCorrectives blob;
+    mh::rig::CorrectiveRuntime runtime;
+};
+
+std::unique_ptr<BoundCorrectives> gCorrectives;
+
 /// Applies @p rig's pose to @p mesh in place, and says why if it cannot.
 ///
 /// The posing itself is `rig::poseMesh`; what is left here is the two settings
 /// the user owns and the reporting, which is the part that must not live in a
 /// library.
 bool poseInPlace(mh::core::Mesh& mesh, PoseRig& rig) {
-    const mh::rig::PoseOptions options{.method = gUseDualQuaternion
-                                                     ? mh::rig::SkinningMethod::DualQuaternion
-                                                     : mh::rig::SkinningMethod::Linear,
-                                       .apply  = gApplyPose};
+    const mh::rig::PoseOptions options{
+        .method      = gUseDualQuaternion ? mh::rig::SkinningMethod::DualQuaternion
+                                          : mh::rig::SkinningMethod::Linear,
+        .apply       = gApplyPose,
+        .correctives = gCorrectives ? &gCorrectives->runtime : nullptr};
     const auto ok = mh::rig::poseMesh(mesh, rig, options);
     if (ok) return true;
 
@@ -460,6 +481,9 @@ bool poseInPlace(mh::core::Mesh& mesh, PoseRig& rig) {
             break;
         case mh::rig::PoseError::StoreFailed:
             std::fprintf(stderr, "cannot store the posed mesh: it has a different vertex count\n");
+            break;
+        case mh::rig::PoseError::CorrectiveFailed:
+            std::fprintf(stderr, "correctives could not be applied to this mesh or pose\n");
             break;
     }
     return false;
@@ -1809,6 +1833,13 @@ int main(int argc, char** argv) {
                        "what the reference did."),
         QStringLiteral("method"), QStringLiteral("dqs"));
     parser.addOption(skinningOpt);
+    const QCommandLineOption correctivesOpt(
+        QStringLiteral("correctives"),
+        QStringLiteral("Pose-space correctives: the path to a corrective manifest "
+                       "(docs/formats/corrective-manifest.md). The compiled blob is written "
+                       "beside it and reused until the manifest changes."),
+        QStringLiteral("manifest"));
+    parser.addOption(correctivesOpt);
     parser.addOption(shadingOpt);
     parser.addOption(rigOpt);
     parser.addOption(poseOpt);
@@ -2158,6 +2189,42 @@ int main(int argc, char** argv) {
         }
     }
     if (!loadPoseRig(*mesh, poseChoice, rig)) return 1;
+
+    // Correctives, after the rig: binding needs the skeleton the drivers name
+    // and the mesh the deltas index. Before any posing, because `poseInPlace`
+    // reads `gCorrectives`.
+    if (parser.isSet(correctivesOpt)) {
+        const std::filesystem::path manifest = parser.value(correctivesOpt).toStdString();
+        auto cache                           = mh::core::loadOrCompileCorrectives(manifest);
+        if (!cache) {
+            std::fprintf(stderr, "correctives: %s\n", cache.error().message().c_str());
+            return 1;
+        }
+        auto bound   = std::make_unique<BoundCorrectives>();
+        bound->bytes = std::move(cache->bytes);
+        auto blob    = mh::core::readCorrectiveBlob(bound->bytes);
+        if (!blob) {
+            // The cache only ever hands back a blob it has just read or just
+            // compiled, so this is a "cannot happen" that is reported rather
+            // than asserted -- a wrong answer here would be a silently
+            // corrective-free character.
+            std::fprintf(stderr, "correctives: %s\n", blob.error().message().c_str());
+            return 1;
+        }
+        bound->blob  = std::move(*blob);
+        auto runtime = mh::rig::CorrectiveRuntime::bind(
+            bound->blob, rig.skeleton, mh::core::topologyHash(*mesh), mesh->coord());
+        if (!runtime) {
+            std::fprintf(stderr, "correctives: %s\n", runtime.error().message().c_str());
+            return 1;
+        }
+        bound->runtime = std::move(*runtime);
+        gCorrectives   = std::move(bound);
+        std::printf(
+            "correctives: %zu poses, %zu drivers, blob %s (%s)\n", gCorrectives->blob.poseCount,
+            gCorrectives->blob.drivers.size(), cache->blobPath.filename().string().c_str(),
+            cache->status == mh::core::CorrectiveCacheStatus::Reused ? "reused" : "rebuilt");
+    }
 
     // Adjacency is topology and survives both morphing and posing, so it is
     // built once. Normals are not, and are recomputed on every rebuild.

@@ -4701,10 +4701,53 @@ GPU here, or Colab) and it comes back to the owner first.
                     Plain has a thin deltoid and a flat armpit; driven has a
                     full rounded deltoid with the crease filled. First image the
                     complete pipeline has produced.
-            - [ ] **The Blender round-trip** the step is named for, and the app
-                  wiring. The runtime is what the app will call; what is left is
-                  a `--correctives` flag, a compiler entry point, and shipped
-                  content for them to run on.
+            - [x] **The app wiring: `--correctives <manifest>`** (2026-09-10).
+                  The flag loads-or-compiles, binds a `CorrectiveRuntime`, and
+                  `poseMesh` applies it. 6 rig cases + 4 app ctests, and a
+                  committed fixture in `tests/correctives/`.
+                  - **The ORDER is the whole of it, and it is not the caller's
+                    to choose.** `poseMesh` re-fits the skeleton, captures the
+                    rest vertices for a live-rig export, then skins. The
+                    corrective goes between the capture and the skinning:
+                    - NOT before the re-fit. `updateJoints` follows the mesh it
+                      is given, and a corrective is a pose-driven bulge rather
+                      than body shape — fitting the rig to it would move the
+                      joints the corrective is driven BY. A shoulder bulge
+                      would shift the shoulder, which would change the signal,
+                      which would change the bulge.
+                    - The rest capture stays UNCORRECTED, so a LIVE-RIG export
+                      does not carry correctives. A consumer without a PSD
+                      runtime cannot evaluate them, and baking a raised-arm
+                      deltoid into something labelled "rest" would carry it
+                      into a lowered arm. A baked export does carry them.
+                    That is why the runtime is passed IN rather than applied by
+                    the app beforehand: doing it outside would put the re-fit on
+                    the corrected mesh.
+                  - **`setRest` every pose, not once at bind**, because the body
+                    may have been re-morphed: this is the character-static path
+                    and the deltas have to go on the shape that exists now.
+                  - **RENDERED IT through the shipping binary.**
+                    `--pose tpose` against `--pose tpose --correctives`: 6,383
+                    pixels differ, all at the shoulder — a raised, rounded
+                    deltoid and a defined shoulder cap where the plain render
+                    has a flat shoulder line.
+                  - **Two test premises were unmet.** The morphed-body case
+                    asserted things true whether or not `setRest` was called;
+                    it now counts vertices differing from an uncorrected run on
+                    the SAME morphed body, where a stale rest puts every vertex
+                    3 dm out. And `setRest`'s length guard had no test at all.
+                  - **A comment of mine was wrong and running it caught that.**
+                    I wrote that `--subdivide` reaches the vertex-count guard.
+                    It does not: the app poses the BASE mesh and subdivides
+                    afterwards, so the count never changes under a bound
+                    runtime — and correctives PROPAGATE through subdivision,
+                    measured, 1,239 of 54,578 subdivided vertices differing.
+                    The guard is an API contract, and the comment says so now.
+                  - `-Werror` caught the unhandled `CorrectiveFailed` in
+                    `main.cpp`'s switch before any test did.
+            - [ ] **The Blender round-trip** the step is named for. Everything
+                  it needs now exists: a shipped fixture, a flag, and exports
+                  that carry the deformation.
       - [ ] **5. Content**: groom, PBR skin, wrinkle maps THROUGH THE SHARED
             DRIVER, eye/teeth rig.
       Two structural consequences to hold onto: proxies and clothing bind as

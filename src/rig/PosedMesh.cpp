@@ -39,10 +39,28 @@ std::expected<void, PoseError> poseMesh(core::Mesh& mesh, PoseRig& rig, PoseOpti
     // wherever the bones do not disagree much -- which is most of a body most
     // of the time -- so it is opt-in rather than a silent change to every
     // existing export.
+    // Correctives, if any: AFTER the re-fit and the rest capture above, BEFORE
+    // the skinning below. See PoseOptions::correctives for why the order is not
+    // the caller's to choose.
+    //
+    // `setRest` every time rather than once at bind, because the body may have
+    // been re-morphed since: this is the character-static path, and the deltas
+    // have to go on the shape that exists now.
+    std::span<const foundation::Vec3> toSkin = mesh.coord();
+    if (options.correctives != nullptr) {
+        if (!options.correctives->setRest(mesh.coord())) {
+            return std::unexpected(PoseError::CorrectiveFailed);
+        }
+        if (!options.correctives->update(rig.localPose)) {
+            return std::unexpected(PoseError::CorrectiveFailed);
+        }
+        toSkin = options.correctives->positions();
+    }
+
     std::vector<foundation::Vec3> posed;
     const bool skinned = options.method == SkinningMethod::DualQuaternion
-                             ? skinPositionsDqs(mesh.coord(), rig.weights, skinning, posed)
-                             : skinPositions(mesh.coord(), rig.weights, skinning, posed);
+                             ? skinPositionsDqs(toSkin, rig.weights, skinning, posed)
+                             : skinPositions(toSkin, rig.weights, skinning, posed);
     if (!skinned) return std::unexpected(PoseError::SkinningFailed);
 
     // changeCoords, not setCoords: posing must not redefine the morph base the

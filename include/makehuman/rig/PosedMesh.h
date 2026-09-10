@@ -2,6 +2,7 @@
 #pragma once
 
 #include "makehuman/core/Mesh.h"
+#include "makehuman/rig/CorrectiveRuntime.h"
 #include "makehuman/rig/Skeleton.h"
 #include "makehuman/rig/VertexWeights.h"
 
@@ -58,12 +59,33 @@ struct PoseOptions {
     /// reference's `_posed` (`shared/animation.py:986-991`), driven by the
     /// toolbar's Pose toggle.
     bool apply{true};
+
+    /// Pose-space correctives, or null for none. Not owned; must outlive the
+    /// call, along with the blob its deltas point into.
+    ///
+    /// Passed IN rather than applied by the caller beforehand, and the reason
+    /// is the ORDER. `poseMesh` re-fits the skeleton to the mesh it is given,
+    /// and a corrective is a pose-driven bulge rather than body shape: fitting
+    /// the rig to it would move the joints the corrective is driven BY, so a
+    /// shoulder bulge would shift the shoulder, which would change the signal,
+    /// which would change the bulge. The corrective goes on AFTER the re-fit
+    /// and before the skinning (directive 12.2: pre-skin, in rest space).
+    ///
+    /// `restCoords` stays uncorrected, so a LIVE-RIG export does not carry
+    /// correctives -- a consumer with no pose-space runtime cannot evaluate
+    /// them, and baking a raised-arm deltoid into something labelled "rest"
+    /// would carry it into a lowered arm. A baked export does carry them.
+    CorrectiveRuntime* correctives{nullptr};
 };
 
 enum class PoseError : uint8_t {
     RefitFailed,     ///< updateJoints or buildRestMatrices refused the mesh
     SkinningFailed,  ///< the weights and the skinning matrices disagree
     StoreFailed,     ///< the posed vertex count no longer matches the mesh
+    /// The corrective runtime refused the mesh or the pose -- a vertex count
+    /// that no longer matches what it was bound to, or a pose that is not one
+    /// matrix per bone.
+    CorrectiveFailed,
 };
 
 /// Applies @p rig's pose to @p mesh in place. A no-op when no pose is loaded.

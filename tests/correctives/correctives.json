@@ -1,0 +1,13 @@
+{
+  "formatVersion": 1,
+  "topologyHash": "e38c060123b5d0db",
+  "kernel": "gaussian",
+  "radius": 0.35,
+  "drivers": [ { "joint": "upperarm01.L", "component": "swing" } ],
+  "poses": [
+    { "name": "rest",    "signal": [0.0, 0.0, 0.0],
+      "delta": "deltas/rest.target" },
+    { "name": "arm_out", "signal": [0.0307178, -2.73542e-18, 0.500344],
+      "delta": "deltas/arm_out.target" }
+  ]
+}

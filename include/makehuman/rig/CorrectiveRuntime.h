@@ -73,6 +73,17 @@ public:
         const core::CompiledCorrectives& blob, const Skeleton& skeleton, uint64_t meshTopologyHash,
         std::span<const foundation::Vec3> rest);
 
+    /// Adopts a new shaped rest mesh, for the CHARACTER-STATIC path.
+    ///
+    /// A slider moves, the body is re-morphed, and the deltas have to go on the
+    /// new shape. Binding once at startup and never updating would apply them
+    /// to the positions the body had when the application opened.
+    ///
+    /// Refused if @p rest is a different length: the deltas were range-checked
+    /// against the mesh at bind, and a different vertex count is a different
+    /// mesh.
+    [[nodiscard]] bool setRest(std::span<const foundation::Vec3> rest);
+
     /// One frame: signal, weights, deltas.
     ///
     /// @param localPose one matrix per bone in the bone's own rest frame --

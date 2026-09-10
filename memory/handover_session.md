@@ -4,6 +4,85 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-10 (fifty-first) — Session · **`--correctives`, and the order that is not negotiable**
+
+*2026-09-10 — the app wiring. Everything the flag needed already existed; what
+this chunk had to get right was WHERE in `poseMesh` the corrective goes.*
+
+### What landed
+`--correctives <manifest>`: load-or-compile, bind a `CorrectiveRuntime`, hand it
+to `poseMesh`. 6 rig cases, 4 app ctests, and a committed fixture in
+`tests/correctives/` whose deltoid bulge is keyed at the shipped T-pose's own
+signal.
+
+**The order is the whole of it, and it is not the caller's to choose.**
+`poseMesh` re-fits the skeleton, captures the rest vertices for a live-rig
+export, then skins. The corrective goes between the capture and the skinning:
+
+- **Not before the re-fit.** `updateJoints` follows the mesh it is given, and a
+  corrective is a pose-driven bulge rather than body shape. Fitting the rig to
+  it would move the joints the corrective is driven BY — a shoulder bulge shifts
+  the shoulder, which changes the signal, which changes the bulge.
+- **The rest capture stays uncorrected**, so a LIVE-RIG export does not carry
+  correctives. A consumer without a pose-space runtime cannot evaluate them, and
+  baking a raised-arm deltoid into something labelled "rest" would carry it into
+  a lowered arm. A baked export does carry them. Stated in the header rather
+  than left to be discovered.
+
+That is why the runtime is passed IN rather than applied by the app first: doing
+it outside would put the re-fit on the corrected mesh. Both halves have their
+own test.
+
+`setRest` runs every pose rather than once at bind, because the body may have
+been re-morphed since — the character-static path again.
+
+### Rendered it, through the shipping binary
+`--pose tpose` against `--pose tpose --correctives`: **6,383 pixels differ, all
+at the shoulder.** The plain render has a flat shoulder line; the corrective one
+has a raised, rounded deltoid and a defined shoulder cap. This is the first time
+the pipeline has run inside the application rather than a scratch harness.
+
+### Two test premises were unmet, and a comment of mine was wrong
+- The morphed-body case asserted things that were true whether or not `setRest`
+  was called, so a mutation removing it survived. It now counts vertices
+  differing from an UNCORRECTED run on the same morphed body — where a stale
+  rest puts every vertex 3 dm out, not one.
+- `setRest`'s length guard had no test at all.
+- **I wrote that `--subdivide` reaches that guard, then ran it: it does not.**
+  The app poses the BASE mesh and subdivides afterwards, so the vertex count
+  never changes under a bound runtime. Better still, correctives PROPAGATE
+  through subdivision — measured, 1,239 of 54,578 subdivided vertices differ
+  with the flag on. The guard is an API contract for a caller that binds to one
+  mesh and poses another, and the comment says that now.
+
+### Mutations
+Seven, all caught after the two test fixes. `-Werror` caught the unhandled
+`CorrectiveFailed` in `main.cpp`'s switch before any test did, which is the
+exhaustive-switch warning doing exactly its job.
+
+Gate mutations: neutering the app's `files_differ` comparison lets "the runtime
+is never handed to poseMesh" pass all four app tests, so that comparison is what
+carries them. Neutering the two vertex counts still leaves the corrective-unused
+mutation caught by the magnitude assertions — so the counts are load-bearing for
+the `setRest` mutation and not for that one.
+
+### A process note
+I ran `git checkout tests/CMakeLists.txt` to undo a gate mutation and wiped the
+real additions with it. Caught immediately by grepping for the test names, and
+re-applied — but the scratchpad copy is the thing to restore from, never git,
+which is the same rule the mutation discipline already has for source files.
+
+### Gates
+Four presets one at a time, `ALLDONE` read. CI's exact clang-format command
+clean. SonarQube read only after `api/ce/task` reports SUCCESS.
+
+### Next
+**The Blender round-trip** is the last named piece of step 4, and everything it
+needs now exists: a shipped fixture, a flag, and exports that carry the
+deformation. After that, step 5 content.
+
+---
+
 ## 2026-09-10 (fiftieth) — Session · **The blob becomes a cache**
 
 *2026-09-10 — directive 12.4's third layer says the blob is "a DISPOSABLE CACHE,
