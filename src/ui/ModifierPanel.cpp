@@ -5,6 +5,7 @@
 
 #include <QAbstractSlider>
 #include <QAccessible>
+#include <QAccessibleValueInterface>
 #include <QAccessibleWidget>
 #include <QCoreApplication>
 #include <QHBoxLayout>
@@ -75,20 +76,83 @@ QString translated(const std::string& source) {
 ///
 /// There is no widget-level API for this; `QAccessible::installFactory` is the
 /// documented way.
-class SliderAccessible : public QAccessibleWidget {
+/// **`text(QAccessible::Value)` is not the channel macOS reads.** Overriding it
+/// alone was the shape of this class for some time, and walking the real
+/// accessibility tree showed what that cost: every slider advertised `AXValue`
+/// and returned **-25212** when read, so a screen reader got no value at all --
+/// worse than the raw tick the override was written to cure.
+///
+/// `qcocoaaccessibility.mm::hasValueAttribute()` exposes a value for a Slider
+/// role only when `interface->valueInterface()` is non-null, and
+/// `getValueAttribute()` never consults the text channel. Installing this
+/// factory REPLACES Qt's own slider interface, which supplies a value
+/// interface -- so supplying none removed the value from the platform
+/// entirely. Hence `QAccessibleValueInterface` below; the text override stays
+/// for the clients that do read it.
+class SliderAccessible : public QAccessibleWidget, public QAccessibleValueInterface {
 public:
     explicit SliderAccessible(QSlider* slider) : QAccessibleWidget(slider, QAccessible::Slider) {}
 
     QString text(QAccessible::Text t) const override {
-        const auto* slider = qobject_cast<const QSlider*>(object());
-        if (t != QAccessible::Value || slider == nullptr) return QAccessibleWidget::text(t);
-        const float lo = slider->property(kMinProperty).toFloat();
-        const float hi = slider->property(kMaxProperty).toFloat();
-        const float v =
-            lo + (static_cast<float>(slider->value()) / static_cast<float>(kSteps)) * (hi - lo);
-        // The same two decimals the readout label shows, so what is heard and
-        // what is seen are the same number.
-        return QString::number(static_cast<double>(v), 'f', 2);
+        if (t != QAccessible::Value || slider() == nullptr) return QAccessibleWidget::text(t);
+        return QString::number(modifierValue(), 'f', 2);
+    }
+
+    void* interface_cast(QAccessible::InterfaceType t) override {
+        if (t == QAccessible::ValueInterface) {
+            return static_cast<QAccessibleValueInterface*>(this);
+        }
+        return QAccessibleWidget::interface_cast(t);
+    }
+
+    // --- QAccessibleValueInterface, in the MODIFIER's units ------------------
+    //
+    // Not ticks. The slider runs 0..kSteps whatever the modifier's own range
+    // is, so handing back the tick would reproduce the original "announced 500
+    // for a modifier sitting at 0.00" through the channel that is actually
+    // read.
+    QVariant currentValue() const override { return modifierValue(); }
+
+    void setCurrentValue(const QVariant& v) override {
+        auto* s = const_cast<QSlider*>(slider());
+        if (s == nullptr) return;
+        const double lo = s->property(kMinProperty).toDouble();
+        const double hi = s->property(kMaxProperty).toDouble();
+        if (hi == lo) return;
+        const double t = (v.toDouble() - lo) / (hi - lo);
+        s->setValue(static_cast<int>(std::lround(t * kSteps)));
+    }
+
+    QVariant minimumValue() const override {
+        const auto* s = slider();
+        return s != nullptr ? s->property(kMinProperty).toDouble() : QVariant{};
+    }
+
+    QVariant maximumValue() const override {
+        const auto* s = slider();
+        return s != nullptr ? s->property(kMaxProperty).toDouble() : QVariant{};
+    }
+
+    QVariant minimumStepSize() const override {
+        const auto* s = slider();
+        if (s == nullptr) return {};
+        const double lo = s->property(kMinProperty).toDouble();
+        const double hi = s->property(kMaxProperty).toDouble();
+        return (hi - lo) / static_cast<double>(kSteps);
+    }
+
+private:
+    [[nodiscard]] const QSlider* slider() const { return qobject_cast<const QSlider*>(object()); }
+
+    /// The tick mapped back into the modifier's own range -- the same two
+    /// decimals the readout label shows, so what is heard and what is seen are
+    /// the same number.
+    [[nodiscard]] double modifierValue() const {
+        const auto* s = slider();
+        if (s == nullptr) return 0.0;
+        const double lo = s->property(kMinProperty).toDouble();
+        const double hi = s->property(kMaxProperty).toDouble();
+        return lo + (static_cast<double>(s->value()) / static_cast<double>(kSteps)) * (hi - lo);
     }
 };
 

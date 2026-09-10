@@ -376,6 +376,65 @@ TEST_CASE("the slider readout is not announced twice", "[ui][a11y]") {
     CHECK_FALSE(capIface->state().invisible);
 }
 
+TEST_CASE("a slider's value reaches the PLATFORM, not just Qt's text channel", "[ui][a11y]") {
+    // The channel macOS actually reads, and the one the case below does not.
+    //
+    // Found by walking the real accessibility tree once the owner granted
+    // Accessibility to this session: every slider advertised AXValue in its
+    // attribute list and returned **-25212** when read. So a screen reader got
+    // NO value at all -- worse than the raw tick the case below was written to
+    // cure.
+    //
+    // Why: `qcocoaaccessibility.mm::hasValueAttribute()` exposes a value for a
+    // Slider role only when `interface->valueInterface()` is non-null, and
+    // `getValueAttribute()` never consults `text(QAccessible::Value)`. Our
+    // factory REPLACED Qt's own slider interface -- which supplies a value
+    // interface -- with one that overrides the text channel and supplies none.
+    // The case below passed throughout, because it asserts the channel nobody
+    // reads.
+    const auto views = shippedModifierViews();
+    if (views.empty()) return;  // no data dir on this machine
+
+    mh::ui::ModifierPanel panel(views);
+    QSlider* slider = panel.findChild<QSlider*>(QString(), Qt::FindChildrenRecursively);
+    REQUIRE(slider != nullptr);
+
+    QAccessibleInterface* iface = QAccessible::queryAccessibleInterface(slider);
+    REQUIRE(iface != nullptr);
+
+    QAccessibleValueInterface* value = iface->valueInterface();
+    REQUIRE(value != nullptr);
+
+    // In the MODIFIER's units, not ticks. The slider runs 0..1000 whatever the
+    // modifier's own range is, so a value interface handing back the tick would
+    // reproduce the original defect through the channel that is actually read.
+    auto* row = qobject_cast<QWidget*>(slider->parent());
+    REQUIRE(row != nullptr);
+    QLabel* readout = nullptr;
+    for (QLabel* l : row->findChildren<QLabel*>(QString(), Qt::FindChildrenRecursively)) {
+        if (l->objectName() == QStringLiteral("modifiers.readout")) readout = l;
+    }
+    REQUIRE(readout != nullptr);
+
+    const double announced = value->currentValue().toDouble();
+    INFO("valueInterface says " << announced << ", the readout shows "
+                                << readout->text().toStdString() << ", the tick is "
+                                << slider->value());
+    CHECK(QString::number(announced, 'f', 2) == readout->text());
+
+    // ...and the range is the modifier's, so "how far along" is meaningful.
+    CHECK(value->minimumValue().toDouble() < value->maximumValue().toDouble());
+    CHECK(value->maximumValue().toDouble() != static_cast<double>(slider->maximum()));
+
+    // It has to FOLLOW the slider, not be a one-off read at construction.
+    slider->setValue(slider->maximum());
+    QAccessibleInterface* after = QAccessible::queryAccessibleInterface(slider);
+    REQUIRE(after != nullptr);
+    REQUIRE(after->valueInterface() != nullptr);
+    CHECK(QString::number(after->valueInterface()->currentValue().toDouble(), 'f', 2) ==
+          readout->text());
+}
+
 TEST_CASE("a slider announces its value, not its tick", "[ui][a11y]") {
     const auto views = shippedModifierViews();
     if (views.empty()) return;  // no data dir on this machine

@@ -3792,6 +3792,30 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       would hand a dangling range to the next QSlider at the same address.
       Two mutations verified (factory returns nullptr; announce the raw tick) —
       both fail 3 assertions.
+- [x] **A slider's value reaches the PLATFORM, not just Qt's text channel**
+      (2026-09-10). `SliderAccessible` now implements
+      `QAccessibleValueInterface` in the MODIFIER's units.
+      - **Found the moment the owner granted Accessibility.** Walking the real
+        tree: every slider advertised `AXValue` in its attribute list and
+        returned **-25212** when read. A screen reader got NO value at all —
+        strictly worse than the raw tick the 2026-09-02 fix was written to cure.
+      - **The old fix was on a channel macOS never reads.**
+        `qcocoaaccessibility.mm::hasValueAttribute()` exposes a value for a
+        Slider role only when `interface->valueInterface()` is non-null, and
+        `getValueAttribute()` never consults `text(QAccessible::Value)`.
+        Installing our factory REPLACED Qt's own slider interface — which
+        supplies a value interface — with one overriding the text channel and
+        supplying none. The existing test passed throughout, because it asserted
+        the channel nobody reads.
+      - **Measured after: `AXValue err=0`, value 0.5, `AXMinValue` 0,
+        `AXMaxValue` 1** — the modifier's own range rather than 0..1000 ticks.
+        VoiceOver hears "0.5" where the readout shows "0.50"; the same number,
+        and the value stays numeric so min/max keep their meaning.
+      - The lesson generalises: a green accessibility test proves the API you
+        called, not the tree the platform builds. Three mutations caught,
+        including the one that reproduces the original defect through the
+        channel that IS read.
+
 - [x] **The slider readout is no longer announced twice** (2026-09-10). The
       value label beside each slider now reports its accessibility interface
       `invisible`, via a `ReadoutAccessible` claimed by the same factory that
@@ -3817,14 +3841,16 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         readout that is on screen and asserts the caption beside it is NOT
         hidden — which is what proves the flag is an override rather than a
         widget being off screen.
-      - **STILL OPEN, and it needs the owner: the real macOS AX tree.** Directive
-        13.2 said to test on this device. I built an `AXUIElement` walker and it
-        reported zero elements — **permission denial reported as silence**, not
-        evidence: `AXIsProcessTrusted() == false`, every call -25211. This
-        session runs under **Zed**, so Zed needs Accessibility in System
-        Settings → Privacy & Security. With that granted the walk takes a
-        minute and settles the platform half by observation rather than by
-        citation.
+      - **VERIFIED ON THE PLATFORM, 2026-09-10.** The owner granted Zed
+        Accessibility, so the real macOS tree could be walked at last:
+        `AXIsProcessTrusted = true`, 9 `AXSlider` and 21 `AXStaticText` on the
+        visible tab, and **every one of those static texts is a caption or
+        heading** — Macro, Gender, Age, Muscle, Weight, Height, Proportions,
+        African, Asian, Caucasian, Modelling, Skin. No numeric readout appears
+        at all. Observation, not the Qt-source citation it rested on.
+      - **And the walk immediately found a REGRESSION in the neighbouring fix.**
+        See the entry below: every slider advertised `AXValue` and returned
+        -25212 when read.
 
 ## Fixtures the ignore rules swallowed (found 2026-09-08)
 
@@ -5443,6 +5469,48 @@ GPU here, or Colab) and it comes back to the owner first.
 - [ ] Migration guide for existing `.mhm` users
 
 ---
+
+## Body-shape controls — they all exist; the gap is DISCOVERY (asked 2026-09-10)
+
+The owner asked how to make breasts, buttocks, a chubby build, an athletic one
+with toned muscles, a six-pack, a chiselled face. **Every one of those is
+already shipped and already on a slider** — 291 sliders across 7 task views,
+which is the same 291 the accessibility walk counted. Nothing was missing, so
+nothing was added:
+
+| Wanted | Where it already is |
+|---|---|
+| Breasts | **Gender** tab → *Breast*, 8 sliders: `BreastSize`, `BreastFirmness`, `breast-dist`, `breast-point`, `breast-trans-down\|up`, `breast-volume-vert` |
+| Buttocks | **Torso** → *Buttocks* (`buttocks-volume`); **Measure** → `hips-circ`; **Body shapes** → female triangle/pear |
+| Chubby | **Macro modelling** → `Weight`; **Body shapes** → apple, rectangle; **Measure** → `waist-circ`; **Torso** → `stomach-pregnant` |
+| Athletic / toned | **Macro modelling** → `Muscle`; **Arms and Legs** → `l/r-upperarm-shoulder-muscle`; **Torso** → `pelvis-tone` |
+| Six-pack | **Torso** → `stomach-tone` — the abdominal-definition slider. Reads as a six-pack only with `Muscle` high AND `Weight` low |
+| Chiselled face | **Face** → *left/right cheek* (`cheek-bones`), *chin/jaw* (`chin-bones`, `chin-prominent`, `chin-jaw-drop`) |
+
+**Body shapes** also ships named somatotypes nobody has to compose by hand:
+apple, diamond, full hourglass, neat hourglass, inverted triangle, lean column,
+rectangle, triangle (female); apple, rectangle, lean column, triangle, inverted
+triangle, trapezoid (male); plus hormonal components (adrenal, liver,
+ovary/gonadal, thyroid).
+
+### The real gaps, which are UX rather than data
+
+- [ ] **No combination presets.** "Six-pack" and "chiselled" are not single
+      controls and cannot be — they are emergent from two or three sliders
+      pulling together (`stomach-tone` + `Muscle` + `Weight`). A short list of
+      named presets that set a combination, the way **Body shapes** already
+      does for silhouettes, would turn three lookups into one click. The
+      machinery exists; only the recipes do not.
+- [ ] **Discoverability, and this is the evidence.** The project's own owner
+      did not know these sliders were there. 291 sliders behind 7 tabs and a
+      free-text search is a lot of surface, and the search matches slider
+      LABELS only — searching "chubby", "fat", "abs", "six pack" or "toned"
+      finds nothing, because the shipped labels say Weight, Stomach tone and
+      Muscle. Synonyms in the search index would cost little and answer exactly
+      the question that was asked.
+- [ ] **No way to see what a slider does before moving it.** Every entry above
+      had to be found by reading `data/modifiers/*.json`. A thumbnail or a
+      hover preview is the reference's own answer and we have not ported it.
 
 ## Research and open questions
 

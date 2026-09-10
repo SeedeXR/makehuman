@@ -4,6 +4,71 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-10 (fifty-ninth) — Session · **The accessibility grant paid for itself in ten minutes**
+
+*2026-09-10 — the owner enabled Accessibility for Zed, which unblocked the
+verification parked in the previous entry. The first walk of the real tree found
+a regression.*
+
+### The verification that was owed
+`AXIsProcessTrusted = true`. Walking the live app: **9 `AXSlider`, 21
+`AXStaticText`** on the visible tab, and every one of those static texts is a
+caption or a heading — Macro, Gender, Age, Muscle, Weight, Height, Proportions,
+African, Asian, Caucasian, Modelling, Skin. **No numeric readout appears at
+all.** The previous chunk's claim now rests on observation rather than on the
+Qt-source citation it was published with.
+
+### And the same walk found a regression
+Every slider **advertised `AXValue` in its attribute list and returned -25212
+when read.** So a screen reader got no value whatsoever — strictly worse than
+the raw tick the 2026-09-02 fix was written to cure, and shipped since.
+
+The cause, from Qt's own bridge: `hasValueAttribute()` exposes a value for a
+Slider role only when `interface->valueInterface()` is non-null, and
+`getValueAttribute()` **never consults `text(QAccessible::Value)`**. Installing
+our factory REPLACED Qt's own slider interface — which supplies a value
+interface — with a `QAccessibleWidget` subclass that overrides the text channel
+and supplies none.
+
+`SliderAccessible` now implements `QAccessibleValueInterface` in the modifier's
+units. Measured after: **`AXValue err=0`, value 0.5, `AXMinValue` 0,
+`AXMaxValue` 1** — the modifier's own range, not 0..1000 ticks. VoiceOver hears
+"0.5" where the readout shows "0.50": the same number, and the value stays
+numeric so min and max keep their meaning.
+
+### The lesson worth keeping
+**A green accessibility test proves the API you called, not the tree the
+platform builds.** The existing case asserted
+`iface->text(QAccessible::Value) == readout->text()` and passed for months,
+against a channel macOS never reads for a slider. Its own comment even said
+"what is NOT verified here is VoiceOver's own behaviour, which needs a real
+device" — the note was right and the gap was larger than it sounded.
+
+### Silence, twice, and neither time was it evidence
+The first walk after the fix reported `TOTAL AXSlider=0 AXStaticText=0`, which
+looked like the change having destroyed the tree. It had not: the app had **0
+windows** and only a menu bar — the window takes ~25 s to appear on a loaded
+machine, and I had waited 12. Polling for the window rather than trusting the
+count is what kept a false conclusion out of this file. (The previous session's
+zero was permission denial; this one was a race. Same reading, two unrelated
+causes.)
+
+### Mutations
+Three, all caught: no value interface exposed (which reproduces the regression
+exactly), the interface handing back ticks instead of modifier units, and the
+range reported as the tick range.
+
+### Gates
+Debug, release, ASan, TSan, one preset at a time, ALLDONE read. clang-format
+clean with CI's exact command. Sonar gate OK with 0 open issues.
+
+### Next
+The jaw control, which the owner asked for in the same message. `jaw` is
+weighted (888 base vertices, measured) and rotating it already works; only the
+control is missing.
+
+---
+
 ## 2026-09-10 (fifty-eighth) — Session · **The duplicated readout, and a gate that was decorative twice over**
 
 *2026-09-10 — directive 13.2: "Create a voiceover and use this device to test
