@@ -96,10 +96,15 @@ std::expected<CorrectiveCache, CorrectiveCacheError> loadOrCompileCorrectives(
     std::filesystem::path blobPath = manifestPath;
     blobPath.replace_extension(kCorrectiveBlobExtension);
 
+    // The manifest goes back on BOTH paths. Filling it only where the blob is
+    // compiled is the natural way to write this and it would leave every load
+    // after the first -- which is every load, since the blob persists -- with
+    // an empty manifest, and a character with no wrinkles.
     if (auto cached = usableBlob(blobPath, *manifest); !cached.empty()) {
         return CorrectiveCache{.bytes    = std::move(cached),
                                .status   = CorrectiveCacheStatus::Reused,
-                               .blobPath = blobPath};
+                               .blobPath = blobPath,
+                               .manifest = std::move(*manifest)};
     }
 
     auto bytes = compileCorrectives(*manifest);
@@ -108,8 +113,10 @@ std::expected<CorrectiveCache, CorrectiveCacheError> loadOrCompileCorrectives(
             CorrectiveCacheError{CorrectiveCacheErrorKind::Compile, bytes.error().message()});
     }
     writeIfPossible(blobPath, *bytes);
-    return CorrectiveCache{
-        .bytes = std::move(*bytes), .status = CorrectiveCacheStatus::Rebuilt, .blobPath = blobPath};
+    return CorrectiveCache{.bytes    = std::move(*bytes),
+                           .status   = CorrectiveCacheStatus::Rebuilt,
+                           .blobPath = blobPath,
+                           .manifest = std::move(*manifest)};
 }
 
 }  // namespace mh::core

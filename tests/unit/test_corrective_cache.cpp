@@ -155,6 +155,37 @@ TEST_CASE("editing the manifest invalidates the blob", "[core][cache]") {
     CHECK(third->status == CorrectiveCacheStatus::Reused);
 }
 
+TEST_CASE("the load hands back the manifest it read", "[core][cache]") {
+    // The manifest is parsed on EVERY call already -- that is this function's
+    // whole design, so that a manifest which no longer loads is an error rather
+    // than a silently-still-working character. Returning it costs nothing and
+    // is what lets a caller reach the fields the blob deliberately does not
+    // bake: the per-pose wrinkle paths (see docs/formats/corrective-manifest.md,
+    // "Not baked into the blob").
+    //
+    // BOTH paths, and that is the assertion worth having. Filling this only
+    // where the blob is compiled is the obvious way to write it, and it would
+    // leave every second load -- every load, in practice, since the blob
+    // persists -- with an empty manifest and a character with no wrinkles.
+    const Fixture f = write("manifest_back");
+
+    const auto first = loadOrCompileCorrectives(f.manifest);
+    REQUIRE(first.has_value());
+    REQUIRE(first->status == CorrectiveCacheStatus::Rebuilt);
+    CHECK(first->manifest.poses.size() == 2);
+    CHECK(first->manifest.poses[0].name == "a");
+    CHECK(first->manifest.radius == 1.5);
+
+    const auto second = loadOrCompileCorrectives(f.manifest);
+    REQUIRE(second.has_value());
+    REQUIRE(second->status == CorrectiveCacheStatus::Reused);
+    CHECK(second->manifest.poses.size() == 2);
+    CHECK(second->manifest.poses[0].name == "a");
+    // The same manifest, so the same hash -- which is also what made the blob
+    // reusable, so this is the two answers agreeing rather than one of them.
+    CHECK(second->manifest.hash == first->manifest.hash);
+}
+
 TEST_CASE("a blob that cannot be trusted is rebuilt, not reported", "[core][cache]") {
     // Every one of these is a cache miss rather than an error. A disposable
     // cache that can fail a load is not disposable.

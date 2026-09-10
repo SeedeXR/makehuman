@@ -23,6 +23,7 @@
 #pragma once
 
 #include "makehuman/core/CorrectiveBlob.h"
+#include "makehuman/core/CorrectiveManifest.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -72,6 +73,14 @@ struct CorrectiveCache {
     CorrectiveCacheStatus status{};
     /// Where the blob is, or would have been.
     std::filesystem::path blobPath;
+    /// The manifest that was read, whether or not the blob had to be rebuilt.
+    ///
+    /// It is parsed on every call regardless -- see the note on
+    /// `loadOrCompileCorrectives` -- so handing it back costs nothing, and it
+    /// is what lets a caller reach the fields the blob deliberately does not
+    /// bake. The per-pose wrinkle paths are the reason it exists:
+    /// `docs/formats/corrective-manifest.md`, "Not baked into the blob".
+    CorrectiveManifest manifest;
 };
 
 /// Returns the compiled blob for @p manifestPath, rebuilding it if the one on

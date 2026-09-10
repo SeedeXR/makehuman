@@ -36,6 +36,7 @@ add_executable(mh_tests
     unit/test_corrective_blob.cpp
     unit/test_pose_signal.cpp
     unit/test_corrective_runtime.cpp
+    unit/test_wrinkles.cpp
     unit/test_corrective_cache.cpp
     unit/test_posed_correctives.cpp
     unit/test_version.cpp
@@ -561,6 +562,71 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/files_identical.cmake)
     set_tests_properties(app_correctives_live_rig_unchanged PROPERTIES
         FIXTURES_REQUIRED "app_corr_live_on;app_corr_live_off")
+
+    # THE SECOND CONSUMER, through the application. The shipped fixture is a
+    # version 2 manifest now: `arm_out` names a crease sheet, `rest` names none
+    # with an explicit "".
+    #
+    # A render rather than an export, because a wrinkle map is texture-space
+    # and no exported format carries one -- the screen is the only place this
+    # is visible at all.
+    #
+    # The sheet is `creases.png` and NOT `shoulder.png`, which is what it was
+    # called until the render was looked at: it is an unmasked field of ridges
+    # covering the whole UV square, so it creases the entire body including the
+    # face. That is the right shape for a fixture -- the largest possible signal
+    # for the smallest possible file -- and the wrong name for one. A real
+    # authored sheet is flat (128,128,255) everywhere except the region it
+    # creases; nothing here needs that, and pretending otherwise in the filename
+    # is how a fixture starts being read as an example.
+    add_test(NAME app_wrinkle_render COMMAND makehuman
+             --rig mixamo_superset --pose tpose
+             --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/correctives.json
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_wrinkle.png)
+    set_tests_properties(app_wrinkle_render PROPERTIES
+        # Named and QUANTIFIED. A weight near zero would mean the RBF weights
+        # never reached the chooser, which is the failure a "rendered ..." check
+        # cannot see.
+        #
+        # 0.98, not 1.00, and the difference was worth chasing rather than
+        # rounding: measured weights at this pose are rest=0.002073,
+        # arm_out=0.980632. An identity-RHS solve reproduces an example pose
+        # EXACTLY at its own centre, so 0.98 says the T-pose sits slightly off
+        # the signal the fixture recorded -- the signal is decomposed from a
+        # float32 Mat4, and the recorded centre was measured through the same
+        # path. 1.00 was a number I wrote down rather than ran.
+        PASS_REGULAR_EXPRESSION "wrinkle: creases\\.png at 0\\.98"
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FAIL_REGULAR_EXPRESSION "nothing to draw;cannot write;maps not shown"
+        FIXTURES_SETUP app_wrinkle_on)
+    # ...against the SAME corrective set with its wrinkle removed.
+    #
+    # `nowrinkle.json` is `correctives.json` with both `wrinkle` fields empty:
+    # same drivers, same poses, same deltas, same geometry. It exists because
+    # the obvious control -- no `--correctives` at all -- made the comparison
+    # below DECORATIVE, and the mutation found it: forcing
+    # `body.wrinkleWeight = 0` still left the two frames differing, because they
+    # were differing by the deltoid BULGE that `app_correctives_move_the_mesh`
+    # already covers. One variable per experiment, or the experiment measures
+    # the other one.
+    add_test(NAME app_wrinkle_render_off COMMAND makehuman
+             --rig mixamo_superset --pose tpose
+             --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/nowrinkle.json
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_wrinkle_off.png)
+    set_tests_properties(app_wrinkle_render_off PROPERTIES
+        # No sheet named anywhere, so nothing may be reported as chosen.
+        FAIL_REGULAR_EXPRESSION "wrinkle: ;maps not shown"
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_SETUP app_wrinkle_off)
+    # The sheet has to CHANGE the frame. Asserting only that a weight was
+    # printed passes with the map never reaching the renderer -- which is
+    # exactly what a chooser wired to nothing would look like.
+    add_test(NAME app_wrinkle_changes_the_frame COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/app_wrinkle.png
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/app_wrinkle_off.png
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_wrinkle_changes_the_frame PROPERTIES
+        FIXTURES_REQUIRED "app_wrinkle_on;app_wrinkle_off")
 
     add_test(NAME app_correctives_missing COMMAND makehuman
              --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/nope.json

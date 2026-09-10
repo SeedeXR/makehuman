@@ -41,6 +41,7 @@
 #include "makehuman/rig/Skeleton.h"
 #include "makehuman/rig/Skinning.h"
 #include "makehuman/rig/VertexWeights.h"
+#include "makehuman/rig/Wrinkles.h"
 #include "makehuman/ui/AssetPanel.h"
 #include "makehuman/ui/FrameStats.h"
 #include "makehuman/ui/ImageViewer.h"
@@ -453,9 +454,53 @@ struct BoundCorrectives {
     std::vector<std::byte> bytes;
     mh::core::CompiledCorrectives blob;
     mh::rig::CorrectiveRuntime runtime;
+    /// Kept because the wrinkle paths live here and not in the blob -- see
+    /// `core::CorrectiveCache::manifest`.
+    mh::core::CorrectiveManifest manifest;
 };
 
 std::unique_ptr<BoundCorrectives> gCorrectives;
+
+/// The wrinkle map the bound correctives are asking for this frame, if any.
+///
+/// Reports the maps it could not show, ONCE. `render::MeshInstance` carries one
+/// map per mesh, so a set whose fired poses name several sheets loses all but
+/// the strongest -- and an author whose elbow crease never appears has no other
+/// way to find out. Printed per render rather than per frame because the CLI
+/// renders once; the interactive path would want it rate-limited.
+mh::rig::WrinkleChoice wrinkleForFrame() {
+    if (gCorrectives == nullptr) return {};
+    const mh::rig::WrinkleChoice choice = mh::rig::chooseWrinkle(
+        gCorrectives->manifest, gCorrectives->blob.poseNames, gCorrectives->runtime.weights());
+    // Reported when it CHANGES, not on every call. `buildScene` runs twice for
+    // one `--render` -- measured, the line printed twice -- and in the window it
+    // runs on every slider drag, so printing unconditionally is noise and
+    // printing once ever goes stale the moment the pose moves.
+    //
+    // Safe as a static because nothing in this file is threaded -- checked, no
+    // QtConcurrent, no std::thread, no QThread.
+    static std::string reported;
+    std::array<char, 512> buf{};
+    std::string report;
+    if (!choice.map.empty()) {
+        std::snprintf(buf.data(), buf.size(), "wrinkle: %s at %.2f",
+                      choice.map.filename().string().c_str(), static_cast<double>(choice.weight));
+        report = buf.data();
+    }
+    if (choice.dropped > 0) {
+        std::snprintf(buf.data(), buf.size(),
+                      "\nwarning: %zu wrinkle maps not shown (%s) -- one mesh carries one map, "
+                      "and %s is the strongest",
+                      choice.dropped, choice.droppedNames.c_str(),
+                      choice.map.filename().string().c_str());
+        report += buf.data();
+    }
+    if (!report.empty() && report != reported) {
+        std::printf("%s\n", report.c_str());
+        reported = report;
+    }
+    return choice;
+}
 
 /// Applies @p rig's pose to @p mesh in place, and says why if it cannot.
 ///
@@ -2218,8 +2263,9 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "correctives: %s\n", runtime.error().message().c_str());
             return 1;
         }
-        bound->runtime = std::move(*runtime);
-        gCorrectives   = std::move(bound);
+        bound->runtime  = std::move(*runtime);
+        bound->manifest = std::move(cache->manifest);
+        gCorrectives    = std::move(bound);
         std::printf(
             "correctives: %zu poses, %zu drivers, blob %s (%s)\n", gCorrectives->blob.poseCount,
             gCorrectives->blob.drivers.size(), cache->blobPath.filename().string().c_str(),
@@ -2750,6 +2796,13 @@ int main(int argc, char** argv) {
         body.baseColour         = bodyMaps.baseColour;
         body.opacity            = bodyMaps.opacity;
         body.roughness          = bodyMaps.roughness;
+
+        // The BODY only. A wrinkle sheet is authored in the base mesh's UV
+        // space, so handing it to a worn proxy would sample someone else's
+        // layout and crease the clothing along whatever happened to be there.
+        const mh::rig::WrinkleChoice wrinkle = wrinkleForFrame();
+        body.wrinkleMap                      = wrinkle.map;
+        body.wrinkleWeight                   = wrinkle.weight;
 
         // autoBlendSkin: the tone follows the ethnic sliders, so it is a blend
         // of the three ethnic litspheres and has no file behind it. `toneBuf`

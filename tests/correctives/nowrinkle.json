@@ -8,6 +8,6 @@
     { "name": "rest",    "signal": [0.0, 0.0, 0.0],
       "delta": "deltas/rest.target", "wrinkle": "" },
     { "name": "arm_out", "signal": [0.0307178, -2.73542e-18, 0.500344],
-      "delta": "deltas/arm_out.target", "wrinkle": "wrinkles/creases.png" }
+      "delta": "deltas/arm_out.target", "wrinkle": "" }
   ]
 }

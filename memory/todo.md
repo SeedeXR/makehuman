@@ -4889,14 +4889,52 @@ GPU here, or Colab) and it comes back to the owner first.
                     exception* rather than on its own assertion. The as-written
                     strings are now captured once during validation; that
                     pre-existing shape is gone with it.
-            - [ ] **`wrinkleWeight` still has to be SET per frame.** The
-                  renderer takes it, the manifest carries the map, and nothing
-                  joins them yet. That wiring — pick the map, evaluate the RBF
-                  weight for it, hand both to the render entry — is where
-                  directive 12.3's "one evaluator, several consumers" finally
-                  shows. Needs a version 2 fixture with a real crease sheet, and
-                  a decision on what the app does when several fired poses name
-                  DIFFERENT maps (the renderer takes one map per mesh).
+            - [x] **The driver sets the weight** (2026-09-10) —
+                  `rig::chooseWrinkle`, `CorrectiveCache::manifest`, and the app
+                  handing a map and a weight to the body's render entry.
+                  **Directive 12.3's "one evaluator, several consumers" is now
+                  demonstrated rather than designed**: one RBF weight vector,
+                  read by the geometry correctives and by the wrinkle chooser.
+                  10 unit cases, 3 app tests, 8 mutations.
+                  - **Summed per sheet, not maxed.** One crease sheet keyed at
+                    several example poses is how a shoulder is authored, and two
+                    neighbouring poses each half active should show it fully on.
+                    The maximum would show it half on — wrong in the direction
+                    nobody notices.
+                  - **Matched by NAME, not index.** The blob is compiled from
+                    the manifest and the cache's hash check guarantees they
+                    agree, so indices would be correct today — and would hand
+                    pose 0's weight to pose 0's map whatever the two were the
+                    day that broke.
+                  - **The dropped sheets are REPORTED.** `MeshInstance` carries
+                    one map per mesh, so all but the strongest are lost, and an
+                    author whose elbow crease never appears has no other way to
+                    find out. Named, not counted.
+                  - **A threshold, or the report fires every frame.** A Gaussian
+                    never returns zero — measured `rest=0.002073` at the T-pose,
+                    where the answer is nominally 0.
+                  - **0.98, not 1.00, and the difference was worth chasing.**
+                    Measured `arm_out=0.980632`. An identity-RHS solve
+                    reproduces an example EXACTLY at its own centre, so this
+                    says the T-pose sits slightly off the signal the fixture
+                    recorded — the signal is decomposed from a float32 `Mat4`.
+                    1.00 was a number written down rather than run.
+                  - **MY GATE WAS DECORATIVE AND THE MUTATION FOUND IT.** The
+                    control render used no `--correctives` at all, so the two
+                    frames differed by the deltoid BULGE — forcing
+                    `wrinkleWeight = 0` still passed. `nowrinkle.json` is now
+                    the same corrective set with both `wrinkle` fields empty:
+                    one variable, or the experiment measures the other one.
+                  - **RENDERED IT AND LOOKED, and renamed a fixture because of
+                    it.** The sheet creases the whole body including the face —
+                    it is an unmasked field of ridges over the whole UV square,
+                    which is right for a fixture and wrong for something called
+                    `shoulder.png`. It is `creases.png` now.
+            - [ ] **The wrinkle does not survive an export.** No interchange
+                  format carries a pose-driven map, so this is screen-only —
+                  the same shape as the correctives' own live-rig limitation,
+                  and the same answer would work: a blend shape at the fired
+                  weight. Not started.
             - [ ] Groom, PBR skin assets, eye/teeth rig (skeleton and
                   constraint work, NOT correctives — "a trap").
       Two structural consequences to hold onto: proxies and clothing bind as

@@ -4,6 +4,106 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-10 (fifty-fifth) — Session · **One evaluator, two consumers — and a gate of mine that was measuring the wrong variable**
+
+*2026-09-10 — the wiring chunk. Directive 12.3's "one pose-signal evaluator,
+several consumers" stops being a design statement and starts being something the
+suite can check.*
+
+### What landed
+`rig::chooseWrinkle`, `core::CorrectiveCache::manifest`, and the app handing a
+map and a weight to the body's render entry. One RBF weight vector is now read
+by two consumers: the geometry correctives and the wrinkle chooser. 10 unit
+cases, 1 cache case, 3 app tests, 8 mutations. 913 -> 927 tests.
+
+### The choice, and what it costs
+`render::MeshInstance` carries ONE map per mesh; the RBF returns a weight for
+every pose, each of which may name its own sheet. So:
+
+- **Summed per sheet, not maxed.** One sheet keyed at several example poses is
+  how a shoulder is authored, and two neighbouring poses each half active should
+  show it fully on. The maximum shows it half on — wrong in the direction nobody
+  notices.
+- **Matched by NAME, not index.** The blob is compiled from the manifest and the
+  cache's hash check guarantees they agree, so indices would be correct today.
+  They would also hand pose 0's weight to pose 0's map whatever the two actually
+  were, the day that guarantee broke, and look entirely plausible doing it.
+- **The dropped sheets are reported, by name.** All but the strongest are simply
+  not shown, and an author whose elbow crease never appears has no other way to
+  find out. "2 maps dropped" is not something anyone can act on.
+- **A threshold, or that report fires every frame.** A Gaussian never returns
+  zero — measured `rest=0.002073` at the T-pose, where the nominal answer is 0.
+
+### 0.98, not 1.00
+The app test first asserted `at 1.00`, because the fixture's sheet is keyed at
+the T-pose's own signal and an identity-RHS solve reproduces an example exactly
+at its centre. It prints **0.98**. Measured weights: `rest=0.002073`,
+`arm_out=0.980632` — so the T-pose sits slightly off the signal the fixture
+recorded, which is what you get decomposing a signal from a float32 `Mat4`.
+Corroborated by an older measurement: the geometry moved 0.5276 against a
+0.545402 delta, a ratio of 0.967.
+
+1.00 was a number I wrote down rather than ran. The test pins 0.98 now, with the
+measured pair in the comment.
+
+### My gate was decorative, and the mutation found it
+`app_wrinkle_changes_the_frame` compares the wrinkled render against a control.
+The control ran with **no `--correctives` at all**, so the two frames differed
+by the deltoid BULGE — which `app_correctives_move_the_mesh` already covers.
+Forcing `body.wrinkleWeight = 0` left it passing.
+
+`nowrinkle.json` is the fix: the same corrective set with both `wrinkle` fields
+empty. Same drivers, same poses, same deltas, same geometry, one variable. The
+mutation fails against it now, and so does dropping the map instead of the
+weight.
+
+The first attempt at that second mutation did not compile (`= {}` is ambiguous
+for `std::filesystem::path`) and the run showed the PREVIOUS mutant's failure. A
+mutation that does not compile proves nothing, and a stale binary will happily
+tell you it did.
+
+### Rendered it and looked, and renamed a fixture because of it
+Through the shipping binary, the shipped fixture, the shipped sheet: 70,072
+pixels differ, the creases light correctly with the surface, and the anatomy
+reads through them.
+
+They also cover the **whole body, including the face** — the sheet is an
+unmasked field of ridges over the entire UV square. That is right for a fixture
+(largest signal, smallest file) and wrong for something called `shoulder.png`,
+so it is `creases.png` now. A real authored sheet is flat everywhere except the
+region it creases.
+
+### Smaller things
+- `wrinkleForFrame` reports on CHANGE, not on every call: `buildScene` runs
+  twice for one `--render` — measured, the line printed twice — and once per
+  slider drag in the window. Printing once ever goes stale the moment the pose
+  moves.
+- The `static std::string` that makes that work is safe because nothing in
+  `main.cpp` is threaded: checked for QtConcurrent, std::thread and QThread, all
+  absent.
+- The body only. A wrinkle sheet is authored in the base mesh's UV space, so
+  giving it to a worn proxy would crease the clothing along someone else's
+  layout.
+
+### Mutations
+Eight, all caught: max instead of sum, `abs` instead of dropping negatives, no
+negligible threshold, no clamp, index pairing instead of name pairing, the cache
+filling the manifest only on rebuild, the weight not reaching the renderer (only
+after the control was fixed), and the map not reaching it.
+
+### Gates
+Debug, release, ASan, TSan: **927/927**, 0 warnings, one preset at a time,
+ALLDONE read. clang-format clean with CI's exact command. Sonar gate OK with 0
+open issues.
+
+### Next
+**The wrinkle does not survive an export.** No interchange format carries a
+pose-driven map, so this is screen-only — the same shape as the correctives'
+own live-rig limitation, and the same answer would work: a blend shape at the
+fired weight.
+
+---
+
 ## 2026-09-10 (fifty-fourth) — Session · **The manifest learns about wrinkles, and a mutation finds an exception escaping `std::expected`**
 
 *2026-09-10 — the authoring half of the wrinkle pipeline. The renderer took a
