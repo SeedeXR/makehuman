@@ -5395,11 +5395,19 @@ GPU here, or Colab) and it comes back to the owner first.
       - `macdeployqt` reports `Cannot resolve rpath` for
         `QtVirtualKeyboard`/`QtVirtualKeyboardQml`. Non-fatal — nothing here
         uses it, and the DMG builds and runs — but the deploy is not clean.
-      - **The bundle is NOT relocatable.** `MH_DATA_DIR`, `MH_SHADER_DIR` and
-        `MH_RESOURCE_DIR` are compile-time absolute paths into the source tree,
-        so the DMG runs on THIS machine only. That is the open
-        "runtime data location" question below, and it must be settled before
-        the DMG is given to anyone.
+      - ~~**The bundle is NOT relocatable.**~~ **STALE — corrected 2026-09-10.**
+        Written before `foundation::resolveDataDir` landed. All three trees are
+        resolved AGAINST THE EXECUTABLE at runtime: `$MH_DATA_DIR` →
+        `<exe>/../Resources/data` → `<exe>/../share/makehuman/data` →
+        `~/Library/Application Support/MakeHuman/data` → the compiled default,
+        each gated on a sentinel file so "a directory exists" cannot stand in
+        for "the assets are there". Wired at `main.cpp:1781/1801/1826`, covered
+        by `tests/unit/test_data_dir.cpp` — including that a bundle copy beats
+        the compiled default — and `src/app/CMakeLists.txt` copies all three
+        into `Contents/Resources/`.
+        **What IS unverified**, and much narrower: the DMG has not been rebuilt
+        and run from a machine with no source tree since. A packaging check, not
+        a design gap, and directive 13.12 puts it behind compile-from-source.
 - [ ] `macdeployqt` + CMake install
 - [ ] Codesign, hardened runtime, notarize, staple
 - [ ] DMG with background and layout
@@ -5431,14 +5439,17 @@ GPU here, or Colab) and it comes back to the owner first.
       Unreal ecosystem, forbids distributing the Software, terminable "at any
       time for convenience". Refused by `LICENSING.md` §5.2 twice over, and hard
       rule 5 forbids the content regardless. Recorded there; question closed.
-- [~] **Runtime data location on macOS** — reframed by directive 13.12, not
-      answered. The owner's answer to "the DMG only runs on this machine" was
-      *"everyone will compile on their machine, that's why it's open source"*,
-      so a RELOCATABLE bundle is not the driver. But `MH_DATA_DIR`,
-      `MH_SHADER_DIR` and `MH_RESOURCE_DIR` are still compile-time absolute
-      paths into THIS CHECKOUT, which is a different defect: a fresh clone on
-      someone else's machine has to work. That is the real item, and it comes
-      before anything else in M11.
+- [x] **Runtime data location on macOS — ALREADY SOLVED, and I got it wrong
+      twice.** Directive 14.5. Not a relative path — that breaks the moment the
+      working directory moves — but runtime resolution against the executable,
+      which `foundation::resolveDataDir` has done for some time: env override,
+      bundle, install prefix, Application Support, compiled default, each gated
+      on a sentinel file. Wired and tested.
+      I repeated the stale "runs on THIS machine only" claim to the owner
+      before checking it, and then wrote a commit message saying both documents
+      were corrected when a failed script meant only one was. Both recorded
+      here because the pattern — restating a memory file as though it were an
+      observation — is the one this project exists to catch.
 - [x] **Widgets, not QML**, for panel content (owner, 2026-09-10). The lean was
       right; it is now a decision.
 - [ ] Survey current research: neural morphable body models, PSD/corrective learning,
