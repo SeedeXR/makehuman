@@ -1072,7 +1072,8 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       on load still passed, because the test asserted the printed MESSAGE rather
       than the effect. It now checks the exported material name.
       Still open: the `--skin` (matcap) versus `--skin-material` naming collision
-      — the `--skin` → `--litsphere` rename is still an owner decision.
+      — the `--skin` → `--litsphere` rename is DONE (2026-09-11), with
+      `--skin` kept working as an alias.
 - [x] **AO maps** — multiplied over the result, and **after** the additive term,
       matching `litsphere_fragment_shader.txt:103-105`. Folding it into
       `shading` earlier would also scale the additive contribution, which the
@@ -2259,7 +2260,11 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `skinMaterial <path to a .mhmat>` (`3_libraries_material_chooser.py:304`),
       and our `--skin` names a **litsphere PNG**, not a material — writing it as
       `skinMaterial` would be a lie about what the value is. Blocked on the
-      `--skin`/`--litsphere` naming decision already raised for the owner.
+      `--skin`/`--litsphere` naming decision, which is now TAKEN — the flag is
+      `--litsphere` and the honest key is available. **Saving it in `.mhm` is
+      the remaining work**, and is its own chunk: it adds a key to the file
+      format, so directive 14.4 applies (this version forward, unknown
+      versions refused).
 - [ ] **The other six choosers are not saved**, for want of the choosers
       themselves — `recordProxy`/`proxyFromDocument` take the slot name, so each
       is one line once its asset group exists.
@@ -3333,7 +3338,9 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       choose one — four shipped African tones were unreachable without the CLI.
       Added as a "Skin material" group. Deliberately NOT called "Skin": that
       group lists LITSPHERES, and the collision is exactly what the pending
-      `--skin` → `--litsphere` rename is about.
+      `--skin` → `--litsphere` rename was about. The FLAG is renamed now; the
+      picker GROUP is still called "Skin" while listing litspheres, which is
+      the same collision one layer up and is not yet done.
 - [x] **Picker labels showed raw file stems.** `african_rich` rendered as
       "African_rich" — no shipped stem had ever contained an underscore, so
       nothing had exercised it. `prettyName` now routes through the tested
@@ -3630,12 +3637,24 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       count gates added last chunk were on the same broken script and had never
       been proven to bite; they now are — mutating `UsdWriter` so only the first
       entry is skinned fails `app_worn_skin_usda_bound`.
-- [ ] Consider renaming `--skin` to `--litsphere` (keeping `--skin` as an
-      alias). It selects a viewport matcap, not a material: `--skin african`
-      still exports `DefaultSkin`, which is correct but reads as a bug. The
-      reference does not have the flag at all — it derives the litsphere from
-      the ethnicity modifiers (`apps/autoskinblender.py:52-60`). **User-facing
-      rename, so worth asking first.**
+- [x] **Renamed `--skin` to `--litsphere`, with `--skin` kept as an alias**
+      (2026-09-11, directive 13.6: *"ensure interoperability and aliases ... both
+      new users and old users who are used in certain ways"*). One
+      `QCommandLineOption` with a name LIST, so `parser.value()` does not care
+      which spelling was typed.
+      - **It picks a viewport MATCAP, not a material** — `--skin african` still
+        exports `DefaultSkin`, which is correct and reads as a bug. That was the
+        whole reason to rename it.
+      - **And it is INERT under `default.mhmat`, by design.** Measured while
+        writing the tests: `--skin african` and `--skin caucasian` render
+        BYTE-IDENTICALLY on the default material, which looks exactly like a
+        dead flag. The cause is `autoBlendSkin true` — the litsphere is blended
+        from the ethnicity macros and whatever was asked for is overridden.
+        Under any of the eight textured materials it differs. The help text says
+        so now, and a test pins both halves so nobody files it as a bug and so
+        turning autoBlendSkin off by accident is loud.
+      - Three mutations caught: the alias dropped, the rename never made, and
+        the value parsed but ignored.
 - [x] **Alpha blending — the shader wrote the alpha and the pipeline threw it
       away.** `outColor.a = diffuse.a` has been in `litsphere.frag:120` all
       along, and `QRhiGraphicsPipeline`'s default target blend is **disabled**,

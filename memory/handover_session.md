@@ -4,6 +4,75 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-11 (sixty-first) — Session · **`--litsphere`, and a flag that looked dead and was not**
+
+*2026-09-11 — the loop's trailing line still said "the next item is the jaw
+control", which the previous fire had just settled. Took the next genuinely open
+item instead: the rename directive 13.6 unblocked.*
+
+### What landed
+`--skin` is `--litsphere` now, with `--skin` kept as an alias — one
+`QCommandLineOption` with a name LIST, so `parser.value()` does not care which
+spelling was typed. The owner's words were *"ensure interoperability and aliases
+... both new users and old users who are used in certain ways"*, and a name list
+is exactly that with no shim.
+
+The rename earns itself: the flag picks a viewport MATCAP, not a material, so
+`--skin african` still exports `DefaultSkin` — correct, and reads as a bug.
+
+### The flag looked dead, and checking took two minutes
+First measurement: `--skin african` and `--skin caucasian` render
+**byte-identically**. That looks like a flag wired to nothing, and it would have
+been a satisfying bug to report.
+
+It is not one. `default.mhmat` sets **`autoBlendSkin true`**, so the litsphere is
+blended from the ethnicity macros and whatever was asked for is overridden —
+deliberately. Re-measured under `african_light`, which sets it false: the two
+**differ**. So the flag is live for eight of the nine shipped materials and inert
+for the one that ships as the default, which is the worst possible place for a
+silent exception.
+
+The help text says so now, and both halves are pinned: a case that the flag
+changes the frame under a textured material, and a case that it does NOT under
+the auto-blending default. The second one exists so the next person does not file
+it as a bug, and so that turning `autoBlendSkin` off by accident is loud rather
+than a quiet change of look.
+
+### Mutations
+Three, all caught: the alias dropped (the old-name case fails on "Unknown
+option"), the rename never made (the new-name case fails the same way), and the
+value parsed but ignored — which only `app_litsphere_changes_the_frame` catches,
+because an accepted-and-inert option passes every "is it a known option" check.
+
+### What this unblocked, and what it did not
+`--skin` was deliberately NOT saved in `.mhm`, because the reference's line is
+`skinMaterial <path to a .mhmat>` and writing a litsphere path there would
+misdescribe the value. The naming decision is taken now and the honest key is
+available, but **saving it is its own chunk**: it adds a key to the file format,
+so directive 14.4 applies — this version forward, unknown versions refused.
+
+Also still open, one layer up: the picker GROUP is called "Skin" while listing
+litspheres. Same collision, different surface.
+
+### A gate failure that was not the code
+The first TSan run reported **81 of 957 failed**, every one of them
+`Failed to change working directory to .../build/macos-arm64-tsan/tests: No such
+file or directory`, while debug, release and ASan had just passed 957/957 on the
+same tree. The build directory had vanished mid-run — the owner was clearing
+`build/` at the time.
+
+Worth recording for the shape of it rather than the cause: the failure text named
+the real problem in its first line, and the temptation was to go looking for a
+data race because the preset was TSan. Reading what the failure actually SAID
+took one command. Re-run clean from an empty `build/`: **957/957 on all four.**
+
+### Gates
+Debug, release, ASan, TSan, one preset at a time, ALLDONE read — on a fully
+clean rebuild. clang-format clean with CI's exact command. Sonar gate OK with 0
+open issues.
+
+---
+
 ## 2026-09-11 (sixtieth) — Session · **The jaw already had a control, and so did the eyes**
 
 *2026-09-11 — the loop's first fire, on an item whose premise I had written

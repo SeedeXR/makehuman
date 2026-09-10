@@ -1951,9 +1951,24 @@ int main(int argc, char** argv) {
                        "exported material -- unlike --skin, which is a viewport matcap."),
         QStringLiteral("name"), QStringLiteral("default"));
 
+    // `--litsphere`, with `--skin` kept as an alias (directive 13.6). It picks
+    // a viewport MATCAP, not a material: `--skin african` still exports
+    // DefaultSkin, which is correct and reads as a bug. Qt takes a name LIST
+    // for exactly this, so one option answers to both and `parser.value()` does
+    // not care which the user typed.
+    //
+    // The autoBlendSkin caveat is in the help text because leaving it out is
+    // how the flag reads as broken: under `default.mhmat` -- which sets
+    // `autoBlendSkin true` -- the litsphere is blended from the ethnicity
+    // macros and this is overridden. Measured: `--skin african` and
+    // `--skin caucasian` render BYTE-IDENTICALLY on the default material, and
+    // differ under any of the eight textured ones.
     const QCommandLineOption skinOpt(
-        QStringLiteral("skin"),
-        QStringLiteral("Litsphere to shade with: african, asian or caucasian (default)."),
+        QStringList{QStringLiteral("litsphere"), QStringLiteral("skin")},
+        QStringLiteral("Litsphere to shade the viewport with: african, asian or caucasian "
+                       "(default). Ignored by a material with autoBlendSkin on -- including "
+                       "the default one, which blends the three by ethnicity. `--skin` is "
+                       "the old name for this and still works."),
         QStringLiteral("name"), QStringLiteral("caucasian"));
     const QCommandLineOption loadOpt(QStringLiteral("load"),
                                      QStringLiteral("Load a .mhm character before anything else."),

@@ -737,6 +737,76 @@ if(MH_HAVE_RENDER)
     # --look-at alone 1,144, and together 1,722 -- neither. AU61 drives 6 bones
     # and the aim replaces 2, so the eyelids follow the unit while the eyeballs
     # ignore it. Overriding is correct; announcing it is the fix.
+    # --litsphere, with --skin kept working as an alias (directive 13.6:
+    # "ensure interoperability and aliases ... both new users and old users who
+    # are used in certain ways").
+    #
+    # The flag picks a viewport MATCAP, not a material -- `--skin african` still
+    # exports DefaultSkin, which is correct and reads as a bug. Renaming it says
+    # what it is; the alias means nobody's muscle memory breaks.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lits)
+    add_test(NAME app_litsphere_new_name COMMAND makehuman
+             --skin-material african_light --litsphere african
+             --render ${CMAKE_CURRENT_BINARY_DIR}/lits/new.png)
+    set_tests_properties(app_litsphere_new_name PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FAIL_REGULAR_EXPRESSION "Unknown option"
+        FIXTURES_SETUP app_lits_new)
+    add_test(NAME app_litsphere_old_name COMMAND makehuman
+             --skin-material african_light --skin african
+             --render ${CMAKE_CURRENT_BINARY_DIR}/lits/old.png)
+    set_tests_properties(app_litsphere_old_name PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FAIL_REGULAR_EXPRESSION "Unknown option"
+        FIXTURES_SETUP app_lits_old)
+    # The alias has to mean the SAME thing, not merely be accepted. An option
+    # that parses and is then ignored would pass a "no Unknown option" check.
+    add_test(NAME app_litsphere_alias_is_the_same COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/lits/new.png
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/lits/old.png
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_identical.cmake)
+    set_tests_properties(app_litsphere_alias_is_the_same PROPERTIES
+        FIXTURES_REQUIRED "app_lits_new;app_lits_old")
+    # ...and it has to DO something, or the two files above would be identical
+    # for the uninteresting reason.
+    add_test(NAME app_litsphere_other COMMAND makehuman
+             --skin-material african_light --litsphere caucasian
+             --render ${CMAKE_CURRENT_BINARY_DIR}/lits/other.png)
+    set_tests_properties(app_litsphere_other PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_SETUP app_lits_other)
+    add_test(NAME app_litsphere_changes_the_frame COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/lits/new.png
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/lits/other.png
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_litsphere_changes_the_frame PROPERTIES
+        FIXTURES_REQUIRED "app_lits_new;app_lits_other")
+
+    # AND the case that explains why every render above names a material.
+    #
+    # Under `default.mhmat` the flag is INERT, and by design: that material sets
+    # `autoBlendSkin true`, so the litsphere is blended from the ethnicity
+    # macros and whatever was asked for is overridden. Measured while writing
+    # this -- `--skin african` and `--skin caucasian` render byte-identically on
+    # the default material, which looks exactly like a dead flag until you check
+    # the material. Pinned so the next person does not file it as a bug, and so
+    # that turning autoBlendSkin off by accident is loud.
+    add_test(NAME app_litsphere_autoblend_a COMMAND makehuman
+             --litsphere african --render ${CMAKE_CURRENT_BINARY_DIR}/lits/ab_a.png)
+    set_tests_properties(app_litsphere_autoblend_a PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render" FIXTURES_SETUP app_lits_ab_a)
+    add_test(NAME app_litsphere_autoblend_b COMMAND makehuman
+             --litsphere caucasian --render ${CMAKE_CURRENT_BINARY_DIR}/lits/ab_b.png)
+    set_tests_properties(app_litsphere_autoblend_b PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render" FIXTURES_SETUP app_lits_ab_b)
+    add_test(NAME app_litsphere_inert_under_autoblend COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/lits/ab_a.png
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/lits/ab_b.png
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_identical.cmake)
+    set_tests_properties(app_litsphere_inert_under_autoblend PROPERTIES
+        FIXTURES_REQUIRED "app_lits_ab_a;app_lits_ab_b")
+
+
     add_test(NAME app_look_at_over_facs COMMAND makehuman
              --facs AU61=1.0 --look-at 1.5,7.8,6.0
              --export ${CMAKE_CURRENT_BINARY_DIR}/lookat/over.obj)
