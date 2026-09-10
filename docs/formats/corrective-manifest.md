@@ -182,6 +182,30 @@ Deliberately **not** part of the hash:
 Deliberately **part** of it: the format version, topology hash, radius, every
 driver, and every pose's name, signal and payload path *as written*.
 
+## What an export can carry
+
+A corrective reaches a **baked** export (`.obj`) and no other kind, and this is
+a property of the target formats rather than a gap here.
+
+The formats that carry a skeleton — glTF, FBX, UsdSkel — get a **live rig** from
+this application: rest geometry with a posed armature, so the consumer computes
+the deformation itself. The rest geometry is uncorrected on purpose. A
+pose-space corrective is not a rest shape, and baking this pose's bulge into
+something labelled "rest" would carry it into every other pose the consumer
+sets. None of the three has a pose-driven shape to put one in instead.
+
+So `--correctives` with a live-rig target writes a file **byte-identical** to
+one written without it (measured with `cmp`; `app_correctives_live_rig_unchanged`
+pins it). The application says so on stderr rather than leaving it to be
+discovered, and `tools/run_blender_validation.sh` round-trips the `.obj` that
+does carry it — Blender reports 164.74 dm^2 of surface without the corrective
+and 165.76 with, on a mesh whose bounding box is identical either way.
+
+The way out, when something needs it, is a **blend shape** at the weight the RBF
+returned for the exported pose: all three formats have those, and this
+application already writes 34 of them. Right at the pose in the file, adjustable
+rather than invisible anywhere else. Not built yet.
+
 ## Not in version 1
 
 - **Composition rules.** Directive 12.4 lists them; there is no consumer yet, so

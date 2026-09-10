@@ -82,6 +82,36 @@ def _geometry(meshes):
     return verts, tris, uv_layers, lo, hi
 
 
+def _surface_area(meshes) -> float:
+    """Total world-space surface area of every mesh, in the file's own units.
+
+    The bounding box cannot see a corrective. Measured: the shipped deltoid
+    bulge moves 250 vertices by up to 0.53 dm and leaves bbox_min, bbox_max and
+    therefore `tallest_extent` identical to six decimal places -- a corrected
+    and an uncorrected export agree on every other number this script reports.
+    Area is the cheapest statistic that changes, and it is order-independent, so
+    no importer's renumbering can move it.
+
+    Not volume: the exported body is masked (13,378 of 18,486 faces) and so is
+    not closed, and a signed volume over an open surface is an origin-dependent
+    number that only looks like a physical one.
+
+    The RAW mesh, not the evaluated one -- unlike `_evaluated_extents`, no
+    armature is applied. On a live-rig file this is therefore the area of the
+    REST surface. Nothing checks it on one today; read it as "what is stored in
+    the file", not "what the consumer will see".
+    """
+    total = 0.0
+    for o in meshes:
+        m = o.data
+        m.calc_loop_triangles()
+        mw = o.matrix_world
+        for t in m.loop_triangles:
+            a, b, c = (mw @ m.vertices[i].co for i in t.vertices)
+            total += (b - a).cross(c - a).length * 0.5
+    return total
+
+
 def _uv_anchor(w):
     """Sort key picking one vertex out of a world-space extreme, unambiguously.
 
@@ -254,6 +284,7 @@ def describe(path: str) -> dict:
         "bbox_max": [round(v, 6) for v in hi] if meshes else None,
         "extents": extents,
         "tallest_extent": tallest,
+        "surface_area": round(_surface_area(meshes), 4),
         "materials": len(bpy.data.materials),
     }
 

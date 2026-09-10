@@ -89,6 +89,25 @@ if [ -x "$app" ]; then
     "$app" --lod 1.0 --lod 0.25 --pose tpose --export "$out/chain.fbx" >/dev/null 2>&1 \
         && echo "chain_lod1.fbx: LOD chain level 1, T-pose, live rig, through our FBX writer" \
         || echo "warn: chain.fbx export failed"
+    # THE CORRECTIVE ROUND-TRIP, and its control.
+    #
+    # An .obj carries no rig, so it gets the BAKED posed mesh -- which is the
+    # only export that can carry a pose-space corrective at all. glTF, FBX and
+    # UsdSkel have no pose-driven shape to put one in, so their live-rig files
+    # are byte-identical with and without --correctives; the app now says so out
+    # loud (app_correctives_live_rig_says_so).
+    #
+    # Two files rather than one absolute number, because the corrective is
+    # invisible to every OTHER statistic here: same vertices, same triangles,
+    # same bounding box to six decimals. The pair is the experiment -- one
+    # variable changed, and Blender reports what moved.
+    "$app" --pose tpose --export "$out/posed.obj" >/dev/null 2>&1 \
+        && echo "posed.obj: T-pose, baked, no correctives (the control)" \
+        || echo "warn: posed.obj export failed"
+    "$app" --pose tpose --correctives "$repo/tests/correctives/correctives.json" \
+        --export "$out/corrective.obj" >/dev/null 2>&1 \
+        && echo "corrective.obj: T-pose, baked, deltoid corrective applied" \
+        || echo "warn: corrective.obj export failed"
 else
     echo "skip posed.glb: $app not built"
 fi
@@ -119,6 +138,7 @@ fi
     "$out/base.obj" "$out/posed.glb" "$out/posed.fbx" "$out/posed.usda" "$out/base.glb" \
     "$out/expressions.glb" "$out/expressions.fbx" "$out/expressions.usda" "$out/base.fbx" \
     "$out/rigged.glb" "$out/morphed.glb" "$out/rigged.fbx" "$out/base.usda" \
-    "$out/posed_lod.glb" "$out/expressions_lod.glb" "$out/chain_lod1.fbx" 2>/dev/null |
+    "$out/posed_lod.glb" "$out/expressions_lod.glb" "$out/chain_lod1.fbx" \
+    "$out/posed.obj" "$out/corrective.obj" 2>/dev/null |
     grep '^BLENDER_VALIDATE:' | sed 's/^BLENDER_VALIDATE://' |
     python3 "$repo/tools/blender_check.py"

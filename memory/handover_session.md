@@ -4,6 +4,90 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-10 (fifty-second) — Session · **A third party looks at a corrective, and finds the app was keeping quiet**
+
+*2026-09-10 — the Blender round-trip, the last named piece of directive 12 step
+4. It did the job a round-trip is for: it found something.*
+
+### What landed
+`posed.obj` and `corrective.obj` — the same baked T-pose, one variable changed —
+added to `tools/run_blender_validation.sh`, with `surface_area` added to
+`blender_validate.py` and a 0.1% check in `blender_check.py`. **18/18 exports
+agree with Blender**, up from 16/16. Plus a warning in the app, and three
+ctests. 905 -> 908 tests.
+
+### The bounding box is blind to a corrective
+This is the reason the entry is not two more rows of counts and extents. The
+shipped deltoid bulge moves **250 vertices by up to 0.53 dm** and leaves
+`bbox_min`, `bbox_max` and therefore `tallest_extent` **identical to six decimal
+places**. Every other number `blender_validate.py` reports is the same for a
+corrected and an uncorrected export. A `posed.obj`/`corrective.obj` pair checked
+the ordinary way would have passed whether or not the corrective ran.
+
+`surface_area` — summed world-space triangle areas — is the cheapest statistic
+that moves: 164.74 -> 165.76 dm^2, and it is order-independent, so no
+importer's renumbering can touch it. **Not volume**: the exported body is masked
+(13,378 of 18,486 faces) and therefore open, and a signed volume over an open
+surface is origin-dependent, a number that only looks physical.
+
+**Both numbers were written into `EXPECT` before Blender was asked.** Blender
+says 164.7452 and 165.7857 — 0.003% and 0.015% off our float64 sums, which is
+ASCII OBJ precision against float32 mesh storage. That is why the tolerance is
+0.1% and not tighter; the signal it has to see is the 0.62% between the two
+files, 6x the slack.
+
+### What the round-trip found
+**A live-rig `.glb` written with `--correctives` is byte-identical to one
+written without.** Measured with `cmp`, both 2,127,476 bytes.
+
+The cause was already a recorded decision and is still the right one: the rest
+capture is uncorrected, because a pose-space corrective is not a rest shape and
+baking a raised-arm deltoid into something labelled "rest" carries it into a
+lowered arm. None of glTF, FBX or UsdSkel has a pose-driven shape to put it in
+instead. So the deformation genuinely cannot travel in that file.
+
+**The silence was the defect.** The app printed `correctives: 2 poses, 1
+drivers` and then wrote a file with none of them in it — "geometry that silently
+does not appear", which `docs/formats/corrective-manifest.md` names as the worst
+failure this format has. It now warns, names the format, and points at `.obj`.
+`app_correctives_live_rig_unchanged` pins the warning's own claim with
+`files_identical`: when the `.glb` starts carrying the corrective that test
+fails, and the warning should be DELETED rather than weakened.
+
+Named as the real fix and left open: emit each fired corrective as a **blend
+shape** at the weight the RBF returned. All three formats have blend shapes and
+all three writers already emit 34 of them.
+
+### One of my own gates was decorative
+`app_correctives_on` gained a `FAIL_REGULAR_EXPRESSION` for the warning, and I
+wrote that it catches a warning "printed unconditionally". Mutating the guard to
+`if (true)` — **the mutation survived**, because it sits inside `if (liveRig)`
+and an `.obj` never enters that branch. The mutation that does matter is the
+warning hoisted OUT of the branch, and that one fails the test. The comment now
+records both, including what the gate cannot see.
+
+Gate mutations run: the product mutation (copy `posed.obj` over
+`corrective.obj`) gives `FAIL corrective.obj: surface area 164.7452 != ~165.76`;
+`files_identical.cmake` rejects a differing pair with exit 1. Its failure
+message named only the skinning-default caller and now says what it means for
+both.
+
+### The 'grep, don't tail' lesson, again
+`cmake -P files_identical.cmake ... 2>&1 | tail -2` printed two blank lines and
+looked like silence. The FATAL_ERROR was four lines up. At least the fourth
+time this project has drawn "it printed nothing" from a `tail`.
+
+### Gates
+Debug, release, ASan, TSan: **908/908**, 0 warnings, one preset at a time.
+clang-format clean with CI's exact command. Blender 18/18.
+
+### Directive 12 step 4 is COMPLETE
+Manifest, compiler/blob, cache, runtime, app flag, round-trip. **Step 5,
+Content, is next**: groom, PBR skin, wrinkle maps through the shared driver,
+eye/teeth rig — the one thing the pipeline cannot supply for itself.
+
+---
+
 ## 2026-09-10 (fifty-first) — Session · **`--correctives`, and the order that is not negotiable**
 
 *2026-09-10 — the app wiring. Everything the flag needed already existed; what

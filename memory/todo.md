@@ -4486,10 +4486,11 @@ GPU here, or Colab) and it comes back to the owner first.
             - [ ] **Nothing consumes the signal yet**, which is why this chunk
                   has no render: there is no geometry moving. The first visual
                   gate arrives with the corrective application.
-      - [~] **4. Authoring format, compiler, Blender round-trip.** Manifest
-            (TOML/JSON) + sparse `.target` payloads → offline RBF solve → an
-            mmap-able blob that is a disposable cache, invalidated on manifest
-            hash mismatch.
+      - [x] **4. Authoring format, compiler, Blender round-trip** — COMPLETE
+            2026-09-10. Manifest (TOML/JSON) + sparse `.target` payloads →
+            offline RBF solve → an mmap-able blob that is a disposable cache,
+            invalidated on manifest hash mismatch. All five named pieces landed;
+            the sub-items below record each, newest last.
             - [x] **The manifest and its written spec** (2026-09-09).
                   `core::loadCorrectiveManifest` plus
                   `docs/formats/corrective-manifest.md`. 9 cases, 95 assertions.
@@ -4745,9 +4746,61 @@ GPU here, or Colab) and it comes back to the owner first.
                     The guard is an API contract, and the comment says so now.
                   - `-Werror` caught the unhandled `CorrectiveFailed` in
                     `main.cpp`'s switch before any test did.
-            - [ ] **The Blender round-trip** the step is named for. Everything
-                  it needs now exists: a shipped fixture, a flag, and exports
-                  that carry the deformation.
+            - [x] **The Blender round-trip** the step is named for — DONE
+                  2026-09-10. `posed.obj` and `corrective.obj`, the same baked
+                  T-pose with one variable changed, both read by Blender.
+                  **18/18 exports agree** (was 16/16).
+                  - **The bounding box is blind to a corrective**, which is why
+                    a fourth `EXPECT` entry of counts and extents would have
+                    been decorative: the bulge moves 250 vertices by up to 0.53
+                    dm and leaves `bbox_min`, `bbox_max` and `tallest_extent`
+                    identical to SIX DECIMALS. Measured, not assumed.
+                    `blender_validate.py` now also reports `surface_area` —
+                    order-independent, so no importer's renumbering moves it,
+                    and 164.74 -> 165.76 dm^2 across the pair.
+                  - **The two numbers were written down BEFORE Blender ran**
+                    (164.740873 / 165.760038, our own float64 sum over the
+                    OBJs). Blender says 164.7452 / 165.7857 — 0.003% and 0.015%
+                    off, which is ASCII OBJ precision against float32 mesh
+                    storage. Tolerance 0.1%: 6x the disagreement, and the signal
+                    it must see is 0.62%, 6x the tolerance. Mutation-tested by
+                    copying `posed.obj` over `corrective.obj` — `FAIL
+                    corrective.obj: surface area 164.7452 != ~165.76`.
+                  - **Not volume**: the exported body is masked (13,378 of
+                    18,486 faces) and therefore open, and a signed volume over
+                    an open surface is origin-dependent — a number that only
+                    looks physical.
+                  - **What the round-trip found: the app was silent about a
+                    real loss.** A live-rig `.glb` written with `--correctives`
+                    is BYTE-IDENTICAL to one written without — measured, `cmp`.
+                    The uncorrected rest capture was already a recorded decision
+                    (above), and it is still the right one; what was wrong is
+                    that the app printed "correctives: 2 poses, 1 drivers" and
+                    then wrote a file with none of them in it. That is
+                    "geometry that silently does not appear", which
+                    `docs/formats/corrective-manifest.md` names as the worst
+                    failure this format has. It now warns, naming the format and
+                    pointing at `.obj`.
+                  - **A gate of mine was decorative, and the mutation found
+                    it.** `app_correctives_on`'s new `FAIL_REGULAR_EXPRESSION`
+                    was meant to catch a warning printed unconditionally — but
+                    weakening the guard to `if (true)` INSIDE `if (liveRig)`
+                    survives, because an `.obj` never enters that branch. The
+                    mutation that matters is the warning moved OUT of the
+                    branch, and that one fails. The comment says which is which
+                    now rather than claiming the stronger one.
+                  - [ ] **OPEN, and now named: get the corrective INTO an
+                    interchange file.** A warning is honest, not sufficient — a
+                    user who exports `.glb` still loses the deformation. None of
+                    glTF, FBX or UsdSkel has a pose-driven shape, but all three
+                    have BLEND SHAPES, and the app already writes 34 of them
+                    through every one of those writers (`--blendshapes`). So the
+                    shape is available: emit each fired corrective as a named
+                    key at the weight the RBF returned for the exported pose.
+                    Right at the pose in the file, adjustable rather than
+                    invisible anywhere else, and honest about being a snapshot.
+                    **Not done here** — it is an exporter feature across three
+                    writers, not part of a validation chunk.
       - [ ] **5. Content**: groom, PBR skin, wrinkle maps THROUGH THE SHARED
             DRIVER, eye/teeth rig.
       Two structural consequences to hold onto: proxies and clothing bind as

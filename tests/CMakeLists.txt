@@ -498,7 +498,17 @@ if(MH_HAVE_RENDER)
              --export ${CMAKE_CURRENT_BINARY_DIR}/corr_on/pose.obj)
     set_tests_properties(app_correctives_on PROPERTIES
         PASS_REGULAR_EXPRESSION "correctives: 2 poses, 1 drivers"
-        FAIL_REGULAR_EXPRESSION "export failed;correctives could not be applied"
+        # The live-rig warning must NOT appear here: an .obj is baked, so this
+        # file carries the deformation and telling the user it does not would be
+        # a lie in the other direction.
+        #
+        # What it catches, measured: the warning moved OUT of the `if (liveRig)`
+        # branch -- this test fails, and app_correctives_live_rig_says_so still
+        # passes. What it CANNOT catch, also measured: the guard inside that
+        # branch weakened to `if (true)`, which no .obj export ever reaches. The
+        # condition that matters here is WHERE the warning sits, not what it
+        # tests once it is there.
+        FAIL_REGULAR_EXPRESSION "export failed;correctives could not be applied;do not reach a live-rig"
         FIXTURES_SETUP app_corr_on)
     # The flag has to CHANGE the geometry. Asserting only that the export
     # succeeded passes with the correctives silently doing nothing, which is
@@ -511,6 +521,46 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
     set_tests_properties(app_correctives_move_the_mesh PROPERTIES
         FIXTURES_REQUIRED "app_corr_off;app_corr_on")
+
+    # ...and the export that CANNOT carry them says so.
+    #
+    # Found by the Blender round-trip, not by any of the tests above: a live-rig
+    # .glb written with --correctives is BYTE-IDENTICAL to one written without.
+    # The live-rig path swaps the mesh back to `rig.restCoords`, which is
+    # captured before the correctives run and is uncorrected on purpose -- a
+    # pose-space corrective is not a rest shape, and baking one into the rest
+    # geometry would put the bulge on every pose the consumer sets afterwards.
+    #
+    # So the deformation is genuinely not expressible in the file, and the only
+    # dishonest part was the silence. The app announced "correctives: 2 poses, 1
+    # drivers" and then wrote a file with none in it -- "geometry that silently
+    # does not appear", which the manifest spec names as the worst failure the
+    # format has.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/corr_live
+                        ${CMAKE_CURRENT_BINARY_DIR}/corr_live_off)
+    add_test(NAME app_correctives_live_rig_says_so COMMAND makehuman
+             --rig mixamo_superset --pose tpose
+             --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/correctives.json
+             --export ${CMAKE_CURRENT_BINARY_DIR}/corr_live/pose.glb)
+    set_tests_properties(app_correctives_live_rig_says_so PROPERTIES
+        PASS_REGULAR_EXPRESSION "correctives do not reach a live-rig \\.glb"
+        FIXTURES_SETUP app_corr_live_on)
+    add_test(NAME app_correctives_live_rig_baseline COMMAND makehuman
+             --rig mixamo_superset --pose tpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/corr_live_off/pose.glb)
+    set_tests_properties(app_correctives_live_rig_baseline PROPERTIES
+        FIXTURES_SETUP app_corr_live_off)
+    # The warning's own claim, pinned. Without this the message is a comment
+    # that happens to be printed: someone could make the .glb carry the
+    # corrective and leave the warning in, and every other test here would stay
+    # green while the app told users their deformation was missing from a file
+    # that has it. When this one fails, DELETE the warning -- do not weaken it.
+    add_test(NAME app_correctives_live_rig_unchanged COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/corr_live_off/pose.glb
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/corr_live/pose.glb
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_identical.cmake)
+    set_tests_properties(app_correctives_live_rig_unchanged PROPERTIES
+        FIXTURES_REQUIRED "app_corr_live_on;app_corr_live_off")
 
     add_test(NAME app_correctives_missing COMMAND makehuman
              --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/nope.json

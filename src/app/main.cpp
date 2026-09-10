@@ -2427,10 +2427,29 @@ int main(int argc, char** argv) {
         //
         // Only for those formats. An OBJ has nothing to apply a pose with, so
         // it keeps the baked posed mesh -- see formatCarriesRig.
-        const bool liveRig =
-            rig.posed() && !rig.restCoords.empty() && formatCarriesRig(lowerExtension(outPath));
+        const std::string outExt = lowerExtension(outPath);
+        const bool liveRig = rig.posed() && !rig.restCoords.empty() && formatCarriesRig(outExt);
         std::vector<mh::foundation::Vec3> posedBackup;
         if (liveRig) {
+            // The rest geometry restored below is UNCORRECTED, and deliberately
+            // so: `rig.restCoords` is captured before the correctives run, and
+            // a pose-space corrective is not a rest shape -- baked into the
+            // rest mesh it would put this pose's bulge on every pose the
+            // consumer sets afterwards. None of glTF, FBX or UsdSkel has a
+            // pose-driven shape to carry it in instead.
+            //
+            // So the deformation genuinely cannot travel in this file. Saying
+            // nothing was the part that was wrong: the app printed "correctives:
+            // N poses" and then wrote a file with none of them in it. Measured:
+            // the .glb is byte-identical to one exported without --correctives
+            // (app_correctives_live_rig_unchanged pins that).
+            if (gCorrectives != nullptr) {
+                std::fprintf(stderr,
+                             "warning: correctives do not reach a live-rig %s -- the file "
+                             "carries REST geometry and a pose-space corrective is not a rest "
+                             "shape. Export .obj for the corrected, baked mesh.\n",
+                             outExt.c_str());
+            }
             // Kept so the interactive path can undo this; see the restore below.
             posedBackup.assign(mesh->coord().begin(), mesh->coord().end());
             if (!mesh->changeCoords(std::vector<mh::foundation::Vec3>(rig.restCoords))) {

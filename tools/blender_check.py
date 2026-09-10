@@ -281,6 +281,37 @@ EXPECT = {
         _EXPRESSION_MESH,
         shape_keys={k.replace("-", "_"): v for k, v in _EXPRESSION_KEYS.items()},
     ),
+    # THE CORRECTIVE ROUND-TRIP, and its control. Both are the app's BAKED
+    # T-pose export: an .obj carries no rig, so the mesh in the file is the one
+    # our own skinning produced, correctives and all.
+    #
+    # `surface_area` is the whole point of the pair. Everything else about these
+    # two files is identical -- 14,444 vertices, 28,796 triangles, and a
+    # bounding box that agrees to six decimal places -- because the shipped
+    # deltoid bulge moves 250 vertices inside the silhouette. Recording only the
+    # counts and the extents would give two entries that pass whether or not the
+    # corrective ran at all.
+    #
+    # The two numbers are OUR computation, written down BEFORE Blender was asked
+    # -- 164.740873 and 165.760038 dm^2, summed triangle areas over the exported
+    # OBJs in float64 -- so Blender agreeing is a third party reproducing the
+    # deformation rather than a number copied out of its own output.
+    #
+    # It agrees, but not exactly: Blender reports 164.7452 and 165.7857, off by
+    # 0.003% and 0.015%. That is ASCII OBJ precision and Blender's float32 mesh
+    # storage against a float64 read of the same file, and it is the reason the
+    # tolerance is not tighter than 0.1%. The gap the check has to SEE is the
+    # 0.62% between the two files, which is 40x the disagreement and 6x the
+    # slack. Mutation-tested by copying posed.obj over corrective.obj:
+    # `FAIL corrective.obj: surface area 164.7452 != ~165.76`.
+    "posed.obj": {
+        "vertices": 14444, "triangles": 28796, "tallest": 16.8628, "uv_layers": 1,
+        "surface_area": 164.7409,
+    },
+    "corrective.obj": {
+        "vertices": 14444, "triangles": 28796, "tallest": 16.8628, "uv_layers": 1,
+        "surface_area": 165.7600,
+    },
     "morphed.glb": {
         "vertices": 21833, "triangles": 36972, "tallest": 1.69455, "uv_layers": 1,
         "shape_keys": {
@@ -338,6 +369,14 @@ for line in sys.stdin:
     # 0.5% covers float32 storage and Blender's own unit conversion.
     if abs(d["tallest_extent"] - want["tallest"]) > want["tallest"] * 0.005:
         problems.append(f"tallest {d['tallest_extent']} != ~{want['tallest']}")
+    # 0.1%, not the 0.5% the extents get: this is the one number that can see a
+    # corrective, and the difference it has to see is 0.62%. A tolerance sized
+    # like the bounding box's would let a dropped corrective through with room
+    # to spare.
+    if "surface_area" in want:
+        got_area = d.get("surface_area")
+        if got_area is None or abs(got_area - want["surface_area"]) > want["surface_area"] * 0.001:
+            problems.append(f"surface area {got_area} != ~{want['surface_area']}")
     if "bones" in want and d.get("bones") != want["bones"]:
         problems.append(f"bones {d.get('bones')} != {want['bones']}")
     if "armatures" in want and d.get("armatures") != want["armatures"]:

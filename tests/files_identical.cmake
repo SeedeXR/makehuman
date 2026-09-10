@@ -2,11 +2,18 @@
 #
 # Asserts two files ARE byte-identical.
 #
-# The mirror of files_differ.cmake, and it exists for the default skinning
-# method. "The default is dual quaternion" is only testable as an EFFECT:
+# The mirror of files_differ.cmake. Two callers, both asserting something that
+# is only visible as an EFFECT on a written file.
+#
+# The default skinning method: "the default is dual quaternion" means
 # exporting with no --skinning and asserting that file equals the --skinning dqs
 # export, while app_skinning_dqs_differs proves the dqs export is not the linear
 # one. Asserting a printed message instead would survive a default flipped back.
+#
+# And the live-rig corrective warning: the app tells the user that
+# --correctives does not reach a .glb, and this is what pins that the file
+# really is the same one. When it fails, the warning has become false and
+# belongs deleted rather than weakened.
 #
 # The empty guard is the same one, for the same reason: a pair of files that
 # failed to write would be "identical" and prove nothing.
@@ -25,5 +32,5 @@ endforeach()
 
 execute_process(COMMAND "${CMAKE_COMMAND}" -E compare_files "${A}" "${B}" RESULT_VARIABLE _same)
 if(NOT _same EQUAL 0)
-    message(FATAL_ERROR "${A} and ${B} differ; the default under test is not the one claimed")
+    message(FATAL_ERROR "${A} and ${B} differ, and were expected to be byte-identical")
 endif()
