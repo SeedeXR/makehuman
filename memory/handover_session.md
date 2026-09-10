@@ -4,6 +4,94 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-10 (fifty-fourth) — Session · **The manifest learns about wrinkles, and a mutation finds an exception escaping `std::expected`**
+
+*2026-09-10 — the authoring half of the wrinkle pipeline. The renderer took a
+map and a weight last chunk; this is where an author says which map.*
+
+### What landed
+`formatVersion` **2**: a required per-pose `wrinkle` payload, resolved like
+`delta`, with `""` for none. Version 1 still reads, and reads as "no wrinkle
+maps". 14 manifest cases, 121 assertions, 7 mutations, and
+`docs/formats/corrective-manifest.md` updated — directive 12.4 asks for this
+format to be specified in writing, so the spec moving is part of the change, not
+documentation of it.
+
+### Keyed on the same poses, and that was the decision
+Directive 12.3 makes wrinkle maps a second consumer of the same driver and says
+so in the negative: "not a second parallel system with its own keying
+convention". A wrinkle manifest of its own would BE that parallel keying, so the
+payload goes on the example poses that already carry the geometry deltas.
+
+### Required, with `""` for none
+The format has no optional fields on purpose, and this looked like the field to
+break that with — a wrinkle map is usually absent. It is not, because a key that
+may be omitted turns `wrinkles`, a plausible typo, into a pose that silently has
+no wrinkle map. That is the exact failure the whole format is arranged to
+refuse. Spelling "none" out costs four characters and turns the typo into an
+error naming the pose.
+
+**The version bounds both ways.** A version 1 manifest naming a wrinkle is
+refused, not read: honouring a field the declared version does not have makes
+the version number a lie, and ignoring it ships a wrinkle set that does nothing.
+The "future version" case moved from 2 to 3, which is what a version number is
+for.
+
+### Version 1 caches survive, measured
+The committed `tests/correctives/correctives.mhcorr`, written before version 2
+existed, still reports **"reused"**. The only hash-loop change for a version 1
+manifest is `hashBytes(h, "")`, whose loop body never runs — but that was worth
+running rather than reasoning about, because "the cache is disposable" makes a
+silent invalidation easy to shrug at and easy to be wrong about.
+
+The hash test now isolates the claim too: `kGoodV2` names a map, so comparing it
+against version 1 would also pass if only the PATHS were content. A version 2
+manifest with every wrinkle `""` differs from version 1 by the version field
+alone, and the mutation that stops hashing `formatVersion` fails exactly there.
+
+### Not baked into the blob
+The blob holds what is expensive to recompute: the solved interpolation matrix
+and the sparse deltas. A texture path is neither, and the manifest is read on
+every load anyway, so the runtime can take wrinkle paths from the manifest and
+the blob format did not have to move. One fewer version number in flight.
+
+### A mutation found an exception escaping `std::expected`
+The hash read payload paths back out of the JSON with `(*poses)[i].at("delta")`
+— validation and hashing as two places reading one object under different
+assumptions, and `at` THROWS.
+
+The mutation that let a version 2 pose through without its `wrinkle` failed its
+case on an **unexpected exception** rather than on its own assertion, which is
+how it surfaced: Catch2 reports the TEST_CASE line for a thrown exception, not
+the assertion line, and that mismatch is what made me look. `loadCorrectiveManifest`
+returns `std::expected` precisely so it does not throw. The as-written strings
+are now captured once during validation and hashed from there; the pre-existing
+`at("delta")` shape went with it.
+
+Worth keeping: a mutation being caught is not the same as a mutation being
+caught by the test you meant. The failing LINE is the evidence, not the failure.
+
+### Mutations
+Seven, all caught by their intended assertions: the version's upper bound
+removed, a missing version 2 wrinkle defaulted, a version 1 wrinkle silently
+ignored, the wrinkle path not containment-checked, the wrinkle path not hashed,
+an empty wrinkle resolved into the manifest's own directory (three cases fail),
+and `formatVersion` not hashed.
+
+### Gates
+Debug, release, ASan, TSan: **913/913**, 0 warnings, one preset at a time,
+ALLDONE read. clang-format clean with CI's exact command. Sonar gate OK with 0
+open issues.
+
+### Next
+**`wrinkleWeight` still has to be SET per frame.** The renderer takes it, the
+manifest carries the map, and nothing joins them. That wiring is where directive
+12.3's "one evaluator, several consumers" finally shows — and it needs a
+decision: the renderer takes ONE map per mesh, so what happens when several
+fired poses name different maps.
+
+---
+
 ## 2026-09-10 (fifty-third) — Session · **Wrinkle maps reach the screen, and a claim that had been written down for weeks turns out to be untested**
 
 *2026-09-10 — directive 12 step 5 opens with its one piece of code: the

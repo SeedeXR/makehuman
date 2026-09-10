@@ -45,7 +45,7 @@ nothing here that would justify the entry.
 
 ```json
 {
-  "formatVersion": 1,
+  "formatVersion": 2,
   "topologyHash": "e38c060123b5d0db",
   "kernel": "gaussian",
   "radius": 0.9,
@@ -54,8 +54,10 @@ nothing here that would justify the entry.
     { "joint": "lowerarm01.L", "component": "twist" }
   ],
   "poses": [
-    { "name": "arm_up",   "signal": [0.0, 1.2, 0.0, 0.4], "delta": "deltas/arm_up.target" },
-    { "name": "arm_back", "signal": [0.3, 0.0, 0.8, 0.0], "delta": "deltas/arm_back.target" }
+    { "name": "arm_up",   "signal": [0.0, 1.2, 0.0, 0.4],
+      "delta": "deltas/arm_up.target", "wrinkle": "wrinkles/shoulder.png" },
+    { "name": "arm_back", "signal": [0.3, 0.0, 0.8, 0.0],
+      "delta": "deltas/arm_back.target", "wrinkle": "" }
   ]
 }
 ```
@@ -68,13 +70,26 @@ the wrong place, is worse than a file that will not load.
 
 ### `formatVersion` (integer)
 
-The version of this format. This build reads **1** and refuses anything else,
-including a missing value.
+The version of this format. This build reads **1 and 2** and refuses anything
+else, including a missing value.
 
 Refusing a *newer* version rather than reading the parts it recognises is what
 directive 12.4 means by versioning conservatively. Silently ignoring a field
-added in version 2 means geometry that quietly does not appear — the failure
+added in version 3 means geometry that quietly does not appear — the failure
 mode nobody reports because nothing looks broken.
+
+| Version | What it added |
+|---|---|
+| 1 | drivers, example poses, `.target` delta payloads |
+| 2 | the per-pose `wrinkle` payload |
+
+**A version 1 manifest still loads, and reads as "no wrinkle maps"** — which is
+what it means, not a default standing in for a missing answer.
+
+**The version bounds both ways.** A version 1 manifest whose pose names a
+`wrinkle` is refused, not read: honouring a field the declared version does not
+have makes the version number a lie, and ignoring it ships a wrinkle set that
+does nothing. Both halves are tested.
 
 ### `topologyHash` (string, exactly 16 hex digits, either case)
 
@@ -160,11 +175,41 @@ Each sculpted example:
   own directory**. A subdirectory is fine. Absolute paths, empty paths and any
   path containing `..` are refused: a manifest is data, and a shipped asset must
   not be able to name any file on the machine.
+- `wrinkle` (string) — **version 2 and above.** Path to the tangent-space
+  wrinkle normal map this pose fades in, under the same rules as `delta`, or
+  `""` for none. Absent from a version 1 manifest, and required in a version 2
+  one.
 
 Two poses at the same point in signal space are refused. That is the realistic
 authoring mistake — the same pose keyed twice — and it makes the interpolation
 matrix singular. `rbfSolve` would refuse it too, but only as "not solvable",
 which tells the author nothing; refused here, both poses can be named.
+
+## The wrinkle payload
+
+Directive 12.3 calls wrinkle maps "the texture-space sibling of PSD" and makes
+them a **second consumer of this same driver** — explicitly "not a second
+parallel system with its own keying convention". So they are keyed *here*, on
+the same example poses that carry the geometry deltas. A wrinkle set is not a
+file of its own: a separate manifest would **be** the parallel keying the
+directive rules out.
+
+**`wrinkle` is required in version 2, and `""` means none.** This format has no
+optional fields, deliberately, and this was not the field to break that with. A
+key that may be omitted turns `wrinkles` — a plausible typo — into a pose that
+silently has no wrinkle map, and a corrective that quietly does not appear is
+the worst failure this format has. Spelling "none" out costs an author four
+characters and turns the typo into an error naming the pose.
+
+**Not baked into the blob.** The blob holds what is expensive to recompute: the
+solved interpolation matrix and the sparse deltas. A texture path is neither, and
+the manifest is read on every load anyway (see "Where it sits"), so the runtime
+takes wrinkle paths from the manifest and the blob format did not have to move.
+
+The renderer's side of this already exists: `render::MeshInstance` carries a
+`wrinkleMap` and a `wrinkleWeight`, blended over the base normal map by adding
+tangent-space slopes. What sets that weight from the RBF's output is the wiring
+between them.
 
 ## The content hash
 
@@ -180,7 +225,10 @@ Deliberately **not** part of the hash:
   do not.
 
 Deliberately **part** of it: the format version, topology hash, radius, every
-driver, and every pose's name, signal and payload path *as written*.
+driver, and every pose's name, signal and payload paths *as written* — the
+`wrinkle` as well as the `delta`. A wrinkle path that moved without moving the
+hash would leave a stale compile in place, which once the runtime reads those
+paths is a character wearing the previous author's creases.
 
 ## What an export can carry
 
@@ -206,11 +254,14 @@ returned for the exported pose: all three formats have those, and this
 application already writes 34 of them. Right at the pose in the file, adjustable
 rather than invisible anywhere else. Not built yet.
 
-## Not in version 1
+## Not in version 2
 
 - **Composition rules.** Directive 12.4 lists them; there is no consumer yet, so
   there is no field for them. Adding one now would be a guess at a shape the
   compiler has not asked for.
+- **Per-pose wrinkle INTENSITY.** The weight the RBF returns is the weight the
+  map fades in at. A separate authored scale would be a second knob for the same
+  thing, and nothing has asked for one.
 - **Poses given as `.bvh` files** rather than literal signal values. The
   directive says "example pose values", and literal values keep the compiler
   free of the pose-loading stack. A future version could accept either.

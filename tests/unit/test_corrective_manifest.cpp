@@ -68,6 +68,27 @@ const char* kGood = R"({
   ]
 })";
 
+/// The same manifest at version 2, where every pose STATES its wrinkle map --
+/// including the one that has none, which says so with an empty string rather
+/// than by leaving the key out. See the header for why that is not a style
+/// choice.
+const char* kGoodV2 = R"({
+  "formatVersion": 2,
+  "topologyHash": "e38c060123b5d0db",
+  "kernel": "gaussian",
+  "radius": 0.9,
+  "drivers": [
+    { "joint": "upperarm01.L", "component": "swing" },
+    { "joint": "lowerarm01.L", "component": "twist" }
+  ],
+  "poses": [
+    { "name": "arm_up",   "signal": [0.0, 1.2, 0.0, 0.4],
+      "delta": "deltas/arm_up.target", "wrinkle": "wrinkles/shoulder.png" },
+    { "name": "arm_back", "signal": [0.3, 0.0, 0.8, 0.0],
+      "delta": "deltas/arm_back.target", "wrinkle": "" }
+  ]
+})";
+
 }  // namespace
 
 TEST_CASE("a well-formed manifest loads into what the runtime needs", "[core][manifest]") {
@@ -100,6 +121,134 @@ TEST_CASE("a well-formed manifest loads into what the runtime needs", "[core][ma
     // a caller never has to know where the manifest was.
     CHECK(m->poses[0].delta == path.parent_path() / "deltas" / "arm_up.target");
     CHECK(m->poses[1].delta == path.parent_path() / "deltas" / "arm_back.target");
+
+    // Version 1 has no wrinkle payload at all, so every pose comes back with an
+    // empty one. This is the compatibility half of the version bump: a manifest
+    // written before wrinkle maps existed still loads, and reads as "no
+    // wrinkles" rather than as an error.
+    CHECK(m->poses[0].wrinkle.empty());
+    CHECK(m->poses[1].wrinkle.empty());
+}
+
+// --- The wrinkle payload, version 2 -----------------------------------------
+//
+// Owner directive 12.3 makes wrinkle maps a SECOND CONSUMER of this same
+// driver, "not a second parallel system with its own keying convention". So
+// they are keyed HERE, on the same example poses, rather than in a file of
+// their own -- a separate manifest would be exactly the parallel keying the
+// directive rules out.
+TEST_CASE("version 2 carries a wrinkle map per pose", "[core][manifest]") {
+    const auto path = writeManifest("v2_wrinkle", kGoodV2);
+    const auto m    = loadCorrectiveManifest(path);
+    REQUIRE(m.has_value());
+
+    REQUIRE(m->poses.size() == 2);
+    // Resolved against the manifest's directory, like `delta`.
+    CHECK(m->poses[0].wrinkle == path.parent_path() / "wrinkles" / "shoulder.png");
+    // ...and an empty string is an EMPTY PATH, not a path to the manifest's own
+    // directory. `parent_path() / ""` is a real trap here: it compares equal to
+    // neither, and it would be handed to a texture loader as a directory.
+    CHECK(m->poses[1].wrinkle.empty());
+}
+
+TEST_CASE("version 2 makes every pose state its wrinkle map", "[core][manifest]") {
+    // The format has NO optional fields, deliberately, and a wrinkle map is not
+    // the field to break that with. If `wrinkle` could simply be left out then
+    // an author who types `wrinkles` gets a pose that silently has no wrinkle
+    // map -- and a corrective that quietly does not appear is the worst failure
+    // this format has, which is the reason the rule exists.
+    //
+    // So "none" is spelled out as `""`, and a missing key is an error.
+    std::string text = kGoodV2;
+    const auto at    = text.find(", \"wrinkle\": \"\"");
+    REQUIRE(at != std::string::npos);
+    text.replace(at, std::string(", \"wrinkle\": \"\"").size(), "");
+
+    const auto m = loadCorrectiveManifest(writeManifest("v2_nowrinkle", text));
+    REQUIRE_FALSE(m.has_value());
+    CHECK(m.error().kind == CorrectiveManifestErrorKind::BadPayloadPath);
+}
+
+TEST_CASE("a wrinkle map in a version 1 manifest is refused", "[core][manifest]") {
+    // The other direction, and the one that matters more: a version 1 header
+    // over a pose that names a wrinkle map is a file claiming a feature its own
+    // version does not have. Reading it and ignoring the field is how a
+    // wrinkle set ships doing nothing; reading it and HONOURING it makes the
+    // version number a lie. Refused.
+    std::string text = kGood;
+    const auto at    = text.find("\"delta\": \"deltas/arm_up.target\"");
+    REQUIRE(at != std::string::npos);
+    text.insert(at + std::string("\"delta\": \"deltas/arm_up.target\"").size(),
+                ", \"wrinkle\": \"wrinkles/shoulder.png\"");
+
+    const auto m = loadCorrectiveManifest(writeManifest("v1_wrinkle", text));
+    REQUIRE_FALSE(m.has_value());
+    CHECK(m.error().kind == CorrectiveManifestErrorKind::UnsupportedVersion);
+}
+
+TEST_CASE("a wrinkle path may not leave the manifest's directory", "[core][manifest]") {
+    // The same rule as `delta`, for the same reason: a manifest is DATA, and a
+    // shipped asset must not be able to name any file on the machine. Checked
+    // separately because the delta case cannot reach this line -- two payload
+    // fields need two guards, and one of them being right proves nothing about
+    // the other.
+    struct Bad {
+        const char* what;
+        const char* value;
+    };
+
+    const Bad bad[]{
+        {"escaping", "../../../etc/passwd"},
+        {"absolute", "/etc/passwd"},
+    };
+    for (const auto& b : bad) {
+        std::string text = kGoodV2;
+        text.replace(text.find("wrinkles/shoulder.png"),
+                     std::string("wrinkles/shoulder.png").size(), b.value);
+        const auto m = loadCorrectiveManifest(writeManifest("v2_badwrinkle", text));
+        INFO("a " << b.what << " wrinkle path");
+        REQUIRE_FALSE(m.has_value());
+        CHECK(m.error().kind == CorrectiveManifestErrorKind::BadPayloadPath);
+    }
+}
+
+TEST_CASE("the wrinkle path is part of the manifest's content hash", "[core][manifest]") {
+    // The blob is a cache keyed on this hash. A wrinkle path that changed
+    // without moving the hash would leave a stale compile in place -- and once
+    // the runtime reads wrinkle paths, that is a character wearing the previous
+    // author's creases.
+    const auto a = loadCorrectiveManifest(writeManifest("wh_a", kGoodV2));
+    REQUIRE(a.has_value());
+
+    std::string text = kGoodV2;
+    text.replace(text.find("wrinkles/shoulder.png"), std::string("wrinkles/shoulder.png").size(),
+                 "wrinkles/elbow.png");
+    const auto b = loadCorrectiveManifest(writeManifest("wh_b", text));
+    REQUIRE(b.has_value());
+    CHECK(a->hash != b->hash);
+
+    // And the version itself is content: the same poses under a version 1
+    // header are a different manifest, because they mean something different.
+    const auto v1 = loadCorrectiveManifest(writeManifest("wh_v1", kGood));
+    REQUIRE(v1.has_value());
+    CHECK(v1->hash != a->hash);
+
+    // The case that ISOLATES that claim. `kGoodV2` names a wrinkle map, so the
+    // comparison above would also pass if only the paths were content. Here
+    // every wrinkle is `""` -- and `hashBytes` over an empty string is a no-op,
+    // so the ONLY thing separating these two manifests is the version field.
+    //
+    // Which is also what makes the version bump free for existing caches:
+    // measured, the committed `tests/correctives/correctives.mhcorr` written
+    // before version 2 existed still reports "reused", because a version 1
+    // manifest hashes to exactly what it always did.
+    std::string allEmpty = kGoodV2;
+    allEmpty.replace(allEmpty.find("wrinkles/shoulder.png"),
+                     std::string("wrinkles/shoulder.png").size(), "");
+    const auto e = loadCorrectiveManifest(writeManifest("wh_empty", allEmpty));
+    REQUIRE(e.has_value());
+    CHECK(e->poses[0].wrinkle.empty());
+    CHECK(e->hash != v1->hash);
 }
 
 TEST_CASE("the file itself has to be readable", "[core][manifest]") {
@@ -139,12 +288,22 @@ TEST_CASE("an unknown format version is refused, not guessed at", "[core][manife
     // versioned CONSERVATIVELY, and reading a version this build does not know
     // means silently ignoring whatever the newer one added -- which for a
     // corrective is geometry that quietly does not appear.
+    // This build reads 1 AND 2. The future version this case refuses moved from
+    // 2 to 3 when the wrinkle payload landed -- the version number moving is
+    // what a version number is for, and version 1 manifests still load
+    // unchanged (see the case above, which is one).
     SECTION("a future version") {
         std::string text = kGood;
-        text.replace(text.find("\"formatVersion\": 1"), 18, "\"formatVersion\": 2");
-        const auto m = loadCorrectiveManifest(writeManifest("v2", text));
+        text.replace(text.find("\"formatVersion\": 1"), 18, "\"formatVersion\": 3");
+        const auto m = loadCorrectiveManifest(writeManifest("v3", text));
         REQUIRE_FALSE(m.has_value());
         CHECK(m.error().kind == CorrectiveManifestErrorKind::UnsupportedVersion);
+    }
+
+    SECTION("version 2 is this build's own") {
+        const auto m = loadCorrectiveManifest(writeManifest("v2ok", kGoodV2));
+        REQUIRE(m.has_value());
+        CHECK(m->formatVersion == 2);
     }
 
     SECTION("no version at all") {

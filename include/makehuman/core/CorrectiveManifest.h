@@ -37,7 +37,14 @@ namespace mh::core {
 /// Bumped only for a change that an older reader could not handle correctly --
 /// conservatively, per directive 12.4. The compiled blob's own version moves
 /// far more freely, because a blob is a cache that can always be rebuilt.
-inline constexpr uint32_t kCorrectiveManifestVersion = 1;
+///
+/// **Version 2 added the per-pose wrinkle payload.** Version 1 is still read,
+/// and reads as "no wrinkle maps" -- which is what it means, not a guess.
+/// Anything above 2 is refused.
+inline constexpr uint32_t kCorrectiveManifestVersion = 2;
+
+/// The oldest version this build still reads.
+inline constexpr uint32_t kOldestCorrectiveManifestVersion = 1;
 
 /// Which half of a joint's rotation drives the signal.
 ///
@@ -74,6 +81,23 @@ struct ExamplePose {
     /// Resolved against the manifest's own directory, so a caller never needs
     /// to know where the manifest was.
     std::filesystem::path delta;
+    /// The wrinkle map this pose fades in, or empty for none. Resolved like
+    /// `delta`. **Version 2 and above**; always empty from a version 1
+    /// manifest.
+    ///
+    /// Directive 12.3 makes wrinkle maps a SECOND CONSUMER of this same
+    /// driver -- "the texture-space sibling of PSD", and explicitly "not a
+    /// second parallel system with its own keying convention". So they are
+    /// keyed here, on the same example poses, and a wrinkle set is not a file
+    /// of its own: a separate manifest would BE that parallel keying.
+    ///
+    /// **In version 2 the field is required and `""` means none.** The format
+    /// has no optional fields on purpose, and this is not the one to break that
+    /// with: a key that may be left out turns `wrinkles` -- a plausible typo --
+    /// into a pose that silently has no wrinkle map, which is the failure this
+    /// whole format is arranged to refuse. Spelling "none" out costs an author
+    /// four characters and makes the typo an error.
+    std::filesystem::path wrinkle;
 };
 
 enum class CorrectiveManifestErrorKind : uint8_t {
@@ -83,7 +107,11 @@ enum class CorrectiveManifestErrorKind : uint8_t {
     /// Not JSON, not an object, or a required field missing or of the wrong
     /// type.
     Malformed,
-    /// Absent, or a version this build does not implement.
+    /// Absent, or a version this build does not implement -- and also a file
+    /// using a field its OWN declared version does not have, such as a
+    /// `wrinkle` payload under `formatVersion` 1. Honouring that would make the
+    /// version number a lie; ignoring it would ship a wrinkle set that does
+    /// nothing.
     UnsupportedVersion,
     UnknownKernel,
     BadRadius,
@@ -98,7 +126,9 @@ enum class CorrectiveManifestErrorKind : uint8_t {
     /// Two poses with the same name, or at the same point in signal space --
     /// the latter makes the interpolation matrix singular.
     DuplicatePose,
-    /// Empty, absolute, or reaching outside the manifest's directory.
+    /// Empty, absolute, or reaching outside the manifest's directory. Also a
+    /// version 2 pose that does not state its `wrinkle` at all -- see
+    /// `ExamplePose::wrinkle` for why an absent key is not "none".
     BadPayloadPath,
 };
 

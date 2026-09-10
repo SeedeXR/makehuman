@@ -97,7 +97,8 @@ std::string CorrectiveManifestError::message() const {
         case CorrectiveManifestErrorKind::Unreadable: s = "manifest cannot be read"; break;
         case CorrectiveManifestErrorKind::Malformed: s = "manifest is malformed"; break;
         case CorrectiveManifestErrorKind::UnsupportedVersion:
-            s = "manifest formatVersion is missing or not supported";
+            s = "manifest formatVersion is missing, not supported, or the file uses a "
+                "field that version does not have";
             break;
         case CorrectiveManifestErrorKind::UnknownKernel: s = "unknown kernel"; break;
         case CorrectiveManifestErrorKind::BadRadius: s = "radius must be greater than zero"; break;
@@ -154,9 +155,12 @@ std::expected<CorrectiveManifest, CorrectiveManifestError> loadCorrectiveManifes
 
     const auto version = doc.find("formatVersion");
     if (version == doc.end() || !version->is_number_unsigned() ||
-        version->get<uint32_t>() != kCorrectiveManifestVersion) {
+        version->get<uint32_t>() < kOldestCorrectiveManifestVersion ||
+        version->get<uint32_t>() > kCorrectiveManifestVersion) {
         return fail(CorrectiveManifestErrorKind::UnsupportedVersion, path,
-                    "this build reads version " + std::to_string(kCorrectiveManifestVersion));
+                    "this build reads versions " +
+                        std::to_string(kOldestCorrectiveManifestVersion) + " to " +
+                        std::to_string(kCorrectiveManifestVersion));
     }
     m.formatVersion = version->get<uint32_t>();
 
@@ -228,6 +232,27 @@ std::expected<CorrectiveManifest, CorrectiveManifestError> loadCorrectiveManifes
     if (poses == doc.end() || !poses->is_array() || poses->empty()) {
         return fail(CorrectiveManifestErrorKind::NoPoses, path);
     }
+
+    // The payload paths AS WRITTEN, collected here rather than re-read from the
+    // JSON when the hash is computed below.
+    //
+    // Hashing has to see the written string and not the resolved path -- moving
+    // a checkout must not invalidate a cache -- and the obvious way to get it
+    // was `(*poses)[i].at("delta")` in the hash loop. That is two places
+    // reading the same object under different assumptions, and `at` THROWS:
+    // any future disagreement between what validation requires and what the
+    // hash reads leaves an exception escaping a function whose whole contract
+    // is to return `std::expected`. Measured, on a mutation that let a version
+    // 2 pose through without its `wrinkle`: the case failed on an unexpected
+    // exception rather than on its own assertion.
+    struct Written {
+        std::string delta;
+        std::string wrinkle;
+    };
+
+    std::vector<Written> written;
+    written.reserve(poses->size());
+
     for (const auto& p : *poses) {
         if (!p.is_object())
             return fail(CorrectiveManifestErrorKind::Malformed, path, "a pose is not an object");
@@ -263,12 +288,48 @@ std::expected<CorrectiveManifest, CorrectiveManifestError> loadCorrectiveManifes
             return fail(CorrectiveManifestErrorKind::BadPayloadPath, path,
                         pose.name + " has no delta");
         }
-        const std::filesystem::path rel = delta->get<std::string>();
+        const std::string deltaWritten  = delta->get<std::string>();
+        const std::filesystem::path rel = deltaWritten;
         if (!payloadPathIsContained(rel)) {
             return fail(CorrectiveManifestErrorKind::BadPayloadPath, path,
-                        pose.name + ": \"" + delta->get<std::string>() + "\"");
+                        pose.name + ": \"" + deltaWritten + "\"");
         }
         pose.delta = path.parent_path() / rel;
+
+        // The wrinkle payload: required from version 2, absent before it.
+        //
+        // Both directions are errors, and deliberately so. A version 2 pose
+        // with no `wrinkle` key is refused rather than defaulted, because a key
+        // that may be omitted turns `wrinkles` -- a plausible typo -- into a
+        // pose that silently has no wrinkle map. And a version 1 pose WITH one
+        // is refused rather than read, because honouring a field the declared
+        // version does not have makes the version number a lie, while ignoring
+        // it ships a wrinkle set that does nothing.
+        std::string wrinkleWritten;
+        const auto wrinkle = p.find("wrinkle");
+        if (m.formatVersion < 2) {
+            if (wrinkle != p.end()) {
+                return fail(CorrectiveManifestErrorKind::UnsupportedVersion, path,
+                            pose.name + " names a wrinkle, which needs formatVersion 2");
+            }
+        } else {
+            if (wrinkle == p.end() || !wrinkle->is_string()) {
+                return fail(CorrectiveManifestErrorKind::BadPayloadPath, path,
+                            pose.name + " has no wrinkle (use \"\" for none)");
+            }
+            wrinkleWritten = wrinkle->get<std::string>();
+            // Empty is "none", and stays an EMPTY PATH rather than becoming the
+            // manifest's own directory -- `parent_path() / ""` would be handed
+            // to a texture loader as a directory.
+            if (!wrinkleWritten.empty()) {
+                const std::filesystem::path wrel = wrinkleWritten;
+                if (!payloadPathIsContained(wrel)) {
+                    return fail(CorrectiveManifestErrorKind::BadPayloadPath, path,
+                                pose.name + ": \"" + wrinkleWritten + "\"");
+                }
+                pose.wrinkle = path.parent_path() / wrel;
+            }
+        }
 
         for (const ExamplePose& seen : m.poses) {
             if (seen.name == pose.name) {
@@ -283,6 +344,7 @@ std::expected<CorrectiveManifest, CorrectiveManifestError> loadCorrectiveManifes
                             seen.name + " and " + pose.name + " are at the same signal");
             }
         }
+        written.push_back(Written{deltaWritten, wrinkleWritten});
         m.poses.push_back(std::move(pose));
     }
 
@@ -303,7 +365,13 @@ std::expected<CorrectiveManifest, CorrectiveManifestError> loadCorrectiveManifes
         hashBytes(h, m.poses[i].name);
         for (const double v : m.poses[i].signal)
             hashDouble(h, v);
-        hashBytes(h, (*poses)[i].at("delta").get<std::string>());
+        hashBytes(h, written[i].delta);
+        // The wrinkle path is content too. One that moved without moving the
+        // hash would leave a stale compile in place -- a character wearing the
+        // previous author's creases. Empty under version 1, where the field
+        // does not exist, which costs nothing: the version is hashed above, so
+        // a version 1 and a version 2 manifest never collide.
+        hashBytes(h, written[i].wrinkle);
     }
     m.hash = h;
 

@@ -4850,14 +4850,53 @@ GPU here, or Colab) and it comes back to the owner first.
                     — which is the additive blend being visible as such. At 0.5
                     they are visibly shallower, which is what made the missing
                     "the weight scales the crease" case obvious.
-            - [ ] **The driver still has to set the weight.** This is the
-                  consumer; what fires it from the RBF weights the geometry
-                  correctives already read is the next chunk, and is where
-                  directive 12.3's "one evaluator, several consumers" is
-                  actually demonstrated. Needs: a wrinkle payload in the
-                  manifest (a `formatVersion` 2 question — version 1 says in
-                  writing that it has no optional fields), the path through the
-                  blob, and `wrinkleWeight` set per frame.
+            - [x] **The authoring format carries the wrinkle** (2026-09-10) —
+                  `formatVersion` **2**, a required per-pose `wrinkle` payload,
+                  and the spec updated. 14 manifest cases, 121 assertions,
+                  7 mutations.
+                  - **Keyed on the SAME poses, not in a file of its own.**
+                    Directive 12.3 says wrinkle maps are "not a second parallel
+                    system with its own keying convention" — a separate
+                    wrinkle manifest would BE that parallel keying.
+                  - **Required, with `""` for none**, which is how the "no
+                    optional fields" rule survives a field that is usually
+                    absent. A key that may be omitted turns `wrinkles` — a
+                    plausible typo — into a pose that silently has no wrinkle
+                    map, and that is the exact failure this format is arranged
+                    to refuse. Four characters of author effort buys an error
+                    that names the pose.
+                  - **The version bounds BOTH ways.** A version 1 manifest
+                    naming a wrinkle is refused: honouring a field the declared
+                    version does not have makes the version number a lie, and
+                    ignoring it ships a wrinkle set that does nothing. Both
+                    halves tested; the "future version" case moved 2 → 3.
+                  - **Version 1 caches survive**, measured rather than argued:
+                    the committed `tests/correctives/correctives.mhcorr`, written
+                    before version 2 existed, still reports **"reused"**. The
+                    only hash-loop change for version 1 is `hashBytes(h, "")`,
+                    which is a no-op — the loop body never runs.
+                  - **NOT baked into the blob.** The blob holds what is
+                    expensive to recompute — the solved matrix and the sparse
+                    deltas. A texture path is neither, and the manifest is read
+                    on every load anyway, so the runtime can take wrinkle paths
+                    from the manifest and the blob format did not have to move.
+                  - **A mutation exposed an exception escaping `expected`.**
+                    The hash read payload paths back out of the JSON with
+                    `at("delta")`, so validation and hashing were two places
+                    reading one object under different assumptions — and `at`
+                    THROWS. The mutation that let a version 2 pose through
+                    without its `wrinkle` failed its case on an *unexpected
+                    exception* rather than on its own assertion. The as-written
+                    strings are now captured once during validation; that
+                    pre-existing shape is gone with it.
+            - [ ] **`wrinkleWeight` still has to be SET per frame.** The
+                  renderer takes it, the manifest carries the map, and nothing
+                  joins them yet. That wiring — pick the map, evaluate the RBF
+                  weight for it, hand both to the render entry — is where
+                  directive 12.3's "one evaluator, several consumers" finally
+                  shows. Needs a version 2 fixture with a real crease sheet, and
+                  a decision on what the app does when several fired poses name
+                  DIFFERENT maps (the renderer takes one map per mesh).
             - [ ] Groom, PBR skin assets, eye/teeth rig (skeleton and
                   constraint work, NOT correctives — "a trap").
       Two structural consequences to hold onto: proxies and clothing bind as
