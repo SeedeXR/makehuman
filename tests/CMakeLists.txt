@@ -37,6 +37,7 @@ add_executable(mh_tests
     unit/test_pose_signal.cpp
     unit/test_corrective_runtime.cpp
     unit/test_wrinkles.cpp
+    unit/test_normal_blend.cpp
     unit/test_corrective_cache.cpp
     unit/test_posed_correctives.cpp
     unit/test_version.cpp
@@ -539,12 +540,19 @@ if(MH_HAVE_RENDER)
     # format has.
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/corr_live
                         ${CMAKE_CURRENT_BINARY_DIR}/corr_live_off)
+    #
+    # Both sides use `nowrinkle.json`, and that is not incidental. The shipped
+    # fixture gained a wrinkle sheet, and a wrinkle DOES reach a live-rig .glb
+    # -- baked into the material's normal texture, which a GLB embeds. So with
+    # `correctives.json` these two files differ for a reason that has nothing to
+    # do with the geometry this case is about. Caught by the full gate run, one
+    # chunk after the case was written.
     add_test(NAME app_correctives_live_rig_says_so COMMAND makehuman
              --rig mixamo_superset --pose tpose
-             --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/correctives.json
+             --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/nowrinkle.json
              --export ${CMAKE_CURRENT_BINARY_DIR}/corr_live/pose.glb)
     set_tests_properties(app_correctives_live_rig_says_so PROPERTIES
-        PASS_REGULAR_EXPRESSION "correctives do not reach a live-rig \\.glb"
+        PASS_REGULAR_EXPRESSION "corrective geometry does not reach a live-rig \\.glb"
         FIXTURES_SETUP app_corr_live_on)
     add_test(NAME app_correctives_live_rig_baseline COMMAND makehuman
              --rig mixamo_superset --pose tpose
@@ -553,9 +561,10 @@ if(MH_HAVE_RENDER)
         FIXTURES_SETUP app_corr_live_off)
     # The warning's own claim, pinned. Without this the message is a comment
     # that happens to be printed: someone could make the .glb carry the
-    # corrective and leave the warning in, and every other test here would stay
-    # green while the app told users their deformation was missing from a file
-    # that has it. When this one fails, DELETE the warning -- do not weaken it.
+    # corrective GEOMETRY and leave the warning in, and every other test here
+    # would stay green while the app told users their deformation was missing
+    # from a file that has it. When this one fails, DELETE the warning -- do not
+    # weaken it.
     add_test(NAME app_correctives_live_rig_unchanged COMMAND ${CMAKE_COMMAND}
              -DA=${CMAKE_CURRENT_BINARY_DIR}/corr_live_off/pose.glb
              -DB=${CMAKE_CURRENT_BINARY_DIR}/corr_live/pose.glb
@@ -627,6 +636,58 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
     set_tests_properties(app_wrinkle_changes_the_frame PROPERTIES
         FIXTURES_REQUIRED "app_wrinkle_on;app_wrinkle_off")
+
+    # THE EXPORT, which is where a wrinkle map otherwise stops existing.
+    #
+    # No interchange format has a pose-driven normal map -- glTF, FBX and
+    # UsdSkel each give a material ONE normal texture -- so the blend is baked
+    # at the pose being written and the exported material points at the result.
+    # Without this the app reports "wrinkle: creases.png at 0.98" and then
+    # writes a file with no crease in it, which is the same silence the
+    # live-rig corrective export was caught doing.
+    #
+    # `african_light` because it is one of the eight shipped skins that names a
+    # normal map; `default.mhmat` has none, and the bake against a synthesised
+    # flat base is a different path.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/wrbake)
+    add_test(NAME app_wrinkle_export COMMAND makehuman
+             --rig mixamo_superset --pose tpose --skin-material african_light
+             --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/correctives.json
+             --export ${CMAKE_CURRENT_BINARY_DIR}/wrbake/body.obj)
+    set_tests_properties(app_wrinkle_export PROPERTIES
+        # The TEXEL COUNT, not just the filename. A bake that copied the base
+        # through unchanged writes a perfectly good file with the right name,
+        # and it reports 0 here.
+        #
+        # At least six digits, spelled out one class at a time: CMake's regex
+        # flavour has NO brace repetition, so `[0-9]{6,}` matched literally and
+        # the case failed against a line that was plainly correct. Measured on
+        # the shipped pairing -- a 1024x1024 skin normal under an unmasked
+        # sheet -- 994,383 of 1,048,576 texels moved.
+        #
+        # The count is over X AND Y ONLY. Counting z as well left this
+        # decorative in turn: z moves for any base that is not exactly unit
+        # length, purely from renormalizing, so a bake mutated to copy x and y
+        # through unchanged still reported 1,048,534 "moved".
+        PASS_REGULAR_EXPRESSION
+            "baked the wrinkle into body_normal\\.png at 0\\.98 \\([0-9][0-9][0-9][0-9][0-9][0-9][0-9]* of 1048576 texels moved\\)"
+        FAIL_REGULAR_EXPRESSION "export failed;cannot bake"
+        FIXTURES_SETUP app_wrinkle_export)
+    # The exported MATERIAL has to point at the bake. Printing that a file was
+    # written proves nothing about what the .mtl says, and an .mtl still naming
+    # skin_normal.png is a file whose creases are only in a sidecar nothing
+    # reads.
+    add_test(NAME app_wrinkle_export_material COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/wrbake/body.mtl
+             "-DKEYS=body_normal.png"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_wrinkle_export_material PROPERTIES
+        FIXTURES_REQUIRED app_wrinkle_export)
+    # There is deliberately NO files_differ between the bake and the skin's own
+    # normal map here. It was written, and it was decorative: the sidecar is a
+    # RE-ENCODED PNG, so it differs from the source byte-for-byte whatever its
+    # pixels say. Measured -- a bake mutated to copy the base through unchanged
+    # passed it. The texel count in the regex above is what replaced it.
 
     add_test(NAME app_correctives_missing COMMAND makehuman
              --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/nope.json

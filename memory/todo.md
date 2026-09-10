@@ -4930,11 +4930,65 @@ GPU here, or Colab) and it comes back to the owner first.
                     it is an unmasked field of ridges over the whole UV square,
                     which is right for a fixture and wrong for something called
                     `shoulder.png`. It is `creases.png` now.
-            - [ ] **The wrinkle does not survive an export.** No interchange
-                  format carries a pose-driven map, so this is screen-only —
-                  the same shape as the correctives' own live-rig limitation,
-                  and the same answer would work: a blend shape at the fired
-                  weight. Not started.
+            - [x] **The wrinkle survives an export, baked** (2026-09-10) —
+                  `foundation::bakeWrinkleIntoNormalMap` plus the app writing
+                  `<stem>_normal.png` beside the export and pointing the
+                  exported material at it. 7 unit cases, 3 app tests,
+                  7 mutations.
+                  - **A blend shape was the wrong answer**, and that note in
+                    this file was wrong when I wrote it. A blend shape moves
+                    VERTICES; a wrinkle map perturbs normals. glTF, FBX and
+                    UsdSkel each give a material exactly ONE normal texture, so
+                    the only thing an export can carry is the blend already
+                    baked at the pose being written.
+                  - **The shaders' arithmetic, not its own.** Two
+                    implementations of one blend is how an exported file and the
+                    viewport come to disagree about a character, so the bake is
+                    checked against the shader formula written out longhand.
+                    Normalizing before the TBN transform is what makes it bakeable
+                    at all: the basis is orthonormal, so the world normal is the
+                    same either way.
+                  - **Nearest-neighbour, sampled from texel centres.** The
+                    shipped pairing is a 1024x1024 `skin_normal.png` under a
+                    256x256 sheet, so a size mismatch is the normal case rather
+                    than an error. Bilinear would interpolate packed normals
+                    across a crease edge and invent a slope in neither texel.
+                  - **A material with no normal map still exports its creases**:
+                    the base becomes a flat sheet at the wrinkle's size.
+                    `default.mhmat` is that case; the other eight shipped skins
+                    all name `skin_normal.png`.
+                  - **THREE gates of mine were decorative in one chunk**, each
+                    found by mutation.
+                    1. `files_differ` between the bake and the skin's own normal
+                       map: the sidecar is a RE-ENCODED PNG, so it differs
+                       byte-for-byte whatever its pixels say. Deleted, not
+                       weakened.
+                    2. Its replacement counted moved texels over RGB — and z
+                       moves for any base that is not exactly unit length, from
+                       renormalizing alone, so a copy-through bake still
+                       reported 1,048,534 of 1,048,576 moved.
+                    3. The count over X AND Y is the one with teeth: 994,383 of
+                       1,048,576, and 0 under the mutation.
+                  - **CMake's regex has no brace repetition.** `[0-9]{6,}`
+                    matched literally and failed a case against a line that was
+                    plainly correct; the digit classes are spelled out now.
+                  - **A test premise of mine was wrong about the data.** "Weight
+                    zero leaves the base alone, within one LSB" — measured,
+                    (130,120,250) has a length of 0.9628, so normalizing
+                    lengthens z from 250 to 255. Five LSB, from an ordinary
+                    pixel. The case asserts INDEPENDENCE instead: two different
+                    sheets at weight zero must bake to identical bytes, which no
+                    round-trip error can flatter.
+                  - **Looked at the baked map.** It carries the crease bands as
+                    green/magenta around neutral blue, which is what a
+                    tangent-space map of horizontal ridges looks like — and the
+                    shipped `skin_normal.png` is so subtle that the crease
+                    dominates it entirely at weight 0.98.
+                  - **Correct at the exported pose and nowhere else.** A consumer
+                    that re-poses the rig keeps these creases. That is the
+                    formats' limitation, and unlike the correctives' rest
+                    capture there is no better alternative to refuse in favour
+                    of. Stated in the header rather than left to be found.
             - [ ] Groom, PBR skin assets, eye/teeth rig (skeleton and
                   constraint work, NOT correctives — "a trap").
       Two structural consequences to hold onto: proxies and clothing bind as

@@ -24,6 +24,7 @@
 #include "makehuman/core/TopologyHash.h"
 #include "makehuman/foundation/DataDir.h"
 #include "makehuman/foundation/Naming.h"
+#include "makehuman/foundation/NormalBlend.h"
 #include "makehuman/foundation/Version.h"
 #include "makehuman/io/BvhWriter.h"
 #include "makehuman/io/Compact.h"
@@ -500,6 +501,106 @@ mh::rig::WrinkleChoice wrinkleForFrame() {
         reported = report;
     }
     return choice;
+}
+
+/// Bakes the fired wrinkle sheet into a normal map beside @p exportPath, and
+/// returns where it put it.
+///
+/// No interchange format has a pose-driven normal map -- glTF, FBX and UsdSkel
+/// each give a material ONE normal texture -- so the blend is baked at the pose
+/// being written. Without this the app reports the wrinkle and then writes a
+/// file with no crease in it, which is exactly the silence the live-rig
+/// corrective export was caught doing.
+///
+/// **The bake is correct at the exported pose and nowhere else.** A consumer
+/// that re-poses the rig keeps these creases. That is a property of the
+/// formats, not of this function, and it is the same trade the correctives make
+/// when they refuse to bake into rest geometry -- except that here there is no
+/// alternative to refuse in favour of.
+///
+/// Written beside the export and named after it. A GLB EMBEDS its images, so
+/// the sidecar is redundant there and required by every other format; one rule
+/// beats a per-format one.
+std::optional<std::filesystem::path> bakeWrinkleBeside(
+    const std::filesystem::path& exportPath, const mh::foundation::MaterialDesc& material) {
+    if (gCorrectives == nullptr) return std::nullopt;
+    const mh::rig::WrinkleChoice choice = mh::rig::chooseWrinkle(
+        gCorrectives->manifest, gCorrectives->blob.poseNames, gCorrectives->runtime.weights());
+    if (choice.map.empty() || choice.weight <= 0.0F) return std::nullopt;
+
+    QImage sheet(QString::fromStdString(choice.map.string()));
+    if (sheet.isNull()) {
+        std::fprintf(stderr, "cannot bake the wrinkle: %s will not load\n",
+                     choice.map.string().c_str());
+        return std::nullopt;
+    }
+    sheet = sheet.convertToFormat(QImage::Format_RGBA8888);
+
+    // A material with no normal map still exports its creases: the base becomes
+    // a flat sheet the size of the wrinkle, so the result is the crease alone,
+    // normalized. `default.mhmat` is exactly this case -- eight of the nine
+    // shipped skins name a normal map and it does not.
+    QImage base;
+    if (!material.normalTexture.empty()) {
+        base = QImage(QString::fromStdString(material.normalTexture.string()));
+        if (base.isNull()) {
+            std::fprintf(stderr, "cannot bake the wrinkle: %s will not load\n",
+                         material.normalTexture.string().c_str());
+            return std::nullopt;
+        }
+        base = base.convertToFormat(QImage::Format_RGBA8888);
+    } else {
+        base = QImage(sheet.width(), sheet.height(), QImage::Format_RGBA8888);
+        base.fill(QColor(128, 128, 255));
+    }
+
+    const auto baked = mh::foundation::bakeWrinkleIntoNormalMap(
+        mh::foundation::NormalMapImage{
+            std::span<const uint8_t>(base.constBits(), static_cast<size_t>(base.sizeInBytes())),
+            base.width(), base.height()},
+        1.0F,
+        mh::foundation::NormalMapImage{
+            std::span<const uint8_t>(sheet.constBits(), static_cast<size_t>(sheet.sizeInBytes())),
+            sheet.width(), sheet.height()},
+        choice.weight);
+    if (!baked) {
+        std::fprintf(stderr, "cannot bake the wrinkle: %s\n", baked.error().message().c_str());
+        return std::nullopt;
+    }
+
+    // How much of the map the crease actually moved, because "a file was
+    // written" is not evidence that anything was baked into it.
+    //
+    // A file comparison cannot stand in for this: the sidecar is a RE-ENCODED
+    // PNG, so it differs from the source byte-for-byte whatever its pixels say.
+    // Measured -- a bake mutated to copy the base through unchanged still
+    // passed a `files_differ` against the skin's own normal map.
+    //
+    // X AND Y ONLY, and z deliberately excluded. The crease is a tangent-space
+    // SLOPE, so it lives in x and y; z moves for any base that is not exactly
+    // unit length, purely from renormalizing. Counting z made this number
+    // decorative too -- measured, the same copy-through mutation still reported
+    // 1,048,534 of 1,048,576 "moved" because renormalizing had touched z on
+    // almost every texel.
+    size_t moved = 0;
+    for (size_t i = 0; i + 1 < baked->size(); i += 4) {
+        if ((*baked)[i] != base.constBits()[i] || (*baked)[i + 1] != base.constBits()[i + 1]) {
+            ++moved;
+        }
+    }
+
+    std::filesystem::path out = exportPath;
+    out.replace_extension();
+    out += "_normal.png";
+    const QImage img(baked->data(), base.width(), base.height(), QImage::Format_RGBA8888);
+    if (!img.save(QString::fromStdString(out.string()))) {
+        std::fprintf(stderr, "cannot bake the wrinkle: cannot write %s\n", out.string().c_str());
+        return std::nullopt;
+    }
+    std::printf("baked the wrinkle into %s at %.2f (%zu of %zu texels moved)\n",
+                out.filename().string().c_str(), static_cast<double>(choice.weight), moved,
+                baked->size() / 4);
+    return out;
 }
 
 /// Applies @p rig's pose to @p mesh in place, and says why if it cannot.
@@ -1445,7 +1546,13 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     // the previous one. So it is all or nothing, and if it is nothing the user
     // hears about it: the body had a perfectly good material and lost it
     // because something it was wearing did not.
-    const auto bodyMat    = bodyMaterial();
+    auto bodyMat = bodyMaterial();
+    // The exported material points at the BAKE, not at the skin's own normal
+    // map. Overridden here rather than inside `bodyMaterial()` because the bake
+    // is named after the export and there is no export in that function.
+    if (bodyMat.has_value()) {
+        if (const auto baked = bakeWrinkleBeside(path, *bodyMat)) bodyMat->normalTexture = *baked;
+    }
     const bool allDressed = bodyMat.has_value() && std::ranges::all_of(worn, [](const auto& kv) {
                                 return kv.second.material.has_value();
                             });
@@ -2484,16 +2591,23 @@ int main(int argc, char** argv) {
             // consumer sets afterwards. None of glTF, FBX or UsdSkel has a
             // pose-driven shape to carry it in instead.
             //
-            // So the deformation genuinely cannot travel in this file. Saying
+            // So the DEFORMATION genuinely cannot travel in this file. Saying
             // nothing was the part that was wrong: the app printed "correctives:
             // N poses" and then wrote a file with none of them in it. Measured:
             // the .glb is byte-identical to one exported without --correctives
-            // (app_correctives_live_rig_unchanged pins that).
+            // (app_correctives_live_rig_unchanged pins that, against a manifest
+            // with no wrinkle in it).
+            //
+            // A WRINKLE SHEET is the exception, and the message says so: it
+            // reaches every format, baked into the material's normal map by
+            // `bakeWrinkleBeside`, because a texture has somewhere to go in
+            // these formats and a pose-driven vertex delta does not.
             if (gCorrectives != nullptr) {
                 std::fprintf(stderr,
-                             "warning: correctives do not reach a live-rig %s -- the file "
-                             "carries REST geometry and a pose-space corrective is not a rest "
-                             "shape. Export .obj for the corrected, baked mesh.\n",
+                             "warning: corrective geometry does not reach a live-rig %s -- the "
+                             "file carries REST geometry and a pose-space corrective is not a "
+                             "rest shape. Export .obj for the corrected, baked mesh. (A wrinkle "
+                             "sheet DOES travel, baked into the normal map.)\n",
                              outExt.c_str());
             }
             // Kept so the interactive path can undo this; see the restore below.

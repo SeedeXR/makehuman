@@ -4,6 +4,105 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-10 (fifty-sixth) — Session · **The wrinkle survives an export, and three gates of mine were decorative in one chunk**
+
+*2026-09-10 — closing the gap the last chunk opened: the app was reporting a
+crease and then writing files with none in them.*
+
+### What landed
+`foundation::bakeWrinkleIntoNormalMap` (Apache-2.0), and the app writing
+`<stem>_normal.png` beside every export with the exported material pointing at
+it. 7 unit cases, 3 app tests, 7 mutations.
+
+### A blend shape was the wrong answer, and my own note said otherwise
+`todo.md` said the fix was "a blend shape at the fired weight", carried over by
+analogy from the corrective case. A blend shape moves VERTICES; a wrinkle map
+perturbs normals. glTF, FBX and UsdSkel each give a material exactly ONE normal
+texture, so the only thing an export can carry is the blend already **baked** at
+the pose being written.
+
+### The shaders' arithmetic, not its own
+Two implementations of one blend is how an exported file and the viewport come to
+disagree about a character, so the bake is checked against the shader formula
+written out longhand in the test rather than copied from the implementation.
+
+Normalizing before the TBN transform is what makes it bakeable at all: the basis
+is orthonormal, so `normalize(TBN*v) == TBN*normalize(v)` and the world normal is
+the same either way.
+
+Nearest-neighbour from texel CENTRES: the shipped pairing is a 1024x1024
+`skin_normal.png` under a 256x256 sheet, so a mismatch is the normal case rather
+than an error. Bilinear would interpolate packed normals across a crease edge and
+invent a slope in neither texel.
+
+### THREE gates decorative in one chunk, each found by mutation
+1. `files_differ` between the bake and the skin's own normal map. The sidecar is
+   a **re-encoded PNG**, so it differs byte-for-byte whatever its pixels say —
+   a bake mutated to copy the base through unchanged passed it. Deleted, not
+   weakened, with the reason left in place of it.
+2. Its replacement counted moved texels over RGB. **z moves for any base that
+   is not exactly unit length**, purely from renormalizing, so the same
+   copy-through mutation still reported 1,048,534 of 1,048,576 "moved".
+3. The count over **x and y only** is the one with teeth — 994,383 of 1,048,576
+   on the shipped pairing, and 0 under the mutation. The crease is a
+   tangent-space slope; it lives in xy, and z is derived.
+
+Two more of the same kind:
+- The nearest-sampler case asserted only that the four quadrants DIFFER, which a
+  **transposed** sampler passes — all four texels are still distinct, just in the
+  wrong corners. It asserts the ascending order now, which pins which texel
+  landed where.
+- `[0-9]{6,}` in a `PASS_REGULAR_EXPRESSION` matched **literally**: CMake's regex
+  flavour has no brace repetition, and the case failed against a line that was
+  plainly correct. The digit classes are spelled out.
+
+### A test premise of mine was wrong about the data
+"Weight zero leaves the base alone, within one LSB" — measured, (130,120,250)
+has a length of 0.9628, so normalizing lengthens z from 250 to **255**. Five
+LSB, from an entirely ordinary pixel.
+
+The case asserts INDEPENDENCE now: two different sheets at weight zero must bake
+to identical bytes. That is a stronger claim than either matching the base, and
+one no round-trip error can flatter. A separate case keeps the round-trip claim
+where it is actually true — a unit-length base.
+
+### The full gate run caught a cross-feature break
+`app_correctives_live_rig_unchanged`, written two chunks ago, asserts a live-rig
+`.glb` is byte-identical with and without `--correctives`. It failed, correctly:
+the shipped fixture gained a wrinkle sheet, and a wrinkle **does** reach a
+live-rig `.glb`, baked into the material's normal texture, which a GLB embeds.
+
+So the case now uses `nowrinkle.json` on both sides to isolate the geometry it is
+about, and the app's warning was overclaiming — it says **corrective geometry**
+does not reach a live rig now, and adds that a wrinkle sheet does. A texture has
+somewhere to go in these formats; a pose-driven vertex delta does not.
+
+The gate run was stopped at the first failure rather than left to fail three more
+presets, and re-run after the fix.
+
+### Looked at the baked map
+It carries the crease bands as green/magenta around neutral blue, which is what a
+tangent-space map of horizontal ridges looks like. The shipped `skin_normal.png`
+is subtle enough that the crease dominates it entirely at weight 0.98.
+
+### Correct at the exported pose and nowhere else
+A consumer that re-poses the exported rig keeps these creases. That is the
+formats' limitation, and unlike the correctives' rest capture there is no better
+alternative to refuse in favour of — so it is stated in the header rather than
+left to be discovered.
+
+### Gates
+Debug, release, ASan, TSan, one preset at a time, ALLDONE read. clang-format
+clean with CI's exact command. Sonar gate OK with 0 open issues.
+
+### Next
+Step 5's remaining named items are **groom, PBR skin assets and the eye/teeth
+rig** — and of those only the eye/teeth rig is code rather than authored
+content. Directive 12.3 is explicit that it is skeleton and constraint work and
+that expressing it as correctives is "a trap".
+
+---
+
 ## 2026-09-10 (fifty-fifth) — Session · **One evaluator, two consumers — and a gate of mine that was measuring the wrong variable**
 
 *2026-09-10 — the wiring chunk. Directive 12.3's "one pose-signal evaluator,
