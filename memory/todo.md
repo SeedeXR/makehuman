@@ -2256,15 +2256,30 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `setRigName` necessarily runs before the document loads — the flag is
       available first — so the file's choice is applied right after the load,
       and only when `--rig` was not given. Same precedence for `--pose`.
-      **`--skin` is deliberately NOT saved.** The reference's line is
-      `skinMaterial <path to a .mhmat>` (`3_libraries_material_chooser.py:304`),
-      and our `--skin` names a **litsphere PNG**, not a material — writing it as
-      `skinMaterial` would be a lie about what the value is. Blocked on the
-      `--skin`/`--litsphere` naming decision, which is now TAKEN — the flag is
-      `--litsphere` and the honest key is available. **Saving it in `.mhm` is
-      the remaining work**, and is its own chunk: it adds a key to the file
-      format, so directive 14.4 applies (this version forward, unknown
-      versions refused).
+      **The litsphere IS saved now** (2026-09-11), under its own honest
+      `litsphere` key rather than the reference's `skinMaterial` — that line
+      names a `.mhmat` and a litsphere is a viewport matcap, which is the whole
+      reason the flag was renamed. It travels in `unhandled`, like every other
+      app-level key here, so a file this writes still loads in MakeHuman 1.x —
+      the commitment `core/Mhm.h` makes outright. Command line beats file, the
+      same precedence as the rig, pose, eye colour and material.
+      - **`skin` was assigned only on the WINDOW path**, so a headless `--save`
+        wrote an empty value — which `recordLine` reads as "remove the key", so
+        the file recorded nothing at all. It is seeded from the CHOOSER now,
+        before the save block, which is also the validated value: an unknown
+        `--litsphere` has already fallen back to the documented default by then.
+      - **A gate of mine was decorative, and the mutation found it.** The reload
+        case asserted only the `(from the file)` MESSAGE, so a mutation that
+        read the line, printed it and threw the value away passed all twelve
+        cases. It renders now and compares — equal to an explicit
+        `--litsphere african`, different from an overridden one.
+      - **Both sides of that comparison must LOAD the same file.** Comparing the
+        reload against a render that loaded nothing failed for the uninteresting
+        reason: the saved file also carries a skeleton and a camera the direct
+        render never had.
+      - **And every render in it names `--skin-material african_light`**,
+        because the default material has autoBlendSkin on and would make all
+        three files identical whatever the code did.
 - [ ] **The other six choosers are not saved**, for want of the choosers
       themselves — `recordProxy`/`proxyFromDocument` take the slot name, so each
       is one line once its asset group exists.

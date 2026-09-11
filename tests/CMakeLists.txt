@@ -745,6 +745,81 @@ if(MH_HAVE_RENDER)
     # exports DefaultSkin, which is correct and reads as a bug. Renaming it says
     # what it is; the alias means nobody's muscle memory breaks.
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lits)
+    # The litsphere SURVIVES a save and reload.
+    #
+    # It was deliberately not saved while the flag was called `--skin`: the
+    # reference's line is `skinMaterial <path to a .mhmat>` and a litsphere PNG
+    # is not a material, so writing one there would have misdescribed the value.
+    # The rename settled that, and the key is its own honest `litsphere` line.
+    #
+    # It goes in `unhandled`, which is how every app-level key here travels --
+    # the reference keeps lines it does not interpret, so a file this writes
+    # still loads in MakeHuman 1.x, which `core/Mhm.h` commits to outright.
+    add_test(NAME app_litsphere_save COMMAND makehuman
+             --litsphere african --skin-material african_light
+             --save ${CMAKE_CURRENT_BINARY_DIR}/lits/saved.mhm)
+    set_tests_properties(app_litsphere_save PROPERTIES FIXTURES_SETUP app_lits_saved)
+    add_test(NAME app_litsphere_save_line COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/lits/saved.mhm
+             "-DKEYS=litsphere african"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_litsphere_save_line PROPERTIES
+        FIXTURES_REQUIRED app_lits_saved)
+    # Reloading it has to APPLY the value, not merely announce it.
+    #
+    # This case asserted only the "(from the file)" message at first, and a
+    # mutation that read the line, printed it and then threw the value away
+    # passed all twelve cases. So it renders, and the render is compared: equal
+    # to an explicit `--litsphere african`, and different from `caucasian`.
+    #
+    # Every render here names `--skin-material african_light` because the
+    # DEFAULT material has autoBlendSkin on, which overrides the litsphere
+    # entirely -- under it these three files would be identical whatever the
+    # code did.
+    add_test(NAME app_litsphere_reload COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/lits/saved.mhm
+             --render ${CMAKE_CURRENT_BINARY_DIR}/lits/reloaded.png)
+    set_tests_properties(app_litsphere_reload PROPERTIES
+        PASS_REGULAR_EXPRESSION "litsphere african \\(from the file\\)"
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_REQUIRED app_lits_saved
+        FIXTURES_SETUP app_lits_reloaded)
+    # Both sides LOAD the same file, so the character, rig, modifiers and camera
+    # are identical and the litsphere is the only variable. Comparing the reload
+    # against a render that loaded NOTHING was the first attempt and it failed
+    # for the uninteresting reason: the saved file also carries a skeleton and a
+    # camera the direct render never had.
+    add_test(NAME app_litsphere_reload_explicit COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/lits/saved.mhm --litsphere african
+             --render ${CMAKE_CURRENT_BINARY_DIR}/lits/reload_explicit.png)
+    set_tests_properties(app_litsphere_reload_explicit PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render" FIXTURES_SETUP app_lits_rex)
+    add_test(NAME app_litsphere_reload_matches_explicit COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/lits/reloaded.png
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/lits/reload_explicit.png
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_identical.cmake)
+    set_tests_properties(app_litsphere_reload_matches_explicit PROPERTIES
+        FIXTURES_REQUIRED "app_lits_reloaded;app_lits_rex")
+    # ...and the file's value is not just the default arriving by another route.
+    add_test(NAME app_litsphere_reload_is_not_the_default COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/lits/reloaded.png
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/lits/override.png
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_litsphere_reload_is_not_the_default PROPERTIES
+        FIXTURES_REQUIRED "app_lits_reloaded;app_lits_override")
+    # The command line WINS over the file -- same precedence as the rig, the
+    # pose, the eye colour and the skin material. Without this the flag would be
+    # silently ignored for any character that had ever been saved.
+    add_test(NAME app_litsphere_flag_beats_file COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/lits/saved.mhm --litsphere caucasian
+             --render ${CMAKE_CURRENT_BINARY_DIR}/lits/override.png)
+    set_tests_properties(app_litsphere_flag_beats_file PROPERTIES
+        FAIL_REGULAR_EXPRESSION "litsphere african \\(from the file\\)"
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_REQUIRED app_lits_saved
+        FIXTURES_SETUP app_lits_override)
+
+
     add_test(NAME app_litsphere_new_name COMMAND makehuman
              --skin-material african_light --litsphere african
              --render ${CMAKE_CURRENT_BINARY_DIR}/lits/new.png)

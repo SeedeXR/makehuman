@@ -4,6 +4,63 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-11 (sixty-second) — Session · **The litsphere survives a save, and a gate that checked the message instead of the effect**
+
+*2026-09-11 — the chunk the rename unblocked. Directive 14.4 applies: a new key
+in the file format, this version forward.*
+
+### What landed
+`.mhm` carries a `litsphere` line now, under its own honest key rather than the
+reference's `skinMaterial` — that line names a `.mhmat`, and a litsphere is a
+viewport matcap, which is the whole reason the flag was renamed. It travels in
+`unhandled`, like every other app-level key here, so a file this writes still
+loads in MakeHuman 1.x — the commitment `core/Mhm.h` makes outright. Command
+line beats file, the same precedence as the rig, pose, eye colour and material.
+
+### `skin` was assigned only on the window path
+A headless `--save` wrote an EMPTY value, and `recordLine` reads empty as
+"remove the key" — so the file recorded nothing at all and the first save test
+failed with no line to find. It is seeded from the CHOOSER now, before the save
+block, which is also the validated value: an unknown `--litsphere` has already
+fallen back to the documented default by then.
+
+### A gate of mine checked the MESSAGE, not the EFFECT
+The reload case asserted only `litsphere african (from the file)`. A mutation
+that read the line, printed it, and threw the value away **passed all twelve
+cases** — because the `printf` was still there and the assertion never looked at
+a pixel.
+
+It renders now and compares two ways: equal to an explicit `--litsphere african`,
+and different from an overridden one. Both comparisons catch that mutation.
+
+Two things had to be right for those comparisons to mean anything, and both were
+learned by getting them wrong first:
+
+- **Both sides must LOAD the same file.** Comparing the reload against a render
+  that loaded nothing failed immediately — the saved file also carries a
+  skeleton and a camera the direct render never had, so the images differed for
+  reasons with nothing to do with the litsphere.
+- **Every render must name `--skin-material african_light`.** The default
+  material has `autoBlendSkin` on, which overrides the litsphere entirely, so
+  under it all three files would be identical whatever the code did. The
+  previous chunk found that; this one depends on it.
+
+### Mutations
+Four, all caught after the gate was rebuilt: nothing written, the value read and
+discarded, the precedence inverted, and the `skinmat_` prefix left on the saved
+name. Two of the four did not compile on the first attempt (`-Wunused-function`,
+`-Wself-assign-overloaded`) and were rewritten — a mutation that does not
+compile proves nothing, and the stale binary reports a pass.
+
+### Also
+Two code comments still called the rename "a pending owner question". Updated.
+
+### Gates
+Debug, release, ASan, TSan, one preset at a time, ALLDONE read. clang-format
+clean with CI's exact command. Sonar gate OK with 0 open issues.
+
+---
+
 ## 2026-09-11 (sixty-first) — Session · **`--litsphere`, and a flag that looked dead and was not**
 
 *2026-09-11 — the loop's trailing line still said "the next item is the jaw

@@ -927,9 +927,10 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(const std::string& curr
     // African tones unreachable to anyone not using the command line.
     //
     // NOT the same thing as the "Skin" group above, which lists LITSPHERES --
-    // viewport matcaps with no PBR data. Having both named "Skin" is exactly
-    // the collision the pending `--skin` -> `--litsphere` rename is about; this
-    // one is spelled out in full rather than competing for the short name.
+    // viewport matcaps with no PBR data. The FLAG collision is gone (`--skin`
+    // is `--litsphere` now, with the old name still working); the GROUP is
+    // still called "Skin" while listing litspheres, which is the same collision
+    // one layer up and is not yet done.
     mh::foundation::AssetGroup materials;
     materials.name = "Skin material";
     for (const std::string& stem : availableSkinMaterials()) {
@@ -1279,16 +1280,29 @@ std::optional<std::pair<int, int>> blendedSkinTone(const mh::core::Human& human,
     return std::pair{e.width, e.height};
 }
 
+/// The short name a litsphere PATH carries, e.g. `african` for
+/// `.../litspheres/skinmat_african.png`.
+///
+/// Derived rather than stored. The chosen litsphere already lives in main()'s
+/// `skin` path and the picker writes it there; a second variable holding the
+/// stem would be a copy to keep in sync, and the two would disagree the first
+/// time one of them was missed.
+std::string litsphereName(const std::filesystem::path& litsphere) {
+    const std::string stem             = litsphere.stem().string();
+    constexpr std::string_view kPrefix = "skinmat_";
+    return stem.starts_with(kPrefix) ? stem.substr(kPrefix.size()) : stem;
+}
+
 /// The body's own material, for export. Under the default litsphere shading the
 /// viewport shows none of this -- a matcap has no material response -- which is
 /// what `--shading pbr` exists to fix; either way a `.mhmat` is what a DCC tool
 /// gets.
 /// The chosen skin material's stem under `data/skins`, e.g. `african_deep`.
 ///
-/// Not a litsphere. `--skin` picks a viewport MATCAP and always has; this picks
-/// the material that is textured, shaded and exported. The two names are
-/// uncomfortably close and the `--skin` -> `--litsphere` rename is still an open
-/// owner question, so this one is spelled out in full rather than competing.
+/// Not a litsphere. `--litsphere` picks a viewport MATCAP (and answers to
+/// `--skin`, its old name); this picks the material that is textured, shaded
+/// and exported. The two were uncomfortably close until the rename, and this
+/// one stays spelled out in full rather than competing for the short name.
 std::string& skinMaterialRef() {
     static std::string name{"default"};
     return name;
@@ -2408,6 +2422,19 @@ int main(int argc, char** argv) {
             }
         }
     }
+
+    // The litsphere the file names, unless the command line overrode it -- the
+    // same precedence as the rig, the pose, the eye colour and the material.
+    // Applied by REPLACING the option's value, because that is what
+    // `buildAssetGroups` is handed a few lines below and what the picker then
+    // starts on.
+    std::string litsphereChoice = parser.value(skinOpt).toStdString();
+    if (!parser.isSet(skinOpt)) {
+        if (const auto fromDoc = valueFromDocument(document, "litsphere")) {
+            litsphereChoice = *fromDoc;
+            std::printf("litsphere %s (from the file)\n", fromDoc->c_str());
+        }
+    }
     // Parsed BEFORE the rig is loaded, because `loadPoseRig` is what applies it.
     // It was five lines below this call first time out, and the app rendered a
     // character staring straight ahead while reporting nothing at all.
@@ -2531,8 +2558,8 @@ int main(int argc, char** argv) {
     // whatever --skin-material or the loaded .mhm chose, so the picker starts
     // on the material actually in use instead of on `default`.
     const auto assetGroups =
-        buildAssetGroups(parser.value(poseOpt).toStdString(), parser.value(skinOpt).toStdString(),
-                         eyesChoice, skinMaterialRef(), rigNameRef(), eyeColourRef());
+        buildAssetGroups(parser.value(poseOpt).toStdString(), litsphereChoice, eyesChoice,
+                         skinMaterialRef(), rigNameRef(), eyeColourRef());
     // Announced so a test can see the picker was built at all -- a group that
     // silently ends up empty renders as a disabled combo box nobody notices.
     std::printf("asset groups: %zu (skin materials: %zu, rigs: %zu)\n", assetGroups.size(),
@@ -2541,7 +2568,16 @@ int main(int argc, char** argv) {
     // The body's material and everything worn, read by every rebuild. Skin is
     // a path rather than a call to setLitsphere because the viewport now takes
     // one material per mesh: the body's has to travel with the body.
-    std::filesystem::path skin;
+    // Seeded from the CHOOSER, not from the raw option, and here rather than in
+    // the window setup: `--save` runs below and needs to know which litsphere is
+    // in play. It used to be assigned only on the window path, so a headless
+    // save wrote an EMPTY litsphere line -- which `recordLine` reads as "remove
+    // the key", so the file recorded nothing at all.
+    //
+    // The chooser's value because it is the VALIDATED one: an unknown
+    // `--litsphere` has already fallen back to the documented default, with a
+    // warning, by the time the group is built.
+    std::filesystem::path skin = selectedChoice(assetGroups, "Skin");
     std::map<QString, WornProxy> wornProxies;
 
     // Put on whatever the choosers start with. Done here, before both --export
@@ -2573,6 +2609,11 @@ int main(int argc, char** argv) {
         // `skinMaterial <relative path>`, the line the reference writes
         // (3_libraries_material_chooser.py:305). Without it a textured
         // character reopened as the untextured default and the choice was gone.
+        // The litsphere, under its own honest key. It is NOT `skinMaterial`: that
+        // line names a .mhmat and this names a viewport matcap, which is the
+        // whole reason the flag was renamed. An unknown key to MakeHuman 1.x,
+        // which keeps lines it does not interpret.
+        recordLine(doc, "litsphere", litsphereName(skin));
         recordLine(doc, "skinMaterial", "skins/" + skinMaterialRef() + ".mhmat");
         recordLine(doc, "eyeMaterial", "eyes/materials/" + eyeColourRef() + ".mhmat");
         recordLine(doc, "skeleton", rig.loaded() ? rigNameRef() + ".mhskel" : std::string{});
