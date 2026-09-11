@@ -212,6 +212,31 @@ def build() -> tuple[dict[str, bytes], str]:
     )
 
 
+def is_stale(path: Path, fresh: bytes) -> bool:
+    """Whether the committed @p path disagrees with a freshly derived @p fresh.
+
+    The text files are compared byte for byte, but the PNG is compared by its
+    decoded PIXELS. Comparing PNG bytes was tried first and failed in CI while
+    passing locally. Reproduced in a linux/amd64 container with the same Pillow
+    (12.3.0) the runner installs, the difference was measured exactly: the
+    committed file is 27,922 bytes and the freshly derived one 28,660, and
+    `np.array_equal` on the decoded arrays is True. Same pixels, different
+    deflate stream -- the platform's zlib, not the library version and not the
+    float maths (both were checked and neither differs).
+
+    Pixels are what the renderer reads, so pixels are what this asks about. The
+    cost is that the gate no longer notices a re-encode that preserves every
+    pixel, which is exactly the change it should not care about.
+    """
+    if not path.exists():
+        return True
+    if path.suffix != ".png":
+        return path.read_bytes() != fresh
+    committed = np.asarray(Image.open(path).convert("RGB"))
+    regenerated = np.asarray(Image.open(io.BytesIO(fresh)).convert("RGB"))
+    return not np.array_equal(committed, regenerated)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--check", action="store_true",
@@ -221,8 +246,7 @@ def main() -> int:
     files, report = build()
 
     if args.check:
-        stale = [name for name, data in files.items()
-                 if not (OUT / name).exists() or (OUT / name).read_bytes() != data]
+        stale = [name for name, data in files.items() if is_stale(OUT / name, data)]
         if stale:
             print("stale generated teeth assets: " + ", ".join(sorted(stale)), file=sys.stderr)
             print("Re-run without --check to regenerate.", file=sys.stderr)
