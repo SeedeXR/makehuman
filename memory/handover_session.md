@@ -105,6 +105,33 @@ uuid` 20 → **22**. Those counts are pinned on purpose — "every material pars
 passes trivially when the loop finds none — so a new shipped asset is supposed
 to move them.
 
+### The one thing that got past every local gate
+`tools/make_teeth.py --check` compared the committed PNG **byte for byte**. It
+passed on this machine and on a fresh venv with a newer NumPy, and failed in CI
+on the first push (`91b95c67`, the `inventories` job). Fixed in `4db5094d`.
+
+Two explanations were formed and **both were wrong**, which is the part worth
+keeping:
+1. "Pillow encodes differently between versions" — disproved by building a
+   probe venv: same Pillow 12.3.0, newer NumPy, byte-identical output.
+2. "libm `pow` differs by an ulp and flips a truncation boundary" — disproved
+   by measuring: the only 42 channel values sitting exactly on an integer are
+   the flat corner fill, which never goes through `pow`.
+
+The answer came from reproducing CI rather than reasoning about it. In a
+`linux/amd64` container with the same Pillow the runner installs: the committed
+file is **27,922 bytes**, the freshly derived one **28,660**, and
+`np.array_equal` on the decoded arrays is **True**. Same pixels, different
+deflate stream — the platform's zlib.
+
+So the text files are still compared byte for byte and the PNG is compared by
+its decoded pixels. Verified inside that same container: the check passes, a
+single changed pixel still fails it, and it passes again once restored.
+
+**The rule**: a gate on a generated BINARY asset must compare what the consumer
+reads, not the file. `make_eyes.py --check` already did this (it compares
+arrays); the teeth gate was written the lazy way and CI caught it.
+
 ### Next
 Five of the six remaining slots have a helper cage to extract the same way
 (`helper-tongue`, `helper-hair`, the eyelash helpers). Clothes and the generic
