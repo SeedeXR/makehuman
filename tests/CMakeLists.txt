@@ -314,7 +314,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 6 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 7 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # The rig had no picker either: two ship, --rig has always chosen between
@@ -834,6 +834,82 @@ if(MH_HAVE_RENDER)
     # all: nothing else printed them, and a rename nothing can see is a rename
     # nothing can gate. Bracketed and comma-separated so "Skin material" cannot
     # satisfy a check meant for "Skin".
+    # THE TEETH SLOT -- the first of the seven empty proxy choosers to be filled.
+    #
+    # Directive 13.5: "if there are no assets or data from legacy, procedurally
+    # generate and wire through". Legacy ships NOTHING here -- measured, zero
+    # .mhclo under every one of the seven proxy directories, because upstream
+    # distributes them as downloadable asset packs.
+    #
+    # But the SHAPE was never missing: base.obj carries `helper-upper-teeth` and
+    # `helper-lower-teeth`, cage geometry that exists so a proxy can be fitted to
+    # it. `tools/make_teeth.py` extracts them, so nothing is invented.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/teeth)
+    add_test(NAME app_teeth_group COMMAND makehuman
+             --save ${CMAKE_CURRENT_BINARY_DIR}/teeth/g.mhm)
+    set_tests_properties(app_teeth_group PROPERTIES
+        PASS_REGULAR_EXPRESSION "asset groups: .*Teeth")
+    # Wearing them has to add GEOMETRY, not just a line of output.
+    add_test(NAME app_teeth_worn COMMAND makehuman
+             --teeth teeth --export ${CMAKE_CURRENT_BINARY_DIR}/teeth/worn.obj)
+    set_tests_properties(app_teeth_worn PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Teeth"
+        FAIL_REGULAR_EXPRESSION "export failed;cannot"
+        FIXTURES_SETUP app_teeth_worn)
+    add_test(NAME app_teeth_none COMMAND makehuman
+             --teeth none --export ${CMAKE_CURRENT_BINARY_DIR}/teeth/none.obj)
+    set_tests_properties(app_teeth_none PROPERTIES
+        FAIL_REGULAR_EXPRESSION "wearing Teeth"
+        FIXTURES_SETUP app_teeth_none)
+    add_test(NAME app_teeth_add_geometry COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/teeth/worn.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/teeth/none.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_teeth_add_geometry PROPERTIES
+        FIXTURES_REQUIRED "app_teeth_worn;app_teeth_none")
+    # The reason this slot is worth filling from the helper cage rather than
+    # from invented shape: the base mesh already weights `helper-upper-teeth`
+    # entirely to `head` and `helper-lower-teeth` entirely to `jaw`, so a jaw
+    # drop separates the two arches for free. This is the assertion that the
+    # teeth are RIGGED and not merely present -- 68 of the proxy's 136 vertices
+    # follow AU26 downwards and the other 68 do not move at all.
+    #
+    # `--facs AU26=1.0` is the jaw drop; the control export is the same
+    # character with no FACS at all, so the only difference between the two
+    # files is the pose.
+    add_test(NAME app_teeth_jaw_rest COMMAND makehuman
+             --teeth teeth --export ${CMAKE_CURRENT_BINARY_DIR}/teeth/jaw_rest.obj)
+    set_tests_properties(app_teeth_jaw_rest PROPERTIES FIXTURES_SETUP app_teeth_jaw_rest)
+    add_test(NAME app_teeth_jaw_open COMMAND makehuman
+             --teeth teeth --facs AU26=1.0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/teeth/jaw_open.obj)
+    set_tests_properties(app_teeth_jaw_open PROPERTIES FIXTURES_SETUP app_teeth_jaw_open)
+    add_test(NAME app_teeth_lower_follows_jaw COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/teeth/jaw_rest.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/teeth/jaw_open.obj
+             -DGROUP=teeth -DEXPECT_MOVED=68 -DEXPECT_STILL=68
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
+    set_tests_properties(app_teeth_lower_follows_jaw PROPERTIES
+        FIXTURES_REQUIRED "app_teeth_jaw_rest;app_teeth_jaw_open")
+    # And the round trip, which is what makes the `teeth` line in a .mhm worth
+    # writing: saved wearing them, the file names them and reopens wearing them.
+    add_test(NAME app_teeth_saved COMMAND makehuman
+             --teeth teeth --save ${CMAKE_CURRENT_BINARY_DIR}/teeth/saved.mhm)
+    set_tests_properties(app_teeth_saved PROPERTIES FIXTURES_SETUP app_teeth_saved)
+    add_test(NAME app_teeth_save_names_it COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/teeth/saved.mhm
+             "-DKEYS=teeth Teeth 7e3a6d94-2b51-4c8f-9a17-5d0c8e2f4b63"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_teeth_save_names_it PROPERTIES
+        FIXTURES_REQUIRED app_teeth_saved)
+    add_test(NAME app_teeth_reload_wears_them COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/teeth/saved.mhm
+             --export ${CMAKE_CURRENT_BINARY_DIR}/teeth/reloaded.obj)
+    set_tests_properties(app_teeth_reload_wears_them PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Teeth"
+        FIXTURES_REQUIRED app_teeth_saved)
+
+
     add_test(NAME app_group_is_litsphere COMMAND makehuman
              --save ${CMAKE_CURRENT_BINARY_DIR}/lits/groups.mhm)
     set_tests_properties(app_group_is_litsphere PROPERTIES
@@ -2211,7 +2287,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 6 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 7 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # Refused rather than silently defaulted to brown, which would make a typo

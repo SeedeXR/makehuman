@@ -345,3 +345,79 @@ TEST_CASE("the litsphere shader keeps the reference's exact terms", "[render][li
     CHECK(code.find("normal = normalize(vNormal)") == std::string::npos);
     CHECK(code.find("normal = vNormal") != std::string::npos);
 }
+
+// The teeth proxy has no diffuse texture, so under the litsphere shader the
+// matcap IS its colour: `outColor.rgb = shading * diffuse.rgb * comp` with a
+// white placeholder standing in for `diffuse` (litsphere.frag:157-162).
+//
+// That is why this test exists rather than a simple "the teeth render" count.
+// The teeth were first wired to the body's own skin matcap and DID render --
+// 36 px, every assertion a pixel count could make would have passed -- as
+// orange teeth indistinguishable from the lip in front of them. Only colour
+// catches that, so colour is what is asserted: the generated enamel matcap has
+// to leave the teeth markedly less saturated than the skin one does.
+TEST_CASE("the teeth matcap renders enamel rather than lip", "[render][proxy][teeth]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    core::Mesh mesh  = body();
+    const auto proxy = core::loadProxy(fs::path(MH_DATA_DIR) / "teeth" / "teeth.mhclo");
+    REQUIRE(proxy.has_value());
+
+    auto teethMesh = core::loadObj(proxy->objFile);
+    REQUIRE(teethMesh.has_value());
+    std::vector<foundation::Vec3> fitted;
+    REQUIRE(core::fitProxy(*proxy, mesh.coord(), fitted));
+    REQUIRE(teethMesh->setCoords(std::move(fitted)).has_value());
+    teethMesh->buildAdjacency();
+    teethMesh->calcNormals();
+    const auto teethRm = core::RenderMesh::build(*teethMesh);
+
+    const auto s      = fullFigure();
+    const auto enamel = fs::path(MH_DATA_DIR) / "teeth" / "skinmat_teeth.png";
+    REQUIRE(fs::exists(enamel));
+
+    // The proxy alone, both times. Worn, the lips occlude nearly all of it on
+    // an unposed mouth, and this test is about the colour of the enamel rather
+    // than about how much of it is visible.
+    const std::vector<render::MeshInstance> withEnamel{{teethRm.view(), enamel}};
+    const std::vector<render::MeshInstance> withSkin{{teethRm.view(), s.litsphere}};
+    const auto a = (*r)->render(withEnamel, s);
+    const auto b = (*r)->render(withSkin, s);
+    REQUIRE(a.has_value());
+    REQUIRE(b.has_value());
+
+    // Saturation as (max - min) / max over the drawn pixels: the difference
+    // between white and orange, and independent of how brightly either is lit.
+    const auto saturation = [&s](const QImage& img) {
+        const QColor bg = QColor::fromRgbF(s.background.x, s.background.y, s.background.z);
+        double total    = 0.0;
+        size_t n        = 0;
+        for (int y = 0; y < img.height(); ++y) {
+            for (int x = 0; x < img.width(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (std::abs(c.red() - bg.red()) <= 6 && std::abs(c.green() - bg.green()) <= 6 &&
+                    std::abs(c.blue() - bg.blue()) <= 6) {
+                    continue;
+                }
+                const int hi = std::max({c.red(), c.green(), c.blue()});
+                const int lo = std::min({c.red(), c.green(), c.blue()});
+                if (hi > 0) total += static_cast<double>(hi - lo) / hi;
+                ++n;
+            }
+        }
+        REQUIRE(n > 0);
+        return total / static_cast<double>(n);
+    };
+
+    const double enamelSat = saturation(*a);
+    const double skinSat   = saturation(*b);
+    INFO("enamel saturation " << enamelSat << " vs skin matcap " << skinSat);
+    // Measured: 0.035 under the enamel matcap, 0.583 under the skin one. The
+    // bounds are wide around those, but both are needed. `enamelSat < skinSat`
+    // alone passes on a matcap that is merely a paler orange, which is exactly
+    // the near miss a hand-tinted sphere produces.
+    CHECK(enamelSat < 0.10);
+    CHECK(skinSat > 0.40);
+}

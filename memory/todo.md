@@ -3343,11 +3343,34 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       - Pillow's `LICENSING.md` row was stale — it claimed `make_appicon.py` was
         the only user — and **NumPy was not recorded as ours at all**, only as a
         legacy-Python dependency. Both fixed (hard rule 6).
-- [ ] **OWNER DECISION: the seven empty proxy choosers.** They are blocked on
-      CONTENT, not code. Upstream ships these as separate downloadable asset
-      packs. Either (a) an asset-pack decision, or (b) generate proxies
-      procedurally as we did the skin textures. Building the choosers before
-      either would ship seven empty dropdowns.
+- [x] **SETTLED by directive 13.5, and the teeth slot is filled** (2026-09-11).
+      The seven empty proxy choosers were blocked on CONTENT, not code: upstream
+      ships these as separate downloadable asset packs. Directive 13.5 chose
+      (b), procedural generation. The teeth are the first one done, and they
+      are not invented: `data/3dobjs/base.obj` already carries
+      `helper-upper-teeth` (68 verts, every one dominated by `head`) and
+      `helper-lower-teeth` (68 verts, every one dominated by `jaw`) as cage
+      geometry precisely so a proxy can be fitted to it. `tools/make_teeth.py`
+      extracts both groups, renumbers them, and writes an IDENTITY `.mhclo`
+      (each vertex on its own base vertex at weight 1,0,0), so the proxy tracks
+      the helper for every body shape and every pose with no interpolation
+      error. The rigging then falls out of the base mesh's own weights:
+      measured, `--facs AU26=1.0` moves exactly 68 of the 136 vertices, all of
+      them downwards, and leaves the other 68 untouched.
+      - **The enamel matcap had to be generated too, and only a RENDER caught
+        that.** The teeth material carries no diffuse texture, and
+        `litsphere.frag:157-162` multiplies the matcap by the diffuse texture
+        alone -- so with the white placeholder standing in, the matcap IS the
+        colour. Wired to the body's skin litsphere the teeth rendered at RGB
+        (233, 155, 123): orange, the same as the lip in front of them. Every
+        pixel-COUNT assertion passed on that. `tools/make_teeth.py` now derives
+        `data/teeth/skinmat_teeth.png` from the skin matcap's luminance, which
+        keeps the light coming from the same direction as on the face; the new
+        render test asserts SATURATION (0.035 vs 0.583), not coverage.
+      - **`proxyFromDocument` searched `data/eyes` whatever the slot**, so the
+        `teeth` line a save wrote round-tripped into "no teeth proxy with UUID
+        ...; using the default". The slot IS the directory; fixed there rather
+        than by adding a second hardcoded path.
 - [x] **The picker group is "Litsphere" now** (2026-09-11), so nothing in the
       panel is called Skin except the materials. "Skin" listed viewport MATCAPS
       while "Skin material" listed the eight textured `.mhmat` files, side by
@@ -3500,9 +3523,17 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       silhouette, so the check is luminance range (29..212 -> 21..227).
       Pinned by the new `app_screenshot` ctest — `app_smoke` returns at
       `--export` before the asset groups exist and never reaches this wiring.
-- [ ] The remaining seven proxy choosers (clothes, hair, teeth, tongue,
-      eyebrows, eyelashes, generic proxy). The machinery is in place; each needs
-      its asset group and a litsphere/material choice.
+- [ ] The remaining SIX proxy choosers (clothes, hair, tongue, eyebrows,
+      eyelashes, generic proxy). Teeth are done (above) and are the template:
+      extract the helper cage from `base.obj`, write an identity `.mhclo`, and
+      generate the matcap from the skin one. `helper-tongue` and `helper-hair`
+      exist in the base mesh; the eyelash helpers do too. Clothes and the
+      generic proxy have NO helper cage and stay blocked on content.
+- [ ] **OWNER DECISION: should the teeth be worn by DEFAULT?** `--teeth`
+      defaults to `none` today, so a character opens toothless and an open
+      mouth is empty. Defaulting to `teeth` is the anatomically right answer but
+      changes the geometry of every existing export and golden fixture, which is
+      the owner's call rather than a silent flip.
 - [x] **Proxy `delete_verts` now reach the body — and the OBJ export was
       leaking the helper cages.** `visibleVertexMask` and
       `Mesh::faceMaskForVisibleVertices` existed and were tested, but

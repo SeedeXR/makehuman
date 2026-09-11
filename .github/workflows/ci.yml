@@ -325,6 +325,14 @@ jobs:
       - name: Generated eye colours match their generator
         run: python3 tools/make_eyes.py --check
 
+      # The teeth proxy is derived from `data/3dobjs/base.obj`'s own
+      # `helper-*-teeth` cage, and its matcap from `skinmat_caucasian.png`.
+      # Either source could be retouched and the committed proxy would go on
+      # describing the old geometry in silence, so the derivation is re-run here
+      # and compared byte for byte.
+      - name: Generated teeth assets match their generator
+        run: python3 tools/make_teeth.py --check
+
       # ONE product version, in /VERSION. CMake reads it, the generated
       # Version.h carries it, and the two files that cannot read it -- the
       # SonarQube properties among them -- are checked against it here. The

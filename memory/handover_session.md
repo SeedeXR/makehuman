@@ -4,6 +4,118 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-11 (sixty-fourth) — Session · **The first of the seven proxy slots is filled, and it came out of the base mesh**
+
+*2026-09-11 — directive 13.5, "if there are no assets or data from legacy,
+procedurally generate and wire through".*
+
+### What landed
+A **Teeth** proxy chooser, wired end to end: `--teeth`, the picker group, the
+`.mhm` round trip, and the viewport.
+
+Legacy ships **zero** `.mhclo` for all seven proxy slots — measured, not
+assumed — because upstream distributes them as downloadable asset packs. But
+the SHAPE was never missing. `data/3dobjs/base.obj` carries `helper-upper-teeth`
+and `helper-lower-teeth`: cage geometry that exists precisely so a proxy can be
+fitted to it, hidden from the render by the static face mask.
+
+`tools/make_teeth.py` extracts both groups and writes `data/teeth/teeth.obj`
+(136 verts, 96 faces, 136 uvs), `teeth.mhclo` and `materials/teeth.mhmat`. The
+fitting is the **identity** — each proxy vertex names its own base vertex at
+weight (1, 0, 0) with a zero offset — so the proxy sits exactly on the helper
+for every body shape and every pose, with no interpolation error to accumulate.
+
+The rigging then falls out of the base mesh's own weights, and that was checked
+rather than assumed:
+
+    helper-upper-teeth   68 verts, every one dominated by `head`
+    helper-lower-teeth   68 verts, every one dominated by `jaw`
+
+Measured on the exports: `--facs AU26=1.0` moves **exactly 68 of the 136**
+vertices, every one of them downwards (dY -0.2538..-0.0940), and leaves the
+other 68 at a delta of exactly 0.
+
+### The bug only a RENDER could find
+The teeth were first shaded with the body's own skin litsphere. They rendered —
+36 changed pixels with the mouth stretched — and **every pixel-count assertion
+a test could make would have passed**. Cropped and looked at, they were orange:
+mean RGB (233, 155, 123), the same colour as the lip in front of them.
+
+The cause is in the shader. The teeth material carries no diffuse texture and
+`litsphere.frag:157-162` multiplies the matcap by the diffuse texture alone, so
+with the white placeholder standing in, **the matcap IS the colour**. The only
+other shipped matcap is `skinmat_eye.png`, measured at (45, 25, 13) in the
+centre — that would have rendered the teeth nearly black.
+
+So the matcap is generated too, and generated **from the skin matcap's
+luminance** rather than from scratch: re-tinting keeps the light coming from
+exactly the same direction as on the face around it, where an invented sphere
+would have lit the teeth from its own private sun. After the fix the teeth
+render at mean RGB (221, 185, 168) and read as a clear white band across an
+open mouth.
+
+`data/teeth/skinmat_teeth.png` lives **beside the teeth, not in
+`data/litspheres/`**: that directory is what the body-skin chooser enumerates,
+and the eye matcap only escapes becoming a selectable body skin by a substring
+test on "eye" (`main.cpp:888`) — the kind of rule that quietly swallows the next
+asset whose name happens to match.
+
+### A latent bug the round trip surfaced
+`proxyFromDocument` resolved a `.mhm` proxy line's UUID against a **hardcoded
+`data/eyes`** whatever the slot. The teeth line saved correctly and reloaded
+into "no teeth proxy with UUID ...; using the default" — the record thrown away
+in silence. The slot IS the directory; fixed there rather than by adding a
+second hardcoded path, so the remaining six slots inherit the fix.
+
+### The gates
+`tests/obj_group_moved.cmake` is new: it takes two OBJ exports of the same
+character, counts how many of a named group's vertices moved, and requires every
+one that moved to have gone **down**.
+
+Two things it does NOT do, both learned by trying them:
+- It does not separate the arches by a horizontal plane. They overlap in Y —
+  the lowest upper-teeth vertex sits at 14.8720 and the highest lower-teeth
+  vertex at 14.9174 — so no plane exists.
+- It does not compare the vertex lines as **text**. That over-counted by four:
+  a vertex on the midline is written `0.0000` in the rest export and `-0.0000`
+  in the posed one, because the pose multiply produces a negative zero. Same
+  point, different characters. The comparison is numeric per component.
+
+The render gate asserts **saturation**, not coverage: 0.035 under the enamel
+matcap against 0.583 under the skin one, with both bounds pinned rather than
+just `a < b`, because `a < b` passes on a matcap that is merely a paler orange.
+
+### Mutations run (all killed their intended test)
+1. Enamel matcap → skin matcap: the render test fails (0.583 < 0.10).
+2. Teeth wear block deleted: `app_teeth_worn`, `app_teeth_add_geometry`,
+   `app_teeth_lower_follows_jaw`, `app_teeth_save_names_it`,
+   `app_teeth_reload_wears_them` all fail.
+3. `proxyFromDocument` back to the hardcoded `data/eyes`:
+   `app_teeth_reload_wears_them` fails.
+4. The lower arch re-pointed at the upper helper's base vertices (so both would
+   ride `head`): `app_teeth_lower_follows_jaw` fails.
+
+And the GATE itself, three ways: A and B swapped (fails on "did not go down"),
+the same file twice (fails on 0 moved), an unknown group name (fails on "no
+group with faces").
+
+### Two inventory tests moved, honestly
+`every shipped material parses` 16 → **17** and `the shipped assets index by
+uuid` 20 → **22**. Those counts are pinned on purpose — "every material parses"
+passes trivially when the loop finds none — so a new shipped asset is supposed
+to move them.
+
+### Next
+Five of the six remaining slots have a helper cage to extract the same way
+(`helper-tongue`, `helper-hair`, the eyelash helpers). Clothes and the generic
+proxy have none and stay blocked on content.
+
+**Open for the owner:** `--teeth` defaults to `none`, so a character opens
+toothless. Defaulting to `teeth` is anatomically right but changes the geometry
+of every existing export and golden fixture.
+
+---
+
 ## 2026-09-11 (sixty-third) — Session · **Nothing in the panel is called Skin except the materials**
 
 *2026-09-11 — the last of the naming collision. The flag half went two chunks
