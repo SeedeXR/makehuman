@@ -3566,6 +3566,62 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       for fitting a groom to, and it passes in front of the face by
       construction. Keep it as a placeholder, or hide the slot until a real
       groom asset exists? Everything else about it is done either way.
+- [ ] **Textured-Black hair styles (afro, locs, cornrows, bantu knots).** Asked
+      for directly by the owner. ATTEMPTED 2026-09-11 and NOT SHIPPED: five
+      generate-render-look iterations produced silhouettes too crude to carry
+      the names, and shipping a bad "Cornrows" is worse than shipping none.
+      Nothing was committed. What was learned is all measured, and is the whole
+      reason the next attempt should be cheap:
+      - **The proxy machinery is not the problem — it is already sufficient.**
+        `src/core/Proxy.cpp:435-438` implements the general fit
+        `P = SUM w_k*H[v_k] + M*d`, so authored geometry that is NOT in the base
+        mesh can be bound to the scalp by three base vertices, barycentric
+        weights and an offset. A generator did this end to end: all four styles
+        loaded, wore, rendered, and cost **zero** C++ changes, because
+        `main.cpp:981` enumerates every `.mhclo` under `data/hair` and
+        `slotLitsphere` is per-SLOT, not per-style.
+      - **Fitting runs on the rest/morphed body; skinning happens afterwards**
+        (`wornSkins`/`rig::proxyWeights`, `main.cpp:1502-1512`). So an authored
+        offset lives in rest space and must NOT be rotated by hand — a style
+        anchored to the scalp is skinned by the scalp and follows a head turn
+        for free. This is what makes a 0.6 dm standoff correct here.
+      - **Offsets of this size are new to the repo.** Everything shipped is
+        either identity-fit (teeth, tongue, hair: max |offset| 0.0000) or
+        surface-hugging (high-poly eyes: 0.0294). The styles reached 0.58-1.24.
+      - **Do NOT grow hair from `helper-hair`.** It is the obvious source and it
+        is wrong: it is a long-hair envelope carrying ribbons down over the
+        face, so an afro grown from its topology renders as strips over the
+        eyes. Use the BODY scalp. Measured: base-mesh head above y=6.0 spans
+        x +-0.879, y 6.000..8.491, z -0.392..1.681; cranium centre
+        **(0, 7.75, 0.50)**; forehead sits at ~+9 degrees elevation in that
+        frame, brow -13, ears -25, nape -50, so a hairline of
+        `-19 + 31*cos(theta)` degrees is right and `14 + 20*cos(theta)` (tried
+        first, in a frame 0.2 dm too low) puts every style in a band across the
+        crown that reads as a headband.
+      - **`loadObj` rejects a vertex referenced by no face** (LooseVertex,
+        `src/core/ObjReader.cpp:235-243`). Selecting scalp vertices by radius
+        and then keeping only whole faces leaves boundary vertices loose, and
+        the whole proxy silently fails to load — which renders as a BALD HEAD,
+        not an error the gates would catch. Keep only vertices a surviving face
+        uses.
+      - **The actual blocker, and why tuning stopped.** Styles were placed by
+        casting a ray from the head centre onto the scalp. The scalp is not a
+        closed dome — mapped over a direction grid it misses straight up, dead
+        front and dead back, because `helper-hair`/the body scalp carry seams
+        there. A nearest-direction FALLBACK for missed rays looked robust and
+        was the trap: it silently collapses every miss onto the scalp rim, so
+        wide sweeps pile up at the front edge instead of distributing. Cornrows
+        and bantu knots were unchanged by two rounds of retuning for exactly
+        this reason. **The fix is not a parameter: placement must WALK THE
+        SCALP SURFACE (geodesic paths over the mesh), not raycast from a
+        centre.** That is the next attempt's first task.
+      - Hanging styles additionally need collision: locs rooted on the forehead
+        fall straight over the eyes. An outward horizontal bias helps and is not
+        enough; strands need to be pushed outside the head silhouette.
+      - Still true and still needed regardless: the slot has ONE matcap for all
+        styles, so every style renders the same colour, and real hair of any
+        texture needs alpha-cut strand cards plus a shader that does
+        transmission. A per-style colour chooser is the cheapest real win here.
 - [ ] The remaining FOUR proxy choosers (clothes, eyebrows, eyelashes, generic
       proxy). The four eyelash helpers (60/65 per side, dominated by
       `orbicularis04.L/R`) exist in the base mesh and are the next cheap slot;
