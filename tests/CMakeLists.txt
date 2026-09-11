@@ -314,7 +314,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 9 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 10 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # The rig had no picker either: two ship, --rig has always chosen between
@@ -1066,6 +1066,155 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_hair_reload_wears_it PROPERTIES
         PASS_REGULAR_EXPRESSION "wearing Hair"
         FIXTURES_REQUIRED app_hair_saved)
+
+    # ------------------------------------------------------------------
+    # Clothes: the first slot holding SEVERAL choosable assets. Teeth combined
+    # two cages into ONE proxy; here two cages stay two garments the user picks
+    # between, which is what made `Slot.slot` separate from `Slot.key`.
+    #
+    # Measured from data/rigs/default_weights.mhw, the two cages have
+    # different shapes: `helper-skirt` is 720 vertices spread across both
+    # upperlegs, both lowerlegs and spine04, and `helper-tights` is 2674
+    # reaching from spine01/02 down to foot.L and foot.R (140 each).
+    #
+    # `helper-genital` is deliberately NOT here. It is a genitalia fitting
+    # cage, not a garment: RENDERED AND LOOKED AT, a proxy cut from it is an
+    # anatomical bulge in fabric colour, and calling it "Briefs" would have
+    # shipped a mislabel that every count and every gate passed happily. It
+    # belongs to a future genitalia slot, not to Clothes.
+    #
+    # So one input separates them, and it is a MORPH rather than a pose, which
+    # is the half the teeth/tongue/hair trio never exercised. Measured on the
+    # exports, `r-foot-trans-in|out=1.0` moves 118 of the skirt's 720 and 412
+    # of the tights' 2674, while the body moves the same 1324 vertices in both
+    # cases: two garments in one slot, two different answers to one input,
+    # which a slot that special-cased its garments could not produce. The zero
+    # case is the jaw drop below.
+    #
+    # The morph is a TRANSLATION on purpose. `r-foot-scale` was the obvious
+    # choice and is confounded: the tights cover the feet, so they become the
+    # model's lowest point, and scaling the foot re-grounds the whole character
+    # -- measured, every one of the 13380 body vertices and all 2674 tights
+    # vertices shifted by a uniform 0.0138. The skirt showed 0 under the same
+    # morph only because it does not reach the sole, so the gate would have
+    # looked like it was discriminating when it was reading a global
+    # translation. Moving the foot sideways changes no ground contact.
+    # ------------------------------------------------------------------
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/clothes)
+    add_test(NAME app_clothes_group COMMAND makehuman
+             --save ${CMAKE_CURRENT_BINARY_DIR}/clothes/g.mhm)
+    set_tests_properties(app_clothes_group PROPERTIES
+        PASS_REGULAR_EXPRESSION "asset groups: .*Clothes")
+
+    add_test(NAME app_clothes_none COMMAND makehuman
+             --clothes none --export ${CMAKE_CURRENT_BINARY_DIR}/clothes/none.obj)
+    set_tests_properties(app_clothes_none PROPERTIES
+        FAIL_REGULAR_EXPRESSION "wearing Skirt;wearing Tights"
+        FIXTURES_SETUP app_clothes_none)
+
+    # Skirt -- both legs and the lower spine, but no feet.
+    add_test(NAME app_clothes_skirt_worn COMMAND makehuman
+             --clothes skirt --export ${CMAKE_CURRENT_BINARY_DIR}/clothes/skirt.obj)
+    set_tests_properties(app_clothes_skirt_worn PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Skirt \\(720 verts\\) lit by skinmat_clothes"
+        FAIL_REGULAR_EXPRESSION "export failed;cannot"
+        FIXTURES_SETUP app_clothes_skirt_worn)
+    add_test(NAME app_clothes_skirt_foot COMMAND makehuman
+             --clothes skirt "--set=armslegs/r-foot-trans-in|out=1.0"
+             --export ${CMAKE_CURRENT_BINARY_DIR}/clothes/skirt_foot.obj)
+    set_tests_properties(app_clothes_skirt_foot PROPERTIES
+        FIXTURES_SETUP app_clothes_skirt_foot)
+    add_test(NAME app_clothes_skirt_partly_follows_the_foot COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/clothes/skirt.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/clothes/skirt_foot.obj
+             -DGROUP=clothes -DEXPECT_MOVED=118 -DEXPECT_STILL=602
+             -DRISE_TOLERANCE=ANY
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
+    set_tests_properties(app_clothes_skirt_partly_follows_the_foot PROPERTIES
+        FIXTURES_REQUIRED "app_clothes_skirt_worn;app_clothes_skirt_foot")
+
+    # Tights -- the only one of the three that reaches the feet.
+    add_test(NAME app_clothes_tights_worn COMMAND makehuman
+             --clothes tights --export ${CMAKE_CURRENT_BINARY_DIR}/clothes/tights.obj)
+    set_tests_properties(app_clothes_tights_worn PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Tights \\(2674 verts\\) lit by skinmat_clothes"
+        FAIL_REGULAR_EXPRESSION "export failed;cannot"
+        FIXTURES_SETUP app_clothes_tights_worn)
+    add_test(NAME app_clothes_tights_foot COMMAND makehuman
+             --clothes tights "--set=armslegs/r-foot-trans-in|out=1.0"
+             --export ${CMAKE_CURRENT_BINARY_DIR}/clothes/tights_foot.obj)
+    set_tests_properties(app_clothes_tights_foot PROPERTIES
+        FIXTURES_SETUP app_clothes_tights_foot)
+    add_test(NAME app_clothes_tights_follow_the_foot COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/clothes/tights.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/clothes/tights_foot.obj
+             -DGROUP=clothes -DEXPECT_MOVED=412 -DEXPECT_STILL=2262
+             -DRISE_TOLERANCE=ANY
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
+    set_tests_properties(app_clothes_tights_follow_the_foot PROPERTIES
+        FIXTURES_REQUIRED "app_clothes_tights_worn;app_clothes_tights_foot")
+
+    # The positive half for the slot as a whole: "nothing moved" also describes
+    # a garment that is frozen or absent, so one of them has to follow a pose.
+    add_test(NAME app_clothes_tpose COMMAND makehuman
+             --clothes tights --pose tpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/clothes/tpose.obj)
+    set_tests_properties(app_clothes_tpose PROPERTIES FIXTURES_SETUP app_clothes_tpose)
+    add_test(NAME app_clothes_follow_the_body COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/clothes/tights.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/clothes/tpose.obj
+             -DGROUP=clothes -DEXPECT_MOVED=2674 -DEXPECT_STILL=0
+             -DRISE_TOLERANCE=ANY
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
+    set_tests_properties(app_clothes_follow_the_body PROPERTIES
+        FIXTURES_REQUIRED "app_clothes_tights_worn;app_clothes_tpose")
+
+    add_test(NAME app_clothes_add_geometry COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/clothes/tights.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/clothes/none.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_clothes_add_geometry PROPERTIES
+        FIXTURES_REQUIRED "app_clothes_tights_worn;app_clothes_none")
+
+    # Round trip: the slot holds several garments, so saving has to name WHICH.
+    add_test(NAME app_clothes_saved COMMAND makehuman
+             --clothes skirt --save ${CMAKE_CURRENT_BINARY_DIR}/clothes/saved.mhm)
+    set_tests_properties(app_clothes_saved PROPERTIES FIXTURES_SETUP app_clothes_saved)
+    add_test(NAME app_clothes_save_names_it COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/clothes/saved.mhm
+             "-DKEYS=clothes Skirt 1b6d47a2-90c3-4e15-8f72-3ad05e9c6b41"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_clothes_save_names_it PROPERTIES
+        FIXTURES_REQUIRED app_clothes_saved)
+    add_test(NAME app_clothes_reload_wears_it COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/clothes/saved.mhm
+             --export ${CMAKE_CURRENT_BINARY_DIR}/clothes/reloaded.obj)
+    set_tests_properties(app_clothes_reload_wears_it PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Skirt"
+        FAIL_REGULAR_EXPRESSION "wearing Tights"
+        FIXTURES_REQUIRED app_clothes_saved)
+
+    # The zero case: the same jaw drop that moves 68 of the teeth and all 226
+    # of the tongue moves none of the skirt, which starts at the waist.
+    #
+    # The SKIRT, not the tights, and that distinction is measured rather than
+    # stylistic. The tights reach the upper chest, and a jaw drop moves 14 of
+    # their 2674 -- at Y 13.967..14.440, by 0.017 to 0.068, which is real
+    # motion carried up the neck and not float noise. Asserting 0 on the
+    # tights would have been asserting something false; asserting 14 would
+    # have pinned a number whose cause is the cage's reach rather than
+    # anything this slot does.
+    add_test(NAME app_clothes_jaw_open COMMAND makehuman
+             --clothes skirt --facs AU26=1.0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/clothes/jaw_open.obj)
+    set_tests_properties(app_clothes_jaw_open PROPERTIES FIXTURES_SETUP app_clothes_jaw_open)
+    add_test(NAME app_clothes_ignores_the_jaw COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/clothes/skirt.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/clothes/jaw_open.obj
+             -DGROUP=clothes -DEXPECT_MOVED=0 -DEXPECT_STILL=720
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
+    set_tests_properties(app_clothes_ignores_the_jaw PROPERTIES
+        FIXTURES_REQUIRED "app_clothes_skirt_worn;app_clothes_jaw_open")
 
 
     add_test(NAME app_group_is_litsphere COMMAND makehuman
@@ -2445,7 +2594,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 9 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 10 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # Refused rather than silently defaulted to brown, which would make a typo

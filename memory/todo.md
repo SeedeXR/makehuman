@@ -3622,11 +3622,45 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         styles, so every style renders the same colour, and real hair of any
         texture needs alpha-cut strand cards plus a shader that does
         transmission. A per-style colour chooser is the cheapest real win here.
-- [ ] The remaining FOUR proxy choosers (clothes, eyebrows, eyelashes, generic
-      proxy). The four eyelash helpers (60/65 per side, dominated by
-      `orbicularis04.L/R`) exist in the base mesh and are the next cheap slot;
-      `helper-genital`, `helper-skirt` and `helper-tights` exist too and belong
-      to clothes. Eyebrows have NO helper cage and stay blocked on content.
+- [x] **The CLOTHES chooser — and a slot stops being one asset.** Skirt (720
+      vertices, 684 faces) and Tights (2674 / 2650), cut from `helper-skirt`
+      and `helper-tights` by the same identity fit the teeth, tongue and hair
+      used. C++ cost: one line, `kProxySlots` 3 -> 4.
+      - The generator learned that a SLOT and an ASSET are different things.
+        `Slot.key` is the asset stem; the new `Slot.slot` is the chooser
+        directory and the `.mhm` line, defaulting to `key` so the first three
+        slots are unchanged. Clothes is the first slot where a user picks
+        BETWEEN assets rather than getting the slot's one proxy.
+      - Because `slotLitsphere` takes the slot key, every garment in a slot is
+        lit by ONE matcap, so entries sharing a slot must agree on the tint.
+        They would otherwise silently resolve to whichever was written last and
+        `--check` would fail on a file nobody edited. Guarded, and the guard is
+        mutation-tested.
+      - **`helper-genital` is deliberately NOT shipped as clothing.** It was
+        generated as "Briefs" first, and RENDERING IT showed an anatomical
+        bulge in fabric colour -- a mislabel that every count and every gate
+        passed happily. It belongs to a future genitalia slot.
+      - The discriminating gate is a MORPH, which the teeth/tongue/hair trio
+        never exercised: `r-foot-trans-in|out=1.0` moves 118 of the skirt's 720
+        and 412 of the tights' 2674, with the body moving the same 1324 in both
+        cases. `r-foot-scale` was tried first and is CONFOUNDED -- the tights
+        cover the feet, so scaling one re-grounds the whole character and all
+        13380 body vertices plus all 2674 tights vertices shift by a uniform
+        0.0138. The skirt read 0 under it only because it misses the sole, so
+        the gate would have looked discriminating while reporting a global
+        translation. A sideways translation changes no ground contact.
+      - The zero case is the SKIRT under a jaw drop, not the tights: the tights
+        reach the chest, and AU26 moves 14 of them at Y 13.967..14.440 by 0.017
+        to 0.068 -- real motion up the neck, not float noise.
+- [ ] **A genitalia slot for `helper-genital`** (200 vertices, 182 faces, all
+      dominated by `spine05`, so rigid with one pelvis bone). Split out of the
+      clothes chunk above once rendering showed it is anatomy rather than a
+      garment. Needs an owner decision on whether the app ships it at all, and
+      on default visibility if it does.
+- [ ] The remaining THREE proxy choosers (eyebrows, eyelashes, generic proxy).
+      The four eyelash helpers (60/65 per side, dominated by
+      `orbicularis04.L/R`) exist in the base mesh and are the next cheap slot.
+      Eyebrows have NO helper cage and stay blocked on content.
 - [ ] **OWNER DECISION: should the teeth be worn by DEFAULT?** `--teeth`
       defaults to `none` today, so a character opens toothless and an open
       mouth is empty. Defaulting to `teeth` is the anatomically right answer but

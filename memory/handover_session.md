@@ -4,6 +4,64 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-12 (sixty-seventh) — Session · **Clothes, and a slot stops being one asset**
+
+*2026-09-12 — the fourth proxy slot, and the first where the user picks between
+garments rather than getting the slot's one proxy.*
+
+### What landed
+A **Clothes** chooser with two garments: **Skirt** (720 vertices, 684 faces) and
+**Tights** (2674 / 2650), cut from `helper-skirt` and `helper-tights` by the same
+identity fit the teeth, tongue and hair used. The C++ cost was again one line —
+`kProxySlots` 3 → 4.
+
+### A slot and an asset are different things
+The first three slots each held exactly one proxy, so `Slot.key` doubled as the
+directory, the asset stem and the `.mhm` line. Clothes breaks that: two cages
+stay two garments. `Slot` gained a `slot` field defaulting to `key`, so nothing
+before it changed.
+
+That exposed a trap worth naming. `slotLitsphere` takes the SLOT key, so every
+garment in a slot is lit by one `skinmat_<slot>.png`. Two entries sharing a slot
+therefore have to agree about the tint — and if they did not, the last one
+written would silently win and `--check` would then fail on a file nobody
+edited. There is now a guard that names the cause, and it is mutation-tested.
+
+### What only rendering caught
+`helper-genital` was generated as a third garment called **Briefs**. Every count
+passed, every gate passed, `--check` passed. Then I rendered it and looked: it is
+an anatomical bulge in fabric colour. `helper-genital` is a genitalia fitting
+cage, not an underwear cage, and shipping it as "Briefs" would have been a
+mislabel no assertion in the suite could have caught. Dropped, and written up in
+`memory/todo.md` as a future genitalia slot with its own owner decision.
+
+### The discriminating gate, and the one that was confounded
+The teeth/tongue/hair trio all separated under a POSE. Clothes separates under a
+MORPH, which is the half that was never exercised. Measured on the exports,
+`r-foot-trans-in|out=1.0` moves **118 of the skirt's 720 and 412 of the tights'
+2674**, while the body moves the same 1324 vertices in both cases.
+
+`r-foot-scale` was the obvious first choice and is **confounded**: the tights
+cover the feet, so they become the model's lowest point, and scaling one
+re-grounds the whole character — measured, all 13380 body vertices and all 2674
+tights vertices shifted by a uniform 0.0138. The skirt read 0 under it only
+because it does not reach the sole. The gate would have looked like it was
+discriminating between garments while actually reporting a global translation.
+Moving the foot sideways changes no ground contact.
+
+The zero case is the **skirt** under a jaw drop, not the tights. The tights reach
+the chest, and AU26 moves 14 of them at Y 13.967..14.440 by 0.017 to 0.068 —
+real motion carried up the neck, not float noise. Asserting 0 there would have
+been asserting something false.
+
+### Gates
+16 new `app_clothes_*` tests, all written first and watched RED. Suite 997 →
+1013. Seven mutations killed: four in the code (wrong cage, wrong slot label,
+wrong matcap, disagreeing tints) and three in the gates (perturbed moved-count,
+jaw gate pointed at the wrong export, `--check` against divergent assets). The
+`--check` mutation also found a real bug: the stale-file message named
+`<key>/<file>` when the file lives at `data/<slot>/<file>`.
+
 ## 2026-09-11 (sixty-sixth) — Session · **The hair slot, and the table paying for itself**
 
 *2026-09-11 — the third helper-cage proxy, added at the cost the last chunk

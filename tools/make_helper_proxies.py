@@ -55,8 +55,14 @@ SOURCE_LITSPHERE = "skinmat_caucasian.png"
 class Slot:
     """One helper-cage proxy: which groups it is cut from, and how it looks."""
 
-    def __init__(self, key, name, uuid, groups, z_depth, tint, material, rationale):
-        self.key = key                # directory under data/, and the .mhm slot
+    def __init__(self, key, name, uuid, groups, z_depth, tint, material, rationale,
+                 slot_key=None):
+        self.key = key                # the asset stem, and what --<slot> takes
+        # The chooser directory and the .mhm slot. Defaults to `key`, because
+        # for the first three slots one cage WAS one garment. Clothes is the
+        # first slot holding several, so its entries share
+        # `slot_key="clothes"` while keeping distinct keys.
+        self.slot_key = slot_key or key
         self.name = name              # what the picker and the .mhm line show
         self.uuid = uuid
         self.groups = groups          # base.obj groups to extract
@@ -67,7 +73,34 @@ class Slot:
 
     @property
     def out(self):
-        return ROOT / "data" / self.key
+        return ROOT / "data" / self.slot_key
+
+
+# Fabric: a desaturated slate, so a garment reads as cloth beside skin and
+# hair rather than as either. Shared by every garment, because the matcap
+# belongs to the slot rather than to the asset.
+CLOTH_TINT = (0.46, 0.50, 0.62)
+
+
+def cloth_material(name):
+    return (
+        "# No texture. A garment's colour and weave are the first things a user\n"
+        "# will want to change, and a generated flat fill would stand in for\n"
+        "# neither. This is honest placeholder shading on the base mesh's own\n"
+        "# fitting cage.\n"
+        f"name {name}\n"
+        "tag MakeHuman\u2122\n"
+        "ambientColor 0.05 0.05 0.06\n"
+        "diffuseColor 0.38 0.41 0.52\n"
+        "specularColor 0.25 0.25 0.28\n"
+        "shininess 0.15\n"
+        "opacity 1.0\n"
+        "transparent False\n"
+        "backfaceCull True\n"
+        "castShadows True\n"
+        "receiveShadows True\n"
+        "shader data/shaders/glsl/litsphere\n"
+    )
 
 
 SLOTS = [
@@ -172,6 +205,40 @@ SLOTS = [
             "# spine01-03, because the cage covers hair falling down the BACK.\n"
             "# So this proxy is NOT rigid with the head -- it follows the body,\n"
             "# which is exactly what the identity fitting gives it for free."
+        ),
+    ),
+    Slot(
+        key="skirt",
+        slot_key="clothes",
+        name="Skirt",
+        uuid="1b6d47a2-90c3-4e15-8f72-3ad05e9c6b41",
+        groups=("helper-skirt",),
+        z_depth=22,
+        tint=CLOTH_TINT,
+        material=cloth_material("Skirt"),
+        rationale=(
+            "# 720 vertices spread across upperleg01/02 and lowerleg01/02 on\n"
+            "# BOTH sides plus spine04: a garment that spans two limbs and the\n"
+            "# pelvis at once. It reaches down the legs but never to the feet,\n"
+            "# so `r-foot-trans` moves only 118 of its 720 where it moves 412\n"
+            "# of the tights."
+        ),
+    ),
+    Slot(
+        key="tights",
+        slot_key="clothes",
+        name="Tights",
+        uuid="5a90f8c6-2d34-4b71-9e05-c8a3711df249",
+        groups=("helper-tights",),
+        z_depth=24,
+        tint=CLOTH_TINT,
+        material=cloth_material("Tights"),
+        rationale=(
+            "# 2674 vertices reaching from spine01/02 all the way to foot.L and\n"
+            "# foot.R (140 each) -- the only garment here that covers the feet,\n"
+            "# which is why `r-foot-trans` moves 412 of these against the\n"
+            "# skirt's 118. It reaches the chest too, so a jaw drop grazes 14\n"
+            "# of them; the skirt, not this, is the slot's zero case."
         ),
     ),
 ]
@@ -307,7 +374,11 @@ def build(slot) -> tuple[dict[str, bytes], str]:
             # becomes a body skin the user can pick. The eye matcap only escapes
             # that by a substring test on "eye" (`main.cpp:888`), the kind of
             # rule that quietly swallows the next asset whose name matches.
-            f"skinmat_{slot.key}.png": make_litsphere(slot.tint),
+            # Named for the SLOT, not the asset: `slotLitsphere` in main.cpp
+            # takes the slot key, so every garment in a slot is lit by one
+            # matcap. Entries sharing a slot must therefore agree on the tint,
+            # which `main` asserts rather than letting the last one written win.
+            f"skinmat_{slot.slot_key}.png": make_litsphere(slot.tint),
         },
         f"{slot.key}: {len(used)} vertices, {len(faces)} faces "
         f"({', '.join(g.removeprefix('helper-') for g in slot.groups)}), "
@@ -348,13 +419,26 @@ def main() -> int:
                     help="only this slot (repeatable); default is all of them")
     args = ap.parse_args()
 
+    # Every entry sharing a slot writes the SAME skinmat_<slot>.png, so a
+    # disagreement about the tint would silently resolve to whichever entry
+    # happened to be written last -- and `--check` would then fail on a file
+    # nobody edited. Caught here instead, where the message names the cause.
+    by_slot = {}
+    for entry in SLOTS:
+        first = by_slot.setdefault(entry.slot_key, entry)
+        if first.tint != entry.tint:
+            raise SystemExit(
+                f"slot '{entry.slot_key}': {first.key} and {entry.key} disagree about the "
+                f"matcap tint ({first.tint} vs {entry.tint}); one slot has one matcap"
+            )
+
     slots = [s for s in SLOTS if args.slot is None or s.key in args.slot]
     stale, reports = [], []
     for slot in slots:
         files, report = build(slot)
         reports.append(report)
         if args.check:
-            stale += [f"{slot.key}/{name}" for name, data in files.items()
+            stale += [f"{slot.slot_key}/{name}" for name, data in files.items()
                       if is_stale(slot.out / name, data)]
         else:
             for name, data in files.items():
