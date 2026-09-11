@@ -871,7 +871,18 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(const std::string& curr
     std::vector<mh::foundation::AssetGroup> groups;
 
     mh::foundation::AssetGroup skins;
-    skins.name      = "Skin";
+    // "Litsphere", not "Skin": this group lists viewport MATCAPS, and the
+    // "Skin material" group below lists the textured .mhmat files. Two things
+    // called Skin in one panel is the collision the --litsphere flag rename
+    // already fixed one layer down.
+    //
+    // Name and key at once, which is safe because nothing persists it: `.mhm`
+    // records the CHOICE (`litsphere african`) and the workspace records dock
+    // object names, neither of which is this string. If that ever stops being
+    // true this needs directive 12.1's treatment -- a canonical id with display
+    // names beside it, the way `data/naming/workspace.names` already does for
+    // workspace presets.
+    skins.name      = "Litsphere";
     int defaultSkin = -1;
     for (const fs::path& p : filesWithExtension(dataDir() / "litspheres", ".png")) {
         if (p.stem().string().find("eye") != std::string::npos) continue;  // not a body skin
@@ -926,11 +937,10 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(const std::string& curr
     // them, and the window could not choose one. That made four of the shipped
     // African tones unreachable to anyone not using the command line.
     //
-    // NOT the same thing as the "Skin" group above, which lists LITSPHERES --
-    // viewport matcaps with no PBR data. The FLAG collision is gone (`--skin`
-    // is `--litsphere` now, with the old name still working); the GROUP is
-    // still called "Skin" while listing litspheres, which is the same collision
-    // one layer up and is not yet done.
+    // NOT the same thing as the "Litsphere" group above, which lists viewport
+    // matcaps with no PBR data. Both collisions are gone now: the flag is
+    // `--litsphere` (answering to `--skin`) and the group is "Litsphere", so
+    // nothing in the panel is called Skin except the materials.
     mh::foundation::AssetGroup materials;
     materials.name = "Skin material";
     for (const std::string& stem : availableSkinMaterials()) {
@@ -2562,8 +2572,17 @@ int main(int argc, char** argv) {
                          skinMaterialRef(), rigNameRef(), eyeColourRef());
     // Announced so a test can see the picker was built at all -- a group that
     // silently ends up empty renders as a disabled combo box nobody notices.
-    std::printf("asset groups: %zu (skin materials: %zu, rigs: %zu)\n", assetGroups.size(),
-                availableSkinMaterials().size(), rigStems().size());
+    // The NAMES, not just the count. Nothing printed them, so the panel's
+    // groups could be renamed with no test able to see it -- and one of them
+    // needed renaming. Bracketed and comma-separated so "Skin material" cannot
+    // satisfy a check meant for "Skin".
+    std::string groupNames;
+    for (const auto& g : assetGroups) {
+        if (!groupNames.empty()) groupNames += ", ";
+        groupNames += g.name;
+    }
+    std::printf("asset groups: %zu [%s] (skin materials: %zu, rigs: %zu)\n", assetGroups.size(),
+                groupNames.c_str(), availableSkinMaterials().size(), rigStems().size());
 
     // The body's material and everything worn, read by every rebuild. Skin is
     // a path rather than a call to setLitsphere because the viewport now takes
@@ -2577,7 +2596,7 @@ int main(int argc, char** argv) {
     // The chooser's value because it is the VALIDATED one: an unknown
     // `--litsphere` has already fallen back to the documented default, with a
     // warning, by the time the group is built.
-    std::filesystem::path skin = selectedChoice(assetGroups, "Skin");
+    std::filesystem::path skin = selectedChoice(assetGroups, "Litsphere");
     std::map<QString, WornProxy> wornProxies;
 
     // Put on whatever the choosers start with. Done here, before both --export
@@ -3201,7 +3220,7 @@ int main(int argc, char** argv) {
     // thing whichever panel the user last touched.
     const auto applyChoice = [&](const QString& group, const QString& id) {
         assets->setChoice(group, id);  // does not emit; see AssetPanel::setChoice
-        if (group == QLatin1String("Skin")) {
+        if (group == QLatin1String("Litsphere")) {
             // Rebuild rather than setLitsphere: the body's material is carried
             // by its MeshInstance now, so changing it without rebuilding would
             // re-upload the old one and render an unchanged picture.
@@ -3492,7 +3511,7 @@ int main(int argc, char** argv) {
     }
     // Taken from the picker, so the viewport and the panel cannot start out
     // disagreeing about which skin is shown.
-    const QString chosenSkin = assets->choice(QStringLiteral("Skin"));
+    const QString chosenSkin = assets->choice(QStringLiteral("Litsphere"));
     if (chosenSkin.isEmpty()) {
         std::fprintf(stderr,
                      "no litspheres found in %s -- the viewport cannot shade anything "

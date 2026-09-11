@@ -4,6 +4,63 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-11 (sixty-third) — Session · **Nothing in the panel is called Skin except the materials**
+
+*2026-09-11 — the last of the naming collision. The flag half went two chunks
+ago; this is the group.*
+
+### What landed
+The picker group is **"Litsphere"**. It listed viewport matcaps while the
+"Skin material" group beside it listed the eight textured `.mhmat` files —
+two things called Skin in one panel, which is exactly what the `--litsphere`
+rename fixed one layer down.
+
+Name and key renamed together, which is safe because **nothing persists the
+group name**: `.mhm` records the CHOICE (`litsphere african`, added last chunk)
+and the workspace records dock object names. Checked both before touching it. If
+that ever stops being true it needs directive 12.1's treatment — a canonical id
+with display names beside it, the way `data/naming/workspace.names` already does
+for workspace presets — and that is recorded rather than built, because nothing
+asks for it yet and `AssetGroup` has only a `name` today.
+
+### The rename was invisible, so it was ungateable
+Nothing printed the group names. The report line said `asset groups: 6 (skin
+materials: 9, rigs: 2)` — a count and two unrelated numbers — so the panel's
+groups could be renamed with no test able to see it.
+
+It lists them now: `asset groups: 6 [Litsphere, Pose, Eyes, Skin material, Eye
+colour, Skeleton] (...)`. Bracketed and comma-separated on purpose, because
+"Skin material" would otherwise satisfy a check meant for "Skin" — the two names
+being confusable is the whole defect, and a naive substring gate would inherit
+it.
+
+### `--inspect` was the wrong vehicle
+The first version of the case ran `--inspect` and failed with nothing to match:
+that path exits before the asset groups are built. `--save` reaches the report
+and costs no render.
+
+### Changing a report line broke two tests that read it
+`app_skin_material_picker` and `app_eye_colour` both assert
+`asset groups: 6 (skin materials: 9, rigs: 2)` verbatim, and inserting the names
+between the count and the parenthesis broke both. The gate caught it, which is
+what the gate is for — but it is worth naming the shape: an output line is an
+interface once anything greps it, and this one had two readers I did not look
+for before editing it. Both now match `asset groups: 6 \[.*\] \(skin materials:
+9, rigs: 2\)`, so each still pins what it originally cared about.
+
+### Mutations
+Three, all caught: the group left with its old name, the names replaced by a
+placeholder in the report, and the group renamed while the LOOKUPS kept the old
+key — which breaks the litsphere selection and is caught by last chunk's save
+and reload cases rather than by this chunk's own. One did not compile
+(`-Wunused-variable`) and was rewritten.
+
+### Gates
+Debug, release, ASan, TSan, one preset at a time, ALLDONE read. clang-format
+clean with CI's exact command. Sonar gate OK with 0 open issues.
+
+---
+
 ## 2026-09-11 (sixty-second) — Session · **The litsphere survives a save, and a gate that checked the message instead of the effect**
 
 *2026-09-11 — the chunk the rename unblocked. Directive 14.4 applies: a new key

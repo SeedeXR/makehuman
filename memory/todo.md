@@ -3348,14 +3348,23 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       packs. Either (a) an asset-pack decision, or (b) generate proxies
       procedurally as we did the skin textures. Building the choosers before
       either would ship seven empty dropdowns.
-- [x] **The eight skin materials had no picker.** `--skin-material` set them,
-      the `.mhm` saved them, the exporters wrote them, and the window could not
-      choose one — four shipped African tones were unreachable without the CLI.
-      Added as a "Skin material" group. Deliberately NOT called "Skin": that
-      group lists LITSPHERES, and the collision is exactly what the pending
-      `--skin` → `--litsphere` rename was about. The FLAG is renamed now; the
-      picker GROUP is still called "Skin" while listing litspheres, which is
-      the same collision one layer up and is not yet done.
+- [x] **The picker group is "Litsphere" now** (2026-09-11), so nothing in the
+      panel is called Skin except the materials. "Skin" listed viewport MATCAPS
+      while "Skin material" listed the eight textured `.mhmat` files, side by
+      side in one panel; the FLAG half of that collision went with the
+      `--litsphere` rename and this is the same collision one layer up.
+      - **Name and key renamed together**, which is safe because nothing
+        persists the group name: `.mhm` records the CHOICE (`litsphere african`)
+        and the workspace records dock object names. If that ever stops being
+        true it needs directive 12.1's treatment — a canonical id with display
+        names beside it, as `data/naming/workspace.names` already does for
+        workspace presets. Recorded rather than built, since nothing asks for it
+        yet.
+      - **The group names are reported now**, because nothing printed them and a
+        rename nothing can see is a rename nothing can gate. The line reads
+        `asset groups: 6 [Litsphere, Pose, Eyes, Skin material, Eye colour,
+        Skeleton] (...)`, bracketed and comma-separated so "Skin material"
+        cannot satisfy a check meant for "Skin".
 - [x] **Picker labels showed raw file stems.** `african_rich` rendered as
       "African_rich" — no shipped stem had ever contained an underscore, so
       nothing had exercised it. `prettyName` now routes through the tested

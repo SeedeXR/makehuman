@@ -311,7 +311,10 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_skin_material_picker COMMAND makehuman
              --render ${CMAKE_CURRENT_BINARY_DIR}/app_picker.png)
     set_tests_properties(app_skin_material_picker PROPERTIES
-        PASS_REGULAR_EXPRESSION "asset groups: 6 \\(skin materials: 9, rigs: 2\\)"
+        PASS_REGULAR_EXPRESSION
+            # The group NAMES sit between the count and the counts now; both halves
+            # of what this case cared about are still pinned.
+            "asset groups: 6 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # The rig had no picker either: two ship, --rig has always chosen between
@@ -818,6 +821,24 @@ if(MH_HAVE_RENDER)
         SKIP_REGULAR_EXPRESSION "cannot render"
         FIXTURES_REQUIRED app_lits_saved
         FIXTURES_SETUP app_lits_override)
+
+
+    # The picker group is called "Litsphere", not "Skin".
+    #
+    # "Skin" listed LITSPHERES -- viewport matcaps -- while "Skin material"
+    # listed the eight textured .mhmat files, and the two sat next to each other
+    # in the same panel. The FLAG collision went with the --litsphere rename;
+    # this is the same collision one layer up.
+    #
+    # The group names are listed in the report line so this is observable at
+    # all: nothing else printed them, and a rename nothing can see is a rename
+    # nothing can gate. Bracketed and comma-separated so "Skin material" cannot
+    # satisfy a check meant for "Skin".
+    add_test(NAME app_group_is_litsphere COMMAND makehuman
+             --save ${CMAKE_CURRENT_BINARY_DIR}/lits/groups.mhm)
+    set_tests_properties(app_group_is_litsphere PROPERTIES
+        PASS_REGULAR_EXPRESSION "asset groups: .*\\[Litsphere,"
+        FAIL_REGULAR_EXPRESSION "\\[Skin,")
 
 
     add_test(NAME app_litsphere_new_name COMMAND makehuman
@@ -2187,7 +2208,10 @@ if(MH_HAVE_RENDER)
              --eye-colour green
              --render ${CMAKE_CURRENT_BINARY_DIR}/app_eye_colour.png)
     set_tests_properties(app_eye_colour PROPERTIES
-        PASS_REGULAR_EXPRESSION "asset groups: 6 \\(skin materials: 9, rigs: 2\\)"
+        PASS_REGULAR_EXPRESSION
+            # The group NAMES sit between the count and the counts now; both halves
+            # of what this case cared about are still pinned.
+            "asset groups: 6 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # Refused rather than silently defaulted to brown, which would make a typo
