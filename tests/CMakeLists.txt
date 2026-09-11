@@ -314,7 +314,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 7 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 8 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # The rig had no picker either: two ship, --rig has always chosen between
@@ -843,7 +843,7 @@ if(MH_HAVE_RENDER)
     #
     # But the SHAPE was never missing: base.obj carries `helper-upper-teeth` and
     # `helper-lower-teeth`, cage geometry that exists so a proxy can be fitted to
-    # it. `tools/make_teeth.py` extracts them, so nothing is invented.
+    # it. `tools/make_helper_proxies.py` extracts them, so nothing is invented.
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/teeth)
     add_test(NAME app_teeth_group COMMAND makehuman
              --save ${CMAKE_CURRENT_BINARY_DIR}/teeth/g.mhm)
@@ -853,7 +853,9 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_teeth_worn COMMAND makehuman
              --teeth teeth --export ${CMAKE_CURRENT_BINARY_DIR}/teeth/worn.obj)
     set_tests_properties(app_teeth_worn PROPERTIES
-        PASS_REGULAR_EXPRESSION "wearing Teeth"
+        # The MATCAP, not just the name: see the comment on the "wearing" line in
+        # main.cpp. Without this a slot handed another slot's matcap passes.
+        PASS_REGULAR_EXPRESSION "wearing Teeth \\(.*\\) lit by skinmat_teeth"
         FAIL_REGULAR_EXPRESSION "export failed;cannot"
         FIXTURES_SETUP app_teeth_worn)
     add_test(NAME app_teeth_none COMMAND makehuman
@@ -908,6 +910,87 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_teeth_reload_wears_them PROPERTIES
         PASS_REGULAR_EXPRESSION "wearing Teeth"
         FIXTURES_REQUIRED app_teeth_saved)
+
+    # THE TONGUE -- the second helper-cage slot, and the one that proves the
+    # slot machinery is machinery rather than a special case for teeth.
+    #
+    # Its claim is a DIFFERENT SHAPE from the teeth's, which is why it is worth
+    # its own assertion rather than a copy. The teeth split 68/68 because the two
+    # arches hang off different bones. The tongue does not split at all: all 226
+    # vertices are dominated by a `tongue*` bone, and the whole tongue chain
+    # hangs off `jaw` (measured from data/rigs/default.mhskel), so a jaw drop
+    # carries every one of them and leaves none behind.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tongue)
+    add_test(NAME app_tongue_group COMMAND makehuman
+             --save ${CMAKE_CURRENT_BINARY_DIR}/tongue/g.mhm)
+    set_tests_properties(app_tongue_group PROPERTIES
+        PASS_REGULAR_EXPRESSION "asset groups: .*Tongue")
+    add_test(NAME app_tongue_worn COMMAND makehuman
+             --tongue tongue --export ${CMAKE_CURRENT_BINARY_DIR}/tongue/worn.obj)
+    set_tests_properties(app_tongue_worn PROPERTIES
+        # The MATCAP, not just the name: see the comment on the "wearing" line in
+        # main.cpp. Without this a slot handed another slot's matcap passes.
+        PASS_REGULAR_EXPRESSION "wearing Tongue \\(.*\\) lit by skinmat_tongue"
+        FAIL_REGULAR_EXPRESSION "export failed;cannot"
+        FIXTURES_SETUP app_tongue_worn)
+    add_test(NAME app_tongue_none COMMAND makehuman
+             --tongue none --export ${CMAKE_CURRENT_BINARY_DIR}/tongue/none.obj)
+    set_tests_properties(app_tongue_none PROPERTIES
+        FAIL_REGULAR_EXPRESSION "wearing Tongue"
+        FIXTURES_SETUP app_tongue_none)
+    add_test(NAME app_tongue_add_geometry COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/tongue/worn.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/tongue/none.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_tongue_add_geometry PROPERTIES
+        FIXTURES_REQUIRED "app_tongue_worn;app_tongue_none")
+    add_test(NAME app_tongue_jaw_open COMMAND makehuman
+             --tongue tongue --facs AU26=1.0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/tongue/jaw_open.obj)
+    set_tests_properties(app_tongue_jaw_open PROPERTIES FIXTURES_SETUP app_tongue_jaw_open)
+    # EXPECT_STILL 0 is the whole point: a tongue that kept vertices behind
+    # would mean the chain had been re-parented off the jaw.
+    add_test(NAME app_tongue_follows_jaw COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/tongue/worn.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/tongue/jaw_open.obj
+             -DGROUP=tongue -DEXPECT_MOVED=226 -DEXPECT_STILL=0
+             # 4e-4 dm: the vertex nearest the jaw pivot rises by exactly that
+             # under the rotation, measured. The far end drops 0.2334, so a sign
+             # error is still 600x outside this.
+             -DRISE_TOLERANCE=4
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
+    set_tests_properties(app_tongue_follows_jaw PROPERTIES
+        FIXTURES_REQUIRED "app_tongue_worn;app_tongue_jaw_open")
+    # And the round trip, the same way the teeth prove theirs.
+    add_test(NAME app_tongue_saved COMMAND makehuman
+             --tongue tongue --save ${CMAKE_CURRENT_BINARY_DIR}/tongue/saved.mhm)
+    set_tests_properties(app_tongue_saved PROPERTIES FIXTURES_SETUP app_tongue_saved)
+    add_test(NAME app_tongue_save_names_it COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/tongue/saved.mhm
+             "-DKEYS=tongue Tongue b5f1c40a-9d27-4e63-8a1b-2c7e06f9d834"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_tongue_save_names_it PROPERTIES
+        FIXTURES_REQUIRED app_tongue_saved)
+    add_test(NAME app_tongue_reload_wears_them COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/tongue/saved.mhm
+             --export ${CMAKE_CURRENT_BINARY_DIR}/tongue/reloaded.obj)
+    set_tests_properties(app_tongue_reload_wears_them PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Tongue"
+        FIXTURES_REQUIRED app_tongue_saved)
+    # Both slots at once: they are separate meshes with separate materials, and
+    # a table that overwrote one with the other would still pass every test above.
+    add_test(NAME app_teeth_and_tongue COMMAND makehuman
+             --teeth teeth --tongue tongue
+             --export ${CMAKE_CURRENT_BINARY_DIR}/tongue/both.obj)
+    set_tests_properties(app_teeth_and_tongue PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Teeth"
+        FIXTURES_SETUP app_teeth_and_tongue)
+    add_test(NAME app_teeth_and_tongue_both_groups COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/tongue/both.obj
+             "-DKEYS=g teeth;g tongue"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_teeth_and_tongue_both_groups PROPERTIES
+        FIXTURES_REQUIRED app_teeth_and_tongue)
 
 
     add_test(NAME app_group_is_litsphere COMMAND makehuman
@@ -2287,7 +2370,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 7 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 8 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # Refused rather than silently defaulted to brown, which would make a typo

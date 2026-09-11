@@ -4,6 +4,103 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-11 (sixty-fifth) — Session · **The tongue, and the moment a slot stopped being code**
+
+*2026-09-11 — the second helper-cage proxy, which is really about the first one
+not being copied.*
+
+### What landed
+A **Tongue** chooser, wired the same way the teeth are: `--tongue`, the picker
+group, the `.mhm` round trip, the viewport. 226 vertices, 224 faces, cut from
+`base.obj`'s own `helper-tongue` cage.
+
+The interesting half is that **a slot is data now**. `kProxySlots` in
+`main.cpp` is a two-entry table that drives all six sites that used to be
+copied per slot: the chooser, the `--<key>` flag, the `.mhm` read, the wear
+step, the `.mhm` write, and the window's picker branch.
+`tools/make_helper_proxies.py` replaces `tools/make_teeth.py` with one
+generator and a `SLOTS` table. Eyes are deliberately NOT in the table — they
+carry a colour choice and a material override, so they keep their own path.
+
+The refactor regenerated the committed teeth assets, so it was **proved
+geometry-preserving** rather than asserted: every non-comment line of
+`teeth.obj` and `teeth.mhclo` identical, every `.mhmat` setting identical, the
+matcap's pixels identical. The only diff is the generator's name in a comment.
+
+### The tongue's claim is a different shape, which is the point
+The teeth split 68/68 because the two arches hang off different bones. The
+tongue does not split at all — measured from `default_weights.mhw` and
+`default.mhskel`:
+
+    helper-tongue   226 verts, every one dominated by a `tongue*` bone
+                    (ten of them), and tongue00's parent is `jaw`
+
+so `--facs AU26=1.0` carries **all 226** and leaves **0** behind. That is a
+different assertion from the teeth's, not a copy of it, and it is what proves
+the table is machinery rather than a special case with a second name.
+
+### The gate had to learn fixed point
+`app_tongue_follows_jaw` failed first time, and the counts were right — 226
+moved, 0 still. What failed was the gate's "every mover went down" rule: the
+tongue vertex nearest the jaw pivot **rises 0.0004 dm** under the rotation,
+which is correct for a rigid rotation about an axis the group sits on.
+
+So `obj_group_moved.cmake` now works in **fixed point**. The writer prints
+exactly four decimals, so `-0.0482` is the integer -482 in units of 1e-4 dm,
+and CMake — which has integer arithmetic and nothing else — can subtract and
+compare exactly. That is what makes `RISE_TOLERANCE` expressible at all; with
+the decimal strings there was no way to add two reals. It defaults to 0, so the
+teeth keep exactly the rule they had. The tongue passes 4 (4e-4 dm); a sign
+error lifts the far end by 0.2334, six hundred times that, and still fails.
+
+### A mutation that was NOT caught, and the hole it exposed
+Making `slotLitsphere` hand every slot the teeth matcap changed the rendered
+tongue from R-G **61.5** to **19.0** — and broke nothing. The render test loads
+the matcap paths itself, so it proves the ASSET is red without ever proving the
+app reaches for it. The teeth test had the same hole and it went unnoticed last
+session.
+
+Fixed where it was observable: `wearProxy` now prints
+`wearing Tongue (226 verts) lit by skinmat_tongue`, appended AFTER the
+`(N verts)` older tests match so they still do, and both slots' `_worn` tests
+assert on the matcap. The mutation now fails `app_tongue_worn`.
+
+### Rendered and looked at
+`--teeth teeth --tongue tongue --facs AU27=1.0`, cropped to the mouth: a white
+band of upper teeth with the tongue filling the opening below it. Marking the
+changed pixels cyan confirmed the dark red mass IS the tongue (166 px, bbox
+y 222-233, x 502-521) and not the unlit cavity behind it. Mean RGB
+(136, 74, 75) — red clearly dominant, green and blue within 1 of each other.
+
+The render gate asks about HUE rather than coverage: redness (R above the mean
+of G and B) is **84.2** under the tongue matcap and **4.4** under the teeth
+one, with both bounds pinned — `pinkRed > enamelRed` alone passes on a tint
+that is merely a warmer white.
+
+### Mutations run
+Gate, eight ways: correct (pass), A/B swapped (fail), tolerance 0 (fail on the
+on-axis vertex), tolerance 2000 with swapped files (still fails — 101 vertices
+rose past it), same file twice (fail), teeth unchanged and still exact (pass),
+teeth swapped (fail), unknown group (fail).
+Code: tongue dropped from `kProxySlots` (11 tests fail), every slot given the
+teeth matcap (fails now, did not before), save loop truncated to the first slot
+(`app_tongue_save_names_it` and `app_tongue_reload_wears_them` fail).
+
+### Inventory counts moved, as they should
+`every shipped material parses` 17 → **18**, `the shipped assets index by uuid`
+22 → **24**.
+
+### Next
+Five slots left. `helper-hair` (428 verts) and the four eyelash helpers exist in
+the base mesh, so each is a `SLOTS` entry plus a `kProxySlots` entry plus tests.
+`helper-genital`, `helper-skirt` and `helper-tights` exist and belong to
+clothes. Eyebrows have no helper cage and stay blocked on content.
+
+**Still open for the owner:** whether teeth (and now the tongue) should be worn
+by DEFAULT. Both default to `none`, so a character opens with an empty mouth.
+
+---
+
 ## 2026-09-11 (sixty-fourth) — Session · **The first of the seven proxy slots is filled, and it came out of the base mesh**
 
 *2026-09-11 — directive 13.5, "if there are no assets or data from legacy,

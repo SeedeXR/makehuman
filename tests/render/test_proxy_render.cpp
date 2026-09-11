@@ -421,3 +421,75 @@ TEST_CASE("the teeth matcap renders enamel rather than lip", "[render][proxy][te
     CHECK(enamelSat < 0.10);
     CHECK(skinSat > 0.40);
 }
+
+// The tongue's matcap makes the same claim as the teeth's, in the opposite
+// direction, and that is why it is worth its own test rather than a second copy
+// of the teeth one: enamel must come out NEUTRAL and a tongue must come out
+// RED. A tint copied from the teeth entry passes every count, every geometry
+// assertion and the teeth's own saturation bound; only asking about the hue
+// catches it.
+TEST_CASE("the tongue matcap renders red, where the teeth one renders neutral",
+          "[render][proxy][tongue]") {
+    requireDevice();
+    auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
+    REQUIRE(r.has_value());
+
+    core::Mesh mesh  = body();
+    const auto proxy = core::loadProxy(fs::path(MH_DATA_DIR) / "tongue" / "tongue.mhclo");
+    REQUIRE(proxy.has_value());
+
+    auto tongueMesh = core::loadObj(proxy->objFile);
+    REQUIRE(tongueMesh.has_value());
+    std::vector<foundation::Vec3> fitted;
+    REQUIRE(core::fitProxy(*proxy, mesh.coord(), fitted));
+    REQUIRE(tongueMesh->setCoords(std::move(fitted)).has_value());
+    tongueMesh->buildAdjacency();
+    tongueMesh->calcNormals();
+    const auto rm = core::RenderMesh::build(*tongueMesh);
+
+    const auto s      = fullFigure();
+    const auto pink   = fs::path(MH_DATA_DIR) / "tongue" / "skinmat_tongue.png";
+    const auto enamel = fs::path(MH_DATA_DIR) / "teeth" / "skinmat_teeth.png";
+    REQUIRE(fs::exists(pink));
+    REQUIRE(fs::exists(enamel));
+
+    // The SAME geometry under both matcaps, so the only difference is the
+    // matcap. Rendered alone: worn, the lips hide nearly all of it.
+    const std::vector<render::MeshInstance> withPink{{rm.view(), pink}};
+    const std::vector<render::MeshInstance> withEnamel{{rm.view(), enamel}};
+    const auto asTongue = (*r)->render(withPink, s);
+    const auto asTeeth  = (*r)->render(withEnamel, s);
+    REQUIRE(asTongue.has_value());
+    REQUIRE(asTeeth.has_value());
+
+    // How far red sits above the mean of green and blue, over the drawn pixels.
+    // Signed, so a blue-cast matcap reads negative rather than merely small.
+    const auto redness = [&s](const QImage& img) {
+        const QColor bg = QColor::fromRgbF(s.background.x, s.background.y, s.background.z);
+        double total    = 0.0;
+        size_t n        = 0;
+        for (int y = 0; y < img.height(); ++y) {
+            for (int x = 0; x < img.width(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (std::abs(c.red() - bg.red()) <= 6 && std::abs(c.green() - bg.green()) <= 6 &&
+                    std::abs(c.blue() - bg.blue()) <= 6) {
+                    continue;
+                }
+                total += c.red() - (c.green() + c.blue()) / 2.0;
+                ++n;
+            }
+        }
+        REQUIRE(n > 0);
+        return total / static_cast<double>(n);
+    };
+
+    const double pinkRed   = redness(*asTongue);
+    const double enamelRed = redness(*asTeeth);
+    INFO("redness: tongue matcap " << pinkRed << ", teeth matcap " << enamelRed);
+    // Measured: 84.2 under the tongue matcap, 4.4 under the teeth one. Both
+    // bounds are needed -- `pinkRed > enamelRed` alone passes on a tint that is
+    // merely a slightly warmer white, which is what copying the teeth entry and
+    // nudging it gives.
+    CHECK(pinkRed > 40.0);
+    CHECK(enamelRed < 10.0);
+}

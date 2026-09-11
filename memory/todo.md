@@ -3350,7 +3350,7 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       are not invented: `data/3dobjs/base.obj` already carries
       `helper-upper-teeth` (68 verts, every one dominated by `head`) and
       `helper-lower-teeth` (68 verts, every one dominated by `jaw`) as cage
-      geometry precisely so a proxy can be fitted to it. `tools/make_teeth.py`
+      geometry precisely so a proxy can be fitted to it. `tools/make_helper_proxies.py`
       extracts both groups, renumbers them, and writes an IDENTITY `.mhclo`
       (each vertex on its own base vertex at weight 1,0,0), so the proxy tracks
       the helper for every body shape and every pose with no interpolation
@@ -3363,7 +3363,7 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         alone -- so with the white placeholder standing in, the matcap IS the
         colour. Wired to the body's skin litsphere the teeth rendered at RGB
         (233, 155, 123): orange, the same as the lip in front of them. Every
-        pixel-COUNT assertion passed on that. `tools/make_teeth.py` now derives
+        pixel-COUNT assertion passed on that. `tools/make_helper_proxies.py` now derives
         `data/teeth/skinmat_teeth.png` from the skin matcap's luminance, which
         keeps the light coming from the same direction as on the face; the new
         render test asserts SATURATION (0.035 vs 0.583), not coverage.
@@ -3523,12 +3523,33 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       silhouette, so the check is luminance range (29..212 -> 21..227).
       Pinned by the new `app_screenshot` ctest — `app_smoke` returns at
       `--export` before the asset groups exist and never reaches this wiring.
-- [ ] The remaining SIX proxy choosers (clothes, hair, tongue, eyebrows,
-      eyelashes, generic proxy). Teeth are done (above) and are the template:
-      extract the helper cage from `base.obj`, write an identity `.mhclo`, and
-      generate the matcap from the skin one. `helper-tongue` and `helper-hair`
-      exist in the base mesh; the eyelash helpers do too. Clothes and the
-      generic proxy have NO helper cage and stay blocked on content.
+- [x] **The TONGUE slot, and a slot is data now** (2026-09-11). The second
+      helper-cage proxy, and the one that turned the teeth's code into
+      machinery: `kProxySlots` in `main.cpp` is a two-entry table that drives
+      the chooser, the `--<key>` flag, the `.mhm` read and write, the wear step
+      and the window's picker branch, and `tools/make_helper_proxies.py` is one
+      generator with a `SLOTS` table. `tools/make_teeth.py` is gone; the
+      refactor was proved geometry-preserving by diffing every non-comment line
+      of the committed teeth assets (identical) and their matcap's pixels
+      (identical) — only the generator's name in a comment changed.
+      - The tongue's claim is a DIFFERENT SHAPE from the teeth's, which is why
+        it earns its own assertion: all 226 vertices are dominated by a
+        `tongue*` bone and the whole chain hangs off `jaw` (measured from
+        `default.mhskel`), so `--facs AU26=1.0` moves every one of them and
+        leaves NONE behind — 226 moved, 0 still, against the teeth's 68/68.
+      - `obj_group_moved.cmake` now works in FIXED POINT (the writer prints four
+        decimals, so `-0.0482` is the integer -482 and CMake can subtract
+        exactly). That was needed for `RISE_TOLERANCE`, which exists because the
+        tongue vertex nearest the jaw pivot RISES 0.0004 dm under the rotation —
+        correct, and something an exact "every mover went down" rule calls a
+        failure. Defaults to 0, so the teeth keep the exact rule.
+- [ ] The remaining FIVE proxy choosers (clothes, hair, eyebrows, eyelashes,
+      generic proxy). Teeth and tongue are done and the machinery is a table
+      now, so a helper-cage slot costs one `SLOTS` entry, one `kProxySlots`
+      entry and its tests. `helper-hair` (428 verts) and the four eyelash
+      helpers (60/65 per side) exist in the base mesh; `helper-genital`,
+      `helper-skirt` and `helper-tights` exist too and belong to clothes.
+      Eyebrows have NO helper cage and stay blocked on content.
 - [ ] **OWNER DECISION: should the teeth be worn by DEFAULT?** `--teeth`
       defaults to `none` today, so a character opens toothless and an open
       mouth is empty. Defaulting to `teeth` is the anatomically right answer but

@@ -11,19 +11,48 @@
 # upper-teeth vertex sits at 14.8720 and the highest lower-teeth vertex at
 # 14.9174, so no horizontal plane separates them).
 #
-# "Moved" is decided by comparing the three coordinates NUMERICALLY, not by
-# comparing the two vertex lines as text. Text was tried first and over-counted
-# by four: a vertex on the model's midline is written `0.0000` in the rest
-# export and `-0.0000` in the posed one, because the pose multiply produces a
-# negative zero. Same point, different characters. The comparison is exact
-# rather than tolerant because an unposed vertex is written from the same float
-# and the measured still-set moves by exactly 0.
+# Everything here is done in FIXED POINT. The writer prints exactly four
+# decimals, so `-0.0482` is the integer -482 in units of 1e-4 dm, and CMake --
+# which has integer arithmetic and nothing else -- can then subtract and compare
+# exactly. Two earlier attempts are worth naming because both were wrong:
+#
+#   * comparing the vertex LINES as text over-counted by four. A vertex on the
+#     model's midline is written `0.0000` in the rest export and `-0.0000` in
+#     the posed one, because the pose multiply produces a negative zero. Same
+#     point, different characters.
+#   * comparing with CMake's `LESS` on the decimal strings works, but cannot
+#     express a tolerance, because there is no way to add two reals.
+#
+# RISE_TOLERANCE is that tolerance, in the same 1e-4 units, and it defaults to
+# 0 so a caller that does not ask for one gets the exact rule. It exists because
+# a group rigid-rotating about a joint has vertices ON the axis: the tongue's
+# nearest vertex to the jaw pivot rises 0.0004 dm under a jaw drop, which is
+# correct and which an exact "every mover went down" rule calls a failure. A
+# sign error still fails loudly -- it lifts the far end by 0.23, six hundred
+# times the tolerance.
 #
 # Usage:
 #   cmake -DA=<rest.obj> -DB=<posed.obj> -DGROUP=<name>
-#         -DEXPECT_MOVED=<n> -DEXPECT_STILL=<n> -P obj_group_moved.cmake
+#         -DEXPECT_MOVED=<n> -DEXPECT_STILL=<n> [-DRISE_TOLERANCE=<n>]
+#         -P obj_group_moved.cmake
 #
 # A and B must be exports of the same character with the same topology.
+
+if(NOT DEFINED RISE_TOLERANCE)
+    set(RISE_TOLERANCE 0)
+endif()
+
+# "-0.0482" -> -482. Four decimals exactly, which is what the writer emits.
+function(fixed_point text out)
+    if(NOT text MATCHES "^(-?)([0-9]+)\\.([0-9][0-9][0-9][0-9])$")
+        message(FATAL_ERROR "not a 4-decimal number: '${text}'")
+    endif()
+    math(EXPR value "${CMAKE_MATCH_2} * 10000 + ${CMAKE_MATCH_3}")
+    if(CMAKE_MATCH_1 STREQUAL "-")
+        math(EXPR value "0 - ${value}")
+    endif()
+    set(${out} "${value}" PARENT_SCOPE)
+endfunction()
 
 foreach(f "${A}" "${B}")
     if(NOT EXISTS "${f}")
@@ -71,21 +100,22 @@ foreach(i IN LISTS indices)
     list(GET va ${i} a)
     list(GET vb ${i} b)
     string(REGEX MATCH "^v +([^ ]+) +([^ ]+) +([^ ]+)" _ "${a}")
-    set(xa "${CMAKE_MATCH_1}")
-    set(ya "${CMAKE_MATCH_2}")
-    set(za "${CMAKE_MATCH_3}")
+    fixed_point("${CMAKE_MATCH_1}" xa)
+    fixed_point("${CMAKE_MATCH_2}" ya)
+    fixed_point("${CMAKE_MATCH_3}" za)
     string(REGEX MATCH "^v +([^ ]+) +([^ ]+) +([^ ]+)" _ "${b}")
-    set(xb "${CMAKE_MATCH_1}")
-    set(yb "${CMAKE_MATCH_2}")
-    set(zb "${CMAKE_MATCH_3}")
+    fixed_point("${CMAKE_MATCH_1}" xb)
+    fixed_point("${CMAKE_MATCH_2}" yb)
+    fixed_point("${CMAKE_MATCH_3}" zb)
     if(xa EQUAL xb AND ya EQUAL yb AND za EQUAL zb)
         math(EXPR still "${still} + 1")
     else()
         math(EXPR moved "${moved} + 1")
-        # Y-up, so a jaw drop is a decrease. Without this the gate passes on
-        # teeth that moved the wrong way, which is what a sign error produces.
-        if(NOT yb LESS ya)
-            list(APPEND rose "${i}: ${ya} -> ${yb}")
+        # Y-up, so a jaw drop is a decrease. Without this the gate passes on a
+        # group that moved the wrong way, which is what a sign error produces.
+        math(EXPR rise "${yb} - ${ya}")
+        if(rise GREATER RISE_TOLERANCE)
+            list(APPEND rose "${i}: rose ${rise} (tolerance ${RISE_TOLERANCE})")
         endif()
     endif()
 endforeach()
