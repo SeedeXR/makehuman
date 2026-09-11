@@ -4,6 +4,91 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-11 (sixty-sixth) — Session · **The hair slot, and the table paying for itself**
+
+*2026-09-11 — the third helper-cage proxy, added at the cost the last chunk
+promised.*
+
+### What landed
+A **Hair** chooser. The whole code change is one `SLOTS` entry in
+`tools/make_helper_proxies.py` and one `kProxySlots` entry in `main.cpp` —
+no new machinery, which is the thing the tongue chunk was really for. 428
+vertices, 198 faces, cut from `base.obj`'s own `helper-hair` cage.
+
+### A third weighting shape, and one pose that separates all three
+Measured from `data/rigs/default_weights.mhw`, `helper-hair` is the first cage
+that is NOT rigid with one body part: **272 of its 428 vertices are dominated
+by `head` and 116 by spine01-03**, because it covers hair falling down the back.
+
+So `--facs AU26=1.0` — the same jaw drop, on all three slots — now reads:
+
+    teeth    68 moved,  68 still   (two arches, different bones)
+    tongue  226 moved,   0 still   (one chain, all under `jaw`)
+    hair      0 moved, 428 still   (no jaw weighting at all)
+
+One input, three slots, three different answers. That is the assertion that
+shows the fitting is per-vertex from the base mesh's own weights rather than a
+special case written per slot, and no single slot could have shown it.
+
+The negative claim is paired with a positive one, because "nothing moved" also
+describes a proxy that is frozen or absent: under `--pose tpose` all 428 follow
+the body.
+
+### The gate learned to say when direction is not the claim
+The T-pose moves the hair cage BOTH ways — measured, it falls 0.5698 at one end
+and rises 0.0957 at the other, the spine straightening while the shoulders come
+up. The exact "every mover went down" rule is wrong there, and the tempting fix
+— `RISE_TOLERANCE=10000` — would read like a tolerance and behave like a
+deletion. So `obj_group_moved.cmake` now accepts the literal **`ANY`**, which
+switches the direction check off and says so. Mutation-tested to confirm it
+disables ONLY direction: with `ANY` set, wrong counts still fail, and the
+tongue's exact rule is untouched.
+
+### Rendered, looked at, and it is the honest answer rather than a good one
+`--hair hair --render`: 16,570 px, mean RGB (89, 60, 43). It reads as long
+straight ribbons hanging from the scalp down over the face and chest.
+
+That is faithful to the asset, not an extraction bug, and it was checked rather
+than assumed: the cage reaches **Z +1.742** while the frontmost face vertex (the
+nose tip) is at **+1.408**, and it spans Y 2.013..8.497 — from the crown to the
+waist. `helper-hair` is a long-hair ENVELOPE, meant as something to fit a groom
+TO, and it passes in front of the face by construction.
+
+Shipped anyway, off by default, with the limitation stated in the material file
+itself and an owner decision recorded in `todo.md`: keep it as a placeholder or
+hide the slot until a real groom exists. Everything else about the slot is done
+either way.
+
+### The one thing nothing was asserting
+`--check` regenerates the matcap from the same tint it is checking, so a tint
+copied from another slot survives it, and the app-path assertion only proves
+WHICH file was used. So the render test now makes a third claim on the same
+geometry: hair luminance **64.7** against the teeth matcap's **181.5**, bounded
+at half. Mutation: hair tint set to the teeth tint — the test fails.
+
+### Mutations run
+Gate, six ways: jaw 0/428 correct (pass); the jaw gate fed the TPOSE export
+(fail — so "0 moved" is not vacuous); tpose 428/0 with ANY (pass); the tpose
+gate fed the JAW export (fail); ANY with a wrong count (fail); the tongue's
+exact rule with swapped files (fail).
+Code: hair dropped from `kProxySlots` (all 9 hair tests fail); hair handed the
+tongue's matcap (`app_hair_worn` fails).
+
+### Counts moved
+`every shipped material parses` 18 → **19**, `the shipped assets index by uuid`
+24 → **26**, the picker's group count 8 → **9**.
+
+### Next
+Eyelashes are the next cheap slot — four helper groups (60/65 per side),
+dominated by `orbicularis04.L/R`, which would be a FOURTH weighting shape (a
+face muscle rather than head, jaw or spine). Clothes have `helper-genital`,
+`helper-skirt` and `helper-tights`. Eyebrows have no cage and stay blocked.
+
+**Open for the owner:** the hair cage question above, and still whether teeth
+and tongue should be worn by DEFAULT.
+
+---
+
 ## 2026-09-11 (sixty-fifth) — Session · **The tongue, and the moment a slot stopped being code**
 
 *2026-09-11 — the second helper-cage proxy, which is really about the first one

@@ -24,7 +24,12 @@
 #     express a tolerance, because there is no way to add two reals.
 #
 # RISE_TOLERANCE is that tolerance, in the same 1e-4 units, and it defaults to
-# 0 so a caller that does not ask for one gets the exact rule. It exists because
+# 0 so a caller that does not ask for one gets the exact rule. The literal
+# `ANY` switches the direction check OFF, for a pose that genuinely moves a
+# group both ways -- a T-pose straightens the spine AND raises the shoulders,
+# so the hair cage rises at one end while falling at the other. That is spelled
+# out rather than smuggled in as an enormous number, because a tolerance of
+# 10000 would read like a tolerance and behave like a deletion. It exists because
 # a group rigid-rotating about a joint has vertices ON the axis: the tongue's
 # nearest vertex to the jaw pivot rises 0.0004 dm under a jaw drop, which is
 # correct and which an exact "every mover went down" rule calls a failure. A
@@ -114,7 +119,7 @@ foreach(i IN LISTS indices)
         # Y-up, so a jaw drop is a decrease. Without this the gate passes on a
         # group that moved the wrong way, which is what a sign error produces.
         math(EXPR rise "${yb} - ${ya}")
-        if(rise GREATER RISE_TOLERANCE)
+        if(NOT RISE_TOLERANCE STREQUAL "ANY" AND rise GREATER RISE_TOLERANCE)
             list(APPEND rose "${i}: rose ${rise} (tolerance ${RISE_TOLERANCE})")
         endif()
     endif()

@@ -428,8 +428,8 @@ TEST_CASE("the teeth matcap renders enamel rather than lip", "[render][proxy][te
 // RED. A tint copied from the teeth entry passes every count, every geometry
 // assertion and the teeth's own saturation bound; only asking about the hue
 // catches it.
-TEST_CASE("the tongue matcap renders red, where the teeth one renders neutral",
-          "[render][proxy][tongue]") {
+TEST_CASE("each slot's matcap renders its own colour: red, neutral and dark",
+          "[render][proxy][tongue][hair]") {
     requireDevice();
     auto r = render::OffscreenRenderer::create(MH_SHADER_DIR);
     REQUIRE(r.has_value());
@@ -483,6 +483,35 @@ TEST_CASE("the tongue matcap renders red, where the teeth one renders neutral",
         return total / static_cast<double>(n);
     };
 
+    // The hair matcap makes a third claim on the same geometry: DARK. Nothing
+    // else asserts it -- `--check` regenerates from the same tint it is
+    // checking, so a tint copied from another slot survives it, and the app
+    // path only proves which FILE was used, not what is in it.
+    const auto dark = fs::path(MH_DATA_DIR) / "hair" / "skinmat_hair.png";
+    REQUIRE(fs::exists(dark));
+    const std::vector<render::MeshInstance> withDark{{rm.view(), dark}};
+    const auto asHair = (*r)->render(withDark, s);
+    REQUIRE(asHair.has_value());
+
+    const auto luminance = [&s](const QImage& img) {
+        const QColor bg = QColor::fromRgbF(s.background.x, s.background.y, s.background.z);
+        double total    = 0.0;
+        size_t n        = 0;
+        for (int y = 0; y < img.height(); ++y) {
+            for (int x = 0; x < img.width(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (std::abs(c.red() - bg.red()) <= 6 && std::abs(c.green() - bg.green()) <= 6 &&
+                    std::abs(c.blue() - bg.blue()) <= 6) {
+                    continue;
+                }
+                total += 0.2126 * c.red() + 0.7152 * c.green() + 0.0722 * c.blue();
+                ++n;
+            }
+        }
+        REQUIRE(n > 0);
+        return total / static_cast<double>(n);
+    };
+
     const double pinkRed   = redness(*asTongue);
     const double enamelRed = redness(*asTeeth);
     INFO("redness: tongue matcap " << pinkRed << ", teeth matcap " << enamelRed);
@@ -492,4 +521,9 @@ TEST_CASE("the tongue matcap renders red, where the teeth one renders neutral",
     // nudging it gives.
     CHECK(pinkRed > 40.0);
     CHECK(enamelRed < 10.0);
+
+    const double hairLuma  = luminance(*asHair);
+    const double teethLuma = luminance(*asTeeth);
+    INFO("luminance: hair matcap " << hairLuma << ", teeth matcap " << teethLuma);
+    CHECK(hairLuma < teethLuma / 2.0);
 }

@@ -3543,13 +3543,34 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         tongue vertex nearest the jaw pivot RISES 0.0004 dm under the rotation —
         correct, and something an exact "every mover went down" rule calls a
         failure. Defaults to 0, so the teeth keep the exact rule.
-- [ ] The remaining FIVE proxy choosers (clothes, hair, eyebrows, eyelashes,
-      generic proxy). Teeth and tongue are done and the machinery is a table
-      now, so a helper-cage slot costs one `SLOTS` entry, one `kProxySlots`
-      entry and its tests. `helper-hair` (428 verts) and the four eyelash
-      helpers (60/65 per side) exist in the base mesh; `helper-genital`,
-      `helper-skirt` and `helper-tights` exist too and belong to clothes.
-      Eyebrows have NO helper cage and stay blocked on content.
+- [x] **The HAIR slot, and the table paid for itself** (2026-09-11). The third
+      helper-cage proxy cost exactly what the tongue chunk promised: one `SLOTS`
+      entry, one `kProxySlots` entry and its tests. No new machinery.
+      - Its weighting is a THIRD distinct shape, measured from
+        `default_weights.mhw`: of 428 vertices, **272 are dominated by `head`
+        and 116 by spine01-03**, because the cage covers hair falling down the
+        back. So the same `--facs AU26=1.0` now gets three different answers —
+        teeth 68 moved/68 still, tongue 226/0, hair **0/428**. One pose,
+        three slots, three results: that is what shows the fitting is
+        per-vertex from the base mesh rather than a special case per slot.
+      - `obj_group_moved.cmake` gained `RISE_TOLERANCE=ANY`, which switches the
+        direction check off for a pose that genuinely moves a group both ways
+        (a T-pose drops the cage 0.5698 at one end and lifts it 0.0957 at the
+        other). Spelled out rather than smuggled in as a huge number, and
+        mutation-tested to confirm it disables only direction, never the counts.
+- [ ] **OWNER DECISION: is the hair cage good enough to ship as a wearable?**
+      It is off by default and the machinery is proven, but RENDERED AND LOOKED
+      AT it is long straight ribbons hanging over the face, not a groom. That
+      is faithful, not a bug: measured, the cage reaches Z +1.742 while the nose
+      tip is at +1.408, and spans Y 2.0..8.5 — it is a long-hair ENVELOPE meant
+      for fitting a groom to, and it passes in front of the face by
+      construction. Keep it as a placeholder, or hide the slot until a real
+      groom asset exists? Everything else about it is done either way.
+- [ ] The remaining FOUR proxy choosers (clothes, eyebrows, eyelashes, generic
+      proxy). The four eyelash helpers (60/65 per side, dominated by
+      `orbicularis04.L/R`) exist in the base mesh and are the next cheap slot;
+      `helper-genital`, `helper-skirt` and `helper-tights` exist too and belong
+      to clothes. Eyebrows have NO helper cage and stay blocked on content.
 - [ ] **OWNER DECISION: should the teeth be worn by DEFAULT?** `--teeth`
       defaults to `none` today, so a character opens toothless and an open
       mouth is empty. Defaulting to `teeth` is the anatomically right answer but

@@ -137,6 +137,43 @@ SLOTS = [
             "# base mesh's weights decide that, not this file."
         ),
     ),
+    Slot(
+        key="hair",
+        name="Hair",
+        uuid="3f8c21d5-6b04-4e79-9c52-1a7de0b46f38",
+        groups=("helper-hair",),
+        # Outermost of the three: it sits over the scalp, so it wins the depth
+        # fight against anything on the head rather than being buried in it.
+        z_depth=50,
+        # Dark brown. Hair is the one slot whose real colour a user will want to
+        # change, and this is the placeholder until the slot grows a colour
+        # chooser the way the eyes have one.
+        tint=(0.32, 0.22, 0.16),
+        material=(
+            "# No texture, and this is the slot where that shows most: real hair\n"
+            "# needs an alpha-cut strand texture, which the cage geometry cannot\n"
+            "# stand in for. This is honest placeholder shading on honest\n"
+            "# reference geometry, not a hair groom.\n"
+            "name Hair\n"
+            "tag MakeHuman\u2122\n"
+            "ambientColor 0.04 0.03 0.02\n"
+            "diffuseColor 0.28 0.19 0.13\n"
+            "specularColor 0.6 0.6 0.6\n"
+            "shininess 0.3\n"
+            "opacity 1.0\n"
+            "transparent False\n"
+            "backfaceCull True\n"
+            "castShadows True\n"
+            "receiveShadows True\n"
+            "shader data/shaders/glsl/litsphere\n"
+        ),
+        rationale=(
+            "# 272 of these vertices are dominated by `head` and 116 by\n"
+            "# spine01-03, because the cage covers hair falling down the BACK.\n"
+            "# So this proxy is NOT rigid with the head -- it follows the body,\n"
+            "# which is exactly what the identity fitting gives it for free."
+        ),
+    ),
 ]
 
 

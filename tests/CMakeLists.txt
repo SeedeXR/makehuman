@@ -314,7 +314,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 8 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 9 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # The rig had no picker either: two ship, --rig has always chosen between
@@ -991,6 +991,81 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
     set_tests_properties(app_teeth_and_tongue_both_groups PROPERTIES
         FIXTURES_REQUIRED app_teeth_and_tongue)
+
+    # THE HAIR -- the third helper-cage slot, and the first whose cage is NOT
+    # rigid with one body part. Measured from data/rigs/default_weights.mhw:
+    # of its 428 vertices, 272 are dominated by `head` and 116 by spine01-03,
+    # because the cage covers hair falling down the BACK. So the hair is the
+    # slot that proves the fitting follows the body rather than a single bone.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/hair)
+    add_test(NAME app_hair_group COMMAND makehuman
+             --save ${CMAKE_CURRENT_BINARY_DIR}/hair/g.mhm)
+    set_tests_properties(app_hair_group PROPERTIES
+        PASS_REGULAR_EXPRESSION "asset groups: .*Hair")
+    add_test(NAME app_hair_worn COMMAND makehuman
+             --hair hair --export ${CMAKE_CURRENT_BINARY_DIR}/hair/worn.obj)
+    set_tests_properties(app_hair_worn PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Hair \\(.*\\) lit by skinmat_hair"
+        FAIL_REGULAR_EXPRESSION "export failed;cannot"
+        FIXTURES_SETUP app_hair_worn)
+    add_test(NAME app_hair_none COMMAND makehuman
+             --hair none --export ${CMAKE_CURRENT_BINARY_DIR}/hair/none.obj)
+    set_tests_properties(app_hair_none PROPERTIES
+        FAIL_REGULAR_EXPRESSION "wearing Hair"
+        FIXTURES_SETUP app_hair_none)
+    add_test(NAME app_hair_add_geometry COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/hair/worn.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/hair/none.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_hair_add_geometry PROPERTIES
+        FIXTURES_REQUIRED "app_hair_worn;app_hair_none")
+    add_test(NAME app_hair_saved COMMAND makehuman
+             --hair hair --save ${CMAKE_CURRENT_BINARY_DIR}/hair/saved.mhm)
+    set_tests_properties(app_hair_saved PROPERTIES FIXTURES_SETUP app_hair_saved)
+    add_test(NAME app_hair_save_names_it COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/hair/saved.mhm
+             "-DKEYS=hair Hair 3f8c21d5-6b04-4e79-9c52-1a7de0b46f38"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_hair_save_names_it PROPERTIES
+        FIXTURES_REQUIRED app_hair_saved)
+    # The SAME jaw drop that moves 68 of the teeth and all 226 of the tongue
+    # moves NONE of the hair. Three slots, three different answers to one pose,
+    # which is what shows the fitting is per-vertex from the base mesh's own
+    # weights rather than a special case written per slot.
+    add_test(NAME app_hair_jaw_open COMMAND makehuman
+             --hair hair --facs AU26=1.0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/hair/jaw_open.obj)
+    set_tests_properties(app_hair_jaw_open PROPERTIES FIXTURES_SETUP app_hair_jaw_open)
+    add_test(NAME app_hair_ignores_the_jaw COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/hair/worn.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/hair/jaw_open.obj
+             -DGROUP=hair -DEXPECT_MOVED=0 -DEXPECT_STILL=428
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
+    set_tests_properties(app_hair_ignores_the_jaw PROPERTIES
+        FIXTURES_REQUIRED "app_hair_worn;app_hair_jaw_open")
+    # ...and the positive half, because "nothing moved" on its own also
+    # describes a proxy that is frozen, or absent. Under a T-pose every one of
+    # the 428 follows the body. Direction is deliberately not asserted here:
+    # measured, the cage falls 0.5698 at one end and rises 0.0957 at the other,
+    # which is the spine straightening while the shoulders come up.
+    add_test(NAME app_hair_tpose COMMAND makehuman
+             --hair hair --pose tpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/hair/tpose.obj)
+    set_tests_properties(app_hair_tpose PROPERTIES FIXTURES_SETUP app_hair_tpose)
+    add_test(NAME app_hair_follows_the_body COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/hair/worn.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/hair/tpose.obj
+             -DGROUP=hair -DEXPECT_MOVED=428 -DEXPECT_STILL=0
+             -DRISE_TOLERANCE=ANY
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
+    set_tests_properties(app_hair_follows_the_body PROPERTIES
+        FIXTURES_REQUIRED "app_hair_worn;app_hair_tpose")
+    add_test(NAME app_hair_reload_wears_it COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/hair/saved.mhm
+             --export ${CMAKE_CURRENT_BINARY_DIR}/hair/reloaded.obj)
+    set_tests_properties(app_hair_reload_wears_it PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Hair"
+        FIXTURES_REQUIRED app_hair_saved)
 
 
     add_test(NAME app_group_is_litsphere COMMAND makehuman
@@ -2370,7 +2445,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 8 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 9 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # Refused rather than silently defaulted to brown, which would make a typo

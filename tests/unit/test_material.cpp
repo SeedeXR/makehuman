@@ -111,12 +111,12 @@ TEST_CASE("every shipped material parses", "[core][material][golden]") {
     }
     CHECK(failed == 0);
     // 3 originals (xray, default skin, brown eye) + 8 generated skin tones
-    // (tools/make_skins.py) + 5 generated eye colours (tools/make_eyes.py) + 2
-    // generated helper-cage proxies, teeth and tongue
+    // (tools/make_skins.py) + 5 generated eye colours (tools/make_eyes.py) + 3
+    // generated helper-cage proxies -- teeth, tongue and hair
     // (tools/make_helper_proxies.py).
     // The count is pinned rather than left open because "every material parses"
     // passes trivially when the loop finds none.
-    CHECK(ok == 18);
+    CHECK(ok == 19);
 }
 
 TEST_CASE("booleans accept the reference's spellings", "[core][material]") {
