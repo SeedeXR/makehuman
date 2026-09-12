@@ -4,6 +4,7 @@
 #include "makehuman/core/Mesh.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <queue>
@@ -14,6 +15,17 @@ namespace {
 
 constexpr float kInf = std::numeric_limits<float>::infinity();
 
+/// Region membership by vertex id, for O(1) "is this vertex walkable".
+///
+/// All three entry points need exactly this, and built it separately.
+std::vector<uint8_t> regionMask(const Mesh& mesh, std::span<const uint32_t> region) {
+    std::vector<uint8_t> inRegion(mesh.vertexCount(), 0U);
+    for (const uint32_t v : region) {
+        if (v < inRegion.size()) inRegion[v] = 1U;
+    }
+    return inRegion;
+}
+
 /// Edge neighbours of every region vertex, keyed by mesh vertex id.
 ///
 /// Built from the face corner array rather than the mesh's `vface` table: a
@@ -22,10 +34,7 @@ constexpr float kInf = std::numeric_limits<float>::infinity();
 /// none has to be kept in step with the faces.
 std::vector<std::vector<uint32_t>> edgeNeighbours(const Mesh& mesh,
                                                   std::span<const uint32_t> region) {
-    std::vector<uint8_t> inRegion(mesh.vertexCount(), 0U);
-    for (const uint32_t v : region) {
-        if (v < inRegion.size()) inRegion[v] = 1U;
-    }
+    const std::vector<uint8_t> inRegion = regionMask(mesh, region);
 
     std::vector<std::vector<uint32_t>> adj(mesh.vertexCount());
     const std::span<const uint32_t> fvert = mesh.fvert();
@@ -66,7 +75,7 @@ float edgeLength(const Mesh& mesh, uint32_t a, uint32_t b) {
 /// Dijkstra from @p sources over @p adj, writing into @p dist.
 void walk(const Mesh& mesh, const std::vector<std::vector<uint32_t>>& adj,
           std::span<const uint32_t> sources, const std::vector<uint8_t>& inRegion,
-          std::vector<float>& dist) {
+          std::vector<float>& dist, std::vector<uint32_t>* prev = nullptr) {
     using Entry = std::pair<float, uint32_t>;
     std::priority_queue<Entry, std::vector<Entry>, std::greater<>> queue;
     for (const uint32_t s : sources) {
@@ -83,6 +92,7 @@ void walk(const Mesh& mesh, const std::vector<std::vector<uint32_t>>& adj,
             const float step = d + edgeLength(mesh, v, n);
             if (step < dist[n]) {
                 dist[n] = step;
+                if (prev != nullptr) (*prev)[n] = v;
                 queue.emplace(step, n);
             }
         }
@@ -96,11 +106,8 @@ std::vector<float> surfaceDistance(const Mesh& mesh, std::span<const uint32_t> r
     std::vector<float> dist(mesh.vertexCount(), kInf);
     if (region.empty()) return dist;
 
-    std::vector<uint8_t> inRegion(mesh.vertexCount(), 0U);
-    for (const uint32_t v : region) {
-        if (v < inRegion.size()) inRegion[v] = 1U;
-    }
-    const auto adj = edgeNeighbours(mesh, region);
+    const auto inRegion = regionMask(mesh, region);
+    const auto adj      = edgeNeighbours(mesh, region);
     walk(mesh, adj, sources, inRegion, dist);
     return dist;
 }
@@ -118,11 +125,8 @@ std::vector<uint32_t> spreadOverSurface(const Mesh& mesh, std::span<const uint32
     members.erase(std::unique(members.begin(), members.end()), members.end());
     if (count >= members.size()) return members;
 
-    std::vector<uint8_t> inRegion(mesh.vertexCount(), 0U);
-    for (const uint32_t v : members) {
-        if (v < inRegion.size()) inRegion[v] = 1U;
-    }
-    const auto adj = edgeNeighbours(mesh, members);
+    const auto inRegion = regionMask(mesh, members);
+    const auto adj      = edgeNeighbours(mesh, members);
 
     picks.push_back(members.front());
     std::vector<float> best(mesh.vertexCount(), kInf);
@@ -155,6 +159,37 @@ std::vector<uint32_t> spreadOverSurface(const Mesh& mesh, std::span<const uint32
         picks.push_back(next);
     }
     return picks;
+}
+
+std::vector<uint32_t> pathOverSurface(const Mesh& mesh, std::span<const uint32_t> region,
+                                      uint32_t source, uint32_t target) {
+    std::vector<uint32_t> path;
+    if (region.empty()) return path;
+
+    const auto inRegion = regionMask(mesh, region);
+    // Bounds only. An explicit in-region check for the two endpoints was here
+    // and a mutation proved it could not change any answer: an edge is walkable
+    // only when BOTH ends are in the region, so a vertex outside it has no
+    // walkable edges -- an excluded source seeds nothing and an excluded target
+    // stays unreachable, and either way the path below comes back empty. The
+    // BOUNDS check is not redundant: `dist[target]` on an out-of-range target
+    // would read past the end.
+    if (source >= inRegion.size() || target >= inRegion.size()) return path;
+
+    constexpr uint32_t kNone = std::numeric_limits<uint32_t>::max();
+    std::vector<float> dist(mesh.vertexCount(), kInf);
+    std::vector<uint32_t> prev(mesh.vertexCount(), kNone);
+    const auto adj = edgeNeighbours(mesh, region);
+    const std::array<uint32_t, 1> seed{source};
+    walk(mesh, adj, seed, inRegion, dist, &prev);
+
+    if (std::isinf(dist[target])) return path;  // no route: empty, not partial
+
+    for (uint32_t v = target; v != kNone; v = prev[v]) {
+        path.push_back(v);
+    }
+    std::reverse(path.begin(), path.end());
+    return path;
 }
 
 }  // namespace mh::core

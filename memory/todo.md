@@ -3662,6 +3662,21 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         repetition, which is why my first `{24}` tests failed on correct
         output. `NOT index GREATER_EQUAL 226` rejects "abc" and "" too, so one
         check replaced two.
+      - **FIXED 2026-09-12 (same day, next chunk): the region was wrong.**
+        `--spread-roots` defined the scalp by HEIGHT alone, which is 303
+        vertices of which only **157 are body** -- the rest are `helper-hair`
+        (138) and `joint-head-2` (8). It was handing out roots on the long-hair
+        envelope this very write-up says never to use. Both gates (y > 7.75,
+        index >= 226) were TRUE of every root and measured the wrong region.
+        Caught by a new `pathOverSurface` test returning an empty route:
+        height-only is **18 disconnected components**, body-only is **ONE** of
+        157. Now group-restricted and pinned by the clamp count (157) and an
+        upper index bound (body cap 226..12157; every helper/joint cap vertex
+        is >= 14566).
+      - **`mh::core::pathOverSurface`** — the vertex chain between two scalp
+        points, which is what routing a parting or a cornrow needs and what
+        distances alone cannot give. Dijkstra's predecessor chain, so `walk`
+        gained an optional `prev[]` rather than a second solver.
       - Next: the generator consumes `--spread-roots` and walks strands from
         those roots. Still open after that, unchanged by this chunk:
       - Hanging styles additionally need collision: locs rooted on the forehead

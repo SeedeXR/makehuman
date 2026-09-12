@@ -4,6 +4,71 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-12 (eightieth) — Session · **The region was wrong, and my gates agreed with it**
+
+*2026-09-12 — a bug in the chunk I shipped an hour earlier.*
+
+### What this is
+`--spread-roots` shipped in `759efe22` defining the scalp as "every vertex above
+y=7.75". That is 303 vertices. Only **157 of them are body**. The other 146 are
+**`helper-hair` (138)** and **`joint-head-2` (8)** — and `memory/todo.md` is
+explicit that helper-hair is the wrong source: "a long-hair envelope carrying
+ribbons down over the face". So the flag was handing the style generator roots
+on the very geometry the write-up says never to grow hair from. The shipped
+output proves it: vertices 14566 and 18722 were among the 24 "hair roots".
+
+My two gates asserted `y > 7.75` and `index >= 226`. Both were true of every
+root. Both measured the region I had DEFINED rather than the scalp I MEANT.
+That is the same failure this log keeps recording, one level further out: not a
+weak check on a good definition, a correct check on a wrong definition.
+
+### How it surfaced
+Not by review — by a new test failing. `pathOverSurface` (this chunk) routes a
+parting from the frontmost to the backmost midline cap vertex, and it came back
+EMPTY. Measured: the height-only region is **18 disconnected components**, the
+largest 157; the body-only scalp is **ONE** component of 157, front-to-back
+z-span 1.858. The helpers float above the cranium as separate shells.
+
+### The fix, and what pins it
+Region restricted to the `body` face group. Two independent gates:
+* the clamp count 303 → **157** (a region that readmitted the helpers reads 303);
+* an upper index bound of **12157** — measured, body cap vertices run
+  226..12157 while every helper/joint cap vertex is **>= 14566**. Height cannot
+  separate them (both sit on the cranium); the index can.
+Mutation N3 (revert to height-only) kills five tests.
+
+### pathOverSurface
+`surfaceDistance` says how FAR the nape is; routing a cornrow needs WHICH
+vertices lie between. Dijkstra already computed it — `walk` gained an optional
+`prev[]` rather than a second solver being written. Empty rather than truncated
+when there is no route, so a partial route cannot pass for a whole one.
+
+### Two mutations SURVIVED, and both were right to
+* N1: the endpoint in-region check could not change any answer — an edge needs
+  BOTH ends in the region, so an excluded endpoint is unreachable anyway.
+* N5: `if (v == source) break;` — `prev[source]` is never written, so the loop
+  already ended there.
+Both deleted. A line no mutation can kill is either untested or unnecessary,
+and these were unnecessary. The BOUNDS half of N1's guard is a different
+matter: N4 removed it and ASan reported a heap-buffer-overflow at
+SurfaceWalk.cpp:186, so that half stays.
+
+### Measurements corrected
+The previous entry's "closest pair 1.126 dm" and "exact 12/12 split" were
+computed on the WRONG 303-vertex region. On the body scalp: closest pair
+**0.387 dm**, split left 11 / right 13 and back 11 / front 13.
+
+### Review pass
+Three findings, all mine: `<array>` used but only transitively included; the
+redundant break above; and `inRegion` built identically in three functions, now
+one `regionMask` helper.
+
+### Next
+The generator consumes `--spread-roots` and walks strands with `pathOverSurface`.
+Collision for hanging styles is still untouched.
+
+---
+
 ## 2026-09-12 (seventy-ninth) — Session · **A primitive nothing could call**
 
 *2026-09-12 — the walk shipped; this is what made it reachable.*

@@ -2597,14 +2597,37 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "cannot read the base mesh: %s\n", base.error().message().c_str());
             return 1;
         }
-        // The cranium cap: everything above the cranium centre's height, which
-        // `memory/todo.md` measured at (0, 7.75, 0.50). A hairline is a
-        // narrower region than this and belongs to the style, not to the
-        // primitive -- this is the scalp every style starts from.
+        // The cranium cap of the BODY: every body vertex above the cranium
+        // centre's height, which `memory/todo.md` measured at (0, 7.75, 0.50).
+        //
+        // The group restriction is not a refinement, it is the whole
+        // correctness of the region. Height alone selects 303 vertices, of
+        // which only 157 are body: 138 belong to `helper-hair` and 8 to
+        // `joint-head-2`. `memory/todo.md` is explicit that helper-hair is the
+        // wrong source -- "a long-hair envelope carrying ribbons down over the
+        // face" -- so roots taken from it are roots on the very geometry the
+        // write-up says never to grow hair from. Measured: the body cap is ONE
+        // connected component, while the height-only region is 18.
+        const auto bodyGroup = base->findFaceGroup("body");
+        if (!bodyGroup) {
+            std::fprintf(stderr, "the base mesh has no \"body\" face group\n");
+            return 1;
+        }
+        const auto coords   = base->coord();
+        const auto fvert    = base->fvert();
+        const auto fgroup   = base->group();
+        const size_t stride = base->vertsPerPrimitive();
+        std::vector<uint8_t> onBody(coords.size(), 0U);
+        for (size_t f = 0; f < fgroup.size(); ++f) {
+            if (fgroup[f] != *bodyGroup) continue;
+            for (size_t c = 0; c < stride; ++c) {
+                const uint32_t v = fvert[f * stride + c];
+                if (v < onBody.size()) onBody[v] = 1U;
+            }
+        }
         std::vector<uint32_t> scalp;
-        const auto coords = base->coord();
         for (uint32_t v = 0; v < coords.size(); ++v) {
-            if (coords[v].y > 7.75F) scalp.push_back(v);
+            if (onBody[v] != 0U && coords[v].y > 7.75F) scalp.push_back(v);
         }
         for (const uint32_t root :
              mh::core::spreadOverSurface(*base, scalp, static_cast<size_t>(wanted))) {

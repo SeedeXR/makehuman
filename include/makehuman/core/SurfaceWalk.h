@@ -62,4 +62,19 @@ class Mesh;
                                                       std::span<const uint32_t> region,
                                                       size_t count);
 
+/// The chain of vertices from @p source to @p target, walking mesh edges inside
+/// @p region.
+///
+/// `surfaceDistance` says how far the nape is from the hairline; this says
+/// which vertices lie between them, which is what routing a parting or a
+/// cornrow actually needs.
+///
+/// @return source first, target last, each consecutive pair joined by an edge.
+///         Empty when either end is outside @p region or no route exists --
+///         empty rather than truncated, so a partial route cannot be mistaken
+///         for a whole one.
+[[nodiscard]] std::vector<uint32_t> pathOverSurface(const Mesh& mesh,
+                                                    std::span<const uint32_t> region,
+                                                    uint32_t source, uint32_t target);
+
 }  // namespace mh::core

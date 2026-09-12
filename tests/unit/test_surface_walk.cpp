@@ -78,6 +78,35 @@ std::vector<uint32_t> allVertices(const Mesh& m) {
     return all;
 }
 
+/// The BODY scalp: body-group vertices above the cranium centre's height.
+///
+/// The group restriction IS the region's correctness, not a refinement.
+/// Measured on the shipped base mesh: height alone (y > 7.75) selects 303
+/// vertices in EIGHTEEN disconnected components, because `helper-hair` (138
+/// vertices) and `joint-head-2` (8) also sit above the cranium. Restricted to
+/// the body it is 157 vertices in ONE component -- and `memory/todo.md` is
+/// explicit that helper-hair is the wrong source, "a long-hair envelope
+/// carrying ribbons down over the face".
+std::vector<uint32_t> bodyScalp(const Mesh& m) {
+    const auto body = m.findFaceGroup("body");
+    REQUIRE(body.has_value());
+    const auto fvert    = m.fvert();
+    const auto fgroup   = m.group();
+    const size_t stride = m.vertsPerPrimitive();
+    std::vector<uint8_t> onBody(m.vertexCount(), 0U);
+    for (size_t f = 0; f < fgroup.size(); ++f) {
+        if (fgroup[f] != *body) continue;
+        for (size_t c = 0; c < stride; ++c)
+            onBody[fvert[f * stride + c]] = 1U;
+    }
+    std::vector<uint32_t> scalp;
+    const auto coords = m.coord();
+    for (uint32_t v = 0; v < coords.size(); ++v) {
+        if (onBody[v] != 0U && coords[v].y > 7.75F) scalp.push_back(v);
+    }
+    return scalp;
+}
+
 }  // namespace
 
 TEST_CASE("surface distance grows along the edges, not through space", "[core][surfacewalk]") {
@@ -216,13 +245,10 @@ TEST_CASE("roots spread over the REAL scalp instead of piling at its rim", "[cor
     const auto mesh = loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
     REQUIRE(mesh.has_value());
 
-    std::vector<uint32_t> scalp;
     const auto coords = mesh->coord();
-    for (uint32_t v = 0; v < coords.size(); ++v) {
-        if (coords[v].y > 7.75F) scalp.push_back(v);
-    }
-    INFO("scalp vertices: " << scalp.size());
-    REQUIRE(scalp.size() > 200);
+    const auto scalp  = bodyScalp(*mesh);
+    INFO("body scalp vertices: " << scalp.size());
+    REQUIRE(scalp.size() == 157);  // measured; 303 would mean helpers crept in
 
     constexpr size_t kRoots = 24;
     const auto picks        = spreadOverSurface(*mesh, scalp, kRoots);
@@ -237,10 +263,13 @@ TEST_CASE("roots spread over the REAL scalp instead of piling at its rim", "[cor
 
     // THE assertion. Collapse looks like roots crowding together; spread looks
     // like every pair being far apart over the surface. MEASURED on the shipped
-    // base mesh: 303 scalp vertices, and the closest pair of 24 roots sits
-    // 1.126 dm apart over the surface. The bound is half that, which still
-    // leaves the failure it is for -- sweeps landing on top of one another at
-    // the front edge -- at or near zero.
+    // base mesh: 157 BODY scalp vertices, and the closest pair of 24 roots sits
+    // 0.387 dm apart over the surface. (An earlier version of this test read
+    // 1.126 dm because its region was the height-only 303, which included the
+    // helper-hair envelope -- a bigger, more spread-out set, and the wrong
+    // one.) The bound is roughly half the measurement, which still leaves the
+    // failure it is for -- sweeps landing on top of one another at the front
+    // edge -- at or near zero.
     float closest = 1e9F;
     for (const uint32_t a : picks) {
         const auto d = surfaceDistance(*mesh, scalp, std::vector<uint32_t>{a});
@@ -249,12 +278,15 @@ TEST_CASE("roots spread over the REAL scalp instead of piling at its rim", "[cor
         }
     }
     INFO("closest pair of roots: " << closest << " dm apart over the surface");
-    CHECK(closest > 0.5F);
+    CHECK(closest > 0.25F);
 
     // And they cover the cap rather than one side of it: both halves in x, and
     // both halves in z, carry roots. A pile at the front edge fails on z.
-    // Measured: exactly 12/12 either way, which a symmetric mesh and a
-    // deterministic rule should give; the bound is a third of that.
+    // Measured on the body scalp: left 11 / right 13 and back 11 / front 13.
+    // (Not the exact 12/12 the height-only region gave: that set was symmetric
+    // in a way the body cap alone is not.) The bound is a third of an even
+    // split, so it fails on a pile rather than on a mesh that is merely not
+    // perfectly balanced.
     int left = 0, right = 0, front = 0, back = 0;
     for (const uint32_t p : picks) {
         (coords[p].x < 0.0F ? left : right)++;
@@ -265,4 +297,96 @@ TEST_CASE("roots spread over the REAL scalp instead of piling at its rim", "[cor
     CHECK(right >= 4);
     CHECK(back >= 4);
     CHECK(front >= 4);
+}
+
+TEST_CASE("a path follows edges from source to target", "[core][surfacewalk]") {
+    const Mesh m      = makeGrid(5);
+    const auto region = allVertices(m);
+
+    // Distances say HOW FAR the nape is from the hairline. Routing a cornrow
+    // needs the actual chain of vertices between them, which is what this adds.
+    const auto path = pathOverSurface(m, region, 0, 24);
+    REQUIRE(path.size() == 9);  // 8 steps on a 5x5 grid, so 9 vertices
+    CHECK(path.front() == 0);
+    CHECK(path.back() == 24);
+
+    // THE assertion: every consecutive pair is a real mesh edge. A "path" that
+    // merely started and ended in the right place while teleporting through
+    // the middle would satisfy the size and the endpoints.
+    for (size_t i = 0; i + 1 < path.size(); ++i) {
+        const auto step = surfaceDistance(m, region, std::vector<uint32_t>{path[i]});
+        INFO("step " << i << ": " << path[i] << " -> " << path[i + 1]);
+        CHECK_THAT(step[path[i + 1]], WithinAbs(1.0, 1e-5));
+    }
+}
+
+TEST_CASE("a path stays inside the region", "[core][surfacewalk]") {
+    const Mesh m = makeGrid(5);
+    std::vector<uint32_t> column;
+    for (uint32_t z = 0; z < 5; ++z)
+        column.push_back(z * 5);
+
+    // The region is the wall. This is what keeps a scalp path off the face.
+    const auto path = pathOverSurface(m, column, 0, 20);
+    REQUIRE(path.size() == 5);
+    for (const uint32_t v : path)
+        CHECK(std::find(column.begin(), column.end(), v) != column.end());
+}
+
+TEST_CASE("an unreachable or excluded endpoint yields no path", "[core][surfacewalk]") {
+    const Mesh m = makeGrid(5);
+    std::vector<uint32_t> column;
+    for (uint32_t z = 0; z < 5; ++z)
+        column.push_back(z * 5);
+
+    // Not a truncated path and not a throw: empty, so a caller cannot mistake
+    // a partial route for a whole one.
+    CHECK(pathOverSurface(m, column, 0, 24).empty());          // target outside
+    CHECK(pathOverSurface(m, column, 24, 0).empty());          // source outside
+    CHECK(pathOverSurface(m, allVertices(m), 0, 99).empty());  // not a vertex
+}
+
+TEST_CASE("a path to the source itself is just the source", "[core][surfacewalk]") {
+    const Mesh m      = makeGrid(5);
+    const auto region = allVertices(m);
+    const auto path   = pathOverSurface(m, region, 7, 7);
+    REQUIRE(path.size() == 1);
+    CHECK(path.front() == 7);
+}
+
+TEST_CASE("a real scalp path runs front to back without leaving the cap", "[core][surfacewalk]") {
+    // The regression, on the mesh that produced the original failure. A
+    // cornrow is exactly this: a route from the hairline to the nape that
+    // never leaves the scalp.
+    const auto mesh = loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+
+    const auto coords = mesh->coord();
+    const auto scalp  = bodyScalp(*mesh);
+    REQUIRE(scalp.size() == 157);
+
+    // Frontmost and backmost cap vertices near the midline: the two ends a
+    // front-to-back parting runs between.
+    uint32_t front = scalp.front();
+    uint32_t back  = scalp.front();
+    for (const uint32_t v : scalp) {
+        if (std::abs(coords[v].x) > 0.15F) continue;  // near the midline
+        if (coords[v].z > coords[front].z) front = v;
+        if (coords[v].z < coords[back].z) back = v;
+    }
+    REQUIRE(front != back);
+
+    const auto path = pathOverSurface(*mesh, scalp, front, back);
+    REQUIRE(path.size() > 2);
+    CHECK(path.front() == front);
+    CHECK(path.back() == back);
+    for (const uint32_t v : path) {
+        REQUIRE(std::find(scalp.begin(), scalp.end(), v) != scalp.end());
+    }
+
+    // It actually travels: the straight-line span between the ends is real, so
+    // a path that never moved in z would be a different route entirely.
+    INFO("path of " << path.size() << " vertices, z " << coords[front].z << " -> "
+                    << coords[back].z);
+    CHECK(coords[front].z - coords[back].z > 0.5F);
 }

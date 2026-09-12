@@ -1749,10 +1749,12 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_spread_roots COMMAND ${CMAKE_COMMAND}
              -DN=24 -DEXPECT=24 -DAPP=$<TARGET_FILE:makehuman>
              -P ${CMAKE_CURRENT_SOURCE_DIR}/check_roots.cmake)
-    # Every root is on the cap. Measured: the cap holds 303 vertices above
+    # Every root is on the cap. MEASURED: the BODY cap holds 157 vertices above
     # y=7.75, so asking for more than that is clamped rather than repeated.
+    # 303 would mean the region had picked up `helper-hair` (138) and
+    # `joint-head-2` (8) as well -- which is the bug this count pins.
     add_test(NAME app_spread_roots_clamped COMMAND ${CMAKE_COMMAND}
-             -DN=999 -DEXPECT=303 -DAPP=$<TARGET_FILE:makehuman>
+             -DN=999 -DEXPECT=157 -DAPP=$<TARGET_FILE:makehuman>
              -P ${CMAKE_CURRENT_SOURCE_DIR}/check_roots.cmake)
     # Deterministic: a style that moved between runs could not be reviewed by
     # looking at it, and the generator would produce a different asset each time.

@@ -37,6 +37,16 @@ foreach(line IN LISTS lines)
     if(NOT index GREATER_EQUAL 226)
         message(FATAL_ERROR "\"${line}\" does not name a cap vertex (lowest is 226)")
     endif()
+    # ...and an upper bound, which is what separates the BODY scalp from the
+    # helper cages sitting above it. MEASURED: body cap vertices run 226..12157,
+    # while every `helper-hair` (138) and `joint-head-2` (8) vertex above
+    # y=7.75 is >= 14566. Height alone cannot tell them apart -- both sit on
+    # the cranium -- so without this a root on the long-hair envelope, the one
+    # source `memory/todo.md` says never to use, reads as a good root.
+    if(index GREATER 12157)
+        message(FATAL_ERROR "\"${line}\" names vertex ${index}, a helper cage rather "
+                            "than the body scalp (body cap ends at 12157)")
+    endif()
     if(index IN_LIST indices)
         message(FATAL_ERROR "vertex ${index} was printed twice")
     endif()
