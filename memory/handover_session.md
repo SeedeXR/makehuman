@@ -4,6 +4,60 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-12 (seventieth) — Session · **The roadmap was wrong about fourteen views**
+
+*2026-09-12 — no new feature; the file that decides what gets built next stopped
+lying.*
+
+### What was wrong
+`memory/taskviews.md` classifies all 51 reference task views into buckets, and
+`tools/audit_taskviews.py` has gated it since 2026-08-30. That gate only ever
+checked the REFERENCE side: how many views exist upstream, and that every one is
+classified. Nothing checked the other half of each claim — whether OUR bucket
+for a view was still true.
+
+Both halves had rotted, in opposite directions:
+
+  * **Nine views sat in `todo`** — "to port, nothing blocking" — after they had
+    shipped. `ExportTaskView` was the sharpest: filed under the comment *"the
+    writers exist but nothing in the UI reaches them"* while `file.export` had
+    an action, a handler, five formats and three tests.
+  * **Six sat in `blocked`** under *"the viewport draws exactly one mesh"* after
+    that stopped being true. Five of those six — teeth, tongue, hair, clothes,
+    eyelashes — I shipped myself on 2026-09-11 and -12 without noticing the
+    inventory still called them blocked.
+
+Found by reconciling before starting, not by looking for it: three fires in a
+row turned up a stale claim (`--check` paths, the "six choosers are not saved"
+line, then `ExportTaskView`), which is what prompted checking the whole file
+rather than the one entry in front of me.
+
+### The gate now runs both ways
+`EVIDENCE` names, for each such view, a literal that appears in `src/` if and
+only if the capability is wired:
+
+    covered/done  ->  the evidence MUST be present
+    todo/blocked  ->  the evidence must be ABSENT
+
+One direction alone would have caught only half of what actually went wrong.
+Mutation-tested both ways: putting `ExportTaskView` back in `todo` fails with
+"IS in src/ -- it shipped", and claiming an unshipped `AnimationLibrary` is
+covered fails with "is not in src/". Exit code 1 and the ctest goes red in both.
+
+A view with no natural user-facing identifier is deliberately left unlisted. A
+check that cannot fail is the thing this exists to prevent.
+
+### It was CI-only
+`audit_taskviews` ran as a GitHub job and never as a ctest, which is why four
+local preset runs a chunk never once exercised it. It is a ctest now.
+
+### Buckets after the correction
+done 7, covered 16, todo 9, blocked 3, declined 16 — 44 standalone plus 7 built
+at run time. The honest remaining list is nine todo (animation library,
+expression chooser, viewer, background, custom targets, material editor,
+expression mixer, mouse actions, help) and three genuinely blocked: eyebrows and
+`ProxyTaskView` on CONTENT, `SceneLibraryTaskView` on a lighting model.
+
 ## 2026-09-12 (sixty-ninth) — Session · **The headless run stops disagreeing silently**
 
 *2026-09-12 — a small correctness fix, and two roadmap claims that measurement

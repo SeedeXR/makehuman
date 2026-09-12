@@ -3682,6 +3682,27 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         down under AU43. They read heavy because the material has no alpha,
         which is recorded in the .mhmat itself as the next thing this slot
         needs.
+- [x] **`memory/taskviews.md` was wrong about FOURTEEN views, and now cannot be
+      again.** The auditor always checked the reference side — how many views
+      exist upstream, and that each is classified — but nothing ever checked
+      whether OUR bucket for a view was still true. Both halves rotted, in
+      opposite directions: **nine** sat in `todo` ("nothing blocking") after
+      shipping, and **six** sat in `blocked` under "the viewport draws exactly
+      one mesh" after that stopped being true — five of those six shipped on
+      2026-09-11 and -12, by me.
+      - `ExportTaskView` was the sharpest case: filed `todo` under the comment
+        "the writers exist but nothing in the UI reaches them" while
+        `file.export` had a handler, five formats and three tests.
+      - `EVIDENCE` in `tools/audit_taskviews.py` now names, per view, a literal
+        that is in `src/` iff the capability is wired, and the gate runs BOTH
+        ways: `covered`/`done` requires it present, `todo`/`blocked` requires it
+        absent. Mutation-tested in both directions. A view with no natural
+        user-facing identifier is left unlisted rather than given a check that
+        cannot fail.
+      - It was a CI-only job, which is why four local preset runs never
+        exercised it; it is a ctest now too.
+      - Buckets after the correction: done 7, covered 16, todo 9, blocked 3,
+        declined 16.
 - [ ] **The remaining two proxy choosers are BLOCKED ON CONTENT, not effort.**
       Eyebrows have no helper cage. The "generic proxy" chooser has nothing to
       choose between: measured, the only proxymesh-shaped assets in `data/` are

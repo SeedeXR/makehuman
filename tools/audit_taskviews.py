@@ -43,32 +43,49 @@ NOT_REGISTERED = {"TextureProjectionView"}
 # declined = Python tooling, or dev-only tabs, with no meaning in a build
 #            shipping no Python. A decision to revisit, not an omission.
 BUCKETS = {
-    # Done differently: the reference makes these tabs, we make them File menu
-    # actions (src/ui/MainWindow.cpp:138-143). Export is NOT here -- the writers
-    # exist but nothing in the UI reaches them, so it is a todo, not a gap we
-    # closed differently.
+    # "covered" means the capability reaches the user, just not as a TAB. The
+    # reference makes each of these a tab; this port is dockable, so they arrive
+    # as File/Edit/Settings menu actions or as groups in the Assets panel.
+    # EVIDENCE below names the literal that proves each one, and the gate fails
+    # if the claim and src/ ever disagree again -- in either direction.
     "LoadTaskView": "covered", "SaveTaskView": "covered",
 
-    # All eight proxy choosers, blocked on one thing: the viewport draws exactly
-    # one mesh. SceneLibraryTaskView is blocked on something else -- a scene is
-    # lights plus environment (shared/scene.py:190-192), so it needs a lighting
-    # model, not multi-mesh.
-    "ClothesTaskView": "blocked", "EyesTaskView": "blocked",
-    "EyebrowsTaskView": "blocked", "EyelashesTaskView": "blocked",
-    "HairTaskView": "blocked", "TeethTaskView": "blocked",
-    "TongueTaskView": "blocked", "ProxyTaskView": "blocked",
+    # Menu actions. Export was listed `todo` under the comment "the writers
+    # exist but nothing in the UI reaches them" long after `file.export` shipped
+    # with a handler, five formats and three tests.
+    "ExportTaskView": "covered", "OpenGLTaskView": "covered",
+    "RandomTaskView": "covered", "SettingsTaskView": "covered",
+    "ShortcutsTaskView": "covered",
+
+    # Groups in the Assets panel rather than tabs of their own.
+    "MaterialTaskView": "covered", "PoseLibraryTaskView": "covered",
+    "SkeletonLibrary": "covered",
+
+    # The six proxy choosers that shipped as Assets-panel groups. They sat in
+    # `blocked` under "the viewport draws exactly one mesh" long after that was
+    # fixed -- five of the six shipped in the sessions of 2026-09-11 and -12.
+    "TeethTaskView": "covered", "TongueTaskView": "covered",
+    "HairTaskView": "covered", "ClothesTaskView": "covered",
+    "EyelashesTaskView": "covered", "EyesTaskView": "covered",
+
+    # Still blocked, and NOT on rendering. Eyebrows have no helper cage in the
+    # base mesh, and ProxyTaskView would choose between alternate BODY
+    # topologies -- measured, the only proxymesh-shaped assets shipped are
+    # data/3dobjs/base.mhclo (basemesh alpha_7, the OLD topology's map) and
+    # a7_converter.proxy (the alpha_7 to hm08 converter), neither of them
+    # wearable. Both are blocked on CONTENT. A scene is lights plus environment
+    # (shared/scene.py:190-192), so SceneLibraryTaskView needs a lighting model.
+    "EyebrowsTaskView": "blocked", "ProxyTaskView": "blocked",
     "SceneLibraryTaskView": "blocked",
 
     # AnimationLibrary gates only on a skeleton and an active animation
     # (3_libraries_animation.py:150,157) -- rig/ and io/BvhReader.h have both.
-    "AnimationLibrary": "todo", "ExportTaskView": "todo",
-    "MaterialTaskView": "todo", "PoseLibraryTaskView": "todo",
-    "SkeletonLibrary": "todo", "ExpressionTaskView": "todo",
-    "OpenGLTaskView": "todo", "ViewerTaskView": "todo",
-    "BackgroundChooser": "todo", "CustomTargetsTaskView": "todo",
-    "RandomTaskView": "todo", "MaterialEditorTaskView": "todo",
-    "ExpressionMixerTaskView": "todo", "SettingsTaskView": "todo",
-    "MouseActionsTaskView": "todo", "ShortcutsTaskView": "todo",
+    # ExpressionTaskView chooses .mhpose files and this port ships NONE
+    # (measured: zero under data/), so its expressions arrive as --facs units.
+    "AnimationLibrary": "todo", "ExpressionTaskView": "todo",
+    "ViewerTaskView": "todo", "BackgroundChooser": "todo",
+    "CustomTargetsTaskView": "todo", "MaterialEditorTaskView": "todo",
+    "ExpressionMixerTaskView": "todo", "MouseActionsTaskView": "todo",
     "HelpTaskView": "todo",
 
     "ShellTaskView": "declined", "ScriptingView": "declined",
@@ -184,6 +201,71 @@ def recorded_totals():
             if (m := re.search(rf"<!-- audit:{key}=(\d+) -->", text))}
 
 
+# What proves a view REACHES THE USER in this port.
+#
+# The counts above audit the reference. Nothing audited the other half of the
+# claim -- whether OUR bucket for a view is still true -- and that is the half
+# that rotted. `ExportTaskView` sat in `todo` under the comment "the writers
+# exist but nothing in the UI reaches them" long after `file.export` shipped
+# with a handler, five formats and three tests. Six proxy choosers sat in
+# `blocked` under "the viewport draws exactly one mesh" after that was fixed
+# and five slots had shipped.
+#
+# So each entry names a literal that appears in `src/` if and only if the
+# capability is wired. The rule runs BOTH ways, because the file got it wrong
+# in both directions:
+#
+#   covered/done  ->  the evidence MUST be present
+#   blocked, and the not-yet-ported bucket  ->  it must be ABSENT
+#
+# A view with no natural user-facing identifier yet is simply not listed; the
+# gate cannot help there and pretending otherwise would be the same class of
+# decorative check this exists to prevent.
+EVIDENCE = {
+    "LoadTaskView": '"file.open"',
+    "SaveTaskView": '"file.save"',
+    "ExportTaskView": '"file.export"',
+    "OpenGLTaskView": '"file.render"',
+    "RandomTaskView": '"edit.randomise"',
+    "ShortcutsTaskView": '"settings.shortcuts"',
+    "SettingsTaskView": '"settings.units"',
+    "MaterialTaskView": '"Skin material"',
+    "PoseLibraryTaskView": '"Pose"',
+    "SkeletonLibrary": '"Skeleton"',
+    "TeethTaskView": '{"teeth", "Teeth"}',
+    "TongueTaskView": '{"tongue", "Tongue"}',
+    "HairTaskView": '{"hair", "Hair"}',
+    "ClothesTaskView": '{"clothes", "Clothes"}',
+    "EyelashesTaskView": '{"eyelashes", "Eyelashes"}',
+    "EyesTaskView": '"Eye colour"',
+}
+
+SRC = REPO / "src"
+
+
+def shipped(literal) -> bool:
+    """Whether @p literal appears anywhere under src/."""
+    return any(literal in path.read_text(encoding="utf-8", errors="ignore")
+               for path in SRC.rglob("*")
+               if path.is_file() and path.suffix in {".cpp", ".h"})
+
+
+def evidence_mismatches():
+    """Views whose bucket disagrees with whether their evidence is in src/."""
+    wrong = []
+    for name, literal in sorted(EVIDENCE.items()):
+        bucket = BUCKETS.get(name)
+        if bucket is None:
+            wrong.append(f"{name}: has evidence but no bucket")
+            continue
+        found = shipped(literal)
+        if bucket in {"covered", "done"} and not found:
+            wrong.append(f"{name}: bucket '{bucket}' but {literal} is not in src/")
+        elif bucket in {"todo", "blocked"} and found:
+            wrong.append(f"{name}: bucket '{bucket}' but {literal} IS in src/ -- it shipped")
+    return wrong
+
+
 def main():
     standalone = standalone_views()
     dynamic = dynamic_view_names()
@@ -201,6 +283,13 @@ def main():
     if recorded != totals:
         print(f"task-view inventory drifted: live {totals}, recorded {recorded}",
               file=sys.stderr)
+        return 1
+
+    mismatched = evidence_mismatches()
+    if mismatched:
+        print("task-view buckets disagree with src/:", file=sys.stderr)
+        for line in mismatched:
+            print(f"  {line}", file=sys.stderr)
         return 1
 
     unclassified = [name for name in standalone if name not in BUCKETS]

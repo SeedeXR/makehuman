@@ -2229,6 +2229,16 @@ if(MH_HAVE_RENDER)
     add_test(NAME audit_version
              COMMAND python3 ${CMAKE_SOURCE_DIR}/tools/audit_version.py)
 
+    # The task-view inventory is a ROADMAP: its buckets decide what gets built
+    # next, so a stale one sends work at something already shipped or hides work
+    # behind a blocker that is gone. Both happened -- corrected 2026-09-12, when
+    # the evidence gate found FOURTEEN views misfiled in two directions.
+    #
+    # It was a CI-only job until now, which is why four local preset runs never
+    # once exercised it.
+    add_test(NAME audit_taskviews
+             COMMAND python3 ${CMAKE_SOURCE_DIR}/tools/audit_taskviews.py)
+
     # foundation, core, rig and io must build without a GUI stack -- that is
     # what makes the headless `parameters -> mesh` path (M10) usable from a
     # batch sampler or a server. They are Qt-free today and nothing enforced

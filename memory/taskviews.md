@@ -51,50 +51,71 @@ dev-gated, so a default release build shows **40**.
 | Bucket | N | Meaning |
 |---|---|---|
 | done | 7 | the dynamic modifier views — shipped |
-| covered | 2 | done differently on purpose |
-| todo | 17 | to port, nothing blocking |
-| blocked | 9 | engine capability missing first |
+| covered | 16 | the capability reaches the user, just not as a TAB |
+| todo | 9 | to port, nothing blocking |
+| blocked | 3 | needs content or an engine capability first |
 | declined | 16 | Python-runtime or dev-only tooling |
+
+## The buckets were wrong about FOURTEEN views, in both directions
+
+**Corrected 2026-09-12.** The auditor has always checked the reference side —
+how many views exist upstream, and that every one is classified. Nothing ever
+checked the other half of each claim: whether OUR bucket for a view was still
+true. Both halves rotted, in opposite directions:
+
+  * **Nine sat in `todo`** — "to port, nothing blocking" — after they shipped.
+    `ExportTaskView` was the worst, filed under the comment *"the writers exist
+    but nothing in the UI reaches them"* long after `file.export` shipped with a
+    handler, five formats and three tests.
+  * **Six sat in `blocked`** under *"the viewport draws exactly one mesh"* after
+    that stopped being true. Five of those six shipped on 2026-09-11 and -12.
+
+`EVIDENCE` in `tools/audit_taskviews.py` now names, for each such view, a
+literal that appears in `src/` if and only if the capability is wired, and the
+gate runs BOTH ways: `covered`/`done` requires the evidence present,
+`todo`/`blocked` requires it absent. A view with no natural user-facing
+identifier is deliberately left unlisted rather than given a check that cannot
+fail.
 
 ### done (7)
 The views `guimodifier.loadModifierTaskViews` builds from the `*_sliders.json`
 files — Face, Torso, Arms and Legs, Gender, Macro modelling, Body shapes,
 Measure. One view per top-level key, `apps/gui/guimodifier.py:226-232`.
 
-### covered (2)
-`LoadTaskView`, `SaveTaskView`. The reference makes these tabs; we make them
-File menu actions (`src/ui/MainWindow.cpp:138-143`), which is the platform
-idiom. Not a gap.
+### covered (16)
+Not a gap: this port is dockable, so what the reference makes a tab arrives as
+a menu action or as a group in the Assets panel.
 
-`ExportTaskView` was in this bucket and should not have been: there is no export
-action in the UI at all (`grep 'file.export' src/` finds nothing). The writers
-exist — `io/ObjWriter.h`, `io/GltfWriter.h`, `io/UsdWriter.h` — but nothing
-reaches them, so it is a real gap and now sits in `todo`. Calling it "covered"
-was the worst kind of error in a roadmap: it labelled missing work as done.
+`LoadTaskView`, `SaveTaskView`, `ExportTaskView`, `OpenGLTaskView` (the Render
+tab — ours is `file.render`; its resolution and AA options are CLI flags),
+`RandomTaskView`, `SettingsTaskView`, `ShortcutsTaskView` — menu actions.
 
-### todo (17)
-`ExportTaskView`, `AnimationLibrary`, `MaterialTaskView`,
-`PoseLibraryTaskView`, `SkeletonLibrary`, `ExpressionTaskView`,
-`OpenGLTaskView`, `ViewerTaskView`, `BackgroundChooser`,
-`CustomTargetsTaskView`, `RandomTaskView`, `MaterialEditorTaskView`,
-`ExpressionMixerTaskView`, `SettingsTaskView`, `MouseActionsTaskView`,
-`ShortcutsTaskView`, `HelpTaskView`.
+`MaterialTaskView`, `PoseLibraryTaskView`, `SkeletonLibrary` — Assets-panel
+groups (Skin material, Pose, Skeleton).
 
-The first four are the rigging/posing tabs the regex hid. They are *todo*, not
-blocked: `rig/Skeleton.h`, `rig/PoseUnits.h`, `rig/Skinning.h` and
-`io/BvhReader.h` all exist.
+`TeethTaskView`, `TongueTaskView`, `HairTaskView`, `ClothesTaskView`,
+`EyelashesTaskView`, `EyesTaskView` — the six proxy choosers, all shipped as
+Assets-panel groups over helper-cage assets.
 
-`OpenGLTaskView` is the real **Render** tab — its label is literally `'Render'`
-(`plugins/4_rendering_opengl/__init__.py:53`) and it holds the resolution box,
-AA toggle and Render button. It is not blocked on a scene model; it deliberately
-does not touch the scene shader (`:59`). `ViewerTaskView` is where its output
-lands (`plugins/4_rendering_opengl/mh2opengl.py:122-123` sets the image and
-switches to it), so declining it would break the render feature.
+### todo (9)
+`AnimationLibrary`, `ExpressionTaskView`, `ViewerTaskView`, `BackgroundChooser`,
+`CustomTargetsTaskView`, `MaterialEditorTaskView`, `ExpressionMixerTaskView`,
+`MouseActionsTaskView`, `HelpTaskView`.
 
-### blocked (9)
-Eight proxy choosers — `ClothesTaskView`, `EyesTaskView`, `EyebrowsTaskView`,
-`EyelashesTaskView`, `HairTaskView`, `TeethTaskView`, `TongueTaskView`,
-`ProxyTaskView` — plus `SceneLibraryTaskView`.
+`AnimationLibrary` gates only on a skeleton and an active animation
+(`3_libraries_animation.py:150,157`) — `rig/` and `io/BvhReader.h` have both.
+`ExpressionTaskView` chooses `.mhpose` files and this port ships **zero**
+(measured under `data/`), so expressions arrive as `--facs` action units
+instead; the chooser needs content before it needs code.
+
+### blocked (3)
+`EyebrowsTaskView` has no helper cage in the base mesh. `ProxyTaskView` would
+choose between alternate BODY topologies, and the only proxymesh-shaped assets
+shipped are `data/3dobjs/base.mhclo` (`basemesh alpha_7`, 434 verts — the OLD
+topology's map) and `a7_converter.proxy` (the alpha_7 → hm08 converter, 7102
+verts); neither is wearable. Both are blocked on CONTENT, not on the engine.
+`SceneLibraryTaskView` is blocked on a lighting model: a scene is lights plus
+environment (`shared/scene.py:190-192`).
 
 ~~All eight choosers are blocked on the same thing: **the viewport draws exactly
 one mesh.**~~ **CORRECTED 2026-09-05 (session 135).** Multi-mesh rendering is
