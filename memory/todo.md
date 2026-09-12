@@ -3859,6 +3859,37 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         side, with position and scale, to model to a photograph. None of that
         half exists.
 
+- [x] **The expression mixer's sixty sliders, as `--pose-unit`.** `--facs`
+      reaches Action Units, and an AU is a NAME for the pose units it moves —
+      measured, the FACS table names **48 of the 60**, so eleven units (Rest
+      aside) were unreachable by any means: `ChinDown`, `UpperLipStretched`,
+      `MouthMoveLeft`/`Right`, all five tongue units and three more.
+      `--pose-unit <unit>=<0..1>` sets any of them, repeatable and in order,
+      and `--list-pose-units` prints the names, which were otherwise
+      undiscoverable.
+      - `--save-expression` now writes whichever was composed. `--facs` and
+        `--pose-unit` converge on one `requestedExpression()`, so the writer
+        does not know which vocabulary was used; the description records what
+        was asked for (`Pose units: ChinDown=1` or `Action Units: AU12=1`),
+        because that is re-derivable where "Smile" is a guess.
+      - **`ExpressionMixerTaskView` moves to `covered`.** The mixer is sixty
+        sliders, a Save and a Load: `--pose-unit` sets, `--list-pose-units`
+        names, `--save-expression` writes, `--expression` reads. Buckets:
+        covered 20, todo 5, blocked 3, declined 16, done 7. Both gate rules
+        were mutation-tested on the move — returning it to `todo` reports
+        `"pose-unit" IS in src/`, and a stale table count fails too.
+      - Three vocabularies now describe the face, so `--pose-unit`,
+        `--expression` and `--facs` refuse each other: layering two applies
+        both to the same bones and whichever ran second would silently be the
+        only one that showed.
+      - Measured, and rendered: `LeftBrowDown=1.0` moves 425 of 14,444
+        vertices, `TongueUp=1.0` moves 110. Looked at neutral, `LeftBrowDown`
+        and `ChinDown` side by side — each change localised, none gross.
+      - 16 CLI tests; four mutations killed. The new logic is CLI parsing and
+        routing: the rig path it feeds (`applyExpressionUnits`, which already
+        refuses an unknown unit name) and `saveExpression` are unit-tested
+        where they live.
+
 - [ ] **The remaining two proxy choosers are BLOCKED ON CONTENT, not effort.**
       Eyebrows have no helper cage. The "generic proxy" chooser has nothing to
       choose between: measured, the only proxymesh-shaped assets in `data/` are

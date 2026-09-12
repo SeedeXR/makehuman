@@ -4,6 +4,54 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-12 (seventy-seventh) — Session · **Eleven pose units were unreachable by any flag**
+
+*2026-09-12 — the expression story finishes: compose from raw units, save,
+reload.*
+
+### What was missing, measured
+`--facs` speaks Action Units, and an AU is a NAME for the pose units it moves.
+Counting the FACS table against the shipped library: it names **48 of the 60**
+units. Eleven (excluding `Rest`) were reachable by no flag at all — `ChinDown`,
+`UpperLipStretched`, `MouthMoveLeft`/`Right`, all five tongue units, and three
+more. The sixty names were also undiscoverable: nothing printed them.
+
+`--pose-unit <unit>=<0..1>` sets any of them, repeatable and in order.
+`--list-pose-units` prints the names.
+
+### The mixer is now covered
+The reference's mixer is sixty sliders, a Save and a Load. `--pose-unit` sets,
+`--list-pose-units` names, `--save-expression` writes, `--expression` reads —
+so `ExpressionMixerTaskView` moves from `todo` to `covered`, on the same
+standard `--custom-targets` and the Shortcuts dialog were judged by. Buckets:
+covered 20, todo 5, blocked 3, declined 16, done 7.
+
+I mutation-tested the move rather than just making it: returning the view to
+`todo` fails with `"pose-unit" IS in src/ -- it shipped`, and leaving the
+bucket table at 19 fails the table rule added two chunks ago. The gate exists
+to force exactly this reclassification, and it did.
+
+### One convergence worth noting
+`--facs` and `--pose-unit` are two vocabularies for one face, so they meet at
+`requestedExpression()` and `--save-expression` writes whichever was used
+without knowing which. The saved description records what was ASKED FOR
+(`Pose units: ChinDown=1`), because that is re-derivable where a name like
+"Smile" is a guess.
+
+And because there are now three ways to describe the face, `--pose-unit`,
+`--expression` and `--facs` refuse each other: layering two applies both to the
+same bones, and whichever ran second would silently be the only one that showed.
+
+### Verified
+`LeftBrowDown=1.0` moves 425 of 14,444 vertices; `TongueUp=1.0` moves 110. Both
+premises measured, not guessed — my first two test counts were invented and the
+gate failed them, which is how they got measured. Rendered neutral,
+`LeftBrowDown` and `ChinDown` together: each change localised, none gross.
+
+16 CLI tests, four mutations killed. The new logic here is CLI parsing and
+routing; the rig path it feeds already refuses unknown unit names and is
+unit-tested where it lives.
+
 ## 2026-09-12 (seventy-sixth) — Session · **A backdrop, and two of my own tests that proved nothing**
 
 *2026-09-12 — the feature was small; the mutations were the chunk.*

@@ -1733,6 +1733,109 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_facs_order_survives PROPERTIES
         FIXTURES_REQUIRED "app_facs_ab_obj;app_facs_ba_obj")
 
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/punit)
+
+    # Setting a face pose unit DIRECTLY -- the reference's expression mixer is
+    # sixty sliders, one per unit (`7_expression_mixer.py:180`), and --facs only
+    # reaches the thirty Action Units that name them. A unit with no AU was
+    # unreachable, and the sixty NAMES were undiscoverable besides.
+    add_test(NAME app_list_pose_units COMMAND makehuman --list-pose-units)
+    set_tests_properties(app_list_pose_units PROPERTIES
+        PASS_REGULAR_EXPRESSION "LeftBrowDown")
+
+    add_test(NAME app_pose_unit_neutral COMMAND makehuman
+             --export ${CMAKE_CURRENT_BINARY_DIR}/punit/neutral.obj)
+    set_tests_properties(app_pose_unit_neutral PROPERTIES FIXTURES_SETUP app_punit_neutral)
+    add_test(NAME app_pose_unit_brow COMMAND makehuman
+             --pose-unit LeftBrowDown=1.0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/punit/brow.obj)
+    set_tests_properties(app_pose_unit_brow PROPERTIES FIXTURES_SETUP app_punit_brow)
+    # The premise: a unit actually moves the face. Without this every assertion
+    # below passes on a flag that parsed and did nothing.
+    add_test(NAME app_pose_unit_moves_the_face COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/punit/neutral.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/punit/brow.obj
+             -DEXPECT_DIFFERENT=425
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
+    set_tests_properties(app_pose_unit_moves_the_face PROPERTIES
+        FIXTURES_REQUIRED "app_punit_neutral;app_punit_brow")
+    # A unit no Action Unit names, which is the whole reason this flag exists.
+    # Measured: the FACS table names 48 of the 60 units, so 11 (excluding Rest)
+    # were unreachable before -- ChinDown, MouthMoveLeft/Right, the five tongue
+    # units, and three more.
+    add_test(NAME app_pose_unit_without_an_au COMMAND makehuman
+             --pose-unit TongueUp=1.0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/punit/tongue.obj)
+    set_tests_properties(app_pose_unit_without_an_au PROPERTIES FIXTURES_SETUP app_punit_tongue)
+    add_test(NAME app_pose_unit_au_free_unit_moves COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/punit/neutral.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/punit/tongue.obj
+             -DEXPECT_DIFFERENT=110
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
+    set_tests_properties(app_pose_unit_au_free_unit_moves PROPERTIES
+        FIXTURES_REQUIRED "app_punit_neutral;app_punit_tongue")
+
+    # Saving what was composed, and reloading it: the mixer's Save button, for
+    # raw units rather than Action Units.
+    add_test(NAME app_pose_unit_saved COMMAND makehuman
+             --pose-unit LeftBrowDown=1.0
+             --save-expression ${CMAKE_CURRENT_BINARY_DIR}/punit/brow.mhpose)
+    set_tests_properties(app_pose_unit_saved PROPERTIES FIXTURES_SETUP app_punit_saved)
+    add_test(NAME app_pose_unit_save_names_the_unit COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/punit/brow.mhpose
+             "-DKEYS=LeftBrowDown;1.0"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_pose_unit_save_names_the_unit PROPERTIES
+        FIXTURES_REQUIRED app_punit_saved)
+    add_test(NAME app_pose_unit_reloaded COMMAND makehuman
+             --expression ${CMAKE_CURRENT_BINARY_DIR}/punit/brow.mhpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/punit/reloaded.obj)
+    set_tests_properties(app_pose_unit_reloaded PROPERTIES
+        FIXTURES_SETUP app_punit_reloaded FIXTURES_REQUIRED app_punit_saved)
+    add_test(NAME app_pose_unit_round_trips COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/punit/brow.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/punit/reloaded.obj
+             -DEXPECT_DIFFERENT=0
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
+    set_tests_properties(app_pose_unit_round_trips PROPERTIES
+        FIXTURES_REQUIRED "app_punit_brow;app_punit_reloaded")
+    # ORDER survives, because the blend multiplies quaternions and does not
+    # commute -- the same rule saveExpression's own tests pin.
+    add_test(NAME app_pose_unit_saved_two COMMAND makehuman
+             --pose-unit RightOuterBrowUp=0.25 --pose-unit LeftBrowDown=0.5
+             --save-expression ${CMAKE_CURRENT_BINARY_DIR}/punit/two.mhpose)
+    set_tests_properties(app_pose_unit_saved_two PROPERTIES FIXTURES_SETUP app_punit_two)
+    add_test(NAME app_pose_unit_save_keeps_order COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/punit/two.mhpose
+             "-DKEYS=RightOuterBrowUp;LeftBrowDown" -DORDERED=1
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_pose_unit_save_keeps_order PROPERTIES
+        FIXTURES_REQUIRED app_punit_two)
+
+    # The four refusals.
+    add_test(NAME app_pose_unit_unknown COMMAND makehuman
+             --pose-unit NoSuchUnit=1.0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/punit/never.obj)
+    set_tests_properties(app_pose_unit_unknown PROPERTIES
+        PASS_REGULAR_EXPRESSION "no such pose unit .NoSuchUnit.")
+    add_test(NAME app_pose_unit_bad_weight COMMAND makehuman
+             --pose-unit LeftBrowDown=5
+             --export ${CMAKE_CURRENT_BINARY_DIR}/punit/never.obj)
+    set_tests_properties(app_pose_unit_bad_weight PROPERTIES
+        PASS_REGULAR_EXPRESSION "--pose-unit wants <unit>=<weight in 0..1>")
+    add_test(NAME app_pose_unit_and_facs COMMAND makehuman
+             --pose-unit LeftBrowDown=1.0 --facs AU12=1.0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/punit/never.obj)
+    set_tests_properties(app_pose_unit_and_facs PROPERTIES
+        PASS_REGULAR_EXPRESSION "describe the face; give one")
+    add_test(NAME app_pose_unit_and_expression COMMAND makehuman
+             --pose-unit LeftBrowDown=1.0
+             --expression ${CMAKE_CURRENT_BINARY_DIR}/punit/brow.mhpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/punit/never.obj)
+    set_tests_properties(app_pose_unit_and_expression PROPERTIES
+        FIXTURES_REQUIRED app_punit_saved
+        PASS_REGULAR_EXPRESSION "describe the face; give one")
+
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bg)
 
     # A backdrop behind a production render. The reference puts an image behind
@@ -1935,7 +2038,7 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_save_expression_needs_facs COMMAND makehuman
              --save-expression ${CMAKE_CURRENT_BINARY_DIR}/expr/never.mhpose)
     set_tests_properties(app_save_expression_needs_facs PROPERTIES
-        PASS_REGULAR_EXPRESSION "--save-expression writes the --facs request")
+        PASS_REGULAR_EXPRESSION "give at least one --facs or --pose-unit")
 
     # The four refusals, each with its own message, because a shared "bad
     # --facs" would not say which mistake was made.
@@ -1956,7 +2059,7 @@ if(MH_HAVE_RENDER)
              --expression ${CMAKE_CURRENT_SOURCE_DIR}/facs_au12.mhpose
              --export ${CMAKE_CURRENT_BINARY_DIR}/app_never_facs4.obj)
     set_tests_properties(app_facs_and_expression PROPERTIES
-        PASS_REGULAR_EXPRESSION "both describe the face")
+        PASS_REGULAR_EXPRESSION "all describe the face; give one")
 
     # ---------------------------------------------------------------------
     # --decimate: the LOD reaches a FILE.

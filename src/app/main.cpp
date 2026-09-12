@@ -349,9 +349,35 @@ QString resolveWorkspaceName(mh::foundation::NamingProfile profile, const QStrin
 
 /// The `--facs` request, or empty. Set once at start-up, for the same reason as
 /// `expressionFileRef`.
+/// The `--pose-unit` request, in the order given, or empty.
+///
+/// The order is kept because `PoseUnits::blend` multiplies quaternions and does
+/// not commute: the sequence a user typed IS the expression, exactly as the
+/// order inside a `.mhpose` is.
+std::vector<mh::rig::WeightedUnit>& poseUnitsRef() {
+    static std::vector<mh::rig::WeightedUnit> units;
+    return units;
+}
+
 std::vector<mh::rig::ActionUnit>& facsRef() {
     static std::vector<mh::rig::ActionUnit> aus;
     return aus;
+}
+
+/// The expression the command line asked for, from whichever flag said so.
+///
+/// `--facs` and `--pose-unit` are two vocabularies for one thing -- an Action
+/// Unit names the pose units it moves -- so they converge here, and
+/// `--save-expression` writes whichever was used without knowing which.
+std::expected<mh::rig::Expression, std::string> requestedExpression() {
+    if (!poseUnitsRef().empty()) {
+        mh::rig::Expression expr;
+        expr.units = poseUnitsRef();
+        return expr;
+    }
+    const auto expr = mh::rig::facsExpression(facsRef());
+    if (!expr) return std::unexpected(expr.error().message());
+    return *expr;
 }
 
 /// Where the eyes are looking, or nothing. Set once from `--look-at`.
@@ -433,6 +459,15 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
     if (!expressionFile.empty()) {
         if (!applyExpression(expressionFile, *skel, modelPose)) return false;
     }
+    if (!poseUnitsRef().empty()) {
+        // The same path an expression FILE takes -- a raw unit request and a
+        // .mhpose are the same thing, one typed and one on disk.
+        mh::rig::Expression expr;
+        expr.name  = "command line";
+        expr.units = poseUnitsRef();
+        if (!applyExpressionUnits(expr, *skel, modelPose)) return false;
+    }
+
     if (!facsRef().empty()) {
         if (!applyFacs(facsRef(), *skel, modelPose)) return false;
     }
@@ -1973,6 +2008,16 @@ int main(int argc, char** argv) {
         QStringLiteral("rest (the authored A-pose, default), tpose, or a path to a "
                        "single-frame .bvh"),
         QStringLiteral("pose"), QStringLiteral("rest"));
+    const QCommandLineOption poseUnitOpt(
+        QStringLiteral("pose-unit"),
+        QStringLiteral("A face pose unit and its weight, as <unit>=<0..1>. Repeatable, and "
+                       "applied in the order given. This is the expression mixer's sixty "
+                       "sliders: --facs reaches only the thirty Action Units that name "
+                       "them. --list-pose-units prints the names."),
+        QStringLiteral("unit=weight"));
+    const QCommandLineOption listPoseUnitsOpt(
+        QStringLiteral("list-pose-units"),
+        QStringLiteral("Print the face pose units --pose-unit accepts, and exit."));
     const QCommandLineOption poseFrameOpt(
         QStringLiteral("pose-frame"),
         QStringLiteral("Which frame of a multi-frame --pose .bvh to stand in, zero-based. "
@@ -2204,6 +2249,8 @@ int main(int argc, char** argv) {
     parser.addOption(shadingOpt);
     parser.addOption(rigOpt);
     parser.addOption(poseOpt);
+    parser.addOption(poseUnitOpt);
+    parser.addOption(listPoseUnitsOpt);
     parser.addOption(poseFrameOpt);
     parser.addOption(expressionOpt);
     parser.addOption(facsOpt);
@@ -2500,6 +2547,49 @@ int main(int argc, char** argv) {
     // one thing, and each applies its own blend and then REPLACES the face
     // bones, so whichever ran second would silently be the only one that
     // showed -- a face missing half of what was asked for, exit 0.
+    if (parser.isSet(listPoseUnitsOpt)) {
+        const auto names =
+            mh::rig::loadPoseUnitNames(dataDir() / "poseunits" / "face-poseunits.json");
+        if (!names) {
+            std::fprintf(stderr, "cannot read the pose units: %s\n",
+                         names.error().message().c_str());
+            return 1;
+        }
+        for (const std::string& n : *names)
+            std::printf("%s\n", n.c_str());
+        return 0;
+    }
+
+    // Three vocabularies for one face. Layering two of them would apply both to
+    // the same bones, so whichever ran second would silently be the only one
+    // that showed -- the reason --expression and --facs already refuse each
+    // other, and it applies just as much to raw units.
+    if ((parser.isSet(poseUnitOpt) ? 1 : 0) + (parser.isSet(expressionOpt) ? 1 : 0) +
+            (parser.isSet(facsOpt) ? 1 : 0) >
+        1) {
+        std::fprintf(stderr,
+                     "--pose-unit, --expression and --facs all describe the face; give one\n");
+        return 1;
+    }
+    for (const QString& assignment : parser.values(poseUnitOpt)) {
+        const QStringList halves = assignment.split(QLatin1Char('='));
+        bool ok                  = false;
+        const float w            = halves.size() == 2 ? halves[1].toFloat(&ok) : 0.0F;
+        // Range-checked like --facs: a unit weight is how far along its single
+        // authored shape the face travels, so outside 0..1 the blend
+        // extrapolates into a face nobody authored.
+        if (halves.size() != 2 || halves[0].isEmpty() || !ok || !std::isfinite(w) || w < 0.0F ||
+            w > 1.0F) {
+            std::fprintf(stderr, "--pose-unit wants <unit>=<weight in 0..1>, got \"%s\"\n",
+                         assignment.toStdString().c_str());
+            return 1;
+        }
+        // The NAME is checked where every expression's names are checked, in
+        // applyExpressionUnits, so a typo is reported the same way whether it
+        // came from a file or the command line.
+        poseUnitsRef().push_back({halves[0].toStdString(), w});
+    }
+
     if (parser.isSet(expressionOpt) && parser.isSet(facsOpt)) {
         std::fprintf(stderr, "--expression and --facs both describe the face; give one\n");
         return 1;
@@ -2530,29 +2620,36 @@ int main(int argc, char** argv) {
     // file that was just read is a copy, and refusing says so rather than
     // producing one.
     if (parser.isSet(saveExpressionOpt)) {
-        if (facsRef().empty()) {
+        if (facsRef().empty() && poseUnitsRef().empty()) {
             std::fprintf(stderr,
-                         "--save-expression writes the --facs request as a reusable "
-                         "expression; give at least one --facs\n");
+                         "--save-expression writes the composed face as a reusable "
+                         "expression; give at least one --facs or --pose-unit\n");
             return 1;
         }
         const std::filesystem::path out = parser.value(saveExpressionOpt).toStdString();
-        auto expr                       = mh::rig::facsExpression(facsRef());
+        auto expr                       = requestedExpression();
         if (!expr) {
-            std::fprintf(stderr, "cannot build the FACS expression: %s\n",
-                         expr.error().message().c_str());
+            std::fprintf(stderr, "cannot build the expression: %s\n", expr.error().c_str());
             return 1;
         }
-        // The Action Units ARE the description: a file that says AU12=1 is
-        // re-derivable, where "Smile" is someone's guess about what it was.
+        // What was ASKED FOR is the description: "AU12=1" or "LeftBrowDown=1"
+        // is re-derivable, where "Smile" is someone's guess about what it was.
         std::string from;
-        for (const auto& au : facsRef()) {
-            if (!from.empty()) from += ", ";
-            from += std::format("{}={}", au.code, au.weight);
+        const bool fromUnits = !poseUnitsRef().empty();
+        if (fromUnits) {
+            for (const auto& u : poseUnitsRef()) {
+                if (!from.empty()) from += ", ";
+                from += std::format("{}={}", u.name, u.weight);
+            }
+        } else {
+            for (const auto& au : facsRef()) {
+                if (!from.empty()) from += ", ";
+                from += std::format("{}={}", au.code, au.weight);
+            }
         }
         expr->name        = prettyName(out, {});
-        expr->description = "Action Units: " + from;
-        expr->tags        = {"facs"};
+        expr->description = (fromUnits ? "Pose units: " : "Action Units: ") + from;
+        expr->tags        = {fromUnits ? "units" : "facs"};
         if (const auto saved = mh::rig::saveExpression(out, *expr); !saved) {
             std::fprintf(stderr, "cannot write %s: %s\n", out.string().c_str(),
                          saved.error().message().c_str());

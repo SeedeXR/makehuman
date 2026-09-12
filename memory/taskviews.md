@@ -51,8 +51,8 @@ dev-gated, so a default release build shows **40**.
 | Bucket | N | Meaning |
 |---|---|---|
 | done | 7 | the dynamic modifier views — shipped |
-| covered | 19 | the capability reaches the user, just not as a TAB |
-| todo | 6 | to port, nothing blocking |
+| covered | 20 | the capability reaches the user, just not as a TAB |
+| todo | 5 | to port, nothing blocking |
 | blocked | 3 | needs content or an engine capability first |
 | declined | 16 | Python-runtime or dev-only tooling |
 

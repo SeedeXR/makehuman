@@ -77,6 +77,11 @@ BUCKETS = {
     # `mh::ui::ImageViewer`, which every render has been shown in since M8.
     "MouseActionsTaskView": "covered", "ViewerTaskView": "covered",
 
+    # The mixer is sixty sliders, a Save and a Load. --pose-unit sets any of
+    # the sixty (--facs names only 48 of them), --list-pose-units prints the
+    # names, --save-expression writes the result and --expression reads it back.
+    "ExpressionMixerTaskView": "covered",
+
     "TeethTaskView": "covered", "TongueTaskView": "covered",
     "HairTaskView": "covered", "ClothesTaskView": "covered",
     "EyelashesTaskView": "covered", "EyesTaskView": "covered",
@@ -97,7 +102,7 @@ BUCKETS = {
     # (measured: zero under data/), so its expressions arrive as --facs units.
     "AnimationLibrary": "todo", "ExpressionTaskView": "todo",
     "BackgroundChooser": "todo", "MaterialEditorTaskView": "todo",
-    "ExpressionMixerTaskView": "todo", "HelpTaskView": "todo",
+    "HelpTaskView": "todo",
 
     "ShellTaskView": "declined", "ScriptingView": "declined",
     "ScriptingExecuteTab": "declined", "SocketTaskView": "declined",
@@ -268,6 +273,7 @@ EVIDENCE = {
     "CustomTargetsTaskView": '"custom-targets"',
     "MouseActionsTaskView": '"mouse.orbit"',
     "ViewerTaskView": 'ImageViewer(&window)',
+    "ExpressionMixerTaskView": '"pose-unit"',
 }
 
 SRC = REPO / "src"
@@ -312,9 +318,6 @@ ABSENT = {
     "MaterialEditorTaskView": ('"Material editor"',
                                "materials can be PICKED but not edited; no "
                                "property editor"),
-    "ExpressionMixerTaskView": ('"Expression mixer"',
-                                "the units exist (rig::ActionUnit, --facs) but "
-                                "nothing in src/ui reaches them"),
     "HelpTaskView": ('"help.manual"', "no Help menu in the window"),
     "EyebrowsTaskView": ('{"eyebrows", "Eyebrows"}',
                          "blocked on content: no helper cage in the base mesh"),
