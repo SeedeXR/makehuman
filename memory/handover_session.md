@@ -4,6 +4,52 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-12 (seventy-third) — Session · **The reasons in the gate were themselves unchecked**
+
+*2026-09-12 — third chunk in a row on the same fault line, and the first one to
+find live bugs rather than only a hole.*
+
+### What happened
+Last chunk closed the hole where a view with no `EVIDENCE` entry was simply not
+checked, by requiring every non-declined view to carry a written REASON instead.
+I wrote eleven reasons. Auditing them against `src/` this chunk, two were false:
+
+* `MouseActionsTaskView` — "no UI surface yet". `ShortcutsDialog` has been
+  rebinding `mouse.orbit` and `mouse.pan` since it was written, and its own
+  header says it merges the reference's mouse and shortcut settings tasks
+  deliberately, so a user need not know whether "how do I pan" is a key
+  question or a mouse one.
+* `ViewerTaskView` — "deliberately not built". `mh::ui::ImageViewer` is
+  constructed at `src/app/main.cpp:3916` and every render has been shown in it
+  since M8. What is deliberately not built is its Refresh button, because
+  nothing writes a path to re-read.
+
+Both had been sitting in the `todo` bucket while shipped.
+
+### The fix
+`NO_EVIDENCE` is now `ABSENT`, and each entry names the literal that WOULD be
+in `src/` if the view had shipped. The gate asserts it is not there. The reason
+is still written down, but it is no longer the check — it is the explanation
+attached to one. The rule named both false claims on its first run.
+
+Two more holes closed in the same pass, found by reading my own diff:
+* the bucket TABLE in `taskviews.md` was five numbers nothing read, and two
+  views changed bucket in this chunk;
+* a view listed as absent but bucketed `covered` was walked by neither rule, so
+  it could claim to reach the user on no evidence at all.
+
+Seven mutations killed, including one that must NOT fail: a table added
+elsewhere in the plan file has to stay out of the comparison.
+
+### The pattern, stated plainly
+Three chunks, three layers of the same fault: the bucket was wrong, then the
+check on the bucket had a gap, then the reason excusing the gap was false. Each
+layer looked like a check and was really an assertion nobody ran. The rule that
+comes out of it: a claim written in prose is a claim nobody tests, so when a
+gate needs an exception, the exception gets a literal too.
+
+Buckets now: covered 19, todo 6, blocked 3, declined 16, done 7.
+
 ## 2026-09-12 (seventy-second) — Session · **The gate I built last chunk had a hole, and I fell into it**
 
 *2026-09-12 — a short chunk, and the most useful kind: the previous one's gate

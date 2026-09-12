@@ -51,8 +51,8 @@ dev-gated, so a default release build shows **40**.
 | Bucket | N | Meaning |
 |---|---|---|
 | done | 7 | the dynamic modifier views — shipped |
-| covered | 17 | the capability reaches the user, just not as a TAB |
-| todo | 8 | to port, nothing blocking |
+| covered | 19 | the capability reaches the user, just not as a TAB |
+| todo | 6 | to port, nothing blocking |
 | blocked | 3 | needs content or an engine capability first |
 | declined | 16 | Python-runtime or dev-only tooling |
 
@@ -74,6 +74,27 @@ true. Both halves rotted, in opposite directions:
 literal that appears in `src/` if and only if the capability is wired, and the
 gate runs BOTH ways: `covered`/`done` requires the evidence present,
 `todo`/`blocked` requires it absent.
+
+**And then the patch had a hole of its own.** The `NO_EVIDENCE` map that closed
+the first one held free TEXT — a sentence saying why a view could not be
+checked — and two of its eleven sentences were false. `MouseActionsTaskView`
+said "no UI surface yet" while `ShortcutsDialog` had been rebinding
+`mouse.orbit` and `mouse.pan` since it was written; its own header says it
+merges the reference's `5_settings_mouse.py` and `5_settings_shortcuts.py` on
+purpose, so a user need not know whether "how do I pan" is a key question or a
+mouse one. `ViewerTaskView` said "deliberately not built" while
+`mh::ui::ImageViewer` had been showing every render since M8 — what was
+deliberately not built is only its Refresh button, because nothing writes a
+path to re-read.
+
+That map is now `ABSENT`, and each entry names the literal that WOULD be in
+`src/` if the view had shipped. The reason is prose; the literal is the check,
+and it runs in the same direction as `EVIDENCE` in reverse. The rule found both
+false claims on its first run, by name.
+
+The bucket TABLE in this file is checked too, for the same reason: it is five
+numbers nobody read, and both views moved bucket in the chunk that added the
+rule.
 
 **The first version of that gate had a hole, and the very next chunk fell into
 it.** `CustomTargetsTaskView` shipped on 2026-09-12 and this file stayed stale,

@@ -69,6 +69,14 @@ BUCKETS = {
     # shape as the rest of this bucket.
     "CustomTargetsTaskView": "covered",
 
+    # Both of these sat in `todo` while shipped, and their stated reasons for
+    # being unchecked were simply false. The mouse task is inside
+    # Settings > Shortcuts... by design -- `ShortcutsDialog` merges the
+    # reference's two settings tasks so a user need not know whether "how do I
+    # pan" is a key question or a mouse one -- and the viewer is
+    # `mh::ui::ImageViewer`, which every render has been shown in since M8.
+    "MouseActionsTaskView": "covered", "ViewerTaskView": "covered",
+
     "TeethTaskView": "covered", "TongueTaskView": "covered",
     "HairTaskView": "covered", "ClothesTaskView": "covered",
     "EyelashesTaskView": "covered", "EyesTaskView": "covered",
@@ -88,10 +96,8 @@ BUCKETS = {
     # ExpressionTaskView chooses .mhpose files and this port ships NONE
     # (measured: zero under data/), so its expressions arrive as --facs units.
     "AnimationLibrary": "todo", "ExpressionTaskView": "todo",
-    "ViewerTaskView": "todo", "BackgroundChooser": "todo",
-    "MaterialEditorTaskView": "todo",
-    "ExpressionMixerTaskView": "todo", "MouseActionsTaskView": "todo",
-    "HelpTaskView": "todo",
+    "BackgroundChooser": "todo", "MaterialEditorTaskView": "todo",
+    "ExpressionMixerTaskView": "todo", "HelpTaskView": "todo",
 
     "ShellTaskView": "declined", "ScriptingView": "declined",
     "ScriptingExecuteTab": "declined", "SocketTaskView": "declined",
@@ -206,6 +212,21 @@ def recorded_totals():
             if (m := re.search(rf"<!-- audit:{key}=(\d+) -->", text))}
 
 
+BUCKET_NAMES = ("done", "covered", "todo", "blocked", "declined")
+
+
+def recorded_buckets():
+    """The bucket table in the plan file, as written.
+
+    Only the five known bucket names are read, so a table added elsewhere in
+    the file cannot quietly join the comparison.
+    """
+    return {m.group(1): int(m.group(2))
+            for m in re.finditer(r"^\|\s*(\w+)\s*\|\s*(\d+)\s*\|",
+                                 PLAN_FILE.read_text(), re.MULTILINE)
+            if m.group(1) in BUCKET_NAMES}
+
+
 # What proves a view REACHES THE USER in this port.
 #
 # The counts above audit the reference. Nothing audited the other half of the
@@ -223,9 +244,10 @@ def recorded_totals():
 #   covered/done  ->  the evidence MUST be present
 #   blocked, and the not-yet-ported bucket  ->  it must be ABSENT
 #
-# A view with no natural user-facing identifier yet is simply not listed; the
-# gate cannot help there and pretending otherwise would be the same class of
-# decorative check this exists to prevent.
+# Every non-declined view must appear here or in `ABSENT` below. Being unlisted
+# used to be allowed, which meant a view could ship and go on being unchecked
+# because nobody had written it down -- exactly the decorative check this exists
+# to prevent.
 EVIDENCE = {
     "LoadTaskView": '"file.open"',
     "SaveTaskView": '"file.save"',
@@ -244,6 +266,8 @@ EVIDENCE = {
     "EyelashesTaskView": '{"eyelashes", "Eyelashes"}',
     "EyesTaskView": '"Eye colour"',
     "CustomTargetsTaskView": '"custom-targets"',
+    "MouseActionsTaskView": '"mouse.orbit"',
+    "ViewerTaskView": 'ImageViewer(&window)',
 }
 
 SRC = REPO / "src"
@@ -256,36 +280,69 @@ def shipped(literal) -> bool:
                if path.is_file() and path.suffix in {".cpp", ".h"})
 
 
-# Views with no user-facing identifier to check, and WHY. Being here is a
-# deliberate act, which is the point: `CustomTargetsTaskView` shipped in the
-# chunk after this gate was written and the inventory stayed stale, because a
-# view with no EVIDENCE entry is simply not checked. Silence was indistinguish-
-# able from "nobody has looked". Now every non-declined view must appear in one
-# map or the other, so the omission has to be written down.
-NO_UI = "no UI surface yet"
-
-NO_EVIDENCE = {
-    "AnimationLibrary": NO_UI + "; would be a chooser over .bvh files",
-    "ExpressionTaskView": "chooses .mhpose files and this port ships zero of them",
-    "ViewerTaskView": "deliberately not built -- nothing to re-read until a "
-                      "render is written to a path (see memory/todo.md)",
-    "BackgroundChooser": NO_UI + "; `background` in src/ is the viewport clear "
-                                 "colour, not a backdrop image",
-    "MaterialEditorTaskView": NO_UI,
-    "ExpressionMixerTaskView": NO_UI + "; expressions arrive as --facs",
-    "MouseActionsTaskView": NO_UI,
-    "HelpTaskView": NO_UI,
-    "EyebrowsTaskView": "blocked on content: no helper cage in the base mesh",
-    "ProxyTaskView": "blocked on content: no wearable alternate body topology",
-    "SceneLibraryTaskView": "blocked on a lighting model",
+# Views that have NOT shipped -- each with the literal that would be in `src/`
+# if it had, and why it has not. The reason is not the check: the LITERAL is.
+#
+# The first version of this map held free text only, and two of its eleven
+# reasons were false. `MouseActionsTaskView` said "no UI surface yet" while
+# `ShortcutsDialog` had been rebinding `mouse.orbit` and `mouse.pan` since it
+# was written (its own header says it merges the reference's mouse and shortcut
+# tasks on purpose), and `ViewerTaskView` said "deliberately not built" while
+# `mh::ui::ImageViewer` had been showing every render since M8. A sentence
+# nobody runs is a claim nobody checks -- which is the hole this gate exists to
+# close, one level up from where it was closed last time.
+#
+# So an entry here asserts the same kind of fact an EVIDENCE entry does, in the
+# opposite direction, and the moment the view ships the gate says so.
+ABSENT = {
+    "AnimationLibrary": ('"Animation"',
+                         "would be a chooser over .bvh files; only single-frame "
+                         "poses are read today"),
+    "ExpressionTaskView": ('"Expression"',
+                           "chooses .mhpose files and this port ships zero of "
+                           "them (measured: 0 under data/)"),
+    "BackgroundChooser": ('"Background image"',
+                          "`background` in src/ is the viewport clear colour "
+                          "and --render's alpha, not a backdrop image"),
+    "MaterialEditorTaskView": ('"Material editor"',
+                               "materials can be PICKED but not edited; no "
+                               "property editor"),
+    "ExpressionMixerTaskView": ('"Expression mixer"',
+                                "the units exist (rig::ActionUnit, --facs) but "
+                                "nothing in src/ui reaches them"),
+    "HelpTaskView": ('"help.manual"', "no Help menu in the window"),
+    "EyebrowsTaskView": ('{"eyebrows", "Eyebrows"}',
+                         "blocked on content: no helper cage in the base mesh"),
+    "ProxyTaskView": ('{"proxy", "Proxy"}',
+                      "blocked on content: no wearable alternate body topology"),
+    "SceneLibraryTaskView": ('"Scene lighting"', "blocked on a lighting model"),
 }
 
 
 def unchecked_views(standalone):
-    """Non-declined views that claim neither evidence nor a reason."""
+    """Non-declined views that claim neither evidence nor a stated absence."""
     return [name for name in standalone
             if BUCKETS.get(name) != "declined"
-            and name not in EVIDENCE and name not in NO_EVIDENCE]
+            and name not in EVIDENCE and name not in ABSENT]
+
+
+def absence_mismatches():
+    """Views claimed absent that are contradicted -- by src/, or by their own
+    bucket.
+
+    The second half closes a hole the first half would otherwise leave: a view
+    listed here but bucketed `covered` is checked by neither rule, because
+    `evidence_mismatches` only walks `EVIDENCE`. It would then claim to reach
+    the user on no evidence whatsoever.
+    """
+    wrong = []
+    for name, (literal, reason) in sorted(ABSENT.items()):
+        if shipped(literal):
+            wrong.append(f"{name}: claimed absent ({reason}) but {literal} IS in src/")
+        elif BUCKETS.get(name) in {"covered", "done"}:
+            wrong.append(f"{name}: bucket '{BUCKETS[name]}' but it is listed as "
+                         f"absent -- a covered view needs an EVIDENCE literal")
+    return wrong
 
 
 def evidence_mismatches():
@@ -338,13 +395,28 @@ def main():
 
     unchecked = unchecked_views(standalone)
     if unchecked:
-        print("task views with neither evidence nor a stated reason "
-              "(add to EVIDENCE or NO_EVIDENCE): " + ", ".join(sorted(unchecked)),
+        print("task views with neither evidence nor a stated absence "
+              "(add to EVIDENCE or ABSENT): " + ", ".join(sorted(unchecked)),
               file=sys.stderr)
+        return 1
+
+    shipped_after_all = absence_mismatches()
+    if shipped_after_all:
+        print("task views whose claimed absence is contradicted:", file=sys.stderr)
+        for line in shipped_after_all:
+            print(f"  {line}", file=sys.stderr)
         return 1
 
     counts = Counter(BUCKETS[name] for name in standalone)
     counts["done"] = len(dynamic)
+
+    # The plan file states these numbers in a table nobody was reading. Two
+    # views moved bucket in this very chunk; without this the table would have
+    # gone on saying 17 and 8.
+    if recorded_buckets() != dict(counts):
+        print(f"bucket table drifted: live {dict(counts)}, "
+              f"recorded {recorded_buckets()}", file=sys.stderr)
+        return 1
 
     print(f"task views: {totals['total']} "
           f"({totals['explicit']} standalone + {totals['dynamic']} built at run time); "

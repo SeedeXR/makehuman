@@ -3739,6 +3739,32 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       and removing a `BUCKETS` entry fails the unclassified rule — which runs
       first, so the message names the step that actually comes first.
       Buckets: covered 17, todo 8, blocked 3, declined 16, done 7.
+- [x] **Two of the gate's own reasons were false, so the reasons became checks.**
+      The `NO_EVIDENCE` map added last chunk held free TEXT. Auditing all eleven
+      sentences against `src/`, two were wrong: `MouseActionsTaskView` said "no
+      UI surface yet" while `ShortcutsDialog` has been rebinding `mouse.orbit`
+      and `mouse.pan` since it was written — its header says it merges the
+      reference's `5_settings_mouse.py` and `5_settings_shortcuts.py` on
+      purpose — and `ViewerTaskView` said "deliberately not built" while
+      `mh::ui::ImageViewer` has shown every render since M8 (`main.cpp:3916`).
+      Only its Refresh button is deliberately absent, because nothing writes a
+      path to re-read.
+      - The map is now `ABSENT`: each entry names the literal that WOULD be in
+        `src/` if the view had shipped, and the gate asserts it is not. Prose is
+        prose; the literal is the check. It named both false claims on its first
+        run.
+      - The bucket TABLE in `taskviews.md` is checked too — five numbers nobody
+        read, and two views changed bucket in this very chunk.
+      - A view listed as absent may not be bucketed `covered`/`done`: neither
+        rule walked that combination, so it could have claimed to reach the user
+        on no evidence at all.
+      - Seven mutations killed, each with the right message: a shipped view
+        claimed absent; an ABSENT literal that is present; the table off by one;
+        a view in neither map; a view missing from `BUCKETS`; an absent view
+        bucketed covered; and a stray table elsewhere in the file, which must
+        NOT fail.
+      - Buckets: covered 19, todo 6, blocked 3, declined 16, done 7.
+
 - [ ] **The remaining two proxy choosers are BLOCKED ON CONTENT, not effort.**
       Eyebrows have no helper cage. The "generic proxy" chooser has nothing to
       choose between: measured, the only proxymesh-shaped assets in `data/` are
