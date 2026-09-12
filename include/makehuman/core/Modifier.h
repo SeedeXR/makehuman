@@ -25,6 +25,11 @@ enum class ModifierKind : uint8_t {
     Macro,
     /// A macro that participates in ethnic renormalisation (humanmodifier.py:615).
     Ethnic,
+    /// Names one target FILE rather than a target group: the reference's
+    /// `SimpleModifier` (`plugins/0_modeling_9_custom_targets.py:199`), used
+    /// for a user's own morphs. A group lookup has nothing to find for a file
+    /// that is not in the index, so this kind goes straight to `targetPath`.
+    Simple,
 };
 
 /// One slider.
@@ -49,6 +54,15 @@ struct Modifier {
 
     /// The target group a Macro/Ethnic modifier draws from: its group name.
     std::string targetGroup;
+
+    /// The target FILE a Simple modifier applies, as an absolute path. Empty
+    /// for every other kind.
+    ///
+    /// Absolute because a custom target lives outside the target root, and
+    /// `TargetLibrary::get` resolves an absolute key against the filesystem
+    /// rather than against its root -- pinned by "a target OUTSIDE the root
+    /// loads by absolute path" in tests/unit/test_target.cpp.
+    std::string targetPath;
 
     /// For a macro modifier, the scalar it drives.
     std::optional<MacroValue> macroValue;  ///< only for Ethnic
@@ -80,6 +94,15 @@ struct ModifierError {
 /// Schema (humanmodifier.py:677-696): a list of `{group, modifiers:[...]}`,
 /// each entry either `{target, min?, max?, mid?}` for a Universal modifier or
 /// `{macrovar, modifierType?}` for a Macro/Ethnic one.
+/// One `ModifierKind::Simple` modifier per `.target` file directly inside
+/// @p dir, named `custom/<stem>`.
+///
+/// A missing or empty directory yields an empty vector rather than an error:
+/// most users never create one, and the reference likewise just reports that
+/// none were found (`0_modeling_9_custom_targets.py:190`). Not recursive --
+/// the reference lists one directory.
+[[nodiscard]] std::vector<Modifier> customModifiers(const std::filesystem::path& dir);
+
 [[nodiscard]] std::expected<std::vector<Modifier>, ModifierError> loadModifiers(
     const std::filesystem::path& jsonPath);
 

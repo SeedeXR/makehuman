@@ -309,6 +309,39 @@ TEST_CASE("prewarm tolerates paths that do not exist", "[core][target][prewarm]"
     REQUIRE(t.error().kind == TargetErrorKind::NotFound);
 }
 
+TEST_CASE("a target OUTSIDE the root loads by absolute path", "[core][target][custom]") {
+    // Custom targets are a user's own morphs and live wherever they keep them,
+    // not under data/targets. They reach the library through this: `root_ /
+    // path` REPLACES the root when `path` is absolute, so an absolute key
+    // addresses a file anywhere.
+    //
+    // HONEST NOTE: this passed the moment it was written, because the
+    // behaviour is std::filesystem::path::operator/ rather than anything this
+    // project wrote. That is exactly why it is pinned. It is load-bearing for
+    // custom targets and it is INCIDENTAL -- nothing here declared it, and a
+    // well-meant "join the root properly" change would silently take it away.
+    // Verified by running it, not assumed: `"/data/targets" / "/tmp/x.target"`
+    // is `/tmp/x.target`.
+    const auto root = std::filesystem::path(MH_DATA_DIR) / "targets";
+    if (!std::filesystem::exists(root)) return;
+
+    // A real shipped target, addressed absolutely through a library whose root
+    // is somewhere else entirely.
+    std::filesystem::path victim;
+    for (const auto& e : std::filesystem::recursive_directory_iterator(root)) {
+        if (e.is_regular_file() && e.path().extension() == ".target") {
+            victim = e.path();
+            break;
+        }
+    }
+    REQUIRE(!victim.empty());
+
+    TargetLibrary elsewhere(std::filesystem::temp_directory_path() / "no-such-root");
+    const auto loaded = elsewhere.get(victim.string());
+    REQUIRE(loaded.has_value());
+    CHECK_FALSE((*loaded)->empty());
+}
+
 TEST_CASE("prewarm of an empty list is a no-op", "[core][target][prewarm]") {
     TargetLibrary lib(std::filesystem::path(MH_DATA_DIR) / "targets");
     lib.prewarm({});

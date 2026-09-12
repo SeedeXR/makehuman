@@ -3703,6 +3703,31 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         exercised it; it is a ctest now too.
       - Buckets after the correction: done 7, covered 16, todo 9, blocked 3,
         declined 16.
+- [x] **CUSTOM TARGETS: a user's own `.target` morphs.** The reference wraps
+      each file in `SimpleModifier('custom', dir, file)`
+      (`0_modeling_9_custom_targets.py:199`), which names a FILE rather than
+      resolving a target GROUP the way every shipped slider does.
+      - `ModifierKind::Simple` carries `targetPath`; the stack takes the file
+        directly, because a group lookup has nothing to find for a file outside
+        the index. `customModifiers(dir)` makes one `custom/<stem>` per
+        `.target`, sorted so the slider list cannot reshuffle between runs.
+      - `--custom-targets <dir>`, and `--set custom/<stem>=1` applies it.
+      - **The loading mechanism already existed, by accident.**
+        `TargetLibrary::get` does `root_ / relativePath`, and `operator/`
+        REPLACES the root when the right side is absolute — verified by
+        compiling and running a probe, not recalled. So an out-of-tree target
+        always loaded. That behaviour is now pinned by a test, because it is
+        load-bearing and nothing declared it: a well-meant "join the root
+        properly" change silently removes it, which is the mutation that kills
+        the test.
+      - **One of my own gates was DECORATIVE and mutation caught it.** The
+        integration check was `files_differ.cmake` between `on.obj` and
+        `off.obj`, and it passes no matter what: the OBJ writer bakes the output
+        stem into its `mtllib <stem>.mtl` line, so it was comparing FILENAMES,
+        not geometry. It passed with the feature deliberately broken. Replaced
+        with a moved-vertex count — exactly the 2 vertices the target names —
+        which fails under the same mutation.
+      - 9 tests (4 unit, 5 integration); four mutations killed.
 - [ ] **The remaining two proxy choosers are BLOCKED ON CONTENT, not effort.**
       Eyebrows have no helper cage. The "generic proxy" chooser has nothing to
       choose between: measured, the only proxymesh-shaped assets in `data/` are

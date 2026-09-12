@@ -2146,6 +2146,12 @@ int main(int argc, char** argv) {
                        "a twisted limb's volume where linear blending collapses it; linear is "
                        "what the reference did."),
         QStringLiteral("method"), QStringLiteral("dqs"));
+    const QCommandLineOption customTargetsOpt(
+        QStringLiteral("custom-targets"),
+        QStringLiteral("Directory of your own .target morphs. Each file becomes a modifier "
+                       "named custom/<filename>, settable with --set like any other."),
+        QStringLiteral("dir"));
+    parser.addOption(customTargetsOpt);
     parser.addOption(skinningOpt);
     const QCommandLineOption correctivesOpt(
         QStringLiteral("correctives"),
@@ -2283,7 +2289,20 @@ int main(int argc, char** argv) {
     }
 
     const mh::core::TargetIndex index = mh::core::TargetIndex::build(dataDir() / "targets");
-    mh::core::Human human(&index, standard->modifiers);
+
+    // A user's own morphs, appended to the shipped sliders. Reported rather
+    // than silent: a directory with nothing usable in it looks identical to a
+    // mistyped path from the outside, and the reference says so too
+    // (`0_modeling_9_custom_targets.py:190`).
+    std::vector<mh::core::Modifier> allModifiers = standard->modifiers;
+    if (parser.isSet(customTargetsOpt)) {
+        const std::filesystem::path dir = parser.value(customTargetsOpt).toStdString();
+        auto custom                     = mh::core::customModifiers(dir);
+        std::fprintf(stderr, "custom targets: %zu in %s\n", custom.size(), dir.string().c_str());
+        allModifiers.insert(allModifiers.end(), std::make_move_iterator(custom.begin()),
+                            std::make_move_iterator(custom.end()));
+    }
+    mh::core::Human human(&index, std::move(allModifiers));
     // Lazy: only the targets a slider actually reaches are read from disk, so
     // start-up does not pay for all 1,280.
     mh::core::TargetLibrary targets(dataDir() / "targets");

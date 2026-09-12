@@ -93,6 +93,37 @@ std::string ModifierError::message() const {
     return m;
 }
 
+std::vector<Modifier> customModifiers(const std::filesystem::path& dir) {
+    std::vector<Modifier> out;
+    std::error_code ec;
+    if (!std::filesystem::is_directory(dir, ec)) return out;
+
+    // Sorted, because a directory iteration order is not defined and a slider
+    // list that reshuffles between runs is a UI nobody can learn.
+    std::vector<std::filesystem::path> files;
+    for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+        if (ec) break;
+        if (entry.is_regular_file() && entry.path().extension() == ".target")
+            files.push_back(entry.path());
+    }
+    std::ranges::sort(files);
+
+    for (const auto& file : files) {
+        Modifier m;
+        m.group    = "custom";
+        m.name     = file.stem().string();
+        m.fullName = m.group + "/" + m.name;
+        m.kind     = ModifierKind::Simple;
+        // Absolute, so the key works regardless of where the process was
+        // started from; `weakly_canonical` rather than `absolute` so a path
+        // with `..` in it still matches what the stack is keyed by.
+        m.targetPath = std::filesystem::weakly_canonical(file, ec).string();
+        if (ec) m.targetPath = file.string();
+        out.push_back(std::move(m));
+    }
+    return out;
+}
+
 std::expected<std::vector<Modifier>, ModifierError> loadModifiers(
     const std::filesystem::path& jsonPath) {
     // openForRead, not exists()+ifstream: a DIRECTORY satisfies both and
@@ -301,6 +332,14 @@ void Human::accumulate(const Modifier& m, float value) {
     const float leftFactor   = -std::min(value, 0.0F);
     const float rightFactor  = std::max(0.0F, value);
     const float centerFactor = 1.0F - std::abs(value);
+
+    // A Simple modifier names a FILE. There is no group to resolve and no
+    // macro factor to weight it by: the slider value IS the weight, which is
+    // what `SimpleModifier.setValue` does (humanmodifier.py:399-404).
+    if (m.kind == ModifierKind::Simple) {
+        if (value != 0.0F) stack_[m.targetPath] = value;
+        return;
+    }
 
     const bool universal = m.kind == ModifierKind::Universal;
     const std::array<Side, 3> sides{

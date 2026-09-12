@@ -4,6 +4,57 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-12 (seventy-first) — Session · **Custom targets, and a gate of mine that was decorative**
+
+*2026-09-12 — a user's own morphs reach the model, and one of my own tests
+turned out to be reading filenames.*
+
+### What landed
+`ModifierKind::Simple` — a modifier that names a target FILE rather than
+resolving a target GROUP, which is what the reference's `SimpleModifier` is
+(`0_modeling_9_custom_targets.py:199`). A group lookup has nothing to find for a
+file that is not in the index, so this kind goes straight to its path.
+
+`customModifiers(dir)` turns each `.target` directly inside a directory into a
+`custom/<stem>` slider, sorted so the list cannot reshuffle between runs, and
+`--custom-targets <dir>` feeds them to the `Human` alongside the shipped ones.
+Driven end to end: `--set custom/nosejob=1.0` moves exactly the two vertices the
+file names.
+
+### The mechanism already existed, by accident
+`TargetLibrary::get` does `root_ / relativePath`, and
+`std::filesystem::path::operator/` REPLACES the left side when the right is
+absolute. So a target outside the target root has always loaded. Verified by
+compiling and running a two-line probe rather than recalling the rule.
+
+That meant the first test I wrote passed the moment it existed — the exact
+"watch it go red first" trap. It is kept and pinned anyway, because the
+behaviour is load-bearing and nothing in this project declared it: mutating the
+join to `root_ / path.relative_path()` — the obvious "fix this properly" edit —
+kills the test, which is what makes it worth its place.
+
+### A gate of mine was decorative, and only mutation found it
+The integration claim was `files_differ.cmake` between `on.obj` and `off.obj`.
+It passes **regardless of the geometry**: the OBJ writer bakes the output stem
+into its `mtllib <stem>.mtl` line, so two exports to different paths always
+differ. Mutating the stack entry away — breaking the feature completely — left
+it green.
+
+Replaced with `obj_group_moved.cmake`: exactly 2 moved and 13378 still, the two
+vertices the fixture target names. That version fails under the same mutation.
+
+This is the third time this session a gate turned out to be reading something
+other than the claim (after the hair matcap, and the task-view buckets). The
+pattern is the same each time: the check was true of something incidental that
+travelled alongside the thing being asserted.
+
+### Gates
+9 tests — 4 unit, 5 integration. Four mutations killed: the dropped stack entry,
+a `customModifiers` that finds nothing, reporting without the flag, and the
+path-join change. A review pass on my own diff also caught the tests comparing
+raw paths while the implementation canonicalises — agreeing only on a machine
+whose temp directory is not a symlink.
+
 ## 2026-09-12 (seventieth) — Session · **The roadmap was wrong about fourteen views**
 
 *2026-09-12 — no new feature; the file that decides what gets built next stopped

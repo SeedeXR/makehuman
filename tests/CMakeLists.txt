@@ -20,6 +20,7 @@ add_executable(mh_tests
     unit/test_naming.cpp
     unit/test_target.cpp
     unit/test_macro.cpp
+    unit/test_custom_targets.cpp
     unit/test_target_index.cpp
     unit/test_material.cpp
     unit/test_asset_index.cpp
@@ -2238,6 +2239,68 @@ if(MH_HAVE_RENDER)
     # once exercised it.
     add_test(NAME audit_taskviews
              COMMAND python3 ${CMAKE_SOURCE_DIR}/tools/audit_taskviews.py)
+
+    # ------------------------------------------------------------------
+    # Custom targets: a user's own .target morphs, from a directory of their
+    # choosing. The unit tests cover the modifier; these cover the only thing
+    # that makes it a FEATURE -- that the flag reaches the mesh.
+    #
+    # The fixture is written by CMake rather than committed, because a target
+    # is just indices and offsets and an invented one states its own intent:
+    # two vertices, half a decimetre along +X.
+    # ------------------------------------------------------------------
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/custom_targets/dir)
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/custom_targets/dir/nosejob.target
+         "11000 0.500000 0.000000 0.000000\n11001 0.500000 0.000000 0.000000\n")
+
+    add_test(NAME app_custom_targets_found COMMAND makehuman
+             --custom-targets ${CMAKE_CURRENT_BINARY_DIR}/custom_targets/dir
+             --export ${CMAKE_CURRENT_BINARY_DIR}/custom_targets/off.obj)
+    set_tests_properties(app_custom_targets_found PROPERTIES
+        PASS_REGULAR_EXPRESSION "custom targets: 1 in"
+        FIXTURES_SETUP app_custom_targets_off)
+
+    add_test(NAME app_custom_targets_applied COMMAND makehuman
+             --custom-targets ${CMAKE_CURRENT_BINARY_DIR}/custom_targets/dir
+             --set custom/nosejob=1.0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/custom_targets/on.obj)
+    set_tests_properties(app_custom_targets_applied PROPERTIES
+        FAIL_REGULAR_EXPRESSION "no such modifier"
+        FIXTURES_SETUP app_custom_targets_on)
+
+    # The claim that matters: setting it moves EXACTLY the two vertices the
+    # target names, and nothing else.
+    #
+    # This was `files_differ.cmake` first, and that was DECORATIVE -- proven by
+    # mutating the stack entry away and watching it still pass. Two exports to
+    # different paths always differ, because the writer bakes the output stem
+    # into its `mtllib <stem>.mtl` line, so the comparison was reading the
+    # FILENAME rather than the geometry. Counting the moved vertices reads the
+    # thing the feature is about.
+    add_test(NAME app_custom_targets_change_the_mesh COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/custom_targets/off.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/custom_targets/on.obj
+             -DGROUP=body -DEXPECT_MOVED=2 -DEXPECT_STILL=13378
+             -DRISE_TOLERANCE=ANY
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
+    set_tests_properties(app_custom_targets_change_the_mesh PROPERTIES
+        FIXTURES_REQUIRED "app_custom_targets_on;app_custom_targets_off")
+
+    # A directory with no .target in it is not an error -- most users never
+    # make one -- but it must say so rather than pretend it loaded something.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/custom_targets/empty)
+    add_test(NAME app_custom_targets_empty_dir COMMAND makehuman
+             --custom-targets ${CMAKE_CURRENT_BINARY_DIR}/custom_targets/empty
+             --export ${CMAKE_CURRENT_BINARY_DIR}/custom_targets/empty.obj)
+    set_tests_properties(app_custom_targets_empty_dir PROPERTIES
+        PASS_REGULAR_EXPRESSION "custom targets: 0 in")
+
+    # And without the flag nothing changes at all: no custom line, and the
+    # shipped sliders are untouched.
+    add_test(NAME app_custom_targets_absent_is_quiet COMMAND makehuman
+             --export ${CMAKE_CURRENT_BINARY_DIR}/custom_targets/none.obj)
+    set_tests_properties(app_custom_targets_absent_is_quiet PROPERTIES
+        FAIL_REGULAR_EXPRESSION "custom targets:")
 
     # foundation, core, rig and io must build without a GUI stack -- that is
     # what makes the headless `parameters -> mesh` path (M10) usable from a
