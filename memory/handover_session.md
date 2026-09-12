@@ -4,6 +4,57 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-12 (seventy-fourth) — Session · **An expression could be composed and never kept**
+
+*2026-09-12 — the first chunk in four that adds a capability rather than
+repairing a check, and it still found its own bug by reading the diff.*
+
+### What was missing
+`loadExpression` reads a `.mhpose` and `facsExpression` derives one from Action
+Units, but nothing could WRITE one. The reference's expression mixer is a set
+of sliders and a Save button (`plugins/7_expression_mixer.py:221-238`); this
+port had the arithmetic and no Save. That is also the real reason `data/` holds
+zero `.mhpose` files: not that nobody shipped any, but that nobody could make
+one.
+
+`rig::saveExpression` and `--save-expression <file>` close it.
+
+### What the tests actually prove
+The claim is a round trip, so it takes three exports: the saved file reloaded
+with `--expression` gives a mesh identical to the `--facs` request it came
+from, AND that expression moves 1,949 of 14,444 vertices against neutral.
+Without the second, the first is two rest meshes agreeing with each other.
+
+The 1,949 is fixed point. A naive text compare of vertex lines says 2,042 — the
+extra 93 are midline vertices written `0.0000` in one export and `-0.0000` in
+the other. I quoted 2,042 first and the comparison script corrected me.
+
+Rendered it and looked: AU12 + AU6 reloaded from file is a recognisable
+Duchenne smile. A vertex count cannot tell "correct" from "identically wrong".
+
+### The bug in my own diff
+`unit_poses` is a JSON OBJECT keyed by unit name. A unit named twice collapses
+to the last weight — and `blend` COMPOSES quaternions, so two applications are
+not one larger weight. Reachable from the command line today as
+`--facs AU12=0.3 --facs AU12=0.7`, which wrote a file that loaded cleanly into
+a different face: 1,793 of 14,444 vertices away from what was asked for.
+
+The format cannot express a repeat, so it is refused rather than written. Zeros
+are dropped first, so a unit merely touched and returned to rest is not a
+duplicate.
+
+Nothing failed to find this. It came out of reading the diff and asking what
+`units[u.name] = ...` does when the name recurs — which is the same question
+the last three chunks were all really about.
+
+### Buckets unchanged, deliberately
+`ExpressionMixerTaskView` stays `todo`: there is still no way to set a single
+pose unit directly (only the ~30 Action Units name them) and nothing in
+`src/ui` reaches either. `ExpressionTaskView` stays `todo` too — a chooser
+needs files to choose and `data/` still has none — but its stated reason was
+amended, because "this port ships zero of them" now has a way to stop being
+true.
+
 ## 2026-09-12 (seventy-third) — Session · **The reasons in the gate were themselves unchecked**
 
 *2026-09-12 — third chunk in a row on the same fault line, and the first one to

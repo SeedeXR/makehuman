@@ -115,6 +115,33 @@ struct PoseUnitsError {
 [[nodiscard]] std::expected<Expression, PoseUnitsError> loadExpression(
     const std::filesystem::path& path);
 
+/// Writes a `.mhpose`.
+///
+/// The counterpart of `loadExpression`, and the missing half of the reference's
+/// expression mixer: it could Save (`plugins/7_expression_mixer.py:221-238`)
+/// and this port could only read, so an expression a user composed could not be
+/// kept. It is also why nothing under `data/` is a `.mhpose` -- there was no
+/// way to make one.
+///
+/// **Order is preserved, and that is the whole point.** `blend` multiplies
+/// quaternions and does not commute, so `units` order is part of the
+/// expression, not a presentation detail. This writes `nlohmann::ordered_json`
+/// for the same reason the reader parses it: the default `json` holds an object
+/// in a std::map and would emit the units alphabetically, producing a file that
+/// loads cleanly into a different face.
+///
+/// **Zero-weight units are dropped**, as the reference drops them
+/// (`7_expression_mixer.py:223`). Every slider is a modifier there, so without
+/// the filter a saved file would name all 60 units and say nothing about which
+/// ones were moved.
+///
+/// Refuses to write anything `loadExpression` would reject: an expression with
+/// no name, or one left with no units once the zeros are gone. Writing a file
+/// our own reader refuses is worse than failing here, where the caller can say
+/// so. Nothing is created on any of those paths.
+[[nodiscard]] std::expected<void, PoseUnitsError> saveExpression(const std::filesystem::path& path,
+                                                                 const Expression& expression);
+
 /// Reads the `framemapping` name list from a pose-unit JSON.
 [[nodiscard]] std::expected<std::vector<std::string>, PoseUnitsError> loadPoseUnitNames(
     const std::filesystem::path& path);

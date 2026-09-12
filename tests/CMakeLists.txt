@@ -9,6 +9,7 @@ add_executable(mh_tests
     unit/test_symmetry.cpp
     unit/test_pose_blend.cpp
     unit/test_facs.cpp
+    unit/test_save_expression.cpp
     unit/test_obj_reader.cpp
     unit/test_proxy_weights.cpp
     unit/test_tangents.cpp
@@ -1729,6 +1730,86 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
     set_tests_properties(app_facs_order_survives PROPERTIES
         FIXTURES_REQUIRED "app_facs_ab_obj;app_facs_ba_obj")
+
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/expr)
+
+    # Saving an expression, which is the half of the reference's mixer this
+    # port never had: it could read a .mhpose and derive one from Action Units,
+    # and could not write one. That is also why nothing under data/ is a
+    # .mhpose -- there was no way to author one.
+    #
+    # The claim is a ROUND TRIP, so it takes three exports. The saved file
+    # re-loaded with --expression must give the same mesh as the --facs request
+    # it came from; and the expression must actually move something, or that is
+    # two rest meshes agreeing with each other. The second test is what stops
+    # the first being decorative.
+    add_test(NAME app_save_expression COMMAND makehuman
+             --facs AU12=1.0 --facs AU6=0.5
+             --save-expression ${CMAKE_CURRENT_BINARY_DIR}/expr/smile.mhpose)
+    set_tests_properties(app_save_expression PROPERTIES FIXTURES_SETUP app_save_expression)
+    # The units come out in the order the Action Units named them, not sorted.
+    # AU12 gives the two mouth units and AU6 the two cheek units, so an
+    # alphabetical writer would put LeftCheekUp first -- and `blend`
+    # multiplies quaternions, which do not commute, so that is a different face.
+    add_test(NAME app_save_expression_order COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/expr/smile.mhpose
+             "-DKEYS=MouthLeftPullUp;MouthRightPullUp;LeftCheekUp;RightCheekUp"
+             -DORDERED=1
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_save_expression_order PROPERTIES
+        FIXTURES_REQUIRED app_save_expression)
+    add_test(NAME app_save_expression_from_facs COMMAND makehuman
+             --facs AU12=1.0 --facs AU6=0.5
+             --export ${CMAKE_CURRENT_BINARY_DIR}/expr/from_facs.obj)
+    set_tests_properties(app_save_expression_from_facs PROPERTIES
+        FIXTURES_SETUP app_expr_facs_obj)
+    add_test(NAME app_save_expression_reloaded COMMAND makehuman
+             --expression ${CMAKE_CURRENT_BINARY_DIR}/expr/smile.mhpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/expr/from_file.obj)
+    set_tests_properties(app_save_expression_reloaded PROPERTIES
+        FIXTURES_SETUP app_expr_file_obj
+        FIXTURES_REQUIRED app_save_expression)
+    add_test(NAME app_save_expression_neutral COMMAND makehuman
+             --export ${CMAKE_CURRENT_BINARY_DIR}/expr/neutral.obj)
+    set_tests_properties(app_save_expression_neutral PROPERTIES
+        FIXTURES_SETUP app_expr_neutral_obj)
+    # The round trip: byte-for-byte the same face.
+    add_test(NAME app_save_expression_round_trips COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/expr/from_facs.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/expr/from_file.obj
+             -DEXPECT_DIFFERENT=0
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
+    set_tests_properties(app_save_expression_round_trips PROPERTIES
+        FIXTURES_REQUIRED "app_expr_facs_obj;app_expr_file_obj")
+    # And the premise, measured: 1,949 of 14,444 vertices. Counting differing
+    # TEXT lines says 2,042 -- the extra 93 are midline vertices written
+    # `0.0000` in one export and `-0.0000` in the other, which is why the
+    # comparison is done in fixed point.
+    add_test(NAME app_save_expression_moves_the_face COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/expr/neutral.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/expr/from_facs.obj
+             -DEXPECT_DIFFERENT=1949
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
+    set_tests_properties(app_save_expression_moves_the_face PROPERTIES
+        FIXTURES_REQUIRED "app_expr_neutral_obj;app_expr_facs_obj")
+    # The same Action Unit twice asks for the same pose units twice, and the
+    # blend COMPOSES them -- it does not add the weights. A JSON object keyed by
+    # unit name cannot say that, so saving it kept the last weight and produced
+    # a file that loaded cleanly into a different face: measured, 1,793 of
+    # 14,444 vertices away from what was asked for. Found by reading the diff,
+    # not by a failing test, which is why it gets one.
+    add_test(NAME app_save_expression_repeated_unit COMMAND makehuman
+             --facs AU12=0.3 --facs AU12=0.7
+             --save-expression ${CMAKE_CURRENT_BINARY_DIR}/expr/never.mhpose)
+    set_tests_properties(app_save_expression_repeated_unit PROPERTIES
+        PASS_REGULAR_EXPRESSION "appears more than once")
+
+    # Without --facs there is nothing to save, and a copy of an --expression
+    # file is not worth a flag.
+    add_test(NAME app_save_expression_needs_facs COMMAND makehuman
+             --save-expression ${CMAKE_CURRENT_BINARY_DIR}/expr/never.mhpose)
+    set_tests_properties(app_save_expression_needs_facs PROPERTIES
+        PASS_REGULAR_EXPRESSION "--save-expression writes the --facs request")
 
     # The four refusals, each with its own message, because a shared "bad
     # --facs" would not say which mistake was made.

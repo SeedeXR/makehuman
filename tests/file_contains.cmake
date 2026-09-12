@@ -12,17 +12,33 @@
 # USDZ stores its stage uncompressed (that is a format requirement, not luck --
 # a consumer memory-maps the archive), so both are greppable without unpacking.
 #
-# Usage: cmake -DFILE=<path> "-DKEYS=a;b;c" -P file_contains.cmake
+# With -DORDERED=1 the keys must also appear IN THAT ORDER. Order is a real
+# claim for a format whose meaning depends on it: a `.mhpose`'s `unit_poses`
+# order is part of the expression, because `PoseUnits::blend` multiplies
+# quaternions and quaternion multiplication does not commute. A writer that
+# emitted the units sorted would pass an unordered check and produce a
+# different face.
+#
+# Usage: cmake -DFILE=<path> "-DKEYS=a;b;c" [-DORDERED=1] -P file_contains.cmake
 
 if(NOT EXISTS "${FILE}")
     message(FATAL_ERROR "no such file: ${FILE}")
 endif()
 
 file(READ "${FILE}" text)
+set(previous -1)
+set(previous_key "")
 foreach(key IN LISTS KEYS)
     string(FIND "${text}" "${key}" at)
     if(at EQUAL -1)
         message(FATAL_ERROR "${FILE} does not contain '${key}'")
     endif()
+    if(ORDERED AND at LESS previous)
+        message(FATAL_ERROR "${FILE}: '${key}' appears before '${previous_key}', "
+                            "but was expected after it")
+    endif()
+    set(previous "${at}")
+    set(previous_key "${key}")
 endforeach()
-message(STATUS "${FILE}: all ${CMAKE_ARGC} keys present")
+list(LENGTH KEYS count)
+message(STATUS "${FILE}: all ${count} keys present")

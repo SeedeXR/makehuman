@@ -299,8 +299,9 @@ ABSENT = {
                          "would be a chooser over .bvh files; only single-frame "
                          "poses are read today"),
     "ExpressionTaskView": ('"Expression"',
-                           "chooses .mhpose files and this port ships zero of "
-                           "them (measured: 0 under data/)"),
+                           "a chooser needs files to choose; still 0 .mhpose "
+                           "under data/, though --save-expression can now "
+                           "author them"),
     "BackgroundChooser": ('"Background image"',
                           "`background` in src/ is the viewport clear colour "
                           "and --render's alpha, not a backdrop image"),

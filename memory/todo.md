@@ -3765,6 +3765,37 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         NOT fail.
       - Buckets: covered 19, todo 6, blocked 3, declined 16, done 7.
 
+- [x] **The expression mixer could Save and this port could only read.**
+      `loadExpression` and `facsExpression` shipped; nothing could WRITE a
+      `.mhpose`, so an expression a user composed could not be kept — and the
+      reason `data/` holds zero of them is that there was no way to author one.
+      `rig::saveExpression` and `--save-expression <file>` close it: the
+      `--facs` request becomes a reusable file that `--expression` reloads.
+      - **Round trip verified on the mesh, not on the bytes**: the reloaded
+        file gives a mesh identical to the `--facs` request that produced it,
+        and — the test that stops the first being decorative — that expression
+        moves 1,949 of 14,444 vertices against neutral. Counting differing TEXT
+        lines says 2,042; the extra 93 are midline vertices written `0.0000` in
+        one export and `-0.0000` in the other, so the comparison is fixed point.
+      - **Rendered and looked at**: AU12 + AU6 reloaded from file is a
+        recognisable Duchenne smile, corners up and cheeks raised — not
+        identical garbage.
+      - **A bug found by reading the diff, not by a failing test.** `unit_poses`
+        is a JSON object, so a unit named twice collapses to the last weight,
+        and `blend` COMPOSES repeats rather than adding them. Reachable as
+        `--facs AU12=0.3 --facs AU12=0.7`, which wrote a file that loaded
+        cleanly into a different face — 1,793 vertices away. The format cannot
+        express it, so it is refused; zeros are dropped first, so a unit merely
+        touched and put back is not a duplicate.
+      - 11 unit tests, 9 CLI tests; six mutations killed, including a writer
+        that sorts (which the CLI round trip catches, not only the unit test).
+      - `tests/file_contains.cmake` gained `ORDERED`, because unit ORDER is part
+        of a `.mhpose` and an unordered check passes on a sorted writer. Its
+        closing message counted `CMAKE_ARGC` rather than the keys; fixed.
+      - Still missing, and why `ExpressionMixerTaskView` stays in `todo`: no way
+        to set a single pose unit directly — only the ~30 Action Units name
+        them — and nothing in `src/ui` reaches either.
+
 - [ ] **The remaining two proxy choosers are BLOCKED ON CONTENT, not effort.**
       Eyebrows have no helper cage. The "generic proxy" chooser has nothing to
       choose between: measured, the only proxymesh-shaped assets in `data/` are

@@ -145,6 +145,55 @@ std::expected<Expression, PoseUnitsError> loadExpression(const std::filesystem::
     return expr;
 }
 
+std::expected<void, PoseUnitsError> saveExpression(const std::filesystem::path& path,
+                                                   const Expression& expression) {
+    const auto malformed = [&path](std::string why) {
+        return std::unexpected(
+            PoseUnitsError{PoseUnitsErrorKind::Malformed, path.string(), std::move(why)});
+    };
+    if (expression.name.empty()) return malformed("an expression needs a \"name\"");
+
+    // ordered_json, for the reason loadExpression gives at length: the default
+    // sorts an object's members and the blend does not commute.
+    nlohmann::ordered_json units = nlohmann::ordered_json::object();
+    for (const auto& u : expression.units) {
+        // The reference's own filter (7_expression_mixer.py:223). A unit at
+        // rest is not part of the expression.
+        if (u.weight == 0.0F) continue;
+        // `unit_poses` is a JSON object, so it cannot say "this unit, twice" --
+        // and `blend` composes quaternions, so two applications are not one
+        // bigger weight. Assigning would keep the last and write a file that
+        // loads cleanly into a different face. Reachable from the CLI today as
+        // `--facs AU12=0.3 --facs AU12=0.7`.
+        if (units.contains(u.name)) {
+            return malformed("\"" + u.name +
+                             "\" appears more than once; a .mhpose names each unit at most once");
+        }
+        units[u.name] = u.weight;
+    }
+    if (units.empty()) return malformed("\"unit_poses\" would be empty");
+
+    nlohmann::ordered_json root = nlohmann::ordered_json::object();
+    root["name"]                = expression.name;
+    root["description"]         = expression.description;
+    root["tags"]                = expression.tags;
+    root["unit_poses"]          = std::move(units);
+
+    // Checked AFTER the refusals above, so a bad expression never creates a
+    // file even when the path is perfectly writable.
+    std::ofstream out(path);
+    if (!out) {
+        return std::unexpected(PoseUnitsError{PoseUnitsErrorKind::Unreadable, path.string(),
+                                              "cannot open for writing"});
+    }
+    out << root.dump(4) << '\n';
+    if (!out) {
+        return std::unexpected(
+            PoseUnitsError{PoseUnitsErrorKind::Unreadable, path.string(), "write failed"});
+    }
+    return {};
+}
+
 std::expected<std::vector<std::string>, PoseUnitsError> loadPoseUnitNames(
     const std::filesystem::path& path) {
     // openForRead, not exists()+ifstream: a DIRECTORY satisfies both and

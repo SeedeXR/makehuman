@@ -1947,6 +1947,12 @@ int main(int argc, char** argv) {
                        "applied in the order given. AU12 is both mouth corners; AU12L and "
                        "AU12R are one side each. Layered onto --pose like --expression."),
         QStringLiteral("AU=weight"));
+    const QCommandLineOption saveExpressionOpt(
+        QStringLiteral("save-expression"),
+        QStringLiteral("Write the --facs request to this .mhpose, so an expression composed "
+                       "from Action Units can be kept, shared and re-loaded with --expression. "
+                       "This is what the reference's expression mixer Save button does."),
+        QStringLiteral("file"));
     const QCommandLineOption poseOpt(
         QStringLiteral("pose"),
         QStringLiteral("rest (the authored A-pose, default), tpose, or a path to a "
@@ -2172,6 +2178,7 @@ int main(int argc, char** argv) {
     parser.addOption(poseOpt);
     parser.addOption(expressionOpt);
     parser.addOption(facsOpt);
+    parser.addOption(saveExpressionOpt);
     parser.addOption(exportOpt);
     parser.addOption(languageOpt);
     parser.addOption(blendshapesOpt);
@@ -2483,6 +2490,47 @@ int main(int argc, char** argv) {
             return 1;
         }
         facsRef().push_back({halves[0].toStdString(), w});
+    }
+
+    // Saving is the missing half of the expression mixer: the port could read a
+    // .mhpose and derive one from FACS, but never write one, so an expression a
+    // user composed could not be kept -- and nothing under data/ is a .mhpose
+    // because there was no way to make one.
+    //
+    // It saves what --facs composed, not what --expression loaded: re-writing a
+    // file that was just read is a copy, and refusing says so rather than
+    // producing one.
+    if (parser.isSet(saveExpressionOpt)) {
+        if (facsRef().empty()) {
+            std::fprintf(stderr,
+                         "--save-expression writes the --facs request as a reusable "
+                         "expression; give at least one --facs\n");
+            return 1;
+        }
+        const std::filesystem::path out = parser.value(saveExpressionOpt).toStdString();
+        auto expr                       = mh::rig::facsExpression(facsRef());
+        if (!expr) {
+            std::fprintf(stderr, "cannot build the FACS expression: %s\n",
+                         expr.error().message().c_str());
+            return 1;
+        }
+        // The Action Units ARE the description: a file that says AU12=1 is
+        // re-derivable, where "Smile" is someone's guess about what it was.
+        std::string from;
+        for (const auto& au : facsRef()) {
+            if (!from.empty()) from += ", ";
+            from += std::format("{}={}", au.code, au.weight);
+        }
+        expr->name        = prettyName(out, {});
+        expr->description = "Action Units: " + from;
+        expr->tags        = {"facs"};
+        if (const auto saved = mh::rig::saveExpression(out, *expr); !saved) {
+            std::fprintf(stderr, "cannot write %s: %s\n", out.string().c_str(),
+                         saved.error().message().c_str());
+            return 1;
+        }
+        std::printf("wrote %s\n", out.string().c_str());
+        return 0;
     }
 
     if (parser.isSet(symmetryOpt)) {
