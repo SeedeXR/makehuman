@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Runs `--spread-roots` and checks that what it printed is actually on the
+# Runs a flag that prints "index x y z" scalp vertices -- `--spread-roots` or
+# `--scalp-path` -- and checks that what it printed is actually on the body
 # scalp, optionally saving the output so two runs can be compared.
 #
 # The y check is THE discriminating assertion, and the first version of these
@@ -9,10 +10,10 @@
 # a line-count check, passes the format check and is perfectly deterministic.
 # It prints the first N vertices of the mesh, which are nowhere near the head.
 # Only the coordinates themselves tell the two apart.
-execute_process(COMMAND "${APP}" --spread-roots "${N}"
+execute_process(COMMAND "${APP}" "${FLAG}" "${ARG}"
                 OUTPUT_VARIABLE out RESULT_VARIABLE rc)
 if(NOT rc EQUAL 0)
-    message(FATAL_ERROR "--spread-roots failed: ${rc}")
+    message(FATAL_ERROR "${FLAG} failed: ${rc}")
 endif()
 string(REPLACE "\n" ";" lines "${out}")
 set(indices "")
@@ -60,9 +61,22 @@ foreach(line IN LISTS lines)
 endforeach()
 list(LENGTH indices seen)
 if(NOT seen EQUAL EXPECT)
-    message(FATAL_ERROR "expected ${EXPECT} roots, got ${seen}")
+    message(FATAL_ERROR "expected ${EXPECT} vertices, got ${seen}")
 endif()
-message(STATUS "${seen} roots, all on the cranium cap")
+# A PATH additionally has ends that must be the ones asked for; roots do not.
+if(DEFINED FIRST)
+    list(GET indices 0 got)
+    if(NOT got EQUAL FIRST)
+        message(FATAL_ERROR "path starts at ${got}, not the requested ${FIRST}")
+    endif()
+endif()
+if(DEFINED LAST)
+    list(GET indices -1 got)
+    if(NOT got EQUAL LAST)
+        message(FATAL_ERROR "path ends at ${got}, not the requested ${LAST}")
+    endif()
+endif()
+message(STATUS "${seen} vertices, all on the body scalp")
 if(DEFINED OUT)
     file(WRITE "${OUT}" "${out}")
 endif()

@@ -3677,6 +3677,12 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         points, which is what routing a parting or a cornrow needs and what
         distances alone cannot give. Dijkstra's predecessor chain, so `walk`
         gained an optional `prev[]` rather than a second solver.
+      - **DONE 2026-09-12: `--scalp-path <from>,<to>`** exposes
+        `pathOverSurface`, which had shipped with no caller but its own tests.
+        A cornrow is a path, and the Python generator cannot call C++. Verified
+        against an independent Python Dijkstra oracle: the midline parting
+        5192 -> 5379 is **13 vertices, 2.4893 dm**, and the C++ reproduces it
+        vertex for vertex. Three mutations, three kills.
       - Next: the generator consumes `--spread-roots` and walks strands from
         those roots. Still open after that, unchanged by this chunk:
       - Hanging styles additionally need collision: locs rooted on the forehead

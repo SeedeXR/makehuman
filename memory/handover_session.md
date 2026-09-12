@@ -4,6 +4,64 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-12 (eighty-first) — Session · **A parting is a path, so the path got a caller**
+
+*2026-09-12 — the third and last of the walk-the-scalp primitives.*
+
+### What this is
+`pathOverSurface` shipped in `00946808` with no caller but its own tests — the
+identical gap `--spread-roots` filled for `spreadOverSurface` one chunk
+earlier. A cornrow IS a path from the hairline to the nape, and the generator
+that will draw one is Python, so without a CLI surface it would need its own
+Dijkstra and the two could drift apart silently.
+
+`--scalp-path <from>,<to>` prints the chain as "index x y z", same format as
+`--spread-roots`. Both ends must be on the body scalp.
+
+### Tested against an ORACLE, not against itself
+Before implementing, a Python Dijkstra over the body cap was written and run:
+the midline parting **5192 → 5379 is 13 vertices, 2.4893 dm** over the surface.
+The test encodes that number, and the shipped C++ reproduces the path
+**vertex for vertex identical** — [5192, 251, 5243, 983, 1015, 5554, 1013, 882,
+881, 879, 5368, 969, 5379]. Testing against an independent implementation is
+worth more than testing against whatever my own code happened to emit.
+
+The output also reads as a parting rather than merely satisfying assertions:
+x stays 0.0000 on the midline, z runs 1.4976 → -0.3605 front to back, and y
+rises over the crown to 8.4913 before coming down.
+
+### Mutations — three, all killed
+* **P1** dropped the off-scalp refusal. It killed BOTH refusal tests, including
+  the `WILL_FAIL` one — which proves that gate is not vacuous here: without the
+  refusal the app exits 0 with an EMPTY path, and the generator would read that
+  as "these two are not connected" rather than "you named the wrong vertex".
+* **P2** swapped the endpoints; the new FIRST/LAST check in the shared checker
+  caught it.
+* **P3** dropped the body restriction from the now-SHARED `bodyScalp` helper
+  and killed five tests — so extracting the region into one function did not
+  weaken the guarantee that cost the previous chunk.
+
+### Reuse rather than a second script
+`check_roots.cmake` took `FLAG`/`ARG` instead of a hard-coded `--spread-roots`,
+because a scalp PATH must satisfy exactly the same contract as a root: on the
+body cap, index 226..12157, y > 7.75, distinct. It gained optional FIRST/LAST,
+which only a path needs.
+
+### Review
+Two findings, both mine: the shared checker still said "roots" in its closing
+message, and the two flags each had their own printf — now one
+`printScalpVertices`, so the format the generator parses cannot drift. Checked
+`<algorithm>` is directly included rather than assuming, after the `<array>`
+transitive-include slip last chunk.
+
+### Next
+All three primitives are now reachable from Python: roots, distances, paths.
+The generator itself is the next chunk, and it is the first VISUAL one — the
+2026-09-11 attempt died on silhouette quality, so it must be rendered and
+looked at, not merely asserted.
+
+---
+
 ## 2026-09-12 (eightieth) — Session · **The region was wrong, and my gates agreed with it**
 
 *2026-09-12 — a bug in the chunk I shipped an hour earlier.*

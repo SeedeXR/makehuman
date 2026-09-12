@@ -278,6 +278,52 @@ bool applyFacs(std::span<const mh::rig::ActionUnit> aus, const mh::rig::Skeleton
     return applyExpressionUnits(*expr, skel, pose);
 }
 
+/// Print scalp vertices as "index x y z", one per line.
+///
+/// Both `--spread-roots` and `--scalp-path` emit this, and the Python
+/// generator parses it; single-sourcing the format means the two flags cannot
+/// drift apart into two things a caller has to tell apart.
+void printScalpVertices(std::span<const mh::foundation::Vec3> coords,
+                        std::span<const uint32_t> indices) {
+    for (const uint32_t v : indices) {
+        const auto& p = coords[v];
+        std::printf("%u %.4f %.4f %.4f\n", v, static_cast<double>(p.x), static_cast<double>(p.y),
+                    static_cast<double>(p.z));
+    }
+}
+
+/// The BODY scalp: body-group vertices above the cranium centre's height.
+///
+/// The group restriction is not a refinement, it is the whole correctness of
+/// the region, and two flags need it now. Height alone selects 303 vertices of
+/// which only 157 are body: 138 belong to `helper-hair` and 8 to
+/// `joint-head-2`. `memory/todo.md` is explicit that helper-hair is the wrong
+/// source -- "a long-hair envelope carrying ribbons down over the face" -- so a
+/// height-only region hands out roots and routes paths over the very geometry
+/// the write-up says never to use. Measured: the body cap is ONE connected
+/// component of 157 vertices; the height-only region is EIGHTEEN.
+std::vector<uint32_t> bodyScalp(const mh::core::Mesh& mesh) {
+    std::vector<uint32_t> scalp;
+    const auto body = mesh.findFaceGroup("body");
+    if (!body) return scalp;
+    const auto fvert    = mesh.fvert();
+    const auto fgroup   = mesh.group();
+    const size_t stride = mesh.vertsPerPrimitive();
+    std::vector<uint8_t> onBody(mesh.vertexCount(), 0U);
+    for (size_t f = 0; f < fgroup.size(); ++f) {
+        if (fgroup[f] != *body) continue;
+        for (size_t c = 0; c < stride; ++c) {
+            const uint32_t v = fvert[f * stride + c];
+            if (v < onBody.size()) onBody[v] = 1U;
+        }
+    }
+    const auto coords = mesh.coord();
+    for (uint32_t v = 0; v < coords.size(); ++v) {
+        if (onBody[v] != 0U && coords[v].y > 7.75F) scalp.push_back(v);
+    }
+    return scalp;
+}
+
 /// The `--pose-frame` index, or none. Set once at start-up.
 ///
 /// A file-scope value for the same reason as the expression file: every
@@ -2027,6 +2073,13 @@ int main(int argc, char** argv) {
                        "raycast at it, which is what the 2026-09-11 attempt got wrong. "
                        "Asking for more than the cap holds prints the whole cap."),
         QStringLiteral("n"));
+    const QCommandLineOption scalpPathOpt(
+        QStringLiteral("scalp-path"),
+        QStringLiteral("Print the chain of scalp vertices between two of them, as "
+                       "<from>,<to>, one \"index x y z\" per line, and exit. A parting "
+                       "or a cornrow IS this path: --spread-roots says where hair starts, "
+                       "this says which way it runs. Both ends must be on the body scalp."),
+        QStringLiteral("from,to"));
     const QCommandLineOption poseFrameOpt(
         QStringLiteral("pose-frame"),
         QStringLiteral("Which frame of a multi-frame --pose .bvh to stand in, zero-based. "
@@ -2261,6 +2314,7 @@ int main(int argc, char** argv) {
     parser.addOption(poseUnitOpt);
     parser.addOption(listPoseUnitsOpt);
     parser.addOption(spreadRootsOpt);
+    parser.addOption(scalpPathOpt);
     parser.addOption(poseFrameOpt);
     parser.addOption(expressionOpt);
     parser.addOption(facsOpt);
@@ -2608,33 +2662,59 @@ int main(int argc, char** argv) {
         // face" -- so roots taken from it are roots on the very geometry the
         // write-up says never to grow hair from. Measured: the body cap is ONE
         // connected component, while the height-only region is 18.
-        const auto bodyGroup = base->findFaceGroup("body");
-        if (!bodyGroup) {
-            std::fprintf(stderr, "the base mesh has no \"body\" face group\n");
+        const auto scalp = bodyScalp(*base);
+        if (scalp.empty()) {
+            std::fprintf(stderr, "the base mesh has no \"body\" scalp above the cranium\n");
             return 1;
         }
-        const auto coords   = base->coord();
-        const auto fvert    = base->fvert();
-        const auto fgroup   = base->group();
-        const size_t stride = base->vertsPerPrimitive();
-        std::vector<uint8_t> onBody(coords.size(), 0U);
-        for (size_t f = 0; f < fgroup.size(); ++f) {
-            if (fgroup[f] != *bodyGroup) continue;
-            for (size_t c = 0; c < stride; ++c) {
-                const uint32_t v = fvert[f * stride + c];
-                if (v < onBody.size()) onBody[v] = 1U;
+        const auto coords = base->coord();
+        printScalpVertices(coords,
+                           mh::core::spreadOverSurface(*base, scalp, static_cast<size_t>(wanted)));
+        return 0;
+    }
+
+    // A parting, routed over the scalp rather than guessed.
+    //
+    // `--spread-roots` says WHERE hair starts; this says which way it runs. A
+    // cornrow IS a path from the hairline to the nape, and the generator that
+    // draws one is Python, so without this surface it would need its own
+    // Dijkstra and the two could drift.
+    if (parser.isSet(scalpPathOpt)) {
+        const QStringList ends = parser.value(scalpPathOpt).split(QLatin1Char(','));
+        bool fromOk            = false;
+        bool toOk              = false;
+        const int from         = ends.size() == 2 ? ends[0].toInt(&fromOk) : 0;
+        const int to           = ends.size() == 2 ? ends[1].toInt(&toOk) : 0;
+        if (!fromOk || !toOk || from < 0 || to < 0) {
+            std::fprintf(stderr,
+                         "--scalp-path wants <from>,<to> as two vertex indices, got \"%s\"\n",
+                         parser.value(scalpPathOpt).toStdString().c_str());
+            return 1;
+        }
+        const auto base = mh::core::loadObj(dataDir() / "3dobjs" / "base.obj");
+        if (!base) {
+            std::fprintf(stderr, "cannot read the base mesh: %s\n", base.error().message().c_str());
+            return 1;
+        }
+        const auto scalp = bodyScalp(*base);
+        if (scalp.empty()) {
+            std::fprintf(stderr, "the base mesh has no \"body\" scalp above the cranium\n");
+            return 1;
+        }
+        // Refused rather than routed around. `pathOverSurface` would return an
+        // empty path for an off-scalp end, and a silent empty result reads to
+        // the generator as "these two are simply not connected" -- which is a
+        // different and fixable problem from "you asked for the wrong vertex".
+        for (const int v : {from, to}) {
+            if (std::find(scalp.begin(), scalp.end(), static_cast<uint32_t>(v)) == scalp.end()) {
+                std::fprintf(stderr, "vertex %d is not on the scalp\n", v);
+                return 1;
             }
         }
-        std::vector<uint32_t> scalp;
-        for (uint32_t v = 0; v < coords.size(); ++v) {
-            if (onBody[v] != 0U && coords[v].y > 7.75F) scalp.push_back(v);
-        }
-        for (const uint32_t root :
-             mh::core::spreadOverSurface(*base, scalp, static_cast<size_t>(wanted))) {
-            const auto& p = coords[root];
-            std::printf("%u %.4f %.4f %.4f\n", root, static_cast<double>(p.x),
-                        static_cast<double>(p.y), static_cast<double>(p.z));
-        }
+        const auto coords = base->coord();
+        printScalpVertices(coords,
+                           mh::core::pathOverSurface(*base, scalp, static_cast<uint32_t>(from),
+                                                     static_cast<uint32_t>(to)));
         return 0;
     }
 
