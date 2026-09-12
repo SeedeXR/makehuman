@@ -4,6 +4,58 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-12 (seventy-eighth) — Session · **The hair blocker's first task, done**
+
+*2026-09-12 — not the styles. The primitive they were blocked on.*
+
+### What this is
+The hair-style attempt of 2026-09-11 failed for a reason that was measured and
+written down: placement raycast from the head centre, the scalp is not a closed
+dome, and the nearest-direction fallback for a missed ray silently collapsed
+every miss onto the rim. `memory/todo.md` concluded "placement must WALK THE
+SCALP SURFACE, not raycast from a centre. That is the next attempt's first
+task." This is that task and nothing else — the styles are a separate chunk and
+they needed this to exist.
+
+`mh::core::SurfaceWalk`:
+* `surfaceDistance` — Dijkstra over mesh EDGES, restricted to a region. An edge
+  is walkable only when BOTH ends are in the region, so the region is a wall the
+  walk cannot cross; that is what keeps a scalp walk off the face without any
+  geometric test at all.
+* `spreadOverSurface` — farthest-point sampling on top of it. No direction grid,
+  no rays, so no misses and nothing to fall back from.
+
+Edge distance, not true geodesic distance, deliberately: it overestimates a few
+per cent on a regular mesh, and placement needs the ORDER, not the number. Said
+so in the header rather than leaving it to be discovered.
+
+### Measured on the real mesh
+The cranium cap above y=7.75 holds **303** vertices. Twenty-four roots come out
+with the closest pair **1.126 dm** apart over the surface, and an exact 12/12
+split left/right and front/back. The original failure — sweeps piling at the
+front edge — would put that first number at zero, which is what the test
+asserts against.
+
+I had to force those numbers out by deliberately failing the test, because
+Catch2 only prints `INFO` on failure and a test that passes first time tells you
+nothing about whether it could fail.
+
+### A decorative test of my own, found by mutation
+"A source outside the region is ignored" checked only that the region stayed
+unreachable — and that passes with the guard REMOVED, because an out-of-region
+source has no walkable edges either way. The observable difference is the
+source's own entry: 0, a distance reported for a vertex the caller excluded,
+versus infinity. It asserts that now, and the mutation dies.
+
+One mutation also failed to COMPILE under -Werror (unused parameter) while the
+stale binary still reported failures — which would have read as a kill. Redone
+so the mutant actually builds before believing the result.
+
+### Next
+The styles themselves: roots from `spreadOverSurface`, strands walked over the
+surface from those roots, and the collision problem for hanging styles (locs
+rooted on the forehead fall over the eyes) which this does not touch.
+
 ## 2026-09-12 (seventy-seventh) — Session · **Eleven pose units were unreachable by any flag**
 
 *2026-09-12 — the expression story finishes: compose from raw units, save,

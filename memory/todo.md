@@ -3618,6 +3618,23 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         this reason. **The fix is not a parameter: placement must WALK THE
         SCALP SURFACE (geodesic paths over the mesh), not raycast from a
         centre.** That is the next attempt's first task.
+      - **DONE 2026-09-12: `mh::core::SurfaceWalk` is that primitive.**
+        `surfaceDistance` is Dijkstra over mesh EDGES restricted to a region --
+        an edge is walkable only when BOTH ends are in the region, so the region
+        is a wall and a scalp walk stays off the face with no geometric test.
+        `spreadOverSurface` is farthest-point sampling on top of it: no
+        direction grid, no rays, so no misses and no fallback to collapse.
+        Edge distance rather than true geodesic distance, deliberately -- it
+        overestimates a few per cent and placement only needs the ORDER.
+        Measured on the shipped base mesh: the cranium cap above y=7.75 holds
+        **303** vertices, and 24 roots come out with the closest pair **1.126
+        dm** apart over the surface and an exact 12/12 split left/right and
+        front/back. The old failure would put that first number at zero.
+        Nine tests; four mutations killed. One of my own tests was decorative
+        and a mutation found it: checking only the region passes with the
+        out-of-region-source guard REMOVED, because such a source has no
+        walkable edges either way -- what differs is the source's OWN entry,
+        0 versus infinity, which is what it asserts now.
       - Hanging styles additionally need collision: locs rooted on the forehead
         fall straight over the eyes. An outward horizontal bias helps and is not
         enough; strands need to be pushed outside the head silhouette.

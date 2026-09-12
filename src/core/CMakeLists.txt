@@ -10,6 +10,7 @@ add_library(mh_core STATIC
     RenderMesh.cpp
     Subdivider.cpp
     Decimator.cpp
+    SurfaceWalk.cpp
     TopologyHash.cpp
     Blendshape.cpp
     Target.cpp
