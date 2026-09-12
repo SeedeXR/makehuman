@@ -51,8 +51,8 @@ dev-gated, so a default release build shows **40**.
 | Bucket | N | Meaning |
 |---|---|---|
 | done | 7 | the dynamic modifier views — shipped |
-| covered | 16 | the capability reaches the user, just not as a TAB |
-| todo | 9 | to port, nothing blocking |
+| covered | 17 | the capability reaches the user, just not as a TAB |
+| todo | 8 | to port, nothing blocking |
 | blocked | 3 | needs content or an engine capability first |
 | declined | 16 | Python-runtime or dev-only tooling |
 
@@ -73,16 +73,21 @@ true. Both halves rotted, in opposite directions:
 `EVIDENCE` in `tools/audit_taskviews.py` now names, for each such view, a
 literal that appears in `src/` if and only if the capability is wired, and the
 gate runs BOTH ways: `covered`/`done` requires the evidence present,
-`todo`/`blocked` requires it absent. A view with no natural user-facing
-identifier is deliberately left unlisted rather than given a check that cannot
-fail.
+`todo`/`blocked` requires it absent.
+
+**The first version of that gate had a hole, and the very next chunk fell into
+it.** `CustomTargetsTaskView` shipped on 2026-09-12 and this file stayed stale,
+because a view with no `EVIDENCE` entry is simply not checked — silence was
+indistinguishable from "nobody has looked". Every non-declined view must now
+appear in either `EVIDENCE` or `NO_EVIDENCE`, the latter carrying the REASON it
+cannot be checked. Being unchecked is now a deliberate, written-down act.
 
 ### done (7)
 The views `guimodifier.loadModifierTaskViews` builds from the `*_sliders.json`
 files — Face, Torso, Arms and Legs, Gender, Macro modelling, Body shapes,
 Measure. One view per top-level key, `apps/gui/guimodifier.py:226-232`.
 
-### covered (16)
+### covered (17)
 Not a gap: this port is dockable, so what the reference makes a tab arrives as
 a menu action or as a group in the Assets panel.
 
@@ -97,10 +102,13 @@ groups (Skin material, Pose, Skeleton).
 `EyelashesTaskView`, `EyesTaskView` — the six proxy choosers, all shipped as
 Assets-panel groups over helper-cage assets.
 
-### todo (9)
+`CustomTargetsTaskView` — `--custom-targets <dir>`, one `custom/<stem>` slider
+per `.target` file a user supplies.
+
+### todo (8)
 `AnimationLibrary`, `ExpressionTaskView`, `ViewerTaskView`, `BackgroundChooser`,
-`CustomTargetsTaskView`, `MaterialEditorTaskView`, `ExpressionMixerTaskView`,
-`MouseActionsTaskView`, `HelpTaskView`.
+`MaterialEditorTaskView`, `ExpressionMixerTaskView`, `MouseActionsTaskView`,
+`HelpTaskView`.
 
 `AnimationLibrary` gates only on a skeleton and an active animation
 (`3_libraries_animation.py:150,157`) — `rig/` and `io/BvhReader.h` have both.

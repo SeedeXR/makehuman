@@ -3728,6 +3728,17 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         with a moved-vertex count — exactly the 2 vertices the target names —
         which fails under the same mutation.
       - 9 tests (4 unit, 5 integration); four mutations killed.
+- [x] **The task-view gate had a hole, and my own next chunk fell into it.**
+      `CustomTargetsTaskView` shipped and `taskviews.md` stayed stale, because
+      the evidence rule only checks views that HAVE an `EVIDENCE` entry — and
+      that view had none. Silence was indistinguishable from "nobody looked".
+      Every non-declined view must now be in `EVIDENCE` or in `NO_EVIDENCE`
+      with the REASON it cannot be checked, so being unchecked is a deliberate,
+      written-down act. Mutation-tested three ways: removing a reason fails the
+      completeness rule, returning the view to `todo` fails the evidence rule,
+      and removing a `BUCKETS` entry fails the unclassified rule — which runs
+      first, so the message names the step that actually comes first.
+      Buckets: covered 17, todo 8, blocked 3, declined 16, done 7.
 - [ ] **The remaining two proxy choosers are BLOCKED ON CONTENT, not effort.**
       Eyebrows have no helper cage. The "generic proxy" chooser has nothing to
       choose between: measured, the only proxymesh-shaped assets in `data/` are

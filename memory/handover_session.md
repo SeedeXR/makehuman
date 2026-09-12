@@ -4,6 +4,47 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-12 (seventy-second) — Session · **The gate I built last chunk had a hole, and I fell into it**
+
+*2026-09-12 — a short chunk, and the most useful kind: the previous one's gate
+failing to catch the one after it.*
+
+### What happened
+Two chunks ago I corrected fourteen misfiled task views and built a gate that
+checks our own bucket claims against `src/`, in both directions. One chunk later
+I shipped `CustomTargetsTaskView` — and `memory/taskviews.md` stayed stale,
+still calling it "to port, nothing blocking". The audit passed.
+
+The hole: the evidence rule only checks views that HAVE an `EVIDENCE` entry.
+A newly shipped view with no entry is simply not checked, so silence was
+indistinguishable from "nobody has looked". The gate was right about everything
+it looked at and blind to the thing that changed.
+
+### The fix
+Every non-declined view must now appear in `EVIDENCE` or in `NO_EVIDENCE`, the
+latter carrying the REASON it cannot be checked — no UI surface yet, blocked on
+content, deliberately not built. Being unchecked is a deliberate act with a
+sentence attached rather than an absence.
+
+The completeness check runs AFTER the "unclassified" one, so a task view that
+appears upstream and is in no map at all is told to add itself to `BUCKETS` —
+the first step — rather than to `EVIDENCE`, which is the second.
+
+Mutation-tested all three rules: deleting a `NO_EVIDENCE` reason fails the
+completeness check (exit 1), returning `CustomTargetsTaskView` to `todo` fails
+the evidence check with "IS in src/ -- it shipped", and deleting a `BUCKETS`
+entry fails the unclassified check rather than the completeness one.
+
+### Why this is worth a chunk
+It is the fourth time this session a check turned out to be reading something
+adjacent to the claim rather than the claim — after the hair matcap, the
+task-view buckets themselves, and the `files_differ` gate that compared
+filenames. The shape recurs: the check was true, and true of the wrong thing.
+This one is sharper than the others because the gate was two chunks old and
+written specifically to prevent this failure.
+
+Buckets now: covered 17, todo 8, blocked 3, declined 16, done 7.
+
 ## 2026-09-12 (seventy-first) — Session · **Custom targets, and a gate of mine that was decorative**
 
 *2026-09-12 — a user's own morphs reach the model, and one of my own tests

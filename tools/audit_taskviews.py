@@ -64,6 +64,11 @@ BUCKETS = {
     # The six proxy choosers that shipped as Assets-panel groups. They sat in
     # `blocked` under "the viewport draws exactly one mesh" long after that was
     # fixed -- five of the six shipped in the sessions of 2026-09-11 and -12.
+    # A user's own .target morphs, via --custom-targets. A directory of files
+    # rather than a tab, which is the same "reaches the user, not as a TAB"
+    # shape as the rest of this bucket.
+    "CustomTargetsTaskView": "covered",
+
     "TeethTaskView": "covered", "TongueTaskView": "covered",
     "HairTaskView": "covered", "ClothesTaskView": "covered",
     "EyelashesTaskView": "covered", "EyesTaskView": "covered",
@@ -84,7 +89,7 @@ BUCKETS = {
     # (measured: zero under data/), so its expressions arrive as --facs units.
     "AnimationLibrary": "todo", "ExpressionTaskView": "todo",
     "ViewerTaskView": "todo", "BackgroundChooser": "todo",
-    "CustomTargetsTaskView": "todo", "MaterialEditorTaskView": "todo",
+    "MaterialEditorTaskView": "todo",
     "ExpressionMixerTaskView": "todo", "MouseActionsTaskView": "todo",
     "HelpTaskView": "todo",
 
@@ -238,6 +243,7 @@ EVIDENCE = {
     "ClothesTaskView": '{"clothes", "Clothes"}',
     "EyelashesTaskView": '{"eyelashes", "Eyelashes"}',
     "EyesTaskView": '"Eye colour"',
+    "CustomTargetsTaskView": '"custom-targets"',
 }
 
 SRC = REPO / "src"
@@ -248,6 +254,38 @@ def shipped(literal) -> bool:
     return any(literal in path.read_text(encoding="utf-8", errors="ignore")
                for path in SRC.rglob("*")
                if path.is_file() and path.suffix in {".cpp", ".h"})
+
+
+# Views with no user-facing identifier to check, and WHY. Being here is a
+# deliberate act, which is the point: `CustomTargetsTaskView` shipped in the
+# chunk after this gate was written and the inventory stayed stale, because a
+# view with no EVIDENCE entry is simply not checked. Silence was indistinguish-
+# able from "nobody has looked". Now every non-declined view must appear in one
+# map or the other, so the omission has to be written down.
+NO_UI = "no UI surface yet"
+
+NO_EVIDENCE = {
+    "AnimationLibrary": NO_UI + "; would be a chooser over .bvh files",
+    "ExpressionTaskView": "chooses .mhpose files and this port ships zero of them",
+    "ViewerTaskView": "deliberately not built -- nothing to re-read until a "
+                      "render is written to a path (see memory/todo.md)",
+    "BackgroundChooser": NO_UI + "; `background` in src/ is the viewport clear "
+                                 "colour, not a backdrop image",
+    "MaterialEditorTaskView": NO_UI,
+    "ExpressionMixerTaskView": NO_UI + "; expressions arrive as --facs",
+    "MouseActionsTaskView": NO_UI,
+    "HelpTaskView": NO_UI,
+    "EyebrowsTaskView": "blocked on content: no helper cage in the base mesh",
+    "ProxyTaskView": "blocked on content: no wearable alternate body topology",
+    "SceneLibraryTaskView": "blocked on a lighting model",
+}
+
+
+def unchecked_views(standalone):
+    """Non-declined views that claim neither evidence nor a reason."""
+    return [name for name in standalone
+            if BUCKETS.get(name) != "declined"
+            and name not in EVIDENCE and name not in NO_EVIDENCE]
 
 
 def evidence_mismatches():
@@ -296,6 +334,13 @@ def main():
     if unclassified:
         print("unclassified task views (add them to BUCKETS): "
               + ", ".join(unclassified), file=sys.stderr)
+        return 1
+
+    unchecked = unchecked_views(standalone)
+    if unchecked:
+        print("task views with neither evidence nor a stated reason "
+              "(add to EVIDENCE or NO_EVIDENCE): " + ", ".join(sorted(unchecked)),
+              file=sys.stderr)
         return 1
 
     counts = Counter(BUCKETS[name] for name in standalone)
