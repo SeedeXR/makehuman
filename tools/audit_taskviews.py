@@ -305,8 +305,10 @@ ABSENT = {
                            "under data/, though --save-expression can now "
                            "author them"),
     "BackgroundChooser": ('"Background image"',
-                          "`background` in src/ is the viewport clear colour "
-                          "and --render's alpha, not a backdrop image"),
+                          "--background puts one behind a RENDER; the reference "
+                          "task is a modelling aid -- an image in the VIEWPORT, "
+                          "per side, with position and scale, to model to a "
+                          "photograph. None of that half exists"),
     "MaterialEditorTaskView": ('"Material editor"',
                                "materials can be PICKED but not edited; no "
                                "property editor"),

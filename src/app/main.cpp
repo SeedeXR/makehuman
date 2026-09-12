@@ -45,6 +45,7 @@
 #include "makehuman/rig/VertexWeights.h"
 #include "makehuman/rig/Wrinkles.h"
 #include "makehuman/ui/AssetPanel.h"
+#include "makehuman/ui/Background.h"
 #include "makehuman/ui/FrameStats.h"
 #include "makehuman/ui/ImageViewer.h"
 #include "makehuman/ui/Language.h"
@@ -1978,6 +1979,12 @@ int main(int argc, char** argv) {
                        "Without it a multi-frame file is refused, because frame 0 of an "
                        "animation is a plausible wrong pose rather than an error."),
         QStringLiteral("n"));
+    const QCommandLineOption backgroundOpt(
+        QStringLiteral("background"),
+        QStringLiteral("An image to put BEHIND --render's character, scaled to cover the "
+                       "frame and centred. Implies --transparent, since the character has "
+                       "to have alpha for anything to show through."),
+        QStringLiteral("file"));
     const QCommandLineOption renderOpt(
         QStringLiteral("render"),
         QStringLiteral("Production render to this PNG and exit. Needs a GPU but NO window, "
@@ -2149,6 +2156,7 @@ int main(int argc, char** argv) {
         parser.addOption(opt);
     parser.addOption(setOpt);
     parser.addOption(renderOpt);
+    parser.addOption(backgroundOpt);
     parser.addOption(transparentOpt);
     parser.addOption(eyeColourOpt);
     parser.addOption(randomOpt);
@@ -2552,6 +2560,23 @@ int main(int argc, char** argv) {
         }
         std::printf("wrote %s\n", out.string().c_str());
         return 0;
+    }
+
+    // The backdrop, loaded once. An unreadable file is an error rather than a
+    // silently missing background: a user who passed --background and got a
+    // plain render would have no way to tell which of the two went wrong.
+    QImage backdrop;
+    if (parser.isSet(backgroundOpt)) {
+        const QString file = parser.value(backgroundOpt);
+        if (!backdrop.load(file)) {
+            std::fprintf(stderr, "cannot read --background image \"%s\"\n",
+                         file.toStdString().c_str());
+            return 1;
+        }
+        if (!parser.isSet(renderOpt)) {
+            std::fprintf(stderr, "--background is the backdrop for --render; give one\n");
+            return 1;
+        }
     }
 
     if (parser.isSet(poseFrameOpt)) {
@@ -3385,7 +3410,13 @@ int main(int argc, char** argv) {
                               const mh::ui::RenderRequest& req) -> std::string {
         const auto img = renderImage(req);
         if (!img) return img.error();
-        if (!img->save(QString::fromStdString(out.string()))) {
+        // AFTER renderImage, never before. It is renderImage that calls
+        // describeFrame, and describeFrame calls a frame blank when it is a
+        // flat fill of the clear colour. A backdrop composited first makes a
+        // render that drew NOTHING look like a frame full of photograph, so the
+        // guard would pass on exactly the failure it exists to catch.
+        const QImage framed = backdrop.isNull() ? *img : mh::ui::overBackground(*img, backdrop);
+        if (!framed.save(QString::fromStdString(out.string()))) {
             return "cannot write " + out.string();
         }
         std::printf("rendered %s (%dx%d%s, %s)\n", out.string().c_str(), img->width(),
@@ -4065,11 +4096,12 @@ int main(int argc, char** argv) {
     if (parser.isSet(renderOpt)) {
         // The CLI's own defaults, unchanged: 1024 square, and whatever
         // --transparent and --shading said.
-        const mh::ui::RenderRequest req{.width       = 1024,
-                                        .height      = 1024,
-                                        .transparent = parser.isSet(transparentOpt),
-                                        .shading     = shading,
-                                        .wireframe   = parser.isSet(wireframeOpt)};
+        const mh::ui::RenderRequest req{
+            .width       = 1024,
+            .height      = 1024,
+            .transparent = parser.isSet(transparentOpt) || parser.isSet(backgroundOpt),
+            .shading     = shading,
+            .wireframe   = parser.isSet(wireframeOpt)};
         if (const std::string err = renderTo(parser.value(renderOpt).toStdString(), req);
             !err.empty()) {
             std::fprintf(stderr, "cannot render: %s\n", err.c_str());

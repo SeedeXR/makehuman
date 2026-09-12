@@ -3826,6 +3826,39 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         on every posed export, because `loadBodyPose` checked `frameCount` and
         then called a loader that re-read the file.
 
+- [x] **A render can have a backdrop; the modelling half of BackgroundChooser
+      still cannot.** `--background <file>` puts an image behind `--render`'s
+      character, scaled to COVER and centred. It is compositing, not a shader
+      change: the renderer already produces alpha, so `mh::ui::overBackground`
+      puts the image under the finished frame and no part of the draw path
+      learns about it. `--background` implies `--transparent`.
+      - **The order is the load-bearing part.** `describeFrame` calls a frame
+        blank when it is a flat fill and reads pixel (0, 0) as the clear colour.
+        Composite first and a render that drew NOTHING over a photograph is a
+        frame full of photograph — so the blank-render guard passes on exactly
+        the failure it exists for. The check runs on the render; the backdrop
+        goes on in `renderTo`, afterwards. The CLI gate asserts the printed
+        coverage is still single-digit (measured 8.2%), which is only possible
+        if the frame was judged before compositing — a mutation that moved the
+        composite earlier fails it.
+      - **Two of my own tests were decorative, and the mutations found both.**
+        The aspect check could not tell COVER from SQUASH (a two-tone backdrop
+        looks the same either way), so the fixture gained a green margin in the
+        outer eighth that only survives squashing. And the null-backdrop check
+        used an OPAQUE frame, which hides an uninitialised buffer; it now uses a
+        transparent one — and `overBackground` clears the destination, because
+        that path was relying on QImage's uninitialised buffer happening to be
+        zero-filled. That last mutation kills no test by design: the fix is to
+        remove the unspecified behaviour, not to test it more cleverly.
+      - The CLI fixture was degenerate at first: a render used as its own
+        backdrop composites to a byte-identical file, correctly. The backdrop is
+        a T-pose render now.
+      - 8 unit tests, 6 CLI tests; five mutations run, four killed.
+      - `BackgroundChooser` stays `todo`, and its stated reason is corrected:
+        the reference task is a MODELLING aid — an image in the VIEWPORT, per
+        side, with position and scale, to model to a photograph. None of that
+        half exists.
+
 - [ ] **The remaining two proxy choosers are BLOCKED ON CONTENT, not effort.**
       Eyebrows have no helper cage. The "generic proxy" chooser has nothing to
       choose between: measured, the only proxymesh-shaped assets in `data/` are

@@ -4,6 +4,55 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-12 (seventy-sixth) — Session · **A backdrop, and two of my own tests that proved nothing**
+
+*2026-09-12 — the feature was small; the mutations were the chunk.*
+
+### What shipped
+`--background <file>`: an image behind `--render`'s character, scaled to cover
+and centred. Compositing, not a shader change — the renderer already produces
+alpha, so `mh::ui::overBackground` goes under the finished frame.
+
+### The order, which is the real design
+`describeFrame` calls a frame blank when it is a flat fill and reads pixel
+(0, 0) as the clear colour. Composite the backdrop first and a render that drew
+NOTHING over a photograph is a frame full of photograph — not flat, corner not
+the clear colour — so the blank-render guard would pass on precisely the
+failure it exists to catch and write it out as a valid PNG.
+
+So the check runs on the render and the backdrop goes on afterwards, in
+`renderTo`. The CLI gate asserts the printed coverage is still the CHARACTER's,
+a single-digit percentage (measured 8.2%); compositing earlier makes it ~100%
+and the test fails. That mutation was run and killed.
+
+### Two of my own tests were decorative
+* The aspect check could not distinguish COVER from SQUASH. A two-tone backdrop
+  puts the seam at the centre either way — I had even written that in the
+  comment and moved on. The fixture now has a green margin in the outer eighth,
+  which cover crops away and squashing shows.
+* The null-backdrop check used an OPAQUE frame, so an uninitialised destination
+  buffer was invisible underneath it. It uses a transparent frame now.
+
+That second mutation still kills no test, and the honest reason is that
+`QImage`'s buffer is uninitialised but comes back zero-filled in practice, so
+the unguarded path is benign rather than correct. The fix was to clear the
+destination explicitly — remove the unspecified behaviour instead of being
+cleverer about testing it.
+
+### And the fixture was degenerate
+The first CLI fixture used a plain render as its own backdrop. The composite
+came out byte-identical to the plain render — correctly, an A-pose over an
+identical A-pose — and the comparison failed. The gate catching an unmet
+premise rather than a bug is the same lesson as the rest of this chunk. The
+backdrop is a T-pose render now.
+
+### What is NOT done
+`BackgroundChooser` stays `todo`. The reference task is a modelling aid: an
+image in the VIEWPORT, per side, with position and scale, so a user can model TO
+a photograph. A render backdrop is the other half. The audit's reason for that
+view said `background` in src/ was only the clear colour, which this makes
+false; it is corrected.
+
 ## 2026-09-12 (seventy-fifth) — Session · **The animations were never going to work, and now we know why**
 
 *2026-09-12 — a capability shipped, and the blocker behind the next one finally

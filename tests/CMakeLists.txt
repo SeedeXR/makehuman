@@ -177,7 +177,8 @@ if(MH_HAVE_RENDER)
                                ui/test_image_viewer.cpp ui/test_shortcuts.cpp
                                ui/test_mouse_bindings.cpp
                                ui/test_shortcuts_dialog.cpp
-                               ui/test_render_request.cpp)
+                               ui/test_render_request.cpp
+                               ui/test_background.cpp)
     target_link_libraries(mh_ui_tests
         PRIVATE mh::ui mh::core Catch2::Catch2 mh::warnings mh::sanitize)
     target_compile_definitions(mh_ui_tests PRIVATE
@@ -1731,6 +1732,68 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
     set_tests_properties(app_facs_order_survives PROPERTIES
         FIXTURES_REQUIRED "app_facs_ab_obj;app_facs_ba_obj")
+
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bg)
+
+    # A backdrop behind a production render. The reference puts an image behind
+    # the model to model TO a photograph (`0_modeling_background.py:104`); the
+    # same image turns a render into a composite.
+    #
+    # The backdrop is a render of the character in a DIFFERENT POSE. Nothing
+    # under data/ is a backdrop -- the user supplies one, exactly like
+    # --custom-targets -- and a render is already a PNG of the right kind, so
+    # this needs no fixture generator and no new tool.
+    #
+    # The pose matters. The first version used a plain render of the SAME
+    # character as its own backdrop, and the composite came out byte-identical
+    # to the plain render -- correctly, since an A-pose over an identical A-pose
+    # is that A-pose. The comparison below then failed, which is the gate doing
+    # its job on a fixture whose premise was unmet rather than on the code.
+    add_test(NAME app_background_backdrop COMMAND makehuman
+             --pose tpose --render ${CMAKE_CURRENT_BINARY_DIR}/bg/backdrop.png)
+    set_tests_properties(app_background_backdrop PROPERTIES FIXTURES_SETUP app_bg_backdrop)
+    add_test(NAME app_background_plain COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/bg/without.png)
+    set_tests_properties(app_background_plain PROPERTIES FIXTURES_SETUP app_bg_without)
+
+    # THE regression, and the reason this is a CLI test at all: the coverage
+    # figure must still be the CHARACTER's -- measured, 8.2% of a 1024 square.
+    # The blank-render guard reads pixel (0, 0) as the clear colour and calls a
+    # flat frame blank, so compositing the backdrop BEFORE that check would make
+    # a render that drew nothing look like a frame full of photograph and sail
+    # through. A single-digit percentage is only possible if the frame was
+    # judged before the backdrop went on.
+    add_test(NAME app_background_render COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/bg/with.png
+             --background ${CMAKE_CURRENT_BINARY_DIR}/bg/backdrop.png)
+    set_tests_properties(app_background_render PROPERTIES
+        FIXTURES_SETUP app_bg_with
+        FIXTURES_REQUIRED app_bg_backdrop
+        PASS_REGULAR_EXPRESSION
+            "1024x1024 covered [0-9]+ of 1048576 pixels \\([0-9]\\.[0-9]%\\)")
+    # And the backdrop actually reached the file. Byte-comparing two PNGs is
+    # only safe because both come from the SAME binary in one run: a different
+    # zlib is what made an earlier byte-compare green locally and red in CI, and
+    # that bites on "identical", never on "differs".
+    add_test(NAME app_background_reaches_the_file COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/bg/with.png
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/bg/without.png
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_background_reaches_the_file PROPERTIES
+        FIXTURES_REQUIRED "app_bg_with;app_bg_without")
+
+    # The two refusals.
+    add_test(NAME app_background_unreadable COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/bg/never.png
+             --background ${CMAKE_CURRENT_BINARY_DIR}/bg/not-an-image.png)
+    set_tests_properties(app_background_unreadable PROPERTIES
+        PASS_REGULAR_EXPRESSION "cannot read --background image")
+    add_test(NAME app_background_needs_render COMMAND makehuman
+             --background ${CMAKE_CURRENT_BINARY_DIR}/bg/backdrop.png
+             --export ${CMAKE_CURRENT_BINARY_DIR}/bg/never.obj)
+    set_tests_properties(app_background_needs_render PROPERTIES
+        FIXTURES_REQUIRED app_bg_backdrop
+        PASS_REGULAR_EXPRESSION "--background is the backdrop for --render")
 
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/pframe)
 
