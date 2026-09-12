@@ -4,6 +4,48 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-12 (seventy-fifth) — Session · **The animations were never going to work, and now we know why**
+
+*2026-09-12 — a capability shipped, and the blocker behind the next one finally
+measured instead of guessed.*
+
+### What shipped
+`loadBodyPoseFrame` and `--pose-frame <n>`: stand in one frame of a multi-frame
+`.bvh`. `loadBodyPose` keeps refusing animations outright, because frame 0 of a
+walk cycle is a plausible wrong pose; naming a frame is how a caller says they
+know what the file is.
+
+### What was measured, and why it matters more
+The test that says "different frames give different poses" FAILED on the
+shipped `walks/walk1.bvh`. Not a bug in the loader — the file names 75 joints
+and **0** of them is a bone of either shipped rig. `walk1.bvh` and
+`zombieWalk1.bvh` are the OLD MakeHuman skeleton (`Spine1`, `UpArm_L`,
+`Clavicle_L`); this port rigs `clavicle.L`, `upperarm01.L`. Every bone stays at
+identity, so every frame of a walk cycle is the same pose.
+
+For contrast, measured the same way: `tpose.bvh` matches 163 of 173 joints and
+`face-poseunits.bvh` 163 of 163.
+
+So `AnimationLibrary` is **blocked on content**, exactly like the eyebrows —
+and the reason I wrote into the audit two chunks ago ("only single-frame poses
+are read today") was true and beside the point. That is the third time this
+session one of my own stated reasons turned out to understate the real blocker.
+The zero-overlap fact is now a test, so retargeting the content fails it.
+
+### The verification
+Frame 0 vs frame 40 of the 60-frame face library: 2,265 of 14,444 vertices.
+Rendered all three and looked — frame 40 is a wide-open jaw. A vertex count
+cannot tell a pose from a differently-broken pose.
+
+### Found by reading the diff
+The first draft read and parsed the BVH **twice** on every posed export:
+`loadBodyPose` looked at `frameCount`, then called a loader that opened the
+file again. Now the parsed file is passed down.
+
+And a mutation earned a test rather than the other way round: dropping the
+`frame < 0` guard let `--pose-frame -2` arrive as 18446744073709551614, so that
+case is now covered.
+
 ## 2026-09-12 (seventy-fourth) — Session · **An expression could be composed and never kept**
 
 *2026-09-12 — the first chunk in four that adds a capability rather than

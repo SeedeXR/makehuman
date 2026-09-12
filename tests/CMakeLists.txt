@@ -10,6 +10,7 @@ add_executable(mh_tests
     unit/test_pose_blend.cpp
     unit/test_facs.cpp
     unit/test_save_expression.cpp
+    unit/test_pose_frame.cpp
     unit/test_obj_reader.cpp
     unit/test_proxy_weights.cpp
     unit/test_tangents.cpp
@@ -1730,6 +1731,68 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
     set_tests_properties(app_facs_order_survives PROPERTIES
         FIXTURES_REQUIRED "app_facs_ab_obj;app_facs_ba_obj")
+
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/pframe)
+
+    # Posing from one frame of a multi-frame .bvh. `loadBodyPose` refuses an
+    # animation outright -- rightly, since frame 0 of a walk cycle is a
+    # plausible wrong pose -- which left every multi-frame file unreachable.
+    # Naming a frame is the caller saying they know what the file is.
+    #
+    # The fixture is `face-poseunits.bvh`: 60 frames, and measured, 163 of its
+    # 163 joints name a bone of the rig. The shipped walks CANNOT serve here --
+    # 0 of their 75 joints match either rig, so every frame of them is identity.
+    # That is asserted in the unit tests, not assumed here.
+    add_test(NAME app_pose_frame_0 COMMAND makehuman
+             --pose ${MH_DATA_DIR}/poseunits/face-poseunits.bvh --pose-frame 0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/pframe/f0.obj)
+    set_tests_properties(app_pose_frame_0 PROPERTIES FIXTURES_SETUP app_pframe_0)
+    add_test(NAME app_pose_frame_40 COMMAND makehuman
+             --pose ${MH_DATA_DIR}/poseunits/face-poseunits.bvh --pose-frame 40
+             --export ${CMAKE_CURRENT_BINARY_DIR}/pframe/f40.obj)
+    set_tests_properties(app_pose_frame_40 PROPERTIES FIXTURES_SETUP app_pframe_40)
+    # Measured: 2,265 of 14,444 vertices. Frame 40 is a wide-open jaw, which is
+    # visible in a render -- the number is here so a loader that quietly
+    # returned frame 0 for every index fails instead of passing.
+    add_test(NAME app_pose_frame_differs COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/pframe/f0.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/pframe/f40.obj
+             -DEXPECT_DIFFERENT=2265
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
+    set_tests_properties(app_pose_frame_differs PROPERTIES
+        FIXTURES_REQUIRED "app_pframe_0;app_pframe_40")
+    # The three refusals, each with its own message.
+    add_test(NAME app_pose_frame_needs_pose COMMAND makehuman
+             --pose-frame 3 --export ${CMAKE_CURRENT_BINARY_DIR}/pframe/never.obj)
+    set_tests_properties(app_pose_frame_needs_pose PROPERTIES
+        PASS_REGULAR_EXPRESSION "--pose-frame needs a --pose")
+    add_test(NAME app_pose_frame_not_a_number COMMAND makehuman
+             --pose ${MH_DATA_DIR}/poseunits/face-poseunits.bvh --pose-frame seven
+             --export ${CMAKE_CURRENT_BINARY_DIR}/pframe/never.obj)
+    set_tests_properties(app_pose_frame_not_a_number PROPERTIES
+        PASS_REGULAR_EXPRESSION "--pose-frame wants a frame index from 0")
+    # A negative index is refused HERE rather than wrapping: without the
+    # `frame < 0` guard, `-2` reaches the loader as 18446744073709551614 and the
+    # user is told there is no frame 18446744073709551614.
+    add_test(NAME app_pose_frame_negative COMMAND makehuman
+             --pose ${MH_DATA_DIR}/poseunits/face-poseunits.bvh --pose-frame -2
+             --export ${CMAKE_CURRENT_BINARY_DIR}/pframe/never.obj)
+    set_tests_properties(app_pose_frame_negative PROPERTIES
+        PASS_REGULAR_EXPRESSION "--pose-frame wants a frame index from 0")
+    add_test(NAME app_pose_frame_past_the_end COMMAND makehuman
+             --pose ${MH_DATA_DIR}/poseunits/face-poseunits.bvh --pose-frame 60
+             --export ${CMAKE_CURRENT_BINARY_DIR}/pframe/never.obj)
+    set_tests_properties(app_pose_frame_past_the_end PROPERTIES
+        PASS_REGULAR_EXPRESSION "no frame 60; the file has 60 frames")
+    # Regression: without a frame, a multi-frame file is still an error, and a
+    # single-frame pose still works exactly as before.
+    add_test(NAME app_pose_frame_absent_still_refuses COMMAND makehuman
+             --pose ${MH_DATA_DIR}/poseunits/face-poseunits.bvh
+             --export ${CMAKE_CURRENT_BINARY_DIR}/pframe/never.obj)
+    set_tests_properties(app_pose_frame_absent_still_refuses PROPERTIES
+        PASS_REGULAR_EXPRESSION "is an animation, not a pose")
+    add_test(NAME app_pose_frame_tpose_unaffected COMMAND makehuman
+             --pose tpose --export ${CMAKE_CURRENT_BINARY_DIR}/pframe/tpose.obj)
 
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/expr)
 

@@ -165,6 +165,23 @@ struct PoseUnitsError {
 /// The file must hold exactly one frame. A multi-frame BVH is an animation, and
 /// silently taking its first frame would turn a wrong file into a plausible
 /// wrong pose.
+/// One frame of a BVH, as a pose.
+///
+/// The counterpart of `loadBodyPose` for a file that IS an animation. Naming a
+/// frame is the caller saying they know it is one, which is what lets
+/// `loadBodyPose` keep refusing multi-frame files outright: the danger it
+/// guards against is a walk cycle silently becoming "the pose", and a caller
+/// who wrote `7` has not done that by accident.
+///
+/// It is what made the shipped animations reachable at all. Measured,
+/// `data/animations/zombie/zombieWalk1.bvh` holds 31 frames and
+/// `walks/walk1.bvh` holds 14, and before this every one of them was refused.
+///
+/// @param frame zero-based. Out of range is an error naming the real count,
+///        because a user who guessed needs to know what to guess instead.
+[[nodiscard]] std::expected<std::vector<Mat4>, PoseUnitsError> loadBodyPoseFrame(
+    const std::filesystem::path& path, const Skeleton& skeleton, size_t frame);
+
 [[nodiscard]] std::expected<std::vector<Mat4>, PoseUnitsError> loadBodyPose(
     const std::filesystem::path& path, const Skeleton& skeleton);
 

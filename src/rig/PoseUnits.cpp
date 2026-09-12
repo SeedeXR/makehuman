@@ -266,35 +266,93 @@ std::expected<PoseUnits, PoseUnitsError> makePoseUnits(const io::BvhFile& bvh,
     return out;
 }
 
+namespace {
+
+/// Reads @p path and maps its frames onto @p skeleton, or an error.
+///
+/// Shared so that the pose loader and the frame loader cannot drift: they
+/// differ only in which frames they will accept and which one they return.
+std::expected<PoseUnits, PoseUnitsError> poseUnitsOf(const std::filesystem::path& path,
+                                                     const Skeleton& skeleton,
+                                                     const io::BvhFile& bvh) {
+    std::vector<std::string> names;
+    names.reserve(bvh.frameCount);
+    for (size_t f = 0; f < bvh.frameCount; ++f) {
+        names.push_back(path.stem().string() + "#" + std::to_string(f));
+    }
+    return makePoseUnits(bvh, skeleton, std::move(names));
+}
+
+/// The BVH at @p path, with the two error sets lined up.
+std::expected<io::BvhFile, PoseUnitsError> readBvhFor(const std::filesystem::path& path) {
+    auto bvh = io::readBvh(path);
+    if (bvh) return *bvh;
+    // The two error sets line up one for one except for BVH's frame-data
+    // kind, which is a malformed file by any other name.
+    PoseUnitsErrorKind kind = PoseUnitsErrorKind::Malformed;
+    switch (bvh.error().kind) {
+        case io::BvhErrorKind::NotFound: kind = PoseUnitsErrorKind::NotFound; break;
+        case io::BvhErrorKind::Unreadable: kind = PoseUnitsErrorKind::Unreadable; break;
+        case io::BvhErrorKind::Malformed:
+        case io::BvhErrorKind::FrameDataMismatch: break;
+    }
+    return std::unexpected(PoseUnitsError{kind, path.string(), bvh.error().message()});
+}
+
+/// One frame of an ALREADY-READ BVH.
+///
+/// Takes the parsed file rather than a path so that `loadBodyPose`, which has
+/// to look at `frameCount` before it decides, does not read and parse the same
+/// file twice. It did in the first draft of this, on every posed export.
+std::expected<std::vector<Mat4>, PoseUnitsError> frameOf(const std::filesystem::path& path,
+                                                         const Skeleton& skeleton,
+                                                         const io::BvhFile& bvh, size_t frame) {
+    if (frame >= bvh.frameCount) {
+        return std::unexpected(PoseUnitsError{
+            PoseUnitsErrorKind::FrameCountMismatch, path.string(),
+            "no frame " + std::to_string(frame) + "; the file has " +
+                std::to_string(bvh.frameCount) + (bvh.frameCount == 1 ? " frame" : " frames")});
+    }
+
+    // makePoseUnits already does the hard part: walk the rig's bones and take
+    // each one's identically-named BVH joint, identity where there is none.
+    //
+    // It builds every frame to hand back one. That is the whole file's worth of
+    // transforms for the shipped 60-frame library and costs nothing worth
+    // naming; a thousand-frame mocap capture would want a version that maps a
+    // single frame, and this is where it would go.
+    auto units = poseUnitsOf(path, skeleton, bvh);
+    if (!units) return std::unexpected(units.error());
+
+    const std::span<const Mat4> f = units->unit(frame);
+    return std::vector<Mat4>(f.begin(), f.end());
+}
+
+}  // namespace
+
+std::expected<std::vector<Mat4>, PoseUnitsError> loadBodyPoseFrame(
+    const std::filesystem::path& path, const Skeleton& skeleton, size_t frame) {
+    auto bvh = readBvhFor(path);
+    if (!bvh) return std::unexpected(bvh.error());
+    return frameOf(path, skeleton, *bvh, frame);
+}
+
 std::expected<std::vector<Mat4>, PoseUnitsError> loadBodyPose(const std::filesystem::path& path,
                                                               const Skeleton& skeleton) {
-    auto bvh = io::readBvh(path);
-    if (!bvh) {
-        // The two error sets line up one for one except for BVH's frame-data
-        // kind, which is a malformed file by any other name.
-        PoseUnitsErrorKind kind = PoseUnitsErrorKind::Malformed;
-        switch (bvh.error().kind) {
-            case io::BvhErrorKind::NotFound: kind = PoseUnitsErrorKind::NotFound; break;
-            case io::BvhErrorKind::Unreadable: kind = PoseUnitsErrorKind::Unreadable; break;
-            case io::BvhErrorKind::Malformed:
-            case io::BvhErrorKind::FrameDataMismatch: break;
-        }
-        return std::unexpected(PoseUnitsError{kind, path.string(), bvh.error().message()});
-    }
+    auto bvh = readBvhFor(path);
+    if (!bvh) return std::unexpected(bvh.error());
+
+    // Kept exactly as it was. A caller asking for a POSE has not told us they
+    // know this is an animation, so frame 0 of a walk cycle stays an error
+    // rather than a plausible wrong pose. `loadBodyPoseFrame` is how a caller
+    // says otherwise.
     if (bvh->frameCount != 1) {
         return std::unexpected(PoseUnitsError{
             PoseUnitsErrorKind::FrameCountMismatch, path.string(),
             "a body pose must hold exactly one frame; this file has " +
                 std::to_string(bvh->frameCount) + " and is an animation, not a pose"});
     }
-
-    // makePoseUnits already does the hard part: walk the rig's bones and take
-    // each one's identically-named BVH joint, identity where there is none.
-    auto units = makePoseUnits(*bvh, skeleton, {std::string(path.stem().string())});
-    if (!units) return std::unexpected(units.error());
-
-    const std::span<const Mat4> frame = units->unit(0);
-    return std::vector<Mat4>(frame.begin(), frame.end());
+    return frameOf(path, skeleton, *bvh, 0);
 }
 
 std::expected<std::vector<Mat4>, PoseUnitsError> mixPoses(std::span<const Mat4> base,

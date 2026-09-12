@@ -3796,6 +3796,36 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         to set a single pose unit directly — only the ~30 Action Units name
         them — and nothing in `src/ui` reaches either.
 
+- [x] **A frame of a multi-frame .bvh can be stood in — and the shipped walks
+      still cannot, for a reason nobody had measured.**
+      `loadBodyPose` refuses anything but one frame, rightly: frame 0 of a walk
+      cycle is a plausible wrong pose, not a pose. The consequence was that
+      every multi-frame file was unreachable. `loadBodyPoseFrame` and
+      `--pose-frame <n>` fix that — naming a frame IS the caller saying they
+      know the file is an animation, so the refusal stays for everyone else.
+      - **The real blocker on `AnimationLibrary`, measured this chunk:**
+        `walks/walk1.bvh` (14 frames) and `zombie/zombieWalk1.bvh` (31) name 75
+        joints, and **0** of them are a bone of either shipped rig. They are the
+        OLD MakeHuman skeleton — `Spine1`, `UpArm_L`, `Clavicle_L` — against
+        this port's `clavicle.L`. Every bone stays at identity, so every frame
+        of them is the same pose. By contrast `tpose.bvh` matches 163 of 173 and
+        `face-poseunits.bvh` 163 of 163.
+        So the item is **blocked on content**, like the eyebrows — not on
+        effort, and not on "only single-frame poses are read", which is what the
+        audit's reason used to say. Retargeting those two files, or shipping a
+        walk authored against `default.mhskel`, unblocks it.
+        A test pins the zero-overlap fact and FAILS if the content is ever
+        retargeted, which is the moment to come back.
+      - Verified on the 60-frame `face-poseunits.bvh`, whose joints do match:
+        frame 0 vs 40 differ by 2,265 of 14,444 vertices, and **rendered** —
+        frame 40 is a wide-open jaw, frame 7 a small brow change.
+      - 8 unit tests, 9 CLI tests; five mutations killed. One of them —
+        accepting a negative index — showed `--pose-frame -2` reaching the
+        loader as 18446744073709551614, so that guard got its own test.
+      - Found by reading the diff: the first draft read and parsed the BVH TWICE
+        on every posed export, because `loadBodyPose` checked `frameCount` and
+        then called a loader that re-read the file.
+
 - [ ] **The remaining two proxy choosers are BLOCKED ON CONTENT, not effort.**
       Eyebrows have no helper cage. The "generic proxy" chooser has nothing to
       choose between: measured, the only proxymesh-shaped assets in `data/` are

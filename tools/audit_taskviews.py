@@ -296,8 +296,10 @@ def shipped(literal) -> bool:
 # opposite direction, and the moment the view ships the gate says so.
 ABSENT = {
     "AnimationLibrary": ('"Animation"',
-                         "would be a chooser over .bvh files; only single-frame "
-                         "poses are read today"),
+                         "blocked on content, measured: the shipped walks name "
+                         "75 joints and 0 of them are a bone of either rig -- "
+                         "they are the OLD MakeHuman skeleton. --pose-frame "
+                         "reaches a frame of any .bvh that DOES match"),
     "ExpressionTaskView": ('"Expression"',
                            "a chooser needs files to choose; still 0 .mhpose "
                            "under data/, though --save-expression can now "

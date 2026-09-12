@@ -276,6 +276,16 @@ bool applyFacs(std::span<const mh::rig::ActionUnit> aus, const mh::rig::Skeleton
     return applyExpressionUnits(*expr, skel, pose);
 }
 
+/// The `--pose-frame` index, or none. Set once at start-up.
+///
+/// A file-scope value for the same reason as the expression file: every
+/// `loadPoseRig` call site wants the same frame, and none of them has an
+/// opinion about it.
+std::optional<size_t>& poseFrameRef() {
+    static std::optional<size_t> frame;
+    return frame;
+}
+
 /// The `--expression` file, or empty. Set once at start-up.
 ///
 /// A file-scope value for the same reason as the skinning method: every
@@ -407,7 +417,11 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
     // through the first's frame.
     std::vector<mh::foundation::Mat4> modelPose;
     if (wantPose) {
-        const auto bodyPose = mh::rig::loadBodyPose(file, *skel);
+        // Naming a frame is how a caller says "I know this is an animation";
+        // without one, loadBodyPose keeps refusing multi-frame files.
+        const auto bodyPose = poseFrameRef()
+                                  ? mh::rig::loadBodyPoseFrame(file, *skel, *poseFrameRef())
+                                  : mh::rig::loadBodyPose(file, *skel);
         if (!bodyPose) {
             std::fprintf(stderr, "cannot load pose: %s\n", bodyPose.error().message().c_str());
             return false;
@@ -1958,6 +1972,12 @@ int main(int argc, char** argv) {
         QStringLiteral("rest (the authored A-pose, default), tpose, or a path to a "
                        "single-frame .bvh"),
         QStringLiteral("pose"), QStringLiteral("rest"));
+    const QCommandLineOption poseFrameOpt(
+        QStringLiteral("pose-frame"),
+        QStringLiteral("Which frame of a multi-frame --pose .bvh to stand in, zero-based. "
+                       "Without it a multi-frame file is refused, because frame 0 of an "
+                       "animation is a plausible wrong pose rather than an error."),
+        QStringLiteral("n"));
     const QCommandLineOption renderOpt(
         QStringLiteral("render"),
         QStringLiteral("Production render to this PNG and exit. Needs a GPU but NO window, "
@@ -2176,6 +2196,7 @@ int main(int argc, char** argv) {
     parser.addOption(shadingOpt);
     parser.addOption(rigOpt);
     parser.addOption(poseOpt);
+    parser.addOption(poseFrameOpt);
     parser.addOption(expressionOpt);
     parser.addOption(facsOpt);
     parser.addOption(saveExpressionOpt);
@@ -2531,6 +2552,23 @@ int main(int argc, char** argv) {
         }
         std::printf("wrote %s\n", out.string().c_str());
         return 0;
+    }
+
+    if (parser.isSet(poseFrameOpt)) {
+        // A frame with no file to take it from is a mistake worth naming: the
+        // default pose is the authored A-pose, which has no frames at all.
+        if (!parser.isSet(poseOpt)) {
+            std::fprintf(stderr, "--pose-frame needs a --pose .bvh to take the frame from\n");
+            return 1;
+        }
+        bool ok         = false;
+        const int frame = parser.value(poseFrameOpt).toInt(&ok);
+        if (!ok || frame < 0) {
+            std::fprintf(stderr, "--pose-frame wants a frame index from 0, got \"%s\"\n",
+                         parser.value(poseFrameOpt).toStdString().c_str());
+            return 1;
+        }
+        poseFrameRef() = static_cast<size_t>(frame);
     }
 
     if (parser.isSet(symmetryOpt)) {
