@@ -4,6 +4,74 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-13 (eighty-second) — Session · **The afro, in five iterations that each had a reason**
+
+*2026-09-13 — the owner asked for this by name. `bambucha` is the afro.*
+
+### What shipped
+`tools/make_hair_styles.py` and `data/hair/afro.*`. ZERO C++ changes: the proxy
+machinery was already sufficient, exactly as the 2026-09-11 write-up predicted.
+The asset is an identity fit PLUS a rest-space world offset, because `fitProxy`
+computes `P = SUM w_k*H[v_k] + (m.x*d.x, m.y*d.y, m.z*d.z)` and
+`TMatrix::diagonal` returns (1,1,1) when no scale form is declared — so each
+vertex is simply `<b> <b> <b> 1 0 0 dx dy dz`. Checking that BEFORE authoring
+saved inventing local-frame maths that does not exist here.
+
+### The five iterations, each with a render looked at
+The previous attempt ran five iterations, shipped nothing, and concluded
+"retuning changed nothing, because no parameter was wrong". This time every
+iteration had a measured cause:
+
+1. Taper across the WHOLE scalp (`margin/deepest`) -> mean offset 0.086 dm,
+   +18 px height, no width. A flat-top sitting far back. The number predicted
+   it; the image confirmed it.
+2. Full volume, 9-degree edge band -> a real ball, but dark jagged spikes
+   fanning round the face. MEASURED why: one mesh edge changes the hairline
+   margin by a median of **7.2 degrees** (p90 14.4), so a 9-degree band
+   collapses the entire taper into ONE face.
+3. 30-degree band + a zero-growth SKIRT below the hairline -> spikes and
+   serrations both gone. The serrations were the region's own ragged boundary
+   acting as the shell's rim; the skirt moves the rim inside the patch.
+4. Still a wide-brimmed MUSHROOM, because growth was RADIAL from the cranium
+   centre — which yields a ball only if the source is already a sphere. The
+   scalp is not, so low vertices pushed sideways. Offset along the surface
+   NORMAL instead -> brim gone, follows the skull.
+5. 20-degree band, 0.78 dm thick -> **124 px wide against 55 px bald** at the
+   crown row. That is an afro.
+
+### A fourth decorative gate of mine, found by mutation
+My "ball not a brim" test compared the shell's half-width below the cranium
+centre against above. Mutation A3 (radial growth x2.2) PASSED it: radial growth
+widens the top too, so the comparison held and the mushroom sailed through.
+What actually separates the two is UNIFORM THICKNESS — a normal offset cannot
+move a vertex further than `thickness`, while inflating from a point moves it
+however far it takes. Rewritten to bound the standoff; A3 now dies.
+
+### Review found two false CLAIMS rather than bad code
+* `LICENSING.md` said `data/hair/*` is derived by `make_helper_proxies.py`.
+  These files are not. Left alone the licence file would assert a derivation
+  that never happened. Now names both generators.
+* "Generated" was ungated — a hand-edit to `afro.obj` would go unnoticed for
+  ever. Added `--check` and a test, proven to bite by appending one comment
+  line (rc=1). GUARDED on `Python3_Interpreter_FOUND`: no other ctest needs
+  Python and the end state ships none, so it runs where an interpreter exists
+  rather than turning a missing tool into a red suite.
+
+### Stated plainly, not papered over
+* It is a smooth MASS, not strands. The slot has one matcap and no alpha-cut
+  strand texture, so no generator can produce strand detail here.
+* Only the AFRO is done. Locs, cornrows and bantu knots need the path work
+  (`--scalp-path` exists for it) plus collision for hanging styles — locs
+  rooted on the forehead fall over the eyes, and nothing here touches that.
+
+### Tests
+Six: two C++ shape regressions (outward standoff with a MEAN bound, uniform
+thickness), three CLI (wears, differs from the placeholder cage, and the
+existing hair suite), one freshness gate. Three generator mutations, three
+kills.
+
+---
+
 ## 2026-09-12 (eighty-first) — Session · **A parting is a path, so the path got a caller**
 
 *2026-09-12 — the third and last of the walk-the-scalp primitives.*

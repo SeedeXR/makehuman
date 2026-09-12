@@ -81,7 +81,8 @@ add_executable(mh_tests
     regression/test_repose.cpp
     regression/test_review_findings.cpp
     regression/test_io_review_findings.cpp
-    regression/test_determinism.cpp)
+    regression/test_determinism.cpp
+    regression/test_afro_shape.cpp)
 
 # mh::rig alone. It PUBLIC-links mh::io (PoseUnits.h takes a BvhFile) and, since
 # PosedMesh.h took a `core::Mesh&`, mh::core as well -- so the tests get both
@@ -1024,6 +1025,40 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
     set_tests_properties(app_hair_add_geometry PROPERTIES
         FIXTURES_REQUIRED "app_hair_worn;app_hair_none")
+    # The afro. `--hair afro` must actually WEAR it: a vertex referenced by no
+    # face makes loadObj reject the proxy and the character renders BALD rather
+    # than erroring (ObjReader.cpp:235-243), which no count check would catch.
+    add_test(NAME app_afro_worn COMMAND makehuman
+             --hair afro --export ${CMAKE_CURRENT_BINARY_DIR}/hair/afro.obj)
+    set_tests_properties(app_afro_worn PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Afro \\(475 verts\\) lit by skinmat_hair"
+        FAIL_REGULAR_EXPRESSION "export failed;cannot"
+        FIXTURES_SETUP app_afro_worn)
+    # ...and it must be a DIFFERENT asset from the placeholder cage, not the
+    # same geometry under a new name.
+    add_test(NAME app_afro_differs_from_cage COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/hair/afro.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/hair/worn.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_afro_differs_from_cage PROPERTIES
+        FIXTURES_REQUIRED "app_afro_worn;app_hair_worn")
+
+    # "Generated" is a claim LICENSING.md makes about data/hair/afro.*, and
+    # without this it is an aspiration: a hand-edit would go unnoticed for ever.
+    # Proven to bite -- appending one comment line to afro.obj fails it.
+    #
+    # GUARDED on the interpreter rather than requiring one. No other test needs
+    # Python, the end state ships none, and the generator uses only the standard
+    # library -- so this runs where an interpreter happens to exist and is
+    # simply absent where it does not, instead of turning a missing tool into a
+    # red suite.
+    find_package(Python3 QUIET COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME afro_assets_are_generated
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_SOURCE_DIR}/tools/make_hair_styles.py --check)
+    endif()
+
     add_test(NAME app_hair_saved COMMAND makehuman
              --hair hair --save ${CMAKE_CURRENT_BINARY_DIR}/hair/saved.mhm)
     set_tests_properties(app_hair_saved PROPERTIES FIXTURES_SETUP app_hair_saved)

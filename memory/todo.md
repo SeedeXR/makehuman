@@ -3685,6 +3685,36 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         vertex for vertex. Three mutations, three kills.
       - Next: the generator consumes `--spread-roots` and walks strands from
         those roots. Still open after that, unchanged by this chunk:
+      - **AFRO (bambucha) SILHOUETTE SOLVED 2026-09-13, five measured
+        iterations, each with a render looked at.** `tools/make_hair_styles.py`.
+        The proxy is an identity fit PLUS a world-space offset: `fitProxy`
+        computes `P = SUM w_k*H[v_k] + (m.x*d.x, m.y*d.y, m.z*d.z)` and
+        `TMatrix::diagonal` returns (1,1,1) when the file declares no scale
+        form, so `d` is simply a rest-space world offset and each vertex is
+        written `<b> <b> <b> 1 0 0 dx dy dz`. What the five iterations taught,
+        all of it measurable:
+        1. Tapering the offset across the WHOLE scalp (`margin/deepest`) gives
+           mean 0.086 dm and renders as a flat-top sitting far back. Volume must
+           be near-constant.
+        2. A taper band narrower than the mesh spacing collapses into ONE face
+           and renders as dark jagged spikes. MEASURED: a single edge changes
+           hairline margin by a median of **7.2 deg** (p90 14.4), so 9 deg was
+           far too narrow; 20-30 deg spans three or four rows.
+        3. A hard in/out region cutoff makes the shell's rim the ragged region
+           boundary, which renders as serrations along the hairline. Fix: keep a
+           **skirt** of vertices below the hairline at ZERO growth, so the grown
+           part ends inside the patch and the rim lies flat on the skin.
+        4. Growing each vertex RADIALLY from the cranium centre yields a ball
+           only if the source is already a sphere. The scalp is not, so low
+           vertices push sideways and it renders as a wide-brimmed MUSHROOM.
+           Offset along the local surface NORMAL instead.
+        5. Shipping figures: thickness 0.78 dm, edge band 20 deg, skirt 12 deg
+           -> 475 vertices, 408 faces, offsets 0..0.78 (mean 0.290), and the
+           rendered head is **124 px wide against 55 px bald** at the crown row.
+        Known and recorded limitation: it is a smooth mass, not strands. The
+        slot has ONE matcap and no alpha-cut strand texture, so no generator can
+        produce strand detail here -- that is the per-style colour/texture work
+        already listed below, not a defect of the shape.
       - Hanging styles additionally need collision: locs rooted on the forehead
         fall straight over the eyes. An outward horizontal bias helps and is not
         enough; strands need to be pushed outside the head silhouette.
