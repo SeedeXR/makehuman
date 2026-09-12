@@ -3635,6 +3635,35 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         out-of-region-source guard REMOVED, because such a source has no
         walkable edges either way -- what differs is the source's OWN entry,
         0 versus infinity, which is what it asserts now.
+      - **DONE 2026-09-12: `--spread-roots <n>` makes that primitive reachable.**
+        The walk shipped with no caller but its own tests, and a primitive
+        nothing can use is not finished. The style generator does not exist yet
+        (`b5437c02` shipped none of the 2026-09-11 attempt, and
+        `tools/make_helper_proxies.py` is the PROXY generator -- it cuts the
+        hair CAGE, it does not style it), but every asset generator in `tools/`
+        is Python -- the five `make_*.py` -- so whatever styles the hair cannot
+        call `mh::core` directly. The flag prints `index x y z` per root
+        over the cranium cap of the BASE mesh in rest (a proxy binds to the base
+        mesh, so generation time is the only time these roots mean anything),
+        and clamps to the whole cap rather than repeating when asked for more.
+        Eight tests, nine mutations killed. THREE of my own checks were
+        decorative until a mutation said so: (1) printing `coords[i]` instead
+        of `coords[picks[i]]` passes a line count, a format regex and
+        determinism, so the check now reads the y of every root; (2) printing
+        the LOOP COUNTER as the index, with correct coordinates beside it,
+        passes even that, so the check also rejects an index below **226**, the
+        lowest-numbered cap vertex; (3) `PASS_REGULAR_EXPRESSION` makes ctest
+        IGNORE the exit code, so both refusal tests passed with the refusal
+        returning 0 -- a generator would read that as a good run. A separate
+        `WILL_FAIL` test pins the code, kept separate for the reason
+        `app_rig_unknown` records (WILL_FAIL beside a regex passes vacuously).
+        Verified rather than assumed: CMake's `LESS_EQUAL` compares floats
+        (7.80 vs 7.75 distinguished) and its regex engine has NO counted
+        repetition, which is why my first `{24}` tests failed on correct
+        output. `NOT index GREATER_EQUAL 226` rejects "abc" and "" too, so one
+        check replaced two.
+      - Next: the generator consumes `--spread-roots` and walks strands from
+        those roots. Still open after that, unchanged by this chunk:
       - Hanging styles additionally need collision: locs rooted on the forehead
         fall straight over the eyes. An outward horizontal bias helps and is not
         enough; strands need to be pushed outside the head silhouette.

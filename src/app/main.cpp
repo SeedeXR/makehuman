@@ -18,6 +18,7 @@
 #include "makehuman/core/SkinTone.h"
 #include "makehuman/core/SliderLayout.h"
 #include "makehuman/core/Subdivider.h"
+#include "makehuman/core/SurfaceWalk.h"
 #include "makehuman/core/Symmetry.h"
 #include "makehuman/core/Target.h"
 #include "makehuman/core/TargetIndex.h"
@@ -2018,6 +2019,14 @@ int main(int argc, char** argv) {
     const QCommandLineOption listPoseUnitsOpt(
         QStringLiteral("list-pose-units"),
         QStringLiteral("Print the face pose units --pose-unit accepts, and exit."));
+    const QCommandLineOption spreadRootsOpt(
+        QStringLiteral("spread-roots"),
+        QStringLiteral("Print <n> hair-root vertices spread evenly over the scalp of the "
+                       "base mesh, as \"index x y z\", and exit. The style generator "
+                       "consumes these: roots are WALKED over the surface rather than "
+                       "raycast at it, which is what the 2026-09-11 attempt got wrong. "
+                       "Asking for more than the cap holds prints the whole cap."),
+        QStringLiteral("n"));
     const QCommandLineOption poseFrameOpt(
         QStringLiteral("pose-frame"),
         QStringLiteral("Which frame of a multi-frame --pose .bvh to stand in, zero-based. "
@@ -2251,6 +2260,7 @@ int main(int argc, char** argv) {
     parser.addOption(poseOpt);
     parser.addOption(poseUnitOpt);
     parser.addOption(listPoseUnitsOpt);
+    parser.addOption(spreadRootsOpt);
     parser.addOption(poseFrameOpt);
     parser.addOption(expressionOpt);
     parser.addOption(facsOpt);
@@ -2557,6 +2567,51 @@ int main(int argc, char** argv) {
         }
         for (const std::string& n : *names)
             std::printf("%s\n", n.c_str());
+        return 0;
+    }
+
+    // Hair roots, for the style generator.
+    //
+    // `mh::core::spreadOverSurface` exists because raycasting at the scalp
+    // failed: the scalp is not a closed dome, a direction grid misses straight
+    // up and dead front, and the nearest-direction fallback for a miss quietly
+    // piles every miss onto the rim. Walking the surface has no rays and so no
+    // misses. This flag is what lets the style generator use it instead of
+    // reimplementing Dijkstra: every asset generator in `tools/` is Python --
+    // the five `make_*.py` -- so whatever generates the styles cannot call
+    // `mh::core` directly.
+    //
+    // The BASE mesh in rest, deliberately: a proxy binds to the base mesh, so
+    // generation time is the only time these roots mean anything. Roots for a
+    // posed or morphed body would be the same vertices in different places.
+    if (parser.isSet(spreadRootsOpt)) {
+        bool ok          = false;
+        const int wanted = parser.value(spreadRootsOpt).toInt(&ok);
+        if (!ok || wanted < 1) {
+            std::fprintf(stderr, "--spread-roots wants a count above 0, got \"%s\"\n",
+                         parser.value(spreadRootsOpt).toStdString().c_str());
+            return 1;
+        }
+        const auto base = mh::core::loadObj(dataDir() / "3dobjs" / "base.obj");
+        if (!base) {
+            std::fprintf(stderr, "cannot read the base mesh: %s\n", base.error().message().c_str());
+            return 1;
+        }
+        // The cranium cap: everything above the cranium centre's height, which
+        // `memory/todo.md` measured at (0, 7.75, 0.50). A hairline is a
+        // narrower region than this and belongs to the style, not to the
+        // primitive -- this is the scalp every style starts from.
+        std::vector<uint32_t> scalp;
+        const auto coords = base->coord();
+        for (uint32_t v = 0; v < coords.size(); ++v) {
+            if (coords[v].y > 7.75F) scalp.push_back(v);
+        }
+        for (const uint32_t root :
+             mh::core::spreadOverSurface(*base, scalp, static_cast<size_t>(wanted))) {
+            const auto& p = coords[root];
+            std::printf("%u %.4f %.4f %.4f\n", root, static_cast<double>(p.x),
+                        static_cast<double>(p.y), static_cast<double>(p.z));
+        }
         return 0;
     }
 

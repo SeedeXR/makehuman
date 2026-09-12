@@ -1734,6 +1734,61 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_facs_order_survives PROPERTIES
         FIXTURES_REQUIRED "app_facs_ab_obj;app_facs_ba_obj")
 
+    # Scalp roots, walked rather than raycast.
+    #
+    # `mh::core::SurfaceWalk` shipped in the chunk before this one and nothing
+    # could reach it -- only its own tests. The style generator does not exist
+    # yet (b5437c02 shipped none of the 2026-09-11 attempt), but every asset
+    # generator in `tools/` is Python and so cannot call `mh::core` directly.
+    # A primitive no caller can use is not finished, so `--spread-roots` is the
+    # surface that finishes it.
+    #
+    # The region is the cranium cap of the BASE MESH in rest -- which is the
+    # mesh a proxy binds to, so generation-time is the only time these roots
+    # are wanted.
+    add_test(NAME app_spread_roots COMMAND ${CMAKE_COMMAND}
+             -DN=24 -DEXPECT=24 -DAPP=$<TARGET_FILE:makehuman>
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_roots.cmake)
+    # Every root is on the cap. Measured: the cap holds 303 vertices above
+    # y=7.75, so asking for more than that is clamped rather than repeated.
+    add_test(NAME app_spread_roots_clamped COMMAND ${CMAKE_COMMAND}
+             -DN=999 -DEXPECT=303 -DAPP=$<TARGET_FILE:makehuman>
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_roots.cmake)
+    # Deterministic: a style that moved between runs could not be reviewed by
+    # looking at it, and the generator would produce a different asset each time.
+    add_test(NAME app_spread_roots_deterministic_a COMMAND ${CMAKE_COMMAND}
+             -DN=24 -DEXPECT=24 -DOUT=${CMAKE_CURRENT_BINARY_DIR}/roots_a.txt
+             -DAPP=$<TARGET_FILE:makehuman>
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_roots.cmake)
+    set_tests_properties(app_spread_roots_deterministic_a PROPERTIES FIXTURES_SETUP roots_a)
+    add_test(NAME app_spread_roots_deterministic_b COMMAND ${CMAKE_COMMAND}
+             -DN=24 -DEXPECT=24 -DOUT=${CMAKE_CURRENT_BINARY_DIR}/roots_b.txt
+             -DAPP=$<TARGET_FILE:makehuman>
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_roots.cmake)
+    set_tests_properties(app_spread_roots_deterministic_b PROPERTIES FIXTURES_SETUP roots_b)
+    add_test(NAME app_spread_roots_repeatable COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/roots_a.txt
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/roots_b.txt
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_identical.cmake)
+    set_tests_properties(app_spread_roots_repeatable PROPERTIES
+        FIXTURES_REQUIRED "roots_a;roots_b")
+    # The two refusals.
+    add_test(NAME app_spread_roots_zero COMMAND makehuman --spread-roots 0)
+    set_tests_properties(app_spread_roots_zero PROPERTIES
+        PASS_REGULAR_EXPRESSION "--spread-roots wants a count above 0")
+    add_test(NAME app_spread_roots_not_a_number COMMAND makehuman --spread-roots lots)
+    set_tests_properties(app_spread_roots_not_a_number PROPERTIES
+        PASS_REGULAR_EXPRESSION "--spread-roots wants a count above 0")
+    # ...and refusing must EXIT non-zero, not merely say so. PASS_REGULAR_EXPRESSION
+    # makes ctest ignore the exit code entirely, so the two tests above pass
+    # unchanged if the refusal returns 0 -- and a generator reading that exit
+    # code would take an empty run for a good one. Kept as its OWN test rather
+    # than paired with the message, for the reason app_rig_unknown records:
+    # WILL_FAIL alongside a regex passes vacuously on the wrong failure. Here
+    # the sibling above pins the message, so this one only has to pin the code.
+    add_test(NAME app_spread_roots_zero_exits_nonzero COMMAND makehuman --spread-roots 0)
+    set_tests_properties(app_spread_roots_zero_exits_nonzero PROPERTIES WILL_FAIL TRUE)
+
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/punit)
 
     # Setting a face pose unit DIRECTLY -- the reference's expression mixer is

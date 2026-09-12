@@ -4,6 +4,98 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-12 (seventy-ninth) — Session · **A primitive nothing could call**
+
+*2026-09-12 — the walk shipped; this is what made it reachable.*
+
+### What this is
+The chunk before this one shipped `mh::core::SurfaceWalk` and I checked
+afterwards who called it. Nothing did — only its own tests. A primitive with no
+reachable caller is not finished, so this chunk is the surface that finishes it.
+
+The style generator does not exist yet — `b5437c02` recorded the 2026-09-11
+attempt and shipped none of it, and `tools/make_helper_proxies.py` is the PROXY
+generator, which cuts the hair CAGE from `helper-hair` rather than styling it.
+(I first wrote the opposite in this entry and checked it: wrong.) What is true
+is the part that decides the design — every asset generator in `tools/` is
+Python: the five `make_*.py` (appicon, eyes, helper_proxies, scene_fixture,
+skins). So whatever generates the styles will be Python and cannot call
+`mh::core`, and a CLI surface is what makes the walk reachable from it.
+(I first wrote "23 of them, the only non-Python files being two shell
+wrappers": 23 counts every .py including the audits, and `tools/` also holds a
+CMakeLists.txt. Counted before committing it.)
+
+`--spread-roots <n>` prints `index x y z`, one root per line, for roots spread
+over the cranium cap of the BASE mesh in rest. The base mesh deliberately: a
+proxy binds to it, so generation time is the only time these roots mean
+anything — roots for a posed or morphed body would be the same vertices in
+different places. Asking for more than the cap holds prints the whole cap once
+each rather than repeating (303 vertices, measured).
+
+### What the mutations found — twice
+Both times the gate was decorative and a mutation was what said so.
+
+1. Printing `coords[i]` instead of `coords[picks[i]]` — the vertex at the loop
+   index rather than the one picked — passes a line count, passes a format
+   check, and is perfectly deterministic. It prints the first N vertices of the
+   mesh, nowhere near the head. Only the coordinates tell the two apart, so the
+   check reads the y of every root now.
+2. Printing the LOOP COUNTER as the index, with the correct coordinates beside
+   it, passes even that. It hands the generator roots it would place at the
+   feet. The check now also rejects an index below **226**, measured as the
+   lowest-numbered cap vertex.
+
+The first two tests I wrote used `PASS_REGULAR_EXPRESSION` with `{24}`. CMake's
+regex engine has no counted repetition, so they failed against correct output;
+the count moved into the script that already parses the lines. Verified
+separately that CMake's `LESS_EQUAL` really does compare floats rather than
+truncating (7.80 vs 7.75 are distinguished), which is what makes the y check
+exact rather than approximately right.
+
+### Two process failures worth recording
+* **I ran mutation builds while the detached gate was running**, in the same
+  build directory — the exact thing the standing rule forbids, and the gate's
+  result would have been a mixed binary. Caught it at the ALLDONE check, killed
+  the run, relaunched on a clean tree.
+* **A restore from the scratchpad copy silently undid clang-format**, because
+  the snapshot predated the format pass. CI's own check found it here rather
+  than on the server. Snapshots taken before formatting are pre-format.
+
+### Tests
+Eight new CLI tests: count and format, clamping to the whole cap, every root on
+the cap, determinism across two runs, the two refusals (zero, non-numeric), and
+a separate `WILL_FAIL` test pinning that a refusal EXITS non-zero. Nine
+mutations, each killed by the intended test — including the shuffle mutation,
+which dies on `app_spread_roots_repeatable` and so proves that gate is live.
+
+A THIRD decorative gate turned up in the review pass: `PASS_REGULAR_EXPRESSION`
+makes ctest ignore the exit code entirely, so both refusal tests passed
+unchanged with the refusal printing its message and then returning 0 — which a
+generator would read as a successful, empty run. Mutation M7 confirmed it:
+`return 1` → `return 0` kills only the new test and leaves the two message
+tests green. Kept as its own test rather than paired with the regex, for the
+reason `app_rig_unknown` records: WILL_FAIL beside a regex passes vacuously on
+the wrong failure.
+
+The ponytail pass cut 7 lines, and one cut was strictly STRONGER rather than
+merely shorter: `index MATCHES "^[0-9]+$"` plus `index LESS 226` became
+`NOT index GREATER_EQUAL 226`, which CMake makes false for "abc" and "" as well
+(verified) — one check covering garbage AND a non-cap index. Re-mutated after
+the cuts; both mutations still die on their intended message.
+
+Verified end to end the way the generator will use it: a Python consumer parses
+24 roots, every field typed, min y 7.7616 above the 7.75 floor, 24 distinct
+indices, and the refusal gives rc=1 with EMPTY stdout. Edges exercised —
+`--spread-roots 1` works, INT_MAX clamps to 303 in 0.27s, and both
+`99999999999` and `--spread-roots=-5` are refused.
+
+### Next
+The generator consumes `--spread-roots` and walks strands from those roots.
+Collision for hanging styles (locs rooted on the forehead fall over the eyes)
+is still untouched and still the harder half.
+
+---
+
 ## 2026-09-12 (seventy-eighth) — Session · **The hair blocker's first task, done**
 
 *2026-09-12 — not the styles. The primitive they were blocked on.*
