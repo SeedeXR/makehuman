@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <vector>
 
 class QUndoStack;
@@ -31,6 +32,18 @@ enum class Skinning : uint8_t {
     Linear,         ///< linear blend skinning
     DualQuaternion  ///< keeps volume where two bones disagree; costs more
 };
+
+/// The skinning method the user last chose in the menu, if they ever did.
+///
+/// Exposed because it is the one window preference a HEADLESS run needs to
+/// read. It does not obey it -- a scripted export must not change meaning
+/// because of what someone last clicked, or the same command would produce
+/// different geometry on two machines -- but it has to know, so it can say
+/// that it is overriding rather than silently disagreeing.
+///
+/// `std::nullopt` when no preference was ever stored, which is the common
+/// case and must stay silent.
+[[nodiscard]] std::optional<Skinning> storedSkinning();
 
 /// The application shell: a viewport with dockable panels around it.
 ///

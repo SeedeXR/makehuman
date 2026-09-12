@@ -2186,6 +2186,27 @@ int main(int argc, char** argv) {
     }
     gUseDualQuaternion = skinningName == QLatin1String("dqs");
 
+    // The stored skinning preference belongs to the WINDOW, and a headless run
+    // builds no window, so `--skinning` alone decides what this run does. That
+    // is deliberate: a scripted export must not change meaning because of what
+    // someone last clicked in a menu, or one command would produce different
+    // geometry on two machines.
+    //
+    // What was wrong is that it happened silently -- pick Linear in the menu,
+    // script an export, get dual quaternion and never be told. Saying so costs
+    // one line and removes the only way this can surprise someone. Only a
+    // DISAGREEMENT is reported; a stored preference that matches the run, and
+    // the overwhelmingly common case of no preference at all, stay quiet.
+    if (const auto stored = mh::ui::storedSkinning()) {
+        const bool storedIsDqs = *stored == mh::ui::Skinning::DualQuaternion;
+        if (storedIsDqs != gUseDualQuaternion) {
+            std::fprintf(stderr,
+                         "stored skinning preference is %s, but this run is using %s "
+                         "(the menu is a window preference; --skinning decides here)\n",
+                         storedIsDqs ? "dqs" : "linear", gUseDualQuaternion ? "dqs" : "linear");
+        }
+    }
+
     const QString shadingName        = parser.value(shadingOpt);
     mh::render::ShadingModel shading = mh::render::ShadingModel::Litsphere;
     if (shadingName == QLatin1String("pbr")) {

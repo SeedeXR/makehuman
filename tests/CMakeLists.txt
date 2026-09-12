@@ -1317,6 +1317,65 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION "wearing Eyelashes"
         FIXTURES_REQUIRED app_eyelashes_saved)
 
+    # ------------------------------------------------------------------
+    # The stored skinning preference is a WINDOW preference, and the headless
+    # path builds no window. That is deliberate -- a scripted export must not
+    # change meaning because of what someone last clicked in a menu, or the
+    # same command would produce different geometry on two machines.
+    #
+    # What was wrong is that it happened SILENTLY. A user who picks Linear in
+    # the menu and then scripts an export got DQS without being told. The flag
+    # stays authoritative; the run now says so.
+    #
+    # HOME is redirected per test because QSettings(IniFormat, UserScope)
+    # resolves to $HOME/.config/<org>/<app>.ini, so each case gets its own
+    # preference file and none of them touch the real one.
+    # ------------------------------------------------------------------
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/pref_linear/.config/MakeHuman)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/pref_dqs/.config/MakeHuman)
+    file(COPY_FILE ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/pref_skinning_linear.ini
+         ${CMAKE_CURRENT_BINARY_DIR}/pref_linear/.config/MakeHuman/MakeHumanCpp.ini)
+    file(COPY_FILE ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/pref_skinning_dqs.ini
+         ${CMAKE_CURRENT_BINARY_DIR}/pref_dqs/.config/MakeHuman/MakeHumanCpp.ini)
+
+    # Stored linear, no flag: the run is DQS and must SAY it is overriding.
+    add_test(NAME app_skinning_stored_linear_warns COMMAND makehuman
+             --export ${CMAKE_CURRENT_BINARY_DIR}/pref_linear/out.obj)
+    set_tests_properties(app_skinning_stored_linear_warns PROPERTIES
+        ENVIRONMENT "HOME=${CMAKE_CURRENT_BINARY_DIR}/pref_linear"
+        PASS_REGULAR_EXPRESSION "stored skinning preference is linear.*using dqs")
+
+    # The same stored preference, but the flag AGREES with it: no warning,
+    # because there is nothing to warn about.
+    add_test(NAME app_skinning_stored_linear_flag_agrees COMMAND makehuman
+             --skinning linear
+             --export ${CMAKE_CURRENT_BINARY_DIR}/pref_linear/agree.obj)
+    set_tests_properties(app_skinning_stored_linear_flag_agrees PROPERTIES
+        ENVIRONMENT "HOME=${CMAKE_CURRENT_BINARY_DIR}/pref_linear"
+        FAIL_REGULAR_EXPRESSION "stored skinning preference")
+
+    # The flag DISAGREES and wins, which is the case a user most needs told.
+    add_test(NAME app_skinning_stored_linear_flag_overrides COMMAND makehuman
+             --skinning dqs
+             --export ${CMAKE_CURRENT_BINARY_DIR}/pref_linear/override.obj)
+    set_tests_properties(app_skinning_stored_linear_flag_overrides PROPERTIES
+        ENVIRONMENT "HOME=${CMAKE_CURRENT_BINARY_DIR}/pref_linear"
+        PASS_REGULAR_EXPRESSION "stored skinning preference is linear.*using dqs")
+
+    # Stored dqs, no flag: agrees with the default, so the run stays quiet.
+    add_test(NAME app_skinning_stored_dqs_is_quiet COMMAND makehuman
+             --export ${CMAKE_CURRENT_BINARY_DIR}/pref_dqs/out.obj)
+    set_tests_properties(app_skinning_stored_dqs_is_quiet PROPERTIES
+        ENVIRONMENT "HOME=${CMAKE_CURRENT_BINARY_DIR}/pref_dqs"
+        FAIL_REGULAR_EXPRESSION "stored skinning preference")
+
+    # No preference at all -- the overwhelmingly common case -- says nothing.
+    add_test(NAME app_skinning_no_preference_is_quiet COMMAND makehuman
+             --export ${CMAKE_CURRENT_BINARY_DIR}/pref_none.obj)
+    set_tests_properties(app_skinning_no_preference_is_quiet PROPERTIES
+        ENVIRONMENT "HOME=${CMAKE_CURRENT_BINARY_DIR}/pref_missing"
+        FAIL_REGULAR_EXPRESSION "stored skinning preference")
+
 
     add_test(NAME app_group_is_litsphere COMMAND makehuman
              --save ${CMAKE_CURRENT_BINARY_DIR}/lits/groups.mhm)

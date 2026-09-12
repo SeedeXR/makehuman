@@ -2280,9 +2280,12 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       - **And every render in it names `--skin-material african_light`**,
         because the default material has autoBlendSkin on and would make all
         three files identical whatever the code did.
-- [ ] **The other six choosers are not saved**, for want of the choosers
-      themselves — `recordProxy`/`proxyFromDocument` take the slot name, so each
-      is one line once its asset group exists.
+- [x] **Every chooser that exists is saved.** `recordProxy` loops over
+      `kProxySlots` (`src/app/main.cpp`), so teeth, tongue, hair, clothes and
+      eyelashes all round-trip through `.mhm`, and eyes do it under
+      `kEyesSaveName` — ten `app_*_save_names_it` / `app_*_reload_wears_*`
+      tests pin it. What is still unsaved is only a chooser that does not
+      exist yet, which is a content problem and not this one.
 
 - [x] **`--inspect <file>`: the application can finally read a mesh.**
       `io::importScene` is five sessions of work — multi-mesh, node transforms,
@@ -3679,8 +3682,15 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         down under AU43. They read heavy because the material has no alpha,
         which is recorded in the .mhmat itself as the next thing this slot
         needs.
-- [ ] The remaining TWO proxy choosers (eyebrows, generic proxy). Eyebrows have
-      NO helper cage and stay blocked on content.
+- [ ] **The remaining two proxy choosers are BLOCKED ON CONTENT, not effort.**
+      Eyebrows have no helper cage. The "generic proxy" chooser has nothing to
+      choose between: measured, the only proxymesh-shaped assets in `data/` are
+      `data/3dobjs/base.mhclo` (`basemesh alpha_7`, 434 verts — the OLD
+      topology's map) and `data/3dobjs/a7_converter.proxy` (`basemesh hm08`,
+      7102 verts). Both are legacy alpha_7 conversion assets, not alternate
+      BODY topologies a user would wear, so a chooser over them would be
+      meaningless. The proxy-slot line of M8 is therefore finished at five
+      slots plus eyes; what remains needs assets or an owner decision.
 - [ ] **OWNER DECISION: should the teeth be worn by DEFAULT?** `--teeth`
       defaults to `none` today, so a character opens toothless and an open
       mouth is empty. Defaulting to `teeth` is the anatomically right answer but
@@ -4260,14 +4270,21 @@ agree today (geometry, UVs, and 169.5 cm under three unit conventions).
       - Verified end to end afterwards, all four combinations: mode on gives
         1.000/1.000 in ONE undo entry and undo returns both to 0.000; mode off
         moves one side and undoes it.
-- [ ] **No UI toggle for skinning in the headless path.** The stored preference
-      is a WINDOW preference: `--export` and `--render` build no window, never
-      read it, and take `--skinning` alone. Deliberate — the flag is the
-      headless spelling. The direction that hurt is gone as of 2026-09-09: DQS
-      is now the default on both paths, so picking it in the menu and then
-      scripting an export agrees. What is left is the mirror, and it is the
-      rarer choice: a user who picks LINEAR in the menu and then scripts an
-      export gets DQS without being told.
+- [x] **The headless path now SAYS when it is overriding the stored skinning
+      preference.** It still does not obey it, and that is deliberate: a
+      scripted export must not change meaning because of what someone last
+      clicked in a menu, or one command would produce different geometry on two
+      machines. What was wrong is that it happened silently — pick Linear in
+      the menu, script an export, get DQS and never be told.
+      `mh::ui::storedSkinning()` exposes the one window preference a headless
+      run needs to READ, returning `std::nullopt` when none was ever stored so
+      "never chose" stays distinguishable from "chose dqs". Only a
+      disagreement is reported. Five tests, each with its own redirected
+      `HOME`, cover: stored linear warns, the flag agreeing silences it, the
+      flag disagreeing still warns, stored dqs is quiet, and no preference at
+      all is quiet. The HOME redirection is mutation-tested — pointing the
+      warning test at the other fixture makes it fail, which is what proves
+      these read the fixtures rather than the developer's real settings.
 
 **SMPL / SMPL-X is licence-blocked for us** — see `LICENSING.md` §5.2. The full
 parametric model is research-only; the CC-BY subset deliberately omits the shape

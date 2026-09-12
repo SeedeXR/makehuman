@@ -29,7 +29,9 @@
 #include <QPointer>
 #include <QSaveFile>
 #include <QSettings>
+
 #include <QTabWidget>
+#include <optional>
 
 #include <QStandardPaths>
 #include <QUndoStack>
@@ -74,6 +76,25 @@ QSettings workspaceSettings() {
     return QSettings(QSettings::IniFormat, QSettings::UserScope, QStringLiteral("MakeHuman"),
                      QStringLiteral("MakeHumanCpp"));
 }
+
+}  // namespace
+
+// Already inside `namespace mh::ui` -- the anonymous namespace above is nested
+// in it -- so this is defined at mh::ui scope directly.
+std::optional<Skinning> storedSkinning() {
+    // Absent is not "dqs": the menu maps every non-`linear` value onto dual
+    // quaternion because that is the shipped default, but a headless run has
+    // to tell "never chose" apart from "chose dqs" -- the first must stay
+    // silent and the second is an agreement worth not mentioning either, yet
+    // only the first may be reported as no preference at all.
+    const QVariant stored = workspaceSettings().value(QStringLiteral("skinning"));
+    if (!stored.isValid()) return std::nullopt;
+    const QString name = stored.toString();
+    if (name.isEmpty()) return std::nullopt;
+    return name == QLatin1String("linear") ? Skinning::Linear : Skinning::DualQuaternion;
+}
+
+namespace {
 
 /// One retranslatable label: what to set, and the ENGLISH source to look up.
 ///

@@ -4,6 +4,52 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-12 (sixty-ninth) — Session · **The headless run stops disagreeing silently**
+
+*2026-09-12 — a small correctness fix, and two roadmap claims that measurement
+turned out to disprove.*
+
+### What landed
+`mh::ui::storedSkinning()`, and one use of it. The stored skinning preference
+belongs to the WINDOW, and a headless `--export`/`--render` builds no window, so
+`--skinning` alone decides the run. That stays true — a scripted export must not
+change meaning because of what someone last clicked, or one command would
+produce different geometry on two machines. What was wrong is that the
+disagreement was SILENT: pick Linear in the menu, script an export, get dual
+quaternion and never be told.
+
+Now only a disagreement is reported, and `std::nullopt` keeps "never chose"
+distinguishable from "chose dqs" so the common case stays quiet.
+
+### The test that proves the other tests
+Five tests, each with its own redirected `HOME`, because
+`QSettings(IniFormat, UserScope)` resolves to `$HOME/.config/<org>/<app>.ini`.
+Three of them are NEGATIVE — they assert silence — and those passed before the
+feature existed, which makes them worthless until proven otherwise. All three
+were mutation-tested: making the code warn unconditionally kills two of them,
+and making an absent preference read as linear kills the third.
+
+The load-bearing one is the gate mutation: pointing the linear-warns test at the
+dqs fixture directory makes it fail. That is what proves these tests read their
+fixtures rather than the developer's real settings — without it the whole set
+could have been passing off the machine's own state.
+
+### Two roadmap claims that were wrong
+Reconciling before starting, both against live code and data:
+
+  * **"The other six choosers are not saved."** Stale. `recordProxy` loops over
+    `kProxySlots`, so all five slots round-trip through `.mhm`, eyes do it under
+    `kEyesSaveName`, and ten tests pin it.
+  * **"The remaining TWO proxy choosers (eyebrows, generic proxy)"** implied
+    cheap work. The generic proxy chooser has nothing to choose between:
+    `data/3dobjs/base.mhclo` is `basemesh alpha_7` (434 verts, the OLD
+    topology's map) and `data/3dobjs/a7_converter.proxy` is the alpha_7 ↔ hm08
+    converter (7102 verts). Both are legacy conversion assets, not wearable
+    body topologies. Blocked on content, like eyebrows.
+
+So the proxy-slot line of M8 is finished at five slots plus eyes. What remains
+in M8 is UI work and owner decisions.
+
 ## 2026-09-12 (sixty-eighth) — Session · **Eyelashes, and the eyelid gets a slot**
 
 *2026-09-12 — the fifth proxy slot, and the first driven by neither the jaw,
