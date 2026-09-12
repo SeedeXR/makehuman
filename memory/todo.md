@@ -3657,10 +3657,30 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       clothes chunk above once rendering showed it is anatomy rather than a
       garment. Needs an owner decision on whether the app ships it at all, and
       on default visibility if it does.
-- [ ] The remaining THREE proxy choosers (eyebrows, eyelashes, generic proxy).
-      The four eyelash helpers (60/65 per side, dominated by
-      `orbicularis04.L/R`) exist in the base mesh and are the next cheap slot.
-      Eyebrows have NO helper cage and stay blocked on content.
+- [x] **The EYELASHES chooser — a fifth weighting shape, driven by the EYELID.**
+      Four cages into one proxy, the way upper and lower teeth make one:
+      `helper-{l,r}-eyelashes-1` are 60 vertices / 44 faces each and `-2` are
+      65 / 48, with NO vertex shared — 250 and 184 in total, measured as a
+      union rather than a sum. C++ cost: one line, `kProxySlots` 4 -> 5.
+      - **The dominant bones are not what this file previously claimed.** It
+        said all four are dominated by `orbicularis04.L/R`. Measured from
+        `data/rigs/default_weights.mhw`, the `-1` pair is `orbicularis04`
+        (49 of 60 a side) and the `-2` pair is `orbicularis03` (54 of 65),
+        with 11 per cage falling to `head`. Corrected here.
+      - AU43 (eyes closed) moves 142 of the 250, and the SPLIT is the finding
+        rather than the total: both `-2` cages move entirely (65 a side, by up
+        to 0.1208) while the `-1` cages move 6 of 60 by at most 0.0079. AU43
+        drives orbicularis03 hard and only grazes orbicularis04 — the geometry
+        saying the `-2` pair rides the lid that closes. A gate asserting 250
+        would have asserted something false about the anatomy.
+      - A jaw drop moves 0 of the 250, which is the first slot to answer that
+        way where the teeth answer 68 and the tongue 226.
+      - RENDERED AND LOOKED AT: lashes present on open eyes and riding the lid
+        down under AU43. They read heavy because the material has no alpha,
+        which is recorded in the .mhmat itself as the next thing this slot
+        needs.
+- [ ] The remaining TWO proxy choosers (eyebrows, generic proxy). Eyebrows have
+      NO helper cage and stay blocked on content.
 - [ ] **OWNER DECISION: should the teeth be worn by DEFAULT?** `--teeth`
       defaults to `none` today, so a character opens toothless and an open
       mouth is empty. Defaulting to `teeth` is the anatomically right answer but

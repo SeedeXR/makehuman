@@ -4,6 +4,51 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-12 (sixty-eighth) — Session · **Eyelashes, and the eyelid gets a slot**
+
+*2026-09-12 — the fifth proxy slot, and the first driven by neither the jaw,
+the head, nor the legs.*
+
+### What landed
+An **Eyelashes** chooser: four cages into one proxy, the way upper and lower
+teeth make one. `helper-{l,r}-eyelashes-1` are 60 vertices / 44 faces each and
+`-2` are 65 / 48, with **no vertex shared between them** — 250 and 184 in
+total, measured as a union rather than assumed as a sum. The C++ cost was one
+line, `kProxySlots` 4 → 5.
+
+### memory/todo.md was wrong, and measuring said so
+That file claimed all four cages are dominated by `orbicularis04.L/R`.
+Measured from `data/rigs/default_weights.mhw`: the `-1` pair is
+`orbicularis04` (49 of 60 a side) and the `-2` pair is `orbicularis03` (54 of
+65), with 11 per cage falling to `head`. Corrected in place.
+
+### The split is the finding, not the total
+AU43 (eyes closed) moves **142 of the 250**. The first gate asserted 250 and
+failed, which was the right outcome: measured per cage, both `-2` cages move
+ENTIRELY (65 a side, by up to 0.1208) while the `-1` cages move 6 of 60 by at
+most 0.0079. AU43 drives orbicularis03 hard and only grazes orbicularis04 —
+the geometry saying the `-2` pair is the lash riding the lid that closes.
+Asserting 250 would have pinned something false about the anatomy; 142 with
+the breakdown written down says what is actually true.
+
+The negative half is the jaw: AU26 moves **0 of the 250**, where the same input
+moves 68 of the teeth and all 226 of the tongue. Five slots now answer one
+FACS unit five different ways.
+
+### Rendered and looked at
+Lashes sit on the open eye and ride the lid down under AU43 — correct
+behaviour. They read heavy rather than as individual hairs because the
+material carries no alpha; that limitation is written into the `.mhmat` itself
+rather than left for someone to rediscover.
+
+### Gates
+11 new `app_eyelashes_*` tests, written first and watched RED. Five mutations
+killed: two in the code (a dropped cage, a wrong slot label) and three in the
+gates (perturbed moved-count, jaw gate pointed at the closed export, `--check`
+against divergent assets). The `--check` message now names
+`eyelashes/<file>` correctly, which is the `slot_key` rename from the previous
+chunk paying off.
+
 ## 2026-09-12 (sixty-seventh) — Session · **Clothes, and a slot stops being one asset**
 
 *2026-09-12 — the fourth proxy slot, and the first where the user picks between

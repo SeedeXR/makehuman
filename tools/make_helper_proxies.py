@@ -241,6 +241,44 @@ SLOTS = [
             "# of them; the skirt, not this, is the slot's zero case."
         ),
     ),
+    Slot(
+        key="eyelashes",
+        name="Eyelashes",
+        uuid="9d4f60b8-13ac-4e27-b5f1-08e7c62a3d95",
+        groups=("helper-l-eyelashes-1", "helper-l-eyelashes-2",
+                "helper-r-eyelashes-1", "helper-r-eyelashes-2"),
+        # Nearest the eye of anything in the head, and it must win the depth
+        # fight against the eye proxy it sits in front of.
+        z_depth=30,
+        # Near-black. Lashes read almost entirely as silhouette at this scale.
+        tint=(0.18, 0.16, 0.15),
+        material=(
+            "# No texture, and lashes are the slot where that costs least: at\n"
+            "# this scale they are silhouette, not surface. What they DO need\n"
+            "# and do not have is alpha, which is what would let individual\n"
+            "# hairs read against the eye white instead of a solid strip.\n"
+            "name Eyelashes\n"
+            "tag MakeHuman\u2122\n"
+            "ambientColor 0.02 0.02 0.02\n"
+            "diffuseColor 0.12 0.11 0.10\n"
+            "specularColor 0.3 0.3 0.3\n"
+            "shininess 0.2\n"
+            "opacity 1.0\n"
+            "transparent False\n"
+            "backfaceCull True\n"
+            "castShadows True\n"
+            "receiveShadows True\n"
+            "shader data/shaders/glsl/litsphere\n"
+        ),
+        rationale=(
+            "# Four cages, no vertex shared: 60 + 65 per side, 250 and 184\n"
+            "# faces in total. A FIFTH weighting shape -- the `-1` pair is\n"
+            "# dominated by orbicularis04 (49 of 60) and the `-2` pair by\n"
+            "# orbicularis03 (54 of 65), with 11 per cage falling to `head`.\n"
+            "# So this is the first proxy the EYELID drives: AU43 carries it\n"
+            "# and a jaw drop leaves it alone."
+        ),
+    ),
 ]
 
 

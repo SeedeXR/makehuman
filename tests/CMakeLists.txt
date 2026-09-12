@@ -314,7 +314,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 10 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 11 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # The rig had no picker either: two ship, --rig has always chosen between
@@ -1215,6 +1215,107 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
     set_tests_properties(app_clothes_ignores_the_jaw PROPERTIES
         FIXTURES_REQUIRED "app_clothes_skirt_worn;app_clothes_jaw_open")
+
+    # ------------------------------------------------------------------
+    # Eyelashes: a fifth weighting shape, and the first slot driven by the
+    # EYELID rather than the jaw, the head or the legs.
+    #
+    # Four cages make one proxy, the way upper and lower teeth make one:
+    # helper-{l,r}-eyelashes-1 are 60 vertices / 44 faces each and
+    # helper-{l,r}-eyelashes-2 are 65 / 48, with no vertex shared between
+    # them -- 250 and 184 in total, measured as a union rather than a sum.
+    #
+    # Their dominant bones, measured from data/rigs/default_weights.mhw, are
+    # NOT what memory/todo.md claimed. The `-1` pair is orbicularis04 (49 of
+    # 60 per side) and the `-2` pair is orbicularis03 (54 of 65), with 11
+    # vertices per cage falling to `head`. That is the whole reason this slot
+    # is worth its own gate: no proxy before it is driven by an eyelid.
+    #
+    # So AU43 (eyes closed) is the discriminating input, and it is the first
+    # one that leaves every other slot alone.
+    #
+    # It moves 142 of the 250, and the split is the point rather than the
+    # total: measured per cage, BOTH `-2` cages move entirely (65 a side, by
+    # up to 0.1208) while the `-1` cages move 6 of 60 by at most 0.0079. AU43
+    # drives orbicularis03 hard and only grazes orbicularis04, which is the
+    # geometry telling us the `-2` pair is the lash on the lid that closes and
+    # the `-1` pair is the one that barely travels. A gate asserting 250 would
+    # be asserting something false about the anatomy.
+    # ------------------------------------------------------------------
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/eyelashes)
+    add_test(NAME app_eyelashes_group COMMAND makehuman
+             --save ${CMAKE_CURRENT_BINARY_DIR}/eyelashes/g.mhm)
+    set_tests_properties(app_eyelashes_group PROPERTIES
+        PASS_REGULAR_EXPRESSION "asset groups: .*Eyelashes")
+
+    add_test(NAME app_eyelashes_worn COMMAND makehuman
+             --eyelashes eyelashes
+             --export ${CMAKE_CURRENT_BINARY_DIR}/eyelashes/worn.obj)
+    set_tests_properties(app_eyelashes_worn PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Eyelashes \\(250 verts\\) lit by skinmat_eyelashes"
+        FAIL_REGULAR_EXPRESSION "export failed;cannot"
+        FIXTURES_SETUP app_eyelashes_worn)
+
+    add_test(NAME app_eyelashes_none COMMAND makehuman
+             --eyelashes none
+             --export ${CMAKE_CURRENT_BINARY_DIR}/eyelashes/none.obj)
+    set_tests_properties(app_eyelashes_none PROPERTIES
+        FAIL_REGULAR_EXPRESSION "wearing Eyelashes"
+        FIXTURES_SETUP app_eyelashes_none)
+
+    add_test(NAME app_eyelashes_add_geometry COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/eyelashes/worn.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/eyelashes/none.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_eyelashes_add_geometry PROPERTIES
+        FIXTURES_REQUIRED "app_eyelashes_worn;app_eyelashes_none")
+
+    # The positive claim: closing the eyes carries the lashes on the lid that
+    # moves. 142 = 65 + 65 fully, plus 6 + 6 that travel marginally.
+    add_test(NAME app_eyelashes_closed COMMAND makehuman
+             --eyelashes eyelashes --facs AU43=1.0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/eyelashes/closed.obj)
+    set_tests_properties(app_eyelashes_closed PROPERTIES FIXTURES_SETUP app_eyelashes_closed)
+    add_test(NAME app_eyelashes_follow_the_lid COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/eyelashes/worn.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/eyelashes/closed.obj
+             -DGROUP=eyelashes -DEXPECT_MOVED=142 -DEXPECT_STILL=108
+             -DRISE_TOLERANCE=ANY
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
+    set_tests_properties(app_eyelashes_follow_the_lid PROPERTIES
+        FIXTURES_REQUIRED "app_eyelashes_worn;app_eyelashes_closed")
+
+    # The negative half, and the one that separates this slot from every
+    # earlier one: a jaw drop moves the teeth and the whole tongue and leaves
+    # the lashes exactly where they were.
+    add_test(NAME app_eyelashes_jaw_open COMMAND makehuman
+             --eyelashes eyelashes --facs AU26=1.0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/eyelashes/jaw_open.obj)
+    set_tests_properties(app_eyelashes_jaw_open PROPERTIES FIXTURES_SETUP app_eyelashes_jaw_open)
+    add_test(NAME app_eyelashes_ignore_the_jaw COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/eyelashes/worn.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/eyelashes/jaw_open.obj
+             -DGROUP=eyelashes -DEXPECT_MOVED=0 -DEXPECT_STILL=250
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
+    set_tests_properties(app_eyelashes_ignore_the_jaw PROPERTIES
+        FIXTURES_REQUIRED "app_eyelashes_worn;app_eyelashes_jaw_open")
+
+    # Round trip through .mhm.
+    add_test(NAME app_eyelashes_saved COMMAND makehuman
+             --eyelashes eyelashes --save ${CMAKE_CURRENT_BINARY_DIR}/eyelashes/saved.mhm)
+    set_tests_properties(app_eyelashes_saved PROPERTIES FIXTURES_SETUP app_eyelashes_saved)
+    add_test(NAME app_eyelashes_save_names_it COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/eyelashes/saved.mhm
+             "-DKEYS=eyelashes Eyelashes 9d4f60b8-13ac-4e27-b5f1-08e7c62a3d95"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_eyelashes_save_names_it PROPERTIES
+        FIXTURES_REQUIRED app_eyelashes_saved)
+    add_test(NAME app_eyelashes_reload_wears_them COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/eyelashes/saved.mhm
+             --export ${CMAKE_CURRENT_BINARY_DIR}/eyelashes/reloaded.obj)
+    set_tests_properties(app_eyelashes_reload_wears_them PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Eyelashes"
+        FIXTURES_REQUIRED app_eyelashes_saved)
 
 
     add_test(NAME app_group_is_litsphere COMMAND makehuman
@@ -2594,7 +2695,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 10 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 11 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # Refused rather than silently defaulted to brown, which would make a typo

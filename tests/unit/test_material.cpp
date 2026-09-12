@@ -116,7 +116,7 @@ TEST_CASE("every shipped material parses", "[core][material][golden]") {
     // (tools/make_helper_proxies.py).
     // The count is pinned rather than left open because "every material parses"
     // passes trivially when the loop finds none.
-    CHECK(ok == 21);
+    CHECK(ok == 22);
 }
 
 TEST_CASE("booleans accept the reference's spellings", "[core][material]") {
