@@ -4,6 +4,69 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-13 (eighty-sixth) — Session · **A pose that drives nothing now says so**
+
+*2026-09-13 — the animation tab was the wrong next chunk, and measuring said so.*
+
+### What this is
+`mh::rig::bonesDrivenBy(path, skeleton)` counts how many of a rig's bones a BVH
+actually drives, and `loadPoseRig` warns when that is zero: *"drives 0 of 179
+bones -- it names none of this skeleton's joints, so the character will stay at
+rest"*. Not a refusal. The pose still loads and the exit code is still 0,
+because `app_pose_frame_*` and the rig tests pin that deliberately; what changed
+is that the silence became information.
+
+### Why, and a correction to my own routing
+The chunk began as the `AnimationLibrary` tab, which the previous fire had
+routed as "needs NO engine work". Measuring first killed that: `walk1.bvh`
+names 75 joints of the OLD MakeHuman skeleton and matches **0** of the default
+rig's 163 or the application's `mixamo_superset` 179. The shipped animations
+drive nothing, so a playback tab would scrub a character that never moves.
+
+`tests/unit/test_pose_frame.cpp` had ALREADY written this down in its header,
+with the same numbers. The measurement reproduced a documented fact rather than
+finding a new one, and saying otherwise would have been a nicer story than the
+truth.
+
+### Two of my own measurements were wrong, and the second one mattered
+* I first reported "`--pose-frame` is honoured -- three distinct meshes". It is
+  not, for these files: the OBJ exports differed ONLY in the `mtllib` line,
+  which embeds the output filename. The VERTICES were identical. That is
+  `memory/`'s "compare pixels, not bytes" in a new costume -- comparing whole
+  files when the meaning lives in one section of them.
+* Before that I read a BVH export as proof the frame was ignored, when the BVH
+  exporter simply does not vary with frame.
+Both were caught by asking what the bytes actually were rather than trusting a
+hash.
+
+### Mutations, including one that SURVIVED
+* The count returns every bone -> 2 tests fail.
+* The application stops warning -> the warning test fails.
+* The application warns ALWAYS -> `app_pose_that_drives_is_quiet` fails, which
+  is what makes that test load-bearing rather than decoration: over-warning is
+  how a warning gets filtered out and stops being read.
+* Dropping the end-site filter -> **survives**. `BvhReader` names an end site
+  `<parent>_end` expressly so it cannot collide with a real joint, and neither
+  rig has a bone ending in `_end` (0 of 163, 0 of 179), so no count this
+  repository can produce distinguishes it. Kept for parity with the posing
+  rule and recorded in the source as a surviving mutation rather than dressed
+  up as covered.
+
+### The test expectation that was wrong
+The app test first asserted "drives 0 of 163 bones" -- the DEFAULT rig's count,
+which is what the unit test uses. The application defaults to
+`mixamo_superset`, 179. The test failed and the number was corrected to the
+measured one.
+
+### Still open, and it is the owner's call
+Either ship animations authored for this rig, or add a mapping for the
+old-MakeHuman names the walks use. `data/rigs/mixamo_retarget.json` does not
+cover them: 65 `Mixamo -> superset` pairs, only 5 of walk1's 75 joints among
+its keys, and no C++ loader. Until then `AnimationLibrary` is blocked on
+CONTENT, and the next buildable view is one of the other four.
+
+---
+
 ## 2026-09-13 (eighty-fifth) — Session · **The scalp was the cranium cap, and Blender said so**
 
 *2026-09-13 — a region that had been wrong at both ends since it was written.*

@@ -140,6 +140,36 @@ TEST_CASE("frame 0 of a single-frame file is that file's pose", "[rig][poseframe
     }
 }
 
+TEST_CASE("a pose file reports how many bones it actually drives", "[rig][poseframe]") {
+    const Skeleton skel = defaultRig();
+
+    // The counterpart to the identity test below. That one pins the CONSEQUENCE
+    // -- every bone stays at rest -- and this pins the CAUSE as a number a
+    // caller can act on, so the application can say "this drove nothing"
+    // instead of posing nothing and reporting success.
+    //
+    // MEASURED: `face-poseunits.bvh` names all 163 bones of the default rig,
+    // and `walk1.bvh` names none of them.
+    const auto driven = bonesDrivenBy(anim(), skel);
+    REQUIRE(driven.has_value());
+    CHECK(*driven == skel.bones.size());
+    CHECK(*driven == 163U);
+
+    const auto none = bonesDrivenBy(walk(), skel);
+    REQUIRE(none.has_value());
+    INFO("walk1.bvh drove " << *none << " bones");
+    CHECK(*none == 0U);
+}
+
+TEST_CASE("a missing pose file is an error, not a count of zero", "[rig][poseframe]") {
+    // Zero is a MEANINGFUL answer -- it is what the shipped walks give -- so it
+    // must not double as "could not read the file", or a typo in a path would
+    // read as content that drives nothing.
+    const auto missing = bonesDrivenBy(dataDir() / "poses" / "no-such-file.bvh", defaultRig());
+    REQUIRE_FALSE(missing.has_value());
+    CHECK(missing.error().kind == PoseUnitsErrorKind::NotFound);
+}
+
 TEST_CASE("the shipped walks name no bone of either rig, so every frame is identity",
           "[rig][poseframe]") {
     const Skeleton skel = defaultRig();

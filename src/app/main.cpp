@@ -494,6 +494,20 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
             std::fprintf(stderr, "cannot load pose: %s\n", bodyPose.error().message().c_str());
             return false;
         }
+        // A BVH drives a bone only when it holds a joint of identically the
+        // same name, so a file written for another skeleton poses NOTHING and
+        // every frame looks the same. Not an error -- the pose still loads, and
+        // the rig tests pin that -- but saying nothing is how the shipped
+        // `data/animations/` walks looked like a working feature for a whole
+        // milestone. MEASURED: they name 75 joints of the old MakeHuman
+        // skeleton and match 0 of this rig's 163.
+        if (const auto driven = mh::rig::bonesDrivenBy(file, *skel);
+            driven.has_value() && *driven == 0) {
+            std::fprintf(stderr,
+                         "warning: %s drives 0 of %zu bones -- it names none of this "
+                         "skeleton's joints, so the character will stay at rest\n",
+                         file.string().c_str(), skel->boneCount());
+        }
         modelPose = *bodyPose;
     }
 

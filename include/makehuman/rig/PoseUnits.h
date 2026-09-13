@@ -179,6 +179,25 @@ struct PoseUnitsError {
 ///
 /// @param frame zero-based. Out of range is an error naming the real count,
 ///        because a user who guessed needs to know what to guess instead.
+/// How many of @p skeleton's bones @p path actually drives.
+///
+/// `makePoseUnits` matches a BVH joint to a bone by IDENTICAL NAME and leaves
+/// every unmatched bone at identity, so a file naming nothing the rig knows
+/// produces the rest pose in silence. That is not hypothetical: the shipped
+/// `data/animations/` walks name 75 joints of the OLD MakeHuman skeleton
+/// (`Spine1`, `Clavicle_L`) and match **0** of this port's 163, which
+/// `tests/unit/test_pose_frame.cpp` pins. Counting the matches is what lets a
+/// caller say so instead of posing nothing and reporting success.
+///
+/// Counted by NAME rather than by inspecting the resulting transforms: a
+/// neutral frame is legitimately near-identity -- `face-poseunits.bvh` frame 0
+/// carries 373 non-zero channels of about 1e-6 -- so "every bone is identity"
+/// cannot tell "drove nothing" from "drove a neutral pose".
+///
+/// Reads @p path, so call it once per pose rather than per frame.
+[[nodiscard]] std::expected<size_t, PoseUnitsError> bonesDrivenBy(const std::filesystem::path& path,
+                                                                  const Skeleton& skeleton);
+
 [[nodiscard]] std::expected<std::vector<Mat4>, PoseUnitsError> loadBodyPoseFrame(
     const std::filesystem::path& path, const Skeleton& skeleton, size_t frame);
 

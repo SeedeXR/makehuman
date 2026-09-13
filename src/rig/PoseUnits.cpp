@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <fstream>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace mh::rig {
 namespace {
@@ -329,6 +330,32 @@ std::expected<std::vector<Mat4>, PoseUnitsError> frameOf(const std::filesystem::
 }
 
 }  // namespace
+
+std::expected<size_t, PoseUnitsError> bonesDrivenBy(const std::filesystem::path& path,
+                                                    const Skeleton& skeleton) {
+    auto bvh = readBvhFor(path);
+    if (!bvh) return std::unexpected(bvh.error());
+
+    // The same rule `makePoseUnits` poses by: a bone is driven when the file
+    // holds a non-end-site joint of IDENTICALLY the same name. Counted the same
+    // way on purpose -- a count that disagreed with the posing would be worse
+    // than no count, because it would be believed.
+    //
+    // The end-site condition is kept for that parity and NOT because a test
+    // can kill it: `BvhReader` names an end site `<parent>_end` expressly so it
+    // "cannot collide with a real joint", and neither shipped rig has a bone
+    // ending in `_end` (0 of 163, 0 of 179). Removing it changes no count this
+    // repository can produce -- a mutation that survives, recorded rather than
+    // dressed up as covered.
+    std::unordered_set<std::string_view> joints;
+    joints.reserve(bvh->joints.size());
+    for (const auto& joint : bvh->joints) {
+        if (!joint.endSite) joints.insert(joint.name);
+    }
+    return static_cast<size_t>(
+        std::count_if(skeleton.bones.begin(), skeleton.bones.end(),
+                      [&joints](const auto& bone) { return joints.contains(bone.name); }));
+}
 
 std::expected<std::vector<Mat4>, PoseUnitsError> loadBodyPoseFrame(
     const std::filesystem::path& path, const Skeleton& skeleton, size_t frame) {

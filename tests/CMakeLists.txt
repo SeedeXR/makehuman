@@ -2091,6 +2091,29 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
     set_tests_properties(app_pose_frame_differs PROPERTIES
         FIXTURES_REQUIRED "app_pframe_0;app_pframe_40")
+    # A pose that drives NOTHING must say so. The shipped walks name 75 joints
+    # of the old MakeHuman skeleton and match 0 of this rig's 163, so the app
+    # posed nothing and reported success -- which is how the content problem
+    # stayed folklore long enough to be rediscovered twice.
+    # NOT a refusal: the pose still loads and the exit code is still 0, because
+    # `app_pose_frame_*` and the rig tests pin that behaviour deliberately. The
+    # change is that it is now VISIBLE.
+    # 179, not 163: the application defaults to `mixamo_superset`, and the walks
+    # match none of either rig. The first version of this test said 163 -- the
+    # DEFAULT rig's count, which is what the unit test uses -- and failed.
+    add_test(NAME app_pose_drives_nothing_says_so COMMAND makehuman
+             --pose ${MH_DATA_DIR}/animations/walks/walk1.bvh --pose-frame 0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/pframe/drives.obj)
+    set_tests_properties(app_pose_drives_nothing_says_so PROPERTIES
+        PASS_REGULAR_EXPRESSION "drives 0 of 179 bones")
+    # ...and a pose that DOES drive the rig must stay quiet, or the warning is
+    # noise that gets filtered out and stops being read.
+    add_test(NAME app_pose_that_drives_is_quiet COMMAND makehuman
+             --pose ${MH_DATA_DIR}/poseunits/face-poseunits.bvh --pose-frame 0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/pframe/quiet.obj)
+    set_tests_properties(app_pose_that_drives_is_quiet PROPERTIES
+        FAIL_REGULAR_EXPRESSION "drives 0 of")
+
     # The three refusals, each with its own message.
     add_test(NAME app_pose_frame_needs_pose COMMAND makehuman
              --pose-frame 3 --export ${CMAKE_CURRENT_BINARY_DIR}/pframe/never.obj)
