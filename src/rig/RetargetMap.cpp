@@ -62,4 +62,16 @@ std::expected<RetargetMap, SkeletonError> loadRetargetMap(const std::filesystem:
     return map;
 }
 
+size_t retargetJoints(io::BvhFile& bvh, const RetargetMap& map) {
+    size_t renamed = 0;
+    for (auto& joint : bvh.joints) {
+        if (joint.endSite) continue;
+        const auto it = map.toBone.find(joint.name);
+        if (it == map.toBone.end()) continue;  // unmapped: left as it was
+        joint.name = it->second;
+        ++renamed;
+    }
+    return renamed;
+}
+
 }  // namespace mh::rig

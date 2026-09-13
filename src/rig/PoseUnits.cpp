@@ -332,9 +332,13 @@ std::expected<std::vector<Mat4>, PoseUnitsError> frameOf(const std::filesystem::
 }  // namespace
 
 std::expected<size_t, PoseUnitsError> bonesDrivenBy(const std::filesystem::path& path,
-                                                    const Skeleton& skeleton) {
+                                                    const Skeleton& skeleton,
+                                                    const RetargetMap* names) {
     auto bvh = readBvhFor(path);
     if (!bvh) return std::unexpected(bvh.error());
+    // Renamed before the count for the same reason the pose loaders rename
+    // before posing: a count that disagreed with the posing would be believed.
+    if (names) retargetJoints(*bvh, *names);
 
     // The same rule `makePoseUnits` poses by: a bone is driven when the file
     // holds a non-end-site joint of IDENTICALLY the same name. Counted the same
@@ -358,16 +362,20 @@ std::expected<size_t, PoseUnitsError> bonesDrivenBy(const std::filesystem::path&
 }
 
 std::expected<std::vector<Mat4>, PoseUnitsError> loadBodyPoseFrame(
-    const std::filesystem::path& path, const Skeleton& skeleton, size_t frame) {
+    const std::filesystem::path& path, const Skeleton& skeleton, size_t frame,
+    const RetargetMap* names) {
     auto bvh = readBvhFor(path);
     if (!bvh) return std::unexpected(bvh.error());
+    if (names) retargetJoints(*bvh, *names);
     return frameOf(path, skeleton, *bvh, frame);
 }
 
 std::expected<std::vector<Mat4>, PoseUnitsError> loadBodyPose(const std::filesystem::path& path,
-                                                              const Skeleton& skeleton) {
+                                                              const Skeleton& skeleton,
+                                                              const RetargetMap* names) {
     auto bvh = readBvhFor(path);
     if (!bvh) return std::unexpected(bvh.error());
+    if (names) retargetJoints(*bvh, *names);
 
     // Kept exactly as it was. A caller asking for a POSE has not told us they
     // know this is an animation, so frame 0 of a walk cycle stays an error

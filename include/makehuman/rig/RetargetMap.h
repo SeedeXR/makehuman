@@ -16,6 +16,7 @@
 // applied on import as well as export.
 #pragma once
 
+#include "makehuman/io/BvhReader.h"
 #include "makehuman/rig/Skeleton.h"
 
 #include <expected>
@@ -43,5 +44,23 @@ struct RetargetMap {
 /// its first three kinds, and this IS a table about a skeleton's bones.
 [[nodiscard]] std::expected<RetargetMap, SkeletonError> loadRetargetMap(
     const std::filesystem::path& path);
+
+/// Renames @p bvh's joints through @p map, in place, and reports how many were
+/// renamed.
+///
+/// This is the whole of retargeting on import. Everything downstream --
+/// `makePoseUnits`, `loadBodyPose`, `bonesDrivenBy` -- matches a BVH joint to a
+/// bone by IDENTICALLY the same name, so making the file say `shoulder01.L`
+/// where it said `UpArm_L` is all it takes; no second matching path is added
+/// that could drift from the first.
+///
+/// A joint the table does not name is LEFT ALONE rather than dropped. The
+/// MakeHuman 1.x tables deliberately leave 16 connector joints unmapped, and a
+/// joint keeping a name no bone shares simply drives nothing -- which is what
+/// it did before. Dropping it would renumber every `parent` index in the file.
+///
+/// End sites are skipped. `BvhReader` names them `<parent>_end` expressly so
+/// they cannot collide with a real joint, and a table never names one.
+size_t retargetJoints(io::BvhFile& bvh, const RetargetMap& map);
 
 }  // namespace mh::rig

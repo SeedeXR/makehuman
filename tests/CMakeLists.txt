@@ -12,6 +12,7 @@ add_executable(mh_tests
     unit/test_save_expression.cpp
     unit/test_pose_frame.cpp
     unit/test_makehuman1_retarget.cpp
+    unit/test_retarget_import.cpp
     unit/test_retarget_map.cpp
     unit/test_scalp.cpp
     unit/test_surface_walk.cpp
@@ -1908,6 +1909,70 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_list_pose_units COMMAND makehuman --list-pose-units)
     set_tests_properties(app_list_pose_units PROPERTIES
         PASS_REGULAR_EXPRESSION "LeftBrowDown")
+
+    # --rig-names on IMPORT. The shipped data/animations/ walks are MakeHuman
+    # 1.x exports: they name joints of the old MakeHuman skeleton and match 0
+    # bones of this rig, so `--pose walk1.bvh` has always loaded successfully
+    # and produced the rest pose. These tests pin BOTH halves -- that it used to
+    # do nothing, and that with the table it does something.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/rignames)
+    set(WALK ${MH_DATA_DIR}/animations/walks/walk1.bvh)
+    add_test(NAME app_rig_names_native_f0 COMMAND makehuman
+             --pose ${WALK} --pose-frame 0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/rignames/nat0.obj)
+    set_tests_properties(app_rig_names_native_f0 PROPERTIES FIXTURES_SETUP app_rn_nat0)
+    add_test(NAME app_rig_names_native_f7 COMMAND makehuman
+             --pose ${WALK} --pose-frame 7
+             --export ${CMAKE_CURRENT_BINARY_DIR}/rignames/nat7.obj)
+    set_tests_properties(app_rig_names_native_f7 PROPERTIES FIXTURES_SETUP app_rn_nat7)
+    add_test(NAME app_rig_names_mh1_f0 COMMAND makehuman
+             --pose ${WALK} --pose-frame 0 --rig-names makehuman1
+             --export ${CMAKE_CURRENT_BINARY_DIR}/rignames/mh0.obj)
+    # The warning must be GONE, which is the whole claim of this chunk. Measured
+    # as a mutation: forcing the table lookup to return nothing brings it back,
+    # and nothing else in the suite notices.
+    set_tests_properties(app_rig_names_mh1_f0 PROPERTIES
+        FIXTURES_SETUP app_rn_mh0 FAIL_REGULAR_EXPRESSION "drives 0 of")
+    add_test(NAME app_rig_names_mh1_f7 COMMAND makehuman
+             --pose ${WALK} --pose-frame 7 --rig-names makehuman1
+             --export ${CMAKE_CURRENT_BINARY_DIR}/rignames/mh7.obj)
+    set_tests_properties(app_rig_names_mh1_f7 PROPERTIES
+        FIXTURES_SETUP app_rn_mh7 FAIL_REGULAR_EXPRESSION "drives 0 of")
+
+    # THE regression, and the premise for everything below it: untargeted, two
+    # different frames of a 14-frame walk give the SAME mesh, because every bone
+    # is left at identity. MEASURED 0 of 14,444.
+    add_test(NAME app_rig_names_native_frames_are_identical COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/rignames/nat0.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/rignames/nat7.obj
+             -DEXPECT_DIFFERENT=0
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
+    set_tests_properties(app_rig_names_native_frames_are_identical PROPERTIES
+        FIXTURES_REQUIRED "app_rn_nat0;app_rn_nat7")
+    # And retargeted, they stop being identical. MEASURED 14,444 of 14,444 --
+    # a walk moves the root, so every vertex moves.
+    add_test(NAME app_rig_names_mh1_frames_differ COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/rignames/mh0.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/rignames/mh7.obj
+             -DEXPECT_DIFFERENT=14444
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
+    set_tests_properties(app_rig_names_mh1_frames_differ PROPERTIES
+        FIXTURES_REQUIRED "app_rn_mh0;app_rn_mh7")
+    # The flag changes the mesh at all -- without this the two tests above are
+    # satisfied by any pair of files that happen to differ from each other.
+    add_test(NAME app_rig_names_changes_the_pose COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/rignames/nat7.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/rignames/mh7.obj
+             -DEXPECT_DIFFERENT=14444
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
+    set_tests_properties(app_rig_names_changes_the_pose PROPERTIES
+        FIXTURES_REQUIRED "app_rn_nat7;app_rn_mh7")
+    # A naming that does not ship must be refused by name, not fall back to
+    # "native" and silently pose nothing.
+    add_test(NAME app_rig_names_rejects_unknown COMMAND makehuman
+             --pose ${WALK} --pose-frame 0 --rig-names nosuchrig
+             --export ${CMAKE_CURRENT_BINARY_DIR}/rignames/never.obj)
+    set_tests_properties(app_rig_names_rejects_unknown PROPERTIES WILL_FAIL TRUE)
 
     add_test(NAME app_pose_unit_neutral COMMAND makehuman
              --export ${CMAKE_CURRENT_BINARY_DIR}/punit/neutral.obj)

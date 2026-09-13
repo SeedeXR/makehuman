@@ -43,6 +43,7 @@
 #include "makehuman/rig/Facs.h"
 #include "makehuman/rig/PoseUnits.h"
 #include "makehuman/rig/PosedMesh.h"
+#include "makehuman/rig/RetargetMap.h"
 #include "makehuman/rig/Skeleton.h"
 #include "makehuman/rig/Skinning.h"
 #include "makehuman/rig/VertexWeights.h"
@@ -328,6 +329,40 @@ std::optional<size_t>& poseFrameRef() {
     return frame;
 }
 
+/// The `--rig-names` choice: which skeleton's joint names the incoming `--pose`
+/// file is written in. "native" -- this port's own names -- is the default and
+/// means no renaming at all.
+std::string& rigNamesRef() {
+    static std::string names{"native"};
+    return names;
+}
+
+/// The retarget table `--rig-names` selects, or nullptr for "native".
+///
+/// Loaded once and kept: `loadPoseRig` consults it three times per call (the
+/// pose, the frame, and the driven-bone count) and re-reading the JSON for each
+/// would be three reads to answer one question.
+///
+/// A table that fails to load returns nullptr with a warning rather than
+/// killing the run: the pose still loads, it just poses nothing, which is
+/// exactly the state the warning below already describes.
+const mh::rig::RetargetMap* retargetTable() {
+    static const std::optional<mh::rig::RetargetMap> table = [] {
+        std::optional<mh::rig::RetargetMap> none;
+        const std::string& choice = rigNamesRef();
+        if (choice == "native") return none;
+        const auto path = dataDir() / "rigs" / (choice + "_retarget.json");
+        auto map        = mh::rig::loadRetargetMap(path);
+        if (!map) {
+            std::fprintf(stderr, "warning: cannot load --rig-names %s: %s\n", choice.c_str(),
+                         map.error().message().c_str());
+            return none;
+        }
+        return std::optional<mh::rig::RetargetMap>{std::move(*map)};
+    }();
+    return table ? &*table : nullptr;
+}
+
 /// The `--expression` file, or empty. Set once at start-up.
 ///
 /// A file-scope value for the same reason as the skinning method: every
@@ -487,9 +522,10 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
     if (wantPose) {
         // Naming a frame is how a caller says "I know this is an animation";
         // without one, loadBodyPose keeps refusing multi-frame files.
-        const auto bodyPose = poseFrameRef()
-                                  ? mh::rig::loadBodyPoseFrame(file, *skel, *poseFrameRef())
-                                  : mh::rig::loadBodyPose(file, *skel);
+        const mh::rig::RetargetMap* names = retargetTable();
+        const auto bodyPose               = poseFrameRef()
+                                                ? mh::rig::loadBodyPoseFrame(file, *skel, *poseFrameRef(), names)
+                                                : mh::rig::loadBodyPose(file, *skel, names);
         if (!bodyPose) {
             std::fprintf(stderr, "cannot load pose: %s\n", bodyPose.error().message().c_str());
             return false;
@@ -501,12 +537,15 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
         // `data/animations/` walks looked like a working feature for a whole
         // milestone. MEASURED: they name 75 joints of the old MakeHuman
         // skeleton and match 0 of this rig's 163.
-        if (const auto driven = mh::rig::bonesDrivenBy(file, *skel);
+        if (const auto driven = mh::rig::bonesDrivenBy(file, *skel, names);
             driven.has_value() && *driven == 0) {
             std::fprintf(stderr,
                          "warning: %s drives 0 of %zu bones -- it names none of this "
-                         "skeleton's joints, so the character will stay at rest\n",
-                         file.string().c_str(), skel->boneCount());
+                         "skeleton's joints, so the character will stay at rest%s\n",
+                         file.string().c_str(), skel->boneCount(),
+                         rigNamesRef() == "native"
+                             ? "; try --rig-names makehuman1 or --rig-names mixamo"
+                             : "");
         }
         modelPose = *bodyPose;
     }
@@ -2102,6 +2141,15 @@ int main(int argc, char** argv) {
                        "Without it a multi-frame file is refused, because frame 0 of an "
                        "animation is a plausible wrong pose rather than an error."),
         QStringLiteral("n"));
+    const QCommandLineOption rigNamesOpt(
+        QStringLiteral("rig-names"),
+        QStringLiteral("Which skeleton's joint names the --pose .bvh is written in: "
+                       "native (this port's own, the default), makehuman1 (the old "
+                       "MakeHuman, which every shipped data/animations/ walk uses) or "
+                       "mixamo. A BVH drives a bone only when it holds a joint of "
+                       "identically the same name, so without the right choice the file "
+                       "loads and poses nothing."),
+        QStringLiteral("naming"), QStringLiteral("native"));
     const QCommandLineOption backgroundOpt(
         QStringLiteral("background"),
         QStringLiteral("An image to put BEHIND --render's character, scaled to cover the "
@@ -2333,6 +2381,7 @@ int main(int argc, char** argv) {
     parser.addOption(scalpPathOpt);
     parser.addOption(bindPointsOpt);
     parser.addOption(poseFrameOpt);
+    parser.addOption(rigNamesOpt);
     parser.addOption(expressionOpt);
     parser.addOption(facsOpt);
     parser.addOption(saveExpressionOpt);
@@ -2900,6 +2949,30 @@ int main(int argc, char** argv) {
             return 1;
         }
         poseFrameRef() = static_cast<size_t>(frame);
+    }
+
+    if (parser.isSet(rigNamesOpt)) {
+        const std::string choice = parser.value(rigNamesOpt).toStdString();
+        // Validated against the files that actually ship, not a hard-coded
+        // list: a table added under data/rigs/ becomes a valid choice without
+        // touching this, and a typo names what IS available instead of
+        // silently falling back to "native" and posing nothing.
+        if (choice != "native" &&
+            !std::filesystem::exists(dataDir() / "rigs" / (choice + "_retarget.json"))) {
+            std::fprintf(stderr, "unknown --rig-names %s; available: native", choice.c_str());
+            // The non-throwing overload: this is already the error path, and a
+            // data directory that is missing or unreadable must print the list
+            // it can rather than throw out of argument parsing.
+            std::error_code ec;
+            for (const auto& entry : std::filesystem::directory_iterator(dataDir() / "rigs", ec)) {
+                const std::string stem = entry.path().stem().string();
+                if (stem.ends_with("_retarget"))
+                    std::fprintf(stderr, ", %s", stem.substr(0, stem.size() - 9).c_str());
+            }
+            std::fprintf(stderr, "\n");
+            return 1;
+        }
+        rigNamesRef() = choice;
     }
 
     if (parser.isSet(symmetryOpt)) {

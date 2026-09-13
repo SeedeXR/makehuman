@@ -2821,9 +2821,38 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
          the other three checks pass on an elbow mapped above a shoulder. This
          promotes to a gate what the Mixamo table's provenance had only claimed
          in prose.
-      3. `--rig-names mixamo|makehuman1|native` applied on IMPORT, proven by a
-         walk that poses the character -- `bonesDrivenBy` goes 0 -> non-zero
-         and the frames stop being identical.
+      3. ~~`--rig-names mixamo|makehuman1|native` applied on IMPORT~~ **DONE**:
+         `mh::rig::retargetJoints` (`include/makehuman/rig/RetargetMap.h`)
+         renames a `BvhFile`'s joints through a table, in place, and reports how
+         many it renamed. That is the WHOLE of retargeting on import --
+         everything downstream matches a BVH joint to a bone by identical name,
+         so making the file say `shoulder01.L` where it said `UpArm_L` is all it
+         takes, and no second matching path exists to drift from the first.
+         `bonesDrivenBy`, `loadBodyPose` and `loadBodyPoseFrame` each take an
+         optional `const RetargetMap*`, defaulted to nullptr so every existing
+         caller is unchanged (pinned by its own regression test).
+         `--rig-names native|makehuman1|mixamo` selects it; the choice is
+         validated against the `*_retarget.json` files that actually ship, so a
+         table dropped into `data/rigs/` becomes a valid choice with no code
+         change and a typo names what IS available instead of silently posing
+         nothing. MEASURED end to end on `walks/walk1.bvh` (14 frames):
+         `bonesDrivenBy` **0 -> 59**; untargeted, frames 0 and 7 export
+         **0 of 14,444** differing vertices (every bone left at identity), and
+         with the table **14,444 of 14,444**. RENDERED and looked at: frames 0
+         and 7 are proper mirror phases of a stride, upright, no inverted
+         joints. The "drives 0 of 179 bones" warning now also names the flag,
+         and is gated by `FAIL_REGULAR_EXPRESSION` rather than by eye.
+         **Unmapped joints are LEFT ALONE rather than dropped** -- dropping one
+         would renumber every `parent` index in the file.
+         **A decorative gate was caught here and fixed**: the first end-site
+         test used the shipped table, which names no `_end` joint, so deleting
+         the end-site guard left the whole suite green. Rewritten to build a
+         table that deliberately names an end site; the mutation now kills it.
+         **Still open, and NOT what this chunk claimed**: the MakeHuman 1.x rest
+         pose and this port's authored A-pose are not the same, so the arms sit
+         slightly differently from the source animation. Renaming is correct;
+         rest-pose compensation is a separate question and nothing here pretends
+         to solve it.
       4. The same selector on EXPORT, across every skeleton-carrying format
          (BVH, glTF/GLB, FBX, DAE, USD).
       5. Only then the `AnimationLibrary` tab, which by that point really is

@@ -3,6 +3,7 @@
 
 #include "makehuman/foundation/Transform.h"
 #include "makehuman/io/BvhReader.h"
+#include "makehuman/rig/RetargetMap.h"
 #include "makehuman/rig/Skeleton.h"
 
 #include <expected>
@@ -195,14 +196,21 @@ struct PoseUnitsError {
 /// cannot tell "drove nothing" from "drove a neutral pose".
 ///
 /// Reads @p path, so call it once per pose rather than per frame.
-[[nodiscard]] std::expected<size_t, PoseUnitsError> bonesDrivenBy(const std::filesystem::path& path,
-                                                                  const Skeleton& skeleton);
+///
+/// @param names an optional table renaming the file's joints before the match
+///        (`retargetJoints`). nullptr is the old behaviour -- the file's own
+///        names, matched literally.
+[[nodiscard]] std::expected<size_t, PoseUnitsError> bonesDrivenBy(
+    const std::filesystem::path& path, const Skeleton& skeleton,
+    const RetargetMap* names = nullptr);
 
 [[nodiscard]] std::expected<std::vector<Mat4>, PoseUnitsError> loadBodyPoseFrame(
-    const std::filesystem::path& path, const Skeleton& skeleton, size_t frame);
+    const std::filesystem::path& path, const Skeleton& skeleton, size_t frame,
+    const RetargetMap* names = nullptr);
 
 [[nodiscard]] std::expected<std::vector<Mat4>, PoseUnitsError> loadBodyPose(
-    const std::filesystem::path& path, const Skeleton& skeleton);
+    const std::filesystem::path& path, const Skeleton& skeleton,
+    const RetargetMap* names = nullptr);
 
 /// Layers @p overlay's transforms for @p bones onto @p base, leaving the rest
 /// of @p base alone. This is what puts a facial expression on a posed body.

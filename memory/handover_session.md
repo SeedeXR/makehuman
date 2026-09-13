@@ -4,6 +4,84 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-14 (eighty-ninth) — Session · **The shipped walks start walking**
+
+*2026-09-14 — third of the five chunks the owner's rig-naming decision implies.*
+
+### What this is
+`mh::rig::retargetJoints` (`include/makehuman/rig/RetargetMap.h`,
+`src/rig/RetargetMap.cpp`) renames a `BvhFile`'s joints through a retarget
+table, in place, and returns how many it renamed. `bonesDrivenBy`,
+`loadBodyPose` and `loadBodyPoseFrame` each gained an optional
+`const RetargetMap*`, defaulted to nullptr. `--rig-names
+native|makehuman1|mixamo` is the chooser.
+
+Renaming is the WHOLE of retargeting on import, and that is the design point:
+everything downstream matches a BVH joint to a bone by IDENTICALLY the same
+name, so making the file say `shoulder01.L` where it said `UpArm_L` is all it
+takes. No second matching path was added that could drift from the first.
+
+### Measured end to end, not asserted
+On `data/animations/walks/walk1.bvh` (14 frames, 75 joints):
+* `bonesDrivenBy` goes **0 -> 59**.
+* Untargeted, frames 0 and 7 export **0 of 14,444** differing vertices -- every
+  bone left at identity, which is the broken state this chunk ends, now pinned
+  as its own regression test so a change that "fixes" it elsewhere is visible.
+* With the table, **14,444 of 14,444** differ, both between frames and against
+  the untargeted export.
+* The "drives 0 of 179 bones" warning disappears, and now names the flag when
+  it does fire. Gated by `FAIL_REGULAR_EXPRESSION`, not by eye.
+
+### Rendered and looked at
+Four frames rendered with `--rig-names makehuman1`. Frames 0 and 7 are proper
+mirror phases of a stride -- left leg forward against right leg forward, arms
+swinging opposite -- upright, with no inverted joints. The untargeted render is
+the A-pose, unchanged.
+
+**Not claimed**: the MakeHuman 1.x rest pose and this port's authored A-pose are
+not the same, so the arms sit slightly differently from the source animation.
+Renaming is correct; rest-pose compensation is a separate question and nothing
+here solves it. Recorded in `memory/todo.md` rather than left to be rediscovered.
+
+### A decorative gate, caught by mutating it
+The first end-site test ran the SHIPPED table, which names no `_end` joint --
+so deleting the end-site guard from `retargetJoints` left the entire suite
+green. The test was measuring nothing. Rewritten to build a table that
+deliberately names one of walk1's 16 end sites; the same mutation now kills it.
+
+Five mutations, five kills, each restored from a scratchpad copy (never
+`git checkout --`):
+* **M1** drop the end-site guard -- survived at first, which is how the
+  decorative test was found; kills after the rewrite.
+* **M2** rename only the first match; **M3** rename source onto source (a
+  no-op rename with the right count);
+* **M4** force `retargetTable()` to nullptr -- caught only by the new
+  app-level tests, which is why they exist;
+* **M5** drop the `--rig-names` validation -- caught by the unknown-value test.
+
+### Design notes worth keeping
+* Unmapped joints are LEFT ALONE, not dropped: dropping one renumbers every
+  `parent` index in the file. The 16 `__` connectors stay as they were and
+  simply drive nothing, which is what they did before.
+* `--rig-names` is validated against the `*_retarget.json` files that actually
+  ship, so a table dropped into `data/rigs/` becomes a valid choice with no
+  code change, and a typo names what IS available rather than falling back to
+  "native" and posing nothing.
+* Choosing the WRONG table is pinned as a near no-op: the Mixamo and MakeHuman
+  1.x tables share exactly 5 source names (`Hips`, `Spine1`, `Spine2`, `Neck`,
+  `Head`), so `--rig-names mixamo` on a 1.x file drives 5 bones, not 59. If a
+  future table edit widens that overlap, the wrong choice starts producing a
+  torso that moves while the limbs do not -- far harder to notice than nothing
+  moving at all.
+
+### Next
+Sequence item 4: the same selector on EXPORT, across every skeleton-carrying
+format (BVH, glTF/GLB, FBX, DAE, USD). Then item 5, the `AnimationLibrary` tab.
+`tests/unit/test_pose_frame.cpp`'s identity test still passes -- it pins the
+UNTARGETED path, which this chunk deliberately left alone.
+
+---
+
 ## 2026-09-13 (eighty-eighth) — Session · **The old MakeHuman names get a table**
 
 *2026-09-13 — second of the five chunks the owner's rig-naming decision implies.*
