@@ -11,6 +11,7 @@ add_executable(mh_tests
     unit/test_facs.cpp
     unit/test_save_expression.cpp
     unit/test_pose_frame.cpp
+    unit/test_makehuman1_retarget.cpp
     unit/test_retarget_map.cpp
     unit/test_scalp.cpp
     unit/test_surface_walk.cpp

@@ -2800,7 +2800,27 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
          65 also exist in `default.mhskel` (the other 16 are the superset-only
          bones the provenance note describes). `_provenance` is deliberately
          not read; it documents generation and feeds nothing.
-      2. Author the MakeHuman 1.x table against `walk1.bvh`'s 75 joints.
+      2. ~~Author the MakeHuman 1.x table against `walk1.bvh`'s 75 joints.~~
+         **DONE**: `tools/makehuman1_mapping.py` emits
+         `data/rigs/makehuman1_retarget.json`, read by the same
+         `loadRetargetMap`. MEASURED: walk1.bvh names **75** joints; 16 are the
+         `__`-prefixed zero-length connectors the MakeHuman 1.x exporter
+         inserts, leaving **59** real joints, and all 59 are mapped. Every
+         target is a real bone of `mixamo_superset` (179) and the table is
+         injective. Targets were NOT invented here -- each reuses the bone
+         `mixamo_retarget.json` already uses for the same anatomical role
+         (`Clavicle_L` and `LeftShoulder` -> `clavicle.L`; `UpArm_L` and
+         `LeftArm` -> `shoulder01.L`; `Toe_L` and `LeftToeBase` -> `ball.L`).
+         The 16 connectors are deliberately unmapped: no oracle names them, and
+         a mis-mapped metacarpal twists a finger where an unmapped one loses a
+         joint that barely moves. **The descent test is the one that earns its
+         keep**: it walks walk1's OWN hierarchy and requires each mapped
+         joint's target to descend from its nearest mapped ancestor's target.
+         Mutation M1 (swap the `UpArm_L`/`LoArm_L` targets) fails ONLY that
+         test -- both targets stay real bones and the table stays injective, so
+         the other three checks pass on an elbow mapped above a shoulder. This
+         promotes to a gate what the Mixamo table's provenance had only claimed
+         in prose.
       3. `--rig-names mixamo|makehuman1|native` applied on IMPORT, proven by a
          walk that poses the character -- `bonesDrivenBy` goes 0 -> non-zero
          and the frames stop being identical.

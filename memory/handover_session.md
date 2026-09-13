@@ -4,6 +4,78 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-13 (eighty-eighth) — Session · **The old MakeHuman names get a table**
+
+*2026-09-13 — second of the five chunks the owner's rig-naming decision implies.*
+
+### What this is
+`tools/makehuman1_mapping.py` emits `data/rigs/makehuman1_retarget.json`, read
+by the `loadRetargetMap` the previous chunk shipped. The shipped
+`data/animations/**/*.bvh` are MakeHuman 1.x exports: they name joints of the
+OLD MakeHuman skeleton and match **0** bones of either rig this port ships, so
+`--pose walk1.bvh` leaves the character at rest and `bonesDrivenBy` reports
+"drives 0 of 179 bones". This table is what will make them usable.
+
+### Measured, not assumed
+* walk1.bvh names **75** joints. 16 are the `__`-prefixed zero-length
+  connectors the MakeHuman 1.x exporter inserts; **59** are real joints, and
+  all 59 are mapped.
+* Every target is a real bone of `mixamo_superset` (179 bones). The table is
+  injective.
+* No target was invented here. Each reuses the bone `mixamo_retarget.json`
+  already uses for the same anatomical role — `Clavicle_L` and Mixamo
+  `LeftShoulder` are the same bone, so both map to `clavicle.L`; `UpArm_L` and
+  `LeftArm` both map to `shoulder01.L`; `Toe_L` and `LeftToeBase` both map to
+  `ball.L`. That inherits a correspondence somebody already checked.
+* The 16 connectors are deliberately unmapped, recorded in the generator's
+  docstring so the next reader knows it was a decision. No oracle names them;
+  a mis-mapped metacarpal twists a finger, an unmapped one loses a joint that
+  barely moves.
+
+### The descent test is the one that earns its keep
+Three of the four TEST_CASEs (`tests/unit/test_makehuman1_retarget.cpp`) check
+coverage, real bones and injectivity. A table can pass all three and still be
+anatomical nonsense — an elbow mapped above a shoulder is made of real bones
+and is perfectly injective. The fourth walks **walk1's own BVH hierarchy** and
+requires each mapped joint's target to descend from its nearest mapped
+ancestor's target, skipping the unmapped connectors.
+
+Five mutations, five kills, restored from a scratchpad copy each time (never
+`git checkout --`):
+* **M1** swap the `UpArm_L`/`LoArm_L` targets — fails **only** the descent
+  test. This is the proof the other three are not enough.
+* **M2** a target that is not a bone; **M3** two sources onto one bone;
+* **M4** a connector mapped; **M5** a joint dropped.
+
+The GATE was mutated too, not only the data: building the descent test's parent
+map empty made it fail 58 assertions rather than pass vacuously, so
+`ancestorOf` fails closed.
+
+This promotes to a gate what the Mixamo table's provenance had claimed only in
+prose.
+
+### Review finding on own diff, fixed before the gate
+The descent test looked up each bone with `std::find_if` and **no
+`<algorithm>` include** — it compiled only through a transitive one, where
+6/6 files in `src/` that use `<algorithm>` names include it. Replaced with a
+name -> parent-name map built once: no missing include, and O(1) per hop
+instead of rescanning 179 bones. M1 was re-run against the rewrite and still
+kills it.
+
+### Gate
+Four presets green at **1158/1158** (debug, release, ASan, TSan), no
+regression. clang-format clean under CI's exact command. SonarQube: waited for
+`api/ce/task` SUCCESS, gate **OK**, **0** open issues.
+
+### Next
+Sequence item 3: `--rig-names mixamo|makehuman1|native` applied on IMPORT,
+proven by `bonesDrivenBy` going 0 -> non-zero for walk1 and the frames ceasing
+to be identical. Note `tests/unit/test_pose_frame.cpp`'s identity test is
+written to FAIL the moment content is retargeted — that is the signal to
+revisit it, not a regression.
+
+---
+
 ## 2026-09-13 (eighty-seventh) — Session · **The retarget table gets a reader**
 
 *2026-09-13 — first of the five chunks the owner's rig-naming decision implies.*
