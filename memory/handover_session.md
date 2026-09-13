@@ -4,6 +4,45 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-13 (eighty-fourth) — Session · **The binder gets a caller, and three copies become one**
+
+*2026-09-13 — the third primitive to need a CLI surface, and the last one.*
+
+### What this is
+`bindToSurface` shipped with no caller but its own tests — the same gap
+`--spread-roots` filled for `spreadOverSurface` and `--scalp-path` for
+`pathOverSurface`. `--bind-points <file>` reads "x y z" per line and prints the
+`.mhclo` vertex record verbatim, so the Python generator can author geometry
+and emit it without reimplementing barycentric binding.
+
+Verified the way the generator will use it rather than by assertion alone: a
+Python consumer binds three authored points, refits each against the base mesh
+by hand, and lands within **7e-6 dm** of where it authored them — with offsets
+<= 0.12 dm, which independently confirms the binder chose NEARBY triangles.
+
+### Three mutations, three kills
+* Binding against the HEIGHT-ONLY region — caught by the index bound
+  (226..12157), the same class of bug that cost `00946808`.
+* A weight of 2.5 — caught by the 0..1 bound. This is the one that matters:
+  `fitProxy` does no clamping, so an out-of-range weight silently extrapolates
+  a vertex somewhere nobody authored, which no vertex count would reveal.
+* A malformed line accepted rather than refused.
+
+### Review: three copies of the region preamble became one
+`--spread-roots`, `--scalp-path` and `--bind-points` had each grown their own
+load-mesh + scalp + error-check block. Collapsed into `loadBodyScalp()`. The
+line saving is incidental; the reason is that the REGION DEFINITION must exist
+once, because height alone readmits the helper-hair envelope. Re-ran the region
+mutation against the extracted version: it now kills SIX tests across all three
+flags at once, where before each flag guarded its own copy.
+
+### Next
+The cornrow generator itself: rows routed with `--scalp-path`, ridge geometry
+authored in Python and bound with `--bind-points`. Every primitive it needs is
+now reachable. Collision for hanging styles is still untouched.
+
+---
+
 ## 2026-09-13 (eighty-third) — Session · **Cornrows are blocked on resolution, so bind arbitrary points**
 
 *2026-09-13 — the measurement that decided the next capability.*

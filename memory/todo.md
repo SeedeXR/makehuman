@@ -3734,6 +3734,20 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         was never entered; without it the weights come back **3 and -2**); for
         "nearest", the OFFSET MAGNITUDE (the farthest-triangle mutation gives
         0.939 dm against an authored standoff of 0.3).
+      - **DONE: `--bind-points <file>`** makes `bindToSurface` reachable from the
+        generator, printing one `.mhclo` vertex record per line --
+        `v1 v2 v3 w1 w2 w3 dx dy dz` -- so Python can author geometry and emit
+        it directly. Verified end to end the way the generator uses it:
+        authored points refit to within **7e-6 dm** with offsets <= 0.12 dm,
+        which also shows the binder picked NEARBY triangles. Three mutations,
+        three kills; the one that matters is a weight of 2.5 caught by the
+        0..1 bound, because `fitProxy` does not clamp and an out-of-range
+        weight extrapolates a vertex to a position nobody authored.
+      - The three scalp flags now share ONE `loadBodyScalp()`. Not for the line
+        count: a height-only region silently readmits the `helper-hair`
+        envelope, which is the bug that cost `00946808`, so that definition must
+        exist exactly once. Reverting it now kills **six** tests across all
+        three flags at once.
       - Hanging styles additionally need collision: locs rooted on the forehead
         fall straight over the eyes. An outward horizontal bias helps and is not
         enough; strands need to be pushed outside the head silhouette.

@@ -18,6 +18,7 @@
 #include "makehuman/core/SkinTone.h"
 #include "makehuman/core/SliderLayout.h"
 #include "makehuman/core/Subdivider.h"
+#include "makehuman/core/SurfaceBind.h"
 #include "makehuman/core/SurfaceWalk.h"
 #include "makehuman/core/Symmetry.h"
 #include "makehuman/core/Target.h"
@@ -322,6 +323,31 @@ std::vector<uint32_t> bodyScalp(const mh::core::Mesh& mesh) {
         if (onBody[v] != 0U && coords[v].y > 7.75F) scalp.push_back(v);
     }
     return scalp;
+}
+
+/// The base mesh and its body scalp, or nothing with the reason printed.
+///
+/// Three flags need exactly this -- `--spread-roots`, `--scalp-path` and
+/// `--bind-points` -- and the region's correctness is the whole point: height
+/// alone readmits the `helper-hair` envelope that `memory/todo.md` says never
+/// to grow hair from, so it must be defined ONCE.
+struct ScalpMesh {
+    mh::core::Mesh mesh;
+    std::vector<uint32_t> scalp;
+};
+
+std::optional<ScalpMesh> loadBodyScalp() {
+    auto base = mh::core::loadObj(dataDir() / "3dobjs" / "base.obj");
+    if (!base) {
+        std::fprintf(stderr, "cannot read the base mesh: %s\n", base.error().message().c_str());
+        return std::nullopt;
+    }
+    auto scalp = bodyScalp(*base);
+    if (scalp.empty()) {
+        std::fprintf(stderr, "the base mesh has no \"body\" scalp above the cranium\n");
+        return std::nullopt;
+    }
+    return ScalpMesh{std::move(*base), std::move(scalp)};
 }
 
 /// The `--pose-frame` index, or none. Set once at start-up.
@@ -2080,6 +2106,14 @@ int main(int argc, char** argv) {
                        "or a cornrow IS this path: --spread-roots says where hair starts, "
                        "this says which way it runs. Both ends must be on the body scalp."),
         QStringLiteral("from,to"));
+    const QCommandLineOption bindPointsOpt(
+        QStringLiteral("bind-points"),
+        QStringLiteral("Bind authored points to the body scalp and print one .mhclo vertex "
+                       "record each -- \"v1 v2 v3 w1 w2 w3 dx dy dz\" -- then exit. The file "
+                       "gives one \"x y z\" per line. This is what lets a style carry geometry "
+                       "the base mesh does not have: the scalp is only ten vertices across, so "
+                       "cornrows cannot be cut from base vertices alone."),
+        QStringLiteral("file"));
     const QCommandLineOption poseFrameOpt(
         QStringLiteral("pose-frame"),
         QStringLiteral("Which frame of a multi-frame --pose .bvh to stand in, zero-based. "
@@ -2315,6 +2349,7 @@ int main(int argc, char** argv) {
     parser.addOption(listPoseUnitsOpt);
     parser.addOption(spreadRootsOpt);
     parser.addOption(scalpPathOpt);
+    parser.addOption(bindPointsOpt);
     parser.addOption(poseFrameOpt);
     parser.addOption(expressionOpt);
     parser.addOption(facsOpt);
@@ -2646,11 +2681,6 @@ int main(int argc, char** argv) {
                          parser.value(spreadRootsOpt).toStdString().c_str());
             return 1;
         }
-        const auto base = mh::core::loadObj(dataDir() / "3dobjs" / "base.obj");
-        if (!base) {
-            std::fprintf(stderr, "cannot read the base mesh: %s\n", base.error().message().c_str());
-            return 1;
-        }
         // The cranium cap of the BODY: every body vertex above the cranium
         // centre's height, which `memory/todo.md` measured at (0, 7.75, 0.50).
         //
@@ -2662,14 +2692,13 @@ int main(int argc, char** argv) {
         // face" -- so roots taken from it are roots on the very geometry the
         // write-up says never to grow hair from. Measured: the body cap is ONE
         // connected component, while the height-only region is 18.
-        const auto scalp = bodyScalp(*base);
-        if (scalp.empty()) {
-            std::fprintf(stderr, "the base mesh has no \"body\" scalp above the cranium\n");
-            return 1;
-        }
-        const auto coords = base->coord();
+        const auto loaded = loadBodyScalp();
+        if (!loaded) return 1;
+        const auto& base  = loaded->mesh;
+        const auto& scalp = loaded->scalp;
+        const auto coords = base.coord();
         printScalpVertices(coords,
-                           mh::core::spreadOverSurface(*base, scalp, static_cast<size_t>(wanted)));
+                           mh::core::spreadOverSurface(base, scalp, static_cast<size_t>(wanted)));
         return 0;
     }
 
@@ -2691,16 +2720,10 @@ int main(int argc, char** argv) {
                          parser.value(scalpPathOpt).toStdString().c_str());
             return 1;
         }
-        const auto base = mh::core::loadObj(dataDir() / "3dobjs" / "base.obj");
-        if (!base) {
-            std::fprintf(stderr, "cannot read the base mesh: %s\n", base.error().message().c_str());
-            return 1;
-        }
-        const auto scalp = bodyScalp(*base);
-        if (scalp.empty()) {
-            std::fprintf(stderr, "the base mesh has no \"body\" scalp above the cranium\n");
-            return 1;
-        }
+        const auto loaded = loadBodyScalp();
+        if (!loaded) return 1;
+        const auto& base  = loaded->mesh;
+        const auto& scalp = loaded->scalp;
         // Refused rather than routed around. `pathOverSurface` would return an
         // empty path for an off-scalp end, and a silent empty result reads to
         // the generator as "these two are simply not connected" -- which is a
@@ -2711,10 +2734,56 @@ int main(int argc, char** argv) {
                 return 1;
             }
         }
-        const auto coords = base->coord();
+        const auto coords = base.coord();
         printScalpVertices(coords,
-                           mh::core::pathOverSurface(*base, scalp, static_cast<uint32_t>(from),
+                           mh::core::pathOverSurface(base, scalp, static_cast<uint32_t>(from),
                                                      static_cast<uint32_t>(to)));
+        return 0;
+    }
+
+    // Binding authored points, so a generator can carry geometry the base mesh
+    // does not have. `bindToSurface` is the inverse of `fitProxy`, and the
+    // record printed here is exactly what a .mhclo vertex line holds.
+    if (parser.isSet(bindPointsOpt)) {
+        const QString path = parser.value(bindPointsOpt);
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            std::fprintf(stderr, "cannot read the points file \"%s\"\n",
+                         path.toStdString().c_str());
+            return 1;
+        }
+        const auto loaded = loadBodyScalp();
+        if (!loaded) return 1;
+        const auto& base  = loaded->mesh;
+        const auto& scalp = loaded->scalp;
+        QTextStream in(&file);
+        while (!in.atEnd()) {
+            const QString line = in.readLine().trimmed();
+            if (line.isEmpty() || line.startsWith(QLatin1Char('#'))) continue;
+            const QStringList parts = line.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+            bool okX                = false;
+            bool okY                = false;
+            bool okZ                = false;
+            const float x           = parts.size() == 3 ? parts[0].toFloat(&okX) : 0.0F;
+            const float y           = parts.size() == 3 ? parts[1].toFloat(&okY) : 0.0F;
+            const float z           = parts.size() == 3 ? parts[2].toFloat(&okZ) : 0.0F;
+            if (!okX || !okY || !okZ) {
+                std::fprintf(stderr, "--bind-points wants three numbers per line, got \"%s\"\n",
+                             line.toStdString().c_str());
+                return 1;
+            }
+            const auto b = mh::core::bindToSurface(base, scalp, mh::foundation::Vec3{x, y, z});
+            if (!b) {
+                std::fprintf(stderr, "no scalp triangle to bind (%s) to\n",
+                             line.toStdString().c_str());
+                return 1;
+            }
+            std::printf("%u %u %u %.5f %.5f %.5f %.5f %.5f %.5f\n", b->refVerts[0], b->refVerts[1],
+                        b->refVerts[2], static_cast<double>(b->weights[0]),
+                        static_cast<double>(b->weights[1]), static_cast<double>(b->weights[2]),
+                        static_cast<double>(b->offset.x), static_cast<double>(b->offset.y),
+                        static_cast<double>(b->offset.z));
+        }
         return 0;
     }
 

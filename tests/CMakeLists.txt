@@ -1861,6 +1861,28 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_scalp_path_not_a_number PROPERTIES
         PASS_REGULAR_EXPRESSION "--scalp-path wants <from>,<to>")
 
+    # Binding authored points, so the style generator can reach `bindToSurface`.
+    # It is Python and cannot call mh::core, and cornrows need authored geometry
+    # because the scalp is only ten vertices across -- identity binding allows
+    # five single-vertex rows, which renders as a corrugated cap.
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/points.txt
+         "0.0 8.60 0.50\n0.0 7.90 1.40\n0.30 8.40 0.60\n")
+    add_test(NAME app_bind_points COMMAND ${CMAKE_COMMAND}
+             -DPOINTS=${CMAKE_CURRENT_BINARY_DIR}/points.txt -DEXPECT=3
+             -DAPP=$<TARGET_FILE:makehuman>
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_bindings.cmake)
+    add_test(NAME app_bind_points_missing_file COMMAND makehuman --bind-points /nope/nope.txt)
+    set_tests_properties(app_bind_points_missing_file PROPERTIES
+        PASS_REGULAR_EXPRESSION "cannot read the points")
+    add_test(NAME app_bind_points_missing_file_exits_nonzero
+             COMMAND makehuman --bind-points /nope/nope.txt)
+    set_tests_properties(app_bind_points_missing_file_exits_nonzero PROPERTIES WILL_FAIL TRUE)
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/bad_points.txt "0.0 8.6\n")
+    add_test(NAME app_bind_points_malformed COMMAND makehuman
+             --bind-points ${CMAKE_CURRENT_BINARY_DIR}/bad_points.txt)
+    set_tests_properties(app_bind_points_malformed PROPERTIES
+        PASS_REGULAR_EXPRESSION "wants three numbers per line")
+
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/punit)
 
     # Setting a face pose unit DIRECTLY -- the reference's expression mixer is
