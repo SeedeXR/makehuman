@@ -4,6 +4,156 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-13 (eighty-fifth) — Session · **The scalp was the cranium cap, and Blender said so**
+
+*2026-09-13 — a region that had been wrong at both ends since it was written.*
+
+### What this is
+`mh::core::hairBearingScalp` (`include/makehuman/core/Scalp.h`,
+`src/core/Scalp.cpp`): the body-group vertices at or above the hairline
+`-19 + 31*cos(azimuth)` degrees about the cranium centre (0, 7.75, 0.50).
+`--spread-roots`, `--scalp-path` and `--bind-points` all walk it, and
+`bodyScalp` is gone from `src/app/main.cpp`.
+
+The hairline formula had lived only in `tools/make_hair_styles.py`, and a
+comment in the walk tests argued the trigonometry "belongs to the style
+generator, not to this primitive". Cornrows disprove that: a braid is ROUTED
+over the region by `pathOverSurface`, so the walk needs the region before any
+style exists, and the region is anatomy rather than style.
+
+### How it was found: four cameras
+`--render` is front-only. Rendering the cornrow cage on the base head from
+top, side, front and back in headless Blender settled in one pass what two
+fires of reasoning had not:
+
+* The six rows were never converging — the front camera was seeing them
+  end-on. Both theories advanced last fire were already refuted by
+  measurement; this confirmed it.
+* Every row's FRONT end sat 3 to 11 degrees BELOW the hairline, on the
+  forehead; every BACK end 52 to 57 degrees ABOVE the nape. Both ends wrong,
+  in opposite directions, and both because the region was the cap.
+
+MEASURED: the cap is 157 vertices, the hair-bearing region 237, and the region
+is not the cap plus a nape — it trades **29 forehead vertices** for **109 nape
+vertices**. One connected component. An independent Python Dijkstra finds the
+same 237 and the same 15-vertex, 3.1145 dm midline row 983 -> 941.
+
+### A gate that had gone decorative without anyone touching it
+`check_roots.cmake` caught the classic `coords[i]`-instead-of-`coords[picks[i]]`
+mutation with `y > 7.75`. That worked only because the region was the cap: the
+new region reaches y=6.99, and MEASURED, the first 157 vertices of the mesh all
+sit at y 7.29..7.36 — inside **any** band wide enough to admit the nape.
+Widening the band would have left a gate that no longer discriminates.
+
+Replaced with identity: the coordinates printed must equal the base mesh's own
+text for the index printed. The app prints `%.4f` and every `base.obj`
+coordinate is written to four decimals, so it is an exact string compare with
+nothing to tune. PROVEN load-bearing: a binary that prints the *same* region
+vertex's coordinates on every line — inside the bounding box, distinct indices,
+perfectly deterministic — passes all 14 region tests without it, and fails 6
+with it.
+
+### Mutations
+* Region back to the cranium cap — 4 tests, across core and both app flags.
+  (The first attempt at this mutation did not compile under `-Werror`; a build
+  failure is not a kill, so it was redone in a form that builds.)
+* Body-group restriction dropped — 3 tests, including connectivity.
+* Hairline flattened to a constant — 3 tests.
+* App prints coords at the loop index — 5 tests.
+* App prints one vertex's coords on every line — 6 tests, identity check only.
+* The generator's hairline drifted one degree, then the application's — the new
+  `--check` region comparison catches the second (237 vs 233, 4 differ). The
+  first is caught earlier by the asset-freshness check, so only the C++ drift
+  exercises the new gate.
+
+### Testing the guard, not just the happy path
+The new `--check` comparison shells out to the application, so its failure
+modes were driven for real rather than reasoned about: a MISSING binary and a
+binary that EXITS NON-ZERO both skip cleanly and return 0, which is what keeps
+a missing tool from reddening CI's release/ASan/TSan jobs (they never build
+`build/macos-arm64-debug/`, which is where `app_binary()` looks).
+
+Driving the third case found a defect before it shipped: an app that prints
+GARBAGE crashed with an unhandled `ValueError` traceback. Exit 1 meant garbage
+never read as agreement, but a gate that dies with a stack trace instead of a
+diagnosis is the same "a gate is code" failure this session keeps finding --
+and the obvious fix is the wrong one, because adding `ValueError` to the caught
+tuple would make garbage SKIP and return 0, turning a broken application into a
+pass. It now fails loudly with a message instead.
+
+The resolution keeps the two kinds of failure apart, which is the whole point:
+a MISSING or failing application still SKIPS and returns 0, because the
+release/ASan/TSan jobs never build `build/macos-arm64-debug` and a missing tool
+must not redden a suite it says nothing about; output that cannot be READ
+returns 1, because the application ran and answered nonsense. Verified by
+driving all four: garbage -> 1 with a diagnosis and no traceback; empty output
+-> 1 via the set comparison (237 against 0); missing binary -> 0; real binary
+-> 0 and the regions agree at 237.
+
+### Also
+`--check` now compares the generator's region against the application's
+`--spread-roots 999` dump, so the two copies of the hairline cannot drift
+silently. Unshipped styles are written to `build/hair/`, not `data/`:
+`AssetIndex::build` scans `data/`, so a half-finished cornrow cage there became
+a wearable and turned the asset-index test red on a working copy that had
+merely RUN the generator.
+
+### A shortcut I tried, and the measurement that killed it
+To avoid re-running a 40-minute four-preset gate for a two-line COMMENT fix, I
+reasoned that comments never reach the object file and that a line-count-neutral
+edit leaves Catch2's `__LINE__` values alone, so the test binary would be
+byte-identical and the existing gate would still cover it. I recorded the gated
+binary's SHA-256 beforehand to prove it.
+
+It does not hold. After the edit the hash differed -- and, decisively, restoring
+the ORIGINAL source and rebuilding produced a THIRD hash. **This build is not
+byte-reproducible across a relink**, so the comment was never the cause and the
+whole method was invalid from the start. It would have "proved" nothing about
+any edit.
+
+The gate was re-run in full instead. Worth remembering as a rule: a gate result
+belongs to the tree that was built for it, and no argument about what the
+compiler "must" emit substitutes for running it again.
+
+### A third decorative gate, found while routing the next chunk
+`memory/taskviews.md` is audited by `tools/audit_taskviews.py`, which checks the
+bucket TABLE and, since an earlier session, each view's bucket against evidence
+in `src/`. It did not check the `### <bucket> (N)` headings the table sits
+above -- so only those could rot, and BOTH had:
+
+* `### todo (8)` still named `ViewerTaskView`, `MouseActionsTaskView` and
+  `ExpressionMixerTaskView` after all three moved to `covered`. The audited
+  table said 5 the whole time and was right: 7+20+5+3+16 is 51, 8 would be 54.
+* `### covered (17)` never gained those same three, so it stayed three behind
+  the audited 20.
+
+That matters because a reader picking the next view to port reads a SECTION,
+not the table -- this chunk's routing nearly started on views already covered.
+Both corrected, and the auditor now compares every section heading with the
+live bucket counts. Only the heading number is compared: the sections are prose
+that legitimately mentions views from other buckets while explaining a move, so
+name-matching there fails on correct text.
+
+MUTATION-TESTED, including against itself: reintroducing `todo (8)` fails,
+reintroducing `covered (17)` fails, and the SAME mutation against the auditor
+WITHOUT the new check passes -- which is the proof the check is load-bearing
+rather than a second spelling of the table check.
+
+Two edge mutations besides: removing a heading fails, and a MALFORMED heading
+(`### blocked (3) for now`) fails rather than being skipped. That second one is
+the design point -- a regex that silently skipped what it could not parse would
+leave that section unaudited for ever, which is how a gate quietly stops
+checking. The pattern is anchored, so an unparseable heading drops out of the
+comparison and fails closed.
+
+### Cornrows: routed correctly, still not shipped
+Re-routed over the region they reach the nape (636 vertices; the side render
+shows a full arc from temple over the crown down behind the ear). Banding the
+endpoints by x still collapses the four OUTER rows onto the temples, so most of
+the occiput stays bare — a style problem, not a region one. Not committed.
+
+---
+
 ## 2026-09-13 (eighty-fourth) — Session · **The binder gets a caller, and three copies become one**
 
 *2026-09-13 — the third primitive to need a CLI surface, and the last one.*

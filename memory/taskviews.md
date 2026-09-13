@@ -108,7 +108,7 @@ The views `guimodifier.loadModifierTaskViews` builds from the `*_sliders.json`
 files — Face, Torso, Arms and Legs, Gender, Macro modelling, Body shapes,
 Measure. One view per top-level key, `apps/gui/guimodifier.py:226-232`.
 
-### covered (17)
+### covered (20)
 Not a gap: this port is dockable, so what the reference makes a tab arrives as
 a menu action or as a group in the Assets panel.
 
@@ -126,10 +126,30 @@ Assets-panel groups over helper-cage assets.
 `CustomTargetsTaskView` — `--custom-targets <dir>`, one `custom/<stem>` slider
 per `.target` file a user supplies.
 
-### todo (8)
-`AnimationLibrary`, `ExpressionTaskView`, `ViewerTaskView`, `BackgroundChooser`,
-`MaterialEditorTaskView`, `ExpressionMixerTaskView`, `MouseActionsTaskView`,
-`HelpTaskView`.
+`MouseActionsTaskView`, `ViewerTaskView` and `ExpressionMixerTaskView` — these
+three moved here from `todo` and the prose never gained them, which is why this
+heading said 17 while the audited table said 20. The mouse task is inside
+Settings > Shortcuts by design (`ShortcutsDialog` merges the reference's two
+settings tasks, so a user need not know whether "how do I pan" is a key
+question or a mouse one); the viewer is `mh::ui::ImageViewer`, which every
+render has been shown in since M8; and the mixer is sixty sliders with a Save
+and a Load, which `--pose-unit` (all sixty — `--facs` names only 48),
+`--list-pose-units`, `--save-expression` and `--expression` already cover.
+
+### todo (5)
+`AnimationLibrary`, `BackgroundChooser`, `ExpressionTaskView`, `HelpTaskView`,
+`MaterialEditorTaskView`.
+
+This list said EIGHT until 2026-09-13, and still named `ViewerTaskView`,
+`MouseActionsTaskView` and `ExpressionMixerTaskView` after the auditor had
+moved all three to `covered` above. The summary table said 5 the whole time and
+was right -- 7+20+5+3+16 is 51, while 8 would have made 54. `audit_taskviews.py`
+validates the TABLE and not this prose, so only the prose could drift, which is
+the same shape as the other decorative gates this session found: it checked
+something adjacent to the claim. **Follow-up worth doing: have the auditor
+re-derive this list from its own bucket map**, so the two cannot disagree
+again. Until then the auditor's map in `tools/audit_taskviews.py` is the
+authority and this paragraph is a copy.
 
 `AnimationLibrary` gates only on a skeleton and an active animation
 (`3_libraries_animation.py:150,157`) — `rig/` and `io/BvhReader.h` have both.

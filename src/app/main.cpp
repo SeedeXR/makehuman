@@ -15,6 +15,7 @@
 #include "makehuman/core/Proxy.h"
 #include "makehuman/core/Random.h"
 #include "makehuman/core/RenderMesh.h"
+#include "makehuman/core/Scalp.h"
 #include "makehuman/core/SkinTone.h"
 #include "makehuman/core/SliderLayout.h"
 #include "makehuman/core/Subdivider.h"
@@ -293,58 +294,25 @@ void printScalpVertices(std::span<const mh::foundation::Vec3> coords,
     }
 }
 
-/// The BODY scalp: body-group vertices above the cranium centre's height.
-///
-/// The group restriction is not a refinement, it is the whole correctness of
-/// the region, and two flags need it now. Height alone selects 303 vertices of
-/// which only 157 are body: 138 belong to `helper-hair` and 8 to
-/// `joint-head-2`. `memory/todo.md` is explicit that helper-hair is the wrong
-/// source -- "a long-hair envelope carrying ribbons down over the face" -- so a
-/// height-only region hands out roots and routes paths over the very geometry
-/// the write-up says never to use. Measured: the body cap is ONE connected
-/// component of 157 vertices; the height-only region is EIGHTEEN.
-std::vector<uint32_t> bodyScalp(const mh::core::Mesh& mesh) {
-    std::vector<uint32_t> scalp;
-    const auto body = mesh.findFaceGroup("body");
-    if (!body) return scalp;
-    const auto fvert    = mesh.fvert();
-    const auto fgroup   = mesh.group();
-    const size_t stride = mesh.vertsPerPrimitive();
-    std::vector<uint8_t> onBody(mesh.vertexCount(), 0U);
-    for (size_t f = 0; f < fgroup.size(); ++f) {
-        if (fgroup[f] != *body) continue;
-        for (size_t c = 0; c < stride; ++c) {
-            const uint32_t v = fvert[f * stride + c];
-            if (v < onBody.size()) onBody[v] = 1U;
-        }
-    }
-    const auto coords = mesh.coord();
-    for (uint32_t v = 0; v < coords.size(); ++v) {
-        if (onBody[v] != 0U && coords[v].y > 7.75F) scalp.push_back(v);
-    }
-    return scalp;
-}
-
-/// The base mesh and its body scalp, or nothing with the reason printed.
+/// The base mesh and its hair-bearing scalp, or nothing with the reason printed.
 ///
 /// Three flags need exactly this -- `--spread-roots`, `--scalp-path` and
-/// `--bind-points` -- and the region's correctness is the whole point: height
-/// alone readmits the `helper-hair` envelope that `memory/todo.md` says never
-/// to grow hair from, so it must be defined ONCE.
+/// `--bind-points` -- and the region's correctness is the whole point, so it is
+/// defined ONCE, in `mh::core::hairBearingScalp`.
 struct ScalpMesh {
     mh::core::Mesh mesh;
     std::vector<uint32_t> scalp;
 };
 
-std::optional<ScalpMesh> loadBodyScalp() {
+std::optional<ScalpMesh> loadScalp() {
     auto base = mh::core::loadObj(dataDir() / "3dobjs" / "base.obj");
     if (!base) {
         std::fprintf(stderr, "cannot read the base mesh: %s\n", base.error().message().c_str());
         return std::nullopt;
     }
-    auto scalp = bodyScalp(*base);
+    auto scalp = mh::core::hairBearingScalp(*base);
     if (scalp.empty()) {
-        std::fprintf(stderr, "the base mesh has no \"body\" scalp above the cranium\n");
+        std::fprintf(stderr, "the base mesh has no \"body\" scalp above the hairline\n");
         return std::nullopt;
     }
     return ScalpMesh{std::move(*base), std::move(scalp)};
@@ -2692,7 +2660,7 @@ int main(int argc, char** argv) {
         // face" -- so roots taken from it are roots on the very geometry the
         // write-up says never to grow hair from. Measured: the body cap is ONE
         // connected component, while the height-only region is 18.
-        const auto loaded = loadBodyScalp();
+        const auto loaded = loadScalp();
         if (!loaded) return 1;
         const auto& base  = loaded->mesh;
         const auto& scalp = loaded->scalp;
@@ -2720,7 +2688,7 @@ int main(int argc, char** argv) {
                          parser.value(scalpPathOpt).toStdString().c_str());
             return 1;
         }
-        const auto loaded = loadBodyScalp();
+        const auto loaded = loadScalp();
         if (!loaded) return 1;
         const auto& base  = loaded->mesh;
         const auto& scalp = loaded->scalp;
@@ -2752,7 +2720,7 @@ int main(int argc, char** argv) {
                          path.toStdString().c_str());
             return 1;
         }
-        const auto loaded = loadBodyScalp();
+        const auto loaded = loadScalp();
         if (!loaded) return 1;
         const auto& base  = loaded->mesh;
         const auto& scalp = loaded->scalp;

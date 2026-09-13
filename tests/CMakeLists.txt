@@ -11,6 +11,7 @@ add_executable(mh_tests
     unit/test_facs.cpp
     unit/test_save_expression.cpp
     unit/test_pose_frame.cpp
+    unit/test_scalp.cpp
     unit/test_surface_walk.cpp
     unit/test_surface_bind.cpp
     unit/test_obj_reader.cpp
@@ -1784,24 +1785,29 @@ if(MH_HAVE_RENDER)
     # are wanted.
     add_test(NAME app_spread_roots COMMAND ${CMAKE_COMMAND}
              -DFLAG=--spread-roots -DARG=24 -DEXPECT=24 -DAPP=$<TARGET_FILE:makehuman>
+             -DBASE=${MH_DATA_DIR}/3dobjs/base.obj
              -P ${CMAKE_CURRENT_SOURCE_DIR}/check_roots.cmake)
-    # Every root is on the cap. MEASURED: the BODY cap holds 157 vertices above
-    # y=7.75, so asking for more than that is clamped rather than repeated.
-    # 303 would mean the region had picked up `helper-hair` (138) and
-    # `joint-head-2` (8) as well -- which is the bug this count pins.
+    # Every root is on the scalp. MEASURED: the hair-bearing region holds 237
+    # body vertices at or above the hairline, so asking for more than that is
+    # clamped rather than repeated. 157 would mean the region had slipped back
+    # to the cranium cap, which stops 50 degrees above the nape; 303 would mean
+    # it had picked up `helper-hair` (138) and `joint-head-2` (8) as well.
     add_test(NAME app_spread_roots_clamped COMMAND ${CMAKE_COMMAND}
-             -DFLAG=--spread-roots -DARG=999 -DEXPECT=157 -DAPP=$<TARGET_FILE:makehuman>
+             -DFLAG=--spread-roots -DARG=999 -DEXPECT=237 -DAPP=$<TARGET_FILE:makehuman>
+             -DBASE=${MH_DATA_DIR}/3dobjs/base.obj
              -P ${CMAKE_CURRENT_SOURCE_DIR}/check_roots.cmake)
     # Deterministic: a style that moved between runs could not be reviewed by
     # looking at it, and the generator would produce a different asset each time.
     add_test(NAME app_spread_roots_deterministic_a COMMAND ${CMAKE_COMMAND}
              -DFLAG=--spread-roots -DARG=24 -DEXPECT=24 -DOUT=${CMAKE_CURRENT_BINARY_DIR}/roots_a.txt
              -DAPP=$<TARGET_FILE:makehuman>
+             -DBASE=${MH_DATA_DIR}/3dobjs/base.obj
              -P ${CMAKE_CURRENT_SOURCE_DIR}/check_roots.cmake)
     set_tests_properties(app_spread_roots_deterministic_a PROPERTIES FIXTURES_SETUP roots_a)
     add_test(NAME app_spread_roots_deterministic_b COMMAND ${CMAKE_COMMAND}
              -DFLAG=--spread-roots -DARG=24 -DEXPECT=24 -DOUT=${CMAKE_CURRENT_BINARY_DIR}/roots_b.txt
              -DAPP=$<TARGET_FILE:makehuman>
+             -DBASE=${MH_DATA_DIR}/3dobjs/base.obj
              -P ${CMAKE_CURRENT_SOURCE_DIR}/check_roots.cmake)
     set_tests_properties(app_spread_roots_deterministic_b PROPERTIES FIXTURES_SETUP roots_b)
     add_test(NAME app_spread_roots_repeatable COMMAND ${CMAKE_COMMAND}
@@ -1833,28 +1839,36 @@ if(MH_HAVE_RENDER)
     # caller but its own tests -- the same gap `--spread-roots` filled for
     # `spreadOverSurface`. Cornrows and partings are paths, and the generator
     # that draws them is Python, so it needs this surface or it needs its own
-    # Dijkstra. ORACLE: an independent Python walk over the body cap makes the
-    # front-to-back midline parting 5192 -> 5379 exactly 13 vertices long,
-    # 2.4893 dm over the surface.
+    # Dijkstra. ORACLE: an independent Python walk over the hair-bearing region
+    # makes the midline row from the front hairline (983, elevation +16.5) to
+    # the nape-most vertex (941, elevation -45.2) exactly 15 vertices long,
+    # 3.1145 dm over the surface -- and finds the same 237-vertex region.
+    #
+    # This test used to route 5192 -> 5379, a pair chosen off the cranium cap:
+    # 5192 sits on the FOREHEAD, below the hairline, and 5379 on the CROWN, 57
+    # degrees short of the nape. Rendering cornrows routed that way in Blender
+    # is what exposed it -- six ridges over the crown with a bare occiput.
     add_test(NAME app_scalp_path COMMAND ${CMAKE_COMMAND}
-             -DFLAG=--scalp-path -DARG=5192,5379 -DEXPECT=13
-             -DFIRST=5192 -DLAST=5379 -DAPP=$<TARGET_FILE:makehuman>
+             -DFLAG=--scalp-path -DARG=983,941 -DEXPECT=15
+             -DFIRST=983 -DLAST=941 -DAPP=$<TARGET_FILE:makehuman>
+             -DBASE=${MH_DATA_DIR}/3dobjs/base.obj
              -P ${CMAKE_CURRENT_SOURCE_DIR}/check_roots.cmake)
     # A path to itself is one vertex, not zero and not an error.
     add_test(NAME app_scalp_path_to_itself COMMAND ${CMAKE_COMMAND}
-             -DFLAG=--scalp-path -DARG=5192,5192 -DEXPECT=1
-             -DFIRST=5192 -DLAST=5192 -DAPP=$<TARGET_FILE:makehuman>
+             -DFLAG=--scalp-path -DARG=983,983 -DEXPECT=1
+             -DFIRST=983 -DLAST=983 -DAPP=$<TARGET_FILE:makehuman>
+             -DBASE=${MH_DATA_DIR}/3dobjs/base.obj
              -P ${CMAKE_CURRENT_SOURCE_DIR}/check_roots.cmake)
     # The refusals. An endpoint off the scalp is the one that matters: vertex 0
     # is a real mesh vertex, just not on the cap, and routing to it would leave
     # the scalp -- the exact thing the region exists to prevent.
-    add_test(NAME app_scalp_path_off_the_scalp COMMAND makehuman --scalp-path 5192,0)
+    add_test(NAME app_scalp_path_off_the_scalp COMMAND makehuman --scalp-path 983,0)
     set_tests_properties(app_scalp_path_off_the_scalp PROPERTIES
         PASS_REGULAR_EXPRESSION "not on the scalp")
     add_test(NAME app_scalp_path_off_the_scalp_exits_nonzero
-             COMMAND makehuman --scalp-path 5192,0)
+             COMMAND makehuman --scalp-path 983,0)
     set_tests_properties(app_scalp_path_off_the_scalp_exits_nonzero PROPERTIES WILL_FAIL TRUE)
-    add_test(NAME app_scalp_path_malformed COMMAND makehuman --scalp-path 5192)
+    add_test(NAME app_scalp_path_malformed COMMAND makehuman --scalp-path 983)
     set_tests_properties(app_scalp_path_malformed PROPERTIES
         PASS_REGULAR_EXPRESSION "--scalp-path wants <from>,<to>")
     add_test(NAME app_scalp_path_not_a_number COMMAND makehuman --scalp-path crown,nape)

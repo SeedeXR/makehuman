@@ -4,12 +4,23 @@
 # `--scalp-path` -- and checks that what it printed is actually on the body
 # scalp, optionally saving the output so two runs can be compared.
 #
-# The y check is THE discriminating assertion, and the first version of these
-# tests did not have it. Printing `coords[i]` instead of `coords[picks[i]]` --
-# the vertex at the loop index rather than the vertex that was picked -- passes
-# a line-count check, passes the format check and is perfectly deterministic.
-# It prints the first N vertices of the mesh, which are nowhere near the head.
-# Only the coordinates themselves tell the two apart.
+# Printing `coords[i]` instead of `coords[picks[i]]` -- the vertex at the loop
+# index rather than the vertex that was picked -- passes a line-count check,
+# passes the format check and is perfectly deterministic. It prints the first N
+# vertices of the mesh, and only the coordinates tell the two apart.
+#
+# An earlier version caught that with `y > 7.75`, which worked only because the
+# region was the cranium cap. The region is now the hair-bearing scalp, which
+# reaches the nape at y=6.99 -- and MEASURED, the first 157 vertices of the mesh
+# all sit at y 7.29..7.36, INSIDE any band wide enough to admit the nape. A
+# height band can no longer tell them apart, so the check is now identity: the
+# coordinates printed must be the base mesh's own text for the index printed.
+# The app prints `%.4f` and every coordinate in `base.obj` is written to four
+# decimals, so this is an exact string compare with nothing to tune.
+
+# The base mesh's own vertex lines, in order, so line N is vertex N.
+file(STRINGS "${BASE}" vlines REGEX "^v ")
+
 execute_process(COMMAND "${APP}" "${FLAG}" "${ARG}"
                 OUTPUT_VARIABLE out RESULT_VARIABLE rc)
 if(NOT rc EQUAL 0)
@@ -52,11 +63,21 @@ foreach(line IN LISTS lines)
         message(FATAL_ERROR "vertex ${index} was printed twice")
     endif()
     list(APPEND indices "${index}")
+    # THE discriminating assertion: these coordinates are that vertex's.
+    list(GET vlines ${index} vline)
+    list(GET parts 1 x)
     list(GET parts 2 y)
-    # 7.75 dm is the cranium centre's height, which is how the region is
-    # defined. A root below it is not on the cap.
-    if(y LESS_EQUAL 7.75)
-        message(FATAL_ERROR "root \"${line}\" is not on the cranium cap (y <= 7.75)")
+    list(GET parts 3 z)
+    if(NOT vline STREQUAL "v ${x} ${y} ${z}")
+        message(FATAL_ERROR "\"${line}\" does not carry vertex ${index}'s position, "
+                            "which the base mesh writes as \"${vline}\"")
+    endif()
+    # ...and the vertex is on the scalp rather than merely somewhere on the body.
+    # MEASURED on the shipped base mesh, the hair-bearing region's box is
+    # x -0.7521..0.7521, y 6.9890..8.4913, z -0.3916..1.3948.
+    if(y LESS 6.98 OR y GREATER 8.50 OR z LESS -0.40 OR z GREATER 1.40
+       OR x LESS -0.76 OR x GREATER 0.76)
+        message(FATAL_ERROR "root \"${line}\" is outside the hair-bearing scalp")
     endif()
 endforeach()
 list(LENGTH indices seen)

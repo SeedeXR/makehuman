@@ -2728,6 +2728,29 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       failure: a mistyped category used to delete the panel while the caller
       went on connecting signals to it.
 - [ ] **OWNER REQUEST (2026-09-05): complete the UI to match the reference.**
+      **>>> THIS IS THE NEXT CHUNK, ahead of any more hair-style work. <<<**
+      Routing decided 2026-09-13 and written down so it is not re-derived:
+      the proxy-slot line of M8 is recorded above as FINISHED at five slots
+      (teeth, tongue, hair, clothes, eyelashes), so cornrows and locs are
+      POLISH on a shipped slot, while this is an explicit owner ask that is
+      still open. `tools/audit_taskviews.py` re-derives the inventory and fails
+      CI on drift: 51 views, 44 explicit + 7 built at run time.
+      The cornrow recipe is fully worked out and verified in the M8 hair notes
+      above -- analytic curve, projected, swept, bound, 1712/1712 -- so it can
+      be picked up cheaply whenever the owner wants it, without re-deriving
+      anything.
+      **Start with `AnimationLibrary`, and it needs NO engine work.** Verified
+      2026-09-13 rather than taken from the note: the reference gates the tab on
+      exactly two things, an active animation and a skeleton
+      (`legacy/python/plugins/3_libraries_animation.py:150` and `:157`), and
+      this port already has both ends. `include/makehuman/io/BvhReader.h` and
+      `src/rig/BvhPose.cpp` exist, and the application already exposes
+      `--pose` (load a BVH), `--pose-frame` (choose a frame), `--pose-unit` and
+      `--list-pose-units`. What is missing is the TAB alone: a chooser over BVH
+      files plus a playback slider bound to the frame selection that is already
+      there. Note `tools/audit_taskviews.py` is the authority on the buckets --
+      the prose list in `memory/taskviews.md` had drifted to name three views
+      the auditor had already moved to `covered`.
       Screenshot supplied of MakeHuman Community 1.2.1. **Use lucide icons**
       (already vendored) and learn the structure from `legacy/python/`.
       **Measured starting state**: `resources/icons/lucide/` holds **57** icons
@@ -3748,9 +3771,237 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         envelope, which is the bug that cost `00946808`, so that definition must
         exist exactly once. Reverting it now kills **six** tests across all
         three flags at once.
+      - **THE SCALP REGION WAS THE CRANIUM CAP, AND THAT WAS WRONG.** Shipped
+        in this chunk: `mh::core::hairBearingScalp` (`include/makehuman/core/Scalp.h`),
+        the body-group vertices at or above the hairline `-19 + 31*cos(azimuth)`
+        degrees about the cranium centre. All three flags -- `--spread-roots`,
+        `--scalp-path`, `--bind-points` -- now walk it; `bodyScalp` is gone
+        from `src/app/main.cpp`.
+        MEASURED: the cap is 157 vertices, the hair-bearing region 237, and the
+        region is NOT the cap plus a nape -- it trades **29 forehead vertices**
+        (above y=7.75 but below the front hairline, which stands at +12 degrees)
+        for **109 nape vertices** (down to elevation -45.15 at azimuth 180).
+        Both are one connected component; an independent Python Dijkstra finds
+        the same 237 and the same 15-vertex, 3.1145 dm midline row 983 -> 941.
+      - **CORNROWS, ATTEMPT 2026-09-13: routed correctly now, still NOT
+        shipped.** Four Blender cameras (top/side/front/back, driven by a short
+        headless `bpy` script -- worth making a checked-in tool, see below)
+        settled three things the front-only `--render` could not:
+        1. The six rows really are six separate, continuous, parallel lanes.
+           The "six crown spikes" of the previous fire was the front camera
+           seeing them end-on -- not a layout failure. Both theories advanced
+           last fire were refuted by measurement and this confirms it.
+        2. The rows' FRONT ends were 3 to 11 degrees BELOW the hairline, on the
+           forehead, and their BACK ends 52 to 57 degrees ABOVE the nape. Both
+           ends wrong, in opposite directions, and both because the region was
+           the cap. `row_ends` had claimed "every row really does run hairline
+           to nape" -- measured in **z only**, never against the hairline.
+        3. Re-routed over the hair-bearing region the rows reach the nape: 636
+           vertices, and the side render shows a full arc from temple over the
+           crown down behind the ear.
+        REMAINING, and it is a style problem rather than a region one: banding
+        the endpoints by x collapses the four OUTER rows onto the temples, so
+        the mid-scalp and most of the occiput stay bare -- only the two centre
+        rows descend the back. Real cornrows converge toward the nape.
+        **THE ROUTING FIX IS MEASURED, not guessed** (independent Python walk,
+        the one that reproduces the application's region and path exactly):
+        take the HAIRLINE RIM -- region vertices within 8 degrees of the
+        hairline, 50 of them -- and pair its FRONT arc (azimuth 315..45, 11
+        vertices, x -0.541..+0.541) with its NAPE arc (azimuth 135..225, 13
+        vertices, x -0.470..+0.470), both sorted by x. Six rows picked that way
+        run +8.0..+16.2 degrees down to -39.5..-45.1, **every one ending below
+        -35**, with **zero vertices shared by all six**.
+        The same measurement records the limit honestly: 36 of the 110 path
+        vertices are shared PAIRWISE (74 distinct), so neighbouring rows do
+        merge in places. That is the ten-vertices-across resolution constraint
+        already written up in `include/makehuman/core/SurfaceBind.h`, not a
+        bug -- and it is why the ridges are authored and bound rather than cut
+        from base vertices.
+        **Pick the endpoints at evenly spaced x VALUES, not at evenly spaced
+        indices into the sorted rim.** MEASURED, and it is the difference
+        between a style and a defect: by index the nape gaps are
+        0.092/0.302/0.152/0.302/0.092 dm, and the ridge tube is ~0.12 dm wide
+        (`stand=0.13, half=0.06`), so the OUTER pairs of rows INTERSECT while
+        the middle leaves 0.30 dm bare lanes. By x value the same six rows give
+        0.185/0.209/0.152/0.209/0.185 -- minimum gap 0.123, which clears the
+        tube. It clears it only just, so SIX rows is near the maximum this mesh
+        supports at this tube width; a seventh would intersect. Narrow the tube
+        before adding rows.
+        **RENDERED, AND THE RIM RULE ALONE IS NOT ENOUGH -- a waypoint is
+        needed.** The rim pairing above was verified by rendering it, and the
+        render refuted it: the four OUTER rows still hugged the sides. The
+        measurement that "every row ends below -35 degrees" was necessary and
+        NOT sufficient -- it checked the endpoints, not the ROUTE, which is the
+        same mistake `row_ends` made when it checked z and claimed hairline-to-
+        nape. MEASURED peak elevation along each rim-paired row: +13.1, +14.8,
+        +71.4, +71.4, +14.8, +13.1. Only the two centre rows cross the crown.
+        The cause is not a bug: a geodesic from front rim to nape rim at a
+        lateral offset takes the SHORT way around the side, because over the
+        crown is longer. Dijkstra does what it is asked; the ask is wrong. **A
+        cornrow is not a shortest path** -- it is a path that holds its lateral
+        position while crossing the dome.
+        FIX, measured and then RENDERED: route each row in two segments,
+        front rim -> a CROWN WAYPOINT (the vertex above elevation 45 nearest
+        the row's own x; there are 22 such, x -0.436..+0.436) -> nape rim.
+        All six rows then peak at +52.0/+62.0/+71.4/+71.4/+62.0/+52.0, overlap
+        drops from 36-of-110 shared vertices to 8-of-100, and the top-down
+        render finally reads as six spread cornrows.
+        ...AND THE WAYPOINT IS WRONG TOO. The kink was first read off the side
+        render; MEASURING the turn angle showed it is far worse than it looked:
+        at the waypoint the four OUTER rows turn **180.0 degrees** -- the path
+        runs up to the crown and retraces the same way back down -- against a
+        mean of 19.9 elsewhere. The two centre rows turn 16.4, because for them
+        the crown is genuinely on the way. Forcing a lateral row through a crown
+        vertex makes it spike, not traverse. Rendered and judged at the time; the images were session-scoped and are
+        not kept -- the numbers above are the record.
+      - **THE ROUTING RULE THAT ACTUALLY MATCHES THE ANATOMY: constant lateral
+        offset along a front-to-nape parameter, no geodesic at all.** Rotate
+        about the head's LEFT-RIGHT axis: `theta = atan2(y - 7.75, z - 0.50)`,
+        UNWRAPPED to 0..360 (`theta += 360 if theta < 0`). Front rim is
+        theta 10.2..16.5, the crown 90, the nape rim 222.0..228.6 -- monotone
+        front to nape, which a geodesic never was. A cornrow is then simply:
+        walk theta in bands from the front rim to the nape rim, taking at each
+        band the region vertex nearest the row's target x.
+        MEASURED, 16 bands, six rows: lateral drift **0.060..0.096 dm** (it was
+        0.238..0.647 before the unwrap, and the ridge tube is 0.12 wide, so the
+        rows now genuinely hold their lane), max turn 33.9..46.3 for the four
+        inner rows.
+        THE UNWRAP IS LOad-BEARING, not cosmetic: without it the nape rim reads
+        theta -138..-131 (those points sit BELOW the cranium centre, so atan2
+        returns a third-quadrant angle), the band walk crosses the +-180 seam,
+        and rows double back -- max turn 135..155, drift up to 0.647.
+        STILL OPEN: the OUTERMOST rows (x=+-0.54) still turn 119.4 and peak at
+        only +43.9 elevation. MEASURED cause, not a guess: crown vertices span
+        x -0.436..+0.436, so a row cannot hold x=0.54 across the crown -- the
+        head narrows and the nearest-x pick snaps inward and back. Taper each
+        row's target x with the head's half-width at that theta instead of
+        holding it constant; real cornrows converge over the crown too.
+        RENDERED, AND REFUTED TOO: with the taper the
+        outer rows ZIGZAG into sawtooth shapes. Tapering the target x makes the
+        nearest-x pick jump between mesh rows band to band. The drift metric
+        (0.060..0.096) passed because it measures distance from the target and
+        NOT SMOOTHNESS.
+      - **THE LESSON UNDER ALL THREE FAILURES, and the metric to use.** Every
+        routing rule this session passed a measurement and was then refuted by
+        the render, because each measurement checked something adjacent to what
+        the eye sees: endpoints instead of the route; the turn at ONE junction
+        instead of the whole path; distance-from-target instead of smoothness.
+        The one metric that has agreed with every render is **max turn angle
+        along the whole path** -- 180 for the spiking waypoint rows, 119.4 for
+        the zigzagging outer rows, 33.9..46.3 for the rows that look right.
+        Gate any future rule on max turn <= about 30 degrees, measured over
+        every vertex of every row, BEFORE rendering.
+        **THE GATE WAS VALIDATED RETROACTIVELY against every rule tried, and it
+        separates them perfectly** -- so the 30-degree threshold is evidence,
+        not a number somebody liked:
+            x-band over the cranium cap (the ORIGINAL attempt)   87.1  FAIL
+            rim pairing, single geodesic                        105.6  FAIL
+            crown waypoint                                      180.0  FAIL
+            theta + taper over vertex picks                     119.4  FAIL
+            ANALYTIC curve projected onto the region             22.0  pass
+        Every rule the render rejected fails it; the only rule the render
+        accepted passes it. It would have flagged the original attempt before
+        any of this started. Use it for locs and bantu knots too -- it costs a
+        dot product per vertex and it is the only cheap check this session
+        found that agrees with the eye.
+      - **AND THE LIKELY REAL ANSWER: stop picking base-mesh vertices at all.**
+        Every rule so far builds a row as a SEQUENCE OF VERTICES, so it
+        inherits the scalp's resolution as jitter -- and the scalp is only ten
+        vertices across with a median edge of 0.1436 dm, which is larger than
+        the 0.12 dm ridge tube. No vertex-picking rule can be smoother than the
+        mesh it picks from. `mh::core::bindToSurface` exists exactly so
+        authored geometry need NOT land on vertices
+        (`include/makehuman/core/SurfaceBind.h`). A cornrow should therefore be
+        a smooth analytic curve in the (theta, lateral) parameterisation above,
+        sampled as finely as the ridge needs, each sample projected onto the
+        surface and bound -- not a walk over vertices. That also disposes of
+        the long-facet defect below, since sampling is then a free parameter.
+        **TESTED AND RENDERED -- THIS ONE WORKS.** The curve is
+        an ellipsoid parameterisation about the cranium centre, with radii
+        taken from the region itself (rx 0.752, ry 0.761, rz 0.895):
+            s = sqrt(1 - u*u)
+            P(t, u) = C + (rx*u, ry*sin(t)*s, rz*cos(t)*s),  t = 16.5..222 deg
+        Each of 40 samples per row is projected to the closest point on the
+        REGION's 408 triangles (Ericson closest-point-on-triangle, the same one
+        `bindToSurface` uses) and the ridge is swept on the projected point and
+        that triangle's outward normal.
+        MEASURED max turn over the whole path: **18.6..22.0 degrees for all six
+        rows**, against 180 for the crown-waypoint rule and 119.4 for the
+        zigzagging theta+taper rows -- so the max-turn gate PREDICTED the good
+        result, the first metric this session that agreed with the render.
+        The top view reads as six smooth parallel evenly spaced rows running
+        the full length of the scalp; the side view as clean arcs from the
+        front hairline over the crown to the nape, no kinks.
+        THE "HOOK" AT THE NAPE WAS A MISREAD, and the correction matters more
+        than the claim did. It was read off the COMPOSITE side render, where
+        six rows overlap in projection. Measuring afterwards: theta is MONOTONE
+        along every row (largest backtrack -4.4 degrees) and max turn is ~20,
+        so no row doubles back -- and rendering ONE row alone (u=0.17)
+        shows a clean smooth arc from the front hairline over the crown
+        to the nape with no hook whatever. Reading a defect out of a 2D
+        projection of overlapping 3D curves is EXACTLY the error that started
+        this whole investigation, when the front-only `--render` made six
+        parallel rows look like six crown spikes. When a render looks wrong,
+        isolate the element before believing it.
+        Do still TRIM samples whose projection distance exceeds ~0.05 dm, but
+        for the honest reason: MEASURED, the inner rows' analytic curve runs up
+        to 0.195 dm off the surface at the nape (outer rows stay under 0.045),
+        i.e. past the region's edge, and projection would snap those samples
+        onto the rim. The trims land at the row ENDS, not mid-row -- checked,
+        because dropping an interior sample would make the sweep bridge the gap
+        with a chord.
+        **THE BINDING STEP IS VERIFIED TOO -- the recipe is complete.** The
+        1712 authored ridge points were fed to the built application's
+        `--bind-points`: **1712 of 1712 bound**, exit 0, and **zero weights
+        outside 0..1**. That last one is the assertion that matters, because
+        `fitProxy` does NO clamping (`src/core/Proxy.cpp:423-441`), so an
+        out-of-range weight silently places a vertex nobody authored.
+        Offset magnitude came back median 0.0715 dm, p90 0.1300, **max 0.1300**
+        -- exactly the ridge's `STAND` of 0.13. The binder independently
+        recovered the standoff the sweep authored, which is a cross-check that
+        the geometry and its binding agree rather than merely both existing.
+        So the whole path is now proven end to end: analytic curve -> project
+        onto the region's triangles -> sweep the ridge -> `--bind-points` ->
+        `write_bound_style`.
+        PRACTICAL WARNING for that rewrite: `cornrows()` already scores about
+        **14** on Sonar's cognitive-complexity metric against a limit of 15
+        (`python:S3776`), so adding even one branch to it fails the gate --
+        this session already had to split `main()` for exactly that rule.
+        Put the curve, the projection and the sweep in their own functions from
+        the start rather than growing `cornrows()`. What remains is to move it out of the scratchpad
+        into `tools/make_hair_styles.py`, tests first, and to LOOK at the worn
+        result in the application rather than at the cage.
+        One more measured defect to fix while there: ring spacing along a row
+        is median 0.1320 dm but runs to a MAX of 0.3870 -- about three tube
+        widths -- so the sweep has a few long flat facets. Subdivide any path
+        segment longer than about one tube width. Ring
+        spacing (~0.15 dm) is still the second defect. Unshipped styles are
+        written to `build/hair/` now, NOT `data/` -- `AssetIndex::build` scans
+        `data/`, so a half-finished style dropped there becomes a wearable and
+        turned the asset-index test red on a working copy that had merely RUN
+        the generator.
       - Hanging styles additionally need collision: locs rooted on the forehead
         fall straight over the eyes. An outward horizontal bias helps and is not
         enough; strands need to be pushed outside the head silhouette.
+        **NOW MEASURED against the hair-bearing region** (per-azimuth head
+        silhouette, 24 sectors, root height down to the chin at y=6.0): of the
+        237 roots, **171 (72%) produce a vertical strand that clips the head**.
+        The push needed is median 0.133 dm, p90 0.451, max 0.985 -- and the
+        split is the whole design: the clipping roots sit at median elevation
+        **+16 degrees**, while the 66 roots that fall CLEAR sit at median
+        **-25**, down on the rim.
+        So a hanging strand cannot be a fall from its root; it has to WALK the
+        scalp from the root down to the rim and only then fall, which is
+        exactly the "walk the surface rather than raycast from the head centre"
+        note above, now with numbers. `pathOverSurface` over this region is
+        that capability -- a loc is a path from the root to the nearest rim
+        vertex, then a drop.
+        CAUTION for whoever measures this next: a first attempt compared each
+        root against the widest BODY radius at every height below it and
+        reported 100% of roots needing a 2.3 dm push. That was wrong -- below
+        y=6 the widest geometry is the SHOULDERS, and hair falling in front of
+        a shoulder is not a collision. Restrict to head heights and compare
+        per-azimuth, not against a global maximum.
       - Still true and still needed regardless: the slot has ONE matcap for all
         styles, so every style renders the same colour, and real hair of any
         texture needs alpha-cut strand cards plus a shader that does

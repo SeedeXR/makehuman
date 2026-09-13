@@ -232,6 +232,28 @@ def recorded_buckets():
             if m.group(1) in BUCKET_NAMES}
 
 
+def recorded_section_counts():
+    """The N in each `### <bucket> (N)` heading in the plan file.
+
+    The bucket TABLE was audited and the sections under it were not, so only
+    the sections could rot -- and both had: `### todo (8)` went on naming
+    `ViewerTaskView`, `MouseActionsTaskView` and `ExpressionMixerTaskView`
+    after all three moved to `covered`, and `### covered (17)` stayed behind
+    when the bucket reached 20. A reader picking the next view to port reads a
+    section, not the table.
+
+    Only the heading number is compared. The sections are prose with names
+    threaded through several paragraphs -- and they legitimately MENTION views
+    from other buckets while explaining a move -- so matching names here would
+    fail on correct text. The count is the part that is unambiguous, and it
+    caught both real drifts.
+    """
+    return {m.group(1): int(m.group(2))
+            for m in re.finditer(r"^### (\w+) \((\d+)\)\s*$",
+                                 PLAN_FILE.read_text(), re.MULTILINE)
+            if m.group(1) in BUCKET_NAMES}
+
+
 # What proves a view REACHES THE USER in this port.
 #
 # The counts above audit the reference. Nothing audited the other half of the
@@ -424,6 +446,13 @@ def main():
     if recorded_buckets() != dict(counts):
         print(f"bucket table drifted: live {dict(counts)}, "
               f"recorded {recorded_buckets()}", file=sys.stderr)
+        return 1
+
+    # ...and the heading over each section, which is what a reader picking the
+    # next view actually reads. Audited for the same reason the table is.
+    if recorded_section_counts() != dict(counts):
+        print(f"section headings drifted: live {dict(counts)}, "
+              f"headings {recorded_section_counts()}", file=sys.stderr)
         return 1
 
     print(f"task views: {totals['total']} "
