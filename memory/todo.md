@@ -2792,8 +2792,14 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         moment the content is retargeted, which is exactly the signal to come
         back and update it.
       Suggested shape, smallest first, each its own chunk:
-      1. Load `mixamo_retarget.json` (the data exists and nothing reads it) and
-         pin its 65 pairs with a test.
+      1. ~~Load `mixamo_retarget.json`~~ **DONE**: `mh::rig::loadRetargetMap`
+         (`include/makehuman/rig/RetargetMap.h`). Reuses `SkeletonError`
+         rather than a parallel enum -- absent/unreadable/malformed are exactly
+         its first three kinds. MEASURED and pinned: 65 pairs, **all 65 targets
+         are real bones of `mixamo_superset` (179)**, injective, and 49 of the
+         65 also exist in `default.mhskel` (the other 16 are the superset-only
+         bones the provenance note describes). `_provenance` is deliberately
+         not read; it documents generation and feeds nothing.
       2. Author the MakeHuman 1.x table against `walk1.bvh`'s 75 joints.
       3. `--rig-names mixamo|makehuman1|native` applied on IMPORT, proven by a
          walk that poses the character -- `bonesDrivenBy` goes 0 -> non-zero

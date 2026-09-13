@@ -4,6 +4,51 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-13 (eighty-seventh) — Session · **The retarget table gets a reader**
+
+*2026-09-13 — first of the five chunks the owner's rig-naming decision implies.*
+
+### What this is
+`mh::rig::loadRetargetMap` (`include/makehuman/rig/RetargetMap.h`,
+`src/rig/RetargetMap.cpp`) reads `data/rigs/mixamo_retarget.json`, which shipped
+in an earlier milestone with **no C++ reader at all** — 65
+`Mixamo bone -> superset bone` pairs sitting as data nothing consulted.
+
+Reuses `SkeletonError` rather than inventing a parallel enum: absent,
+unreadable and malformed are exactly its first three kinds, and this IS a table
+about a skeleton's bones. `_provenance` is deliberately not read — it records
+how the table was generated and is input to nothing.
+
+### The tests are about the RIG, not about the JSON
+Parsing is the easy half. A table whose targets have been renamed out from
+under it parses perfectly and retargets nothing, so the load-bearing assertion
+is that **every one of the 65 targets is still a real bone of
+`mixamo_superset`** (179 bones). Rename a bone in the `.mhskel` and it fails,
+which is exactly when someone should re-run `tools/mixamo_mapping.py --emit`.
+
+MEASURED while writing them: 65 pairs, all targets present, injective, and 49
+of the 65 also exist in `default.mhskel` — the other 16 being the superset-only
+bones the provenance note describes.
+
+### Two tests passed vacuously, and mutation is what settled them
+Against the empty stub, "every target is a real bone" and "injective" both
+PASSED — there was nothing to check. That is the same shape as the walkable-
+island test two chunks ago, so neither was taken on trust:
+* A target renamed to a bone that does not exist -> fails.
+* Two sources mapped to one bone -> fails.
+Both are therefore load-bearing, proven rather than assumed.
+
+### A guard nothing distinguished, until it did
+Dropping the empty-name guard still failed two tests — but only through the
+spot checks, which would have failed either way. Nothing pinned that an EMPTY
+target is REFUSED rather than stored. It matters: stored as-is it renames a
+joint to nothing, and every reader downstream sees that as "the rig has no such
+bone", a hole indistinguishable from ordinary absence. A separate test now pins
+it, and re-running the mutation alone — guard dropped, shipped table untouched
+— fails exactly that one test.
+
+---
+
 ## 2026-09-13 (eighty-sixth) — Session · **A pose that drives nothing now says so**
 
 *2026-09-13 — the animation tab was the wrong next chunk, and measuring said so.*
