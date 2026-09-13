@@ -4,6 +4,54 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-13 (eighty-third) — Session · **Cornrows are blocked on resolution, so bind arbitrary points**
+
+*2026-09-13 — the measurement that decided the next capability.*
+
+### What this is
+Cornrows were the obvious next style after the afro. They are not buildable
+with the binding the afro used, and that is measured rather than felt: the
+hair-bearing scalp is **1.504 dm wide with a median edge of 0.1436 dm, about
+TEN vertices across**. Ridge, gap, ridge means identity binding allows at most
+five rows each one vertex wide -- a corrugated cap. No parameter fixes that.
+
+`memory/todo.md` had already named the way out: "authored geometry that is NOT
+in the base mesh can be bound to the scalp by three base vertices, barycentric
+weights and an offset". `mh::core::bindToSurface` is that binder, the inverse of
+`fitProxy`. Weights come from the CLOSEST POINT on the triangle (Ericson's seven
+Voronoi regions), so a point beyond an edge binds to that edge instead of
+producing weights outside 0..1 that `fitProxy` would extrapolate.
+
+### The lesson worth keeping: a round trip proves consistency, not choice
+The headline test is bind -> fit -> same point. It is necessary and it is NOT
+sufficient, and two of three mutations proved it by surviving:
+
+* **Keeping the FARTHEST triangle** round-trips perfectly, because the residual
+  offset absorbs whatever the weights get wrong. What "nearest" actually buys
+  is a SMALL offset -- the authored standoff and nothing more. Bind far and the
+  offset is head-sized, so the weights ride the wrong part of the mesh and the
+  hair moves wrongly when the body morphs. Asserting the offset MAGNITUDE kills
+  it: 0.939 dm against an authored 0.3.
+* **Deleting one clamp branch** survived twice before it died. A mutation only
+  dies if a test drives the SPECIFIC branch it breaks, and my first two
+  off-triangle points both landed nearest corner B, so corner A's Voronoi
+  region was never entered. With a point that does enter it, the weights come
+  back as **3 and -2** -- exactly the extrapolation the clamp exists to stop.
+
+### Review
+One finding, a ceiling named rather than hidden: the binder linearly scans every
+face per point. MEASURED -- 18,486 quads means 36,972 triangle tests per bind
+and about 111M for a 3,000-vertex style. Seconds in a generator that runs at
+authoring time and never in the application, so it stays; the comment names the
+upgrade path (restrict to region faces, or a grid) for when a style wants tens
+of thousands of vertices.
+
+### Next
+The cornrow generator: rows routed with `--scalp-path`, authored ridge geometry
+bound with `bindToSurface`. Collision for hanging styles is still untouched.
+
+---
+
 ## 2026-09-13 (eighty-second) — Session · **The afro, in five iterations that each had a reason**
 
 *2026-09-13 — the owner asked for this by name. `bambucha` is the afro.*

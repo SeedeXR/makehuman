@@ -3715,6 +3715,25 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         slot has ONE matcap and no alpha-cut strand texture, so no generator can
         produce strand detail here -- that is the per-style colour/texture work
         already listed below, not a defect of the shape.
+      - **CORNROWS ARE BLOCKED ON MESH RESOLUTION, measured 2026-09-13, and the
+        unblock is `mh::core::bindToSurface`.** The hair-bearing scalp is
+        **1.504 dm wide with a median edge of 0.1436 dm -- about TEN vertices
+        across**. Cornrows need ridge, gap, ridge, so the IDENTITY binding the
+        afro used allows at most five rows each exactly one vertex wide, which
+        renders as a corrugated cap rather than braids. That is structural, not
+        a parameter. The way out is the one this write-up already named:
+        authored geometry bound by three base vertices, barycentric weights and
+        an offset. `bindToSurface` is that binder -- the inverse of `fitProxy`,
+        clamped to the closest point ON the triangle so weights stay in 0..1.
+      - **A round-trip test proves CONSISTENCY, not correctness of choice.**
+        Bind a point, fit it back, and it returns exactly -- for ANY triangle,
+        because the residual offset absorbs whatever the weights get wrong. Two
+        of three mutations survived that test. What kills them: for the clamp, a
+        point in the SPECIFIC Voronoi region the branch handles (the first two
+        off-triangle points both landed nearest corner B, so corner A's branch
+        was never entered; without it the weights come back **3 and -2**); for
+        "nearest", the OFFSET MAGNITUDE (the farthest-triangle mutation gives
+        0.939 dm against an authored standoff of 0.3).
       - Hanging styles additionally need collision: locs rooted on the forehead
         fall straight over the eyes. An outward horizontal bias helps and is not
         enough; strands need to be pushed outside the head silhouette.

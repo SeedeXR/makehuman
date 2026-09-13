@@ -12,6 +12,7 @@ add_executable(mh_tests
     unit/test_save_expression.cpp
     unit/test_pose_frame.cpp
     unit/test_surface_walk.cpp
+    unit/test_surface_bind.cpp
     unit/test_obj_reader.cpp
     unit/test_proxy_weights.cpp
     unit/test_tangents.cpp
