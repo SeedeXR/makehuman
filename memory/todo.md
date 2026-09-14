@@ -817,7 +817,7 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `is_array() && size() == 4` guard and then throw `json::type_error` out of
       `get<double>()`, past the `std::expected` every caller is written against.
       Observed, then fixed and gated.
-- [ ] **Pin the rest of `body-poseunits.json`'s authoring errors.** The four
+- [x] **Pinned the rest of `body-poseunits.json`'s authoring errors.** The four
       already pinned (`UpperArmUpLeft1/2` -> mouth bones, `Finger1/2CloseLeft`
       -> foot bones) are not the whole story. Found 2026-09-14 by listing which
       bones each pose actually names:
@@ -838,6 +838,23 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       An axis-vs-name sweep is NOT the way to find these: it assumes world axes
       while the quaternions are bone-LOCAL, and produced 18 false positives.
       Match on which bones a pose NAMES — that is frame-independent.
+      **Done 2026-09-14.** `region_mismatch_suspects` in
+      `tools/audit_poseunits.py` generalises the two existing detectors: a pose
+      whose every bone belongs to ONE region other than the one its name
+      announces. Pins **12** — the 8 new ones, plus the 4 already pinned, which
+      it independently rediscovers (kept un-deduplicated: the overlap is
+      evidence the general rule agrees with the two specific ones).
+      **Two it must NOT flag**, and this is the load-bearing part:
+      `FootTurnOutLeft` drives only `lowerleg01.L` and `HandRollBackwardLeft`
+      only `lowerarm01.L`. Both are correct rigging — foot turn-out IS tibial
+      rotation, hand roll IS forearm pronation — so a distal control driven by
+      the segment immediately PROXIMAL to it is exempt. Without the exemption
+      the detector reports 14 and two of them are libels.
+      `special*` is classified head **verified against
+      `data/rigs/default.mhskel`**, not assumed: special01/03/06 parent to
+      `head`, special04 to `jaw`.
+      `foot_suspects` was NOT deleted despite looking subsumed — it also catches
+      a pose whose name announces no region at all, which this detector skips.
 - [x] **Whole-body poses: A-pose and T-pose, render and export** (owner request,
       2026-08-29). `rig::loadBodyPose` reads a single-frame BVH;
       `rig::poseToBoneLocal` converts it into each bone's rest frame.

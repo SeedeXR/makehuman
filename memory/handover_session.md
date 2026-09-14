@@ -4,6 +4,61 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-14 (ninety-fifth) — Session · **Twelve poses named for the wrong body part**
+
+*2026-09-14 — the chunk that started because a render did not match its label.*
+
+### What shipped
+`region_mismatch_suspects` in `tools/audit_poseunits.py`: a pose whose every
+bone belongs to ONE body region other than the region its NAME announces. The
+general form of the mouth and foot detectors already there, and it finds ten
+more errors.
+
+Pins **12**: `HeadTurnLeft`/`HeadTurnRight` (named head, drive only hand),
+`TorsoUp`/`TorsoDown` (named spine, drive only head), `UpperLegUpLeft`/
+`UpperLegDownLeft` (named leg, drive only spine), `Toe1CloseLeft`/
+`Toe2CloseLeft` (named foot, drive only hand), plus the four already pinned,
+which this detector independently rediscovers.
+
+### The part that took the thinking: the two it must NOT flag
+The first version reported **14**. Two were libels:
+- `FootTurnOutLeft` drives only `lowerleg01.L` — foot turn-out IS tibial rotation.
+- `HandRollBackwardLeft` drives only `lowerarm01.L` — hand roll IS forearm pronation.
+
+A distal control driven by the segment immediately PROXIMAL to it is correct
+rigging, not an error. That exemption is exactly two pairs, `foot<-leg` and
+`hand<-arm`; `head<-hand` is not adjacent and stays flagged. A self-test case
+pins that the exemption does not swallow an absurd pairing.
+
+**This is why the axis-vs-name sweep was abandoned earlier**: it assumed world
+axes while the quaternions are bone-LOCAL, and produced 18 false positives.
+Matching on which bones a pose NAMES is frame-independent.
+
+### Verified, not assumed
+`special*` is classified as a head region **checked against
+`data/rigs/default.mhskel`**: special01/03/06 parent to `head`, special04 to
+`jaw`. Guessing from the name is how a false accusation ships.
+
+### Sonar earned its place again
+Gate came back **ERROR — 1 CRITICAL**: cognitive complexity 19 against a limit
+of 15, from two closures each carrying their own loop inside the detector.
+Hoisted `_region_of`, `_region_claimed_by` and `_contradicts` to module scope
+with the tables as constants. Re-scanned: **gate OK, 0 issues**. All five
+mutations re-run against the refactored structure and re-killed.
+
+### Not deleted, and why
+`foot_suspects` looks subsumed by the new detector — it is that detector
+restricted to `actual == foot`. It is NOT subsumed: it also catches a pose whose
+name announces NO region, which `region_mismatch_suspects` deliberately skips.
+Different coverage, so both stay.
+
+### Gates
+Mutations N1-N5 then P1-P5 after the refactor, all killed, including a GATE
+mutation that corrupts the pinned list. The negative self-test case was checked
+to fire on its own rather than riding on the pin. No C++ changed, so the
+four-preset gate at 1271/1271 from `004b5b96` still holds — verified by
+`git status`, not assumed.
+
 ## 2026-09-14 (ninety-fourth) — Session · **61 body pose units stop being decoration**
 
 *2026-09-14 — the chunk where a surviving mutation was the whole point.*

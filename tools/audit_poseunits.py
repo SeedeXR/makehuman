@@ -82,6 +82,89 @@ def foot_suspects(poses) -> list[str]:
                   and not p.lower().startswith(("foot", "toe", "heel")))
 
 
+# Bone name prefix -> body region, and pose name prefix -> the region the name
+# announces. By PREFIX, so a rig that gains `finger6-1.L` or `spine05` is
+# covered without an edit. Ordered: the first matching prefix wins.
+#
+# `special*` is head, VERIFIED against data/rigs/default.mhskel rather than
+# assumed from the name: special01/03/06 parent to `head` and special04 to
+# `jaw`. `platysma` is a neck muscle and the asset uses it exactly that way, in
+# HeadUp/HeadDown alongside head and neck.
+_BONE_REGIONS = (
+    ("hand", ("wrist", "metacarpal", "finger", "palm")),
+    ("foot", ("heel", "metatarsal", "toe", "ball")),
+    ("head", ("head", "neck", "platysma", "oris", "eye", "jaw", "tongue",
+              "levator", "orbicularis", "risorius", "temporalis", "masseter",
+              "depressor", "special", "nose")),
+    ("spine", ("spine", "breast", "pelvis", "hips", "root")),
+    ("leg", ("upperleg", "lowerleg")),
+    ("arm", ("upperarm", "lowerarm", "shoulder", "scapula", "clavicle")),
+)
+_NAME_REGIONS = (
+    ("foot", ("foot", "toe", "heel")),
+    # "figer" is the asset's own typo, kept so those poses are still judged.
+    ("hand", ("finger", "figer", "hand", "thumb")),
+    ("head", ("head",)),
+    ("spine", ("torso",)),
+    ("leg", ("upperleg", "lowerleg", "leg")),
+    ("arm", ("upperarm", "lowerarm", "arm")),
+)
+# A distal control driven by the segment immediately PROXIMAL to it is correct
+# rigging, not an error: turning the foot out IS tibial rotation and rolling the
+# hand IS forearm pronation. Without this the detector reports 14 and two of
+# them are libels.
+_PROXIMAL = {("foot", "leg"), ("hand", "arm")}
+
+
+def _region_of(bone: str) -> str | None:
+    """The body region a bone belongs to, or None if the map does not know it."""
+    for region, prefixes in _BONE_REGIONS:
+        if bone.startswith(prefixes):
+            return region
+    return None
+
+
+def _region_claimed_by(pose: str) -> str | None:
+    """The region a pose NAME announces, or None if it announces none."""
+    low = pose.lower()
+    for region, prefixes in _NAME_REGIONS:
+        if low.startswith(prefixes):
+            return region
+    return None
+
+
+def _contradicts(pose: str, bones) -> tuple[str, str] | None:
+    """`(claimed, actual)` when @p pose drives only one region and it is not the
+    region its name announces, else None.
+
+    A bone the region map does not recognise makes the pose UNJUDGEABLE rather
+    than clean -- the asset's `collisionArm*`/`collisionLeg*` bones are exactly
+    that case, and guessing about them would be how a false accusation ships.
+    """
+    claimed = _region_claimed_by(pose)
+    if claimed is None:
+        return None  # the name announces no region, so nothing to contradict
+    driven = {_region_of(b) for b in bones}
+    if None in driven or len(driven) != 1:
+        return None  # unmapped bone, or a mix: not a clean single-region pose
+    actual = driven.pop()
+    if actual == claimed or (claimed, actual) in _PROXIMAL:
+        return None
+    return claimed, actual
+
+
+def region_mismatch_suspects(poses) -> list[tuple[str, str, str]]:
+    """Poses driving ONLY bones of a body region their name contradicts.
+
+    The general form of the two errors already pinned below, and it finds ten
+    more. A pose that merely TOUCHES a foreign bone is not mis-named; one whose
+    every bone belongs to a single region other than the one its name announces
+    is. Returns `(pose, region the name claims, region it actually drives)`.
+    """
+    found = ((pose, _contradicts(pose, bones)) for pose, bones in poses.items())
+    return sorted((pose, *verdict) for pose, verdict in found if verdict)
+
+
 def _mouth_driving_problems(poses) -> list[str]:
     """Two poses drive MOUTH bones. Raising an arm must not move the lips; this
     is an authoring error in the reference asset, recorded so a future reader
@@ -116,8 +199,53 @@ def _foot_driving_problems(poses) -> list[str]:
     return []
 
 
+def _region_mismatch_problems(poses) -> list[str]:
+    """Twelve poses drive nothing but bones of the wrong body region.
+
+    `HeadTurnLeft`/`HeadTurnRight` drive only `wrist.L`, `metacarpal1-4.L` and
+    `finger1-1.L` -- a head control that moves the HAND. `TorsoUp`/`TorsoDown`
+    drive the head/neck/platysma set instead of the spine. `UpperLegUpLeft`/
+    `UpperLegDownLeft` drive `spine1..4` plus `breast` and no leg bone at all.
+    `Toe1CloseLeft`/`Toe2CloseLeft` drive only `finger1-1.L`, a HAND bone.
+
+    The remaining four are the mouth and foot errors already pinned below, which
+    this detector independently rediscovers -- deliberately not deduplicated:
+    each pin guards a different property, and the overlap is evidence the
+    general rule agrees with the two specific ones.
+
+    NOT flagged, and the distinction matters: `FootTurnOutLeft` drives only
+    `lowerleg01.L` and `HandRollBackwardLeft` only `lowerarm01.L`. Those are
+    correct rigging -- turning the foot out IS tibial rotation, rolling the hand
+    IS forearm pronation -- so a distal control driven by the segment
+    immediately proximal to it is exempt. Without that exemption the detector
+    reports 14 and two of them are libels.
+
+    These names are NOT corrected. Nothing in the reference reads this file
+    (only `face-poseunits`, `2_posing_expression.py:116-126`), so there is no
+    oracle to correct them against, and inventing names would be guesswork.
+
+    Found 2026-09-14 after rendering a body pose unit and noticing the motion
+    did not match the label.
+    """
+    suspect = region_mismatch_suspects(poses)
+    print(f"  poses driving only the wrong region: {len(suspect)}")
+    for pose, claimed, actual in suspect:
+        print(f"      {pose}: named for the {claimed}, drives only {actual}")
+    expected = [
+        ("Finger1CloseLeft", "hand", "foot"), ("Finger2CloseLeft", "hand", "foot"),
+        ("HeadTurnLeft", "head", "hand"), ("HeadTurnRight", "head", "hand"),
+        ("Toe1CloseLeft", "foot", "hand"), ("Toe2CloseLeft", "foot", "hand"),
+        ("TorsoDown", "spine", "head"), ("TorsoUp", "spine", "head"),
+        ("UpperArmUpLeft1", "arm", "head"), ("UpperArmUpLeft2", "arm", "head"),
+        ("UpperLegDownLeft", "leg", "spine"), ("UpperLegUpLeft", "leg", "spine"),
+    ]
+    if suspect != expected:
+        return [f"the set of wrong-region poses changed: {suspect}"]
+    return []
+
+
 def self_test() -> list[str]:
-    """Both detectors, on data that must and must not be flagged.
+    """All three detectors, on data that must and must not be flagged.
 
     MEASURED: breaking either DETECTOR -- making it match nothing, or match
     everything -- is caught here. Breaking the PINNING above it is not, and
@@ -148,6 +276,28 @@ def self_test() -> list[str]:
         problems.append("the foot detector misses right-side foot bones")
     if foot_suspects({"Finger9CurlLeft": {"toe1-1.L": 1}}) != ["Finger9CurlLeft"]:
         problems.append("the foot detector misses toe bones")
+    # The region detector, on the four shapes that matter.
+    if region_mismatch_suspects({"HeadTurnLeft": {"wrist.L": 1, "finger1-1.L": 1}}) != [
+            ("HeadTurnLeft", "head", "hand")]:
+        problems.append("the region detector missed a head pose driving only hand bones")
+    if region_mismatch_suspects({"HeadTurnLeft": {"head": 1, "neck": 1}}):
+        problems.append("the region detector flags a pose driving its own region")
+    # A pose that merely TOUCHES a foreign bone is not mis-named.
+    if region_mismatch_suspects({"HeadTurnLeft": {"head": 1, "wrist.L": 1}}):
+        problems.append("the region detector flags a pose that only touches a foreign bone")
+    # The proximal exemption, which is why the count is 12 and not 14.
+    if region_mismatch_suspects({"FootTurnOutLeft": {"lowerleg01.L": 1}}):
+        problems.append("the region detector flags a foot control driven from the leg")
+    if region_mismatch_suspects({"HandRollBackwardLeft": {"lowerarm01.L": 1}}):
+        problems.append("the region detector flags a hand control driven from the arm")
+    # ...but the exemption must not swallow a genuinely absurd pairing.
+    if region_mismatch_suspects({"HandCloseLeft": {"head": 1}}) != [
+            ("HandCloseLeft", "hand", "head")]:
+        problems.append("the proximal exemption swallowed a hand pose driving the head")
+    # A bone the region map does not know must make the pose UNJUDGEABLE, not
+    # silently fine: collisionArm/collisionLeg bones are exactly this case.
+    if region_mismatch_suspects({"HeadTurnLeft": {"collisionArm1.L": 1}}):
+        problems.append("the region detector judged a pose containing an unmapped bone")
     return problems
 
 
@@ -175,6 +325,7 @@ def main() -> int:
 
     problems += _mouth_driving_problems(poses)
     problems += _foot_driving_problems(poses)
+    problems += _region_mismatch_problems(poses)
     problems += self_test()
 
     if problems:
