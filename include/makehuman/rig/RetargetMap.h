@@ -21,8 +21,11 @@
 
 #include <expected>
 #include <filesystem>
+#include <span>
 #include <string>
+#include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace mh::rig {
@@ -99,5 +102,33 @@ size_t retargetJoints(io::BvhFile& bvh, const RetargetMap& map);
 /// Mixamo table 65; the rest keep this rig's own names, which is the only
 /// honest thing to call a bone the other skeleton has no word for.
 size_t renameBones(std::vector<std::string>& names, const RetargetMap& map);
+
+/// How well one naming fits a motion file: the table's name, and how many of a
+/// skeleton's bones the file drives once read through it.
+struct NamingFit {
+    std::string naming;
+    size_t driven{};
+};
+
+/// @p candidates ranked by how many of @p skeleton's bones the BVH at @p bvh
+/// drives under each, best first. Ties keep the caller's order.
+///
+/// This exists because the shipped motion files are unusable by default and a
+/// GUI user cannot say otherwise. MEASURED: every `.bvh` under
+/// `data/animations/` drives **0** of the 179 superset bones under this rig's
+/// own names, 59 through the MakeHuman 1.x table and 5 through Mixamo's. On the
+/// command line that is survivable -- `--rig-names` exists and the loader says
+/// so -- but a chooser has no flag to offer, so picking a walk would silently
+/// produce a character standing still.
+///
+/// The file's OWN names are always ranked too, under the name @p nativeNaming,
+/// so "none of these tables helps" is a result rather than a special case.
+///
+/// Reads @p bvh once per candidate, so call it when a file is chosen, not per
+/// frame.
+[[nodiscard]] std::vector<NamingFit> rankNamings(
+    const std::filesystem::path& bvh, const Skeleton& skeleton,
+    std::span<const std::pair<std::string, RetargetMap>> candidates,
+    std::string_view nativeNaming = "native");
 
 }  // namespace mh::rig

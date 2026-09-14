@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "makehuman/rig/RetargetMap.h"
 
+#include "makehuman/rig/PoseUnits.h"
+
+#include <algorithm>
+
 #include "makehuman/foundation/FileRead.h"
 
 #include <nlohmann/json.hpp>
@@ -108,6 +112,35 @@ size_t renameBones(std::vector<std::string>& names, const RetargetMap& map) {
         ++renamed;
     }
     return renamed;
+}
+
+std::vector<NamingFit> rankNamings(const std::filesystem::path& bvh, const Skeleton& skeleton,
+                                   std::span<const std::pair<std::string, RetargetMap>> candidates,
+                                   std::string_view nativeNaming) {
+    // The file's own names go in FIRST, so a stable sort leaves them ahead of
+    // any table that merely ties them. A pose authored against this rig should
+    // never be renamed just because some table scores equally.
+    const auto native = bonesDrivenBy(bvh, skeleton, nullptr);
+    if (!native) {
+        // Unreadable or absent. Ranking nothing is the honest answer: every
+        // candidate would score zero, and a caller could not tell "no naming
+        // helps" from "there is no file".
+        return {};
+    }
+
+    std::vector<NamingFit> ranked;
+    ranked.reserve(candidates.size() + 1);
+    ranked.push_back({std::string(nativeNaming), *native});
+
+    for (const auto& [naming, table] : candidates) {
+        const auto driven = bonesDrivenBy(bvh, skeleton, &table);
+        if (!driven) return {};  // it read a moment ago; something is wrong
+        ranked.push_back({naming, *driven});
+    }
+
+    std::stable_sort(ranked.begin(), ranked.end(),
+                     [](const NamingFit& a, const NamingFit& b) { return a.driven > b.driven; });
+    return ranked;
 }
 
 }  // namespace mh::rig

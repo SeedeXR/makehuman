@@ -1912,6 +1912,86 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_list_pose_units PROPERTIES
         PASS_REGULAR_EXPRESSION "LeftBrowDown")
 
+    # `--rig-names auto` -- and the reason it is a FLAG and not just chooser
+    # behaviour: the chooser's path runs only in the GUI, and a path no test can
+    # reach is a path nothing checks. One implementation, two entry points.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/autoname)
+    set(WALKBVH ${MH_DATA_DIR}/animations/walks/walk1.bvh)
+    add_test(NAME app_rig_names_auto_reports_its_choice COMMAND makehuman
+             --pose ${WALKBVH} --pose-frame 0 --rig-names auto
+             --export ${CMAKE_CURRENT_BINARY_DIR}/autoname/a0.obj)
+    set_tests_properties(app_rig_names_auto_reports_its_choice PROPERTIES
+        FIXTURES_SETUP app_auto0
+        PASS_REGULAR_EXPRESSION "read as makehuman1 \\(59 of 179 bones driven\\)")
+    add_test(NAME app_rig_names_auto_frame7 COMMAND makehuman
+             --pose ${WALKBVH} --pose-frame 7 --rig-names auto
+             --export ${CMAKE_CURRENT_BINARY_DIR}/autoname/a7.obj)
+    set_tests_properties(app_rig_names_auto_frame7 PROPERTIES FIXTURES_SETUP app_auto7)
+    # It does not merely announce a naming -- the character moves.
+    add_test(NAME app_rig_names_auto_actually_animates COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/autoname/a0.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/autoname/a7.obj
+             -DEXPECT_DIFFERENT=14444
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
+    set_tests_properties(app_rig_names_auto_actually_animates PROPERTIES
+        FIXTURES_REQUIRED "app_auto0;app_auto7")
+    # `auto` names no table, so a RIGGED export under it must not go looking for
+    # data/rigs/auto_retarget.json. It did: every .glb/.fbx/.usd export warned
+    # "cannot load --rig-names auto". The earlier gates all exported .obj, which
+    # carries no skeleton, so none of them reached it.
+    add_test(NAME app_rig_names_auto_rigged_export_is_quiet COMMAND makehuman
+             --pose ${WALKBVH} --pose-frame 0 --rig-names auto
+             --export ${CMAKE_CURRENT_BINARY_DIR}/autoname/a.glb)
+    set_tests_properties(app_rig_names_auto_rigged_export_is_quiet PROPERTIES
+        FAIL_REGULAR_EXPRESSION "cannot load --rig-names")
+
+    # A pose authored for THIS rig keeps its own names: `auto` ranks native
+    # alongside the tables rather than treating it as a fallback, so it wins
+    # when it should. Without this, `auto` would rename everything it could.
+    add_test(NAME app_rig_names_auto_leaves_native_poses_alone COMMAND makehuman
+             --pose tpose --rig-names auto
+             --export ${CMAKE_CURRENT_BINARY_DIR}/autoname/t.obj)
+    set_tests_properties(app_rig_names_auto_leaves_native_poses_alone PROPERTIES
+        FAIL_REGULAR_EXPRESSION "read as")
+
+    # The Animation chooser.
+    #
+    # It exists because `data/animations/` shipped for four milestones as files
+    # nothing could reach: MEASURED, all three drive 0 of this rig's 179 bones
+    # under their own names (59 through the MakeHuman 1.x table, 5 through
+    # Mixamo's). The chooser ranks the namings per file and reads each through
+    # the best one, because the GUI has no --rig-names to offer.
+    # The label is title-cased by `prettyAssetName`, like every other chooser,
+    # because no animation ships a .meta -- pinning it here is what caught the
+    # labels coming out as raw stems.
+    #
+    # Each file pinned by its LABEL COLUMN, not by a bare name -- `walk1` and
+    # `zombieWalk1` also appear in the path column, so pinning them alone passed
+    # whether or not a label was ever produced. All three shipped files, dance1
+    # included, which nothing pinned before.
+    add_test(NAME app_list_animations_labels_dance COMMAND makehuman --list-animations)
+    set_tests_properties(app_list_animations_labels_dance PROPERTIES
+        PASS_REGULAR_EXPRESSION "dance1\\.bvh\tDance1\t1\t")
+    add_test(NAME app_list_animations_labels_walk COMMAND makehuman --list-animations)
+    set_tests_properties(app_list_animations_labels_walk PROPERTIES
+        PASS_REGULAR_EXPRESSION "walk1\\.bvh\tWalk1\t14\t")
+    add_test(NAME app_list_animations_labels_zombie COMMAND makehuman --list-animations)
+    set_tests_properties(app_list_animations_labels_zombie PROPERTIES
+        PASS_REGULAR_EXPRESSION "zombieWalk1\\.bvh\tZombieWalk1\t31\t")
+    # The frame count is reported, which is what a scrubber will need and what
+    # tells a 1-frame file from a 31-frame one.
+    # THE claim: the ranking names makehuman1, not native. If this ever says
+    # native, the chooser is offering files that cannot move the character.
+    add_test(NAME app_list_animations_ranks_the_naming COMMAND makehuman --list-animations)
+    set_tests_properties(app_list_animations_ranks_the_naming PROPERTIES
+        PASS_REGULAR_EXPRESSION "makehuman1 \\(59 bones\\)")
+    # ...and the ranking is measured against the rig that is loaded, so it
+    # follows --rig rather than being a constant.
+    add_test(NAME app_list_animations_ranks_per_rig COMMAND makehuman
+             --rig default --list-animations)
+    set_tests_properties(app_list_animations_ranks_per_rig PROPERTIES
+        PASS_REGULAR_EXPRESSION "makehuman1 \\(56 bones\\)")
+
     # --rig-names on EXPORT, across every skeleton-carrying format.
     #
     # Four of the five read their bone names from one vector, SkinView::
@@ -3623,7 +3703,8 @@ if(MH_HAVE_RENDER)
     # earlier version of this printed the material's own flag and was blind to
     # exactly the wiring it was meant to cover.
     # Eye COLOUR is independent of the Eyes group, which picks the geometry.
-    # Six groups now: Skin, Pose, Eyes, Skin material, Eye colour, Skeleton.
+    # Eleven groups: Litsphere, Pose, Eyes, Teeth, Tongue, Hair, Clothes,
+    # Eyelashes, Skin material, Eye colour, Skeleton.
     add_test(NAME app_eye_colour COMMAND makehuman
              --eye-colour green
              --render ${CMAKE_CURRENT_BINARY_DIR}/app_eye_colour.png)

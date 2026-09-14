@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace mh::rig;
@@ -161,4 +162,71 @@ TEST_CASE("an empty table renames nothing", "[rig][retarget][export][regression]
     const std::vector<std::string> before = names;
     CHECK(renameBones(names, none) == 0);
     CHECK(names == before);
+}
+
+// ------------------------------------------------- naming fit (chooser)
+
+namespace {
+
+std::vector<std::pair<std::string, RetargetMap>> shippedTables() {
+    std::vector<std::pair<std::string, RetargetMap>> out;
+    for (const char* stem : {"makehuman1", "mixamo"})
+        out.emplace_back(stem, table(stem));
+    return out;
+}
+
+fs::path walk() {
+    return dataDir() / "animations" / "walks" / "walk1.bvh";
+}
+
+}  // namespace
+
+TEST_CASE("the shipped walks need a naming, and rankNamings says which",
+          "[rig][retarget][naming]") {
+    const auto skel = loadSkeleton(dataDir() / "rigs" / "mixamo_superset.mhskel");
+    REQUIRE(skel.has_value());
+    const auto tables = shippedTables();
+
+    const auto ranked = rankNamings(walk(), *skel, tables);
+    // Every candidate is ranked, plus the file's own names, so "nothing helps"
+    // is an answer rather than an empty result.
+    REQUIRE(ranked.size() == tables.size() + 1);
+
+    // MEASURED on all three shipped animations: 0 native, 59 makehuman1,
+    // 5 mixamo. So the 1.x table wins and native comes last.
+    CHECK(ranked.front().naming == "makehuman1");
+    CHECK(ranked.front().driven == 59);
+    CHECK(ranked.back().naming == "native");
+    CHECK(ranked.back().driven == 0);
+
+    // Ranked, not merely listed.
+    for (size_t i = 1; i < ranked.size(); ++i)
+        CHECK(ranked[i - 1].driven >= ranked[i].driven);
+}
+
+TEST_CASE("a pose written for THIS rig ranks its own names first", "[rig][retarget][naming]") {
+    // The counterpart, and the reason native is a candidate rather than a
+    // fallback: tpose.bvh is authored against this rig, so no table beats it.
+    const auto skel = loadSkeleton(dataDir() / "rigs" / "mixamo_superset.mhskel");
+    REQUIRE(skel.has_value());
+    const auto ranked = rankNamings(dataDir() / "poses" / "tpose.bvh", *skel, shippedTables());
+    REQUIRE_FALSE(ranked.empty());
+    CHECK(ranked.front().naming == "native");
+    CHECK(ranked.front().driven > 100);
+}
+
+TEST_CASE("an unreadable file ranks nothing rather than guessing", "[rig][retarget][naming]") {
+    const auto skel = loadSkeleton(dataDir() / "rigs" / "mixamo_superset.mhskel");
+    REQUIRE(skel.has_value());
+    const auto ranked = rankNamings(dataDir() / "no_such_file.bvh", *skel, shippedTables());
+    CHECK(ranked.empty());
+}
+
+TEST_CASE("no candidates still ranks the file's own names", "[rig][retarget][naming]") {
+    const auto skel = loadSkeleton(dataDir() / "rigs" / "mixamo_superset.mhskel");
+    REQUIRE(skel.has_value());
+    const auto ranked = rankNamings(walk(), *skel, {});
+    REQUIRE(ranked.size() == 1);
+    CHECK(ranked.front().naming == "native");
+    CHECK(ranked.front().driven == 0);
 }

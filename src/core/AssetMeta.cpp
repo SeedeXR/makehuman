@@ -29,11 +29,6 @@ bool AssetMeta::hasTag(std::string_view tag) const {
 
 AssetMeta loadAssetMeta(const std::filesystem::path& asset) {
     AssetMeta meta;
-    // The stem is the default name, as it is in the reference
-    // (`3_libraries_pose.py:114`), so a caller always has something to label a
-    // chooser entry with.
-    meta.name = asset.stem().string();
-
     std::filesystem::path sidecar = asset;
     sidecar.replace_extension(".meta");
 

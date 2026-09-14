@@ -27,9 +27,16 @@ namespace mh::core {
 /// What a `.meta` says about an asset, in the two respects anything reads:
 /// what to call it, and what kind of thing it is.
 struct AssetMeta {
-    /// The `name` field, or the asset's own stem when the file gives none.
-    /// The reference defaults the same way, so a file without a name still
-    /// labels a chooser entry rather than leaving it blank.
+    /// The `name` field, or EMPTY when the file gives none.
+    ///
+    /// The reference defaults this to the asset's stem
+    /// (`3_libraries_pose.py:114`) and this deliberately does not, because the
+    /// caller cannot then tell "the sidecar named it" from "there was no
+    /// sidecar" -- and those want different labels here. A named asset uses its
+    /// name; an unnamed one goes through `prettyAssetName` like every other
+    /// chooser in this port, so `walk1.bvh` reads "Walk1" beside "High-poly"
+    /// and "T-pose" rather than a bare stem. Defaulting here made that fallback
+    /// unreachable and the Animation listing showed raw stems.
     std::string name;
 
     /// Lowercased and de-duplicated, as the reference lowercases them into a

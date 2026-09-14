@@ -2930,8 +2930,65 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
          Neither is reachable with the shipped tables; both were PROVEN to fire
          with a transient probe table, since a warning nobody has seen run is
          not evidence.
-      5. Only then the `AnimationLibrary` tab, which by that point really is
-         just a chooser plus a frame slider.
+      5. The `AnimationLibrary` tab. **HALF DONE** (2026-09-14), and the half
+         that is missing is missing deliberately.
+         **Shipped**: `mh::rig::rankNamings` ranks candidate retarget tables
+         PLUS the file's own names by how many of a skeleton's bones a BVH
+         drives, best first, stably so a tie favours native -- a pose authored
+         for this rig is never renamed just because a table scores equally.
+         `--rig-names auto` uses it per file and says which naming it chose;
+         `--list-animations` reports every shipped file with its frame count and
+         winning naming, measured against the rig actually loaded.
+         MEASURED: `dance1` 1 frame, `walk1` 14, `zombieWalk1` 31; all three
+         drive **0** of the superset's 179 bones under this rig's own names, 59
+         through the MakeHuman 1.x table, 5 through Mixamo's. Under `auto`,
+         frames 0 and 7 of walk1 differ in 14,444 of 14,444 vertices -- it
+         really animates -- while `--pose tpose --rig-names auto` renames
+         nothing.
+         **NOT shipped, and why**: the Animation CHOOSER. It was built and
+         withdrawn the same day. Pose and Animation would be two combos over one
+         `rig`, and review found four MAJOR state bugs in the first attempt:
+         (a) `poseFrameRef() = 0` leaked into later Pose loads, routing them
+         through `loadBodyPoseFrame` and past `loadBodyPose`'s multi-frame
+         refusal (`src/rig/PoseUnits.cpp:384`) -- so a multi-frame file dropped
+         into `data/poses/` would be silently accepted as frame 0;
+         (b) the two combos could contradict each other, leaving the panel
+         naming a pose the model was not in, unrecoverable without cycling
+         through another entry because `QComboBox` only emits on a CHANGE;
+         (c) switching Skeleton reloaded `poseChoice`, which the Animation
+         branch never updated, silently dropping the animation;
+         (d) the Animation group had no pre-flight probe, so a failed load left
+         a lying combo plus a no-op undo entry.
+         **`data/animations/*.mhanim` is authored metadata nothing reads.**
+         Found 2026-09-14 while chasing the labels. `walks.mhanim` and
+         `zombie.mhanim` carry, as `# key value` lines: author, licence,
+         homepage, uuid, `# tag Walk` / `# tag Zombie` / `# tag In-place`,
+         `# rig soft1`, an optional `# scale`, and one
+         `# anim <Name> <file> z_is_up` per BVH -- so `walk1.bvh` is authored
+         "Walk1", `dance1.bvh` is "Dance1", `zombieWalk1.bvh` is "zombieWalk1".
+         The chooser currently title-cases the stem instead, which agrees for
+         two of the three. Reading `.mhanim` would give exact authored names,
+         tags a filter could use, and a CROSS-CHECK worth having: `z_is_up` is
+         declared there, and `io::readBvh` detects it independently
+         (`UpAxis::Auto`, `src/io/BvhReader.cpp:180`) -- a test that the two
+         agree would catch a mis-detected file. VERIFIED by rendering: all
+         three load upright, so detection is right today.
+         Design that interaction BEFORE rebuilding it -- and note the owner's
+         decision of 2026-09-14, taken once the distinction was clear: keep
+         `--rig-names auto` and `--list-animations`, leave the chooser out.
+         The distinction matters and I stated it wrongly first. The TAB is a
+         genuine reference task view -- `class AnimationLibrary(gui3d.TaskView)`
+         at `legacy/python/plugins/3_libraries_animation.py:48`, registered into
+         `Pose/Animate` at `:182` -- so it belongs in this port and stays
+         `todo`. What it is NOT is a chooser: it holds a frame slider, four
+         transport buttons and a status line over an animation loaded
+         ELSEWHERE, with no file list anywhere in its 189 lines. The chooser was
+         this port's own idea and is the part withdrawn; the SCRUBBER is what
+         matches the reference and is what "finish the tab" means. Five of its
+         behaviours are marked do-not-copy, a full re-skin per drag tick among
+         them -- and that one is expensive here, because each frame change
+         re-reads the .bvh and refits the skeleton (no cached BvhFile, no
+         setFrame), so throttle to release rather than per tick.
       Shipped meanwhile so the trap is visible instead of folklore:
       `mh::rig::bonesDrivenBy` and a warning -- "drives 0 of 179 bones".
       **The next buildable view is one of the other four**: `BackgroundChooser`,

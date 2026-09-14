@@ -330,6 +330,9 @@ std::optional<size_t>& poseFrameRef() {
     return frame;
 }
 
+/// `--rig-names auto`: let the file decide, by ranking.
+constexpr const char* kAutoNaming = "auto";
+
 /// The `--rig-names` choice: whose bone names to speak, in BOTH directions.
 ///
 /// On import it renames an incoming `--pose` file's joints; on export it
@@ -353,7 +356,11 @@ const mh::rig::RetargetMap* retargetTable() {
     static const std::optional<mh::rig::RetargetMap> table = [] {
         std::optional<mh::rig::RetargetMap> none;
         const std::string& choice = rigNamesRef();
-        if (choice == "native") return none;
+        // `auto` names no table: it is resolved per FILE by `autoNamingFor`,
+        // which needs the file to rank against and so cannot answer here.
+        // Without this, every rigged export under --rig-names auto went looking
+        // for data/rigs/auto_retarget.json and warned that it was missing.
+        if (choice == "native" || choice == kAutoNaming) return none;
         const auto path = dataDir() / "rigs" / (choice + "_retarget.json");
         auto map        = mh::rig::loadRetargetMap(path);
         if (!map) {
@@ -389,6 +396,77 @@ const mh::rig::RetargetMap* exportNameTable() {
         return std::optional<mh::rig::RetargetMap>{std::move(back)};
     }();
     return table ? &*table : nullptr;
+}
+
+/// Every naming this build can offer, loaded from the tables that ship.
+///
+/// Data-driven for the same reason `--rig-names` validates against the
+/// directory: a table dropped into data/rigs becomes a candidate with no code
+/// change. A table that will not load is reported and skipped rather than
+/// silently narrowing the choice.
+const std::vector<std::pair<std::string, mh::rig::RetargetMap>>& namingCandidates() {
+    // Loaded ONCE, for the reason `retargetTable` gives for itself: this is on
+    // the interactive path, and re-reading and re-parsing every table per call
+    // is work nobody asked for.
+    static const std::vector<std::pair<std::string, mh::rig::RetargetMap>> cached = [] {
+        std::vector<std::pair<std::string, mh::rig::RetargetMap>> out;
+        std::error_code ec;
+        const std::filesystem::path dir = dataDir() / "rigs";
+        for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+            const std::string stem = entry.path().stem().string();
+            if (!stem.ends_with("_retarget")) continue;
+            auto map = mh::rig::loadRetargetMap(entry.path());
+            if (!map) {
+                std::fprintf(stderr, "warning: skipping %s: %s\n", entry.path().string().c_str(),
+                             map.error().message().c_str());
+                continue;
+            }
+            out.emplace_back(stem.substr(0, stem.size() - 9), std::move(*map));
+        }
+        if (ec) {
+            std::fprintf(stderr, "cannot read %s: %s\n", dir.string().c_str(),
+                         ec.message().c_str());
+        }
+        // Deterministic order, so a tie resolves the same way on every machine.
+        std::sort(out.begin(), out.end(),
+                  [](const auto& a, const auto& b) { return a.first < b.first; });
+        return out;
+    }();
+    return cached;
+}
+
+/// The naming that makes @p file drive the most of @p skeleton's bones, or
+/// nullptr when the file's own names already win.
+///
+/// ONE implementation for `--rig-names auto` and the Animation chooser. The
+/// chooser cannot ask the user -- there is no naming control in the GUI -- and
+/// a path only the GUI can reach is a path no test can run, which is why this
+/// is a flag as well as a behaviour.
+///
+/// The returned pointer is owned by a function-local static and stays valid
+/// until the next call. Callers use it immediately and do not keep it.
+const mh::rig::RetargetMap* autoNamingFor(const std::filesystem::path& file,
+                                          const mh::rig::Skeleton& skeleton) {
+    static std::optional<mh::rig::RetargetMap> picked;
+    picked.reset();
+
+    auto candidates   = namingCandidates();
+    const auto ranked = mh::rig::rankNamings(file, skeleton, candidates);
+    if (ranked.empty()) {
+        std::fprintf(stderr, "warning: cannot rank namings for %s; using this rig's own names\n",
+                     file.string().c_str());
+        return nullptr;
+    }
+    if (ranked.front().naming == "native") return nullptr;
+
+    for (auto& [naming, table] : candidates) {
+        if (naming != ranked.front().naming) continue;
+        picked = std::move(table);
+        break;
+    }
+    std::printf("%s: read as %s (%zu of %zu bones driven)\n", file.filename().string().c_str(),
+                ranked.front().naming.c_str(), ranked.front().driven, skeleton.boneCount());
+    return picked ? &*picked : nullptr;
 }
 
 /// Renames @p skin's bones to the chosen skeleton's words.
@@ -686,10 +764,14 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
     if (wantPose) {
         // Naming a frame is how a caller says "I know this is an animation";
         // without one, loadBodyPose keeps refusing multi-frame files.
-        const mh::rig::RetargetMap* names = retargetTable();
-        const auto bodyPose               = poseFrameRef()
-                                                ? mh::rig::loadBodyPoseFrame(file, *skel, *poseFrameRef(), names)
-                                                : mh::rig::loadBodyPose(file, *skel, names);
+        // `auto` is resolved against THIS file -- it is the only choice that
+        // cannot be answered without one, which is why `retargetTable()` refuses
+        // it and this asks `autoNamingFor` instead.
+        const mh::rig::RetargetMap* names =
+            rigNamesRef() == kAutoNaming ? autoNamingFor(file, *skel) : retargetTable();
+        const auto bodyPose = poseFrameRef()
+                                  ? mh::rig::loadBodyPoseFrame(file, *skel, *poseFrameRef(), names)
+                                  : mh::rig::loadBodyPose(file, *skel, names);
         if (!bodyPose) {
             std::fprintf(stderr, "cannot load pose: %s\n", bodyPose.error().message().c_str());
             return false;
@@ -2284,6 +2366,14 @@ int main(int argc, char** argv) {
                        "sliders: --facs reaches only the thirty Action Units that name "
                        "them. --list-pose-units prints the names."),
         QStringLiteral("unit=weight"));
+    const QCommandLineOption listAnimationsOpt(
+        QStringLiteral("list-animations"),
+        QStringLiteral("Print the animations the Animation chooser offers, as "
+                       "\"<id>\\t<label>\\t<frames>\\t<best naming>\", and exit. The best "
+                       "naming is the --rig-names choice that makes the file drive the most "
+                       "bones of the current rig: every shipped animation names the OLD "
+                       "MakeHuman skeleton and drives none of this rig's bones under its own "
+                       "names."));
     const QCommandLineOption listPosesOpt(
         QStringLiteral("list-poses"),
         QStringLiteral("Print the poses the Pose chooser offers, as \"<id>\\t<label>\", "
@@ -2332,7 +2422,11 @@ int main(int argc, char** argv) {
                        "bone only when it holds a joint of identically the same name. On "
                        "EXPORT it renames the bones written into .bvh, .glb, .fbx, .dae "
                        "and .usd, so anything but native ships a rig your downstream "
-                       "tools must expect."),
+                       "tools must expect. `auto` picks, per file, whichever naming "
+                       "drives the most bones of the loaded rig, and says which it "
+                       "chose -- every shipped data/animations/ file drives NONE under "
+                       "native. `auto` affects reading only; exports keep this rig's "
+                       "own names."),
         QStringLiteral("naming"), QStringLiteral("native"));
     const QCommandLineOption backgroundOpt(
         QStringLiteral("background"),
@@ -2560,6 +2654,7 @@ int main(int argc, char** argv) {
     parser.addOption(rigOpt);
     parser.addOption(poseOpt);
     parser.addOption(poseUnitOpt);
+    parser.addOption(listAnimationsOpt);
     parser.addOption(listPosesOpt);
     parser.addOption(listPoseUnitsOpt);
     parser.addOption(spreadRootsOpt);
@@ -2862,6 +2957,51 @@ int main(int argc, char** argv) {
     // one thing, and each applies its own blend and then REPLACES the face
     // bones, so whichever ran second would silently be the only one that
     // showed -- a face missing half of what was asked for, exit 0.
+    if (parser.isSet(listAnimationsOpt)) {
+        const auto skelPath = rigFile(".mhskel");
+        const auto skel     = mh::rig::loadSkeleton(skelPath);
+        if (!skel) {
+            std::fprintf(stderr, "cannot load the rig: %s\n", skel.error().message().c_str());
+            return 1;
+        }
+        const auto tables = namingCandidates();
+
+        size_t listed = 0;
+        for (const std::filesystem::path& p :
+             filesWithExtension(dataDir() / "animations", ".bvh")) {
+            const auto meta  = mh::core::loadAssetMeta(p);
+            const auto label = meta.name.empty() ? prettyName(p, "") : meta.name;
+
+            // A file that will not read is REPORTED and skipped, not fatal.
+            // Failing here printed the earlier lines and then exited non-zero,
+            // handing a scripted caller partial output plus a failure -- and
+            // the ranking two lines down already tolerates its own empty
+            // result as "?", so this was the odd one out.
+            const auto bvh = mh::io::readBvh(p, {});
+            if (!bvh) {
+                std::fprintf(stderr, "warning: skipping %s: %s\n", p.string().c_str(),
+                             bvh.error().message().c_str());
+                continue;
+            }
+            // Reported, not guessed: the ranking is measured against the rig
+            // that is actually loaded, so it changes with --rig.
+            const auto ranked      = mh::rig::rankNamings(p, *skel, tables);
+            const std::string best = ranked.empty()
+                                         ? std::string{"?"}
+                                         : ranked.front().naming + " (" +
+                                               std::to_string(ranked.front().driven) + " bones)";
+            std::printf("%s\t%s\t%zu\t%s\n", p.string().c_str(), label.c_str(), bvh->frameCount,
+                        best.c_str());
+            ++listed;
+        }
+        if (listed == 0) {
+            std::fprintf(stderr, "no animations found in %s\n",
+                         (dataDir() / "animations").string().c_str());
+            return 1;
+        }
+        return 0;
+    }
+
     if (parser.isSet(listPosesOpt)) {
         // Printed from the SAME list the chooser is built from, deliberately.
         // A second enumeration here could drift from the real one and would
@@ -3180,9 +3320,9 @@ int main(int argc, char** argv) {
         // list: a table added under data/rigs/ becomes a valid choice without
         // touching this, and a typo names what IS available instead of
         // silently falling back to "native" and posing nothing.
-        if (choice != "native" &&
+        if (choice != "native" && choice != kAutoNaming &&
             !std::filesystem::exists(dataDir() / "rigs" / (choice + "_retarget.json"))) {
-            std::fprintf(stderr, "unknown --rig-names %s; available: native", choice.c_str());
+            std::fprintf(stderr, "unknown --rig-names %s; available: native, auto", choice.c_str());
             // The non-throwing overload: this is already the error path, and a
             // data directory that is missing or unreadable must print the list
             // it can rather than throw out of argument parsing.

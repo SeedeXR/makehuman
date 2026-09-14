@@ -77,7 +77,11 @@ TEST_CASE("a missing sidecar is not an error", "[core][meta]") {
     // Most assets ship without one. The reference treats absence as "no
     // metadata", so a caller can use the result unconditionally.
     const auto meta = loadAssetMeta(dataDir() / "3dobjs" / "base.obj");
-    CHECK(meta.name == "base");  // falls back to the asset's own stem
+    // EMPTY, not the stem. The caller needs to tell "the sidecar named it" from
+    // "there was no sidecar" -- an unnamed asset is labelled by
+    // `prettyAssetName` like every other chooser, and defaulting to the stem
+    // here made that fallback unreachable. See the header.
+    CHECK(meta.name.empty());
     CHECK(meta.tags.empty());
 }
 
@@ -123,6 +127,16 @@ TEST_CASE("a key with no value does not become a tag", "[core][meta]") {
     const auto meta = loadAssetMeta(t.asset);
     CHECK(meta.tags.empty());
     CHECK(meta.name == "Kept");
+}
+
+TEST_CASE("a sidecar with no name leaves the name empty", "[core][meta]") {
+    // The distinction the whole field rests on: this file EXISTS and is read,
+    // and still names nothing, so the caller falls back exactly as it would for
+    // an asset with no sidecar at all.
+    const TempMeta t("tag rest poses\nlicense CC0\n");
+    const auto meta = loadAssetMeta(t.asset);
+    CHECK(meta.name.empty());
+    CHECK(meta.hasTag("rest poses"));
 }
 
 // ----------------------------------------------------------- regression

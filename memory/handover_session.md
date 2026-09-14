@@ -4,6 +4,115 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-14 (ninety-second) — Session · **The shipped animations become reachable, and a chooser is withdrawn**
+
+*2026-09-14 — the loading half of rig-naming item 5. The chooser half was built
+and taken back out; that is the more useful half of this entry.*
+
+### What shipped
+* `mh::rig::rankNamings` — ranks candidate retarget tables PLUS the file's own
+  names by how many of a skeleton's bones a BVH drives, best first. Stable, so a
+  tie favours native: a pose authored for this rig is never renamed merely
+  because some table scores equally.
+* `--rig-names auto` — resolves per FILE and reports its choice.
+* `--list-animations` — every shipped file with frame count and winning naming,
+  measured against the rig actually loaded (59 bones on superset, 56 on default).
+
+MEASURED: `dance1` 1 frame, `walk1` 14, `zombieWalk1` 31. All three drive **0**
+of the superset's 179 bones under this rig's own names, 59 through the MakeHuman
+1.x table, 5 through Mixamo's. Under `auto`, frames 0 and 7 of walk1 differ in
+14,444 of 14,444 vertices; `--pose tpose --rig-names auto` renames nothing.
+
+### Why the chooser was withdrawn
+It was built — an `Animation` AssetGroup, an `applyChoice` branch, live and
+visible in the real AX tree. Review then found four MAJOR state bugs, all from
+one cause: **Pose and Animation are two combos over one `rig`, and the
+interaction was never designed.**
+
+1. `poseFrameRef() = 0` leaked into later Pose loads, routing them through
+   `loadBodyPoseFrame` and past `loadBodyPose`'s multi-frame refusal
+   (`src/rig/PoseUnits.cpp:384`). A multi-frame `.bvh` in `data/poses/` would
+   then be silently accepted as frame 0 — the exact thing that guard exists for.
+2. The combos could contradict each other: pick T-pose, then walk1, then None,
+   and the body drops to A-pose while the Pose combo still says "T-pose".
+   Unrecoverable without cycling, because `QComboBox` only emits on a CHANGE.
+3. Switching Skeleton reloaded `poseChoice`, which the Animation branch never
+   updated — the animation vanished while its combo still named it.
+4. No pre-flight probe for the Animation group, so a failed load left a lying
+   combo plus a no-op undo entry — verbatim what the comment beside that probe
+   says must not happen.
+
+Patching four state bugs into a design that generates them is the wrong move, so
+the loading half shipped and the chooser did not. Recorded in
+`memory/taskviews.md` and `tools/audit_taskviews.py` with the bugs named, so the
+next attempt starts at the design question.
+
+**Read before rebuilding**: the reference's `AnimationLibrary` is NOT a chooser.
+It is a frame scrubber over an animation loaded elsewhere, no file list anywhere
+in 189 lines (`3_libraries_animation.py:48-189`), and five of its behaviours are
+do-not-copy — a full re-skin per drag tick among them.
+
+### A GUI-only path made testable
+Qt popups take neither AppleScript clicks nor type-ahead, so the chooser's
+auto-ranking would have been code no test could reach. That is why it became
+`--rig-names auto`: one implementation, two entry points, and the CLI gained a
+real feature. Restructure for testability rather than accepting an untested path.
+
+### Two findings worth keeping
+* **`auto` broke every rigged export.** `retargetTable()` never learned that
+  `auto` names no file, so it hunted for `data/rigs/auto_retarget.json` and
+  warned on every `.glb`/`.fbx`/`.usd`. Every gate exported `.obj`, which
+  carries no skeleton, so nothing reached it. Fixed and mutation-gated.
+* **Three `--list-animations` gates were weak**: they pinned `walk1` and
+  `zombieWalk1`, which also appear in the PATH column, so they passed whether or
+  not a label was produced; `dance1` was pinned nowhere; one asserted nothing
+  beyond exit 0. Each now pins the whole label-and-frame row.
+
+Ponytail then found `namesOverride` — a `loadPoseRig` parameter added for the
+chooser — had zero callers once the chooser came out. Deleted.
+
+### Follow-ups the owner's "no bugs" pass then turned up
+Three more, all in the kept code, all found by acting on that instruction
+rather than declaring done:
+
+* **A label bug that reached the user.** No animation ships a `.meta`, and
+  `loadAssetMeta` defaulted `name` to the stem -- which made every caller's
+  documented `prettyAssetName` fallback UNREACHABLE. Labels came out as raw
+  `walk1` beside `T-pose` and `High-poly`. Fixed at the source: `name` is now
+  EMPTY when the file names nothing, so a caller can tell "the sidecar named it"
+  from "there was no sidecar". Now `Dance1`, `Walk1`, `ZombieWalk1`; poses
+  unchanged. This is a deliberate divergence from the reference, which defaults
+  to the stem (`3_libraries_pose.py:114`) -- documented in the header.
+* **`--rig-names auto` broke every RIGGED export.** `retargetTable()` never
+  learned that `auto` names no file, so it hunted for
+  `data/rigs/auto_retarget.json` and warned on every `.glb`/`.fbx`/`.usd`. Every
+  gate exported `.obj`, which carries no skeleton, so nothing reached it.
+* **`--list-animations` failed too hard**: one unreadable file printed the
+  earlier rows and THEN exited non-zero, handing a scripted caller partial
+  output plus a failure, while the ranking beside it already tolerated its own
+  empty result. Warns and skips now.
+
+### A Z-up scare that was not a bug
+`data/animations/*.mhanim` declare `z_is_up`, and this port is Y-up. Checked
+rather than assumed: `io::readBvh` auto-detects (`UpAxis::Auto`,
+`src/io/BvhReader.cpp:180`) and records `convertedFromZUp`. Confirmed by
+RENDERING all three -- upright, feet down, no rotation.
+
+### `data/animations/*.mhanim` is authored metadata nothing reads
+Found while chasing the labels. Each carries author, licence, homepage, uuid,
+tags (`Walk`, `Zombie`, `In-place`), `# rig soft1`, an optional `# scale`, and
+one `# anim <Name> <file> z_is_up` per BVH -- so `walk1.bvh` is authored
+"Walk1". Reading it would give exact names, tags a filter could use, and a
+CROSS-CHECK worth having: `z_is_up` is declared there and detected independently
+by the reader, so a test that the two agree would catch a mis-detected file.
+
+### Next
+Design the Pose/Animation interaction, then build the SCRUBBER (not a chooser --
+that is what the reference's tab actually is). Read `.mhanim` while there. After
+that, M5-M9 in milestone order.
+
+---
+
 ## 2026-09-14 (ninety-first) — Session · **Exports learn to speak other skeletons**
 
 *2026-09-14 — fourth of the five chunks the owner's rig-naming decision implies.*

@@ -151,8 +151,28 @@ re-derive this list from its own bucket map**, so the two cannot disagree
 again. Until then the auditor's map in `tools/audit_taskviews.py` is the
 authority and this paragraph is a copy.
 
-`AnimationLibrary` gates only on a skeleton and an active animation
-(`3_libraries_animation.py:150,157`) — `rig/` and `io/BvhReader.h` have both.
+`AnimationLibrary` is **no longer blocked on content** (2026-09-14).
+`--rig-names auto` reads any shipped animation through the naming that drives
+the most bones — MEASURED, 59 of 179 via the MakeHuman 1.x table against **0**
+under this rig's own names — and `--list-animations` reports every file with its
+frame count and chosen naming. The remaining work is the CHOOSER, and it is
+unbuilt deliberately.
+
+Two things to know before building it. First, the tab itself IS a reference task
+view — `class AnimationLibrary(gui3d.TaskView)` at
+`3_libraries_animation.py:48`, registered into `Pose/Animate` at `:182` — so it
+belongs in this port. What it is NOT is a chooser: it is a frame scrubber over
+an animation loaded elsewhere, with no file list in its 189 lines. The file
+chooser was this port's own idea, and that is the part that was withdrawn; the
+scrubber is the part that matches the reference and is still to build. Second, a first
+attempt at an Animation asset group was written and withdrawn the same day,
+because Pose and Animation are two combos over one `rig` and the interaction was
+undesigned — review found four state bugs: a frame index leaking into later pose
+loads past `loadBodyPose`'s multi-frame guard, the two combos contradicting each
+other so the panel named a pose the model was not in, a Skeleton change silently
+dropping the animation, and a failed load leaving a lying combo plus a no-op
+undo entry. Design that interaction first; the loading half already works.
+
 `ExpressionTaskView` chooses `.mhpose` files and this port ships **zero**
 (measured under `data/`), so expressions arrive as `--facs` action units
 instead; the chooser needs content before it needs code.
