@@ -5687,11 +5687,22 @@ GPU here, or Colab) and it comes back to the owner first.
                     measured bounding box of the moved vertices rather than at
                     the driving joint: `shoulder01.L` is a clavicle near the
                     spine, and aiming there framed the hip.
-            - [ ] **Wiring it into the app** waits for the authoring manifest
-                  (step 4): a corrective needs a driving joint, example poses
-                  and sculpted deltas, and all three are manifest content.
-                  Hardcoding a demo corrective in `main.cpp` would be
-                  scaffolding for something the next step deletes.
+            - [x] **Wiring it into the app — DONE, and this entry was STALE.**
+                  It said the wiring "waits for the authoring manifest (step 4)";
+                  step 4 is itself marked COMPLETE above, and the wiring shipped
+                  with it. Corrected 2026-09-14 after reconciling against live
+                  state, having nearly rebuilt something that already ships.
+                  VERIFIED by running it, not by reading the code:
+                  `--correctives <manifest>` is declared at
+                  `src/app/main.cpp:2680` and bound after the rig at `:3486`
+                  (binding needs the skeleton the drivers name). A full run --
+                  `--correctives tests/correctives/correctives.json --pose
+                  data/poses/tpose.bvh --export corr.obj` -- skinned 179 joints,
+                  wrote the OBJ, and baked a wrinkle map at 0.98 with 56,832 of
+                  65,536 texels moved.
+                  The original reasoning was sound and is why it is now safe:
+                  no demo corrective was ever hardcoded in `main.cpp`, so there
+                  was no scaffolding for step 4 to delete.
                   - **The runtime stays hand-written** — directive 12.5 fixes
                     the per-vertex accumulation order, and Eigen's vectorised
                     reductions reorder float additions by design. Not a
@@ -5725,9 +5736,12 @@ GPU here, or Colab) and it comes back to the owner first.
                     definite, so plain Cholesky is the wrong algorithm; a
                     pivoted LDLT or QR is what keeps a clustered set of example
                     poses from silently returning garbage.
-            - [ ] **Nothing consumes the signal yet**, which is why this chunk
-                  has no render: there is no geometry moving. The first visual
-                  gate arrives with the corrective application.
+            - [x] **"Nothing consumes the signal yet" was true when written and
+                  is now FALSE.** Corrected 2026-09-14. Two consumers run: the
+                  deltas move rest-space geometry pre-skin, and the same weights
+                  select the per-pose wrinkle map. The visual gate this entry
+                  was waiting for exists -- a corrective run bakes a normal map
+                  and reports how many texels moved.
       - [x] **4. Authoring format, compiler, Blender round-trip** — COMPLETE
             2026-09-10. Manifest (TOML/JSON) + sparse `.target` payloads →
             offline RBF solve → an mmap-able blob that is a disposable cache,
@@ -6043,6 +6057,30 @@ GPU here, or Colab) and it comes back to the owner first.
                     invisible anywhere else, and honest about being a snapshot.
                     **Not done here** — it is an exporter feature across three
                     writers, not part of a validation chunk.
+                    **Scoped 2026-09-14 by reading the writers, so the next fire
+                    does not re-derive it.** The plumbing already exists:
+                    `foundation::MorphTarget {name, deltas}`
+                    (`include/makehuman/foundation/Geometry.h:166`) is DENSE, one
+                    delta per RENDER vertex, and `SceneEntry::morphTargets`
+                    (`include/makehuman/io/SceneIO.h:116`) is already consumed by
+                    glTF, FBX and USD. Reuse that path; do not add a parallel one.
+                    **The actual gap is the WEIGHT.** `MorphTarget` has no weight
+                    field and all three writers hardcode the initial value to
+                    zero: glTF emits `"weights":[0,0,...]`
+                    (`src/io/GltfWriter.cpp:1046`) and FBX `DeformPercent 0.0`
+                    (`src/io/FbxWriter.cpp:770`). So the chunk is "MorphTarget
+                    learns a weight, three writers stop hardcoding zero", plus
+                    turning each fired corrective into a target.
+                    **Zero must stay the default for the 34 modelling shapes** —
+                    the glTF comment says why and it is right: a viewer that
+                    ignores weights then shows the unmorphed body rather than
+                    every target at once. Only a corrective carries a non-zero
+                    weight, because only it is a snapshot of one pose.
+                    Check when building it: the blob's deltas are SPARSE
+                    (`core::TargetView`) while `MorphTarget` is dense per RENDER
+                    vertex, and export COMPACTS vertices (`io/Compact.h`) — so
+                    the densify step must go through the same compaction mapping
+                    the 34 shapes use, or every delta lands on the wrong vertex.
       - [~] **5. Content**: groom, PBR skin, wrinkle maps THROUGH THE SHARED
             DRIVER, eye/teeth rig.
             - [x] **Wrinkle maps reach the screen** (2026-09-10) —
@@ -6493,9 +6531,19 @@ GPU here, or Colab) and it comes back to the owner first.
 - [ ] Eye, teeth, tongue rigging refinement — **skeleton and constraint work,
       NOT correctives** (directive 12.3: expressing them as correctives is "a
       trap"). Stays in the rig layer.
-- [ ] Wrinkle/detail normal blending — **now a CONSUMER of the shared pose
-      driver** (directive 12.3), not a parallel system with its own keying
-      convention. Blocked behind PSD steps 1-4, deliberately.
+- [x] **Wrinkle/detail normal blending — DONE, and this entry was STALE.**
+      It said "blocked behind PSD steps 1-4, deliberately"; step 4 is complete
+      and this landed with it. Corrected 2026-09-14 against live state.
+      It is a CONSUMER of the shared pose driver exactly as directive 12.3
+      requires, with no keying convention of its own: `ExamplePose::wrinkle`
+      (`include/makehuman/core/CorrectiveManifest.h:100`) keys the map on the
+      SAME example poses the deltas use, so one RBF weight vector drives both.
+      MEASURED: `tests/unit/test_wrinkles.cpp` and
+      `tests/unit/test_normal_blend.cpp` pass 145 assertions in 17 cases, and
+      twelve app-level ctest entries cover it -- including "version 2 carries a
+      wrinkle map per pose", "a wrinkle map in a version 1 manifest is refused",
+      "a wrinkle path may not leave the manifest's directory" and "nothing fired
+      means no wrinkle map at all".
 
 ## M10 — Data-driven character generation
 

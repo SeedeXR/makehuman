@@ -4,6 +4,49 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-14 (ninety-sixth) — Session · **The roadmap was lying about three finished things**
+
+*2026-09-14 — the chunk where reconciling against live state stopped me
+rebuilding something that already ships.*
+
+### What happened
+With M5, M6 and M7 at zero open items, the next item in milestone order looked
+like M9's "Wiring it into the app". Before building it I ran the thing it said
+was missing. It works.
+
+`--correctives <manifest>` is declared at `src/app/main.cpp:2680` and bound
+after the rig at `:3486`. A full run --
+`--correctives tests/correctives/correctives.json --pose data/poses/tpose.bvh
+--export corr.obj` -- skinned 179 joints, wrote the OBJ, and **baked a wrinkle
+map at 0.98 with 56,832 of 65,536 texels moved**.
+
+### Three entries corrected, each against something run
+1. **"Wiring it into the app waits for the authoring manifest (step 4)"** --
+   step 4 is itself marked COMPLETE directly below it, and the wiring landed
+   with it.
+2. **"Nothing consumes the signal yet, which is why this chunk has no render"**
+   -- two consumers run: deltas move rest-space geometry pre-skin, and the same
+   weights select the per-pose wrinkle map.
+3. **"Wrinkle/detail normal blending -- blocked behind PSD steps 1-4,
+   deliberately"** -- shipped. `tests/unit/test_wrinkles.cpp` and
+   `test_normal_blend.cpp` pass **145 assertions in 17 cases**, plus twelve
+   app-level ctest entries including "version 2 carries a wrinkle map per pose"
+   and "a wrinkle path may not leave the manifest's directory".
+
+### Why this matters more than the edit
+CLAUDE.md says a stale memory file lies with authority, and this is what that
+looks like in practice: the roadmap is what picks the next chunk, so three wrong
+entries were about to cost a chunk of duplicated work. The rule that caught it
+is the cheap one -- **run the thing before building it**.
+
+### What the correction UNCOVERED
+With the stale entries cleared, the genuinely open item surfaced:
+**get the corrective INTO an interchange file.** A user who exports `.glb` still
+loses the deformation. None of glTF, FBX or UsdSkel has a pose-driven shape, but
+all three have BLEND SHAPES and the app already writes 34 through every one of
+those writers (`--blendshapes`). Emit each fired corrective as a named key at
+the weight the RBF returned for the exported pose. That is the next chunk.
+
 ## 2026-09-14 (ninety-fifth) — Session · **Twelve poses named for the wrong body part**
 
 *2026-09-14 — the chunk that started because a render did not match its label.*
