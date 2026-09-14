@@ -39,11 +39,6 @@ std::optional<Channel> channelFromName(std::string_view s) {
     return std::nullopt;
 }
 
-/// Joint names to measure the up axis against, most reliable first. Each is a
-/// bone whose length is dominated by the body's vertical extent.
-constexpr std::array<std::string_view, 6> kUpProbeJoints{"spine03",      "spine02",      "spine01",
-                                                         "upperleg02.L", "lowerleg02.L", "head"};
-
 }  // namespace
 
 std::string BvhError::message() const {
@@ -164,23 +159,69 @@ std::expected<BvhFile, BvhError> readBvh(const std::filesystem::path& path,
     // ---- decide the up axis ------------------------------------------------
     bool zUp = (options.upAxis == UpAxis::ZUp);
     if (options.upAxis == UpAxis::Auto) {
-        // Measure a bone that should be dominated by the body's vertical
-        // extent, and see which component wins.
-        for (const auto& probe : kUpProbeJoints) {
-            const auto it = std::ranges::find_if(
-                out.joints, [&](const BvhJoint& j) { return j.name == probe; });
-            if (it == out.joints.end()) continue;
+        // The body's EXTENT, not a named joint and not a sum of bone lengths.
+        //
+        // This used to look for one of six probe joints -- `spine03`, `head`
+        // and four more -- and compare the direction to that joint's first
+        // child. Two things were wrong with it. Those are THIS rig's bone
+        // names, so every file written for another skeleton matched nothing and
+        // fell through to Y-up: MEASURED, all three `data/animations/*.bvh`
+        // name the old MakeHuman skeleton, match no probe, and were loading
+        // unconverted while their own `.mhanim` declares `z_is_up`. And the
+        // probe could be confidently wrong even when it did match -- `head`'s
+        // first child in this rig is `temporalis02.R`, a sideways face bone
+        // whose direction says nothing about which way is up.
+        //
+        // Extent is naming-independent and has room to spare. MEASURED over
+        // every BVH that ships, as max-minus-min of joint POSITION per axis:
+        //
+        //     walk1 / zombieWalk1   y  2.06   z 16.36   (7.96x)
+        //     dance1                y  2.12   z 15.93   (7.50x)
+        //     tpose / benchmark     y  3.98   z 16.57   (4.16x)
+        //     face-poseunits        y  3.98   z 16.68   (4.19x)
+        //
+        // Summing |offset| instead -- the first attempt -- measured bone-length
+        // noise rather than body extent and gave tpose.bvh 69.47 against 69.57,
+        // a margin of 0.14% across 222 joints. Positions also make a root
+        // OFFSET carrying world placement harmless: it shifts every joint
+        // equally and cancels out of a max-minus-min, where it would have been
+        // added straight onto a sum.
+        //
+        // Z-up is claimed only when Z CLEARLY dominates. Anything ambiguous
+        // keeps Y-up, which is the format's convention and what an unrecognised
+        // file used to get: a partial rig -- a face-only or hand-only capture --
+        // has no meaningful vertical extent, and rotating one on a coin-flip
+        // would be worse than leaving it alone.
+        // Empty gives 0, so a file with no joints falls to Y-up rather than
+        // comparing uninitialised bounds.
+        const auto extentAlong = [&out](float foundation::Vec3::* axis) {
+            if (out.joints.empty()) return 0.0F;
+            float lo = out.joints.front().position.*axis;
+            float hi = lo;
+            for (const BvhJoint& j : out.joints) {
+                lo = std::min(lo, j.position.*axis);
+                hi = std::max(hi, j.position.*axis);
+            }
+            return hi - lo;
+        };
+        const float extentY = extentAlong(&foundation::Vec3::y);
+        const float extentZ = extentAlong(&foundation::Vec3::z);
 
-            const auto idx   = static_cast<int32_t>(std::distance(out.joints.begin(), it));
-            const auto child = std::ranges::find_if(
-                out.joints, [&](const BvhJoint& j) { return j.parent == idx; });
-            if (child == out.joints.end()) continue;  // an end effector proves nothing
-
-            const Vec3 d = child->position - it->position;
-            zUp          = std::abs(d.z) > std::abs(d.y);
-            break;
-        }
+        // 1.5 sits an order of magnitude below the 4.16x margin of the
+        // tightest file that ships, and well above 1.0, so it separates a real
+        // Z-up body from a rig that merely leans.
+        //
+        // SURVIVING MUTATION, recorded rather than dressed up as covered:
+        // corrupting one of the four bounds -- reading `position.y` into `loZ`,
+        // say -- changes no verdict any test can see. That is the margin doing
+        // its job: every real file clears it by 4x or more, so a damaged bound
+        // still lands on the right side. It means the bounds are not pinned
+        // individually, only their conclusion is. Exposing the extents to pin
+        // them would be API nobody else wants.
+        constexpr float kDominance = 1.5F;
+        zUp                        = extentZ > extentY * kDominance;
     }
+
     out.convertedFromZUp = zUp;
 
     if (zUp) {

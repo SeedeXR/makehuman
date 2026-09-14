@@ -2959,6 +2959,36 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
          branch never updated, silently dropping the animation;
          (d) the Animation group had no pre-flight probe, so a failed load left
          a lying combo plus a no-op undo entry.
+         **The shipped animations were loading SIDEWAYS, and nothing noticed.**
+         Fixed 2026-09-14. `io::readBvh`'s `UpAxis::Auto` decided the up axis by
+         looking for one of six probe joints -- `spine03`, `head` and four more
+         -- and comparing the direction to that joint's first child. Those are
+         THIS rig's bone names. Every `data/animations/*.bvh` names the OLD
+         MakeHuman skeleton, matched none of them, and fell through to Y-up,
+         while each file's own `.mhanim` declares `z_is_up`.
+         The probe list is now DELETED. `Auto` measures positional EXTENT --
+         max-minus-min of joint position per axis -- and claims Z-up only when Z
+         dominates Y by 1.5x; anything ambiguous keeps Y-up, which is the
+         format's convention and what an unrecognised file used to get.
+         MEASURED extents (y / z): walk1 and zombieWalk1 2.06/16.36, dance1
+         2.12/15.93, tpose and benchmark 3.98/16.57, face-poseunits 3.98/16.68
+         -- margins of 4.2x to 8.0x.
+         **The first attempt was wrong and is worth remembering**: summing
+         `|offset|` across all joints measured bone-length noise, not body
+         extent -- 222 mostly-tiny face and hand bones pointing everywhere --
+         and gave `tpose.bvh` 69.47 against 69.57, a margin of **0.14%**. It
+         also broke the write-then-read round-trip test, because `writeBvh`
+         emits Y-up. Extent is immune to a root `OFFSET` carrying world
+         placement too: that shifts every joint equally and cancels out of a
+         max-minus-min, where it would have been added straight onto a sum.
+         The GATE is `tests/regression/test_animation_upaxis.cpp`: it parses
+         `# anim <Name> <file> z_is_up` out of the `.mhanim` files and
+         cross-checks `convertedFromZUp` against what the author declared --
+         ground truth the heuristic did not produce. Plus a synthetic **Y-up rig
+         with foreign joint names**, which is the direction this heuristic can
+         now get wrong and which no shipped file covers, since every BVH under
+         `data/` measures Z-up.
+
          **`data/animations/*.mhanim` is authored metadata nothing reads.**
          Found 2026-09-14 while chasing the labels. `walks.mhanim` and
          `zombie.mhanim` carry, as `# key value` lines: author, licence,

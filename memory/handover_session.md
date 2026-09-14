@@ -4,6 +4,76 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-14 (ninety-third) — Session · **The shipped animations were loading sideways**
+
+*2026-09-14 — found by a test written to confirm existing behaviour, which is
+the only reason it was found at all.*
+
+### The bug
+`io::readBvh`'s `UpAxis::Auto` decided the up axis by finding one of six probe
+joints — `spine03`, `spine02`, `spine01`, `upperleg02.L`, `lowerleg02.L`,
+`head` — and comparing the direction to that joint's first child.
+
+Those are **this rig's** bone names. Every `data/animations/*.bvh` names the OLD
+MakeHuman skeleton, matched none of them, and fell through to Y-up — while each
+file's own `.mhanim` declares `z_is_up`. All three shipped animations were
+loading unconverted.
+
+Nothing caught it because the only two assertions on `convertedFromZUp` were
+against files the tests themselves chose.
+
+### The fix, after /code-review rewrote it
+The probe list is **deleted**. `Auto` now measures positional EXTENT —
+max-minus-min of joint position per axis — and claims Z-up only when Z dominates
+Y by 1.5x. Ambiguous files keep Y-up: the format's convention, and what an
+unrecognised file used to get. A partial rig (face-only, hand-only) has no
+meaningful vertical extent and must not be rotated on a coin-flip.
+
+MEASURED extents, y / z: walk1 and zombieWalk1 2.06/16.36, dance1 2.12/15.93,
+tpose and benchmark 3.98/16.57, face-poseunits 3.98/16.68. Margins 4.2x to 8.0x.
+
+Deleting the list also removed a second latent bug the review found: `head`'s
+first child in this rig is `temporalis02.R`, a sideways face bone, so the probe
+could be confidently WRONG when it did match — rescued today only because
+`spine03` happens to come first.
+
+### My first attempt was wrong, and the way it was wrong matters
+Summing `|offset|` across all joints measured **bone-length noise**, not body
+extent: 222 mostly-tiny face and hand bones pointing in every direction. It gave
+`tpose.bvh` 69.47 against 69.57 — a margin of **0.14%** — and broke the
+write-then-read round-trip, because `writeBvh` emits Y-up. Extent gives the same
+file 4.16x.
+
+Extent is also immune to a root `OFFSET` carrying world placement (routine in
+multi-actor mocap): it shifts every joint equally and cancels out of a
+max-minus-min, where a sum would have taken it straight on board.
+
+**Three claims of mine were false and are corrected.** The comment cited
+51.95/19.22, which are the sums EXCLUDING End Sites while the code includes
+them (real: 52.50/22.34). "On this port's own Y-up poses the comparison runs the
+other way" had no referent — there are no Y-up BVHs under `data/`; all six
+measure Z-up. And the public `UpAxis::Auto` header contract still described the
+old probe, so a caller would believe an unrecognised rig is left alone.
+
+### The gate
+`tests/regression/test_animation_upaxis.cpp` parses `# anim <Name> <file>
+z_is_up` out of the `.mhanim` files and cross-checks `convertedFromZUp` against
+what the AUTHOR declared — ground truth the heuristic did not produce. Plus a
+coverage test that no `.bvh` escapes the check, a `REQUIRE` so an empty parse
+cannot pass vacuously, and a synthetic **Y-up rig with foreign joint names**:
+the direction this heuristic can now get wrong, and which no shipped file can
+cover.
+
+Deliberately NOT built: a `.mhanim` parser. Neither this port nor the reference
+reads that format — checked — so a production reader would serve nobody. The one
+fact worth having lives in the test.
+
+### Next
+Still blocked on the owner: how Pose and Animation coexist in the UI. Then M5-M9
+in milestone order.
+
+---
+
 ## 2026-09-14 (ninety-second) — Session · **The shipped animations become reachable, and a chooser is withdrawn**
 
 *2026-09-14 — the loading half of rig-naming item 5. The chooser half was built

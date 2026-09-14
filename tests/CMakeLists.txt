@@ -89,6 +89,7 @@ add_executable(mh_tests
     regression/test_review_findings.cpp
     regression/test_io_review_findings.cpp
     regression/test_determinism.cpp
+    regression/test_animation_upaxis.cpp
     regression/test_afro_shape.cpp)
 
 # mh::rig alone. It PUBLIC-links mh::io (PoseUnits.h takes a BvhFile) and, since

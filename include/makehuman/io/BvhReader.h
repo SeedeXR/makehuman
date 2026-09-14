@@ -59,10 +59,24 @@ enum class TranslationPolicy : uint8_t { RootOnly, All, None };
 /// How to treat the file's up axis.
 ///
 /// BVH does not record which axis is up, and both conventions are in the wild.
-/// `Auto` measures it: it finds a joint from a known humanoid set that has a
-/// child, and compares |dy| against |dz| along that bone. A humanoid's spine or
-/// leg is longer vertically than in depth, so whichever component dominates
-/// names the up axis. Both MakeHuman pose files measure as **Z-up**.
+///
+/// `Auto` measures the skeleton's EXTENT: max-minus-min of joint position along
+/// Y and along Z, claiming Z-up only when Z dominates Y by a clear margin. A
+/// standing humanoid is far taller than it is deep, so the long axis names up.
+/// Every BVH that ships measures Z-up, by margins of 4.2x to 8.0x.
+///
+/// **An ambiguous file is left alone.** Below the margin -- which is where a
+/// partial rig lands, a face-only or hand-only capture with no meaningful
+/// vertical extent -- `Auto` keeps Y-up, the format's convention. It does not
+/// guess: rotating a capture that merely leans would be worse than leaving it.
+///
+/// This used to look for a joint from a known humanoid set and compare |dy|
+/// against |dz| along it. Those were THIS rig's bone names, so a file written
+/// for any other skeleton matched none of them and silently fell through to
+/// Y-up -- which is how all three shipped `data/animations/*.bvh` loaded
+/// unconverted while their own `.mhanim` declared `z_is_up`.
+///
+/// Pass `YUp` or `ZUp` to skip the measurement when the caller knows.
 ///
 /// Getting this wrong does not fail -- it produces a complete, plausible
 /// skeleton lying on its side.
