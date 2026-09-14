@@ -15,6 +15,7 @@ add_executable(mh_tests
     unit/test_retarget_import.cpp
     unit/test_asset_meta.cpp
     unit/test_body_poseunits.cpp
+    unit/test_centers_of_rotation.cpp
     unit/test_retarget_export.cpp
     unit/test_retarget_map.cpp
     unit/test_scalp.cpp

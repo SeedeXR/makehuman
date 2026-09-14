@@ -5480,6 +5480,35 @@ GPU here, or Colab) and it comes back to the owner first.
                   precompute is 19,158 vertices × 36,972 triangles of
                   similarity evaluation, which needs its own budget and its
                   own cache format.
+                  **Started 2026-09-15, and the measurement OVERTURNS the
+                  "own cache format" assumption above.** `rig::weightSimilarity`
+                  and `rig::computeCentersOfRotation` are built and tested
+                  (`src/rig/CentersOfRotation.cpp`). Then a transient probe on
+                  the shipped mesh, since removed:
+                  - Full precompute, RELEASE: **2,040 ms** (11,847 ms in debug)
+                    for 19,158 verts × 36,972 tris. **15,057 of 19,158** centres
+                    move off their rest position, so this is not a marginal
+                    effect on a handful of vertices.
+                  - Non-zero `(vertex, triangle)` similarity pairs, from a 1-in-20
+                    sample: **~19.5 million**, about **1,020 triangles per
+                    vertex**.
+                  **So a sparse similarity cache is the WRONG answer**: at 8
+                  bytes a pair that is ~**156 MB**, which is worse than the two
+                  seconds it would save. Recorded before building it.
+                  **And the centres cannot be computed once at startup anyway**:
+                  they are positions on the REST mesh, and the rest mesh changes
+                  with every modelling slider. What does NOT change with shape is
+                  the similarity — it reads only the weights — but caching that
+                  is the 156 MB above.
+                  **The promising direction is PARALLELISM, not a cache.** The
+                  loop is embarrassingly parallel across vertices and each vertex
+                  is independent, so it is deterministic to split (unlike the PSD
+                  accumulation directive 12.5 pins). 2 s over 8 cores is ~0.3 s,
+                  which is a shape-change cost worth paying. MEASURE it rather
+                  than assuming the speedup.
+                  The other option the paper uses is computing on a DECIMATED
+                  mesh and transferring — this port already has decimation, so
+                  it is available if parallelism is not enough.
       - [~] **3. PSD runtime + synthetic oracle.** Swing-twist decomposition
             (NOT Euler) → one RBF evaluator → a weight vector. Analytic
             corrective function as ground truth, verified AT and BETWEEN

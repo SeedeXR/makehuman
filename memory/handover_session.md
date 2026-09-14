@@ -4,6 +4,75 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-15 (ninety-eighth) — Session · **Centres of rotation, and the cache that should not exist**
+
+*2026-09-15 — a measurement that killed the plan the roadmap had written down.*
+
+### What shipped
+`rig::weightSimilarity`, `rig::computeCentersOfRotation` and
+`rig::skinPositionsCor` — Le & Hodgins 2016, owner directive 12's step 2, the
+rung above the DQS that already shipped. 13 cases, 56 assertions.
+
+DQS rotates every vertex about the JOINT. CoR rotates it about the vertex's own
+precomputed centre, which is where the bulge on the inside of a bend comes from.
+
+**No reference implementation exists** — the Python original has no CoR — so
+every test is an ANALYTIC oracle in directive 12.7's sense: the answer follows
+from the definition, not from a recorded output.
+
+### Two reductions that make it safe to enable
+- A rigidly bound vertex gets **exactly** LBS. Its centre is its rest position,
+  so `R(v-v) + LBS(v)` collapses identically, not approximately.
+- The 180-degree twist ring that LBS pinches to **0.0** holds its full **2.0**
+  radius, same as DQS. Both blend the rotation; only the pivot differs.
+
+### The measurement that overturned the roadmap
+The todo said this "needs its own budget and its own cache format". A transient
+probe on the shipped mesh, since deleted, says otherwise:
+- Release precompute **2,040 ms** (11,847 ms debug) for 19,158 verts x 36,972 tris.
+- **15,057 of 19,158** centres move off rest — not a marginal effect.
+- **~19.5 million** non-zero `(vertex, triangle)` similarity pairs from a 1-in-20
+  sample, about **1,020 triangles per vertex**.
+
+At 8 bytes a pair that cache is **~156 MB** — worse than the two seconds it
+would save. And the centres are positions on the REST mesh, which changes with
+every modelling slider, so it was never a one-time startup cost either. The
+shape-independent part is the similarity, and caching that IS the 156 MB.
+
+**The direction is parallelism, not caching.** The loop is independent per
+vertex, so splitting it is deterministic — unlike the PSD accumulation order
+directive 12.5 pins. Recorded in todo.md with the numbers, so the next attempt
+starts from there rather than re-deriving a dead end. Decimation is the fallback.
+
+**Deliberately NOT wired into the app.** Two seconds per shape change is not an
+interactive cost, and shipping a flag nobody should turn on is worse than
+shipping none.
+
+### Two mutations survived first, and both were tests that could not discriminate
+**C1 exposed a false claim in my own test comment.** It said the centroid case
+"pins the AREA weighting" — it could not: a square's two halves have EQUAL
+areas, so dropping the area term changed nothing. Comment corrected, and a wedge
+fixture added (areas 0.5 and 2.5) where the answer is **7/6** with the weighting
+and **5/6** without.
+
+**C4 took three attempts, because I twice guessed at library behaviour instead
+of measuring it.** Identity-vs-180 degrees has a dot of exactly zero. Then
+rotY(+-170) — MEASURED — come back as `(+-0.0872, 0, 0.9962, 0)` with dot
+**+0.98**, because `quaternionFromMatrix` flips `w` and KEEPS the axis rather
+than forcing `w >= 0`. Only 170-vs-270 gives a negative dot (**-0.64**). Third
+attempt killed it. Both dead ends are written into the test comments.
+
+### The machine, not the work, was the bottleneck
+**Ten reaper kills.** The gate now runs in contiguous slices and the slices got
+finer each time: 651-1107 died at 254/459 and was split at 900; 901-1107 then
+died at **209 of 213** — four tests short — and was split at 1050. A slice only
+banks when it prints its pass line, so losing one late throws away everything in
+it. Small slices lose less.
+
+Final: debug 1292/1292, release 1292/1292, ASan 650+459+188, TSan
+650+251+156+59+146+42 — contiguous over 1-1292, no gap, same binary, tree
+verified unchanged before every resume. Sonar OK, 0 issues.
+
 ## 2026-09-14 (ninety-seventh) — Session · **The corrective stops being invisible**
 
 *2026-09-14 — two surviving mutations, and neither wanted a tweak.*
