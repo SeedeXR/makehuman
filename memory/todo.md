@@ -2821,6 +2821,48 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
          the other three checks pass on an elbow mapped above a shoulder. This
          promotes to a gate what the Mixamo table's provenance had only claimed
          in prose.
+      2.5. ~~The pose chooser offered a rig stress-fixture as a pose.~~ **DONE**
+         (2026-09-14). The owner reported "the benchmark pose distorts the
+         character wrongly". DIAGNOSED by rendering it in Blender from four
+         angles and close-rendering the hands: `data/poses/benchmark.bvh` is a
+         front splits (hanumanasana) with arms overhead, and the two hands
+         INTERPENETRATE. Nothing deforms it wrongly -- a BVH stores joint
+         rotations and carries no collision, so the pose is authored impossible.
+         Its own sidecar says so: `tag Developement`, "Benchmark pose used to
+         test the rigging in extreme condition". A first hypothesis -- that the
+         16 superset bones the file does not drive (`hips`, every fingertip)
+         caused it -- was REFUTED: the `default` rig, which the file drives
+         163 of 163, renders identical hands.
+         So the bug was never the skinning; it was a developer fixture sitting
+         in a user-facing chooser. `mh::core::loadAssetMeta`
+         (`include/makehuman/core/AssetMeta.h`) reads the `.meta` sidecar, ported
+         from the oracle at `legacy/python/plugins/3_libraries_pose.py:111-135`
+         and placed in AGPL `core` beside the other asset parsers per
+         LICENSING.md's `mh-asset` row. The chooser now labels from the `name`
+         field (so **"T-pose"**, as the reference labels it, not the
+         stem-prettified "Tpose") and omits `Developement`-tagged assets --
+         unless one IS the current pose, or the chooser would show one pose's
+         label over another's geometry. `--pose` resolves any pose by stem or
+         filename, case and hyphens ignored, where it used to special-case
+         `tpose` alone; `--pose benchmark` failed with "file not found" for a
+         file sitting right beside it. `--list-poses` added so the chooser is
+         gateable headlessly, built from the SAME `buildAssetGroups` call.
+         **Only `name` and `tags` are stored.** The reference also reads
+         description/license/copyright/author; nothing here consumes them, and
+         the CI licence gate reads SPDX headers in SOURCE files, not asset
+         sidecars.
+         **Two SURVIVING mutations, recorded in code rather than dressed up as
+         covered**: folding the FILE's stem is unreachable (both shipped poses
+         are lowercase and hyphen-free, so `fold(stem) == stem`), and rebuilding
+         the Qt picker from the raw flag is invisible to ctest (the headless
+         gate covers the same bug via `--list-poses`; nothing drives the picker).
+         **A HIGH bug of my own making, found by /code-review and reproduced
+         before fixing**: the picker was built from the raw `--pose` flag while
+         the pose actually loaded came from the document, so a `.mhm` carrying
+         `pose benchmark` had its entry VANISH from the list while its geometry
+         was on screen -- the exact failure the new filter's comment promised
+         not to cause. Both call sites now share `poseFromArgsOrDocument`.
+
       3. ~~`--rig-names mixamo|makehuman1|native` applied on IMPORT~~ **DONE**:
          `mh::rig::retargetJoints` (`include/makehuman/rig/RetargetMap.h`)
          renames a `BvhFile`'s joints through a table, in place, and reports how

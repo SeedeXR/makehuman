@@ -4,6 +4,96 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-14 (ninetieth) — Session · **A stress-fixture stops posing as a pose**
+
+*2026-09-14 — owner-reported: "the benchmark pose distorts the character wrongly".*
+
+### The diagnosis, which was not what the report implied
+Rendered `data/poses/benchmark.bvh` in Blender from four angles, then
+close-rendered the hands. It is a front splits (hanumanasana) with arms
+overhead, and the two hands **interpenetrate** — fingers passing through each
+other. No human hand does that.
+
+Nothing is deforming it. A BVH stores joint rotations and carries no collision,
+so the file is authored impossible, and its own sidecar says as much:
+`tag Developement`, "Benchmark pose used to test the rigging in extreme
+condition". It is an upstream CC0 developer fixture for stressing a rig.
+
+**A hypothesis was refuted on the way**, and that is worth keeping: 16 superset
+bones go undriven by this file, including `hips` and every fingertip segment,
+because the BVH names `default.mhskel`'s 163 bones while the app defaults to
+`mixamo_superset` (179). That looked like the cause. It is not — rendering
+against `--rig default`, which the file drives 163 of 163, gives identical
+hands. The undriven bones are real and remain worth knowing; they are not this.
+
+So the defect was never the skinning. It was that a developer fixture sat in a
+user-facing chooser, offering a deliberately impossible body with no way to
+tell why.
+
+### What shipped
+* `mh::core::loadAssetMeta` (`include/makehuman/core/AssetMeta.h`,
+  `src/core/AssetMeta.cpp`) — the `.meta` sidecar reader, ported from the oracle
+  at `legacy/python/plugins/3_libraries_pose.py:111-135`. AGPL, in `core`
+  beside the other asset parsers, per LICENSING.md's `mh-asset` row and rule 4
+  ("when in doubt, it is AGPL"); `io` is Apache-2.0 and may never be written by
+  translating an AGPL file.
+* The chooser labels from the `name` field — **"T-pose"**, as the reference
+  labels it, not the stem-prettified "Tpose" — and omits `Developement`-tagged
+  assets, unless one IS the current pose.
+* `--pose` resolves any pose by stem or filename, case and hyphens ignored. It
+  special-cased `tpose` alone, so `--pose benchmark` failed with "file not
+  found" for a file sitting right beside it: the GUI could reach it and the CLI
+  could not.
+* `--list-poses`, built from the SAME `buildAssetGroups` call the app uses, so
+  the gate cannot drift from what the chooser shows.
+
+### Parity notes
+Only `name` and `tags` are stored. The reference also reads `description`,
+`license`, `copyright`, `author` — nothing here consumes them, and the CI
+licence gate reads SPDX headers in SOURCE files, not asset sidecars.
+
+Whitespace runs COLLAPSE in a value, because the reference splits the line and
+rejoins with a single space. A test asserting otherwise was corrected to the
+oracle rather than the code being bent to the test.
+
+An empty `name` line keeps the stem instead of blanking the label — the
+reference would assign the empty string. Excluded explicitly per CLAUDE.md 3.
+
+### A HIGH bug of my own, found by review and reproduced before fixing
+The picker was built from the raw `--pose` flag while the pose actually loaded
+came from the document. Cosmetic before this chunk (wrong entry highlighted);
+once dev fixtures became hideable it made a loaded `.mhm`'s pose entry VANISH
+from the list while its geometry was on screen — precisely the failure the new
+filter's own comment promised not to cause. Reproduced, then fixed: both call
+sites now share `poseFromArgsOrDocument`. Six further review findings fixed
+alongside it.
+
+### Mutations
+The harness now ASSERTS that each mutation applied and that the build SUCCEEDED
+— both failure modes silently leave the old binary serving the test and fake a
+survival, and both happened here before the assertions went in.
+
+Killed: dev-tag filter disabled; label from stem not meta; stem lookup dead;
+tags not lowercased; `--list-poses` ignoring the document; query not reduced to
+a stem.
+
+**Two genuine survivors, recorded in code rather than dressed up as covered:**
+folding the FILE's stem is unreachable (both shipped poses are lowercase and
+hyphen-free); and rebuilding the Qt picker from the raw flag is invisible to
+ctest, since the headless gate covers that bug via `--list-poses` and nothing
+drives the picker.
+
+### Process lesson
+Reviews were run AFTER the gate was launched, so two full gates were killed to
+apply their findings. The loop prompt now puts `/code-review` and
+`/ponytail-review` BEFORE the final four-preset run.
+
+### Next
+Rig-naming sequence item 4: `--rig-names` on EXPORT across BVH, glTF/GLB, FBX,
+DAE and USD. Then item 5, the `AnimationLibrary` tab.
+
+---
+
 ## 2026-09-14 (eighty-ninth) — Session · **The shipped walks start walking**
 
 *2026-09-14 — third of the five chunks the owner's rig-naming decision implies.*

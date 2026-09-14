@@ -26,6 +26,7 @@ add_library(mh_core STATIC
     Random.cpp
     Symmetry.cpp
     Mhm.cpp
+    AssetMeta.cpp
     Proxy.cpp
     SkinTone.cpp
     Material.cpp

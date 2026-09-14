@@ -4,6 +4,7 @@
 // and hands the UI a plain view, which is what lets mh_ui and mh_render stay
 // Apache-2.0.
 #include "makehuman/core/AssetIndex.h"
+#include "makehuman/core/AssetMeta.h"
 #include "makehuman/core/Blendshape.h"
 #include "makehuman/core/CorrectiveBlob.h"
 #include "makehuman/core/CorrectiveCache.h"
@@ -463,6 +464,80 @@ std::expected<mh::rig::Expression, std::string> requestedExpression() {
 /// has to apply it, and none of them has an opinion about it.
 std::optional<mh::foundation::Vec3> gLookAt;
 
+/// Files of one extension in @p dir, sorted.
+///
+/// directory_iterator order is unspecified, so without the sort the pickers
+/// reshuffle between machines. The error is reported rather than swallowed: a
+/// missing asset directory used to yield an empty group and, downstream, a
+/// viewport that failed its upload every frame forever.
+std::vector<std::filesystem::path> filesWithExtension(const std::filesystem::path& dir,
+                                                      std::string_view extension) {
+    std::error_code ec;
+    std::vector<std::filesystem::path> found;
+    // Recursive because proxies are shipped one directory per asset
+    // (data/eyes/high-poly/high-poly.mhclo). litspheres/ and poses/ are flat,
+    // so this changes nothing for them.
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(dir, ec)) {
+        if (entry.path().extension() == extension) found.push_back(entry.path());
+    }
+    if (ec) {
+        std::fprintf(stderr, "cannot read %s: %s\n", dir.string().c_str(), ec.message().c_str());
+        return {};
+    }
+    std::sort(found.begin(), found.end());
+    return found;
+}
+
+/// True when @p spelling names @p file -- the full path, or the stem with
+/// hyphens and case ignored, so `t-pose`, `tpose` and `T-Pose` all name
+/// `data/poses/tpose.bvh`.
+///
+/// ONE matcher, used by both the chooser and `--pose`. They had drifted apart
+/// once already: matching only "tpose" and not "t-pose" left the picker reading
+/// "A-pose (rest)" over a T-posed model, and the obvious click could not fix it
+/// because the index was already 0. Two spellings of "does this name that" is
+/// how that happens.
+///
+/// SURVIVING MUTATION, recorded rather than dressed up as covered: folding the
+/// FILE's stem is unreachable with the data that ships. Both poses are named in
+/// lowercase with no hyphen (`tpose`, `benchmark`), so `fold(stem) == stem` and
+/// removing that call leaves the whole suite green -- measured. It is kept
+/// because folding one side only is a latent bug, not a simplification: it
+/// would accept `T-Pose` typed by a user while refusing a file named
+/// `T-Pose.bvh`, and nothing about this function justifies that asymmetry. The
+/// day a pose ships with a capital or a hyphen in its filename, the test that
+/// covers it is the one already here.
+bool namesPose(const std::filesystem::path& file, const std::string& spelling) {
+    if (spelling == file.string()) return true;
+    const auto fold = [](std::string text) {
+        std::erase(text, '-');
+        std::transform(text.begin(), text.end(), text.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return text;
+    };
+    // The QUERY is reduced to a stem too, so `benchmark.bvh` names
+    // `benchmark.bvh`. The stem shortcut teaches a user that pose names work,
+    // and the filename is the natural next guess; refusing it taught nothing.
+    const std::string wanted = fold(std::filesystem::path(spelling).stem().string());
+    return !wanted.empty() && wanted == fold(file.stem().string());
+}
+
+/// The shipped pose @p spelling names, or empty if none does.
+///
+/// Looks only in data/poses, so a stem can never shadow a real path the user
+/// typed -- the caller tries the path first.
+std::filesystem::path findPoseByStem(const std::string& spelling) {
+    // Sorted, via the same enumeration the chooser uses. A raw
+    // directory_iterator is unordered, and since `namesPose` folds case and
+    // hyphens, `t-pose.bvh` and `tpose.bvh` are one name to it -- so with both
+    // present the CLI and the chooser could disagree about which file a
+    // spelling means, differently on different machines.
+    for (const std::filesystem::path& p : filesWithExtension(dataDir() / "poses", ".bvh")) {
+        if (namesPose(p, spelling)) return p;
+    }
+    return {};
+}
+
 /// Loads the rig, and the pose named by @p pose if there is one.
 ///
 /// "A-pose" is not a file: the MakeHuman base mesh is authored in one, so the
@@ -478,7 +553,15 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
     const bool wantPose = !(pose == "rest" || pose == "apose" || pose == "a-pose");
 
     std::filesystem::path file = pose;
-    if (pose == "tpose" || pose == "t-pose") file = dataDir() / "poses" / "tpose.bvh";
+    if (wantPose && !std::filesystem::is_regular_file(file)) {
+        // Any pose in data/poses is reachable by its stem, hyphens optional.
+        // This used to special-case `tpose` alone, so `--pose benchmark` failed
+        // with "file not found" for a file sitting right beside it -- the GUI
+        // could reach it (the chooser stores full paths) and the CLI could not.
+        if (const auto resolved = findPoseByStem(pose); !resolved.empty()) {
+            file = resolved;
+        }
+    }
 
     const auto skelPath = rigFile(".mhskel");
     if (!std::filesystem::exists(skelPath)) {
@@ -825,30 +908,6 @@ bool poseInPlace(mh::core::Mesh& mesh, PoseRig& rig) {
     return false;
 }
 
-/// Files of one extension in @p dir, sorted.
-///
-/// directory_iterator order is unspecified, so without the sort the pickers
-/// reshuffle between machines. The error is reported rather than swallowed: a
-/// missing asset directory used to yield an empty group and, downstream, a
-/// viewport that failed its upload every frame forever.
-std::vector<std::filesystem::path> filesWithExtension(const std::filesystem::path& dir,
-                                                      std::string_view extension) {
-    std::error_code ec;
-    std::vector<std::filesystem::path> found;
-    // Recursive because proxies are shipped one directory per asset
-    // (data/eyes/high-poly/high-poly.mhclo). litspheres/ and poses/ are flat,
-    // so this changes nothing for them.
-    for (const auto& entry : std::filesystem::recursive_directory_iterator(dir, ec)) {
-        if (entry.path().extension() == extension) found.push_back(entry.path());
-    }
-    if (ec) {
-        std::fprintf(stderr, "cannot read %s: %s\n", dir.string().c_str(), ec.message().c_str());
-        return {};
-    }
-    std::sort(found.begin(), found.end());
-    return found;
-}
-
 /// "skinmat_african.png" -> "African"; "tpose.bvh" -> "Tpose".
 ///
 /// The assets are named by convention rather than carrying a label, so one is
@@ -861,19 +920,11 @@ std::string prettyName(const std::filesystem::path& file, std::string_view prefi
     return mh::ui::prettyAssetName(file.stem().string(), prefix).toStdString();
 }
 
-/// True when @p spelling names @p file -- the id itself, or any of the short
-/// aliases loadPoseRig accepts.
-bool namesPose(const std::filesystem::path& file, const std::string& spelling) {
-    if (spelling == file.string()) return true;
-    // loadPoseRig takes "tpose" and "t-pose"; matching only the first left the
-    // picker reading "A-pose (rest)" over a T-posed model, which the obvious
-    // click could not fix because the index was already 0.
-    std::string wanted = spelling;
-    std::erase(wanted, '-');
-    std::string stem = file.stem().string();
-    std::erase(stem, '-');
-    return !wanted.empty() && wanted == stem;
-}
+/// The `.meta` tag that marks an asset as a development fixture rather than
+/// content. Spelled as the shipped files spell it -- `data/poses/benchmark.meta`
+/// says `tag Developement`, typo and all -- because this must match the DATA,
+/// not the dictionary. `AssetMeta` lowercases tags on the way in.
+constexpr const char* kDevAssetTag = "developement";
 
 constexpr const char* kDefaultSkin = "caucasian";
 /// The "not wearing any" entry of a proxy chooser. A sentinel rather than an
@@ -1088,8 +1139,26 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(
     poses.choices.push_back({"rest", "A-pose (rest)"});
     poses.selected = 0;
     for (const fs::path& p : filesWithExtension(dataDir() / "poses", ".bvh")) {
-        poses.choices.push_back({p.string(), prettyName(p, "")});
-        if (namesPose(p, currentPose)) {
+        const auto meta      = mh::core::loadAssetMeta(p);
+        const bool isCurrent = namesPose(p, currentPose);
+        // A developer fixture is not a pose anyone browses TO. `benchmark.bvh`
+        // is tagged `Developement` by its own author and described as testing
+        // "the rigging in extreme condition" -- MEASURED, its hands
+        // interpenetrate, because a BVH carries rotations and no collision.
+        // Offering it beside the T-pose hands the user a deliberately
+        // impossible body and no way to tell why.
+        //
+        // Hidden from the LIST, never made unreachable: `--pose benchmark` and
+        // an explicit path both still load it, which is what a developer
+        // stressing the rig actually needs. And if it IS the current pose it
+        // stays listed, or the chooser would display some other pose's label
+        // over this one's geometry.
+        if (meta.hasTag(kDevAssetTag) && !isCurrent) continue;
+        // A sidecar's `name` wins; without one, `prettyName` -- so a pose with
+        // no .meta is title-cased like every sibling chooser instead of
+        // showing a raw stem such as `walk_cycle`.
+        poses.choices.push_back({p.string(), meta.name.empty() ? prettyName(p, "") : meta.name});
+        if (isCurrent) {
             poses.selected = static_cast<int>(poses.choices.size()) - 1;
         }
     }
@@ -1269,6 +1338,23 @@ std::optional<std::string> valueFromDocument(const mh::core::MhmFile& doc, std::
         if ((in >> k) && k == key && (in >> v)) return v;
     }
     return std::nullopt;
+}
+
+/// The pose the run will actually use: the `--pose` flag, or the loaded
+/// document's own `pose` line when the flag was not given.
+///
+/// Shared so the asset picker, `--list-poses` and the pose that is really
+/// loaded cannot disagree. They did: the picker was built from the raw flag, so
+/// a .mhm carrying `pose benchmark` highlighted "A-pose (rest)" -- and once dev
+/// fixtures became hideable, the entry vanished from the list entirely while
+/// its geometry was on screen.
+std::string poseFromArgsOrDocument(const QCommandLineParser& parser,
+                                   const QCommandLineOption& poseOpt,
+                                   const mh::core::MhmFile& document) {
+    if (!parser.isSet(poseOpt)) {
+        if (const auto fromDoc = valueFromDocument(document, "pose")) return *fromDoc;
+    }
+    return parser.value(poseOpt).toStdString();
 }
 
 /// Replaces @p doc's `<key> ...` line with `<key> <value>`, or removes it when
@@ -2109,6 +2195,12 @@ int main(int argc, char** argv) {
                        "sliders: --facs reaches only the thirty Action Units that name "
                        "them. --list-pose-units prints the names."),
         QStringLiteral("unit=weight"));
+    const QCommandLineOption listPosesOpt(
+        QStringLiteral("list-poses"),
+        QStringLiteral("Print the poses the Pose chooser offers, as \"<id>\\t<label>\", "
+                       "and exit. Development fixtures are omitted: they are tagged as such "
+                       "in their .meta and are not poses anyone browses to, though --pose "
+                       "still loads one by name or path."));
     const QCommandLineOption listPoseUnitsOpt(
         QStringLiteral("list-pose-units"),
         QStringLiteral("Print the face pose units --pose-unit accepts, and exit."));
@@ -2376,6 +2468,7 @@ int main(int argc, char** argv) {
     parser.addOption(rigOpt);
     parser.addOption(poseOpt);
     parser.addOption(poseUnitOpt);
+    parser.addOption(listPosesOpt);
     parser.addOption(listPoseUnitsOpt);
     parser.addOption(spreadRootsOpt);
     parser.addOption(scalpPathOpt);
@@ -2677,6 +2770,44 @@ int main(int argc, char** argv) {
     // one thing, and each applies its own blend and then REPLACES the face
     // bones, so whichever ran second would silently be the only one that
     // showed -- a face missing half of what was asked for, exit 0.
+    if (parser.isSet(listPosesOpt)) {
+        // Printed from the SAME list the chooser is built from, deliberately.
+        // A second enumeration here could drift from the real one and would
+        // then be a gate that passes while the chooser is wrong.
+        // The other groups are built too and thrown away: the point is that
+        // this is the SAME call the app makes, so the list cannot drift from
+        // what the chooser shows. Their "current" values are the documented
+        // defaults, which keeps their fallback warnings off the output.
+        //
+        // The pose comes from the DOCUMENT when one was loaded, for the same
+        // reason the picker does: `--load posed.mhm --list-poses` must list the
+        // pose that .mhm actually carries, or this gate would report a chooser
+        // nobody sees.
+        const auto groups =
+            buildAssetGroups(poseFromArgsOrDocument(parser, poseOpt, document), kDefaultSkin,
+                             kDefaultEyes, skinMaterialRef(), rigNameRef(), eyeColourRef(), {});
+        size_t listed = 0;
+        for (const auto& group : groups) {
+            if (group.name != "Pose") continue;
+            for (const auto& choice : group.choices) {
+                std::printf("%s\t%s\n", choice.id.c_str(), choice.label.c_str());
+                ++listed;
+            }
+        }
+        // The group always exists -- it is seeded with the A-pose, which needs
+        // no file -- so testing for its presence was a branch that could not
+        // fire. What CAN go wrong is data/poses being unreadable, and that used
+        // to print the single `rest` line and exit 0: success, for a missing
+        // asset directory.
+        if (listed <= 1) {
+            std::fprintf(stderr,
+                         "only the built-in A-pose is available; %s is missing or unreadable\n",
+                         (dataDir() / "poses").string().c_str());
+            return 1;
+        }
+        return 0;
+    }
+
     if (parser.isSet(listPoseUnitsOpt)) {
         const auto names =
             mh::rig::loadPoseUnitNames(dataDir() / "poseunits" / "face-poseunits.json");
@@ -3004,10 +3135,7 @@ int main(int argc, char** argv) {
     // round-trips exactly. A reference-written path relative to ITS pose library
     // will not resolve here; that is a real limit, not a silent one, because
     // loadPoseRig reports what it could not open.
-    std::string poseChoice = parser.value(poseOpt).toStdString();
-    if (!parser.isSet(poseOpt)) {
-        if (const auto fromDoc = valueFromDocument(document, "pose")) poseChoice = *fromDoc;
-    }
+    const std::string poseChoice = poseFromArgsOrDocument(parser, poseOpt, document);
 
     // The skin material the file names, unless the command line overrode it --
     // same precedence as the rig and the pose. The line holds a relative path
@@ -3189,8 +3317,21 @@ int main(int argc, char** argv) {
     // whatever --skin-material or the loaded .mhm chose, so the picker starts
     // on the material actually in use instead of on `default`.
     const auto assetGroups =
-        buildAssetGroups(parser.value(poseOpt).toStdString(), litsphereChoice, eyesChoice,
-                         skinMaterialRef(), rigNameRef(), eyeColourRef(), proxyChoices);
+        // `poseChoice`, NOT the raw --pose option: a .mhm records its own pose
+        // line, and building the picker from the flag meant a loaded document's
+        // pose was not the one the picker highlighted. Cosmetic until the dev
+        // fixture became hideable -- then the entry vanished outright while its
+        // geometry was on screen, which is the exact failure the filter's own
+        // comment promises not to cause.
+        //
+        // SURVIVING MUTATION, recorded: putting the raw flag back here breaks
+        // nothing ctest can see. `app_pose_loaded_document_pose_is_listed`
+        // covers the same bug through `--list-poses`, which is the headless
+        // path; THIS call feeds the Qt picker and no test drives it. Both now
+        // route through `poseFromArgsOrDocument`, so they cannot drift by
+        // accident -- only by someone re-inlining the flag here on purpose.
+        buildAssetGroups(poseChoice, litsphereChoice, eyesChoice, skinMaterialRef(), rigNameRef(),
+                         eyeColourRef(), proxyChoices);
     // Announced so a test can see the picker was built at all -- a group that
     // silently ends up empty renders as a disabled combo box nobody notices.
     // The NAMES, not just the count. Nothing printed them, so the panel's

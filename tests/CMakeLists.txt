@@ -13,6 +13,7 @@ add_executable(mh_tests
     unit/test_pose_frame.cpp
     unit/test_makehuman1_retarget.cpp
     unit/test_retarget_import.cpp
+    unit/test_asset_meta.cpp
     unit/test_retarget_map.cpp
     unit/test_scalp.cpp
     unit/test_surface_walk.cpp
@@ -1910,12 +1911,119 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_list_pose_units PROPERTIES
         PASS_REGULAR_EXPRESSION "LeftBrowDown")
 
+    # The Pose chooser, and what it must NOT offer.
+    #
+    # `data/poses/benchmark.bvh` is a developer fixture: its own .meta says
+    # `tag Developement` and "Benchmark pose used to test the rigging in extreme
+    # condition". MEASURED by rendering it -- the hands interpenetrate, because
+    # a BVH stores rotations and carries no collision. Nothing deforms it
+    # wrongly; it is authored impossible. It must not sit in a chooser beside
+    # the T-pose, and must stay reachable for the developer who wants it.
+    add_test(NAME app_list_poses COMMAND makehuman --list-poses)
+    add_test(NAME app_list_poses_labels_come_from_meta COMMAND makehuman --list-poses)
+    # "T-pose" is the `name` field of tpose.meta. The filename stem would
+    # prettify to "Tpose", so this fails if the label stops coming from the
+    # metadata -- which is also what the reference labels it.
+    set_tests_properties(app_list_poses_labels_come_from_meta PROPERTIES
+        PASS_REGULAR_EXPRESSION "T-pose")
+    # FAIL_REGULAR_EXPRESSION, not PASS: it still honours the exit code, where
+    # PASS_REGULAR_EXPRESSION makes ctest ignore it entirely.
+    add_test(NAME app_list_poses_hides_dev_fixture COMMAND makehuman --list-poses)
+    set_tests_properties(app_list_poses_hides_dev_fixture PROPERTIES
+        FAIL_REGULAR_EXPRESSION "Benchmark")
+    # ...but when it IS the current pose it must be listed, or the chooser
+    # displays one pose's label over another's geometry.
+    add_test(NAME app_list_poses_shows_the_current_dev_pose COMMAND makehuman
+             --list-poses --pose benchmark)
+    set_tests_properties(app_list_poses_shows_the_current_dev_pose PROPERTIES
+        PASS_REGULAR_EXPRESSION "Benchmark-pose")
+
+    # A .mhm carrying a dev-fixture pose must still show that pose in the
+    # chooser. The picker used to be built from the raw --pose flag while the
+    # pose actually loaded came from the document, so a loaded file's pose was
+    # merely mis-highlighted -- until dev fixtures became hideable, at which
+    # point the entry vanished from the list while its geometry was on screen.
+    add_test(NAME app_pose_saves_dev_fixture COMMAND makehuman
+             --pose benchmark --save ${CMAKE_CURRENT_BINARY_DIR}/poses/bench.mhm)
+    set_tests_properties(app_pose_saves_dev_fixture PROPERTIES FIXTURES_SETUP app_pose_benchmhm)
+    add_test(NAME app_pose_loaded_document_pose_is_listed COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/poses/bench.mhm --list-poses)
+    set_tests_properties(app_pose_loaded_document_pose_is_listed PROPERTIES
+        FIXTURES_REQUIRED app_pose_benchmhm
+        PASS_REGULAR_EXPRESSION "Benchmark-pose")
+
+    # Any pose is reachable by stem, not just tpose. `--pose benchmark` used to
+    # fail with "file not found" for a file sitting right beside tpose.bvh: the
+    # GUI could reach it (the chooser stores full paths) and the CLI could not.
+    add_test(NAME app_pose_stem_resolves COMMAND makehuman
+             --pose benchmark --export ${CMAKE_CURRENT_BINARY_DIR}/poses/stem.obj)
+    set_tests_properties(app_pose_stem_resolves PROPERTIES
+        FIXTURES_SETUP app_pose_stem FAIL_REGULAR_EXPRESSION "cannot load pose")
+    add_test(NAME app_pose_path_still_resolves COMMAND makehuman
+             --pose ${MH_DATA_DIR}/poses/benchmark.bvh
+             --export ${CMAKE_CURRENT_BINARY_DIR}/poses/path.obj)
+    set_tests_properties(app_pose_path_still_resolves PROPERTIES
+        FIXTURES_SETUP app_pose_path FAIL_REGULAR_EXPRESSION "cannot load pose")
+    # The stem and the path must give the SAME body, or the shortcut resolves to
+    # something other than the file it names.
+    add_test(NAME app_pose_stem_equals_path COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/poses/stem.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/poses/path.obj
+             -DEXPECT_DIFFERENT=0
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
+    set_tests_properties(app_pose_stem_equals_path PROPERTIES
+        FIXTURES_REQUIRED "app_pose_stem;app_pose_path")
+    # Case and hyphens are both ignored, so a user who types what they SEE in
+    # the chooser ("T-pose") reaches the file. Without this the folding in
+    # `namesPose` is untested -- measured: removing it left the whole suite
+    # green, which is how a behaviour nobody asked for survives.
+    add_test(NAME app_pose_stem_ignores_case COMMAND makehuman
+             --pose T-Pose --export ${CMAKE_CURRENT_BINARY_DIR}/poses/case.obj)
+    set_tests_properties(app_pose_stem_ignores_case PROPERTIES
+        FIXTURES_SETUP app_pose_case FAIL_REGULAR_EXPRESSION "cannot load pose")
+    add_test(NAME app_pose_stem_case_matches_exact COMMAND makehuman
+             --pose tpose --export ${CMAKE_CURRENT_BINARY_DIR}/poses/exact.obj)
+    set_tests_properties(app_pose_stem_case_matches_exact PROPERTIES
+        FIXTURES_SETUP app_pose_exact FAIL_REGULAR_EXPRESSION "cannot load pose")
+    add_test(NAME app_pose_case_is_the_same_pose COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/poses/case.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/poses/exact.obj
+             -DEXPECT_DIFFERENT=0
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
+    set_tests_properties(app_pose_case_is_the_same_pose PROPERTIES
+        FIXTURES_REQUIRED "app_pose_case;app_pose_exact")
+
+    # A stem naming nothing is still an error, not a silent fall back to rest.
+    add_test(NAME app_pose_unknown_stem_refused COMMAND makehuman
+             --pose nosuchpose --export ${CMAKE_CURRENT_BINARY_DIR}/poses/never.obj)
+    # Two tests, because the two halves cannot be asserted in one: setting
+    # PASS_REGULAR_EXPRESSION makes ctest judge by the regex and IGNORE the exit
+    # code, and WILL_FAIL then inverts that verdict -- so the two together make
+    # finding the message a failure. Measured the hard way.
+    #
+    # This one pins the exit code...
+    set_tests_properties(app_pose_unknown_stem_refused PROPERTIES WILL_FAIL TRUE)
+    # ...and this one pins WHY, so the suite can tell "refused the unknown pose"
+    # from "crashed" or "could not write the export".
+    add_test(NAME app_pose_unknown_stem_says_why COMMAND makehuman
+             --pose nosuchpose --export ${CMAKE_CURRENT_BINARY_DIR}/poses/never2.obj)
+    set_tests_properties(app_pose_unknown_stem_says_why PROPERTIES
+        PASS_REGULAR_EXPRESSION "cannot load pose: nosuchpose")
+
+    # And the filename WITH its extension resolves too: the stem shortcut
+    # teaches that pose names work, and the filename is the natural next guess.
+    add_test(NAME app_pose_filename_with_extension COMMAND makehuman
+             --pose tpose.bvh --export ${CMAKE_CURRENT_BINARY_DIR}/poses/ext.obj)
+    set_tests_properties(app_pose_filename_with_extension PROPERTIES
+        FAIL_REGULAR_EXPRESSION "cannot load pose")
+
     # --rig-names on IMPORT. The shipped data/animations/ walks are MakeHuman
     # 1.x exports: they name joints of the old MakeHuman skeleton and match 0
     # bones of this rig, so `--pose walk1.bvh` has always loaded successfully
     # and produced the rest pose. These tests pin BOTH halves -- that it used to
     # do nothing, and that with the table it does something.
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/rignames)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/poses)
     set(WALK ${MH_DATA_DIR}/animations/walks/walk1.bvh)
     add_test(NAME app_rig_names_native_f0 COMMAND makehuman
              --pose ${WALK} --pose-frame 0
