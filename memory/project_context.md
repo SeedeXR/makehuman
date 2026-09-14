@@ -244,9 +244,23 @@ lack (`collisionArm*`, `heel.L`, `metatarsal1..5`, `platysma03/06`, `scapula.L`)
 So a pose-unit consumer needs an **explicit bone table**, exactly as the Mixamo
 retarget did; name matching will silently drop a third of the data.
 
-**Two poses are authoring errors in the reference asset**: `UpperArmUpLeft1` and
-`UpperArmUpLeft2` drive `oris01`/`oris02` — *mouth* bones. Raising the left arm
-must not move the lips. Pinned by the audit so it is never mistaken for our bug.
+**Four poses are authoring errors in the reference asset.** `UpperArmUpLeft1`
+and `UpperArmUpLeft2` drive `oris01`/`oris02` — *mouth* bones. Raising the left
+arm must not move the lips.
+
+And found 2026-09-14: `Finger1CloseLeft` and `Finger2CloseLeft` drive **nothing
+but foot bones** — exactly the six `FootDownLeft` maps, `heel.L` plus all five
+metatarsals. They are not finger poses with a stray foot bone; they are
+duplicates of a foot pose wearing the wrong name. A consumer trusting the NAME
+would ship a "close the finger" control that moves the foot.
+
+Harmless today only because this rig has no heel or metatarsal bones, so both
+resolve to nothing — it stops being harmless the moment anyone adds foot
+detail. All four are pinned by `tools/audit_poseunits.py`, whose detectors now
+carry a self-test: a check of the form "this set must still be exactly X" only
+fires when the asset changes, so breaking the detector itself went unnoticed
+(measured). The detectors are covered; the pins are tripwires, and that split is
+deliberate.
 
 **`normalmapIntensity` does nothing in the reference's litsphere shader.**
 `litsphere_fragment_shader.txt:74-77` computes

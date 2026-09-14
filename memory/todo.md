@@ -776,9 +776,24 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       others we truly lack (`collisionArm*`, `heel.L`, `metatarsal1..5`).
       **A consumer therefore needs an explicit bone table**, exactly as the
       Mixamo retarget did — name matching silently drops a third of the data.
-      Also found: `UpperArmUpLeft1/2` drive `oris01`/`oris02`, **mouth** bones.
-      That is an authoring error in the reference asset, now pinned so it is
-      never mistaken for ours.
+      Also found: `UpperArmUpLeft1/2` drive `oris01`/`oris02`, **mouth** bones,
+      and (2026-09-14) `Finger1CloseLeft`/`Finger2CloseLeft` drive nothing but
+      FOOT bones — exactly the six `FootDownLeft` maps. Four authoring errors in
+      the reference asset, all pinned so they are never mistaken for ours.
+      **The table's scope is now measured**, so building it is no longer
+      open-ended. Of the 24 absent bones, exactly THREE are clean
+      generation-difference renames: `neck` -> `neck01`, `shoulder.L` ->
+      `shoulder01.L`, `upperleg.L` -> `upperleg01.L`. That alone revives 3 of
+      the 8 dead poses — `LowerLegBendLeft1`, `LowerLegBendLeft2` and
+      `UpperLegForwardLeft` each need `upperleg.L` and nothing else.
+      The other 5 stay dead and should: 4 need heel/metatarsals this rig does
+      not have AND are the mis-named foot poses above, and `TorsoRight` needs
+      `spine1..4` against our `spine01..05` — four into five, ambiguous, and
+      guessing twists the torso. `scapula.L`, `collisionArm*`, `collisionLeg*`,
+      `platysma*`, `heel.L`, `metatarsal*` have NO counterpart at all; only
+      `special02` is odd, since we ship `special01` and `special03..06`.
+      Build the table AND its consumer together: a table nothing reads is the
+      same mistake as a `.mhanim` parser nothing calls.
       Measured and gated by `tools/audit_poseunits.py` (CI). **Loader not built**
       — building one before the bone table exists would produce poses that
       silently do nothing. Recorded in `memory/project_context.md` §8.0.
