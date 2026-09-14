@@ -330,9 +330,11 @@ std::optional<size_t>& poseFrameRef() {
     return frame;
 }
 
-/// The `--rig-names` choice: which skeleton's joint names the incoming `--pose`
-/// file is written in. "native" -- this port's own names -- is the default and
-/// means no renaming at all.
+/// The `--rig-names` choice: whose bone names to speak, in BOTH directions.
+///
+/// On import it renames an incoming `--pose` file's joints; on export it
+/// renames the bones written into every skeleton-carrying format. "native" --
+/// this port's own names -- is the default and means no renaming at all.
 std::string& rigNamesRef() {
     static std::string names{"native"};
     return names;
@@ -362,6 +364,85 @@ const mh::rig::RetargetMap* retargetTable() {
         return std::optional<mh::rig::RetargetMap>{std::move(*map)};
     }();
     return table ? &*table : nullptr;
+}
+
+/// The `--rig-names` table INVERTED, for export, or nullptr for "native".
+///
+/// Import asks "this file says UpArm_L, which of my bones is that?"; export
+/// asks it backwards. One table, read both ways, so the two directions cannot
+/// describe different correspondences.
+///
+/// Loaded once. A non-injective table would drop pairs, so the collision count
+/// is checked and reported here rather than discarded -- a dropped pair means a
+/// bone exports under another bone's name, which looks like valid output.
+const mh::rig::RetargetMap* exportNameTable() {
+    static const std::optional<mh::rig::RetargetMap> table = [] {
+        std::optional<mh::rig::RetargetMap> none;
+        const mh::rig::RetargetMap* forward = retargetTable();
+        if (forward == nullptr) return none;  // native: our own names
+        size_t collisions = 0;
+        auto back         = mh::rig::invertRetargetMap(*forward, &collisions);
+        if (collisions > 0) {
+            std::fprintf(stderr, "warning: --rig-names %s exports %zu bones under a shared name\n",
+                         rigNamesRef().c_str(), collisions);
+        }
+        return std::optional<mh::rig::RetargetMap>{std::move(back)};
+    }();
+    return table ? &*table : nullptr;
+}
+
+/// Renames @p skin's bones to the chosen skeleton's words.
+///
+/// ONE applier for the body and every worn proxy, deliberately. glTF, FBX and
+/// USD each refuse a scene whose skinned entries name different skeletons
+/// (`GltfWriter.cpp` MixedSkeletons and its siblings), so renaming the body but
+/// not the clothes would not produce a mislabelled file -- it would fail the
+/// export outright. Two call sites sharing one function is what stops that.
+void applyExportNames(mh::rig::SkinData& skin) {
+    const mh::rig::RetargetMap* names = exportNameTable();
+    if (names == nullptr) return;
+    const size_t renamed = mh::rig::renameBones(skin.jointNames, *names);
+
+    // An INJECTIVE table still does not guarantee injective OUTPUT: a renamed
+    // bone can land on the name of a bone the table leaves alone. The two
+    // vocabularies are demonstrably not disjoint -- the Mixamo table maps
+    // `HeadTop_End` to itself precisely because this rig borrowed that name --
+    // and `--rig-names` accepts any table dropped into data/rigs, so this is
+    // reachable without touching the code. Two bones of one name is an
+    // ambiguous rig: USD emits two identical joint paths, Maya merges them, and
+    // a re-imported BVH binds both to one bone. The MixedSkeletons guards
+    // compare names ACROSS entries and never for uniqueness WITHIN one, so
+    // nothing downstream would catch it.
+    //
+    // NEITHER this warning nor the zero-rename one below is reachable with the
+    // tables that ship: both cover part of both rigs, and neither produces a
+    // clash on either (checked, all four combinations). They are here for the
+    // user-supplied table, and both were confirmed to fire by dropping a probe
+    // table into data/rigs and removing it again -- not left as code nobody has
+    // ever seen run.
+    std::map<std::string, size_t> seen;
+    for (const std::string& name : skin.jointNames)
+        ++seen[name];
+    for (const auto& [name, count] : seen) {
+        if (count > 1) {
+            std::fprintf(stderr,
+                         "warning: --rig-names %s gives %zu bones the name \"%s\"; the exported "
+                         "rig is ambiguous and consumers will merge or mis-bind them\n",
+                         rigNamesRef().c_str(), count, name.c_str());
+        }
+    }
+
+    // F3: renaming NOTHING is the export-side twin of "drives 0 of N bones",
+    // and just as worth saying. Coverage is skeleton-dependent -- MEASURED, the
+    // Mixamo table covers 65 of mixamo_superset's 179 bones but only 49 of
+    // default's 163 -- so a table that fits one rig can rename nothing on
+    // another and the export completes silently under this rig's own names.
+    if (renamed == 0) {
+        std::fprintf(stderr,
+                     "warning: --rig-names %s renamed 0 of %zu bones -- this table names none of "
+                     "%s's joints, so the export carries this rig's own names\n",
+                     rigNamesRef().c_str(), skin.jointNames.size(), rigNameRef().c_str());
+    }
 }
 
 /// The `--expression` file, or empty. Set once at start-up.
@@ -1749,6 +1830,7 @@ std::vector<mh::rig::SkinData> wornSkins(const PoseRig& rig,
                          name.c_str());
         } else {
             if (rig.posed()) skin.globalPose = rig.globalPose;
+            applyExportNames(skin);
             std::printf("%s skin: %zu joints, %u influences/vertex\n", name.c_str(),
                         skin.globalRest.size(), static_cast<unsigned>(skin.influences));
         }
@@ -1852,6 +1934,7 @@ std::optional<mh::rig::SkinData> exportSkin(const PoseRig& rig, const mh::core::
     // bind pose equal the pose, so the mesh arrived exactly as it looked on
     // screen and every consumer's skinning was a no-op.
     if (rig.posed()) skin.globalPose = rig.globalPose;
+    applyExportNames(skin);
     std::printf("skin: %zu joints, %u influences/vertex\n", skin.globalRest.size(),
                 static_cast<unsigned>(skin.influences));
     return skin;
@@ -1985,7 +2068,13 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
             std::fprintf(stderr, "no rig loaded, so there is no skeleton to write\n");
             return false;
         }
-        const auto file = mh::rig::toBvhPose(rig.skeleton, rig.localPose);
+        auto file = mh::rig::toBvhPose(rig.skeleton, rig.localPose);
+        // BVH is the one format that does not read `SkinView::jointNames`, so
+        // the rename the other four inherit has to be applied again here, to
+        // the same table read the same way.
+        if (const mh::rig::RetargetMap* names = exportNameTable()) {
+            mh::rig::retargetJoints(file, *names);
+        }
         if (file.joints.empty()) {
             std::fprintf(stderr, "cannot build a BVH from this skeleton\n");
             return false;
@@ -2235,12 +2324,15 @@ int main(int argc, char** argv) {
         QStringLiteral("n"));
     const QCommandLineOption rigNamesOpt(
         QStringLiteral("rig-names"),
-        QStringLiteral("Which skeleton's joint names the --pose .bvh is written in: "
-                       "native (this port's own, the default), makehuman1 (the old "
-                       "MakeHuman, which every shipped data/animations/ walk uses) or "
-                       "mixamo. A BVH drives a bone only when it holds a joint of "
-                       "identically the same name, so without the right choice the file "
-                       "loads and poses nothing."),
+        QStringLiteral("Which skeleton's bone names to read and write: native (this "
+                       "port's own, the default), makehuman1 (the old MakeHuman, which "
+                       "every shipped data/animations/ walk uses) or mixamo. Applies in "
+                       "BOTH directions. On IMPORT it renames a --pose .bvh's joints, "
+                       "which a file needs to drive anything at all -- a BVH drives a "
+                       "bone only when it holds a joint of identically the same name. On "
+                       "EXPORT it renames the bones written into .bvh, .glb, .fbx, .dae "
+                       "and .usd, so anything but native ships a rig your downstream "
+                       "tools must expect."),
         QStringLiteral("naming"), QStringLiteral("native"));
     const QCommandLineOption backgroundOpt(
         QStringLiteral("background"),

@@ -19,7 +19,14 @@
 # emitted the units sorted would pass an unordered check and produce a
 # different face.
 #
-# Usage: cmake -DFILE=<path> "-DKEYS=a;b;c" [-DORDERED=1] -P file_contains.cmake
+# With "-DABSENT=x;y" the file must NOT contain any of those strings. Presence
+# alone is a weak claim for a rename: a writer that ADDED the new name while
+# leaving the old one somewhere would satisfy every KEY and still ship a file
+# naming two skeletons. Saying what must be gone is what makes it a rename
+# rather than an addition.
+#
+# Usage: cmake -DFILE=<path> "-DKEYS=a;b;c" ["-DABSENT=x;y"] [-DORDERED=1]
+#              -P file_contains.cmake
 
 if(NOT EXISTS "${FILE}")
     message(FATAL_ERROR "no such file: ${FILE}")
@@ -40,5 +47,12 @@ foreach(key IN LISTS KEYS)
     set(previous "${at}")
     set(previous_key "${key}")
 endforeach()
+foreach(key IN LISTS ABSENT)
+    string(FIND "${text}" "${key}" at)
+    if(NOT at EQUAL -1)
+        message(FATAL_ERROR "${FILE} still contains '${key}' at offset ${at}")
+    endif()
+endforeach()
 list(LENGTH KEYS count)
-message(STATUS "${FILE}: all ${count} keys present")
+list(LENGTH ABSENT gone)
+message(STATUS "${FILE}: all ${count} keys present, ${gone} absent as required")

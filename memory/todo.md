@@ -2895,8 +2895,41 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
          slightly differently from the source animation. Renaming is correct;
          rest-pose compensation is a separate question and nothing here pretends
          to solve it.
-      4. The same selector on EXPORT, across every skeleton-carrying format
-         (BVH, glTF/GLB, FBX, DAE, USD).
+      4. ~~The same selector on EXPORT, across every skeleton-carrying format~~
+         **DONE** (2026-09-14). `mh::rig::invertRetargetMap` reads the table
+         backwards -- import asks "this file says UpArm_L, which of my bones is
+         that?", export asks it the other way -- and `mh::rig::renameBones`
+         applies it to a name vector. ONE table, both directions, so they cannot
+         describe different correspondences. Inversion is exact because both
+         tables are gated INJECTIVE; a non-injective one reports its collisions
+         rather than dropping pairs silently, and the survivor is chosen
+         lexicographically because `unordered_map` order is unspecified and
+         arrival order would export different files on different runs.
+         **Four of the five formats share one choke point**: glTF, FBX, USD and
+         DAE all read `foundation::SkinView::jointNames`, so `applyExportNames`
+         on the `SkinData` covers them. BVH bypasses `SkinView` entirely and
+         takes a second `retargetJoints` pass after `toBvhPose`.
+         **One applier for the body AND every worn proxy, deliberately**: glTF,
+         FBX and USD each refuse a scene whose skinned entries name different
+         skeletons, so a partial rename does not mislabel a file -- it fails the
+         export outright. MEASURED that the gates really exercise it: `--eyes`
+         defaults to HighPolyEyes, so every glb/fbx/usda case writes two skinned
+         entries.
+         VERIFIED IN BLENDER, not merely grepped: bvh, glb, fbx all import with
+         **179 bones** and the chosen skeleton's names -- `shoulder01.L` /
+         `UpArm_L` / `LeftArm`. 15 gates (5 formats x 3 namings) assert the
+         chosen word is PRESENT and the other two ABSENT; presence alone would
+         pass on a writer that added the new name beside the old.
+         `renameBones` counts CHANGES, not table hits: the Mixamo table has one
+         identity pair (`HeadTop_End`, a name this rig borrowed from Mixamo), so
+         65 bones are covered and 64 change.
+         Two warnings guard user-supplied tables -- a rename colliding with an
+         untouched bone (table injectivity does not imply injective OUTPUT), and
+         a table that renames nothing (coverage is skeleton-dependent: the
+         Mixamo table covers 65 of superset's 179 but 49 of default's 163).
+         Neither is reachable with the shipped tables; both were PROVEN to fire
+         with a transient probe table, since a warning nobody has seen run is
+         not evidence.
       5. Only then the `AnimationLibrary` tab, which by that point really is
          just a chooser plus a frame slider.
       Shipped meanwhile so the trap is visible instead of folklore:

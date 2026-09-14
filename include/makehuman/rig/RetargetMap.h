@@ -23,6 +23,7 @@
 #include <filesystem>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace mh::rig {
 
@@ -62,5 +63,41 @@ struct RetargetMap {
 /// End sites are skipped. `BvhReader` names them `<parent>_end` expressly so
 /// they cannot collide with a real joint, and a table never names one.
 size_t retargetJoints(io::BvhFile& bvh, const RetargetMap& map);
+
+/// The table read backwards: this rig's bone name -> what the other skeleton
+/// calls it.
+///
+/// `RetargetMap` is authored in the IMPORT direction, source name -> our bone,
+/// because that is the direction a file arrives in. Export is the same question
+/// asked the other way, and inverting is exact rather than approximate: both
+/// shipped tables are gated as INJECTIVE (`test_makehuman1_retarget.cpp`,
+/// `test_mixamo_retarget.cpp`), so no two sources claim one bone and nothing is
+/// lost. A non-injective table would silently drop pairs, so this refuses to
+/// pretend: the loser is reported, not swallowed.
+///
+/// @param collisions if non-null, receives the number of pairs dropped because
+///        two sources named the same bone. Zero for every shipped table.
+[[nodiscard]] RetargetMap invertRetargetMap(const RetargetMap& map, size_t* collisions = nullptr);
+
+/// Renames @p names in place through @p map, returning how many actually
+/// CHANGED -- not how many the table covers.
+///
+/// The two differ: a table may map a bone to the name it already has. The
+/// Mixamo table does exactly once, for `HeadTop_End`, because this rig borrowed
+/// Mixamo's word for that bone. Counting hits rather than changes would report
+/// work that did not happen.
+///
+/// This is the export counterpart of `retargetJoints`, and it exists because
+/// four of the five skeleton-carrying writers -- glTF, FBX, USD and DAE -- read
+/// their bone names from exactly one place, `foundation::SkinView::jointNames`.
+/// Renaming that vector once covers all four. BVH is the exception: it does not
+/// go through `SkinView` at all, so it takes `retargetJoints` on its own
+/// `BvhFile` with the same inverted table.
+///
+/// A name the table does not cover is LEFT ALONE, exactly as an unmapped joint
+/// is on import. The MakeHuman 1.x table names 59 of 179 superset bones and the
+/// Mixamo table 65; the rest keep this rig's own names, which is the only
+/// honest thing to call a bone the other skeleton has no word for.
+size_t renameBones(std::vector<std::string>& names, const RetargetMap& map);
 
 }  // namespace mh::rig

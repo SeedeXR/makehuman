@@ -14,6 +14,7 @@ add_executable(mh_tests
     unit/test_makehuman1_retarget.cpp
     unit/test_retarget_import.cpp
     unit/test_asset_meta.cpp
+    unit/test_retarget_export.cpp
     unit/test_retarget_map.cpp
     unit/test_scalp.cpp
     unit/test_surface_walk.cpp
@@ -1910,6 +1911,137 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_list_pose_units COMMAND makehuman --list-pose-units)
     set_tests_properties(app_list_pose_units PROPERTIES
         PASS_REGULAR_EXPRESSION "LeftBrowDown")
+
+    # --rig-names on EXPORT, across every skeleton-carrying format.
+    #
+    # Four of the five read their bone names from one vector, SkinView::
+    # jointNames, so one rename covers glTF, FBX, USD and DAE. BVH bypasses that
+    # structure entirely and gets its own pass. These gates exist because that
+    # asymmetry is exactly where a rename goes half-applied -- and because glTF,
+    # FBX and USD each REFUSE a scene whose skinned entries name different
+    # skeletons, so a partial rename does not mislabel a file, it fails the
+    # export outright.
+    #
+    # Each case asserts the chosen skeleton's word is present AND the other two
+    # are gone. Presence alone would pass on a writer that added the new name
+    # beside the old one.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/rignames-export)
+    add_test(NAME app_export_names_bvh_native_write COMMAND makehuman
+             --pose tpose --rig-names native --export ${CMAKE_CURRENT_BINARY_DIR}/rignames-export/native.bvh)
+    set_tests_properties(app_export_names_bvh_native_write PROPERTIES FIXTURES_SETUP app_export_names_bvh_native)
+    add_test(NAME app_export_names_bvh_native COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/rignames-export/native.bvh "-DKEYS=shoulder01" "-DABSENT=UpArm_L;LeftArm"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_export_names_bvh_native PROPERTIES FIXTURES_REQUIRED app_export_names_bvh_native)
+    add_test(NAME app_export_names_bvh_makehuman1_write COMMAND makehuman
+             --pose tpose --rig-names makehuman1 --export ${CMAKE_CURRENT_BINARY_DIR}/rignames-export/makehuman1.bvh)
+    set_tests_properties(app_export_names_bvh_makehuman1_write PROPERTIES FIXTURES_SETUP app_export_names_bvh_makehuman1)
+    add_test(NAME app_export_names_bvh_makehuman1 COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/rignames-export/makehuman1.bvh "-DKEYS=UpArm_L" "-DABSENT=shoulder01;LeftArm"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_export_names_bvh_makehuman1 PROPERTIES FIXTURES_REQUIRED app_export_names_bvh_makehuman1)
+    add_test(NAME app_export_names_bvh_mixamo_write COMMAND makehuman
+             --pose tpose --rig-names mixamo --export ${CMAKE_CURRENT_BINARY_DIR}/rignames-export/mixamo.bvh)
+    set_tests_properties(app_export_names_bvh_mixamo_write PROPERTIES FIXTURES_SETUP app_export_names_bvh_mixamo)
+    add_test(NAME app_export_names_bvh_mixamo COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/rignames-export/mixamo.bvh "-DKEYS=LeftArm" "-DABSENT=shoulder01;UpArm_L"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_export_names_bvh_mixamo PROPERTIES FIXTURES_REQUIRED app_export_names_bvh_mixamo)
+    add_test(NAME app_export_names_glb_native_write COMMAND makehuman
+             --pose tpose --rig-names native --export ${CMAKE_CURRENT_BINARY_DIR}/rignames-export/native.glb)
+    set_tests_properties(app_export_names_glb_native_write PROPERTIES FIXTURES_SETUP app_export_names_glb_native)
+    add_test(NAME app_export_names_glb_native COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/rignames-export/native.glb "-DKEYS=shoulder01" "-DABSENT=UpArm_L;LeftArm"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_export_names_glb_native PROPERTIES FIXTURES_REQUIRED app_export_names_glb_native)
+    add_test(NAME app_export_names_glb_makehuman1_write COMMAND makehuman
+             --pose tpose --rig-names makehuman1 --export ${CMAKE_CURRENT_BINARY_DIR}/rignames-export/makehuman1.glb)
+    set_tests_properties(app_export_names_glb_makehuman1_write PROPERTIES FIXTURES_SETUP app_export_names_glb_makehuman1)
+    add_test(NAME app_export_names_glb_makehuman1 COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/rignames-export/makehuman1.glb "-DKEYS=UpArm_L" "-DABSENT=shoulder01;LeftArm"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_export_names_glb_makehuman1 PROPERTIES FIXTURES_REQUIRED app_export_names_glb_makehuman1)
+    add_test(NAME app_export_names_glb_mixamo_write COMMAND makehuman
+             --pose tpose --rig-names mixamo --export ${CMAKE_CURRENT_BINARY_DIR}/rignames-export/mixamo.glb)
+    set_tests_properties(app_export_names_glb_mixamo_write PROPERTIES FIXTURES_SETUP app_export_names_glb_mixamo)
+    add_test(NAME app_export_names_glb_mixamo COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/rignames-export/mixamo.glb "-DKEYS=LeftArm" "-DABSENT=shoulder01;UpArm_L"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_export_names_glb_mixamo PROPERTIES FIXTURES_REQUIRED app_export_names_glb_mixamo)
+    add_test(NAME app_export_names_fbx_native_write COMMAND makehuman
+             --pose tpose --rig-names native --export ${CMAKE_CURRENT_BINARY_DIR}/rignames-export/native.fbx)
+    set_tests_properties(app_export_names_fbx_native_write PROPERTIES FIXTURES_SETUP app_export_names_fbx_native)
+    add_test(NAME app_export_names_fbx_native COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/rignames-export/native.fbx "-DKEYS=shoulder01" "-DABSENT=UpArm_L;LeftArm"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_export_names_fbx_native PROPERTIES FIXTURES_REQUIRED app_export_names_fbx_native)
+    add_test(NAME app_export_names_fbx_makehuman1_write COMMAND makehuman
+             --pose tpose --rig-names makehuman1 --export ${CMAKE_CURRENT_BINARY_DIR}/rignames-export/makehuman1.fbx)
+    set_tests_properties(app_export_names_fbx_makehuman1_write PROPERTIES FIXTURES_SETUP app_export_names_fbx_makehuman1)
+    add_test(NAME app_export_names_fbx_makehuman1 COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/rignames-export/makehuman1.fbx "-DKEYS=UpArm_L" "-DABSENT=shoulder01;LeftArm"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_export_names_fbx_makehuman1 PROPERTIES FIXTURES_REQUIRED app_export_names_fbx_makehuman1)
+    add_test(NAME app_export_names_fbx_mixamo_write COMMAND makehuman
+             --pose tpose --rig-names mixamo --export ${CMAKE_CURRENT_BINARY_DIR}/rignames-export/mixamo.fbx)
+    set_tests_properties(app_export_names_fbx_mixamo_write PROPERTIES FIXTURES_SETUP app_export_names_fbx_mixamo)
+    add_test(NAME app_export_names_fbx_mixamo COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/rignames-export/mixamo.fbx "-DKEYS=LeftArm" "-DABSENT=shoulder01;UpArm_L"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_export_names_fbx_mixamo PROPERTIES FIXTURES_REQUIRED app_export_names_fbx_mixamo)
+    add_test(NAME app_export_names_usda_native_write COMMAND makehuman
+             --pose tpose --rig-names native --export ${CMAKE_CURRENT_BINARY_DIR}/rignames-export/native.usda)
+    set_tests_properties(app_export_names_usda_native_write PROPERTIES FIXTURES_SETUP app_export_names_usda_native)
+    add_test(NAME app_export_names_usda_native COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/rignames-export/native.usda "-DKEYS=shoulder01_L" "-DABSENT=UpArm_L;LeftArm"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_export_names_usda_native PROPERTIES FIXTURES_REQUIRED app_export_names_usda_native)
+    add_test(NAME app_export_names_usda_makehuman1_write COMMAND makehuman
+             --pose tpose --rig-names makehuman1 --export ${CMAKE_CURRENT_BINARY_DIR}/rignames-export/makehuman1.usda)
+    set_tests_properties(app_export_names_usda_makehuman1_write PROPERTIES FIXTURES_SETUP app_export_names_usda_makehuman1)
+    add_test(NAME app_export_names_usda_makehuman1 COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/rignames-export/makehuman1.usda "-DKEYS=UpArm_L" "-DABSENT=shoulder01_L;LeftArm"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_export_names_usda_makehuman1 PROPERTIES FIXTURES_REQUIRED app_export_names_usda_makehuman1)
+    add_test(NAME app_export_names_usda_mixamo_write COMMAND makehuman
+             --pose tpose --rig-names mixamo --export ${CMAKE_CURRENT_BINARY_DIR}/rignames-export/mixamo.usda)
+    set_tests_properties(app_export_names_usda_mixamo_write PROPERTIES FIXTURES_SETUP app_export_names_usda_mixamo)
+    add_test(NAME app_export_names_usda_mixamo COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/rignames-export/mixamo.usda "-DKEYS=LeftArm" "-DABSENT=shoulder01_L;UpArm_L"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_export_names_usda_mixamo PROPERTIES FIXTURES_REQUIRED app_export_names_usda_mixamo)
+    add_test(NAME app_export_names_dae_native_write COMMAND makehuman
+             --pose tpose --rig-names native --export ${CMAKE_CURRENT_BINARY_DIR}/rignames-export/native.dae)
+    set_tests_properties(app_export_names_dae_native_write PROPERTIES FIXTURES_SETUP app_export_names_dae_native)
+    add_test(NAME app_export_names_dae_native COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/rignames-export/native.dae "-DKEYS=shoulder01" "-DABSENT=UpArm_L;LeftArm"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_export_names_dae_native PROPERTIES FIXTURES_REQUIRED app_export_names_dae_native)
+    add_test(NAME app_export_names_dae_makehuman1_write COMMAND makehuman
+             --pose tpose --rig-names makehuman1 --export ${CMAKE_CURRENT_BINARY_DIR}/rignames-export/makehuman1.dae)
+    set_tests_properties(app_export_names_dae_makehuman1_write PROPERTIES FIXTURES_SETUP app_export_names_dae_makehuman1)
+    add_test(NAME app_export_names_dae_makehuman1 COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/rignames-export/makehuman1.dae "-DKEYS=UpArm_L" "-DABSENT=shoulder01;LeftArm"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_export_names_dae_makehuman1 PROPERTIES FIXTURES_REQUIRED app_export_names_dae_makehuman1)
+    add_test(NAME app_export_names_dae_mixamo_write COMMAND makehuman
+             --pose tpose --rig-names mixamo --export ${CMAKE_CURRENT_BINARY_DIR}/rignames-export/mixamo.dae)
+    set_tests_properties(app_export_names_dae_mixamo_write PROPERTIES FIXTURES_SETUP app_export_names_dae_mixamo)
+    add_test(NAME app_export_names_dae_mixamo COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/rignames-export/mixamo.dae "-DKEYS=LeftArm" "-DABSENT=shoulder01;UpArm_L"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_export_names_dae_mixamo PROPERTIES FIXTURES_REQUIRED app_export_names_dae_mixamo)
+
+    # The ABSENT machinery, gated against itself. A negative assertion only
+    # fires when violated, so with nothing violating it, breaking the check is
+    # invisible -- measured: downgrading its FATAL_ERROR to STATUS left every
+    # export-naming test green. This deliberately violates it.
+    add_test(NAME app_export_names_absent_actually_fails COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/rignames-export/native.bvh
+             "-DKEYS=shoulder01" "-DABSENT=shoulder01"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_export_names_absent_actually_fails PROPERTIES
+        WILL_FAIL TRUE FIXTURES_REQUIRED app_export_names_bvh_native)
 
     # The Pose chooser, and what it must NOT offer.
     #

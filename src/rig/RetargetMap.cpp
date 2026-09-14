@@ -74,4 +74,40 @@ size_t retargetJoints(io::BvhFile& bvh, const RetargetMap& map) {
     return renamed;
 }
 
+RetargetMap invertRetargetMap(const RetargetMap& map, size_t* collisions) {
+    RetargetMap out;
+    out.toBone.reserve(map.toBone.size());
+    size_t dropped = 0;
+
+    for (const auto& [source, bone] : map.toBone) {
+        const auto [it, inserted] = out.toBone.emplace(bone, source);
+        if (inserted) continue;
+        ++dropped;
+        // Two sources claim one bone, so one of them cannot survive. WHICH one
+        // is chosen deterministically -- the lexicographically smaller name --
+        // because `unordered_map` iteration order is unspecified, and picking
+        // by arrival would make the same table export different files on
+        // different runs.
+        if (source < it->second) it->second = source;
+    }
+
+    // Reported through `collisions`, not printed here: the caller knows WHICH
+    // --rig-names choice produced this and can say so, and a library that
+    // printed as well would say it twice -- including into unit-test output.
+    if (collisions) *collisions = dropped;
+    return out;
+}
+
+size_t renameBones(std::vector<std::string>& names, const RetargetMap& map) {
+    size_t renamed = 0;
+    for (std::string& name : names) {
+        const auto it = map.toBone.find(name);
+        if (it == map.toBone.end()) continue;  // no word for it: keep ours
+        if (it->second == name) continue;      // the same word in both
+        name = it->second;
+        ++renamed;
+    }
+    return renamed;
+}
+
 }  // namespace mh::rig

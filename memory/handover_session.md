@@ -4,6 +4,84 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-14 (ninety-first) — Session · **Exports learn to speak other skeletons**
+
+*2026-09-14 — fourth of the five chunks the owner's rig-naming decision implies.*
+
+### What this is
+`--rig-names native|makehuman1|mixamo` now applies on EXPORT as well as import.
+`mh::rig::invertRetargetMap` reads the table backwards and
+`mh::rig::renameBones` applies it to a vector of bone names. One table, both
+directions, so import and export cannot describe different correspondences.
+
+### The shape of it, which a survey changed
+Recon first, and it was worth it: this looked like five per-format changes and
+is not. glTF, FBX, USD and DAE all read their bone names from ONE vector,
+`foundation::SkinView::jointNames`, so `applyExportNames` on the `SkinData`
+covers four formats. BVH is the exception — it never touches `SkinView` — and
+takes a second `retargetJoints` pass after `toBvhPose`.
+
+**One applier for the body and every worn proxy, deliberately.** glTF, FBX and
+USD each refuse a scene whose skinned entries name different skeletons, so
+renaming the body but not the clothes does not mislabel a file — it fails the
+export. The review confirmed the gates actually reach that guard: `--eyes`
+defaults to HighPolyEyes, so every glb/fbx/usda case writes two skinned entries.
+
+### Verified in Blender, not grepped
+bvh, glb and fbx all import with **179 bones** — nothing dropped — carrying
+`shoulder01.L` / `UpArm_L` / `LeftArm` for native / makehuman1 / mixamo. usda
+and dae confirmed by content.
+
+15 gates (5 formats x 3 namings) assert the chosen skeleton's word is PRESENT
+and the other two ABSENT. Presence alone would pass on a writer that ADDED the
+new name beside the old one, which is an addition, not a rename.
+
+### Details worth keeping
+* Inversion is exact only because both tables are gated injective. A
+  non-injective table reports collisions instead of dropping pairs, and the
+  survivor is chosen lexicographically — `unordered_map` order is unspecified,
+  so arrival order would make one table export different files on different runs.
+* `renameBones` counts CHANGES, not table hits. The Mixamo table contains one
+  IDENTITY pair, `HeadTop_End`, because this rig borrowed that name from Mixamo:
+  65 bones covered, 64 changed. Counting hits would report work that did not
+  happen.
+* Coverage is skeleton-dependent — MEASURED, the Mixamo table covers 65 of
+  `mixamo_superset`'s 179 bones but only 49 of `default`'s 163.
+
+### Three harness bugs, all mine, all found by mutation
+1. My ctest `-R` filter used Catch2 TAGS. ctest matches test NAMES, and Catch2
+   registers each TEST_CASE separately, so the filter matched nothing and two
+   rounds of unit-test mutations looked like survivors.
+2. The `ABSENT` check was untestable by construction. A negative assertion only
+   fires when violated, so downgrading its FATAL_ERROR to STATUS left every
+   export gate green. It now has a WILL_FAIL test that deliberately violates it.
+3. Determinism was unpinned: the collision test checked HOW MANY pairs dropped
+   but not WHICH name survived, so removing the tie-break was invisible.
+
+Six mutations, six kills once those were fixed.
+
+### Review findings, four fixed
+* A rename can collide with a bone the table leaves alone — table injectivity
+  does not imply injective OUTPUT, and the vocabularies are not disjoint.
+  Ambiguous rig: USD emits duplicate joint paths, Maya merges them, a
+  re-imported BVH mis-binds.
+* The `--help` text still said the flag governed only the `--pose .bvh`. A user
+  following it to load a shipped walk would silently ship 1.x bone names.
+* No export-side twin of the import path's "drives 0 of N bones".
+* One warning printed twice, library and caller, leaking into test output.
+
+Neither new warning is reachable with the shipped tables, so both were PROVEN
+to fire with a probe table dropped into data/rigs and removed again. `data/` was
+verified clean afterwards — writing a file there once broke the asset-index
+count.
+
+### Next
+Item 5, the `AnimationLibrary` tab — a chooser over BVH files plus a frame
+slider, and now genuinely unblocked: `--pose`, `--pose-frame`, `--rig-names` and
+retargeting all exist.
+
+---
+
 ## 2026-09-14 (ninetieth) — Session · **A stress-fixture stops posing as a pose**
 
 *2026-09-14 — owner-reported: "the benchmark pose distorts the character wrongly".*
