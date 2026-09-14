@@ -416,4 +416,96 @@ std::expected<std::vector<Mat4>, PoseUnitsError> mixPoses(std::span<const Mat4> 
     return out;
 }
 
+std::expected<PoseUnits, PoseUnitsError> loadBodyPoseUnits(const std::filesystem::path& path,
+                                                           const Skeleton& skeleton,
+                                                           const RetargetMap* names) {
+    auto opened = foundation::openForRead(path);
+    if (!opened) {
+        const auto kind = opened.error() == foundation::FileReadErrorKind::NotFound
+                              ? PoseUnitsErrorKind::NotFound
+                              : PoseUnitsErrorKind::Unreadable;
+        return std::unexpected(PoseUnitsError{kind, path.string(), "cannot open"});
+    }
+
+    nlohmann::ordered_json doc;
+    try {
+        *opened >> doc;
+    } catch (const nlohmann::json::exception& e) {
+        return std::unexpected(
+            PoseUnitsError{PoseUnitsErrorKind::Malformed, path.string(), e.what()});
+    }
+    const auto poses = doc.find("poses");
+    if (poses == doc.end() || !poses->is_object()) {
+        return std::unexpected(
+            PoseUnitsError{PoseUnitsErrorKind::Malformed, path.string(), "no `poses` object"});
+    }
+
+    const auto malformed = [&path](std::string what) {
+        return std::unexpected(
+            PoseUnitsError{PoseUnitsErrorKind::Malformed, path.string(), std::move(what)});
+    };
+
+    // Bone name -> index, built once. The asset names its bones per pose, so
+    // without this the lookup would be a linear scan of 179 bones per entry.
+    std::unordered_map<std::string_view, size_t> boneIndex;
+    boneIndex.reserve(skeleton.bones.size());
+    for (size_t b = 0; b < skeleton.bones.size(); ++b)
+        boneIndex.emplace(skeleton.bones[b].name, b);
+
+    PoseUnits out;
+    out.boneCount = skeleton.bones.size();
+    out.names.reserve(poses->size());
+    out.data.assign(poses->size() * out.boneCount, Mat4::identity());
+
+    size_t unit = 0;
+    for (const auto& [poseName, bones] : poses->items()) {
+        out.names.push_back(poseName);
+        if (!bones.is_object()) {
+            return malformed("pose `" + poseName + "` is not an object");
+        }
+        for (const auto& [rawBone, quat] : bones.items()) {
+            // Rejected rather than skipped, the way the sibling table loader
+            // rejects a wrong-typed value (`src/rig/RetargetMap.cpp:52-55`). A
+            // skipped bone loads a pose that moves LESS than it says while
+            // reporting success -- the failure nobody notices for a release.
+            if (!quat.is_array() || quat.size() != 4) {
+                return malformed("pose `" + poseName + "` bone `" + rawBone +
+                                 "`: expected 4 quaternion components, got " +
+                                 std::to_string(quat.size()));
+            }
+            // `is_array() && size() == 4` is NOT enough: four strings pass it
+            // and then throw `json::type_error` out of `get<double>()`, past
+            // the `std::expected` every caller is written against. MEASURED.
+            if (!std::all_of(quat.begin(), quat.end(),
+                             [](const auto& c) { return c.is_number(); })) {
+                return malformed("pose `" + poseName + "` bone `" + rawBone +
+                                 "`: quaternion is not numeric");
+            }
+
+            // The table renames the asset's bone to this rig's, exactly as
+            // `retargetJoints` renames a BVH's joints. A bone it does not cover
+            // keeps its own name and simply fails to match below -- which is
+            // the whole reason the table exists: MEASURED, name matching alone
+            // leaves 8 of the 61 poses driving nothing at all.
+            std::string bone = rawBone;
+            if (names != nullptr) {
+                if (const auto it = names->toBone.find(bone); it != names->toBone.end()) {
+                    bone = it->second;
+                }
+            }
+            const auto at = boneIndex.find(bone);
+            if (at == boneIndex.end()) continue;  // this rig has no such bone
+
+            // `[w, x, y, z]`, which is this project's quaternion order --
+            // Eigen's `.coeffs()` is `[x, y, z, w]` and mixing them silently
+            // produces a plausible wrong rotation.
+            const foundation::Quat q{quat[0].get<double>(), quat[1].get<double>(),
+                                     quat[2].get<double>(), quat[3].get<double>()};
+            out.data[unit * out.boneCount + at->second] = foundation::quaternionMatrix(q);
+        }
+        ++unit;
+    }
+    return out;
+}
+
 }  // namespace mh::rig

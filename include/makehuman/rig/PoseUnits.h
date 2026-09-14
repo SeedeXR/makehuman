@@ -156,6 +156,27 @@ struct PoseUnitsError {
 [[nodiscard]] std::expected<PoseUnits, PoseUnitsError> makePoseUnits(
     const io::BvhFile& bvh, const Skeleton& skeleton, std::vector<std::string> names);
 
+/// Builds the BODY pose-unit library from `body-poseunits.json`.
+///
+/// The second producer of `PoseUnits`, and a different shape from the first:
+/// `makePoseUnits` reads 60 frames of a BVH, while this reads 61 poses that
+/// each name their bones directly as `[w,x,y,z]` quaternions. No frames, no
+/// BVH. The RESULT is the same type on purpose, so `indexOf` and `blend` do not
+/// care which producer made a unit.
+///
+/// A bone the rig does not have is left at identity, exactly as `makePoseUnits`
+/// leaves an unmatched joint -- so a partially-resolving pose moves the bones it
+/// can and nothing else.
+///
+/// @param names an optional table renaming the asset's bones to this rig's.
+///        MEASURED on the 61 shipped poses: without one, 29 resolve fully, 24
+///        partially and 8 not at all; with `body-poseunits-bones.json`, 36 / 20
+///        / 5. The asset was authored against a differently-named skeleton, so
+///        name matching alone silently drops a third of it.
+[[nodiscard]] std::expected<PoseUnits, PoseUnitsError> loadBodyPoseUnits(
+    const std::filesystem::path& path, const Skeleton& skeleton,
+    const RetargetMap* names = nullptr);
+
 /// Loads a whole-body pose -- a T-pose, an A-pose, a stance -- from a
 /// single-frame BVH, ready to hand to computeSkinningMatrices().
 ///

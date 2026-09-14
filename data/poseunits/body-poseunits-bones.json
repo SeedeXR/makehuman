@@ -1,0 +1,16 @@
+{
+  "_provenance": {
+    "generated_by": "hand-written, 2026-09-14",
+    "source": "data/poseunits/body-poseunits.json",
+    "rig": "data/rigs/mixamo_superset.mhskel and data/rigs/default.mhskel (identical result)",
+    "note": "Body pose-unit bone name -> this rig's bone name. NOT a skeleton naming and deliberately NOT under data/rigs/: `--rig-names` validates against that directory, so a table there would become a selectable naming, which this is not.",
+    "measured": "61 poses. Without this table 29 resolve fully, 24 partially, 8 not at all. With it: 36 / 20 / 5 -- three dead poses revive and four partial ones complete.",
+    "why_only_three": "Of the 24 bones the asset names and this rig lacks, only these three are clean generation-difference renames. The rest are not guesses worth making: `spine1..4` would have to land on `spine01..05` (four into five -- ambiguous, and guessing twists the torso); `scapula.L`, `heel.L`, `metatarsal1..5.L`, `collisionArm1..2.L`, `collisionLeg0..2.L`, `platysma03/06.L/R` have NO counterpart in this rig at all; and `special02` is an odd gap since `special01` and `special03..06` all exist. Leaving a bone unmapped costs one bone of one pose. Mapping it wrongly moves the wrong body part, which is worse and harder to notice.",
+    "left_side_only": "The asset references `shoulder.L` and `upperleg.L` but never the `.R` forms -- 48 of its 61 poses are Left-named and the rig already has every right-side counterpart. Mapping names nothing references would be speculation."
+  },
+  "mapping": {
+    "neck": "neck01",
+    "shoulder.L": "shoulder01.L",
+    "upperleg.L": "upperleg01.L"
+  }
+}

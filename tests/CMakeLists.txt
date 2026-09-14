@@ -14,6 +14,7 @@ add_executable(mh_tests
     unit/test_makehuman1_retarget.cpp
     unit/test_retarget_import.cpp
     unit/test_asset_meta.cpp
+    unit/test_body_poseunits.cpp
     unit/test_retarget_export.cpp
     unit/test_retarget_map.cpp
     unit/test_scalp.cpp
@@ -2123,6 +2124,53 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
     set_tests_properties(app_export_names_absent_actually_fails PROPERTIES
         WILL_FAIL TRUE FIXTURES_REQUIRED app_export_names_bvh_native)
+
+    # BODY pose units reach --pose-unit, not just the face ones.
+    #
+    # data/poseunits/body-poseunits.json shipped as 61 poses nothing could
+    # apply. It was authored against a differently-named skeleton, so MEASURED
+    # against both rigs: 29 resolve fully, 24 partially, 8 not at all. With
+    # body-poseunits-bones.json -- three renames, the only unambiguous ones --
+    # that becomes 36 / 20 / 5.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bodyunits)
+    # 60 face + 61 body, and the two name sets do not overlap.
+    add_test(NAME app_list_pose_units_includes_body COMMAND makehuman --list-pose-units)
+    set_tests_properties(app_list_pose_units_includes_body PROPERTIES
+        PASS_REGULAR_EXPRESSION "UpperArmUpLeft1")
+    add_test(NAME app_list_pose_units_still_has_face COMMAND makehuman --list-pose-units)
+    set_tests_properties(app_list_pose_units_still_has_face PROPERTIES
+        PASS_REGULAR_EXPRESSION "LeftBrowDown")
+
+    add_test(NAME app_body_pose_unit_rest COMMAND makehuman
+             --export ${CMAKE_CURRENT_BINARY_DIR}/bodyunits/rest.obj)
+    set_tests_properties(app_body_pose_unit_rest PROPERTIES FIXTURES_SETUP app_bpu_rest)
+    # THE claim: a unit the bone table revived actually moves the character.
+    # UpperLegForwardLeft names `upperleg.L` and nothing else, so without the
+    # table's one rename it drives nothing at all.
+    add_test(NAME app_body_pose_unit_revived COMMAND makehuman
+             --pose-unit UpperLegForwardLeft=1.0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/bodyunits/revived.obj)
+    set_tests_properties(app_body_pose_unit_revived PROPERTIES FIXTURES_SETUP app_bpu_revived)
+    add_test(NAME app_body_pose_unit_moves_the_leg COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/bodyunits/rest.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/bodyunits/revived.obj
+             -DEXPECT_DIFFERENT=1858
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
+    set_tests_properties(app_body_pose_unit_moves_the_leg PROPERTIES
+        FIXTURES_REQUIRED "app_bpu_rest;app_bpu_revived")
+    # An unknown unit is still refused, so a typo does not silently do nothing.
+    add_test(NAME app_body_pose_unit_unknown_refused COMMAND makehuman
+             --pose-unit NoSuchUnitAtAll=1.0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/bodyunits/never.obj)
+    set_tests_properties(app_body_pose_unit_unknown_refused PROPERTIES WILL_FAIL TRUE)
+
+    # --help must say the body units exist. It said "A face pose unit" and
+    # "the expression mixer's sixty sliders" for a whole chunk after --pose-unit
+    # started accepting 121 -- a stale doc ships as confidently as stale code,
+    # and nothing gated it.
+    add_test(NAME app_help_mentions_body_pose_units COMMAND makehuman --help)
+    set_tests_properties(app_help_mentions_body_pose_units PROPERTIES
+        PASS_REGULAR_EXPRESSION "sixty-one pose the BODY")
 
     # The Pose chooser, and what it must NOT offer.
     #

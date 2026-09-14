@@ -4,6 +4,119 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-14 (ninety-fourth) — Session · **61 body pose units stop being decoration**
+
+*2026-09-14 — the chunk where a surviving mutation was the whole point.*
+
+### What shipped
+`rig::loadBodyPoseUnits` (`src/rig/PoseUnits.cpp:419`, declared
+`include/makehuman/rig/PoseUnits.h:176`) — the **second producer** of
+`PoseUnits`. `makePoseUnits` reads 60 frames of a BVH; this reads 61 poses that
+name their bones directly as `[w,x,y,z]` quaternions, no BVH and no frames. It
+returns the same type on purpose, so `indexOf` and `blend` cannot tell the
+producers apart.
+
+`data/poseunits/body-poseunits-bones.json` — three renames, `neck`→`neck01`,
+`shoulder.L`→`shoulder01.L`, `upperleg.L`→`upperleg01.L`. Deliberately NOT under
+`data/rigs/`: `--rig-names` validates against that directory, so a table there
+would become a selectable skeleton naming, which this is not.
+
+`main.cpp`'s `allPoseUnits(skel)` merges 60 face + 61 body. `--list-pose-units`
+prints **121**; `--pose-unit` reaches both.
+
+### Measured, not asserted
+- Table effect: **29 full / 24 partial / 8 dead** → **36 / 20 / 5**.
+- `--pose-unit UpperLegForwardLeft=1.0` moves **1,858 of 14,444** exported
+  vertices, max **3.58 dm**. Without the table's one rename it moves nothing.
+- The five still-dead poses are correct to leave dead. `FootDownLeft` shows 105
+  vertices at max **0.0001 dm** — one unit in the last place of the OBJ writer's
+  4-decimal output. Rounding noise, not motion.
+
+### The mutation that mattered
+Reading the quaternion as `[x,y,z,w]` instead of `[w,x,y,z]` **survived all six
+original tests.** They checked whether a unit *moves*, never whether it moves
+*correctly* — a wrong rotation is still a rotation. This is exactly the trap
+CLAUDE.md names ("Eigen's `.coeffs()` is `[x,y,z,w]`. Classic trap").
+
+Killed by pinning `LowerLegBendLeft1`'s actual matrix. Under the swap
+`m[1][1]` is **-1.0**: a 30° turn about Y becomes a 180° flip — the leg upside
+down. Six tests green, character destroyed.
+
+**The lesson, again: a test that asserts "something changed" is not a test of
+what changed.**
+
+### A defect found reviewing my own diff
+`if (!quat.is_array() || quat.size() != 4) continue;` silently dropped a bone —
+the pose still loaded, just moved less than it said. Worse, four *strings* pass
+that guard and then throw `json::type_error` out of `get<double>()`, **past the
+`std::expected` every caller is written against**. Observed, not theorised:
+`[json.exception.type_error.302] type must be number, but is string`.
+
+Fixed to reject with `Malformed`, naming pose and bone, the way the sibling
+loader does (`src/rig/RetargetMap.cpp:52-55`). Three error paths, three tests,
+three mutations killed.
+
+### Warnings proven to fire
+Both non-fatal warnings in `allPoseUnits` were driven with a transient probe
+(the data file moved aside, then restored) rather than assumed:
+- table missing → `warning: cannot read .../body-poseunits-bones.json`
+- body units missing → `warning: cannot read the body pose units`, and the list
+  falls to **60** names, proving the documented graceful degradation: a
+  body-unit failure does not cost the face units.
+
+### The asset is mislabelled far beyond the four errors already pinned
+Rendered `UpperLegForwardLeft` and `LowerLegBendLeft1` and LOOKED at them. The
+skinning is clean -- rigid hip rotation, no shearing -- so the loader applies
+the matrices in the right space. But the names do not describe the data.
+
+An axis-vs-name sweep first suggested 18 contradictions; **most of that was my
+own heuristic being wrong**, since it assumed world axes while these are
+bone-LOCAL rotations. Discarded. What survives is frame-INDEPENDENT, because it
+is about which bones a pose names at all:
+
+| Pose | Bones it actually drives |
+|---|---|
+| `HeadTurnLeft`, `HeadTurnRight` | ONLY hand: `wrist.L`, `metacarpal1-4.L`, `finger1-1.L` |
+| `TorsoUp`, `TorsoDown` | head, neck, `platysma03/06.L/R` -- the HeadUp/HeadDown bone set |
+| `UpperLegUpLeft`, `UpperLegDownLeft` | `spine1..4` + `breast.L/R`, no leg bone at all |
+| `Toe1CloseLeft`, `Toe2CloseLeft` | only `finger1-1.L`, a HAND bone |
+| `Figer1RollInLeft/OutLeft` | "Figer" typo, and they drive finger4/finger5, not finger1 |
+
+**Not literal duplicates** -- checked, zero exact-duplicate pose pairs in the
+file, so these share a bone SET with another pose but carry different values.
+That also refines the earlier entry: `Finger1CloseLeft != FootDownLeft` by
+value; what they share is the six-bone set.
+
+**No oracle exists.** Grepped the whole reference: nothing reads
+`body-poseunits.json`. Only `face-poseunits` is consumed
+(`2_posing_expression.py:116-126`, `7_expression_mixer.py:166-174`). So there is
+no reference behaviour to match and no parity fixture is possible for this file.
+
+Deliberately NOT renamed. Inventing names for an orphan asset would be
+unverifiable guessing, and the loader's job is to read the file faithfully --
+which it does. **Next chunk: extend `tools/audit_poseunits.py` to pin these the
+way the first four are pinned**, so the count cannot silently grow again.
+
+### A stale doc ships as confidently as stale code
+`--help` said `--pose-unit` took "A face pose unit" and was "the expression
+mixer's sixty sliders" -- for the whole chunk in which it started accepting
+**121**. Caught only by running `--help` while looking for render flags; nothing
+gated it. Both strings fixed (`src/app/main.cpp:2403`, `:2424`) and
+`app_help_mentions_body_pose_units` now pins the claim, watched RED first by
+reverting the sentence.
+
+### Gates
+11 unit tests + 6 app-level ctest entries. Mutations: **M1** (table never
+consulted), **M2** (rename discarded), **M3** (quaternion order), **M4** (body
+names not merged), **M5/M6/M7** (the three error paths) — all killed, every
+build confirmed to SUCCEED first. The name-collision gate was itself mutated
+(intersect face with face) and killed.
+
+*One false verdict along the way, recorded because it is the recurring one: a
+"GATE SURVIVED" that came from a mutation whose pattern was absent — clang-format
+had reflowed the line. An unapplied mutation proves nothing. Read the formatted
+text first, and assert the pattern is present.*
+
 ## 2026-09-14 (ninety-third) — Session · **The shipped animations were loading sideways**
 
 *2026-09-14 — found by a test written to confirm existing behaviour, which is

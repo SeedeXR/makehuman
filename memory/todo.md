@@ -763,7 +763,7 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       (`animation.py:286`) and its writer emits `.mhpose`
       (`7_expression_mixer.py:136`); the JSON is identical, so there is one
       loader, not two.
-- [~] **Body pose units: investigated, and the asset does not fit our rig.**
+- [x] **Body pose units: loaded, through a three-rename bone table.**
       Format confirmed — 61 poses, each bone -> `[w,x,y,z]` quaternion directly,
       no BVH frames. But it was authored against a richer, differently-named
       skeleton. Against **both** shipped rigs:
@@ -792,11 +792,52 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       guessing twists the torso. `scapula.L`, `collisionArm*`, `collisionLeg*`,
       `platysma*`, `heel.L`, `metatarsal*` have NO counterpart at all; only
       `special02` is odd, since we ship `special01` and `special03..06`.
-      Build the table AND its consumer together: a table nothing reads is the
-      same mistake as a `.mhanim` parser nothing calls.
-      Measured and gated by `tools/audit_poseunits.py` (CI). **Loader not built**
-      — building one before the bone table exists would produce poses that
-      silently do nothing. Recorded in `memory/project_context.md` §8.0.
+      Measured and gated by `tools/audit_poseunits.py` (CI). Recorded in
+      `memory/project_context.md` §8.0.
+      **Built 2026-09-14, table and consumer together** — a table nothing reads
+      would have been the same mistake as a `.mhanim` parser nothing calls.
+      `rig::loadBodyPoseUnits` (`src/rig/PoseUnits.cpp:419`) is the second
+      producer of `PoseUnits`: 61 poses naming bones directly, no BVH, returning
+      the **same type** as `makePoseUnits` so `indexOf` and `blend` cannot tell
+      the producers apart. `data/poseunits/body-poseunits-bones.json` carries the
+      three renames. With it: **36 full / 20 partial / 5 dead**, from 29/24/8.
+      `main.cpp`'s `allPoseUnits` merges 60 face + 61 body into one library, so
+      `--list-pose-units` prints **121** and `--pose-unit` reaches both. The two
+      name sets are disjoint — gated, because `indexOf` returns the first match
+      and a collision would make a body unit silently unreachable.
+      Verified end to end, not asserted: `--pose-unit UpperLegForwardLeft=1.0`
+      moves **1,858 of 14,444** exported vertices (max 3.58 dm), and that unit
+      moves NOTHING without the table's one `upperleg.L` rename.
+      **The mutation that mattered**: reading the quaternion as `[x,y,z,w]`
+      instead of `[w,x,y,z]` survived all six original tests — they checked that
+      a unit *moves*, never that it moves *correctly*. `LowerLegBendLeft1` is now
+      pinned to its actual matrix; under the swap `m[1][1]` is **-1.0**, a leg
+      turned upside down. The trap CLAUDE.md names, caught by mutation, not luck.
+      Malformed input is **rejected, not skipped**: four strings pass an
+      `is_array() && size() == 4` guard and then throw `json::type_error` out of
+      `get<double>()`, past the `std::expected` every caller is written against.
+      Observed, then fixed and gated.
+- [ ] **Pin the rest of `body-poseunits.json`'s authoring errors.** The four
+      already pinned (`UpperArmUpLeft1/2` -> mouth bones, `Finger1/2CloseLeft`
+      -> foot bones) are not the whole story. Found 2026-09-14 by listing which
+      bones each pose actually names:
+      `HeadTurnLeft`/`HeadTurnRight` drive ONLY hand bones (`wrist.L`,
+      `metacarpal1-4.L`, `finger1-1.L`) and no head bone;
+      `TorsoUp`/`TorsoDown` drive the head/neck/platysma set, not the spine;
+      `UpperLegUpLeft`/`UpperLegDownLeft` drive `spine1..4` + `breast.L/R` and
+      no leg bone; `Toe1CloseLeft`/`Toe2CloseLeft` drive only `finger1-1.L`, a
+      HAND bone; and `Figer1RollInLeft/OutLeft` carry a "Figer" typo while
+      driving finger4/finger5 rather than finger1.
+      **Not duplicates** — zero exact-duplicate pose pairs in the file; these
+      share a bone SET with another pose but carry different values.
+      **No oracle**: nothing in the reference reads this file at all (only
+      `face-poseunits`, `2_posing_expression.py:116-126`), so no parity fixture
+      is possible and the names cannot be corrected by consulting it.
+      Do NOT rename — inventing names for an orphan asset is unverifiable.
+      Extend `tools/audit_poseunits.py` so the count cannot silently grow.
+      An axis-vs-name sweep is NOT the way to find these: it assumes world axes
+      while the quaternions are bone-LOCAL, and produced 18 false positives.
+      Match on which bones a pose NAMES — that is frame-independent.
 - [x] **Whole-body poses: A-pose and T-pose, render and export** (owner request,
       2026-08-29). `rig::loadBodyPose` reads a single-frame BVH;
       `rig::poseToBoneLocal` converts it into each bone's rest frame.

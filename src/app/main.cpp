@@ -173,6 +173,59 @@ std::string availableRigs() {
 /// live here. Aliased rather than renamed at every use.
 using PoseRig = mh::rig::PoseRig;
 
+/// Every pose unit this build offers: the 60 FACE units, then the 61 BODY ones.
+///
+/// Two producers, one library. The face units come from a 60-frame BVH; the
+/// body units name their bones directly as quaternions in a JSON. Merging them
+/// means `--pose-unit` and `--list-pose-units` reach both without either having
+/// to know which file a name came from -- MEASURED, the two name sets do not
+/// overlap, so one `indexOf` is unambiguous.
+///
+/// The body units are read through `body-poseunits-bones.json`, without which
+/// 8 of the 61 drive nothing at all: the asset was authored against a
+/// differently-named skeleton. A missing table is a WARNING, not a failure --
+/// the face units still work, and 29 body units resolve on their own.
+std::optional<mh::rig::PoseUnits> allPoseUnits(const mh::rig::Skeleton& skel) {
+    const auto bvh = mh::io::readBvh(dataDir() / "poseunits" / "face-poseunits.bvh");
+    if (!bvh) {
+        std::fprintf(stderr, "cannot read the face pose units\n");
+        return std::nullopt;
+    }
+    auto names = mh::rig::loadPoseUnitNames(dataDir() / "poseunits" / "face-poseunits.json");
+    if (!names) {
+        std::fprintf(stderr, "cannot read the pose unit names: %s\n",
+                     names.error().message().c_str());
+        return std::nullopt;
+    }
+    auto units = mh::rig::makePoseUnits(*bvh, skel, std::move(*names));
+    if (!units) {
+        std::fprintf(stderr, "cannot build the pose units: %s\n", units.error().message().c_str());
+        return std::nullopt;
+    }
+
+    const auto tablePath = dataDir() / "poseunits" / "body-poseunits-bones.json";
+    const auto table     = mh::rig::loadRetargetMap(tablePath);
+    if (!table) {
+        std::fprintf(stderr,
+                     "warning: cannot read %s: %s -- body pose units that name a renamed bone "
+                     "will do nothing\n",
+                     tablePath.string().c_str(), table.error().message().c_str());
+    }
+    const auto body = mh::rig::loadBodyPoseUnits(dataDir() / "poseunits" / "body-poseunits.json",
+                                                 skel, table ? &*table : nullptr);
+    if (!body) {
+        // Not fatal: the face units are the ones an expression needs, and they
+        // are already built. Saying so beats losing them to a body-unit problem.
+        std::fprintf(stderr, "warning: cannot read the body pose units: %s\n",
+                     body.error().message().c_str());
+        return std::move(*units);
+    }
+
+    units->names.insert(units->names.end(), body->names.begin(), body->names.end());
+    units->data.insert(units->data.end(), body->data.begin(), body->data.end());
+    return std::move(*units);
+}
+
 /// Layers an expression onto @p pose, in model space.
 ///
 /// The recipe is the reference's and every step of it is parity-tested
@@ -193,22 +246,8 @@ using PoseRig = mh::rig::PoseRig;
 ///        becomes the pose.
 bool applyExpressionUnits(const mh::rig::Expression& expr, const mh::rig::Skeleton& skel,
                           std::vector<mh::foundation::Mat4>& pose) {
-    const auto bvh = mh::io::readBvh(dataDir() / "poseunits" / "face-poseunits.bvh");
-    if (!bvh) {
-        std::fprintf(stderr, "cannot read the face pose units\n");
-        return false;
-    }
-    auto names = mh::rig::loadPoseUnitNames(dataDir() / "poseunits" / "face-poseunits.json");
-    if (!names) {
-        std::fprintf(stderr, "cannot read the pose unit names: %s\n",
-                     names.error().message().c_str());
-        return false;
-    }
-    const auto units = mh::rig::makePoseUnits(*bvh, skel, std::move(*names));
-    if (!units) {
-        std::fprintf(stderr, "cannot build the pose units: %s\n", units.error().message().c_str());
-        return false;
-    }
+    const auto units = allPoseUnits(skel);
+    if (!units) return false;
 
     std::vector<size_t> indices;
     std::vector<float> weights;
@@ -2361,10 +2400,11 @@ int main(int argc, char** argv) {
         QStringLiteral("pose"), QStringLiteral("rest"));
     const QCommandLineOption poseUnitOpt(
         QStringLiteral("pose-unit"),
-        QStringLiteral("A face pose unit and its weight, as <unit>=<0..1>. Repeatable, and "
-                       "applied in the order given. This is the expression mixer's sixty "
-                       "sliders: --facs reaches only the thirty Action Units that name "
-                       "them. --list-pose-units prints the names."),
+        QStringLiteral("A pose unit and its weight, as <unit>=<0..1>. Repeatable, and "
+                       "applied in the order given. Sixty are the expression mixer's face "
+                       "sliders, of which --facs reaches only the thirty Action Units that "
+                       "name them; the other sixty-one pose the BODY. --list-pose-units "
+                       "prints the names."),
         QStringLiteral("unit=weight"));
     const QCommandLineOption listAnimationsOpt(
         QStringLiteral("list-animations"),
@@ -2382,7 +2422,8 @@ int main(int argc, char** argv) {
                        "still loads one by name or path."));
     const QCommandLineOption listPoseUnitsOpt(
         QStringLiteral("list-pose-units"),
-        QStringLiteral("Print the face pose units --pose-unit accepts, and exit."));
+        QStringLiteral("Print the pose units --pose-unit accepts -- sixty face and "
+                       "sixty-one body -- and exit."));
     const QCommandLineOption spreadRootsOpt(
         QStringLiteral("spread-roots"),
         QStringLiteral("Print <n> hair-root vertices spread evenly over the scalp of the "
@@ -3041,14 +3082,17 @@ int main(int argc, char** argv) {
     }
 
     if (parser.isSet(listPoseUnitsOpt)) {
-        const auto names =
-            mh::rig::loadPoseUnitNames(dataDir() / "poseunits" / "face-poseunits.json");
-        if (!names) {
-            std::fprintf(stderr, "cannot read the pose units: %s\n",
-                         names.error().message().c_str());
+        // Built against the rig, because the BODY units resolve per bone and a
+        // different --rig changes which of them can move anything.
+        const auto skelPath = rigFile(".mhskel");
+        auto skel           = mh::rig::loadSkeleton(skelPath);
+        if (!skel) {
+            std::fprintf(stderr, "cannot load the rig: %s\n", skel.error().message().c_str());
             return 1;
         }
-        for (const std::string& n : *names)
+        const auto units = allPoseUnits(*skel);
+        if (!units) return 1;
+        for (const std::string& n : units->names)
             std::printf("%s\n", n.c_str());
         return 0;
     }
