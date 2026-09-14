@@ -920,6 +920,49 @@ TEST_CASE("a stage refuses a second blend shape set, and a mismatched one",
 }
 
 // A target that moves nothing is still written, with empty arrays. Emitting a
+TEST_CASE("blend shape weights reach the stage through a SkelAnimation",
+          "[io][usd][usdskel][morph]") {
+    // The widest gap of the three writers. glTF has a `weights` array on the
+    // mesh and FBX a `DeformPercent` on the channel, but UsdSkel puts opening
+    // weights NOWHERE on the mesh: they live on a `SkelAnimation` prim that the
+    // mesh points at through `skel:animationSource`. Without one, a stage can
+    // name its blend shapes and still have no way to say any of them is on.
+    //
+    // A pose-space corrective is a SNAPSHOT of a deformation already true of
+    // the character, so the stage must open with it applied.
+    core::Mesh mesh = baseMesh();
+    const auto rm   = core::RenderMesh::build(mesh);
+
+    std::vector<foundation::Vec3> deltas(rm.view().vertexCount(), foundation::Vec3{});
+    deltas[7] = foundation::Vec3{0.0F, 0.5F, 0.0F};
+    std::vector<foundation::Vec3> other(rm.view().vertexCount(), foundation::Vec3{});
+    other[9] = foundation::Vec3{0.2F, 0.0F, 0.0F};
+    // Mixed on purpose: a fired corrective beside a modelling key that must
+    // still open at zero.
+    const std::vector<foundation::MorphTarget> morphs{{"correctiveElbow", deltas, 0.75F},
+                                                      {"smile", other, 0.0F}};
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_usd_blendshape_weight.usda";
+    const std::vector<io::UsdSceneEntry> scene{{rm.view(), "body", nullptr, nullptr, morphs}};
+    REQUIRE(io::writeUsdaScene(out, scene).has_value());
+
+    std::ifstream in(out);
+    const std::string t((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+
+    CHECK(t.find("def SkelAnimation ") != std::string::npos);
+    // The animation names the same shapes, in the same order as the weights --
+    // UsdSkel matches them positionally, so a mismatch silently drives the
+    // wrong shape.
+    CHECK(t.find("uniform token[] blendShapes = [\"correctiveElbow\", \"smile\"]") !=
+          std::string::npos);
+    CHECK(t.find("float[] blendShapeWeights = [0.75, 0]") != std::string::npos);
+    // ...and the mesh has to point at it, or the weights are inert.
+    CHECK(t.find("rel skel:animationSource = </") != std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
 // BlendShape prim whose name is listed in `skel:blendShapes` but which does not
 // exist would make the stage inconsistent; dropping the name instead would
 // renumber every target after it, and glTF/FBX keep theirs.

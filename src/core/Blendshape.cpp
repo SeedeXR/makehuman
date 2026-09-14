@@ -40,7 +40,7 @@ std::vector<Blendshape> buildExpressionBlendshapes(const TargetIndex& index,
 
             const auto t = loadTarget(c.path);
             if (!t) continue;  // a malformed unit drops out; the rest still export
-            if (!expandTargetToRenderVertices(*t, vmap, meshVertexCount, scratch)) continue;
+            if (!expandTargetToRenderVertices(t->view(), vmap, meshVertexCount, scratch)) continue;
 
             for (size_t i = 0; i < shape.deltas.size(); ++i) {
                 shape.deltas[i].x += w * scratch[i].x;

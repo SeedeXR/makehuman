@@ -255,6 +255,42 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
         out << "    }\n\n";
     }
 
+    // ---- blend shape weights ---------------------------------------------
+    // UsdSkel puts opening weights NOWHERE on the mesh: `skel:blendShapes`
+    // names the shapes and `skel:blendShapeTargets` points at the prims, but
+    // neither says how far any of them is on. That lives on a `SkelAnimation`
+    // the mesh references through `skel:animationSource`.
+    //
+    // Emitted only when something actually carries targets, so a stage without
+    // blend shapes is byte-identical to what it was before this existed.
+    //
+    // Only ONE entry may carry morph targets (`io::SceneEntry::morphTargets`),
+    // so one animation prim covers the stage.
+    const UsdSceneEntry* morphEntry = nullptr;
+    for (const UsdSceneEntry& entry : entries) {
+        if (!entry.morphTargets.empty()) {
+            morphEntry = &entry;
+            break;
+        }
+    }
+    if (morphEntry != nullptr) {
+        out << "    def SkelAnimation \"Anim\"\n    {\n";
+        // The two arrays are matched POSITIONALLY by UsdSkel, so they are
+        // written from the same loop order -- a mismatch would silently drive
+        // the wrong shape rather than fail.
+        out << "        uniform token[] blendShapes = [";
+        for (size_t t = 0; t < morphEntry->morphTargets.size(); ++t) {
+            out << (t != 0 ? ", " : "") << '"' << usdIdentifier(morphEntry->morphTargets[t].name)
+                << '"';
+        }
+        out << "]\n";
+        out << "        float[] blendShapeWeights = [";
+        for (size_t t = 0; t < morphEntry->morphTargets.size(); ++t) {
+            out << (t != 0 ? ", " : "") << num(morphEntry->morphTargets[t].weight);
+        }
+        out << "]\n    }\n\n";
+    }
+
     // ---- materials -------------------------------------------------------
     // UsdPreviewSurface under one Looks scope, bound per mesh. A scene with no
     // materials writes no scope at all, so its output is unchanged from before
@@ -395,6 +431,9 @@ std::expected<UsdWriteResult, UsdWriteError> writeUsdaScene(const std::filesyste
                     << usdIdentifier(entry.morphTargets[t].name) << ">";
             }
             out << "]\n";
+            // Without this the weights above are inert: the mesh names its
+            // shapes but nothing tells it which animation drives them.
+            out << "        rel skel:animationSource = </" << options.primName << "/Anim>\n";
         }
         if (skinned) {
             // THIS entry's weights, against the shared skeleton. Writing the

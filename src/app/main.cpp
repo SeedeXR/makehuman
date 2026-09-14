@@ -3813,14 +3813,14 @@ int main(int argc, char** argv) {
             // reaches every format, baked into the material's normal map by
             // `bakeWrinkleBeside`, because a texture has somewhere to go in
             // these formats and a pose-driven vertex delta does not.
-            if (gCorrectives != nullptr) {
-                std::fprintf(stderr,
-                             "warning: corrective geometry does not reach a live-rig %s -- the "
-                             "file carries REST geometry and a pose-space corrective is not a "
-                             "rest shape. Export .obj for the corrected, baked mesh. (A wrinkle "
-                             "sheet DOES travel, baked into the normal map.)\n",
-                             outExt.c_str());
-            }
+            // The warning that used to stand here said the corrective could not
+            // travel in a live-rig file. It no longer can't: every fired
+            // corrective is written as a shape key at the weight the RBF gave
+            // it, so the deformation is in the file, named, and adjustable.
+            // Deleted rather than softened, on the explicit instruction of the
+            // gate that caught it (`app_correctives_live_rig_unchanged`, whose
+            // comment said "when this one fails, DELETE the warning -- do not
+            // weaken it"). That gate is now inverted to pin the new truth.
             // Kept so the interactive path can undo this; see the restore below.
             posedBackup.assign(mesh->coord().begin(), mesh->coord().end());
             if (!mesh->changeCoords(std::vector<mh::foundation::Vec3>(rig.restCoords))) {
@@ -3998,6 +3998,81 @@ int main(int argc, char** argv) {
                 std::printf("%zu blendshapes (34 expression units, ethnicity-blended)\n",
                             morphs.size());
             }
+        }
+
+        // Every FIRED corrective, as a shape key at the weight the RBF gave it.
+        //
+        // NOT gated on --blendshapes, deliberately. That flag chooses whether
+        // the 34 MODELLING keys ride along; a corrective is a deformation the
+        // user explicitly asked for with --correctives, and dropping it would
+        // silently lose what they exported the pose to keep. None of glTF, FBX
+        // or UsdSkel has a pose-driven shape, so a blend shape at a fixed
+        // weight is the honest approximation: right at this pose, adjustable
+        // rather than invisible, and plainly a snapshot of one frame.
+        //
+        // The deltas are baked into the exported positions either way. The key
+        // is what makes them SEPARABLE in a DCC -- without it the deformation
+        // is welded into the mesh with no way to dial it back.
+        std::vector<std::vector<mh::foundation::Vec3>> correctiveDeltas;
+        if (gCorrectives != nullptr && !subdivided) {
+            const auto& blob         = gCorrectives->blob;
+            const auto poseWeights   = gCorrectives->runtime.weights();
+            const auto vmapForExport = lod ? std::span<const uint32_t>(lodVmap) : rm.vmap();
+            // The SAME threshold the runtime applies (`kNegligible`,
+            // src/rig/CorrectiveRuntime.cpp:93), not a second policy invented
+            // here. It is chosen against what a float vertex can represent, so
+            // nothing it drops could have moved anything.
+            //
+            // Matching matters: the exported POSITIONS already have every
+            // corrective the runtime applied baked in, so a stricter threshold
+            // here would bake a deformation and then omit the key that explains
+            // it. On MAGNITUDE, because an RBF weight can be negative --
+            // extrapolation past an example pose is real deformation, and a
+            // bare `< threshold` would silently drop all of it.
+            std::vector<mh::foundation::Vec3> scratch;
+            // RESERVED, and that is a lifetime guarantee rather than a
+            // micro-optimisation: `morphs` holds a `std::span` into
+            // `correctiveDeltas.back()`, so a reallocation part-way through the
+            // loop would leave every span already pushed dangling. At most
+            // `poseCount` entries are ever added, so this capacity is never
+            // exceeded. Same reason `shapeDeltas` above reserves.
+            correctiveDeltas.reserve(blob.poseCount);
+            // Bounded by ALL THREE parallel arrays, not just poseCount. The
+            // blob reader validates their extents, so a short one should be
+            // impossible -- which is exactly why indexing past it would be an
+            // unreadable crash in a release build rather than a failure anyone
+            // could diagnose.
+            for (size_t i = 0;
+                 i < blob.poseCount && i < poseWeights.size() && i < blob.poseNames.size(); ++i) {
+                if (std::abs(poseWeights[i]) < 1e-6) continue;
+                if (i >= blob.deltas.size() || blob.deltas[i].empty()) continue;
+                // Same two steps the 34 take: expand the sparse BASE-indexed
+                // delta onto render vertices through the vmap, then move it
+                // through the export compaction. Skipping either puts every
+                // delta past the first dropped vertex on the wrong vertex.
+                if (!mh::core::expandTargetToRenderVertices(blob.deltas[i], vmapForExport,
+                                                            mesh->vertexCount(), scratch)) {
+                    std::fprintf(stderr,
+                                 "warning: corrective `%.*s` indexes a vertex this mesh does not "
+                                 "have; exporting without it\n",
+                                 static_cast<int>(blob.poseNames[i].size()),
+                                 blob.poseNames[i].data());
+                    continue;
+                }
+                correctiveDeltas.push_back(
+                    mh::io::compactDeltas(scratch, written.remap, written.coord.size()));
+                morphs.push_back({std::string(blob.poseNames[i]), correctiveDeltas.back(),
+                                  static_cast<float>(poseWeights[i])});
+                std::printf("corrective `%.*s` exported as a shape key at %.3f\n",
+                            static_cast<int>(blob.poseNames[i].size()), blob.poseNames[i].data(),
+                            poseWeights[i]);
+            }
+        } else if (gCorrectives != nullptr && subdivided) {
+            // Same reason the 34 are refused above: the deltas index the BASE
+            // mesh and a subdivided vmap names vertices past its count.
+            std::fprintf(stderr,
+                         "a subdivided mesh cannot carry corrective shape keys; the deformation "
+                         "is still baked into the exported positions\n");
         }
 
         // An EMPTY mask when decimating: the mask is already baked into the

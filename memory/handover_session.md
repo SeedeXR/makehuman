@@ -4,6 +4,68 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-14 (ninety-seventh) — Session · **The corrective stops being invisible**
+
+*2026-09-14 — two surviving mutations, and neither wanted a tweak.*
+
+### What shipped
+A pose-space corrective now leaves the application inside the file. Every FIRED
+corrective is written as a named shape key at the weight the RBF returned, in
+all three interchange formats.
+
+- `foundation::MorphTarget` gained `weight` (`Geometry.h:166`).
+- **glTF**: `"weights"` stops being a row of zeros (`GltfWriter.cpp`).
+- **FBX**: `DeformPercent` carries the weight on its 0..100 scale.
+- **USD**: the widest gap of the three. UsdSkel puts opening weights NOWHERE on
+  the mesh, so the stage could name its blend shapes and have no way to say any
+  was on. A `SkelAnimation` prim plus `skel:animationSource` now carries them.
+- `expandTargetToRenderVertices` takes a `TargetView`, so blob-resident deltas
+  expand with no copy. Five call sites pass `.view()`. Net deletion.
+
+NOT gated on `--blendshapes`: that flag chooses whether the 34 MODELLING keys
+ride along; a corrective is a deformation the user asked for by name.
+
+### Verified in Blender, not asserted
+The GLB imports with shape keys `rest` **0.0021** and `arm_out` **0.9806** — the
+RBF weights — and `arm_out` moves **256 of 14,517** vertices at max **0.0538**.
+Localised, real, slider in range.
+
+### The two survivors, which is where the value was
+**W5 — the compaction removed.** The app printed "corrective `arm_out` exported
+as a shape key" and **wrote no file**: the writer rejected the wrong-length
+deltas. Every check passed anyway, for two compounding reasons —
+`PASS_REGULAR_EXPRESSION` makes ctest ignore the exit code, and the downstream
+checks then read a **STALE** `.glb` left in the build directory by an earlier
+run. Announcing a thing and not writing it is the exact failure this test group
+exists to catch, and the gate had grown a hole shaped like it. Fixed by deleting
+the outputs first, which is now a load-bearing fixture rather than tidiness.
+
+**W6 — `std::abs` dropped.** A negative RBF weight is real extrapolation past an
+example pose, and the runtime applies it. MEASURED: `rest` is **-0.000112** at
+the shipped `benchmark` pose, a hundred times the 1e-6 threshold. A plain
+`< 1e-6` silently discards it. Now gated on a text `.usda`, where the weights
+are readable.
+
+Neither was fixed by adjusting a test until it passed. Both were holes.
+
+### A warning deleted, on its own gate's instruction
+"corrective geometry does not reach a live-rig file" became false with this
+change. The test pinning it carried the instruction *"when this one fails,
+DELETE the warning -- do not weaken it"*, written by a past chunk that
+anticipated exactly this. Warning deleted; the gate inverted to pin that the
+file now DIFFERS and NAMES the pose.
+
+### One false verdict of my own, recorded
+"W3 SURVIVED" was wrong: `ctest -R` matches ctest NAMES, and the USD case is a
+Catch2 tag inside `mh_tests`, so the filter never ran it. Re-run through the
+binary it dies. That is the third time this session a filter or an absent
+pattern produced a false mutation verdict.
+
+### Gates
+Debug 1279/1279. Six mutations, all killed after the two holes were closed.
+`/ponytail-review`: nothing to cut — the only deletion available was the
+`Target`→`TargetView` copy, and it was taken.
+
 ## 2026-09-14 (ninety-sixth) — Session · **The roadmap was lying about three finished things**
 
 *2026-09-14 — the chunk where reconciling against live state stopped me

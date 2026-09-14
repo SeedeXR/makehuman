@@ -504,7 +504,7 @@ std::vector<foundation::Vec3> expandedTarget(const core::Mesh& mesh, const core:
     auto t = core::loadTarget(std::filesystem::path(MH_DATA_DIR) / "targets" / rel);
     REQUIRE(t.has_value());
     std::vector<foundation::Vec3> deltas;
-    REQUIRE(core::expandTargetToRenderVertices(*t, rm.vmap(), mesh.vertexCount(), deltas));
+    REQUIRE(core::expandTargetToRenderVertices(t->view(), rm.vmap(), mesh.vertexCount(), deltas));
     return deltas;
 }
 
@@ -522,7 +522,7 @@ TEST_CASE("a target expands onto render vertices, seams included", "[gltf][morph
                               "head-oval.target");
     REQUIRE(t.has_value());
     std::vector<foundation::Vec3> deltas;
-    REQUIRE(core::expandTargetToRenderVertices(*t, rm.vmap(), mesh->vertexCount(), deltas));
+    REQUIRE(core::expandTargetToRenderVertices(t->view(), rm.vmap(), mesh->vertexCount(), deltas));
     REQUIRE(deltas.size() == rm.vertexCount());
 
     // Build the sparse source as a lookup and confirm every render vertex got
@@ -562,6 +562,33 @@ TEST_CASE("a morphed GLB carries targets, names and default weights", "[gltf][mo
     // targetNames is what a DCC reads to label the shape keys; without it they
     // import as "Key 1", "Key 2" and become unusable.
     CHECK(j.find("\"targetNames\":[\"head-oval\",\"nose-base-up\"]") != std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("a morph target's own weight reaches the GLB", "[gltf][morph]") {
+    // The file must OPEN with the corrective already applied at the strength
+    // the RBF asked for. Before this, every writer hardcoded zero, so a
+    // pose-driven deformation exported as a shape key nobody had dialled in --
+    // present in the file and invisible in every viewer.
+    const auto mesh = core::loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
+    REQUIRE(mesh.has_value());
+    const auto rm = core::RenderMesh::build(*mesh);
+
+    const auto a = expandedTarget(*mesh, rm, "head/head-oval.target");
+    const auto b = expandedTarget(*mesh, rm, "nose/nose-base-up.target");
+    // Mixed on purpose: a fired corrective beside a modelling key that must
+    // still open at zero.
+    const std::vector<foundation::MorphTarget> morphs{{"corrective-elbow", a, 0.75F},
+                                                      {"nose-base-up", b, 0.0F}};
+
+    const auto out = std::filesystem::temp_directory_path() / "mh_morph_weight_test.glb";
+    REQUIRE(io::writeGlb(out, rm.view(), {}, nullptr, nullptr, morphs).has_value());
+
+    const std::string j = glbJson(out);
+    CHECK(j.find("\"weights\":[0.75,0]") != std::string::npos);
+    CHECK(j.find("\"targetNames\":[\"corrective-elbow\",\"nose-base-up\"]") != std::string::npos);
 
     std::error_code ec;
     std::filesystem::remove(out, ec);

@@ -1043,12 +1043,21 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
         }
         j += "}]";
         if (!pk.morphAcc.empty()) {
-            // Default weights: all zero, i.e. the base mesh. A viewer that
-            // ignores them still shows the unmorphed body rather than every
-            // target at once.
+            // Each target's own opening weight, which is ZERO for a modelling
+            // shape key: a DCC then shows the unmorphed body and the artist
+            // dials each one in, and a viewer that ignores weights entirely
+            // still sees the base mesh rather than every key at once.
+            //
+            // A pose-space corrective is the exception, and the reason this is
+            // not a constant: it is a SNAPSHOT of a deformation already true of
+            // the character at the exported pose, so the file has to open with
+            // it applied at the strength the RBF asked for. Hardcoding zero
+            // wrote the deformation into the file and made it invisible.
             j += R"(,"weights":[)";
-            for (size_t t = 0; t < pk.morphAcc.size(); ++t)
-                j += (t != 0 ? ",0" : "0");
+            for (size_t t = 0; t < pk.morphAcc.size(); ++t) {
+                if (t != 0) j += ",";
+                j += fmtFloat(entries[i].morphTargets[t].weight);
+            }
             j += "]";
 
             // targetNames is an extras convention rather than core glTF, but it

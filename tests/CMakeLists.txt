@@ -519,16 +519,15 @@ if(MH_HAVE_RENDER)
              --export ${CMAKE_CURRENT_BINARY_DIR}/corr_on/pose.obj)
     set_tests_properties(app_correctives_on PROPERTIES
         PASS_REGULAR_EXPRESSION "correctives: 2 poses, 1 drivers"
-        # The live-rig warning must NOT appear here: an .obj is baked, so this
-        # file carries the deformation and telling the user it does not would be
-        # a lie in the other direction.
+        # The live-rig warning this once guarded against is GONE (2026-09-14):
+        # correctives now travel as shape keys, so the claim it made is false
+        # and it was deleted rather than softened. The phrase is kept in the
+        # FAIL list below deliberately -- it is now an assertion that the
+        # deleted message has not been reintroduced, which costs nothing and
+        # catches a revert.
         #
-        # What it catches, measured: the warning moved OUT of the `if (liveRig)`
-        # branch -- this test fails, and app_correctives_live_rig_says_so still
-        # passes. What it CANNOT catch, also measured: the guard inside that
-        # branch weakened to `if (true)`, which no .obj export ever reaches. The
-        # condition that matters here is WHERE the warning sits, not what it
-        # tests once it is there.
+        # An .obj is baked and carries the deformation in its positions, so
+        # nothing here should ever claim otherwise.
         FAIL_REGULAR_EXPRESSION "export failed;correctives could not be applied;do not reach a live-rig"
         FIXTURES_SETUP app_corr_on)
     # The flag has to CHANGE the geometry. Asserting only that the export
@@ -566,30 +565,98 @@ if(MH_HAVE_RENDER)
     # `correctives.json` these two files differ for a reason that has nothing to
     # do with the geometry this case is about. Caught by the full gate run, one
     # chunk after the case was written.
-    add_test(NAME app_correctives_live_rig_says_so COMMAND makehuman
+    # DELETE the outputs first, and this is load-bearing rather than tidiness.
+    #
+    # MEASURED: with the export compaction removed, the app printed "corrective
+    # `arm_out` exported as a shape key" and then wrote NO FILE -- the writer
+    # rejected the wrong-length deltas. Every check below still passed, because
+    # PASS_REGULAR_EXPRESSION makes ctest ignore the exit code and the checks
+    # then read the STALE .glb an earlier run had left in the build directory.
+    # Announcing a thing and not writing it is the exact failure this group
+    # exists to catch, and it had grown a hole in the shape of it.
+    #
+    # With the files removed first, a failed export leaves nothing and
+    # `files_differ` and `file_contains` fail on a file that is not there.
+    add_test(NAME app_correctives_live_rig_clean COMMAND ${CMAKE_COMMAND} -E rm -f
+             ${CMAKE_CURRENT_BINARY_DIR}/corr_live/pose.glb
+             ${CMAKE_CURRENT_BINARY_DIR}/corr_live_off/pose.glb)
+    set_tests_properties(app_correctives_live_rig_clean PROPERTIES
+        FIXTURES_SETUP app_corr_live_clean)
+
+    # RENAMED from `..._says_so` 2026-09-14. It asserted the warning that said
+    # corrective geometry could not travel in a live-rig file. It can now, as a
+    # shape key, so the warning is deleted and this pins the replacement: the
+    # app must SAY it exported the key, and the two tests below must find it in
+    # the file. Announcing without writing is the exact failure the original
+    # chunk was built to stop, and it is still the one being guarded.
+    add_test(NAME app_correctives_live_rig_exports_the_key COMMAND makehuman
              --rig mixamo_superset --pose tpose
              --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/nowrinkle.json
              --export ${CMAKE_CURRENT_BINARY_DIR}/corr_live/pose.glb)
-    set_tests_properties(app_correctives_live_rig_says_so PROPERTIES
-        PASS_REGULAR_EXPRESSION "corrective geometry does not reach a live-rig \\.glb"
+    set_tests_properties(app_correctives_live_rig_exports_the_key PROPERTIES
+        PASS_REGULAR_EXPRESSION "corrective .arm_out. exported as a shape key"
+        FIXTURES_REQUIRED app_corr_live_clean
         FIXTURES_SETUP app_corr_live_on)
     add_test(NAME app_correctives_live_rig_baseline COMMAND makehuman
              --rig mixamo_superset --pose tpose
              --export ${CMAKE_CURRENT_BINARY_DIR}/corr_live_off/pose.glb)
     set_tests_properties(app_correctives_live_rig_baseline PROPERTIES
+        FIXTURES_REQUIRED app_corr_live_clean
         FIXTURES_SETUP app_corr_live_off)
-    # The warning's own claim, pinned. Without this the message is a comment
-    # that happens to be printed: someone could make the .glb carry the
-    # corrective GEOMETRY and leave the warning in, and every other test here
-    # would stay green while the app told users their deformation was missing
-    # from a file that has it. When this one fails, DELETE the warning -- do not
-    # weaken it.
-    add_test(NAME app_correctives_live_rig_unchanged COMMAND ${CMAKE_COMMAND}
+    # INVERTED 2026-09-14, on the explicit instruction the previous version of
+    # this test carried: "when this one fails, DELETE the warning -- do not
+    # weaken it". It pinned that a live-rig .glb was byte-identical with and
+    # without --correctives, which was true and was the LIMITATION the warning
+    # described. Correctives now travel as shape keys, so the old assertion
+    # pinned a bug and the warning became a lie; both are gone.
+    #
+    # This is not a weakened test. It is the same property from the other side:
+    # the file must now DIFFER, and must name the corrective.
+    add_test(NAME app_correctives_live_rig_carries_the_key COMMAND ${CMAKE_COMMAND}
              -DA=${CMAKE_CURRENT_BINARY_DIR}/corr_live_off/pose.glb
              -DB=${CMAKE_CURRENT_BINARY_DIR}/corr_live/pose.glb
-             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_identical.cmake)
-    set_tests_properties(app_correctives_live_rig_unchanged PROPERTIES
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_correctives_live_rig_carries_the_key PROPERTIES
         FIXTURES_REQUIRED "app_corr_live_on;app_corr_live_off")
+
+    # A NEGATIVE weight is still a weight, and this is the only case that says
+    # so. An RBF extrapolating past an example pose returns negative
+    # coefficients, and the runtime applies them -- so the export has to as
+    # well, or the file's baked positions and its shape keys disagree.
+    #
+    # MEASURED on the shipped `benchmark` pose: `rest` comes out at
+    # -0.000112098984, magnitude 1.12e-4, which is a hundred times the 1e-6
+    # threshold. Testing the magnitude rather than the value is what keeps it.
+    # A plain `< 1e-6` drops it, leaving `arm_out` alone in the stage -- which
+    # is exactly what this fails on. Text .usda because the weights are
+    # human-readable there; the GLB above covers the binary path.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/corr_neg)
+    add_test(NAME app_correctives_negative_weight_clean COMMAND ${CMAKE_COMMAND} -E rm -f
+             ${CMAKE_CURRENT_BINARY_DIR}/corr_neg/pose.usda)
+    set_tests_properties(app_correctives_negative_weight_clean PROPERTIES
+        FIXTURES_SETUP app_corr_neg_clean)
+    add_test(NAME app_correctives_negative_weight COMMAND makehuman
+             --rig mixamo_superset --pose benchmark
+             --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/nowrinkle.json
+             --export ${CMAKE_CURRENT_BINARY_DIR}/corr_neg/pose.usda)
+    set_tests_properties(app_correctives_negative_weight PROPERTIES
+        FIXTURES_REQUIRED app_corr_neg_clean FIXTURES_SETUP app_corr_neg)
+    add_test(NAME app_correctives_negative_weight_survives COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/corr_neg/pose.usda
+             "-DKEYS=\"rest\";\"arm_out\""
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_correctives_negative_weight_survives PROPERTIES
+        FIXTURES_REQUIRED app_corr_neg)
+
+    # ...and the key is NAMED, because a shape key a DCC cannot identify is not
+    # much better than no key. glTF puts targetNames in the JSON chunk, which is
+    # plain text near the head of the GLB.
+    add_test(NAME app_correctives_live_rig_names_the_pose COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/corr_live/pose.glb
+             "-DKEYS=arm_out"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_correctives_live_rig_names_the_pose PROPERTIES
+        FIXTURES_REQUIRED "app_corr_live_on")
 
     # THE SECOND CONSUMER, through the application. The shipped fixture is a
     # version 2 manifest now: `arm_out` names a crease sheet, `rest` names none

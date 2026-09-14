@@ -60,7 +60,7 @@ std::vector<foundation::Vec3> variantDeltas(const std::string& unit, const std::
     const auto t = core::loadTarget(p);
     REQUIRE(t.has_value());
     std::vector<foundation::Vec3> out;
-    REQUIRE(core::expandTargetToRenderVertices(*t, f.rm.vmap(), f.mesh.vertexCount(), out));
+    REQUIRE(core::expandTargetToRenderVertices(t->view(), f.rm.vmap(), f.mesh.vertexCount(), out));
     return out;
 }
 

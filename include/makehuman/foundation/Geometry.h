@@ -166,6 +166,17 @@ struct SkinView {
 struct MorphTarget {
     std::string name;
     std::span<const Vec3> deltas;
+    /// The weight the file should OPEN at, 0..1.
+    ///
+    /// Zero for a modelling shape key, and that is deliberate: a DCC shows the
+    /// unmorphed body and the artist dials each key in. A viewer that ignores
+    /// weights entirely still sees the base mesh rather than every key at once.
+    ///
+    /// Non-zero only for a shape that is a SNAPSHOT of something already true
+    /// of the character -- a pose-space corrective fired at the exported pose.
+    /// The deformation is in the file at the strength the RBF asked for,
+    /// adjustable rather than invisible, and honest about being one frame.
+    float weight{0.0F};
 };
 
 /// The material values a format writer needs. Deliberately not the whole

@@ -331,7 +331,7 @@ FbxRigFixture buildFbxRig() {
                               "head-oval.target");
     REQUIRE(t.has_value());
     std::vector<foundation::Vec3> deltas;
-    REQUIRE(core::expandTargetToRenderVertices(*t, rm.vmap(), f.mesh.vertexCount(), deltas));
+    REQUIRE(core::expandTargetToRenderVertices(t->view(), rm.vmap(), f.mesh.vertexCount(), deltas));
     f.deltaStore.push_back(std::move(deltas));
     f.morphs.push_back(foundation::MorphTarget{"head-oval", f.deltaStore.back()});
     return f;

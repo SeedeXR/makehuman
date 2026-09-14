@@ -6045,7 +6045,7 @@ GPU here, or Colab) and it comes back to the owner first.
                     mutation that matters is the warning moved OUT of the
                     branch, and that one fails. The comment says which is which
                     now rather than claiming the stronger one.
-                  - [ ] **OPEN, and now named: get the corrective INTO an
+                  - [x] **DONE 2026-09-14: the corrective reaches an
                     interchange file.** A warning is honest, not sufficient — a
                     user who exports `.glb` still loses the deformation. None of
                     glTF, FBX or UsdSkel has a pose-driven shape, but all three
@@ -6081,6 +6081,41 @@ GPU here, or Colab) and it comes back to the owner first.
                     vertex, and export COMPACTS vertices (`io/Compact.h`) — so
                     the densify step must go through the same compaction mapping
                     the 34 shapes use, or every delta lands on the wrong vertex.
+                    **Built 2026-09-14, exactly as scoped.** `MorphTarget` gained
+                    a `weight` and all three writers stopped hardcoding zero:
+                    glTF's `weights` array, FBX's `DeformPercent` (scaled to its
+                    0..100), and -- the widest gap -- USD, which had NO way to
+                    express an opening weight at all and now gets a
+                    `SkelAnimation` prim plus `skel:animationSource`.
+                    `expandTargetToRenderVertices` now takes a `TargetView`, so
+                    blob-resident deltas expand without a copy; 5 call sites pass
+                    `.view()`.
+                    NOT gated on `--blendshapes`: that flag chooses the 34
+                    MODELLING keys, while a corrective is a deformation the user
+                    asked for with `--correctives`.
+                    **Verified in Blender, not asserted**: the GLB imports with
+                    shape keys `rest` 0.0021 and `arm_out` 0.9806 -- the RBF
+                    weights -- and `arm_out` moves 256 of 14,517 vertices at max
+                    0.0538.
+                    **Two mutations survived first, and both were real holes:**
+                    (1) removing the compaction made the app ANNOUNCE the key and
+                    write no file, and every check passed because
+                    PASS_REGULAR_EXPRESSION makes ctest ignore the exit code
+                    while the downstream checks read a STALE .glb from an earlier
+                    run -- fixed by deleting the outputs first, which is now a
+                    load-bearing fixture; (2) `< 1e-6` without `std::abs` drops
+                    NEGATIVE weights, which are real extrapolation -- MEASURED,
+                    `rest` is -0.000112 at the `benchmark` pose, a hundred times
+                    the threshold. Both now killed.
+                    The threshold is the runtime's own `kNegligible`
+                    (`src/rig/CorrectiveRuntime.cpp:93`), not a second policy:
+                    the exported POSITIONS already have every corrective the
+                    runtime applied baked in, so a stricter export threshold
+                    would bake a deformation and omit the key explaining it.
+                    **A warning was DELETED, not softened**: "corrective geometry
+                    does not reach a live-rig file" is now false. Its own gate
+                    said "when this one fails, DELETE the warning", and that gate
+                    is inverted to pin the new truth.
       - [~] **5. Content**: groom, PBR skin, wrinkle maps THROUGH THE SHARED
             DRIVER, eye/teeth rig.
             - [x] **Wrinkle maps reach the screen** (2026-09-10) —

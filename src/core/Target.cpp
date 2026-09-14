@@ -186,7 +186,7 @@ void TargetLibrary::prewarm(std::span<const std::string> relativePaths) {
         if (loaded[i]) cache_.emplace(*todo[i], std::move(*loaded[i]));
 }
 
-bool expandTargetToRenderVertices(const Target& target, std::span<const uint32_t> vmap,
+bool expandTargetToRenderVertices(const TargetView& target, std::span<const uint32_t> vmap,
                                   size_t meshVertexCount, std::vector<Vec3>& out) {
     if (target.maxVertexIndex >= meshVertexCount && !target.empty()) return false;
 

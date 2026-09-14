@@ -102,7 +102,8 @@ int main(int argc, char** argv) {
             return 1;
         }
         std::vector<mh::foundation::Vec3> deltas;
-        if (!mh::core::expandTargetToRenderVertices(*t, rm.vmap(), mesh->vertexCount(), deltas)) {
+        if (!mh::core::expandTargetToRenderVertices(t->view(), rm.vmap(), mesh->vertexCount(),
+                                                    deltas)) {
             std::fprintf(stderr, "target %s: does not fit the mesh\n", rel);
             return 1;
         }

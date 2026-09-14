@@ -756,10 +756,17 @@ Node shapeGeometry(int64_t id, const std::string& name, const foundation::MorphT
     return g;
 }
 
-/// The channel that drives one target. `DeformPercent` 0 is the unmorphed
-/// state, which is what a file should open in; `FullWeights` is the 0..100
-/// scale at which the shape is fully applied.
-Node blendShapeChannel(int64_t id, const std::string& name) {
+/// The channel that drives one target. `DeformPercent` is where the channel
+/// OPENS on the 0..100 scale `FullWeights` defines.
+///
+/// Zero for a modelling shape key -- the unmorphed state a file should open in,
+/// with the artist dialling each key in. A pose-space corrective is the
+/// exception: it is a SNAPSHOT of a deformation already true of the character
+/// at the exported pose, so it opens at the strength the RBF asked for.
+/// Hardcoding zero put the deformation in the file and made it invisible.
+///
+/// @param weight 0..1, scaled here to FBX's 0..100.
+Node blendShapeChannel(int64_t id, const std::string& name, float weight) {
     Node c("Deformer");
     c.addI64(id);
     c.addString(objectName(name, "SubDeformer"));
@@ -768,7 +775,7 @@ Node blendShapeChannel(int64_t id, const std::string& name) {
     v.addI32(100);
     c.add(std::move(v));
     Node percent("DeformPercent");
-    percent.addF64(0.0);
+    percent.addF64(static_cast<double>(weight) * 100.0);
     c.add(std::move(percent));
     Node weights("FullWeights");
     weights.addArray('d', std::vector<double>{100.0});
@@ -1168,7 +1175,8 @@ std::expected<FbxWriteResult, FbxWriteError> writeFbxScene(const std::filesystem
             for (const size_t t : id.movingTargets) {
                 id.channel.push_back(allocate());
                 id.shape.push_back(allocate());
-                objects.add(blendShapeChannel(id.channel.back(), entry.morphTargets[t].name));
+                objects.add(blendShapeChannel(id.channel.back(), entry.morphTargets[t].name,
+                                              entry.morphTargets[t].weight));
                 objects.add(shapeGeometry(id.shape.back(), entry.morphTargets[t].name,
                                           entry.morphTargets[t], xf));
             }

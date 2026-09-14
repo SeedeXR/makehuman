@@ -678,6 +678,46 @@ TEST_CASE("blend shapes become a BlendShape deformer", "[io][fbx][morph]") {
     std::filesystem::remove(out, ec);
 }
 
+/// The little-endian bytes of @p v as an FBX 'D' property, which is how a
+/// double is stored in a binary FBX.
+///
+/// Asserting the VALUE and not just the node name: every existing test here
+/// greps for "DeformPercent" as a string, which passes whatever number follows
+/// it -- and zero was exactly the wrong number for a corrective.
+static std::string fbxDouble(double v) {
+    std::string out(1, 'D');
+    const auto* raw = reinterpret_cast<const char*>(&v);
+    out.append(raw, sizeof(double));
+    return out;
+}
+
+TEST_CASE("a blend shape channel opens at the target's own weight", "[io][fbx][morph]") {
+    // A pose-space corrective is a SNAPSHOT of a deformation already true of
+    // the character, so the file must open with it applied. The writer used to
+    // hardcode DeformPercent to 0, which put the deformation in the file and
+    // made it invisible in every DCC.
+    const auto out = tempFbx("morph_weight");
+    const auto m   = quad();
+    const auto rm  = core::RenderMesh::build(m);
+
+    std::vector<foundation::Vec3> deltas(rm.view().vertexCount(), foundation::Vec3{0, 0, 0});
+    deltas[1] = {0.0F, 0.4F, 0.0F};
+    const std::array<foundation::MorphTarget, 1> targets{
+        foundation::MorphTarget{"corrective-elbow", deltas, 0.75F}};
+    REQUIRE(io::writeFbx(out, rm.view(), {}, nullptr, nullptr, targets).has_value());
+
+    const auto b = readAll(out);
+    const std::string blob(reinterpret_cast<const char*>(b.data()), b.size());
+
+    // FBX stores DeformPercent on the 0..100 scale that `FullWeights` uses, so
+    // 0.75 of the way in is 75.
+    INFO("DeformPercent must carry 75, not 0");
+    CHECK(blob.find(fbxDouble(75.0)) != std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
 TEST_CASE("a blend shape stores only the vertices it moves", "[io][fbx][morph]") {
     // SPARSE, like Maya's own: the shape carries an `Indexes` array and only the
     // deltas for those vertices. The expression targets move a few hundred

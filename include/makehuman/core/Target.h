@@ -163,7 +163,10 @@ private:
 ///             the same delta or the seam tears open when the target is applied.
 /// @param out  resized to vmap.size(); untouched vertices are left at zero.
 /// @return false if the target references a vertex the mesh does not have.
-[[nodiscard]] bool expandTargetToRenderVertices(const Target& target,
+/// Takes a VIEW, not a `Target`, so the same expansion serves an owning target
+/// and deltas read in place out of a compiled corrective blob -- which is what
+/// `Target::view()` exists for. Callers holding a `Target` pass `t.view()`.
+[[nodiscard]] bool expandTargetToRenderVertices(const TargetView& target,
                                                 std::span<const uint32_t> vmap,
                                                 size_t meshVertexCount, std::vector<Vec3>& out);
 
