@@ -4438,6 +4438,18 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       anatomy, so it is worn like anatomy rather than opted into like a garment.
       Same consequence as the teeth decision: default-visible geometry moves
       every export and golden fixture, and re-baselining them IS the work.
+      **RESEARCHED 2026-09-15: THE ASSET DOES NOT EXIST YET.** This is the part
+      the decision did not price in. `tools/make_helper_proxies.py` defines
+      teeth, tongue, hair, skirt, tights and eyelashes (lines 108, 140, 174,
+      211, 228, 245) and has NO genital entry, and `find data -iname "*genital*"`
+      returns only `data/targets/genitals` -- morph targets, not a proxy. So
+      there is no `.mhclo` to make visible: the chunk begins by generating the
+      cage, and only then becomes a defaults-and-fixtures change like teeth.
+      Ordering consequence: teeth is a small, well-understood default flip
+      against a shipped asset, genitalia is an asset-authoring job first. Doing
+      them "together" should mean ONE re-baseline of the fixtures, not one
+      undivided piece of work -- and if the cage needs render-and-look
+      iterations (the hair precedent), teeth should not be held hostage to it.
 - [x] **The EYELASHES chooser — a fifth weighting shape, driven by the EYELID.**
       Four cages into one proxy, the way upper and lower teeth make one:
       `helper-{l,r}-eyelashes-1` are 60 vertices / 44 faces each and `-2` are
@@ -4686,6 +4698,30 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       RE-BASELINED, and each re-baseline LOOKED AT rather than accepted because
       the numbers moved. `--teeth none` must still work for anyone who wants the
       old shape.
+      **RESEARCHED 2026-09-15 (not yet implemented), exact seam:** all five
+      helper slots share ONE hardcoded default, the literal `"none"` at
+      `src/app/main.cpp:2632`, built in the loop over `kProxySlots`
+      (`src/app/main.cpp:1159`). Eyes are the precedent for a per-slot default:
+      `kDefaultEyes = "high-poly"` at `src/app/main.cpp:1136`, used at 2621 and
+      3061. So the change is a per-slot default field on `ProxySlot` rather
+      than a special case for teeth -- the same table that already stops a slot
+      arriving with a chooser but no flag.
+      Only ONE teeth asset ships (`data/teeth/teeth.mhclo`), so the default
+      value is unambiguous. `--teeth none` keeps working for free because
+      `none` stays a legal value; that still needs its own gate, because "the
+      default changed" and "the opt-out still works" are different claims.
+      **Blast radius, researched rather than assumed.** This file says the flip
+      "changes the geometry of every existing export and golden fixture". That
+      is probably an OVERSTATEMENT and should be measured before it is repeated:
+      the golden parity tests under `tests/golden/` build meshes directly
+      against the Python oracle and never go through the app's CLI, so a CLI
+      default cannot move them. The fixtures that DO move are app-level exports
+      that omit `--teeth`. The six existing `--teeth` call sites
+      (`tests/CMakeLists.txt:937,945,966,969,982,1066`) all pass the flag
+      EXPLICITLY, as `teeth` or `none`, so they stay valid either way.
+      Cheapest way to enumerate the rest: flip the default and run the suite --
+      the failures ARE the list, and that is a measurement rather than a guess.
+      Do not write the re-baseline list into this file until it has been seen.
 - [x] **Proxy `delete_verts` now reach the body — and the OBJ export was
       leaking the helper cages.** `visibleVertexMask` and
       `Mesh::faceMaskForVisibleVertices` existed and were tested, but
