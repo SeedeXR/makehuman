@@ -4,7 +4,9 @@
 #include "makehuman/foundation/Transform.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <thread>
 #include <unordered_map>
 
 namespace mh::rig {
@@ -58,8 +60,8 @@ float weightSimilarity(std::span<const uint32_t> bonesA, std::span<const float> 
 
 std::vector<foundation::Vec3> computeCentersOfRotation(std::span<const foundation::Vec3> rest,
                                                        std::span<const uint32_t> triangles,
-                                                       const CompiledWeights& weights,
-                                                       float sigma) {
+                                                       const CompiledWeights& weights, float sigma,
+                                                       unsigned threads) {
     if (triangles.size() % 3 != 0) return {};
     if (weights.influences == 0 || weights.vertexCount() != rest.size()) return {};
     const size_t influences    = weights.influences;
@@ -121,42 +123,92 @@ std::vector<foundation::Vec3> computeCentersOfRotation(std::span<const foundatio
     }
 
     std::vector<foundation::Vec3> centers(rest.begin(), rest.end());
-    std::vector<uint32_t> candidates;
-    for (size_t v = 0; v < rest.size(); ++v) {
-        const std::span<const uint32_t> vBones{&weights.boneIndex[v * influences], influences};
-        const std::span<const float> vWeights{&weights.weight[v * influences], influences};
 
-        candidates.clear();
-        for (size_t k = 0; k < influences; ++k) {
-            if (vWeights[k] == 0.0F) continue;
-            const auto found = bonesToTriangles.find(vBones[k]);
-            if (found == bonesToTriangles.end()) continue;
-            candidates.insert(candidates.end(), found->second.begin(), found->second.end());
-        }
-        std::sort(candidates.begin(), candidates.end());
-        candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
+    // One vertex's centre depends on nothing but shared const data, so the
+    // work splits with no locking and no shared accumulator -- the same shape
+    // as the target prewarm in `src/core/Target.cpp:159-186`. Each thread
+    // writes only `centers[v]` for the v it claimed, and nothing reads the
+    // array until every thread has joined.
+    //
+    // MEASURED 2026-09-15, and the reason this exists: 19,158 verts / 36,972
+    // triangles of shipped base mesh, release build, one thread 2,040 ms
+    // against 337 ms on this machine's ten -- 6.05x, 0 of 19,158 centres
+    // differing. Reproduce by calling this with `threads` 1 and 0 on
+    // `3dobjs/base.obj` plus `rigs/default_weights.mhw`.
+    //
+    // Nothing calls this in the app yet: the intended consumer re-runs it when
+    // a modelling slider moves the rest positions, and two seconds per slider
+    // drag is what would make that unshippable. Stated as the target rather
+    // than as current behaviour, because today the only callers are tests.
+    const size_t hw        = std::thread::hardware_concurrency();
+    const size_t requested = threads != 0 ? threads : (hw == 0 ? size_t{4} : hw);
+    // CLAMPED to the vertex count. `threads` is a caller's number and nothing
+    // stopped it being absurd: asking for 10,000 workers on a five-vertex test
+    // mesh would spawn 10,000 threads to have 9,995 of them find the work
+    // already claimed and exit. At least one, so an empty mesh still runs the
+    // loop zero times rather than spawning nothing and returning uninitialised.
+    const size_t workers = std::max(size_t{1}, std::min(requested, rest.size()));
+    std::atomic<size_t> nextVertex{0};
 
-        double sumW = 0.0;
-        double sumX = 0.0;
-        double sumY = 0.0;
-        double sumZ = 0.0;
-        for (const uint32_t t : candidates) {
-            const float s = weightSimilarity(vBones, vWeights, triBones[t], triWeights[t], sigma);
-            if (s == 0.0F) continue;
-            const double contribution = static_cast<double>(s) * static_cast<double>(triArea[t]);
-            sumW += contribution;
-            sumX += contribution * static_cast<double>(triCentroid[t].x);
-            sumY += contribution * static_cast<double>(triCentroid[t].y);
-            sumZ += contribution * static_cast<double>(triCentroid[t].z);
+    const auto worker = [&]() {
+        // Scratch is PER THREAD, and this is the only thing in the loop that
+        // could have been shared by accident.
+        //
+        // MEASURED by hoisting it out: the build succeeds, and the suite then
+        // HANGS -- one worker spins forever over a vector another is
+        // reallocating (10m39s of CPU before it was killed). So the failure
+        // mode is a hang, not a wrong answer, and the thread-count determinism
+        // case below does NOT catch it by assertion -- it never gets to
+        // assert. TSan is the gate that names this one properly.
+        //
+        // Recorded because "a mutation was killed" would overstate it: what
+        // actually happens is that nothing finishes.
+        std::vector<uint32_t> candidates;
+        for (size_t v = nextVertex++; v < rest.size(); v = nextVertex++) {
+            const std::span<const uint32_t> vBones{&weights.boneIndex[v * influences], influences};
+            const std::span<const float> vWeights{&weights.weight[v * influences], influences};
+
+            candidates.clear();
+            for (size_t k = 0; k < influences; ++k) {
+                if (vWeights[k] == 0.0F) continue;
+                const auto found = bonesToTriangles.find(vBones[k]);
+                if (found == bonesToTriangles.end()) continue;
+                candidates.insert(candidates.end(), found->second.begin(), found->second.end());
+            }
+            std::sort(candidates.begin(), candidates.end());
+            candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
+
+            double sumW = 0.0;
+            double sumX = 0.0;
+            double sumY = 0.0;
+            double sumZ = 0.0;
+            for (const uint32_t t : candidates) {
+                const float s =
+                    weightSimilarity(vBones, vWeights, triBones[t], triWeights[t], sigma);
+                if (s == 0.0F) continue;
+                const double contribution =
+                    static_cast<double>(s) * static_cast<double>(triArea[t]);
+                sumW += contribution;
+                sumX += contribution * static_cast<double>(triCentroid[t].x);
+                sumY += contribution * static_cast<double>(triCentroid[t].y);
+                sumZ += contribution * static_cast<double>(triCentroid[t].z);
+            }
+            // Zero means nothing on the surface bends like this vertex -- a rigid
+            // binding, most often. It keeps the rest position it was seeded with.
+            if (sumW > 0.0) {
+                centers[v] = foundation::Vec3{static_cast<float>(sumX / sumW),
+                                              static_cast<float>(sumY / sumW),
+                                              static_cast<float>(sumZ / sumW)};
+            }
         }
-        // Zero means nothing on the surface bends like this vertex -- a rigid
-        // binding, most often. It keeps the rest position it was seeded with.
-        if (sumW > 0.0) {
-            centers[v] =
-                foundation::Vec3{static_cast<float>(sumX / sumW), static_cast<float>(sumY / sumW),
-                                 static_cast<float>(sumZ / sumW)};
-        }
-    }
+    };
+
+    std::vector<std::thread> pool;
+    pool.reserve(workers);
+    for (size_t k = 0; k < workers; ++k)
+        pool.emplace_back(worker);
+    for (auto& th : pool)
+        th.join();
     return centers;
 }
 

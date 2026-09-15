@@ -69,9 +69,20 @@ namespace mh::rig {
 ///         triangle names a vertex the mesh does not have. `skinPositionsCor`
 ///         then refuses the empty result rather than skinning about the origin,
 ///         so a caller that ignores this still fails loudly.
+/// @param threads how many worker threads, or 0 for `hardware_concurrency`.
+///        The loop is independent per vertex -- each writes only its own centre
+///        and reads only shared const data -- so the result is BIT-IDENTICAL
+///        whatever this is set to. That is not a hopeful claim: it is asserted
+///        by comparing a one-thread run against a many-thread one, because a
+///        precompute that drifted with the core count would make every
+///        downstream golden test machine-dependent.
+///
+///        This differs from the PSD accumulation order directive 12.5 pins,
+///        where the SUM is shared and reordering it changes the float result.
+///        Here nothing is summed across vertices.
 [[nodiscard]] std::vector<foundation::Vec3> computeCentersOfRotation(
     std::span<const foundation::Vec3> rest, std::span<const uint32_t> triangles,
-    const CompiledWeights& weights, float sigma = 0.1F);
+    const CompiledWeights& weights, float sigma = 0.1F, unsigned threads = 0);
 
 /// Centre-of-rotation skinning, positions only.
 ///

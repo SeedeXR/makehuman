@@ -356,3 +356,45 @@ TEST_CASE("two rotations blend the short way round", "[rig][cor]") {
     INFO("landed at x = " << cor[0].x << " (-0.766 corrected, +0.766 not)");
     CHECK_THAT(static_cast<double>(cor[0].x), WithinAbs(-0.766, 5e-3));
 }
+
+TEST_CASE("the precompute gives the same answer at any thread count", "[rig][cor]") {
+    // The precompute is split across threads, so this is the property that
+    // keeps it honest: one vertex's centre depends on nothing but shared const
+    // data, and each thread writes only the slot it claimed. Nothing is summed
+    // ACROSS vertices, which is what would make the float result depend on the
+    // order threads happened to finish in.
+    //
+    // BIT-IDENTICAL, not approximately equal. A precompute that drifted with
+    // the core count would make every downstream golden result machine-
+    // dependent, and the drift would be small enough to look like noise.
+    //
+    // A wedge, because it has vertices with genuinely different neighbourhoods.
+    const std::vector<foundation::Vec3> rest{{0.0F, 0.0F, 0.0F},
+                                             {1.0F, 0.0F, 0.0F},
+                                             {0.0F, 1.0F, 0.0F},
+                                             {3.0F, 3.0F, 0.0F},
+                                             {-2.0F, 1.0F, 0.5F}};
+    const std::vector<uint32_t> tris{0, 1, 2, 1, 2, 3, 0, 2, 4};
+    rig::CompiledWeights w;
+    w.influences = 2;
+    for (size_t i = 0; i < rest.size(); ++i) {
+        w.boneIndex.push_back(0);
+        w.boneIndex.push_back(1);
+        w.weight.push_back(i % 2 == 0 ? 0.7F : 0.4F);
+        w.weight.push_back(i % 2 == 0 ? 0.3F : 0.6F);
+    }
+
+    const auto one = rig::computeCentersOfRotation(rest, tris, w, 0.1F, 1);
+    REQUIRE(one.size() == rest.size());
+    for (const unsigned n : {2U, 4U, 8U}) {
+        const auto many = rig::computeCentersOfRotation(rest, tris, w, 0.1F, n);
+        REQUIRE(many.size() == one.size());
+        for (size_t i = 0; i < one.size(); ++i) {
+            INFO(n << " threads, vertex " << i);
+            // Bit-exact: `==` on the floats, not a tolerance.
+            CHECK(many[i].x == one[i].x);
+            CHECK(many[i].y == one[i].y);
+            CHECK(many[i].z == one[i].z);
+        }
+    }
+}

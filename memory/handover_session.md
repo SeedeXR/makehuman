@@ -4,6 +4,79 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-15 (ninety-ninth) — Session · **Six times faster, and bit-identical**
+
+*2026-09-15 — the measurement said parallelism, so parallelism it was.*
+
+### What shipped
+`computeCentersOfRotation` takes a `threads` parameter (0 = `hardware_concurrency`)
+and splits per vertex with an atomic work index — the same shape as the target
+prewarm in `src/core/Target.cpp:159-186`: no locking, no shared accumulator.
+
+**MEASURED on the shipped mesh, RELEASE, 10 hardware threads:**
+**2,040 ms → 337 ms**, a **6.05x** speedup, and **0 of 19,158** centres differ
+from the serial run. Probe written, read, deleted.
+
+That settles the open question from the previous chunk: decimating the mesh for
+the precompute is NOT needed. 337 ms is a plausible per-shape-change cost where
+2 s was not.
+
+**The figure in this entry was wrong until it was re-measured.** It read
+1,992 ms → 329 ms while the code comment said 2,040 ms, and neither was
+corroborated anywhere — two numbers from two runs of a probe already deleted.
+Re-running the probe on `3dobjs/base.obj` + `rigs/default_weights.mhw` gave
+2,040 / 337, so the CODE was right and this file was stale. They agreed on
+6.05x, which is exactly why the discrepancy read as harmless. A ratio matching
+is not the two figures matching. Prefer a number a reader can reproduce: the
+comment now names the inputs and the flags.
+
+**Nothing in the app calls `computeCentersOfRotation` yet** — grep says the only
+callers are its own tests. The comment used to describe the slider path as
+current behaviour; it now says target. Worth knowing before trusting the
+"reason this exists" line.
+
+### Why it is safe to thread this, and where it is not
+Each vertex writes only its own centre and **nothing is summed across
+vertices**, so thread interleaving cannot change a float result. Gated
+BIT-EXACTLY — `==` on the floats, not a tolerance — comparing one thread against
+2, 4 and 8.
+
+**This is not a general licence to thread things in this codebase.** Directive
+12.5 pins the PSD accumulation ORDER precisely because that sum IS shared. The
+distinction is the whole reason this one is allowed.
+
+### The mutation, stated precisely rather than flatteringly
+Hoisting the scratch buffer out of the worker — making it shared — **builds
+fine and then HANGS**: one worker spinning forever over a vector another is
+reallocating, 10m39s of CPU before it was killed.
+
+So the failure mode is a hang, **not a wrong answer**, and the determinism test
+never reaches its assertion. TSan is the gate that names this one. Recorded in
+the code comment, because "a mutation was killed" would overstate what happened.
+
+### Review findings on my own diff
+- **`threads` was UNBOUNDED.** A caller could ask for 10,000 workers on a
+  five-vertex mesh. Now clamped to the vertex count with a floor of one.
+- **Ponytail deleted the `workers <= 1` special case** — seven lines to avoid a
+  single thread spawn, when the pool path already handles one correctly.
+
+### Two incidents worth carrying forward
+**The `build/` tree vanished mid-mutation.** Not disk space (71 GB free), not
+me — most likely the second claude session on this repo. It produced one
+"KILLED" verdict that was actually a build failure, caught by reading the log
+rather than trusting the exit code. **A mutation whose build failed is
+inconclusive.**
+
+**An orphaned `until` waiter span for ~9 minutes.** It was waiting for a
+mutation verdict that could never be written, because I had killed the hung test
+that would have written it. Killed after verifying the condition was genuinely
+absent. **If you kill a task, kill its waiter too.**
+
+### Gate
+Sliced at 400 tests from the start — the finer slices survive where 650 did not,
+and there were no kills at all this round. debug / release / ASan / TSan, four
+contiguous slices each over 1-1292, same binary, tree verified unchanged.
+
 ## 2026-09-15 (ninety-eighth) — Session · **Centres of rotation, and the cache that should not exist**
 
 *2026-09-15 — a measurement that killed the plan the roadmap had written down.*

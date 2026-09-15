@@ -2800,6 +2800,27 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `setPanel` returns `[[nodiscard]] bool` and does **not** take ownership on
       failure: a mistyped category used to delete the panel while the caller
       went on connecting signals to it.
+- [ ] **OWNER DECISION TAKEN (2026-09-15): Pose and Animation get TWO
+      mutually-exclusive combos, AND the CLI keeps working.** Asked verbatim:
+      *"2 and add cli"*.
+      So: a Pose chooser and an Animation chooser, side by side, where picking
+      one CLEARS the other -- they both drive the same single `.bvh` slot, and
+      two live selections would be a lie about what the character is doing.
+      The CLI is not replaced by the window: `--pose` already accepts either
+      kind of file and must keep doing so, and `--list-poses` /
+      `--list-animations` stay. The combos are a second way in, not the only
+      one.
+      **Recorded 2026-09-15 and this is a correction**: this question had been
+      carried as "blocked on the owner" for an entire session while living ONLY
+      in a loop prompt -- it was in neither todo.md nor handover_session.md, so
+      it would have vanished with the session. A blocking question that is not
+      written down is not tracked, it is just repeated.
+      What already exists to build on: `--pose` takes a pose or an animation;
+      `namesPose` folds case and hyphens; `poseFromArgsOrDocument` is the single
+      choke point both the chooser and the loader already share; and the
+      reference's own AnimationLibrary is a frame scrubber
+      (`3_libraries_animation.py:48-189`) rather than a second chooser.
+
 - [ ] **OWNER REQUEST (2026-09-05): complete the UI to match the reference.**
       **>>> THIS IS THE NEXT CHUNK, ahead of any more hair-style work. <<<**
       Routing decided 2026-09-13 and written down so it is not re-derived:
@@ -3942,7 +3963,22 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         (a T-pose drops the cage 0.5698 at one end and lifts it 0.0957 at the
         other). Spelled out rather than smuggled in as a huge number, and
         mutation-tested to confirm it disables only direction, never the counts.
-- [ ] **OWNER DECISION: is the hair cage good enough to ship as a wearable?**
+- [ ] **OWNER REQUEST TAKEN (2026-09-15): build a FULL hair feature with
+      several styles.** Asked verbatim for *"a full hair cage feature with
+      different hair styles"* -- so NEITHER option offered (hide the slot, or
+      ship the envelope as a placeholder) is the answer. The cage stays, and
+      becomes the thing grooms are fitted TO.
+      **This merges with the Textured-Black hair styles item below**, which was
+      attempted 2026-09-11 and NOT shipped: five generate-render-look iterations
+      gave silhouettes too crude to carry their names. Read that entry first --
+      its measurements are why the next attempt should be cheaper, and its
+      conclusion stands, that shipping a bad "Cornrows" is worse than none.
+      State the risk up front: the proxy machinery is ALREADY sufficient
+      (`src/core/Proxy.cpp:435-438`), so the hard part is ASSET AUTHORING, and
+      that is exactly where the last attempt failed. Budget for
+      render-and-look iterations, not for code.
+      Measured context for the cage itself, kept because it is still true:
+- [ ] **(superseded) is the hair cage good enough to ship as a wearable?**
       It is off by default and the machinery is proven, but RENDERED AND LOOKED
       AT it is long straight ribbons hanging over the face, not a groom. That
       is faithful, not a bug: measured, the cage reaches Z +1.742 while the nose
@@ -4397,8 +4433,11 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 - [ ] **A genitalia slot for `helper-genital`** (200 vertices, 182 faces, all
       dominated by `spine05`, so rigid with one pelvis bone). Split out of the
       clothes chunk above once rendering showed it is anatomy rather than a
-      garment. Needs an owner decision on whether the app ships it at all, and
-      on default visibility if it does.
+      garment.
+      **OWNER DECISION TAKEN (2026-09-15): ship it, VISIBLE by default.** It is
+      anatomy, so it is worn like anatomy rather than opted into like a garment.
+      Same consequence as the teeth decision: default-visible geometry moves
+      every export and golden fixture, and re-baselining them IS the work.
 - [x] **The EYELASHES chooser — a fifth weighting shape, driven by the EYELID.**
       Four cages into one proxy, the way upper and lower teeth make one:
       `helper-{l,r}-eyelashes-1` are 60 vertices / 44 faces each and `-2` are
@@ -4638,11 +4677,15 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       BODY topologies a user would wear, so a chooser over them would be
       meaningless. The proxy-slot line of M8 is therefore finished at five
       slots plus eyes; what remains needs assets or an owner decision.
-- [ ] **OWNER DECISION: should the teeth be worn by DEFAULT?** `--teeth`
-      defaults to `none` today, so a character opens toothless and an open
-      mouth is empty. Defaulting to `teeth` is the anatomically right answer but
-      changes the geometry of every existing export and golden fixture, which is
-      the owner's call rather than a silent flip.
+- [ ] **OWNER DECISION TAKEN (2026-09-15): teeth ARE worn by default.**
+      `--teeth` defaulted to `none`, so a character opened toothless and an open
+      mouth was empty. The owner chose "Default to teeth" -- the anatomically
+      right answer.
+      **This changes the geometry of every existing export and golden fixture**,
+      which is the work rather than a side effect: the fixtures must be
+      RE-BASELINED, and each re-baseline LOOKED AT rather than accepted because
+      the numbers moved. `--teeth none` must still work for anyone who wants the
+      old shape.
 - [x] **Proxy `delete_verts` now reach the body — and the OBJ export was
       leaking the helper cages.** `visibleVertexMask` and
       `Mesh::faceMaskForVisibleVertices` existed and were tested, but
@@ -5509,6 +5552,25 @@ GPU here, or Colab) and it comes back to the owner first.
                   The other option the paper uses is computing on a DECIMATED
                   mesh and transferring — this port already has decimation, so
                   it is available if parallelism is not enough.
+                  **Parallelised 2026-09-15, and MEASURED rather than assumed.**
+                  `computeCentersOfRotation` takes a `threads` parameter (0 =
+                  `hardware_concurrency`) and splits per vertex with an atomic
+                  work index — the same shape as the target prewarm in
+                  `src/core/Target.cpp:159-186`, no locking and no shared
+                  accumulator.
+                  On the shipped mesh, RELEASE, 10 hardware threads:
+                  **2,040 ms serial → 337 ms**, a **6.05x** speedup, and
+                  **0 of 19,158 centres differ** from the serial run.
+                  Determinism is the load-bearing property and it is GATED
+                  bit-exactly, not approximately: each vertex writes only its
+                  own slot and nothing is summed across vertices, so the answer
+                  cannot depend on the core count. This is the opposite of the
+                  PSD accumulation order directive 12.5 pins, where the sum IS
+                  shared. A drifting precompute would make every downstream
+                  golden result machine-dependent, and drift small enough to
+                  read as noise.
+                  So decimation is NOT needed for this: 337 ms is a plausible
+                  shape-change cost where 2 s was not.
       - [~] **3. PSD runtime + synthetic oracle.** Swing-twist decomposition
             (NOT Euler) → one RBF evaluator → a weight vector. Analytic
             corrective function as ground truth, verified AT and BETWEEN
