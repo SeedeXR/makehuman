@@ -243,7 +243,7 @@ if(MH_HAVE_RENDER)
     # GLB of the same character writes -- the two exports agreeing is the
     # property under test.
     add_test(NAME app_smoke_obj_faces COMMAND ${CMAKE_COMMAND}
-             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/app_smoke.obj -DEXPECT=14398
+             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/app_smoke.obj -DEXPECT=14494
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_body_faces.cmake)
     set_tests_properties(app_smoke_obj_faces PROPERTIES FIXTURES_REQUIRED app_smoke_obj)
     # The window path. app_smoke now also exercises the proxy wiring through
@@ -934,7 +934,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION "asset groups: .*Teeth")
     # Wearing them has to add GEOMETRY, not just a line of output.
     add_test(NAME app_teeth_worn COMMAND makehuman
-             --teeth teeth --export ${CMAKE_CURRENT_BINARY_DIR}/teeth/worn.obj)
+             --teeth teeth --export ${CMAKE_CURRENT_BINARY_DIR}/teeth/expl/c.obj)
     set_tests_properties(app_teeth_worn PROPERTIES
         # The MATCAP, not just the name: see the comment on the "wearing" line in
         # main.cpp. Without this a slot handed another slot's matcap passes.
@@ -942,16 +942,88 @@ if(MH_HAVE_RENDER)
         FAIL_REGULAR_EXPRESSION "export failed;cannot"
         FIXTURES_SETUP app_teeth_worn)
     add_test(NAME app_teeth_none COMMAND makehuman
-             --teeth none --export ${CMAKE_CURRENT_BINARY_DIR}/teeth/none.obj)
+             --teeth none --export ${CMAKE_CURRENT_BINARY_DIR}/teeth/off/c.obj)
     set_tests_properties(app_teeth_none PROPERTIES
         FAIL_REGULAR_EXPRESSION "wearing Teeth"
         FIXTURES_SETUP app_teeth_none)
+    # SAME BASENAME, different directory. This compared `worn.obj` against
+    # `none.obj` and COULD NOT FAIL: an OBJ's `mtllib` line is derived from the
+    # output filename, so the two files differed on that line whatever the
+    # geometry did. PROVEN by exporting both with `--teeth none` -- identical
+    # geometry, 14398 faces each, and the test still passed. It was asserting
+    # that two filenames differ.
     add_test(NAME app_teeth_add_geometry COMMAND ${CMAKE_COMMAND}
-             -DA=${CMAKE_CURRENT_BINARY_DIR}/teeth/worn.obj
-             -DB=${CMAKE_CURRENT_BINARY_DIR}/teeth/none.obj
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/teeth/expl/c.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/teeth/off/c.obj
              -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
     set_tests_properties(app_teeth_add_geometry PROPERTIES
         FIXTURES_REQUIRED "app_teeth_worn;app_teeth_none")
+    # TEETH ARE WORN BY DEFAULT. A character opened toothless and an open mouth
+    # was empty, which is wrong about anatomy rather than about configuration:
+    # every other helper cage the body ships is opt-in because it is a GARMENT,
+    # and teeth are not.
+    #
+    # All three exports below share the BASENAME `c.obj` and differ only in
+    # directory. That is not tidiness: an OBJ's `mtllib` line is derived from
+    # the output FILENAME, so `default.obj` and `worn.obj` differ on that line
+    # even when every vertex matches -- measured, the two files differed by
+    # exactly 3 bytes, `len("default") - len("worn")`. Byte-comparing exports
+    # with different names would make the identical-check impossible to pass
+    # AND the differ-check impossible to fail, so the differ-check would have
+    # passed even if `--teeth none` did nothing at all.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/teeth/dflt)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/teeth/expl)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/teeth/off)
+    add_test(NAME app_teeth_default_wears_them COMMAND makehuman
+             --export ${CMAKE_CURRENT_BINARY_DIR}/teeth/dflt/c.obj)
+    set_tests_properties(app_teeth_default_wears_them PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Teeth \\(.*\\) lit by skinmat_teeth"
+        FAIL_REGULAR_EXPRESSION "export failed;cannot"
+        FIXTURES_SETUP app_teeth_default)
+    # The printed line proves the slot was filled; this proves the default
+    # resolves to THE SAME asset rather than merely to something. A default
+    # that silently picked a different .mhclo passes the first and fails this.
+    add_test(NAME app_teeth_default_is_the_explicit_one COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/teeth/dflt/c.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/teeth/expl/c.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_identical.cmake)
+    set_tests_properties(app_teeth_default_is_the_explicit_one PROPERTIES
+        FIXTURES_REQUIRED "app_teeth_default;app_teeth_worn")
+    # ...and every OTHER slot stays off. Found by mutation: flipping the
+    # tongue default to "tongue" left all seventeen teeth tests green, because
+    # tongue is default-on in the default export AND the explicit one, so the
+    # teeth comparison cannot see it. Nothing anywhere asserted that a garment
+    # slot is unworn, and `ProxySlot` now makes flipping one a one-word change.
+    #
+    # Teeth are anatomy and are worn; Tongue, Hair, Clothes and Eyelashes are
+    # choices and are not. This is the assertion that keeps that line where the
+    # table says it is.
+    # Its OWN directory. The OBJ exporter drops a FIXED-NAME texture sidecar
+    # beside the file (`brown_eye.png`, observed in the build tree), so sharing
+    # a directory with the app_teeth_default fixture means two processes write
+    # that identical path under `ctest -j`.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/teeth/only)
+    # A TYPO MUST SAY SO. Silent until now, and harmless while every slot
+    # defaulted to none -- the typo produced the default character anyway. With
+    # teeth default-on, `--teeth teth` silently ships a body with no teeth and
+    # the user gets no cue at all. The warning is proven to fire, and proven
+    # NOT to fire for a valid value or for `none`.
+    add_test(NAME app_teeth_unknown_warns COMMAND makehuman
+             --teeth no_such_proxy
+             --export ${CMAKE_CURRENT_BINARY_DIR}/teeth/only/bogus.obj)
+    set_tests_properties(app_teeth_unknown_warns PROPERTIES
+        PASS_REGULAR_EXPRESSION "unknown --teeth \"no_such_proxy\"; wearing none")
+    add_test(NAME app_teeth_valid_does_not_warn COMMAND makehuman
+             --teeth teeth
+             --export ${CMAKE_CURRENT_BINARY_DIR}/teeth/only/valid.obj)
+    set_tests_properties(app_teeth_valid_does_not_warn PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Teeth"
+        FAIL_REGULAR_EXPRESSION "unknown --teeth")
+    add_test(NAME app_proxy_defaults_are_teeth_only COMMAND makehuman
+             --export ${CMAKE_CURRENT_BINARY_DIR}/teeth/only/c.obj)
+    set_tests_properties(app_proxy_defaults_are_teeth_only PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Teeth"
+        FAIL_REGULAR_EXPRESSION "wearing Tongue;wearing Hair;wearing Clothes;wearing Eyelashes")
     # The reason this slot is worth filling from the helper cage rather than
     # from invented shape: the base mesh already weights `helper-upper-teeth`
     # entirely to `head` and `helper-lower-teeth` entirely to `jaw`, so a jaw
@@ -993,6 +1065,47 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_teeth_reload_wears_them PROPERTIES
         PASS_REGULAR_EXPRESSION "wearing Teeth"
         FIXTURES_REQUIRED app_teeth_saved)
+    # THE NEGATIVE ROUND TRIP, which is the one that matters now.
+    #
+    # `app_teeth_reload_wears_them` above went VACUOUS the moment teeth became
+    # the default: it passes whether or not the `teeth` line is read at all.
+    # This is the pair that still has teeth in it.
+    #
+    # "Nothing worn" used to be recorded as the ABSENCE of a line, which
+    # conflated "the user took this off" with "this file predates the slot".
+    # Harmless while every slot defaulted to none; the moment one defaulted to
+    # WORN, a character saved deliberately toothless reopened with teeth.
+    # MEASURED before the fix: `--teeth none --save` wrote no teeth line and
+    # the reload printed "wearing Teeth (136 verts)".
+    add_test(NAME app_teeth_none_saved COMMAND makehuman
+             --teeth none --save ${CMAKE_CURRENT_BINARY_DIR}/teeth/saved_none.mhm)
+    set_tests_properties(app_teeth_none_saved PROPERTIES FIXTURES_SETUP app_teeth_none_saved)
+    # The sentinel is written, not merely implied by silence.
+    add_test(NAME app_teeth_none_save_records_it COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/teeth/saved_none.mhm
+             "-DKEYS=teeth none"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_teeth_none_save_records_it PROPERTIES
+        FIXTURES_REQUIRED app_teeth_none_saved)
+    add_test(NAME app_teeth_none_reload_stays_none COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/teeth/saved_none.mhm
+             --export ${CMAKE_CURRENT_BINARY_DIR}/teeth/reloaded_none.obj)
+    set_tests_properties(app_teeth_none_reload_stays_none PROPERTIES
+        FAIL_REGULAR_EXPRESSION "wearing Teeth"
+        FIXTURES_REQUIRED app_teeth_none_saved)
+    # The SAME defect, for eyes, and it predates the teeth slot entirely --
+    # `--eyes none --save` then reload wore eyes again, while the docstring on
+    # `proxyFromDocument` already claimed that case was fixed. Only the by-UUID
+    # half was. Gated here so the sentinel cannot be removed for one slot.
+    add_test(NAME app_eyes_none_saved COMMAND makehuman
+             --eyes none --save ${CMAKE_CURRENT_BINARY_DIR}/teeth/eyes_none.mhm)
+    set_tests_properties(app_eyes_none_saved PROPERTIES FIXTURES_SETUP app_eyes_none_saved)
+    add_test(NAME app_eyes_none_reload_stays_none COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/teeth/eyes_none.mhm
+             --export ${CMAKE_CURRENT_BINARY_DIR}/teeth/eyes_none.obj)
+    set_tests_properties(app_eyes_none_reload_stays_none PROPERTIES
+        FAIL_REGULAR_EXPRESSION "wearing HighPolyEyes"
+        FIXTURES_REQUIRED app_eyes_none_saved)
 
     # THE TONGUE -- the second helper-cage slot, and the one that proves the
     # slot machinery is machinery rather than a special case for teeth.
@@ -2001,7 +2114,7 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_rig_names_auto_actually_animates COMMAND ${CMAKE_COMMAND}
              -DA=${CMAKE_CURRENT_BINARY_DIR}/autoname/a0.obj
              -DB=${CMAKE_CURRENT_BINARY_DIR}/autoname/a7.obj
-             -DEXPECT_DIFFERENT=14444
+             -DEXPECT_DIFFERENT=14580
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
     set_tests_properties(app_rig_names_auto_actually_animates PROPERTIES
         FIXTURES_REQUIRED "app_auto0;app_auto7")
@@ -2239,6 +2352,22 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_help_mentions_body_pose_units COMMAND makehuman --help)
     set_tests_properties(app_help_mentions_body_pose_units PROPERTIES
         PASS_REGULAR_EXPRESSION "sixty-one pose the BODY")
+    # --help must name the REAL default for a proxy slot. The wording is built
+    # from `ProxySlot::defaultChoice` so it cannot drift from the table, and
+    # this is what proves that wiring rather than assuming it: teeth are worn
+    # by default and the flag has to say so, while a garment slot still reads
+    # "none (default)" exactly once -- the shared wording produced the clumsy
+    # "none (default), none, or ..." until it was special-cased.
+    add_test(NAME app_help_names_the_proxy_defaults COMMAND makehuman --help)
+    set_tests_properties(app_help_names_the_proxy_defaults PROPERTIES
+        # A SHORT run, deliberately. Qt wraps the description column, and the
+        # name column is sized by the longest option string -- so asserting the
+        # whole "Teeth proxy to wear: teeth (default), none" phrase would turn
+        # red when some unrelated long flag pushes `none` onto the next line.
+        # "teeth (default)" carries the same claim and does not depend on
+        # layout; the fail-regex still catches the doubled-none wording.
+        PASS_REGULAR_EXPRESSION "teeth \\(default\\)"
+        FAIL_REGULAR_EXPRESSION "none \\(default\\), none")
 
     # The Pose chooser, and what it must NOT offer.
     #
@@ -2391,7 +2520,7 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_rig_names_mh1_frames_differ COMMAND ${CMAKE_COMMAND}
              -DA=${CMAKE_CURRENT_BINARY_DIR}/rignames/mh0.obj
              -DB=${CMAKE_CURRENT_BINARY_DIR}/rignames/mh7.obj
-             -DEXPECT_DIFFERENT=14444
+             -DEXPECT_DIFFERENT=14580
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
     set_tests_properties(app_rig_names_mh1_frames_differ PROPERTIES
         FIXTURES_REQUIRED "app_rn_mh0;app_rn_mh7")
@@ -2400,7 +2529,7 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_rig_names_changes_the_pose COMMAND ${CMAKE_COMMAND}
              -DA=${CMAKE_CURRENT_BINARY_DIR}/rignames/nat7.obj
              -DB=${CMAKE_CURRENT_BINARY_DIR}/rignames/mh7.obj
-             -DEXPECT_DIFFERENT=14444
+             -DEXPECT_DIFFERENT=14580
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
     set_tests_properties(app_rig_names_changes_the_pose PROPERTIES
         FIXTURES_REQUIRED "app_rn_nat7;app_rn_mh7")
@@ -2585,13 +2714,21 @@ if(MH_HAVE_RENDER)
              --pose ${MH_DATA_DIR}/poseunits/face-poseunits.bvh --pose-frame 40
              --export ${CMAKE_CURRENT_BINARY_DIR}/pframe/f40.obj)
     set_tests_properties(app_pose_frame_40 PROPERTIES FIXTURES_SETUP app_pframe_40)
-    # Measured: 2,265 of 14,444 vertices. Frame 40 is a wide-open jaw, which is
+    # Measured: 2,333 of 14,580 vertices. Frame 40 is a wide-open jaw, which is
     # visible in a render -- the number is here so a loader that quietly
     # returned frame 0 for every index fails instead of passing.
+    #
+    # Was 2,265 of 14,444 before teeth became default-on. Both halves of that
+    # move are explained and neither was accepted on faith: the total grew by
+    # the teeth proxy's 136 vertices, and the DIFFERING count grew by exactly
+    # 68 -- the lower arch, weighted to `jaw`, following the jaw down while the
+    # upper arch on `head` stays put. 68 of 136 is the same split
+    # app_teeth_lower_follows_jaw measures independently from a FACS jaw drop,
+    # so two separately written tests agree about the rigging.
     add_test(NAME app_pose_frame_differs COMMAND ${CMAKE_COMMAND}
              -DA=${CMAKE_CURRENT_BINARY_DIR}/pframe/f0.obj
              -DB=${CMAKE_CURRENT_BINARY_DIR}/pframe/f40.obj
-             -DEXPECT_DIFFERENT=2265
+             -DEXPECT_DIFFERENT=2333
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
     set_tests_properties(app_pose_frame_differs PROPERTIES
         FIXTURES_REQUIRED "app_pframe_0;app_pframe_40")
@@ -2812,7 +2949,7 @@ if(MH_HAVE_RENDER)
     # better gate for it either way: it moves if the body is wrong AND if the
     # eyes are ever decimated by accident.
     add_test(NAME app_decimate_obj_faces COMMAND ${CMAKE_COMMAND}
-             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/lod_quarter/body.obj -DEXPECT=7708
+             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/lod_quarter/body.obj -DEXPECT=7804
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_body_faces.cmake)
     set_tests_properties(app_decimate_obj_faces PROPERTIES
         FIXTURES_REQUIRED app_lod_quarter_obj)
@@ -2820,7 +2957,7 @@ if(MH_HAVE_RENDER)
     # The undecimated total, from the same helper, so the pair is a comparison
     # rather than one number in isolation.
     add_test(NAME app_decimate_full_obj_faces COMMAND ${CMAKE_COMMAND}
-             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/lod_full/body.obj -DEXPECT=14398
+             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/lod_full/body.obj -DEXPECT=14494
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_body_faces.cmake)
     set_tests_properties(app_decimate_full_obj_faces PROPERTIES
         FIXTURES_REQUIRED app_lod_full_obj)
@@ -3186,7 +3323,7 @@ if(MH_HAVE_RENDER)
     # was the second one that was false last time. 54,532 = 53,512 subdivided
     # body + 1,020 eyes, which are a separate proxy mesh and are NOT subdivided.
     add_test(NAME app_subdivide_obj_faces COMMAND ${CMAKE_COMMAND}
-             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/app_subdivide.obj -DEXPECT=54532
+             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/app_subdivide.obj -DEXPECT=54628
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_body_faces.cmake)
     set_tests_properties(app_subdivide_obj_faces PROPERTIES
         FIXTURES_REQUIRED app_subdivide_obj)
@@ -3531,7 +3668,9 @@ if(MH_HAVE_RENDER)
              ${CMAKE_SOURCE_DIR}/tools/count_in_file.py
              --file ${CMAKE_CURRENT_BINARY_DIR}/app_worn.usda
              "--needle=rel skel:skeleton = </"
-             --count 2)
+             # 3, not 2: body + worn proxy + the default teeth. One binding per
+             # SKINNED mesh, and teeth became default-on.
+             --count 3)
     set_tests_properties(app_worn_skin_usda_bound PROPERTIES
         FIXTURES_REQUIRED app_worn_usda_file)
     # ONE skeleton, shared. Two prims would be two rigs.
@@ -3862,7 +4001,10 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_eye_is_blended COMMAND makehuman
              --render ${CMAKE_CURRENT_BINARY_DIR}/app_blend.png)
     set_tests_properties(app_eye_is_blended PROPERTIES
-        PASS_REGULAR_EXPRESSION "scene: 2 meshes \\(1 blended\\)"
+        # 3 meshes now -- body, eyes, teeth -- but still ONE blended. That is
+        # the assertion that matters: teeth are opaque, so a change that
+        # started blending them would push this to 2 and fail here.
+        PASS_REGULAR_EXPRESSION "scene: 3 meshes \\(1 blended\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     add_test(NAME app_render_pbr COMMAND makehuman

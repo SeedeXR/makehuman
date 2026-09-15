@@ -41,8 +41,21 @@ mkdir -p "$out"
 #   unposed -- the deformation must be exactly the IDENTITY. That is where a
 #              wrong bind matrix is easiest to see, and it is how the
 #              `Transform`-must-be-the-inverse-bind defect was caught.
-"$app" --rig mixamo_superset --pose tpose --export "$out/app_posed.fbx" >/dev/null
-"$app" --rig mixamo_superset --export "$out/app_unposed.fbx" >/dev/null
+# `--teeth none`, for the same reason as the Blender harness: teeth became
+# worn by DEFAULT, and `tools/maya_check.py` pins `skin_clusters: 2` and
+# `live_meshes: ["bodyShape", "eyesShape"]` for these files. Neither harness is
+# run by ctest, so nothing in the suite would have said those went stale --
+# MEASURED, the default export is "3 meshes ... mesh \"teeth\": 136 verts", so
+# the run reported two failures for a correct file.
+#
+# KNOWN LIMITATION, stated rather than hidden: with both harnesses asking for
+# the body alone, no third-party DCC ever reads the teeth mesh, so the DEFAULT
+# character's FBX/USD/glTF interchange is checked only by our own --inspect and
+# the app_teeth_* ctest entries. A worn-proxy export IS read by Maya and
+# Blender (posed.fbx carries the eyes on the shared skeleton), so the mechanism
+# is covered; what is not covered is this particular slot being in it.
+"$app" --teeth none --rig mixamo_superset --pose tpose --export "$out/app_posed.fbx" >/dev/null
+"$app" --teeth none --rig mixamo_superset --export "$out/app_unposed.fbx" >/dev/null
 echo "exported $out/app_posed.fbx and $out/app_unposed.fbx"
 
 # OUR OWN writer, next to the assimp one. Maya is the reference implementation

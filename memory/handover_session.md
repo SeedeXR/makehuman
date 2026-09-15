@@ -4,6 +4,148 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-16 (hundredth) — Session · **Teeth, and three gates that were lying**
+
+*2026-09-16 — the owner said "default to teeth"; the interesting part was what
+that broke.*
+
+### What shipped
+`ProxySlot` gains a `defaultChoice` field (`src/app/main.cpp`): teeth `"teeth"`,
+tongue/hair/clothes/eyelashes `"none"`. A per-slot FIELD rather than a special
+case, because the distinction is not about teeth — a slot is default-on when it
+is ANATOMY and default-off when it is a GARMENT. The `--help` wording is derived
+from the same field, so it cannot drift from the table.
+
+### The re-baseline, and why every number was looked at
+Eleven tests failed. They resolved into three groups, each explained BEFORE it
+was touched:
+
+- **+96 faces** in four count tests — exactly `data/teeth/teeth.obj`'s 96 faces.
+  The same +96 under `--decimate` AND `--subdivide`, which says the proxy gets
+  neither. Pre-existing proxy behaviour, not introduced here.
+- **+136 vertices** in three "everything moved" tests — exactly the teeth
+  vertex count.
+- **+68 differing vertices** under `--pose-frame 40`, whose comment already
+  said "a wide-open jaw". That is the lower arch on `jaw` moving while the upper
+  arch on `head` stays — the SAME 68/136 split `app_teeth_lower_follows_jaw`
+  measures independently from a FACS jaw drop. Two separately written tests
+  agreeing about the rigging is worth more than either.
+
+### THREE GATES THAT COULD NOT FAIL
+This is the part worth keeping.
+
+**1. `app_teeth_add_geometry` had never been able to fail.** It compared
+`teeth/worn.obj` with `teeth/none.obj`, and an OBJ's `mtllib` line is derived
+from the OUTPUT FILENAME — so the two files differed on that line whatever the
+geometry did. PROVEN, not reasoned: both were exported with `--teeth none`,
+giving identical geometry and 14,398 faces each, and the test still passed. It
+was asserting that two filenames differ. Fixed by giving all three exports the
+basename `c.obj` in separate directories, then verified BOTH ways — exit 1 on
+identical geometry, exit 0 with teeth present.
+
+**2. I wrote the same bug myself, twice, in the same hour.** The new
+identical-check was unpassable and the new differ-check unfailable, for exactly
+that reason. Measured first: `default.obj` and `worn.obj` differed by 3 bytes,
+`len("default") - len("worn")`. The lesson is not "remember mtllib" — it is that
+comparing GENERATED files by bytes silently compares their names too.
+
+**3. A ctest run reported 93% against a STALE test list.** Editing
+`tests/CMakeLists.txt` does nothing until `cmake --preset` reconfigures, and
+ctest happily ran the old definitions — the new directories did not exist.
+Caught by checking that the files the tests should have written were there.
+
+### What mutation testing found that review did not
+Flipping the TONGUE default to `"tongue"` left all seventeen teeth tests green:
+tongue is default-on in the default export AND the explicit one, so the teeth
+comparison is blind to it. **Nothing anywhere asserted that a garment slot is
+unworn**, and the new table makes flipping one a one-word change.
+`app_proxy_defaults_are_teeth_only` now closes that, and kills the mutation.
+
+### The harness nothing was watching
+`tools/blender_check.py` pins ~15 vertex/triangle expectation sets and two
+float64 surface areas — and `tools/run_blender_validation.sh` is **NOT run by
+ctest**, so the teeth default invalidated all of them silently. Rather than
+re-derive numbers whose entire value is that they were computed BEFORE Blender
+was asked, every app export there now passes `--teeth none`: the harness is
+about whether the BASE MESH survives each format, and the posed/corrective pair
+is a controlled experiment where teeth would be a second variable diluting the
+0.62% signal. VERIFIED by running it: `--teeth none` gives 14,444 verts /
+14,398 faces → 28,796 triangles, matching the pinned figures exactly. The
+fixture-generated files come from `mh_export_fixture`, which has no proxy slots.
+
+### `audit_taskviews` broke on a struct gaining a field
+Its EVIDENCE literals matched `{"teeth", "Teeth"}`; the third field unmatched
+all five slots at once, from a change that took nothing away. The braces are
+gone — the key/group pair identifies the slot, and pinning the closing brace
+pinned the struct's arity, which is not what that evidence is about.
+
+### What /code-review caught that everything else missed
+The gate was six slices green when this arrived. Stopping it was right.
+
+**A character saved deliberately toothless reopened WEARING TEETH.** `.mhm`
+recorded "nothing worn" as the ABSENCE of a line, which conflated "the user took
+this off" with "this file predates the slot". Harmless while every slot
+defaulted to `none` -- both readings produced the same character -- and a
+regression the instant one defaulted to WORN. Reproduced before fixing:
+`--teeth none --save` wrote no `teeth` line and the reload printed
+`wearing Teeth (136 verts)`.
+
+**The same bug already existed for eyes, and the docstring claimed it fixed.**
+`proxyFromDocument`'s comment cites "one saved wearing NONE reopened wearing
+eyes" as a solved case. Only the by-UUID half was solved: `--eyes none --save`
+then reload STILL wore eyes, and had done since before the teeth slot existed.
+Measured, not inferred. `recordProxy` now writes an explicit `<slot> none`
+sentinel and `proxyFromDocument` reads it, closing EVERY slot at once rather
+than special-casing teeth. Gated both directions for teeth AND eyes; the
+mutation (sentinel back to an empty string) kills three of the new tests.
+
+**`app_teeth_reload_wears_them` had gone vacuous.** It was the only test proving
+the LOAD direction of the round trip, and with teeth default-on it passes
+whether or not the `.mhm` line is read at all.
+
+**I fixed the Blender harness and missed the Maya one.** `tools/maya_check.py`
+pins `skin_clusters: 2` and `live_meshes: ["bodyShape", "eyesShape"]`; the
+default export is 3 meshes, so the run reported two failures for a correct file.
+Same hazard I had just written fifteen lines of comment about, one directory
+away. Both now pass `--teeth none`, with the KNOWN LIMITATION stated in the
+script rather than hidden: no third-party DCC now reads the teeth mesh, so the
+default character's interchange is covered only by our own `--inspect` and the
+app_teeth_* entries.
+
+**The brace fix was half-applied.** `EVIDENCE` was de-braced; `ABSENT` still held
+`{"eyebrows", "Eyebrows"}` for the same reason, and it fails in the HARDER
+direction -- a view that shipped would keep being reported absent.
+
+**Two lower-severity, both real:** `app_proxy_defaults_are_teeth_only` shared an
+output directory with another fixture, and the OBJ exporter drops a FIXED-NAME
+texture sidecar (`brown_eye.png`) beside the file, so `ctest -j` raced on that
+path; and the `--help` assertion ran 42 characters across a Qt wrap boundary
+with ~7 columns of slack, so an unrelated long flag would have turned it red.
+
+**And a silent failure the directive forbids:** `--teeth teth` exited 0, printed
+nothing, and shipped a body with no teeth. Harmless when every slot defaulted to
+`none`; now `--help` promises teeth. The slot loop warns like `--eyes` and
+`--skin` already did -- proven to fire, and proven NOT to fire for a valid value
+or for `none`.
+
+
+### Ponytail
+Cut 3 of 7 new tests: two duplicated existing exports (repointing the originals
+served both purposes and fixed gate 1 above), and the opt-out comparison became
+transitively redundant once `default == explicit` was byte-proven. 1300 → 1297
+tests, with one more REAL gate than before.
+
+### Not done, and why
+**Genitalia is not in this chunk.** The owner asked for it together with teeth,
+and the asset DOES NOT EXIST: `tools/make_helper_proxies.py` has no genital
+entry and `data/` has only morph targets. That half is asset authoring, which is
+where the 2026-09-11 hair attempt burned five render-and-look iterations. Teeth
+is a finished, gated default flip; holding it behind an unauthored cage would
+help nobody. Treat "together" as ONE re-baseline of the fixtures — which this
+chunk has now done.
+
+---
+
 ## 2026-09-15 (ninety-ninth) — Session · **Six times faster, and bit-identical**
 
 *2026-09-15 — the measurement said parallelism, so parallelism it was.*

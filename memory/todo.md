@@ -4689,7 +4689,7 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       BODY topologies a user would wear, so a chooser over them would be
       meaningless. The proxy-slot line of M8 is therefore finished at five
       slots plus eyes; what remains needs assets or an owner decision.
-- [ ] **OWNER DECISION TAKEN (2026-09-15): teeth ARE worn by default.**
+- [x] **OWNER DECISION TAKEN (2026-09-15): teeth ARE worn by default.** SHIPPED 2026-09-16.
       `--teeth` defaulted to `none`, so a character opened toothless and an open
       mouth was empty. The owner chose "Default to teeth" -- the anatomically
       right answer.
@@ -4722,6 +4722,27 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       Cheapest way to enumerate the rest: flip the default and run the suite --
       the failures ARE the list, and that is a measurement rather than a guess.
       Do not write the re-baseline list into this file until it has been seen.
+      **SEEN 2026-09-16. Eleven tests, in three groups, each explained before
+      being touched:** +96 faces (exactly `data/teeth/teeth.obj`'s 96, and the
+      SAME +96 under `--decimate` and `--subdivide`, so the proxy gets neither)
+      in app_smoke_obj_faces / app_decimate_obj_faces /
+      app_decimate_full_obj_faces / app_subdivide_obj_faces; +136 verts
+      (the teeth vertex count) in app_rig_names_auto_actually_animates /
+      app_rig_names_mh1_frames_differ / app_rig_names_changes_the_pose;
+      +68 differing verts in app_pose_frame_differs -- the lower arch on `jaw`
+      under a wide-open jaw while the upper arch on `head` stays, the same
+      68/136 split app_teeth_lower_follows_jaw measures independently;
+      2->3 USD skeleton bindings in app_worn_skin_usda_bound; 2->3 meshes
+      (still 1 blended) in app_eye_is_blended; and audit_taskviews, which was
+      NOT a re-baseline (see below).
+      **The blast-radius prediction above was right**: no `tests/golden/`
+      parity fixture moved.
+      **THREE GATES THAT COULD NOT FAIL were found doing this** -- recorded in
+      the 2026-09-16 handover entry. The one worth repeating here:
+      `app_teeth_add_geometry` compared `worn.obj` with `none.obj`, and an OBJ's
+      `mtllib` line comes from the output FILENAME, so it asserted that two
+      filenames differ. Proven by exporting both toothless and watching it pass.
+      Byte-comparing GENERATED files silently compares their names too.
 - [x] **Proxy `delete_verts` now reach the body — and the OBJ export was
       leaking the helper cages.** `visibleVertexMask` and
       `Mesh::faceMaskForVisibleVertices` existed and were tested, but

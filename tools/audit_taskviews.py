@@ -287,11 +287,18 @@ EVIDENCE = {
     "MaterialTaskView": '"Skin material"',
     "PoseLibraryTaskView": '"Pose"',
     "SkeletonLibrary": '"Skeleton"',
-    "TeethTaskView": '{"teeth", "Teeth"}',
-    "TongueTaskView": '{"tongue", "Tongue"}',
-    "HairTaskView": '{"hair", "Hair"}',
-    "ClothesTaskView": '{"clothes", "Clothes"}',
-    "EyelashesTaskView": '{"eyelashes", "Eyelashes"}',
+    # NO BRACES on the five helper-cage slots. These match a `kProxySlots`
+    # row, and the row GREW a third field when teeth became default-on --
+    # `{"teeth", "Teeth"}` stopped matching `{"teeth", "Teeth", "teeth"}` and
+    # all five views were reported uncovered at once, by a change that had
+    # taken nothing away. The key/group pair is what identifies the slot;
+    # pinning the closing brace pinned the struct's arity as well, which is not
+    # what this evidence is about.
+    "TeethTaskView": '"teeth", "Teeth"',
+    "TongueTaskView": '"tongue", "Tongue"',
+    "HairTaskView": '"hair", "Hair"',
+    "ClothesTaskView": '"clothes", "Clothes"',
+    "EyelashesTaskView": '"eyelashes", "Eyelashes"',
     "EyesTaskView": '"Eye colour"',
     "CustomTargetsTaskView": '"custom-targets"',
     "MouseActionsTaskView": '"mouse.orbit"',
@@ -353,9 +360,16 @@ ABSENT = {
                                "materials can be PICKED but not edited; no "
                                "property editor"),
     "HelpTaskView": ('"help.manual"', "no Help menu in the window"),
-    "EyebrowsTaskView": ('{"eyebrows", "Eyebrows"}',
+    # NO BRACES here either -- same reason as EVIDENCE above, and the inverse
+    # failure. `absence_mismatches` fires when the literal IS in src/, so a
+    # brace-pinned string would keep reporting these views absent after they
+    # ship, because the row they will be added to now reads
+    # `{"eyebrows", "Eyebrows", "none"}`. Fixing EVIDENCE alone would have left
+    # the trap armed in the direction that is harder to notice: a view that
+    # shipped and is still reported missing.
+    "EyebrowsTaskView": ('"eyebrows", "Eyebrows"',
                          "blocked on content: no helper cage in the base mesh"),
-    "ProxyTaskView": ('{"proxy", "Proxy"}',
+    "ProxyTaskView": ('"proxy", "Proxy"',
                       "blocked on content: no wearable alternate body topology"),
     "SceneLibraryTaskView": ('"Scene lighting"', "blocked on a lighting model"),
 }
