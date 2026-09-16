@@ -51,8 +51,8 @@ dev-gated, so a default release build shows **40**.
 | Bucket | N | Meaning |
 |---|---|---|
 | done | 7 | the dynamic modifier views — shipped |
-| covered | 20 | the capability reaches the user, just not as a TAB |
-| todo | 5 | to port, nothing blocking |
+| covered | 21 | the capability reaches the user, just not as a TAB |
+| todo | 4 | to port, nothing blocking |
 | blocked | 3 | needs content or an engine capability first |
 | declined | 16 | Python-runtime or dev-only tooling |
 
@@ -108,10 +108,12 @@ The views `guimodifier.loadModifierTaskViews` builds from the `*_sliders.json`
 files — Face, Torso, Arms and Legs, Gender, Macro modelling, Body shapes,
 Measure. One view per top-level key, `apps/gui/guimodifier.py:226-232`.
 
-### covered (20)
+### covered (21)
 Not a gap: this port is dockable, so what the reference makes a tab arrives as
 a menu action or as a group in the Assets panel.
 
+`AnimationLibrary` (an Animation combo beside Pose, the two clearing each
+other because they fill one `.bvh` slot; `--animation` on the command line),
 `LoadTaskView`, `SaveTaskView`, `ExportTaskView`, `OpenGLTaskView` (the Render
 tab — ours is `file.render`; its resolution and AA options are CLI flags),
 `RandomTaskView`, `SettingsTaskView`, `ShortcutsTaskView` — menu actions.
@@ -136,8 +138,8 @@ render has been shown in since M8; and the mixer is sixty sliders with a Save
 and a Load, which `--pose-unit` (all sixty — `--facs` names only 48),
 `--list-pose-units`, `--save-expression` and `--expression` already cover.
 
-### todo (5)
-`AnimationLibrary`, `BackgroundChooser`, `ExpressionTaskView`, `HelpTaskView`,
+### todo (4)
+`BackgroundChooser`, `ExpressionTaskView`, `HelpTaskView`,
 `MaterialEditorTaskView`.
 
 This list said EIGHT until 2026-09-13, and still named `ViewerTaskView`,

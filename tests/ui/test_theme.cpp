@@ -1429,6 +1429,47 @@ TEST_CASE("a choice undoes and redoes, and choices never merge", "[undo]") {
     CHECK(stack.count() == 2);  // the redo tail was dropped, then one pushed
 }
 
+TEST_CASE("clearing the other chooser undoes with the pick that caused it", "[undo]") {
+    // Pose and Animation fill ONE `.bvh` slot, so picking in either empties the
+    // other. That emptying has to be part of the SAME undo entry.
+    //
+    // It was not. The window cleared the other combo with `setChoice`, which
+    // blocks signals and never touches the bookkeeping, while the pushed
+    // command recorded only the picked group. Undo then reversed half the edit:
+    // after Animation=Walk1 then Pose=T-pose, one undo landed on the rest pose
+    // with the animation gone, instead of back on Walk1. A macro is what makes
+    // the pair atomic.
+    QStringList applied;
+    const auto apply = [&](const QString& key, const QString& id) {
+        applied << (key + QLatin1Char('=') + id);
+    };
+
+    QUndoStack stack;
+    stack.push(new mh::ui::ChoiceChangeCommand(QStringLiteral("Animation"), QStringLiteral("none"),
+                                               QStringLiteral("walk1"), 0, apply));
+    CHECK(applied.last() == QStringLiteral("Animation=walk1"));
+
+    // Picking a Pose empties Animation, as ONE entry.
+    stack.beginMacro(QStringLiteral("choice"));
+    stack.push(new mh::ui::ChoiceChangeCommand(QStringLiteral("Animation"), QStringLiteral("walk1"),
+                                               QStringLiteral("none"), 0, apply));
+    stack.push(new mh::ui::ChoiceChangeCommand(QStringLiteral("Pose"), QStringLiteral("rest"),
+                                               QStringLiteral("tpose"), 0, apply));
+    stack.endMacro();
+    CHECK(stack.count() == 2);  // the first pick, then the macro -- not three
+    CHECK(applied.last() == QStringLiteral("Pose=tpose"));
+
+    // ONE undo puts BOTH back: the pose reverts AND the animation returns.
+    // Without the macro this reverted the pose alone and left Animation empty.
+    stack.undo();
+    CHECK(applied.contains(QStringLiteral("Pose=rest")));
+    CHECK(applied.last() == QStringLiteral("Animation=walk1"));
+
+    // ...and redo empties it again, in the same order.
+    stack.redo();
+    CHECK(applied.last() == QStringLiteral("Pose=tpose"));
+}
+
 TEST_CASE("setChoice selects without emitting", "[assets]") {
     // Restored API: it was cut for having no production caller, and undo is
     // that caller -- restoring a choice must not report it as a fresh one.

@@ -332,7 +332,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 12 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 13 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # The rig had no picker either: two ship, --rig has always chosen between
@@ -2515,6 +2515,165 @@ if(MH_HAVE_RENDER)
     # by default and the flag has to say so, while a garment slot still reads
     # "none (default)" exactly once -- the shared wording produced the clumsy
     # "none (default), none, or ..." until it was special-cased.
+    # THE ANIMATION CHOOSER. `--list-animations`' own help text has said "the
+    # animations the Animation chooser offers" while there WAS no Animation
+    # chooser -- the asset groups ran [Litsphere, Pose, Eyes, ...] with no such
+    # entry. A help string promising a surface that does not exist.
+    #
+    # Pose and Animation are two ways into ONE `.bvh` slot, so the group must
+    # exist beside Pose rather than replacing it.
+    # ONE test, not two: an earlier pair ran the identical command in two
+    # processes, one asserting `.*Animation` and one `.*Pose.*Animation`. The
+    # second subsumes the first -- it proves the group exists AND that Pose
+    # survives beside it, which is the whole claim.
+    add_test(NAME app_animation_group_keeps_pose COMMAND makehuman
+             --save ${CMAKE_CURRENT_BINARY_DIR}/anim_g2.mhm)
+    set_tests_properties(app_animation_group_keeps_pose PROPERTIES
+        PASS_REGULAR_EXPRESSION "asset groups: .*Pose.*Animation")
+    # "None" is the Animation chooser's no-selection entry, and every other
+    # chooser in this app spells that `none`. `loadPoseRig` only recognised
+    # `rest`/`apose`/`a-pose`, so picking None went looking for a FILE called
+    # "none" and failed with "cannot load pose: none: file not found" -- the
+    # chooser's own empty state broken by the vocabulary it shares with its
+    # siblings.
+    add_test(NAME app_pose_none_is_the_rest_pose COMMAND makehuman
+             --pose none --export ${CMAKE_CURRENT_BINARY_DIR}/anim_none.obj)
+    set_tests_properties(app_pose_none_is_the_rest_pose PROPERTIES
+        FAIL_REGULAR_EXPRESSION "cannot load pose")
+    # `--animation`: the command line for what the Animation chooser does.
+    #
+    # `--pose walk1.bvh` REFUSES a multi-frame file, deliberately -- frame 0 of
+    # a walk cycle is a plausible wrong pose, so a caller who means it says so.
+    # A combo box has no way to say so, and neither did the command line, which
+    # is why this exists. It is `--pose-frame 0 --rig-names auto` for one file,
+    # named after the thing the user is choosing.
+    #
+    # MEASURED before it existed: with the default `native` naming the shipped
+    # walks drive 0 of 179 bones and EVERY FRAME IS IDENTICAL; with makehuman1
+    # naming frames 0 and 7 differ in 14,780 of 14,780 vertices. So "the
+    # animation loaded" is not "the animation animates", and these gate the
+    # second claim.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/anim)
+    add_test(NAME app_animation_rest COMMAND makehuman
+             --export ${CMAKE_CURRENT_BINARY_DIR}/anim/rest.obj)
+    set_tests_properties(app_animation_rest PROPERTIES FIXTURES_SETUP app_anim_rest)
+    add_test(NAME app_animation_frame0 COMMAND makehuman
+             --animation walk1 --export ${CMAKE_CURRENT_BINARY_DIR}/anim/f0.obj)
+    set_tests_properties(app_animation_frame0 PROPERTIES
+        FAIL_REGULAR_EXPRESSION "cannot load pose;drives 0 of"
+        FIXTURES_SETUP app_anim_f0)
+    add_test(NAME app_animation_frame7 COMMAND makehuman
+             --animation walk1 --pose-frame 7
+             --export ${CMAKE_CURRENT_BINARY_DIR}/anim/f7.obj)
+    set_tests_properties(app_animation_frame7 PROPERTIES FIXTURES_SETUP app_anim_f7)
+    # It poses at all...
+    add_test(NAME app_animation_poses_the_body COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/anim/rest.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/anim/f0.obj
+             -DEXPECT_DIFFERENT=14780
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
+    set_tests_properties(app_animation_poses_the_body PROPERTIES
+        FIXTURES_REQUIRED "app_anim_rest;app_anim_f0")
+    # ...and DIFFERENTLY per frame, which is the claim that fails when the
+    # naming is not resolved: every frame then lands on the same rest pose.
+    add_test(NAME app_animation_frames_differ COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/anim/f0.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/anim/f7.obj
+             -DEXPECT_DIFFERENT=14780
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
+    set_tests_properties(app_animation_frames_differ PROPERTIES
+        FIXTURES_REQUIRED "app_anim_f0;app_anim_f7")
+    # MUTUALLY EXCLUSIVE, and said so rather than silently preferring one.
+    # Both flags fill the one .bvh slot; which one won would be invisible in
+    # the output, so the pair is refused. This is the command-line half of what
+    # the two combos do by clearing each other.
+    add_test(NAME app_animation_and_pose_refused COMMAND makehuman
+             --pose tpose --animation walk1
+             --export ${CMAKE_CURRENT_BINARY_DIR}/anim/both.obj)
+    set_tests_properties(app_animation_and_pose_refused PROPERTIES
+        PASS_REGULAR_EXPRESSION "both fill the one .bvh slot")
+    # A typo names the flag that lists the real ones, rather than failing with
+    # "file not found" for something the user never typed as a path.
+    add_test(NAME app_animation_unknown_named COMMAND makehuman
+             --animation no_such_walk
+             --export ${CMAKE_CURRENT_BINARY_DIR}/anim/bogus.obj)
+    set_tests_properties(app_animation_unknown_named PROPERTIES
+        PASS_REGULAR_EXPRESSION "unknown --animation \"no_such_walk\"; --list-animations")
+    # --pose still REFUSES a multi-frame file. The new flag is an addition, not
+    # a loosening: this is the guard that stops frame 0 of a walk being served
+    # as though someone had asked for it.
+    add_test(NAME app_pose_still_refuses_an_animation COMMAND makehuman
+             --pose ${MH_DATA_DIR}/animations/walks/walk1.bvh
+             --export ${CMAKE_CURRENT_BINARY_DIR}/anim/refused.obj)
+    set_tests_properties(app_pose_still_refuses_an_animation PROPERTIES
+        PASS_REGULAR_EXPRESSION "is an animation, not a pose")
+    # `--pose tpose --save` HUNG -- 100% CPU for fourteen minutes, found as a
+    # stray process rather than by any test. `livesInAnimations` decided whether
+    # a pose file sits under data/animations by walking up its parents, and
+    # `path("/").parent_path()` is `"/"` with `has_parent_path()` still true, so
+    # anything OUTSIDE that directory looped forever. It is a prefix comparison
+    # now.
+    #
+    # This is a TIMEOUT test: the assertion is that the command terminates. The
+    # 60 s budget is ~40x the measured runtime, so it fails on a hang and not on
+    # a slow machine.
+    add_test(NAME app_pose_save_terminates COMMAND makehuman
+             --pose tpose --save ${CMAKE_CURRENT_BINARY_DIR}/anim/term.mhm)
+    set_tests_properties(app_pose_save_terminates PROPERTIES
+        TIMEOUT 60
+        PASS_REGULAR_EXPRESSION "wrote .*term.mhm")
+    # ...and the detection it guards still answers both ways: a file under
+    # data/animations resolves its naming per file, a pose does not.
+    add_test(NAME app_pose_in_animations_dir_auto_names COMMAND makehuman
+             --pose ${MH_DATA_DIR}/animations/walks/dance1.bvh
+             --export ${CMAKE_CURRENT_BINARY_DIR}/anim/dance.obj)
+    set_tests_properties(app_pose_in_animations_dir_auto_names PROPERTIES
+        TIMEOUT 60
+        PASS_REGULAR_EXPRESSION "dance1.bvh: read as makehuman1")
+    add_test(NAME app_plain_pose_is_not_auto_named COMMAND makehuman
+             --pose tpose --export ${CMAKE_CURRENT_BINARY_DIR}/anim/plain.obj)
+    set_tests_properties(app_plain_pose_is_not_auto_named PROPERTIES
+        TIMEOUT 60
+        FAIL_REGULAR_EXPRESSION "read as")
+    # THE ROUND TRIP, gating what this chunk actually changed.
+    #
+    # Before it, `--animation walk1 --save` then `--load` exited 1 with
+    # "is an animation, not a pose" -- the app refused to open its own save
+    # file. Now the reload resolves the naming per file and poses.
+    #
+    # It asserts the reload POSES, not that it reproduces the direct export
+    # byte for byte. MEASURED: direct vs reload differs by 832 of 14,780
+    # vertices for an animation AND 759 for a plain `--pose tpose`, so the
+    # gap is the DOCUMENT's, pre-existing and the same order either way. An
+    # identity assertion here would fail for poses too and would be pinning
+    # someone else's bug to this feature.
+    add_test(NAME app_animation_saved COMMAND makehuman
+             --animation walk1 --save ${CMAKE_CURRENT_BINARY_DIR}/anim/w.mhm)
+    set_tests_properties(app_animation_saved PROPERTIES
+        TIMEOUT 60 FIXTURES_SETUP app_anim_saved)
+    add_test(NAME app_animation_save_records_the_path COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/anim/w.mhm
+             "-DKEYS=walk1.bvh"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_animation_save_records_the_path PROPERTIES
+        FIXTURES_REQUIRED app_anim_saved)
+    # Reopening its own save file must not fail, and must not land at rest.
+    add_test(NAME app_animation_reload_still_poses COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/anim/w.mhm
+             --export ${CMAKE_CURRENT_BINARY_DIR}/anim/reload.obj)
+    set_tests_properties(app_animation_reload_still_poses PROPERTIES
+        TIMEOUT 60
+        PASS_REGULAR_EXPRESSION "walk1.bvh: read as makehuman1"
+        FAIL_REGULAR_EXPRESSION "cannot load pose;is an animation, not a pose;drives 0 of"
+        FIXTURES_REQUIRED app_anim_saved
+        FIXTURES_SETUP app_anim_reload)
+    add_test(NAME app_animation_reload_is_not_the_rest_pose COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/anim/rest.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/anim/reload.obj
+             -DEXPECT_DIFFERENT=14780
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
+    set_tests_properties(app_animation_reload_is_not_the_rest_pose PROPERTIES
+        FIXTURES_REQUIRED "app_anim_rest;app_anim_reload")
     add_test(NAME app_help_names_the_proxy_defaults COMMAND makehuman --help)
     set_tests_properties(app_help_names_the_proxy_defaults PROPERTIES
         # A SHORT run, deliberately. Qt wraps the description column, and the
@@ -2640,11 +2799,19 @@ if(MH_HAVE_RENDER)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/rignames)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/poses)
     set(WALK ${MH_DATA_DIR}/animations/walks/walk1.bvh)
+    # `--rig-names native` is now EXPLICIT here. These two fixtures exist to be
+    # the UNTARGETED case, and a file under data/animations resolves its naming
+    # per file by default since the Animation chooser landed -- so without the
+    # flag they stopped being untargeted, the two frames started differing, and
+    # both assertions below failed. Saying `native` out loud is what keeps them
+    # measuring what their comments claim.
     add_test(NAME app_rig_names_native_f0 COMMAND makehuman
+             --rig-names native
              --pose ${WALK} --pose-frame 0
              --export ${CMAKE_CURRENT_BINARY_DIR}/rignames/nat0.obj)
     set_tests_properties(app_rig_names_native_f0 PROPERTIES FIXTURES_SETUP app_rn_nat0)
     add_test(NAME app_rig_names_native_f7 COMMAND makehuman
+             --rig-names native
              --pose ${WALK} --pose-frame 7
              --export ${CMAKE_CURRENT_BINARY_DIR}/rignames/nat7.obj)
     set_tests_properties(app_rig_names_native_f7 PROPERTIES FIXTURES_SETUP app_rn_nat7)
@@ -2899,11 +3066,26 @@ if(MH_HAVE_RENDER)
     # 179, not 163: the application defaults to `mixamo_superset`, and the walks
     # match none of either rig. The first version of this test said 163 -- the
     # DEFAULT rig's count, which is what the unit test uses -- and failed.
+    # `--rig-names native` is now REQUIRED to reach this warning with walk1.
+    # A file under data/animations resolves its naming per file by default, so
+    # the walk drives 59 of 179 rather than 0 -- the behaviour improved and this
+    # fixture stopped being an example of "drives nothing". Pinning the warning
+    # on the explicit native reading keeps the rule gated while the default path
+    # gets its own assertion below.
     add_test(NAME app_pose_drives_nothing_says_so COMMAND makehuman
+             --rig-names native
              --pose ${MH_DATA_DIR}/animations/walks/walk1.bvh --pose-frame 0
              --export ${CMAKE_CURRENT_BINARY_DIR}/pframe/drives.obj)
     set_tests_properties(app_pose_drives_nothing_says_so PROPERTIES
         PASS_REGULAR_EXPRESSION "drives 0 of 179 bones")
+    # ...and by DEFAULT the same file now drives the rig instead of warning.
+    add_test(NAME app_pose_in_animations_drives_by_default COMMAND makehuman
+             --pose ${MH_DATA_DIR}/animations/walks/walk1.bvh --pose-frame 0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/pframe/drives_auto.obj)
+    set_tests_properties(app_pose_in_animations_drives_by_default PROPERTIES
+        TIMEOUT 60
+        PASS_REGULAR_EXPRESSION "walk1.bvh: read as makehuman1 \\(59 of 179"
+        FAIL_REGULAR_EXPRESSION "drives 0 of")
     # ...and a pose that DOES drive the rig must stay quiet, or the warning is
     # noise that gets filtered out and stops being read.
     add_test(NAME app_pose_that_drives_is_quiet COMMAND makehuman
@@ -4128,7 +4310,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 12 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 13 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # Refused rather than silently defaulted to brown, which would make a typo

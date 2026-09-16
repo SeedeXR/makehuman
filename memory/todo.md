@@ -2820,6 +2820,82 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       choke point both the chooser and the loader already share; and the
       reference's own AnimationLibrary is a frame scrubber
       (`3_libraries_animation.py:48-189`) rather than a second chooser.
+      **RE-MEASURED 2026-09-16, and the "blocked on content" note below is
+      STALE in three separate ways. Do not act on it without re-checking.**
+      1. `data/rigs/makehuman1_retarget.json` EXISTS (the note says a second
+         table "has to be" written). So does a ranking path: `rankNamings`
+         plus `autoNamingFor` (`src/app/main.cpp:487`), and `retargetJoints`
+         is wired at `PoseUnits.cpp:341,369,378`.
+      2. `--list-animations` already reports the right answer per file --
+         `walk1.bvh  Walk1  14  makehuman1 (59 bones)`. It is a DIAGNOSTIC,
+         not applied.
+      3. **The animations are NOT broken content. They work.** Measured:
+         `--rig-names makehuman1 --pose walks/walk1.bvh --pose-frame 0` vs
+         `--pose-frame 7` differ in **14,780 of 14,780** vertices. With the
+         DEFAULT naming they differ in **0** -- every frame poses identically,
+         which is what the old note read as dead content.
+      The real cause is that `--rig-names` defaults to `native`, and a BVH
+      drives a bone only when it holds a joint of identically that name. The
+      CLI is honest about it and prints
+      `drives 0 of 179 bones ... try --rig-names makehuman1 or mixamo`.
+      **What that means for THIS chunk:** an Animation combo has no flag to
+      offer. A user picking "Walk1" from a chooser would get a frozen character
+      and a stderr warning they never see. So the chooser path must resolve the
+      naming PER FILE via `autoNamingFor` -- which exists for exactly this and
+      today is reached only when `--rig-names auto` is passed explicitly.
+      EXPORT TWO FRAMES AND COMPARE before believing the chooser works; "the
+      combo is populated" is not "the animation animates".
+      **OPEN, found 2026-09-16 while gating the chunk: a `.mhm` round trip does
+      NOT reproduce the character exactly.** `--animation walk1 --save w.mhm`
+      then `--load w.mhm --export` differs from a DIRECT `--animation walk1
+      --export` in **832 of 14,780 vertices**. The reload succeeds and poses
+      (it reads as makehuman1 and exits 0, where before this chunk it exited 1),
+      so this is a FIDELITY gap, not a failure. Not yet known whether it is
+      animation-specific: the control to run is the same experiment with
+      `--pose tpose`, which was still measuring when this was written. If the
+      pose control differs too, it is a pre-existing `.mhm` fidelity issue and
+      belongs in its own chunk rather than here.
+      **CONTROL READ 2026-09-16: it is NOT animation-specific.** The same
+      experiment with `--pose tpose` differs by **759 of 14,780** vertices,
+      against the animation's 832 -- the same order. So this is a PRE-EXISTING
+      `.mhm` fidelity gap and does not belong to the Animation chunk. A
+      round-trip test asserting identity would fail for poses too.
+      Recorded as its own item below. What the Animation chunk DOES gate is the
+      behaviour it changed: an animation saved and reloaded now POSES (before,
+      the reload exited 1 with "is an animation, not a pose").
+
+- [ ] **The window's Save As and Open ignore the pose entirely.**
+      Found by /code-review 2026-09-16 while reviewing the Animation chooser,
+      and PRE-EXISTING -- it affects Pose exactly as much as Animation, which is
+      why it is filed here rather than folded into that chunk.
+      `documentFor` (the GUI Save As path) copies `base.unhandled` verbatim and
+      writes NO `pose` or `skeleton` line, so a character posed or animated in
+      the window and saved from the File menu loses it. `applyLoaded` (Open)
+      never reads those lines back either, so opening a posed `.mhm` from the
+      menu leaves the rig and both combos on their old values.
+      The `--save`/`--load` command-line paths DO handle the pose, which is why
+      the Animation chunk's round-trip test passes: it goes through the CLI.
+      So the gap is specifically the File menu.
+      Not fixed in the Animation chunk on purpose: that chunk had already grown
+      about fourfold under review, and a pre-existing document bug affecting
+      both choosers is its own piece of work. The code comment beside
+      `poseIsAnimation` says so rather than implying the tracking covers it.
+
+- [ ] **A `.mhm` round trip does not reproduce the character exactly.**
+      MEASURED 2026-09-16 with the RELEASE binary, comparing a direct export
+      against a save-then-reload of the same character:
+        `--pose tpose`      759 of 14,780 vertices differ
+        `--animation walk1` 832 of 14,780 vertices differ
+      Same order for both, so it is not about poses or animations -- it is the
+      document. Prime suspect is precision: the file records "11 modifiers" as
+      decimal text, so a value that does not round-trip exactly re-morphs the
+      mesh slightly. NOT yet confirmed; confirm before fixing.
+      Worth a chunk of its own because "save and reopen gives you back what you
+      had" is the claim a save format exists to make, and 5% of vertices moving
+      is not nothing. Compare with python (`[l for l in open(p) if
+      l.startswith("v ")]`) -- `obj_verts_differ.cmake` takes >120 s on 14,780
+      vertices in CMake script mode -- and use the RELEASE binary, which is
+      several times faster than debug for exports.
 
 - [ ] **OWNER REQUEST (2026-09-05): complete the UI to match the reference.**
       **>>> THIS IS THE NEXT CHUNK, ahead of any more hair-style work. <<<**

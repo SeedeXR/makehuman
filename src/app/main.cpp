@@ -382,6 +382,18 @@ std::string& rigNamesRef() {
     return names;
 }
 
+/// Whether `--rig-names` was given, as opposed to sitting at its default.
+///
+/// An animation resolves its naming PER FILE, but only when the user has not
+/// said which naming they want. Without this, `--animation walk1 --rig-names
+/// native` answered about makehuman1 -- the opposite of what was asked, with no
+/// notice. "Nothing was chosen" and "native was chosen" are different states
+/// and the string alone cannot tell them apart.
+bool& rigNamesExplicitRef() {
+    static bool explicitly = false;
+    return explicitly;
+}
+
 /// The retarget table `--rig-names` selects, or nullptr for "native".
 ///
 /// Loaded once and kept: `loadPoseRig` consults it three times per call (the
@@ -736,6 +748,14 @@ std::filesystem::path findPoseByStem(const std::string& spelling) {
     return {};
 }
 
+/// The "not wearing any" entry of a chooser. A sentinel rather than an empty
+/// string so it is visible in a save file and cannot be confused with "unset".
+///
+/// Declared here rather than beside the proxy code because `loadPoseRig` needs
+/// it too: the Animation chooser's empty entry is spelled with the same word,
+/// and a second literal "none" would be a coupling nothing checks.
+constexpr const char* kNoProxy = "none";
+
 /// Loads the rig, and the pose named by @p pose if there is one.
 ///
 /// "A-pose" is not a file: the MakeHuman base mesh is authored in one, so the
@@ -746,9 +766,32 @@ std::filesystem::path findPoseByStem(const std::string& spelling) {
 /// `--rig mixamo_superset` with no `--pose` loaded no skeleton at all and the
 /// export could not have carried one -- the bind pose being precisely the most
 /// useful thing to export.
-bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& out) {
+/// @param asAnimation the caller KNOWS this file is an animation and wants its
+///        first frame, with the naming resolved per file.
+///
+/// Only the Animation chooser passes true. The CLI stays strict on purpose:
+/// `--pose walk1.bvh` still refuses a multi-frame file, because frame 0 of a
+/// walk cycle is a plausible WRONG pose and a caller who meant it says so with
+/// `--pose-frame`. Picking from a list headed "Animation" is that same
+/// statement made in the window, so the window may make it on the user's
+/// behalf -- there is no flag for them to pass.
+/// @param frame which frame to take, or nullopt for "the caller has no opinion".
+///
+/// PASSED, not read from `poseFrameRef()`. That global holds what the COMMAND
+/// LINE asked for and is never cleared, so once `--pose-frame 7` had been given
+/// every later load in the window read frame 7 too -- and picking any
+/// single-frame entry in the Pose chooser then failed with "no frame 7; the
+/// file has 1 frame", explained only on a stderr a GUI user never sees. The
+/// window has no frame to offer, so it passes nullopt and gets frame 0 for an
+/// animation.
+bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& out,
+                 bool asAnimation = false, std::optional<size_t> frame = std::nullopt) {
     const std::filesystem::path& expressionFile = expressionFileRef();
-    const bool wantPose = !(pose == "rest" || pose == "apose" || pose == "a-pose");
+    // `none` too, because that is what every OTHER chooser in this app calls
+    // its empty entry (`kNoProxy`), and the Animation chooser uses the same
+    // word. Without it, picking None went looking for a file called "none".
+    const bool wantPose =
+        !(pose == "rest" || pose == "apose" || pose == "a-pose" || pose == kNoProxy);
 
     std::filesystem::path file = pose;
     if (wantPose && !std::filesystem::is_regular_file(file)) {
@@ -806,11 +849,44 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
         // `auto` is resolved against THIS file -- it is the only choice that
         // cannot be answered without one, which is why `retargetTable()` refuses
         // it and this asks `autoNamingFor` instead.
+        //
+        // An animation picked from the chooser resolves its naming PER FILE
+        // even when --rig-names was left at `native`. Without that the shipped
+        // walks drive 0 bones and the character sits at rest: the CLI answers
+        // that with a warning naming the flag to pass, and a combo box has no
+        // flag to offer. MEASURED on walk1.bvh -- frames 0 and 7 differ in
+        // 14,780 of 14,780 vertices under makehuman1 naming and in 0 under
+        // native.
+        // NAMING and FRAME are separate decisions, and bundling them was a
+        // mistake. A file's bone naming is a property of the FILE, so resolving
+        // it per file is always right and costs nothing -- that is what makes
+        // `--pose data/animations/dance1.bvh` pose instead of standing at rest.
+        // Defaulting to FRAME 0 is not: frame 0 of a walk cycle is a plausible
+        // WRONG pose, so it stays tied to the caller saying "animation".
+        // Deriving both from the file loosened `--pose` into accepting
+        // multi-frame files, which is precisely the guard this keeps.
+        //
+        // An explicit --rig-names still wins over the per-file default.
+        const bool fileNeedsNaming = !dataDir().empty() && [&] {
+            std::error_code fec;
+            const auto adir = std::filesystem::weakly_canonical(dataDir() / "animations", fec);
+            auto fp         = std::filesystem::weakly_canonical(file, fec);
+            if (fec) return false;
+            const auto d = adir.string();
+            const auto c = fp.string();
+            return c.size() > d.size() && c.compare(0, d.size(), d) == 0 && c[d.size()] == '/';
+        }();
+        const bool autoNames = rigNamesRef() == kAutoNaming ||
+                               ((asAnimation || fileNeedsNaming) && !rigNamesExplicitRef());
         const mh::rig::RetargetMap* names =
-            rigNamesRef() == kAutoNaming ? autoNamingFor(file, *skel) : retargetTable();
-        const auto bodyPose = poseFrameRef()
-                                  ? mh::rig::loadBodyPoseFrame(file, *skel, *poseFrameRef(), names)
-                                  : mh::rig::loadBodyPose(file, *skel, names);
+            autoNames ? autoNamingFor(file, *skel) : retargetTable();
+        // Frame 0 unless the caller named one. `asAnimation` is the window
+        // saying "I know this is multi-frame", which is what --pose-frame says
+        // on the command line.
+        const std::optional<size_t> want =
+            frame ? frame : (asAnimation ? std::optional<size_t>{0} : std::nullopt);
+        const auto bodyPose = want ? mh::rig::loadBodyPoseFrame(file, *skel, *want, names)
+                                   : mh::rig::loadBodyPose(file, *skel, names);
         if (!bodyPose) {
             std::fprintf(stderr, "cannot load pose: %s\n", bodyPose.error().message().c_str());
             return false;
@@ -1129,10 +1205,6 @@ std::string prettyName(const std::filesystem::path& file, std::string_view prefi
 constexpr const char* kDevAssetTag = "developement";
 
 constexpr const char* kDefaultSkin = "caucasian";
-/// The "not wearing any" entry of a proxy chooser. A sentinel rather than an
-/// empty string so it is visible in a save file and cannot be confused with
-/// "unset".
-constexpr const char* kNoProxy     = "none";
 constexpr const char* kDefaultEyes = "high-poly";
 
 /// Eyes get their own matcap; shading them with the body's skin makes them read
@@ -1359,6 +1431,14 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(
     }
     groups.push_back(std::move(skins));
 
+    // A sidecar's `name` wins; without one, `prettyName` -- so an asset with no
+    // .meta is title-cased like every sibling chooser instead of showing a raw
+    // stem such as `walk_cycle`. Written out three times before this existed.
+    const auto chooserLabel = [](const std::filesystem::path& f) {
+        const auto meta = mh::core::loadAssetMeta(f);
+        return meta.name.empty() ? prettyName(f, "") : meta.name;
+    };
+
     mh::foundation::AssetGroup poses;
     poses.name = "Pose";
     // The rest mesh IS the A-pose, so it is a choice with no file behind it.
@@ -1383,12 +1463,38 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(
         // A sidecar's `name` wins; without one, `prettyName` -- so a pose with
         // no .meta is title-cased like every sibling chooser instead of
         // showing a raw stem such as `walk_cycle`.
-        poses.choices.push_back({p.string(), meta.name.empty() ? prettyName(p, "") : meta.name});
+        poses.choices.push_back({p.string(), chooserLabel(p)});
         if (isCurrent) {
             poses.selected = static_cast<int>(poses.choices.size()) - 1;
         }
     }
     groups.push_back(std::move(poses));
+
+    // ANIMATION: the second way into the SAME `.bvh` slot.
+    //
+    // Two choosers rather than one combined list, because a pose and an
+    // animation are different things to a user even though they land in the
+    // same place -- and `--list-animations`' help had already promised "the
+    // Animation chooser" for a surface that did not exist.
+    //
+    // They are MUTUALLY EXCLUSIVE by construction, not by a rule enforced
+    // somewhere: both write the one pose slot, so selecting in either leaves
+    // exactly one live selection. The window clears the other combo so the
+    // screen says the same thing the model does.
+    //
+    // "None" is first and is NOT the rest pose: rest belongs to the Pose
+    // chooser, and duplicating it here would be a second control for one state.
+    mh::foundation::AssetGroup animations;
+    animations.name = "Animation";
+    animations.choices.push_back({kNoProxy, "None"});
+    animations.selected = 0;
+    for (const fs::path& p : filesWithExtension(dataDir() / "animations", ".bvh")) {
+        animations.choices.push_back({p.string(), chooserLabel(p)});
+        if (namesPose(p, currentPose)) {
+            animations.selected = static_cast<int>(animations.choices.size()) - 1;
+        }
+    }
+    groups.push_back(std::move(animations));
 
     // Eyes: the first proxy chooser. Only the two shipped eye proxies exist in
     // data/, so this is a real chooser over a small set rather than a stub.
@@ -2464,6 +2570,19 @@ int main(int argc, char** argv) {
         QStringLiteral("rest (the authored A-pose, default), tpose, or a path to a "
                        "single-frame .bvh"),
         QStringLiteral("pose"), QStringLiteral("rest"));
+    // The command line for what the Animation chooser does. `--pose` REFUSES a
+    // multi-frame file on purpose (frame 0 of a walk is a plausible wrong
+    // pose), so before this there was no way to ask for an animation by name
+    // from a script -- only `--pose <path> --pose-frame N --rig-names auto`,
+    // three flags that had to be discovered together.
+    const QCommandLineOption animationOpt(
+        QStringLiteral("animation"),
+        QStringLiteral("An animation to stand the character in, by stem or path -- what the "
+                       "Animation chooser offers, and --list-animations prints. Frame 0 "
+                       "unless --pose-frame names another, and the bone naming is resolved "
+                       "PER FILE, which a shipped walk needs to drive anything at all. "
+                       "Mutually exclusive with --pose: both fill one .bvh slot."),
+        QStringLiteral("name"));
     const QCommandLineOption poseUnitOpt(
         QStringLiteral("pose-unit"),
         QStringLiteral("A pose unit and its weight, as <unit>=<0..1>. Repeatable, and "
@@ -2770,6 +2889,7 @@ int main(int argc, char** argv) {
     parser.addOption(shadingOpt);
     parser.addOption(rigOpt);
     parser.addOption(poseOpt);
+    parser.addOption(animationOpt);
     parser.addOption(poseUnitOpt);
     parser.addOption(listAnimationsOpt);
     parser.addOption(listPosesOpt);
@@ -3420,8 +3540,13 @@ int main(int argc, char** argv) {
     if (parser.isSet(poseFrameOpt)) {
         // A frame with no file to take it from is a mistake worth naming: the
         // default pose is the authored A-pose, which has no frames at all.
-        if (!parser.isSet(poseOpt)) {
-            std::fprintf(stderr, "--pose-frame needs a --pose .bvh to take the frame from\n");
+        // ...or an --animation, which is the same slot reached by the other
+        // name. Guarding on --pose alone made `--animation walk1 --pose-frame 7`
+        // an error for no reason a user could see.
+        if (!parser.isSet(poseOpt) && !parser.isSet(animationOpt)) {
+            std::fprintf(stderr,
+                         "--pose-frame needs a --pose or --animation .bvh to take the frame "
+                         "from\n");
             return 1;
         }
         bool ok         = false;
@@ -3455,7 +3580,8 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "\n");
             return 1;
         }
-        rigNamesRef() = choice;
+        rigNamesRef()         = choice;
+        rigNamesExplicitRef() = true;
     }
 
     if (parser.isSet(symmetryOpt)) {
@@ -3487,7 +3613,40 @@ int main(int argc, char** argv) {
     // round-trips exactly. A reference-written path relative to ITS pose library
     // will not resolve here; that is a real limit, not a silent one, because
     // loadPoseRig reports what it could not open.
-    const std::string poseChoice = poseFromArgsOrDocument(parser, poseOpt, document);
+    std::string poseChoice = poseFromArgsOrDocument(parser, poseOpt, document);
+
+    // --animation fills the SAME slot as --pose, so asking for both is asking
+    // for two things at once. Refused rather than silently preferring one:
+    // which one won would be invisible in the output.
+    const bool wantsAnimation = parser.isSet(animationOpt);
+    if (wantsAnimation && parser.isSet(poseOpt)) {
+        std::fprintf(stderr,
+                     "--pose and --animation both fill the one .bvh slot; pass one of them\n");
+        return 1;
+    }
+    if (wantsAnimation) {
+        // By STEM or by path, the way --pose resolves a pose. Searched under
+        // data/animations, which is where --list-animations looks, so the two
+        // agree about what the word "walk1" means.
+        const std::string wanted    = parser.value(animationOpt).toStdString();
+        std::filesystem::path found = wanted;
+        if (!std::filesystem::is_regular_file(found)) {
+            found.clear();
+            for (const std::filesystem::path& c :
+                 filesWithExtension(dataDir() / "animations", ".bvh")) {
+                if (namesPose(c, wanted)) {
+                    found = c;
+                    break;
+                }
+            }
+        }
+        if (found.empty()) {
+            std::fprintf(stderr, "unknown --animation \"%s\"; --list-animations prints them\n",
+                         wanted.c_str());
+            return 1;
+        }
+        poseChoice = found.string();
+    }
 
     // The skin material the file names, unless the command line overrode it --
     // same precedence as the rig and the pose. The line holds a relative path
@@ -3554,7 +3713,53 @@ int main(int argc, char** argv) {
         gLookAt = at;
     }
 
-    if (!loadPoseRig(*mesh, poseChoice, rig)) return 1;
+    // What the pose slot currently holds, and whether it was filled from the
+    // Animation side. UPDATED when the window picks, because the Skeleton
+    // branch re-applies this value and would otherwise drop a chooser-picked
+    // animation back to whatever the process started with.
+    //
+    // NOT for `--save`: that is handled before the window is ever constructed
+    // and returns, so it can only ever see the startup value. An earlier
+    // version of this comment claimed otherwise. The window's own Save As goes
+    // through `documentFor`, which copies `unhandled` verbatim and writes no
+    // `pose` line at all -- so a character animated in the window and saved
+    // from the File menu still loses the animation. That is a real gap and it
+    // is NOT fixed here; it belongs with Open, which likewise never reads the
+    // document's `pose`/`skeleton` lines back into the choosers.
+    // ANIMATION-NESS IS A PROPERTY OF THE FILE, not of how it was asked for.
+    //
+    // Derived rather than taken from the flag, because three other paths arrive
+    // here without one: reloading a `.mhm` that records an animation's path,
+    // `--pose` naming a SINGLE-frame file that still lives under
+    // data/animations (dance1.bvh -- it passes the multi-frame guard and then
+    // drives 0 bones under native naming), and the Animation combo preselecting
+    // itself from `currentPose`. With the flag alone the combo read "Dance1"
+    // over a body at rest.
+    const auto livesInAnimations = [](const std::string& choice) {
+        // A PREFIX comparison, not a walk up the parents. The walk was an
+        // infinite loop: `path("/").parent_path()` is `"/"` and
+        // `has_parent_path()` stays true there, so anything outside
+        // data/animations span forever -- `--pose tpose --save` sat at 100% CPU
+        // for fourteen minutes before it was noticed as a hung process.
+        std::error_code ec;
+        const auto dir = std::filesystem::weakly_canonical(dataDir() / "animations", ec);
+        auto path      = std::filesystem::weakly_canonical(std::filesystem::path(choice), ec);
+        if (ec) return false;
+        const auto d = dir.string();
+        const auto c = path.string();
+        return c.size() > d.size() && c.compare(0, d.size(), d) == 0 && c[d.size()] == '/';
+    };
+    // Frame-0 intent only. `--pose` NEVER gets it, even when it names a file
+    // under data/animations -- that is the guard that stops frame 0 of a walk
+    // being served as though it had been asked for. A `.mhm` reload sets no
+    // --pose, so reopening a saved animation still resolves to frame 0.
+    bool poseIsAnimation =
+        wantsAnimation || (!parser.isSet(poseOpt) && livesInAnimations(poseChoice));
+    // What frame the live pose is showing, so the Skeleton branch re-applies
+    // the same one instead of snapping an animation back to frame 0.
+    std::optional<size_t> poseFrameLive = poseFrameRef();
+    // The command line's frame is consumed HERE and nowhere else.
+    if (!loadPoseRig(*mesh, poseChoice, rig, poseIsAnimation, poseFrameRef())) return 1;
 
     // Correctives, after the rig: binding needs the skeleton the drivers name
     // and the mesh the deltas index. Before any posing, because `poseInPlace`
@@ -4496,7 +4701,13 @@ int main(int argc, char** argv) {
             const std::string previous = rigNameRef();
             setRigName(id.toStdString());
             PoseRig next;
-            if (!loadPoseRig(*mesh, poseChoice, next)) {
+            // applyStack FIRST, for the reason the Pose branch below spells out:
+            // `buildScene` leaves the mesh posed, and fitting the skeleton to an
+            // already-posed mesh is the 33 cm bug from session 038. This branch
+            // never did it, and an animated body is the state you are most
+            // likely to switch rigs from.
+            human.applyStack(*mesh, targets);
+            if (!loadPoseRig(*mesh, poseChoice, next, poseIsAnimation, poseFrameLive)) {
                 setRigName(previous);
                 assets->setChoice(group, QString::fromStdString(previous));
                 return;
@@ -4557,14 +4768,21 @@ int main(int argc, char** argv) {
             rebuildInto(*shell);
             return;
         }
-        if (group != QLatin1String("Pose")) return;
+        // POSE AND ANIMATION ARE ONE SLOT, REACHED TWO WAYS.
+        //
+        // Mutual exclusion is not a rule enforced here -- it falls out of both
+        // writing the same `rig`. What this DOES do is clear the other combo,
+        // so the screen stops claiming a selection the model no longer holds.
+        // `setChoice` deliberately does not emit, so this cannot recurse.
+        const bool isAnimation = group == QLatin1String("Animation");
+        if (group != QLatin1String("Pose") && !isAnimation) return;
         // Back to the morph base FIRST. loadPoseRig fits the skeleton to
         // whatever the mesh currently holds, and the mesh is left posed after
         // every rebuild -- so switching pose to pose was conjugating into the
         // previous pose's rest frame. Measured error: 33 cm maximum.
         human.applyStack(*mesh, targets);
         PoseRig next;
-        if (!loadPoseRig(*mesh, id.toStdString(), next)) {
+        if (!loadPoseRig(*mesh, id.toStdString(), next, isAnimation)) {
             // applyStack has already reset the mesh to its morph base, so
             // returning here would leave the viewport showing the old pose over
             // an unposed mesh -- three surfaces disagreeing. Rebuild with the
@@ -4576,7 +4794,21 @@ int main(int argc, char** argv) {
             rebuildInto(*shell);
             return;
         }
-        rig = std::move(next);
+        rig             = std::move(next);
+        poseChoice      = id.toStdString();
+        poseIsAnimation = isAnimation;
+        // The window has no frame control, so a chooser pick shows frame 0 of
+        // an animation and nothing of a pose. Clearing this is what stops a
+        // command-line --pose-frame following the user around the session.
+        poseFrameLive = std::nullopt;
+        // The other chooser is NOT cleared here. It used to be, with
+        // `setChoice`, and that is what made undo wrong: `setChoice` blocks
+        // signals and never touches `currentChoice`, so the undo stack recorded
+        // only the picked group's before-value and knew nothing about the combo
+        // that had just been emptied underneath it. Undo then reversed half the
+        // edit. Clearing is now one of TWO commands pushed as a single macro by
+        // the `chosen` handler, so both groups' bookkeeping moves together and
+        // both come back on undo.
         // A pose arriving or leaving is what enables the toolbar's Pose toggle.
         // Its STATE is deliberately not touched: someone who switched posing
         // off and then picks a different pose expects it to stay off.
@@ -4798,19 +5030,55 @@ int main(int argc, char** argv) {
             // A pose that will not load must not become an undo
             // entry that does nothing. Try it first; on failure put
             // the picker back and record nothing.
-            if (group == QLatin1String("Pose") && id != QLatin1String("rest")) {
+            // ...and the same for ANIMATION, which fills the same slot and can
+            // fail the same way. Guarding only "Pose" left the new chooser with
+            // exactly the defect this guard exists to prevent: a failed load
+            // leaving a combo that names a file the character is not in, plus
+            // an undo entry that reverses nothing.
+            const bool poseLike =
+                group == QLatin1String("Pose") || group == QLatin1String("Animation");
+            const bool empty = id == QLatin1String("rest") || id == QString::fromLatin1(kNoProxy);
+            if (poseLike && !empty) {
                 PoseRig probe;
-                if (!loadPoseRig(*mesh, id.toStdString(), probe)) {
+                if (!loadPoseRig(*mesh, id.toStdString(), probe,
+                                 group == QLatin1String("Animation"))) {
                     assets->setChoice(group, before);
                     return;
                 }
             }
 
-            window.undoStack()->push(new mh::ui::ChoiceChangeCommand(
-                group, before, id, mergeGroup, [&](const QString& g, const QString& value) {
-                    currentChoice.insert(g, value);
-                    applyChoice(g, value);
-                }));
+            const auto applyOne = [&](const QString& g, const QString& value) {
+                currentChoice.insert(g, value);
+                applyChoice(g, value);
+            };
+
+            // Pose and Animation fill ONE slot, so picking in either has to
+            // empty the other -- and that emptying must be part of the same
+            // undo entry, or undo reverses half the edit. Two commands inside a
+            // macro rather than a new command class: QUndoStack already groups,
+            // and each half stays a plain ChoiceChangeCommand that knows its own
+            // before and after.
+            //
+            // Order matters. Redo runs them as pushed -- empty the other, then
+            // set this one -- and undo runs them backwards, so the other
+            // chooser's previous selection comes back AFTER this one is
+            // reverted. Doing it the other way round left the pose slot holding
+            // whichever command happened to run last.
+            const QString other      = group == QLatin1String("Pose") ? QStringLiteral("Animation")
+                                                                      : QStringLiteral("Pose");
+            const QString otherEmpty = other == QLatin1String("Pose")
+                                           ? QStringLiteral("rest")
+                                           : QString::fromLatin1(kNoProxy);
+            const bool clearsOther   = poseLike && currentChoice.value(other) != otherEmpty;
+
+            if (clearsOther) window.undoStack()->beginMacro(QStringLiteral("choice"));
+            if (clearsOther) {
+                window.undoStack()->push(new mh::ui::ChoiceChangeCommand(
+                    other, currentChoice.value(other), otherEmpty, mergeGroup, applyOne));
+            }
+            window.undoStack()->push(
+                new mh::ui::ChoiceChangeCommand(group, before, id, mergeGroup, applyOne));
+            if (clearsOther) window.undoStack()->endMacro();
         });
 
     window.setDocumentPath(documentPath);

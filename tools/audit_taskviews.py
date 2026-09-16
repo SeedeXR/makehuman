@@ -96,12 +96,12 @@ BUCKETS = {
     "EyebrowsTaskView": "blocked", "ProxyTaskView": "blocked",
     "SceneLibraryTaskView": "blocked",
 
-    # AnimationLibrary is no longer blocked on CONTENT -- --rig-names auto and
-    # --list-animations reach every shipped file (2026-09-14). See ABSENT below
-    # for why the chooser itself is still unbuilt.
+    # AnimationLibrary SHIPPED 2026-09-16: an Animation combo beside Pose, the
+    # two clearing each other because they fill one .bvh slot, plus
+    # `--animation` for the command line. Its EVIDENCE literal is below.
     # ExpressionTaskView chooses .mhpose files and this port ships NONE
     # (measured: zero under data/), so its expressions arrive as --facs units.
-    "AnimationLibrary": "todo", "ExpressionTaskView": "todo",
+    "AnimationLibrary": "covered", "ExpressionTaskView": "todo",
     "BackgroundChooser": "todo", "MaterialEditorTaskView": "todo",
     "HelpTaskView": "todo",
 
@@ -286,6 +286,13 @@ EVIDENCE = {
     "SettingsTaskView": '"settings.units"',
     "MaterialTaskView": '"Skin material"',
     "PoseLibraryTaskView": '"Pose"',
+    # SHIPPED 2026-09-16. Kept from the old ABSENT rationale because it is the
+    # reason the chooser took two attempts: the first produced four state bugs
+    # -- a frame index leaking into later pose loads, the two combos
+    # contradicting each other, a Skeleton change dropping the animation, and a
+    # failed load leaving a lying combo plus a no-op undo entry. All four were
+    # live again in the second attempt until they were looked for by name.
+    "AnimationLibrary": '"Animation"',
     "SkeletonLibrary": '"Skeleton"',
     # NO BRACES on the five helper-cage slots. These match a `kProxySlots`
     # row, and the row GREW a third field when teeth became default-on --
@@ -331,22 +338,6 @@ def shipped(literal) -> bool:
 # So an entry here asserts the same kind of fact an EVIDENCE entry does, in the
 # opposite direction, and the moment the view ships the gate says so.
 ABSENT = {
-    # No longer blocked on content: `--rig-names auto` reads any shipped
-    # animation through the naming that drives the most bones (MEASURED: 59 of
-    # 179 via the MakeHuman 1.x table, against 0 under this rig's own names),
-    # and `--list-animations` reports every file with its frame count. What is
-    # missing is the CHOOSER, and it is missing deliberately: Pose and Animation
-    # would be two combos over one rig, and a first attempt produced four
-    # state bugs -- a frame index leaking into later pose loads past
-    # `loadBodyPose`'s multi-frame guard, the two combos contradicting each
-    # other, a Skeleton change silently dropping the animation, and a failed
-    # load leaving a lying combo plus a no-op undo entry. That interaction needs
-    # designing, not patching.
-    "AnimationLibrary": ('"Animation"',
-                         "the chooser is deliberately unbuilt: Pose and Animation "
-                         "are two controls over one rig and the interaction is "
-                         "undesigned. --rig-names auto and --list-animations "
-                         "reach the files from the command line"),
     "ExpressionTaskView": ('"Expression"',
                            "a chooser needs files to choose; still 0 .mhpose "
                            "under data/, though --save-expression can now "

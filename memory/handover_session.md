@@ -4,6 +4,87 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-16 (hundred-and-second) — Session · **The Animation chooser, and a note I read too late**
+
+*2026-09-16 — the owner said "2 and add cli"; three of the things the plan said
+about this were false.*
+
+### What shipped
+An **Animation** chooser beside Pose (asset groups 12 → 13, it sits directly
+after Pose), mutually exclusive with it — both write the one `rig`, and picking
+in either clears the other combo via `setChoice`, which deliberately does not
+emit. Plus **`--animation <stem|path>`**, refused alongside `--pose` because
+they fill one slot and which won would be invisible.
+
+### THREE STALE CLAIMS, all corrected by measuring
+`memory/todo.md` said the animations were blocked on content. Every part of
+that was out of date:
+1. It said a `makehuman1` naming table "has to be" written. It EXISTS, along
+   with `rankNamings`, `autoNamingFor` and `retargetJoints`.
+2. It said `--pose` "already accepts either kind of file". It REFUSES an
+   animation: *"a body pose must hold exactly one frame; this file has 14"*.
+3. It said the shipped walks drive nothing. **They work.** Measured: under
+   `makehuman1` naming, frames 0 and 7 of `walk1.bvh` differ in **14,780 of
+   14,780** vertices; under the default `native` naming they differ in **0**,
+   which is what read as dead content.
+
+The cause is that `--rig-names` defaults to `native` and a BVH drives a bone
+only when it holds a joint of identically that name. The CLI says so —
+*"drives 0 of 179 bones … try --rig-names makehuman1"* — but **a combo box has
+no flag to offer**, so the chooser resolves naming PER FILE via `autoNamingFor`
+and defaults to frame 0. `--pose` stays strict, and a test pins that.
+
+### THE NOTE I READ TOO LATE
+`tools/audit_taskviews.py` recorded that a FIRST attempt at this chooser
+produced four state bugs, and concluded *"that interaction needs designing, not
+patching"*. **I built it before reading that.** Checked afterwards:
+- **combos contradicting** — handled.
+- **failed load leaving a lying combo + no-op undo** — the existing probe guard
+  covered `"Pose"` ONLY, so the new chooser shipped with exactly the defect
+  that guard exists to prevent. Extended to both.
+- **Skeleton change dropping the animation** — real, and WORSE than recorded:
+  `poseChoice` was never updated after startup, so the Skeleton branch
+  re-applied the STARTUP pose and `--save` recorded the STARTUP pose. A
+  pre-existing bug this chunk would have inherited. Fixed at the root:
+  `poseChoice`/`poseIsAnimation` now track what the window picked.
+- **frame index leaking** — believed unreachable from the window (nothing in
+  the UI writes `poseFrameRef()`), and handed to /code-review to attack rather
+  than asserted.
+
+**Read the audit tool's own prose before building the thing it describes.** It
+is not just a counter; it carries the reasons.
+
+### A bug I wrote and caught
+The Animation chooser's empty entry is spelled `none`, like every other
+chooser. `loadPoseRig` recognised only `rest`/`apose`/`a-pose`, so picking None
+went looking for a FILE called "none". Fixed at the shared choke point, which
+meant moving `kNoProxy` above `loadPoseRig` rather than writing a second
+literal.
+
+### Ponytail
+`chooserLabel()` extracted: the rule "a `.meta` name wins over the prettified
+stem" had been written out three times (I added the third). The occurrence at
+`main.cpp:3164` is left alone — different scope, pre-existing, and converting
+it would be scope creep beyond this diff.
+
+### Also
+`AnimationLibrary` moved from ABSENT/todo to EVIDENCE/covered in
+`audit_taskviews.py`, with `memory/taskviews.md`'s bucket table and section
+headings updated (covered 20 → 21, todo 5 → 4). The auditor caught this itself:
+the view was claimed absent "deliberately unbuilt" and `"Animation"` was
+suddenly in `src/`.
+
+**Looked at, not assumed:** rendered `--animation walk1 --pose-frame 7` and the
+character stands mid-stride, arms down and forward. The shoulders pinch
+visibly, because only **59 of 179** bones are driven — the retarget table does
+not cover the clavicle chain. Pre-existing coverage, not introduced here, but
+that is what "59 of 179" looks like on a body.
+
+Suite 1320 → 1331.
+
+---
+
+
 ## 2026-09-16 (hundred-and-first) — Session · **Genitals, and a claim I had to withdraw**
 
 *2026-09-16 — the owner said "ship it, visible by default"; the geometry was
