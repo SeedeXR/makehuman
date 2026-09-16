@@ -239,11 +239,13 @@ if(MH_HAVE_RENDER)
         FIXTURES_SETUP app_smoke_obj)
     # ...and then read the file, because "the app said 13378" and "the file
     # holds 13378" are different claims, and it was the second one that was
-    # false. 14,398 = 13,378 body + 1,020 eyes, and 13,378 is exactly what the
-    # GLB of the same character writes -- the two exports agreeing is the
-    # property under test.
+    # false. 14,676 = 13,378 body + 1,020 eyes + 96 teeth + 182 genitals, and
+    # 13,378 is exactly what the GLB of the same character writes -- the two
+    # exports agreeing is the property under test. The teeth and genitals terms
+    # are the two anatomy slots that are worn by default; neither is decimated
+    # or subdivided, so they are a constant in all three of these counts.
     add_test(NAME app_smoke_obj_faces COMMAND ${CMAKE_COMMAND}
-             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/app_smoke.obj -DEXPECT=14494
+             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/app_smoke.obj -DEXPECT=14676
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_body_faces.cmake)
     set_tests_properties(app_smoke_obj_faces PROPERTIES FIXTURES_REQUIRED app_smoke_obj)
     # The window path. app_smoke now also exercises the proxy wiring through
@@ -330,7 +332,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 11 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 12 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # The rig had no picker either: two ship, --rig has always chosen between
@@ -1019,10 +1021,165 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_teeth_valid_does_not_warn PROPERTIES
         PASS_REGULAR_EXPRESSION "wearing Teeth"
         FAIL_REGULAR_EXPRESSION "unknown --teeth")
-    add_test(NAME app_proxy_defaults_are_teeth_only COMMAND makehuman
+
+    # THE GENITALS SLOT. Anatomy, not a garment, so it is worn by default for
+    # the same reason teeth are -- and it is the FIRST proxy to carry
+    # `autoBlendSkin true`, because it is the first one made of skin.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/genitals)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/genitals/dflt)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/genitals/off)
+    add_test(NAME app_genitals_group COMMAND makehuman
+             --save ${CMAKE_CURRENT_BINARY_DIR}/genitals/g.mhm)
+    set_tests_properties(app_genitals_group PROPERTIES
+        PASS_REGULAR_EXPRESSION "asset groups: .*Genitals")
+    add_test(NAME app_genitals_worn COMMAND makehuman
+             --genitals genitals --export ${CMAKE_CURRENT_BINARY_DIR}/genitals/worn.obj)
+    set_tests_properties(app_genitals_worn PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Genitals \\(.*\\) lit by"
+        FAIL_REGULAR_EXPRESSION "export failed;cannot")
+    # Worn by DEFAULT, and the opt-out still works.
+    add_test(NAME app_genitals_default_wears_them COMMAND makehuman
+             --export ${CMAKE_CURRENT_BINARY_DIR}/genitals/dflt/c.obj)
+    set_tests_properties(app_genitals_default_wears_them PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Genitals"
+        FIXTURES_SETUP app_genitals_default)
+    add_test(NAME app_genitals_none COMMAND makehuman
+             --genitals none --export ${CMAKE_CURRENT_BINARY_DIR}/genitals/off/c.obj)
+    set_tests_properties(app_genitals_none PROPERTIES
+        FAIL_REGULAR_EXPRESSION "wearing Genitals"
+        FIXTURES_SETUP app_genitals_none)
+    # Same basename in different directories -- an OBJ's `mtllib` line is
+    # derived from the output FILENAME, so comparing `dflt.obj` with `off.obj`
+    # would differ on that line whatever the geometry did.
+    add_test(NAME app_genitals_optout_drops_geometry COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/genitals/dflt/c.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/genitals/off/c.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_genitals_optout_drops_geometry PROPERTIES
+        FIXTURES_REQUIRED "app_genitals_default;app_genitals_none")
+    # WHAT DRIVES THE CAGE, measured rather than assumed -- and the first
+    # version of this comment was WRONG.
+    #
+    # All 200 vertices take their LARGEST weight from `spine05`, which is true
+    # and which I first read as "rigid, rides the pelvis whole". It is not the
+    # same claim. Measured in default_weights.mhw, **97 of the 200 carry a
+    # SECOND bone**: `pelvis.L`/`pelvis.R` on 42 each and
+    # `upperleg01.L`/`upperleg01.R` on 59 each. The cage deforms with the hips.
+    #
+    # The error surfaced because `app_body_pose_unit_moves_the_leg` moved 59
+    # more vertices than before and 59 is not 200 -- a number that did not fit
+    # the story. Three poses pin the real behaviour:
+    #   T-pose            -> all 200 move (the whole pelvis goes with the body)
+    #   torso bend        -> 0 move (the torso bends ABOVE the pelvis)
+    #   one leg forward   -> exactly 59 move, the count weighted to upperleg01.L
+    # The last is the discriminating one: a cage genuinely rigid on one bone
+    # would move 0 there, and the earlier two tests would not have noticed.
+    #
+    # RISE_TOLERANCE=ANY because this is not a jaw drop: the helper defaults to
+    # requiring downward motion and the pelvis does not go down in a T-pose.
+    # No separate "rest" export: `app_genitals_default_wears_them` above already
+    # runs the identical command (no flags) and its output is the rest pose.
+    add_test(NAME app_genitals_tposed COMMAND makehuman
+             --pose tpose --export ${CMAKE_CURRENT_BINARY_DIR}/genitals/tpose.obj)
+    set_tests_properties(app_genitals_tposed PROPERTIES FIXTURES_SETUP app_genitals_tposed)
+    add_test(NAME app_genitals_bent COMMAND makehuman
+             --pose-unit TorsoLeft=1.0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/genitals/bend.obj)
+    set_tests_properties(app_genitals_bent PROPERTIES FIXTURES_SETUP app_genitals_bent)
+    add_test(NAME app_genitals_ride_the_pelvis COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/genitals/dflt/c.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/genitals/tpose.obj
+             -DGROUP=genitals -DEXPECT_MOVED=200 -DEXPECT_STILL=0 -DRISE_TOLERANCE=ANY
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
+    set_tests_properties(app_genitals_ride_the_pelvis PROPERTIES
+        FIXTURES_REQUIRED "app_genitals_default;app_genitals_tposed")
+    add_test(NAME app_genitals_ignore_a_torso_bend COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/genitals/dflt/c.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/genitals/bend.obj
+             -DGROUP=genitals -DEXPECT_MOVED=0 -DEXPECT_STILL=200 -DRISE_TOLERANCE=ANY
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
+    set_tests_properties(app_genitals_ignore_a_torso_bend PROPERTIES
+        FIXTURES_REQUIRED "app_genitals_default;app_genitals_bent")
+    add_test(NAME app_genitals_leg_carries_59 COMMAND makehuman
+             --pose-unit UpperLegForwardLeft=1.0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/genitals/leg.obj)
+    set_tests_properties(app_genitals_leg_carries_59 PROPERTIES
+        FIXTURES_SETUP app_genitals_leg)
+    add_test(NAME app_genitals_hip_deforms_the_cage COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/genitals/dflt/c.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/genitals/leg.obj
+             -DGROUP=genitals -DEXPECT_MOVED=59 -DEXPECT_STILL=141 -DRISE_TOLERANCE=ANY
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
+    set_tests_properties(app_genitals_hip_deforms_the_cage PROPERTIES
+        FIXTURES_REQUIRED "app_genitals_default;app_genitals_leg")
+    # THE SKIN TONE FOLLOWS THE BODY, and this is the first proxy for which that
+    # is true. `autoBlendSkin` parsed and exported for the whole project's life
+    # and was applied ONLY to the body, so a genital proxy would have kept a
+    # fixed caucasian-derived matcap while the body darkened -- RENDERED at
+    # African=1.0 it was a pale patch at the crotch. The printed line is the one
+    # place the app's own choice is observable, and teeth must NOT claim it.
+    add_test(NAME app_genitals_blend_to_skin_tone COMMAND makehuman
+             --export ${CMAKE_CURRENT_BINARY_DIR}/genitals/blend.obj)
+    set_tests_properties(app_genitals_blend_to_skin_tone PROPERTIES
+        # Both patterns are anchored to the MATCAP STEM, which is unique per
+        # slot and on the same line. `wearing Teeth .* blended` looked right
+        # and matched ACROSS THE NEWLINE onto the genitals line, failing on
+        # correct output -- ctest's `.` spans lines here.
+        PASS_REGULAR_EXPRESSION "skinmat_genitals blended to the skin tone"
+        FAIL_REGULAR_EXPRESSION "skinmat_teeth blended to the skin tone")
+    # ...and the PIXELS follow, which the printed line above cannot show.
+    #
+    # The same character at two ethnicities, so the sampled box has the SAME
+    # surface normals in both -- a matcap shades by normal, so comparing two
+    # different body parts would measure the normals instead of the tone.
+    # MEASURED at (512,508) r6, the crotch: response 54.2 with the blend
+    # reaching worn proxies and 28.1 without it (the residue is body pixels
+    # inside the box and the lighting, not the proxy following). The threshold
+    # sits between them.
+    add_test(NAME app_genitals_render_caucasian COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/genitals/cauc.png)
+    set_tests_properties(app_genitals_render_caucasian PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_SETUP app_genitals_render_cauc)
+    add_test(NAME app_genitals_render_african COMMAND makehuman
+             --set macrodetails/African=1.0
+             --render ${CMAKE_CURRENT_BINARY_DIR}/genitals/afr.png)
+    set_tests_properties(app_genitals_render_african PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_SETUP app_genitals_render_afr)
+    # `.venv-mh` when it exists, because the wheels this needs live there and
+    # NOT in the system interpreter -- pointing at `python3` made the check
+    # skip on the developer machine too, which is the one place it can run.
+    set(MH_PIL_PYTHON python3)
+    if(EXISTS ${CMAKE_SOURCE_DIR}/.venv-mh/bin/python)
+        set(MH_PIL_PYTHON ${CMAKE_SOURCE_DIR}/.venv-mh/bin/python)
+    endif()
+    add_test(NAME app_genitals_tone_follows_ethnicity COMMAND ${MH_PIL_PYTHON}
+             ${CMAKE_SOURCE_DIR}/tools/png_region_response.py
+             --a ${CMAKE_CURRENT_BINARY_DIR}/genitals/cauc.png
+             --b ${CMAKE_CURRENT_BINARY_DIR}/genitals/afr.png
+             --cx 512 --cy 508 --radius 6 --min-response 40)
+    set_tests_properties(app_genitals_tone_follows_ethnicity PROPERTIES
+        # 77 = Pillow/NumPy absent, or the render was skipped. Those wheels are
+        # installed for the `inventories` CI job, not for the macOS build+test
+        # jobs that run ctest, so this SKIPS in CI and runs locally. Said out
+        # loud rather than left to look green everywhere.
+        SKIP_RETURN_CODE 77
+        FIXTURES_REQUIRED "app_genitals_render_cauc;app_genitals_render_afr")
+    # Named `..._are_teeth_only` until genitals shipped, at which point the NAME
+    # was false while the test still passed -- it never asserted anything about
+    # genitals either way. Renamed and widened rather than left reading as a
+    # claim it was not making. PASS_REGULAR_EXPRESSION takes ONE pattern, so the
+    # second anatomy slot needs its own entry.
+    add_test(NAME app_proxy_defaults_are_anatomy_only COMMAND makehuman
              --export ${CMAKE_CURRENT_BINARY_DIR}/teeth/only/c.obj)
-    set_tests_properties(app_proxy_defaults_are_teeth_only PROPERTIES
+    set_tests_properties(app_proxy_defaults_are_anatomy_only PROPERTIES
         PASS_REGULAR_EXPRESSION "wearing Teeth"
+        FAIL_REGULAR_EXPRESSION "wearing Tongue;wearing Hair;wearing Clothes;wearing Eyelashes")
+    add_test(NAME app_proxy_defaults_include_genitals COMMAND makehuman
+             --export ${CMAKE_CURRENT_BINARY_DIR}/teeth/only/c2.obj)
+    set_tests_properties(app_proxy_defaults_include_genitals PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Genitals"
         FAIL_REGULAR_EXPRESSION "wearing Tongue;wearing Hair;wearing Clothes;wearing Eyelashes")
     # The reason this slot is worth filling from the helper cage rather than
     # from invented shape: the base mesh already weights `helper-upper-teeth`
@@ -2114,7 +2271,7 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_rig_names_auto_actually_animates COMMAND ${CMAKE_COMMAND}
              -DA=${CMAKE_CURRENT_BINARY_DIR}/autoname/a0.obj
              -DB=${CMAKE_CURRENT_BINARY_DIR}/autoname/a7.obj
-             -DEXPECT_DIFFERENT=14580
+             -DEXPECT_DIFFERENT=14780
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
     set_tests_properties(app_rig_names_auto_actually_animates PROPERTIES
         FIXTURES_REQUIRED "app_auto0;app_auto7")
@@ -2335,7 +2492,7 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_body_pose_unit_moves_the_leg COMMAND ${CMAKE_COMMAND}
              -DA=${CMAKE_CURRENT_BINARY_DIR}/bodyunits/rest.obj
              -DB=${CMAKE_CURRENT_BINARY_DIR}/bodyunits/revived.obj
-             -DEXPECT_DIFFERENT=1858
+             -DEXPECT_DIFFERENT=1917
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
     set_tests_properties(app_body_pose_unit_moves_the_leg PROPERTIES
         FIXTURES_REQUIRED "app_bpu_rest;app_bpu_revived")
@@ -2520,7 +2677,7 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_rig_names_mh1_frames_differ COMMAND ${CMAKE_COMMAND}
              -DA=${CMAKE_CURRENT_BINARY_DIR}/rignames/mh0.obj
              -DB=${CMAKE_CURRENT_BINARY_DIR}/rignames/mh7.obj
-             -DEXPECT_DIFFERENT=14580
+             -DEXPECT_DIFFERENT=14780
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
     set_tests_properties(app_rig_names_mh1_frames_differ PROPERTIES
         FIXTURES_REQUIRED "app_rn_mh0;app_rn_mh7")
@@ -2529,7 +2686,7 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_rig_names_changes_the_pose COMMAND ${CMAKE_COMMAND}
              -DA=${CMAKE_CURRENT_BINARY_DIR}/rignames/nat7.obj
              -DB=${CMAKE_CURRENT_BINARY_DIR}/rignames/mh7.obj
-             -DEXPECT_DIFFERENT=14580
+             -DEXPECT_DIFFERENT=14780
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
     set_tests_properties(app_rig_names_changes_the_pose PROPERTIES
         FIXTURES_REQUIRED "app_rn_nat7;app_rn_mh7")
@@ -2942,14 +3099,16 @@ if(MH_HAVE_RENDER)
     #
     # **7,708 and not 6,688**, because this helper counts every `f` line and the
     # scene has two objects: the body at 6,688 and the EYE PROXY at 1,020,
-    # undecimated. Measured per group: full = body 13,378 + eyes 1,020 = 14,398,
-    # quarter = body 6,688 + eyes 1,020 = 7,708. A worn proxy is a separate mesh
+    # undecimated. Measured per group, plus the 96 teeth and 182 genitals that
+    # are worn by default and decimated by neither: full = body 13,378 + eyes
+    # 1,020 + 278 = 14,676, quarter = body 6,688 + eyes 1,020 + 278 = 7,986.
+    # A worn proxy is a separate mesh
     # with its own fit and its own mask, and eyes are the last geometry anyone
     # wants to simplify, so `--decimate` reduces the BODY. The total is the
     # better gate for it either way: it moves if the body is wrong AND if the
     # eyes are ever decimated by accident.
     add_test(NAME app_decimate_obj_faces COMMAND ${CMAKE_COMMAND}
-             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/lod_quarter/body.obj -DEXPECT=7804
+             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/lod_quarter/body.obj -DEXPECT=7986
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_body_faces.cmake)
     set_tests_properties(app_decimate_obj_faces PROPERTIES
         FIXTURES_REQUIRED app_lod_quarter_obj)
@@ -2957,7 +3116,7 @@ if(MH_HAVE_RENDER)
     # The undecimated total, from the same helper, so the pair is a comparison
     # rather than one number in isolation.
     add_test(NAME app_decimate_full_obj_faces COMMAND ${CMAKE_COMMAND}
-             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/lod_full/body.obj -DEXPECT=14494
+             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/lod_full/body.obj -DEXPECT=14676
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_body_faces.cmake)
     set_tests_properties(app_decimate_full_obj_faces PROPERTIES
         FIXTURES_REQUIRED app_lod_full_obj)
@@ -3320,10 +3479,11 @@ if(MH_HAVE_RENDER)
         FIXTURES_SETUP app_subdivide_obj)
     # ...and then read the file, for the reason app_smoke_obj_faces gives: "the
     # app said 53512" and "the file holds 53512" are different claims, and it
-    # was the second one that was false last time. 54,532 = 53,512 subdivided
-    # body + 1,020 eyes, which are a separate proxy mesh and are NOT subdivided.
+    # was the second one that was false last time. 54,810 = 53,512 subdivided
+    # body + 1,020 eyes + 96 teeth + 182 genitals -- all three are separate
+    # proxy meshes and NONE of them is subdivided.
     add_test(NAME app_subdivide_obj_faces COMMAND ${CMAKE_COMMAND}
-             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/app_subdivide.obj -DEXPECT=54628
+             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/app_subdivide.obj -DEXPECT=54810
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_body_faces.cmake)
     set_tests_properties(app_subdivide_obj_faces PROPERTIES
         FIXTURES_REQUIRED app_subdivide_obj)
@@ -3668,9 +3828,9 @@ if(MH_HAVE_RENDER)
              ${CMAKE_SOURCE_DIR}/tools/count_in_file.py
              --file ${CMAKE_CURRENT_BINARY_DIR}/app_worn.usda
              "--needle=rel skel:skeleton = </"
-             # 3, not 2: body + worn proxy + the default teeth. One binding per
-             # SKINNED mesh, and teeth became default-on.
-             --count 3)
+             # 4: body + worn proxy + the default teeth + the default
+             # genitals. One binding per SKINNED mesh.
+             --count 4)
     set_tests_properties(app_worn_skin_usda_bound PROPERTIES
         FIXTURES_REQUIRED app_worn_usda_file)
     # ONE skeleton, shared. Two prims would be two rigs.
@@ -3968,7 +4128,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 11 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 12 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # Refused rather than silently defaulted to brown, which would make a typo
@@ -4001,10 +4161,11 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_eye_is_blended COMMAND makehuman
              --render ${CMAKE_CURRENT_BINARY_DIR}/app_blend.png)
     set_tests_properties(app_eye_is_blended PROPERTIES
-        # 3 meshes now -- body, eyes, teeth -- but still ONE blended. That is
-        # the assertion that matters: teeth are opaque, so a change that
-        # started blending them would push this to 2 and fail here.
-        PASS_REGULAR_EXPRESSION "scene: 3 meshes \\(1 blended\\)"
+        # 4 meshes now -- body, eyes, teeth, genitals -- but still ONE
+        # blended. That is the assertion that matters: the anatomy slots are
+        # opaque, so a change that started blending one would push this to 2
+        # and fail here.
+        PASS_REGULAR_EXPRESSION "scene: 4 meshes \\(1 blended\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     add_test(NAME app_render_pbr COMMAND makehuman

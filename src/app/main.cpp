@@ -1165,7 +1165,8 @@ struct ProxySlot {
     const char* defaultChoice;
 };
 
-constexpr std::array<ProxySlot, 5> kProxySlots{{{"teeth", "Teeth", "teeth"},
+constexpr std::array<ProxySlot, 6> kProxySlots{{{"teeth", "Teeth", "teeth"},
+                                                {"genitals", "Genitals", "genitals"},
                                                 {"tongue", "Tongue", "none"},
                                                 {"hair", "Hair", "none"},
                                                 {"clothes", "Clothes", "none"},
@@ -1200,6 +1201,14 @@ struct WornProxy {
 /// Defined below with the other material helpers; needed here so a worn eye can
 /// pick up the chosen colour.
 std::filesystem::path eyeMaterialPath();
+
+/// Whether @p mhmat asks for its tone to follow the ethnic sliders.
+///
+/// Defined below with the other material helpers, for the same reason as
+/// `eyeMaterialPath`. It returns a bool rather than the whole `ViewportMaps` so
+/// that struct does not have to move above the proxy code to be forward
+/// declarable.
+bool materialBlendsSkin(const std::filesystem::path& mhmat);
 
 /// Loads @p path and fits it to @p body once, so the caller gets something
 /// renderable or nothing.
@@ -1255,8 +1264,14 @@ std::optional<WornProxy> wearProxy(const std::filesystem::path& path, const mh::
     // the app reaches for it. This line is the only place the app's own choice
     // is observable from outside, so the per-slot tests assert on it. Appended
     // AFTER the "(N verts)" the older tests match, so they still do.
-    std::fprintf(stderr, "wearing %s (%zu verts) lit by %s\n", worn.proxy.name.c_str(),
-                 worn.proxy.vertexCount(), litsphereStem.c_str());
+    //
+    // A slot whose material sets `autoBlendSkin` says so, because for it the
+    // matcap named here is only the FALLBACK -- the renderer replaces it with
+    // the ethnic blend. Printing the stem alone would have been true of the
+    // file and false of the pixels.
+    std::fprintf(stderr, "wearing %s (%zu verts) lit by %s%s\n", worn.proxy.name.c_str(),
+                 worn.proxy.vertexCount(), litsphereStem.c_str(),
+                 materialBlendsSkin(worn.proxy.materialFile) ? " blended to the skin tone" : "");
     return worn;
 }
 
@@ -1708,6 +1723,12 @@ struct ViewportMaps {
     float opacity{1.0F};
 };
 
+ViewportMaps viewportMapsOf(const std::filesystem::path& mhmat);
+
+bool materialBlendsSkin(const std::filesystem::path& mhmat) {
+    return viewportMapsOf(mhmat).autoBlendSkin;
+}
+
 ViewportMaps viewportMapsOf(const std::filesystem::path& mhmat) {
     ViewportMaps maps;
     const auto mat = mh::core::loadMaterial(mhmat);
@@ -1814,7 +1835,19 @@ std::optional<std::pair<int, int>> blendedSkinTone(const mh::core::Human& human,
     const std::array<std::span<const uint8_t>, 3> images{e.caucasian, e.african, e.asian};
     auto blended = mh::core::blendEthnicLitsphere(images, w);
     if (!blended) return std::nullopt;
-    out = std::move(*blended);
+    // COPY into @p out rather than move-assigning it. A move REPLACES the
+    // allocation, so `out.data()` changes -- and every `MeshInstance` handed a
+    // span into the previous buffer is left pointing at freed memory. The
+    // viewport keeps those instances between rebuilds and only reads the bytes
+    // later, when an RHI re-creation sets `needsUpload` and memcpy's from them,
+    // so the read can come arbitrarily long after the free.
+    //
+    // The size is a constant 256*256*4 after the first call, so `resize` is a
+    // no-op from then on and `data()` never moves. This was survivable while
+    // only the body blended; a slot that blends makes N instances alias the
+    // one buffer.
+    out.resize(blended->size());
+    std::copy(blended->begin(), blended->end(), out.begin());
     return std::pair{e.width, e.height};
 }
 
@@ -4251,8 +4284,22 @@ int main(int argc, char** argv) {
         // of the three ethnic litspheres and has no file behind it. `toneBuf`
         // owns the bytes because MeshInstance's span does not, and the render
         // outlives this scope.
+        //
+        // Computed at most ONCE and shared: the blend depends only on the
+        // character's ethnic sliders, so the body and every worn proxy that
+        // asks for it want the identical bytes. `toneBuf` outlives the render
+        // because MeshInstance holds a non-owning span into it.
+        std::optional<std::pair<int, int>> toneSize;
+        bool toneTried        = false;
+        const auto ensureTone = [&]() -> const std::optional<std::pair<int, int>>& {
+            if (!toneTried) {
+                toneTried = true;
+                toneSize  = blendedSkinTone(human, toneBuf);
+            }
+            return toneSize;
+        };
         if (bodyMaps.autoBlendSkin) {
-            if (const auto size = blendedSkinTone(human, toneBuf)) {
+            if (const auto& size = ensureTone()) {
                 body.litsphereRgba   = toneBuf;
                 body.litsphereWidth  = size->first;
                 body.litsphereHeight = size->second;
@@ -4276,6 +4323,22 @@ int main(int argc, char** argv) {
             inst.baseColour         = wornMaps.baseColour;
             inst.opacity            = wornMaps.opacity;
             inst.roughness          = wornMaps.roughness;
+            // A worn proxy made of SKIN follows the ethnic sliders, exactly as
+            // the body does. Until this existed the flag parsed, exported, and
+            // did nothing here: the genitals kept a fixed caucasian-derived
+            // matcap while the body darkened around them, which RENDERED as a
+            // pale patch at the crotch -- looked at, not reasoned about.
+            //
+            // Only anatomy should ask for this. A garment carrying
+            // `autoBlendSkin true` would be taking the body's tone, which is
+            // why the flag lives in the material rather than in this loop.
+            if (wornMaps.autoBlendSkin) {
+                if (const auto& size = ensureTone()) {
+                    inst.litsphereRgba   = toneBuf;
+                    inst.litsphereWidth  = size->first;
+                    inst.litsphereHeight = size->second;
+                }
+            }
             scene.push_back(std::move(inst));
         }
         // Reported from the INSTANCES, not from the materials they came from.

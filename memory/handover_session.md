@@ -4,6 +4,89 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-16 (hundred-and-first) — Session · **Genitals, and a claim I had to withdraw**
+
+*2026-09-16 — the owner said "ship it, visible by default"; the geometry was
+the easy half.*
+
+### What shipped
+A **Genitals** slot, worn by default, cut from the base mesh's own
+`helper-genital` cage: 182 faces over 200 vertices, `z_depth 20` (the lowest of
+any wearable — clothing must win the depth fight over anatomy). `kProxySlots`
+5 → 6.
+
+The matcap tint `(0.948, 0.602, 0.482)` is **derived, not chosen**: it is the
+value that reproduces `skinmat_caucasian.png` through the generator's own shade
+curve. Sampled at the sphere centre, RGB (163.6, 104.0, 83.3) at shade 0.6770,
+so tint = rgb / (shade·255), and the round trip returns the same RGB. Every
+other slot picks a tint because it is NOT skin. This one is.
+
+### The obstacle was never the geometry
+`autoBlendSkin` had been parsed (`Material.cpp:270`) and exported (`:440`) for
+the project's whole life and applied **only to the body** — the worn-proxy loop
+took a fixed matcap and never blended. So the flag on a proxy parsed, exported,
+and did nothing.
+
+RENDERED AT African=1.0 BEFORE FIXING IT: the genitals stayed a pale patch
+while the body darkened. Predicted, then *seen*. The worn loop now honours the
+flag, reusing `blendedSkinTone` through an `ensureTone()` memo so body and
+proxies share one buffer. Re-rendered: the tone tracks the body.
+
+### The measurement that was wrong before the code was
+First attempt compared the genital region against a **thigh** patch and got a
+number that contradicted the render. A matcap shades by NORMAL, so comparing
+two different body parts measures the normals, not the tone. The valid
+comparison is the SAME region at two ethnicities: response 28.1 before the fix,
+54.2 after. `tools/png_region_response.py` pins it, and the mutation matters —
+deleting the render-side blend leaves the *printed line* test passing and only
+the pixel test fails. A printed line proves the branch ran, never that the
+pixels followed.
+
+### A CLAIM I HAD TO WITHDRAW
+I recorded, from a real measurement, that all 200 cage vertices take their
+largest weight from `spine05` — and read that as "rigid, rides the pelvis
+whole". **Those are not the same claim, and the second one is false.** Vertices
+carry four influences: **97 of the 200 have a second bone**, `pelvis.L/R` on 42
+each and `upperleg01.L/R` on **59** each. The cage deforms with the hips.
+
+It surfaced because `app_body_pose_unit_moves_the_leg` moved 59 more vertices
+and **59 is not 200** — a number that did not fit the story. Chasing it instead
+of re-baselining it is the whole reason it was caught. Three poses now pin the
+real behaviour: a T-pose moves all 200, a torso bend moves 0 (the torso bends
+ABOVE the pelvis), one leg forward moves exactly 59. **Only the last
+discriminates** — the first two pass on a genuinely rigid cage too.
+
+**"Dominated by bone X" is about the LARGEST weight and says nothing about the
+others.**
+
+### Both DCC harnesses, this time without being told twice
+Last chunk I fixed the Blender harness and missed the Maya one. `--teeth none`
+alone still wore genitals, so both sets of pinned numbers were stale again.
+Both now pass `--teeth none --genitals none`, verified to reproduce the pinned
+shape exactly: 14,444 verts / 14,398 faces.
+
+### Two stale things found in passing
+`test_material.cpp` said "3 generated helper-cage proxies — teeth, tongue and
+hair" while its own arithmetic needed 6; skirt, tights and eyelashes had
+shipped without it. And `app_proxy_defaults_are_teeth_only` still PASSED after
+genitals shipped while its NAME had become false — it never asserted anything
+about genitals either way. Renamed `..._are_anatomy_only` and split, because
+`PASS_REGULAR_EXPRESSION` takes one pattern.
+
+### Re-baselines, each looked at
++182 faces and +200 vertices everywhere, 3 → 4 USD skeleton bindings, 3 → 4
+render meshes (still 1 blended), 11 → 12 asset groups, 22 → 23 materials,
+33 → 35 indexed assets. Suite 1304 → 1325.
+
+### Known limitation, stated rather than hidden
+`app_genitals_tone_follows_ethnicity` needs Pillow/NumPy, which CI installs for
+the `inventories` job and NOT for the macOS jobs that run ctest. It runs
+locally via `.venv-mh` and **skips in CI**. A gate that skips everywhere is not
+a gate; this one is verified on the developer machine and is a no-op in CI.
+
+---
+
+
 ## 2026-09-16 (hundredth) — Session · **Teeth, and three gates that were lying**
 
 *2026-09-16 — the owner said "default to teeth"; the interesting part was what

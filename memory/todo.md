@@ -4430,7 +4430,7 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       - The zero case is the SKIRT under a jaw drop, not the tights: the tights
         reach the chest, and AU26 moves 14 of them at Y 13.967..14.440 by 0.017
         to 0.068 -- real motion up the neck, not float noise.
-- [ ] **A genitalia slot for `helper-genital`** (200 vertices, 182 faces, all
+- [x] **A genitalia slot for `helper-genital`** SHIPPED 2026-09-16. (200 vertices, 182 faces, all
       dominated by `spine05`, so rigid with one pelvis bone). Split out of the
       clothes chunk above once rendering showed it is anatomy rather than a
       garment.
@@ -4450,6 +4450,103 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       them "together" should mean ONE re-baseline of the fixtures, not one
       undivided piece of work -- and if the cage needs render-and-look
       iterations (the hair precedent), teeth should not be held hostage to it.
+      **TEETH SHIPPED 2026-09-16 as `3013b233`, so the fixture re-baseline is
+      DONE and the cage lands on top of it.**
+      **RESEARCHED 2026-09-16, measured not assumed:**
+      - The cage IS there and IS the size this file claimed: `helper-genital`
+        in `data/3dobjs/base.obj` is **182 faces / 200 unique vertices**, a
+        contiguous index range 15129..15328. Counted, not quoted.
+      - `tools/make_helper_proxies.py` takes a `Slot(key, name, uuid, groups,
+        z_depth, tint, material, rationale, slot_key=None)`; `slot_key`
+        defaults to `key` and is the chooser directory AND the `.mhm` slot.
+        Adding a row is the whole C++-side cost.
+      - **z_depth must be the LOWEST of any wearable.** Higher is OUTERMOST
+        (`Proxy.h:217-225`, "reversed(sorted by z_depth)"), and the garments
+        are skirt 22 and tights 24, so genitalia want ~20: anatomy sits under
+        clothing, and a garment must win the depth fight over it.
+      - **THE REAL OBSTACLE, and it is not the geometry.** Genitalia are SKIN,
+        and skin follows the ethnic sliders. `autoBlendSkin` is parsed
+        (`Material.cpp:270`) and exported (`:440`), but it is applied ONLY to
+        the body: `main.cpp:4254` tests `bodyMaps.autoBlendSkin`, while the
+        worn-proxy loop right below it takes `worn.litsphere` -- the slot's own
+        fixed matcap PNG -- and never blends. So a genital proxy carrying
+        `autoBlendSkin true` would parse, export, and DO NOTHING on screen.
+        Shipped as-is it would be a fixed-tone patch on a body whose tone moves,
+        which is far more visible than it is for teeth or hair because the
+        surfaces are continuous.
+        Two honest options, and this needs deciding before authoring:
+        (a) extend the worn-proxy path to honour `autoBlendSkin`, reusing
+            `blendedSkinTone` exactly as the body does -- the correct fix, and
+            it makes the slot look right at every ethnicity; or
+        (b) ship a fixed skin-toned matcap like every other slot and accept a
+            visible mismatch off the default ethnicity.
+        (a) is the one worth doing; (b) is the hair mistake again -- shipping
+        something that renders wrong is worse than shipping nothing.
+        RENDER IT AND LOOK before believing either way round.
+      - **CORRECTED 2026-09-16: the cage is NOT rigid, and this file said it
+        was.** All 200 vertices do take their LARGEST weight from `spine05`,
+        which is what was measured -- but that is not the same claim as rigid,
+        and it was read as if it were. Measured again properly: **97 of the 200
+        carry a SECOND bone**, `pelvis.L`/`pelvis.R` on 42 each and
+        `upperleg01.L`/`upperleg01.R` on **59** each. The cage deforms with the
+        hips.
+        Caught because `app_body_pose_unit_moves_the_leg` moved 59 more
+        vertices than before and 59 is not 200 -- a number that did not fit the
+        story. Gated by three poses: a T-pose moves all 200, a torso bend moves
+        0 (the torso bends ABOVE the pelvis), and one leg forward moves exactly
+        59. The last is the discriminating one; the first two would have passed
+        on a genuinely rigid cage too.
+        **Lesson: "dominated by bone X" is about the LARGEST weight and says
+        nothing about the others.** Four influences per vertex; check for the
+        rest before calling anything rigid.
+      - **BUILT 2026-09-16.** Slot `genitals`, `kProxySlots` 5 -> 6,
+        `defaultChoice "genitals"`, z_depth 20. Tint (0.948, 0.602, 0.482)
+        DERIVED to reproduce `skinmat_caucasian.png` through the generator's
+        own shade curve (within half a level -- the tint is rounded to three
+        decimals). `autoBlendSkin true`, and the worn-proxy render path now
+        HONOURS it: before that it parsed, exported and did nothing, and
+        rendering at African=1.0 showed a pale patch at the crotch. Gated by
+        pixels, not just by the printed line -- deleting the render-side blend
+        leaves the printed-line test passing.
+      - **/code-review found NINE things, all fixed.** Two mattered:
+        (1) `blendedSkinTone` ended with `out = std::move(*blended)`, which
+        REPLACES the allocation -- every `MeshInstance` span into the old buffer
+        dangles, and the viewport reads those bytes later when an RHI
+        re-creation triggers an upload. Pre-existing for the body; this change
+        made N instances alias one buffer. Now `resize` + `copy` so `data()`
+        never moves.
+        (2) The SHIPPED `data/genitals/genitals.mhclo` header still asserted the
+        withdrawn RIGID claim, under the words "Measured, not assumed" -- I had
+        corrected it in the tests and here and left it in the generated asset.
+        Third time in two chunks of fixing some instances of a pattern and
+        missing one.
+        Also: three face-count comments whose arithmetic had not summed since
+        the teeth commit, two comments contradicting the assertion directly
+        under them, a duplicated paragraph, and `data/genitals/` still
+        UNTRACKED -- which `git add -A` would not have flagged and which would
+        have failed CI's `make_helper_proxies.py --check` on a fresh checkout.
+      - **SCOPING CORRECTION 2026-09-16.** I first planned to ship the
+        `autoBlendSkin`-for-worn-proxies fix as its own smaller chunk, on the
+        grounds that it helps any skin-toned proxy. That does not work, and the
+        reason is worth keeping: **the fix would be unobservable on its own.**
+        `data/skins/default.mhmat` is the ONLY shipped material setting
+        `autoBlendSkin true`, and it is the BODY's skin -- no proxy sets it, so
+        there would be nothing to point a test at, and writing a throwaway
+        `.mhmat` into `data/` to create one is exactly the probe-in-data the
+        directives forbid. The genital cage IS the first asset that needs it.
+        So the two are ONE chunk, in this order:
+          1. generate the cage via `tools/make_helper_proxies.py` (a Slot row),
+             with `autoBlendSkin true` in its `.mhmat`;
+          2. extend the worn-proxy path in `main.cpp` to honour it, reusing
+             `blendedSkinTone` exactly as the body does at `:4254`;
+          3. wire the slot into `kProxySlots` with `defaultChoice` set;
+          4. re-baseline the fixtures the new default moves.
+      - **`scene: N meshes (M blended)` CANNOT observe this.** That counter
+        (`main.cpp:4289`) means ALPHA-blended, not skin-tone-blended. The
+        observable to add is a printed line on the "wearing X ... lit by Y"
+        model, which is also what keeps the fix from being a silent no-op.
+        Then RENDER AT TWO ETHNICITIES AND COMPARE -- a printed line proves the
+        branch ran, not that the pixels followed.
 - [x] **The EYELASHES chooser — a fifth weighting shape, driven by the EYELID.**
       Four cages into one proxy, the way upper and lower teeth make one:
       `helper-{l,r}-eyelashes-1` are 60 vertices / 44 faces each and `-2` are

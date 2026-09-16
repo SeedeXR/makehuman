@@ -50,9 +50,13 @@ echo "exporting to $out"
 # armature, which is an interchange-semantics decision, not a validation gap.
 # The app is a macOS .app bundle, so the executable is inside it. The bare path
 # is still tried first: a build configured before the bundle landed has it there.
-# EVERY app export below passes `--teeth none`, and that is deliberate.
+# EVERY app export below passes `--teeth none --genitals none`, and that is
+# deliberate.
 #
-# Teeth became worn by DEFAULT (they are anatomy, not a garment). This harness
+# Teeth and genitals are worn by DEFAULT (they are anatomy, not garments).
+# Genitals were added second, and adding ONLY `--teeth none` would have
+# left every number here stale again -- the same miss as the first time,
+# when this file was fixed and the Maya one was not. This harness
 # pins ~15 sets of vertex/triangle counts and two float64 surface areas that
 # were computed BEFORE Blender was asked, and it is NOT run by ctest -- nothing
 # in the suite would have told us they had gone stale. Rather than re-derive
@@ -68,18 +72,18 @@ echo "exporting to $out"
 app="$repo/build/macos-arm64-release/src/app/makehuman.app/Contents/MacOS/makehuman"
 [ -x "$app" ] || app="$repo/build/macos-arm64-release/src/app/makehuman"
 if [ -x "$app" ]; then
-    "$app" --teeth none --pose tpose --export "$out/posed.glb" >/dev/null 2>&1 \
+    "$app" --teeth none --genitals none --pose tpose --export "$out/posed.glb" >/dev/null 2>&1 \
         && echo "posed.glb: T-pose, live rig (rest geometry + posed armature)" \
         || echo "warn: posed.glb export failed"
     # The same export in FBX, through our own writer. It is the one that carries
     # the worn proxy on the SHARED skeleton, and Blender is the second reader
     # of that claim -- Maya is the first.
-    "$app" --teeth none --pose tpose --export "$out/posed.fbx" >/dev/null 2>&1 \
+    "$app" --teeth none --genitals none --pose tpose --export "$out/posed.fbx" >/dev/null 2>&1 \
         && echo "posed.fbx: T-pose, live rig, body and eyes on one skeleton" \
         || echo "warn: posed.fbx export failed"
     # ...and in USD. UsdSkel is the third independent expression of the same
     # claim: one Skeleton prim, and every skinned Mesh bound to it.
-    "$app" --teeth none --pose tpose --export "$out/posed.usda" >/dev/null 2>&1 \
+    "$app" --teeth none --genitals none --pose tpose --export "$out/posed.usda" >/dev/null 2>&1 \
         && echo "posed.usda: T-pose, live rig, body and eyes on one skeleton" \
         || echo "warn: posed.usda export failed"
     # A DECIMATED body on the same rig. This is the one check that can say the
@@ -87,7 +91,7 @@ if [ -x "$app" ]; then
     # triangles and every vertex has been renumbered by the collapses, so if the
     # provenance mapping were wrong Blender's own skinning would pull the body
     # somewhere else entirely. "It has a skin of 179 bones" cannot see that.
-    "$app" --teeth none --pose tpose --decimate 0.25 --export "$out/posed_lod.glb" >/dev/null 2>&1 \
+    "$app" --teeth none --genitals none --pose tpose --decimate 0.25 --export "$out/posed_lod.glb" >/dev/null 2>&1 \
         && echo "posed_lod.glb: T-pose, live rig, body decimated to 25%" \
         || echo "warn: posed_lod.glb export failed"
     # ...and the 34 expression blendshapes ON a decimated body. This is the one
@@ -95,13 +99,13 @@ if [ -x "$app" ]; then
     # deltas are built per render vertex through the same composed mapping the
     # skin uses, and `--inspect` cannot see a morph target at all. Blender
     # counts the vertices every key moves, per key.
-    "$app" --teeth none --decimate 0.25 --blendshapes --export "$out/expressions_lod.glb" >/dev/null 2>&1 \
+    "$app" --teeth none --genitals none --decimate 0.25 --blendshapes --export "$out/expressions_lod.glb" >/dev/null 2>&1 \
         && echo "expressions_lod.glb: 34 expression keys on a body decimated to 25%" \
         || echo "warn: expressions_lod.glb export failed"
     # An LOD CHAIN, in the second format the owner named (directive 11) and the
     # one no third party wrote for us. Level 1 is the reduced one; level 0 is
     # the ordinary export, already covered by posed.fbx.
-    "$app" --teeth none --lod 1.0 --lod 0.25 --pose tpose --export "$out/chain.fbx" >/dev/null 2>&1 \
+    "$app" --teeth none --genitals none --lod 1.0 --lod 0.25 --pose tpose --export "$out/chain.fbx" >/dev/null 2>&1 \
         && echo "chain_lod1.fbx: LOD chain level 1, T-pose, live rig, through our FBX writer" \
         || echo "warn: chain.fbx export failed"
     # THE CORRECTIVE ROUND-TRIP, and its control.
@@ -116,10 +120,10 @@ if [ -x "$app" ]; then
     # invisible to every OTHER statistic here: same vertices, same triangles,
     # same bounding box to six decimals. The pair is the experiment -- one
     # variable changed, and Blender reports what moved.
-    "$app" --teeth none --pose tpose --export "$out/posed.obj" >/dev/null 2>&1 \
+    "$app" --teeth none --genitals none --pose tpose --export "$out/posed.obj" >/dev/null 2>&1 \
         && echo "posed.obj: T-pose, baked, no correctives (the control)" \
         || echo "warn: posed.obj export failed"
-    "$app" --teeth none --pose tpose --correctives "$repo/tests/correctives/correctives.json" \
+    "$app" --teeth none --genitals none --pose tpose --correctives "$repo/tests/correctives/correctives.json" \
         --export "$out/corrective.obj" >/dev/null 2>&1 \
         && echo "corrective.obj: T-pose, baked, deltoid corrective applied" \
         || echo "warn: corrective.obj export failed"

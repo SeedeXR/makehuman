@@ -279,6 +279,63 @@ SLOTS = [
             "# and a jaw drop leaves it alone."
         ),
     ),
+    Slot(
+        key="genitals",
+        name="Genitals",
+        uuid="93ccdc7d-06a1-4ed9-9ca2-05a234aba0b4",
+        groups=("helper-genital",),
+        # The LOWEST z_depth of anything wearable. Higher is OUTERMOST
+        # (`Proxy.h:217-225` walks the stack `reversed(sorted by z_depth)`), and
+        # the garments are skirt 22 and tights 24 -- so anything a character
+        # puts on has to win the depth fight over anatomy, not lose it.
+        z_depth=20,
+        # MEASURED, not chosen: this is the tint that reproduces
+        # `skinmat_caucasian.png` through this file's own shade curve. Sampling
+        # a 16x16 patch at the sphere centre gives RGB (163.6, 104.0, 83.3) at
+        # shade 0.6770, so tint = rgb / (shade * 255) = (0.948, 0.602, 0.482).
+        # The generated matcap reads (163.1, 103.4, 82.7) there -- within half a
+        # level, not bit-identical, because the tint is rounded to three
+        # decimals before it is applied. Every other slot
+        # picks a tint because it is NOT skin; this one is skin, so the honest
+        # value is the one that reproduces skin.
+        #
+        # It is only the FALLBACK: with `autoBlendSkin true` below, the
+        # renderer replaces this with the ethnic blend. It is what a material
+        # that opts out of blending gets.
+        tint=(0.948, 0.602, 0.482),
+        material=(
+            "# `autoBlendSkin true`, and this is the FIRST proxy to set it.\n"
+            "# Genitalia are skin, and skin follows the ethnic sliders -- a\n"
+            "# fixed tone here would be a patch that stays put while the body\n"
+            "# around it moves, which is far more visible than it would be for\n"
+            "# teeth or hair because the surfaces are continuous.\n"
+            "name Genitals\n"
+            "tag MakeHuman\u2122\n"
+            "autoBlendSkin true\n"
+            "ambientColor 0.10 0.07 0.06\n"
+            "diffuseColor 0.64 0.41 0.33\n"
+            "specularColor 0.12 0.12 0.12\n"
+            "shininess 0.1\n"
+            "opacity 1.0\n"
+            "transparent False\n"
+            "backfaceCull True\n"
+            "castShadows True\n"
+            "receiveShadows True\n"
+            "shader data/shaders/glsl/litsphere\n"
+        ),
+        rationale=(
+            "# 182 faces over 200 vertices. All 200 take their LARGEST weight\n"
+            "# from `spine05` and none is unweighted -- but that is not the same\n"
+            "# as rigid, and an earlier version of this header said it was.\n"
+            "# Measured in default_weights.mhw: 97 of the 200 carry a SECOND\n"
+            "# bone, `pelvis.L`/`pelvis.R` on 42 each and `upperleg01.L`/\n"
+            "# `upperleg01.R` on 59 each. The cage DEFORMS with the hips, and a\n"
+            "# single leg forward moves exactly those 59.\n"
+            "#\n"
+            "# Anatomy rather than a garment, which is why the slot is worn by\n"
+            "# default and why it carries autoBlendSkin."
+        ),
+    ),
 ]
 
 
