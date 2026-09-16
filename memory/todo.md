@@ -4039,6 +4039,60 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         (a T-pose drops the cage 0.5698 at one end and lifts it 0.0957 at the
         other). Spelled out rather than smuggled in as a huge number, and
         mutation-tested to confirm it disables only direction, never the counts.
+- [x] **CORNROWS, and a gate that passed the mutant** (2026-09-16). The second
+      shipped style and the first whose geometry is NOT in the base mesh:
+      2148 vertices / 2112 faces, six braids bound to the scalp by three base
+      vertices and barycentric weights. `data/hair/cornrows.{obj,mhclo}`.
+      **C++ cost zero** -- `main.cpp` already enumerates `data/hair/*.mhclo`.
+      - **The analytic-curve recipe recorded above did NOT survive
+        re-measurement.** Max turn between consecutive braid samples, the one
+        metric that has ever agreed with the render: **106.3 deg** walking base
+        vertices (what was committed), **78.7** marching freely over the
+        surface (two rows REVERSED over the crown), and the fixed ellipsoid is
+        smooth but its tail stands 0.25 dm off the occiput by elevation -45, so
+        projection collapses those samples onto the RIM and rows stopped 15 to
+        37 degrees above the hairline -- the exact bare-occiput defect that
+        recipe was written to fix.
+      - **What works: a MONOTONE angle sweep with the radius carried forward**
+        from the previous projected point. The angle advances on its own so the
+        row cannot double back, and the head's radius varies slowly so each
+        candidate starts near the surface. MEASURED max turn **17.7..19.8 deg**.
+      - `samples` is a trade-off, not a free parameter: max turn is 14.6..21.9
+        at 40 samples, 17.7..19.8 at 70, **19.0..28.9 at 90** -- finer steps
+        amplify per-facet jitter. 70 is the minimum.
+      - **`crown_half_width`, not the region's half-width.** The region reaches
+        +-0.7521 down at ear height; a row placed there has no scalp above it
+        to arc over and the trace finds nothing. Measured, the region narrows
+        with elevation -- 0.6326 above 30 deg, **0.5444 above 40**, 0.4362
+        above 50.
+      - **A GATE THAT PASSED A MUTANT THAT DELETES THE FEATURE.** The standoff
+        assertion checked `|offset|`; sweeping the ridge with `stand = -0.13`
+        buries every braid in the skull -- a BALD HEAD -- and the magnitude is
+        identical either way. Re-pinned on the SIGNED change in distance from
+        the cranium centre, as `test_afro_shape.cpp` already did.
+      - **Measured against the wrong thing first, the way `row_ends` did.** The
+        hairline assertion demanded every row's back end reach -30 deg, but the
+        hairline is +12 dead front, -19 at the ears and -50 at the nape, so
+        that asks the outer row to run below its own hairline. Both ends now
+        compare against `hairlineElevation` AT THAT AZIMUTH: front ends sit
+        4.2..5.8 deg above it, back ends 3.4..6.3.
+      - **Rendered and looked at from four angles** (Blender, ortho, track-to;
+        the app's own `--render` is one fixed full-body view in which the head
+        is ~100 px). Top: six smooth parallel evenly spaced rows the full length
+        of the scalp. Side: clean arcs, no kinks. The side view APPEARS to show
+        the braids floating clear of the skull at the back -- that is the
+        composite-projection misread, six rows overlapping in 2D. Measured
+        instead: every vertex sits **0.0130..0.1300 dm** off the scalp and
+        0.1300 is the sweep's `stand` exactly, so the binder independently
+        recovered the standoff the generator authored.
+      - `hair_assets_are_generated` (was `afro_assets_are_generated`) covers all
+        four files and takes **`--app $<TARGET_FILE:makehuman>`** -- the
+        generator's own default points at the debug tree, so under any other
+        preset it would have checked a binary that is not under test. It FAILS
+        (rc=2) when the app cannot be run rather than skipping.
+      - STILL OPEN, stated not hidden: braid ends are cut square rather than
+        tapered; one matcap per SLOT so every style is the same colour.
+
 - [ ] **OWNER REQUEST TAKEN (2026-09-15): build a FULL hair feature with
       several styles.** Asked verbatim for *"a full hair cage feature with
       different hair styles"* -- so NEITHER option offered (hide the slot, or
@@ -4062,7 +4116,8 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       for fitting a groom to, and it passes in front of the face by
       construction. Keep it as a placeholder, or hide the slot until a real
       groom asset exists? Everything else about it is done either way.
-- [ ] **Textured-Black hair styles (afro, locs, cornrows, bantu knots).** Asked
+- [ ] **Textured-Black hair styles -- afro and CORNROWS now ship; locs and
+      bantu knots remain.** Asked
       for directly by the owner. ATTEMPTED 2026-09-11 and NOT SHIPPED: five
       generate-render-look iterations produced silhouettes too crude to carry
       the names, and shipping a bad "Cornrows" is worse than shipping none.

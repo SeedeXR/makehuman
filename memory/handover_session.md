@@ -4,6 +4,139 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-16 (hundred-and-third) — Session · **Cornrows, and a gate that passed the mutant**
+
+*The owner asked on 2026-09-15 for "a full hair cage feature with different hair
+styles". This is the second style, and the first whose geometry is not in the
+base mesh at all.*
+
+### What shipped
+**Cornrows** — 2148 vertices, 2112 faces, six braids running from the front
+hairline over the crown to the nape, bound to the scalp by three base vertices
+and barycentric weights (`mh::core::bindToSurface`). `data/hair/cornrows.{obj,mhclo}`,
+derived by `tools/make_hair_styles.py`, which now **ships** them instead of
+writing them to the build tree. C++ cost: zero — `main.cpp` already enumerates
+every `.mhclo` under `data/hair`.
+
+### THREE ROUTINGS, and the measurement that chose between them
+The plan recorded a verified analytic-curve recipe. **It did not survive
+re-measurement**, and the honest version is that all three attempts failed
+before one worked. Max turn between consecutive braid samples, which is the
+one metric that has ever agreed with the render:
+
+| routing | max turn | what it looked like |
+|---|---|---|
+| walking base vertices (what was committed) | **106.3°** | zigzag; no vertex rule is smoother than the 0.1436 dm mesh |
+| a fixed ellipsoid about the cranium centre | smooth, but | tail stands 0.25 dm off the occiput by elevation −45; projecting those samples **collapses them onto the rim**, so rows stopped 15–37° above the hairline and the occiput was bare |
+| free march over the surface | **78.7°** | two rows REVERSED and went back over the crown |
+| **monotone angle sweep, radius carried forward** | **17.7–19.8°** | six clean parallel arcs |
+
+The ellipsoid recipe is the one the plan called verified. It is not wrong that
+it once rendered well; it is that its measured tail behaviour reproduces the
+exact bare-occiput defect the plan blames on the routing it replaced.
+
+`samples` is a real trade-off, not a free parameter: max turn runs 14.6–21.9°
+at 40 samples, 17.7–19.8 at 70 and **19.0–28.9 at 90** — finer steps amplify
+per-facet jitter. 70 is the minimum.
+
+### A GATE THAT PASSED THE MUTANT
+The standoff assertion checked `|offset|`. Sweeping the ridge with
+`stand = -0.13` buries every braid inside the skull — which renders as a **bald
+head** — and the magnitude is identical either way, so **M3 passed a mutant that
+deletes the feature**. Re-pinned on the SIGNED change in distance from the
+cranium centre, the way `test_afro_shape.cpp` already measured the afro's, and
+the mutant now dies on `proxy vertex 0 stands off -0.124759 dm`.
+
+Four mutations, each with the build verified first: crown half-width → the
+region's full half-width (killed), the rim guard removed (killed), the ridge
+swept inward (**survived**, then killed), 70 samples → 400 (killed).
+
+### I MEASURED AGAINST THE WRONG THING, the same way `row_ends` did
+The first hairline assertion demanded every row's back end reach −30° elevation.
+The hairline is **+12° dead front, −19 at the ears and −50 at the nape**, so
+that asks the outermost row to run below its own hairline. Both ends are now
+compared against `hairlineElevation` AT THAT AZIMUTH. Measured on the shipped
+asset: front ends 4.2–5.8° above the hairline, back ends 3.4–6.3° above it.
+
+### RENDERED AND LOOKED AT, from four angles
+The app's `--render` is one fixed full-body view and the head is ~100 px in it —
+enough to see something dark at the crown, not enough to judge it. Rendered the
+export in Blender instead (ortho, track-to constraint): **top** reads as six
+smooth parallel evenly spaced rows the full length of the scalp; **side** as
+clean arcs with no kinks; **three-quarter front and rear** show the rows
+starting at the hairline and wrapping the occiput.
+
+The side view appears to show the braids FLOATING clear of the skull at the
+back. It is the composite-projection misread the plan warns about — six rows
+overlapping in 2D. Measured instead: every cornrow vertex sits **0.0130 to
+0.1300 dm** off the scalp, and 0.1300 is the sweep's `stand` exactly. The binder
+independently recovered the standoff the generator authored.
+
+### Two self-inflicted errors worth recording
+* **`git checkout tools/make_hair_styles.py` to undo a mutation wiped the whole
+  rewrite**, because none of it was committed. Replayed from the session log and
+  verified byte-identical. Mutations now restore from a scratchpad copy.
+* **A mutation regenerated `data/hair` and I compared against the mutant**,
+  briefly concluding the replay had drifted. It had not — 1452 vertices was M1's
+  output sitting in `data/`. Regenerate after every mutation, and `--check`.
+
+A third near-miss was the recorded one: the re-export "DIFFERS" from what I had
+rendered, and it was the **`mtllib` line**, which is filename-derived. Geometry
+identical once it is excluded.
+
+### The gate grew a real guard
+`hair_assets_are_generated` (was `afro_assets_are_generated`) now covers all
+four files and takes **`--app $<TARGET_FILE:makehuman>`**. The generator's own
+default points at the debug tree, so under release/ASan/TSan the check would
+have run against a binary that is not the one under test. It **fails with rc=2**
+when the application cannot be run rather than skipping — cornrows ship, so a
+run that cannot derive them cannot confirm them either.
+
+### SonarQube found three real things in the new code
+Gate ERROR, three issues, all mine and all worth fixing rather than suppressing:
+* **`python:S3776`** -- `closest_on_triangle` scored **19** against a limit of
+  15. The irony is recorded: my own `cornrows()` docstring warns about exactly
+  this rule. Split into `_along` and `_closest_past_ab`, **without reordering
+  the tests** -- they are Voronoi regions and the C++ reference interleaves them
+  this way, so a reorder could return a different (equally close) point at a tie
+  and silently move the asset. Verified: the regenerated asset is BYTE-IDENTICAL.
+* **`python:S7632`** -- `# noqa: PLW0603 -- ...` is not valid suppression
+  syntax. Fixed by deleting the `global` it was excusing: the app path is now
+  threaded `main(--app) -> derive -> cornrows -> app_binary`.
+* **`python:S1244`** -- an exact float compare on a divide guard. Now `if not
+  denom`, which is the form the same function already used three times.
+
+Re-scanned: **GATE OK, 0 open issues**, after `api/ce/task` reported SUCCESS.
+
+**`.sonar-token` is an ENV FILE, not a bare token.** Reading it with `cat` put
+the whole file -- comments included -- into the Bearer header, and the scanner
+echoed the secret back in its error text. It documents its own usage in its
+first lines: `set -a; . ./.sonar-token; set +a`. The runner now sources it and
+never dumps the scanner log unredacted.
+
+### The machine, which cost more than the code did
+* **The memory reaper kills FOREGROUND work too.** The recorded diagnosis blamed
+  Docker's idle VM; Docker's daemon was DOWN for these kills. Three foreground
+  ctest runs succeeded and the fourth died on SIGKILL (137), so "run it in the
+  foreground" is not the remedy either. What the machine actually shows is
+  **6.3 GB in the compressor across 580 processes** with no single hog — it
+  simply runs near capacity. Slice the sanitizers and expect retries.
+* **The machine rebooted mid-gate into a new macOS major version**
+  (Darwin 25.6.0 -> 27.0.0), which cleared `/tmp` and took the gate log with it.
+  The working tree was untouched and the toolchain still worked. Two
+  consequences, both now permanent: the gate log lives in the session
+  scratchpad, not `/tmp`, and every preset was re-run from scratch rather than
+  quote results whose log no longer existed.
+
+### Not done, deliberately
+* The braid ends are cut square. Real braids taper; this is honest, not hidden.
+* One matcap for the whole slot, so every style is the same colour. A per-style
+  colour chooser is still the cheapest real win here.
+* Locs and bantu knots still need the collision work the plan measured
+  (171 of 237 roots produce a strand that clips the head).
+
+---
+
 ## 2026-09-16 (hundred-and-second) — Session · **The Animation chooser, and a note I read too late**
 
 *2026-09-16 — the owner said "2 and add cli"; three of the things the plan said

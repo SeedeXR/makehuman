@@ -92,7 +92,8 @@ add_executable(mh_tests
     regression/test_io_review_findings.cpp
     regression/test_determinism.cpp
     regression/test_animation_upaxis.cpp
-    regression/test_afro_shape.cpp)
+    regression/test_afro_shape.cpp
+    regression/test_cornrows_shape.cpp)
 
 # mh::rig alone. It PUBLIC-links mh::io (PoseUnits.h takes a BvhFile) and, since
 # PosedMesh.h took a `core::Mesh&`, mh::core as well -- so the tests get both
@@ -1401,10 +1402,35 @@ if(MH_HAVE_RENDER)
     # red suite.
     find_package(Python3 QUIET COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)
-        add_test(NAME afro_assets_are_generated
+        # `--app` rather than letting the generator guess: cornrows are routed
+        # and bound BY the application, and its own default points at the debug
+        # tree, so under any other preset the check would have run against a
+        # binary that is not the one being tested -- or against none at all.
+        add_test(NAME hair_assets_are_generated
                  COMMAND ${Python3_EXECUTABLE}
-                         ${CMAKE_SOURCE_DIR}/tools/make_hair_styles.py --check)
+                         ${CMAKE_SOURCE_DIR}/tools/make_hair_styles.py --check
+                         --app $<TARGET_FILE:makehuman>)
     endif()
+
+    # CORNROWS -- the first style whose geometry is not in the base mesh at all.
+    # It is bound to the scalp by three base vertices and barycentric weights
+    # (`mh::core::bindToSurface`), so unlike every earlier proxy it can place a
+    # vertex nobody authored if a weight escapes 0..1; `fitProxy` does no
+    # clamping. `tests/regression/test_cornrows_shape.cpp` is where the SHAPE is
+    # gated -- these two only establish that the app wears it and that it is its
+    # own asset.
+    add_test(NAME app_cornrows_worn COMMAND makehuman
+             --hair cornrows --export ${CMAKE_CURRENT_BINARY_DIR}/hair/cornrows.obj)
+    set_tests_properties(app_cornrows_worn PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Cornrows \\(2148 verts\\) lit by skinmat_hair"
+        FAIL_REGULAR_EXPRESSION "export failed;cannot"
+        FIXTURES_SETUP app_cornrows_worn)
+    add_test(NAME app_cornrows_differ_from_afro COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/hair/cornrows.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/hair/afro.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_cornrows_differ_from_afro PROPERTIES
+        FIXTURES_REQUIRED "app_cornrows_worn;app_afro_worn")
 
     add_test(NAME app_hair_saved COMMAND makehuman
              --hair hair --save ${CMAKE_CURRENT_BINARY_DIR}/hair/saved.mhm)
