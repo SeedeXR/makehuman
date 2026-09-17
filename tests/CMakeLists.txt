@@ -4590,7 +4590,8 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             "rendered .*app_render\\.png \\(1024x1024, transparent, litsphere\\)"
         SKIP_REGULAR_EXPRESSION "cannot render"
-        FAIL_REGULAR_EXPRESSION "nothing to draw;cannot write")
+        FAIL_REGULAR_EXPRESSION "nothing to draw;cannot write"
+        FIXTURES_SETUP app_render_png)
 
     # Wireframe, at the level where it silently failed. The render-level test
     # (`[render][wireframe]`) proves the PIPELINE draws edges; this proves the
@@ -4728,6 +4729,101 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
     set_tests_properties(app_skin_material_reaches_the_viewport PROPERTIES
         FIXTURES_REQUIRED "app_pbr_default_png;app_pbr_skin_png")
+
+    # --- the material editor (M8) -----------------------------------------
+    #
+    # The port could READ a .mhmat and WRITE one and had no way to CHANGE one.
+    # `--set-material` is the editor's headless surface: the panel edits through
+    # the same `mh::core::setMaterialProperty`, so what is gated here is what
+    # the panel does.
+
+    add_test(NAME app_set_material_writes_the_edit COMMAND makehuman
+             --skin-material african_deep
+             --set-material diffuseColor=0.8,0.1,0.1
+             --set-material shininess=0.31
+             --save-material ${CMAKE_CURRENT_BINARY_DIR}/app_edited_skin.mhmat)
+    set_tests_properties(app_set_material_writes_the_edit PROPERTIES
+        PASS_REGULAR_EXPRESSION "wrote .*app_edited_skin\\.mhmat \\(african_deep, 2 edits\\)"
+        FAIL_REGULAR_EXPRESSION "cannot save"
+        FIXTURES_SETUP app_edited_skin_mhmat)
+
+    # BOTH edits, and the shipped values they replaced must be GONE -- a writer
+    # that appended a second diffuseColor line would satisfy a presence-only
+    # check and produce a file whose last line wins. african_deep ships
+    # `diffuseColor 1.0 1.0 1.0` and `shininess 0.42`; 0.31 is chosen because it
+    # is neither that nor the struct default (0.2), so the assertion cannot pass
+    # on an edit that did nothing.
+    add_test(NAME app_set_material_reaches_the_file COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/app_edited_skin.mhmat
+             "-DKEYS=diffuseColor 0.8 0.1 0.1;shininess 0.31"
+             "-DABSENT=diffuseColor 1;shininess 0.42"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_set_material_reaches_the_file PROPERTIES
+        FIXTURES_REQUIRED app_edited_skin_mhmat)
+
+    # A typo must be REFUSED. The parser ignores an unknown key on purpose --
+    # community assets carry keys this build has never seen -- and an editor
+    # inheriting that would let `--set-material diffusColor=1,0,0` change
+    # nothing and say nothing, which is how the Expression chooser shipped
+    # doing nothing.
+    add_test(NAME app_set_material_unknown_property_refused COMMAND makehuman
+             --set-material diffusColor=1,0,0
+             --save-material ${CMAKE_CURRENT_BINARY_DIR}/app_never_written.mhmat)
+    set_tests_properties(app_set_material_unknown_property_refused PROPERTIES
+        PASS_REGULAR_EXPRESSION "unknown material property 'diffusColor'"
+        FAIL_REGULAR_EXPRESSION "wrote ")
+
+    add_test(NAME app_set_material_bad_value_refused COMMAND makehuman
+             --set-material shininess=abc
+             --save-material ${CMAKE_CURRENT_BINARY_DIR}/app_never_written.mhmat)
+    set_tests_properties(app_set_material_bad_value_refused PROPERTIES
+        PASS_REGULAR_EXPRESSION "expected a number, got 'abc'"
+        FAIL_REGULAR_EXPRESSION "wrote ")
+
+    # The edit must reach the SCREEN, not just the file. Under --shading pbr
+    # diffuseColor is the base colour (`ViewportMaps::baseColour`), so a red
+    # diffuse renders a red body. MEASURED: 85,359 of 1,048,576 pixels differ.
+    # The floor is set well under that and well over the 0-3 px two renders of
+    # one scene differ by, so it fails if the edit stops reaching the viewport
+    # and does not flake on MSAA resolve order.
+    add_test(NAME app_render_pbr_edited COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_render_pbr_edited.png
+             --shading pbr --set-material diffuseColor=0.8,0.1,0.1)
+    set_tests_properties(app_render_pbr_edited PROPERTIES
+        PASS_REGULAR_EXPRESSION "rendered .*app_render_pbr_edited\\.png \\(1024x1024, pbr\\)"
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_SETUP app_pbr_edited_png)
+
+    add_test(NAME app_set_material_reaches_the_viewport COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/app_render_pbr.png
+             ${CMAKE_CURRENT_BINARY_DIR}/app_render_pbr_edited.png
+             --min-differing 40000)
+    set_tests_properties(app_set_material_reaches_the_viewport PROPERTIES
+        FIXTURES_REQUIRED "app_pbr_default_png;app_pbr_edited_png")
+
+    # And the other half of that claim, which is why the gate above says `pbr`:
+    # under the DEFAULT litsphere shading the matcap shades by NORMAL and the
+    # material's diffuseColor reaches nothing at all. MEASURED: 0 of 1,048,576
+    # pixels differ. A render gate written against the default shading would
+    # have been decorative -- it would pass with --set-material deleted.
+    #
+    # Pinned rather than left as a comment: if the litsphere path ever starts
+    # honouring diffuseColor, this fails and somebody decides on purpose.
+    add_test(NAME app_render_litsphere_edited COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_render_litsphere_edited.png --transparent
+             --set-material diffuseColor=0.8,0.1,0.1)
+    set_tests_properties(app_render_litsphere_edited PROPERTIES
+        PASS_REGULAR_EXPRESSION
+            "rendered .*app_render_litsphere_edited\\.png \\(1024x1024, transparent, litsphere\\)"
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_SETUP app_litsphere_edited_png)
+
+    add_test(NAME app_matcap_ignores_the_diffuse_colour COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/app_render.png
+             ${CMAKE_CURRENT_BINARY_DIR}/app_render_litsphere_edited.png
+             --max-differing 8)
+    set_tests_properties(app_matcap_ignores_the_diffuse_colour PROPERTIES
+        FIXTURES_REQUIRED "app_render_png;app_litsphere_edited_png")
 
     set_tests_properties(ui PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen;TMPDIR=${MH_TEST_TMPDIR}")

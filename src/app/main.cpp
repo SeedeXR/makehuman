@@ -86,6 +86,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <expected>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -1429,6 +1430,10 @@ std::string selectedChoice(std::span<const mh::foundation::AssetGroup> groups,
 std::vector<std::string> availableSkinMaterials();
 std::vector<std::string> availableEyeColours();
 
+/// Also defined next to the skin-material helpers: the skin `.mhmat` with every
+/// `--set-material` edit applied. Needed up here by the viewport maps.
+std::expected<mh::core::Material, std::string> editedSkinMaterial();
+
 /// dataDir(), NOT MH_DATA_DIR. The compile-time macro is an absolute path into
 /// the tree that built the binary; a bundled copy has its own assets and
 /// `resolveDataDir` has already found them. Three scans here used the macro and
@@ -1908,24 +1913,38 @@ struct ViewportMaps {
     float opacity{1.0F};
 };
 
-ViewportMaps viewportMapsOf(const std::filesystem::path& mhmat);
+ViewportMaps viewportMapsOf(const mh::core::Material& material);
+
+/// A material by path, unedited. `--set-material` reaches the SKIN only, which
+/// is what the editor edits; a proxy's own `.mhmat` is loaded as it ships.
+ViewportMaps viewportMapsOf(const std::filesystem::path& mhmat) {
+    const auto mat = mh::core::loadMaterial(mhmat);
+    if (!mat) return {};
+    return viewportMapsOf(*mat);
+}
+
+/// The skin's maps, with every `--set-material` edit applied -- the same
+/// material `bodyMaterial()` exports.
+ViewportMaps skinViewportMaps() {
+    const auto mat = editedSkinMaterial();
+    if (!mat) return {};
+    return viewportMapsOf(*mat);
+}
 
 bool materialBlendsSkin(const std::filesystem::path& mhmat) {
     return viewportMapsOf(mhmat).autoBlendSkin;
 }
 
-ViewportMaps viewportMapsOf(const std::filesystem::path& mhmat) {
+ViewportMaps viewportMapsOf(const mh::core::Material& material) {
     ViewportMaps maps;
-    const auto mat = mh::core::loadMaterial(mhmat);
-    if (!mat) return maps;
     using mh::core::TextureChannel;
-    const auto slot = [&mat](TextureChannel c) {
-        return mat->textures[static_cast<size_t>(c)].path;
+    const auto slot = [&material](TextureChannel c) {
+        return material.textures[static_cast<size_t>(c)].path;
     };
     maps.diffuse       = slot(TextureChannel::Diffuse);
     maps.normal        = slot(TextureChannel::NormalMap);
     maps.ao            = slot(TextureChannel::AoMap);
-    maps.autoBlendSkin = mat->autoBlendSkin;
+    maps.autoBlendSkin = material.autoBlendSkin;
     // Never assigned until now, so EVERY worn thing was drawn in the opaque
     // pass with blending disabled and its alpha discarded. The shipped eye is
     // what that costs: its front geometry is a cornea whose texel is
@@ -1936,12 +1955,12 @@ ViewportMaps viewportMapsOf(const std::filesystem::path& mhmat) {
     //
     // Either condition blends, matching what the exporters already write:
     // `.mhmat`'s own flag, or an opacity below 1.
-    maps.transparent = mat->desc().transparent || mat->desc().opacity < 1.0F;
+    maps.transparent = material.desc().transparent || material.desc().opacity < 1.0F;
     maps.normalMapIntensity =
-        mat->textures[static_cast<size_t>(TextureChannel::NormalMap)].intensity;
-    maps.baseColour = mat->desc().diffuse;
-    maps.opacity    = mat->desc().opacity;
-    const auto mr   = mh::foundation::metallicRoughnessOf(mat->desc());
+        material.textures[static_cast<size_t>(TextureChannel::NormalMap)].intensity;
+    maps.baseColour = material.desc().diffuse;
+    maps.opacity    = material.desc().opacity;
+    const auto mr   = mh::foundation::metallicRoughnessOf(material.desc());
     maps.metallic   = mr.metallic;
     maps.roughness  = mr.roughness;
     // That is every field of `MaterialDesc` the viewport can honour, and the
@@ -2095,11 +2114,40 @@ std::filesystem::path skinMaterialPath() {
     return dataDir() / "skins" / (skinMaterialRef() + ".mhmat");
 }
 
-std::optional<mh::foundation::MaterialDesc> bodyMaterial() {
+/// The `--set-material` edits, in the order they were given.
+///
+/// Applied on every load of the skin material, never baked into the file on
+/// disk: `data/skins` is shipped CC0 content and an editor that rewrote it
+/// behind the user's back would be a data-loss bug. `--save-material` is how
+/// an edit becomes a file.
+std::vector<std::string>& materialOverridesRef() {
+    static std::vector<std::string> edits;
+    return edits;
+}
+
+/// The skin material as EDITED: the file on disk with every override applied.
+///
+/// The one door. The exporters (`bodyMaterial`) and the viewport
+/// (`skinViewportMaps`) both come through here, because an editor that moved
+/// the exported file and not the screen -- or the reverse -- is exactly the
+/// combo that changes and does nothing.
+std::expected<mh::core::Material, std::string> editedSkinMaterial() {
     const auto path = skinMaterialPath();
-    if (auto mat = mh::core::loadMaterial(path)) return mat->desc();
-    std::fprintf(stderr, "cannot load %s; exporting without a body material\n",
-                 path.string().c_str());
+    auto mat        = mh::core::loadMaterial(path);
+    if (!mat) return std::unexpected(mat.error().message());
+    const auto dir = path.parent_path();
+    for (const std::string& edit : materialOverridesRef()) {
+        if (auto ok = mh::core::setMaterialProperty(*mat, edit, dir); !ok) {
+            return std::unexpected("--set-material " + edit + ": " + ok.error());
+        }
+    }
+    return *mat;
+}
+
+std::optional<mh::foundation::MaterialDesc> bodyMaterial() {
+    const auto mat = editedSkinMaterial();
+    if (mat) return mat->desc();
+    std::fprintf(stderr, "%s; exporting without a body material\n", mat.error().c_str());
     return std::nullopt;
 }
 
@@ -2884,6 +2932,23 @@ int main(int argc, char** argv) {
     const QCommandLineOption saveOpt(QStringLiteral("save"),
                                      QStringLiteral("Write the character as .mhm and exit."),
                                      QStringLiteral("path"));
+
+    // The material editor's headless surface. The panel edits the same
+    // material through the same function, so anything the panel can do is
+    // reachable -- and gateable -- from here.
+    const QCommandLineOption setMaterialOpt(
+        QStringLiteral("set-material"),
+        QStringLiteral("Override one property of the skin material: name=value, e.g. "
+                       "diffuseColor=0.8,0.1,0.1 or shininess=0.7. Repeatable, applied in "
+                       "order. Affects the viewport, --render and every export. An unknown "
+                       "property is an error. Visible on screen only under --shading pbr: "
+                       "the default litsphere is a matcap and shades by normal alone."),
+        QStringLiteral("name=value"));
+    const QCommandLineOption saveMaterialOpt(
+        QStringLiteral("save-material"),
+        QStringLiteral("Write the edited skin material here as a .mhmat and exit. The "
+                       "shipped file under data/skins is never modified."),
+        QStringLiteral("path"));
     const QCommandLineOption subdivOpt(
         QStringLiteral("subdivide"),
         QStringLiteral("Draw and export the Catmull-Clark subdivided mesh."));
@@ -2947,6 +3012,8 @@ int main(int argc, char** argv) {
     parser.addOption(lodOpt);
     parser.addOption(loadOpt);
     parser.addOption(saveOpt);
+    parser.addOption(setMaterialOpt);
+    parser.addOption(saveMaterialOpt);
     parser.addOption(skinOpt);
     parser.addOption(skinMaterialOpt);
     parser.addOption(eyesOpt);
@@ -3153,6 +3220,21 @@ int main(int argc, char** argv) {
             return 1;
         }
         skinMaterialRef() = want;
+    }
+
+    // Validated HERE, against a default Material rather than the chosen file,
+    // because a property's name, its value grammar and its clamp range do not
+    // depend on which .mhmat is open -- and a typo should be refused before the
+    // asset scan, not after a render. The application itself happens in
+    // `editedSkinMaterial`, once per load.
+    for (const QString& edit : parser.values(setMaterialOpt)) {
+        const std::string spec = edit.toStdString();
+        mh::core::Material probe;
+        if (auto ok = mh::core::setMaterialProperty(probe, spec, dataDir() / "skins"); !ok) {
+            std::fprintf(stderr, "--set-material %s: %s\n", spec.c_str(), ok.error().c_str());
+            return 1;
+        }
+        materialOverridesRef().push_back(spec);
     }
 
     const mh::core::TargetIndex index = mh::core::TargetIndex::build(dataDir() / "targets");
@@ -3834,6 +3916,25 @@ int main(int argc, char** argv) {
                              fromDoc->c_str());
             }
         }
+    }
+
+    // After the .mhm, so `--load x.mhm --save-material y.mhmat` edits the
+    // material that character actually wears. Exits, like --save.
+    if (parser.isSet(saveMaterialOpt)) {
+        const std::filesystem::path out = parser.value(saveMaterialOpt).toStdString();
+        const auto edited               = editedSkinMaterial();
+        if (!edited) {
+            std::fprintf(stderr, "%s\n", edited.error().c_str());
+            return 1;
+        }
+        if (const auto ok = mh::core::saveMaterial(out, *edited); !ok) {
+            std::fprintf(stderr, "cannot save %s: %s\n", out.string().c_str(),
+                         ok.error().message().c_str());
+            return 1;
+        }
+        std::printf("wrote %s (%s, %zu edits)\n", out.string().c_str(), skinMaterialRef().c_str(),
+                    materialOverridesRef().size());
+        return 0;
     }
 
     // The litsphere the file names, unless the command line overrode it -- the
@@ -4621,7 +4722,7 @@ int main(int argc, char** argv) {
         // --skin-material chose the material the EXPORTERS wrote and nothing
         // else, so every one of the eight shipped tones rendered as the same
         // untextured body while the .mhm and the .glb said otherwise.
-        const ViewportMaps bodyMaps = viewportMapsOf(skinMaterialPath());
+        const ViewportMaps bodyMaps = skinViewportMaps();
         mh::render::MeshInstance body;
         body.mesh               = rm.view();
         body.litsphere          = skin;

@@ -4,6 +4,106 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-17 (hundred-and-eighth) — Session · **The material editor, and a description that appended**
+
+*M8 opens. `MaterialEditorTaskView` was the last `todo` task view. The port
+could READ a `.mhmat` and WRITE one and had no way to CHANGE one; this chunk
+is the editing engine and its headless surface. The panel is next.*
+
+### The design: one dispatch, not two
+`loadMaterial`'s per-line key dispatch was **extracted** out of its `while`
+loop into `applyLine(Material&, tokens, dir)` in the anonymous namespace
+(`src/core/Material.cpp`). The parser calls it; so does the new public
+`mh::core::setMaterialProperty(Material&, "key=value", dir)`.
+
+A second table mapping property names to fields was the obvious alternative and
+is where the two would have drifted apart — over a key's spelling, its clamp
+range, or a side effect like `viewPortAlpha` also setting `hasViewPortColor`
+(`material.py:392`). Sharing the dispatch makes every one of those true for
+free, and there is a test for the `viewPortAlpha` case specifically.
+
+`applyLine` returns `expected<bool, string>`: **true** = key recognised,
+**false** = unknown, **error** = recognised key, unparseable value. That third
+state is the point. The parser IGNORES an unknown key on purpose (community
+assets carry keys this build has never seen) and the EDITOR must not: a typo
+that changes nothing and says nothing is how the Expression chooser shipped.
+`setMaterialProperty` turns `false` into `unknown material property 'x'`.
+
+`setMaterialProperty` applies to a **copy** and commits only on success, so
+`diffuseColor=0.5,zzz,0.5` does not leave two of three channels changed.
+
+### The CLI surface
+- `--set-material <name>=<value>`, repeatable, applied in order. Commas or
+  spaces: `diffuseColor=0.8,0.1,0.1` and `diffuseColor=0.8 0.1 0.1` are one
+  edit, as is the two-token `shaderConfig=spec False`.
+- `--save-material <path>` writes the edited material and exits. **The shipped
+  file under `data/skins` is never modified** — the edits live in
+  `materialOverridesRef()` and are applied on every load.
+
+Validated at parse time against a default `Material`, because a property's
+name, grammar and clamp range do not depend on which file is open — a typo is
+refused before the asset scan, not after a render.
+
+### The one door
+`editedSkinMaterial()` is the single place the overrides are applied.
+`bodyMaterial()` (every exporter) and the new `skinViewportMaps()` (the screen)
+both come through it. `viewportMapsOf` was split into a `const Material&`
+overload plus a path wrapper to make that possible. An editor that moved the
+exported file and not the screen is exactly the combo that changes and does
+nothing, and there are two independent gates saying it does neither.
+
+### MEASURED: the matcap trap, both halves
+Under `--shading pbr`, `--set-material diffuseColor=0.8,0.1,0.1` moves
+**85,359 of 1,048,576 pixels**. Under the DEFAULT litsphere shading it moves
+**0** — the matcap shades by NORMAL and `litsphere.frag` declares `base` and
+never reads it, deliberately (`litsphere.frag:70-76`). A render gate written
+against the default shading would have passed with `--set-material` deleted.
+
+Both are pinned: `app_set_material_reaches_the_viewport` (--min-differing
+40000) and `app_matcap_ignores_the_diffuse_colour` (--max-differing 8). The
+second is not decorative — mutating `litsphere.frag` to multiply by
+`mbuf.base.rgb` builds clean and fails it.
+
+### A parity bug the review found
+`description` **APPENDED**. Two `description` lines in one file concatenated
+with no separator, and `--set-material description=...` on a material that
+already had one produced `"a shipped skinedited"`. The oracle assigns
+(`self.description = " ".join(words[1:])`, `material.py:372`). **Measured
+against the reference** on a two-line file: it gives `'second one'`. Fixed;
+two tests, one per half.
+
+Found only because exposing the dispatch as an editor made the append visible.
+A parser that appended had looked fine for as long as no shipped file had two
+of those lines.
+
+### Mutation testing — four, all killed, all with a clean build
+| mutation | killed by |
+|---|---|
+| `known = false` removed (unknown key silently accepted) | `app_set_material_unknown_property_refused` + a unit case |
+| overrides never applied | the file gate AND the viewport gate |
+| viewport re-reads the unedited file | the viewport gate ALONE (the file gate stayed green — they are independent) |
+| `litsphere.frag` multiplies by `base.rgb` | `app_matcap_ignores_the_diffuse_colour` |
+
+A fifth attempt (`skinViewportMaps` calling the path overload) **failed to
+build** — `-Werror,-Wunused-function` — and was therefore INCONCLUSIVE and
+redone a way that compiles. The lesson holds: count `error:` before believing a
+survivor.
+
+### Ponytail
+Two dead `if (!failure)` guards removed: in a function that now handles ONE
+line, at most one of `num`/`color` can fire, so the "first error wins" guard
+they carried while `failure` spanned the whole FILE has nothing left to guard.
+`skinViewportMaps()` has one caller and was KEPT — it names the invariant, and
+`-Wunused-function` proved it fails loudly if it stops being called.
+
+### What is NOT done
+**The panel.** This chunk is the engine and the headless surface;
+`MaterialEditorTaskView` stays `todo` until the panel lands. The CLI is what
+makes the panel gateable when it does: it will edit through the same
+`setMaterialProperty`.
+
+---
+
 ## 2026-09-17 (hundred-and-seventh) — Session · **M5, M6 and M7 were already finished**
 
 *Owner asked to "finish the M5, M6, M7 remaining items". Audited all seven

@@ -98,6 +98,194 @@ constexpr std::array<ChannelKey, kTextureChannelCount> kChannels{{
     {"aomaptexture", "aomapintensity", "aomapTexture", "aomapIntensity", TextureChannel::AoMap},
 }};
 
+/// One `key value...` line of a `.mhmat` applied to @p m.
+///
+/// Extracted from `loadMaterial`'s loop so that EDITING a material and READING
+/// one are the same dispatch (`setMaterialProperty`, below). A second table
+/// mapping names to fields would be where the two drift apart -- over a key's
+/// spelling, its clamp range, or a side effect like `viewPortAlpha` also
+/// setting `hasViewPortColor`.
+///
+/// @p dir is what a texture path is resolved against.
+///
+/// @return true when the key was recognised, false when it was not. An error
+/// means a RECOGNISED key carried a value that will not parse: silently
+/// keeping the default would give the asset a different appearance with no
+/// diagnostic. An UNKNOWN key is not an error HERE -- community assets carry
+/// keys this build has never seen, and the reference tolerates them too -- but
+/// it is one for the editor, which is why the two cases are distinguishable.
+std::expected<bool, std::string> applyLine(Material& m, const std::vector<std::string>& tok,
+                                           const std::filesystem::path& dir) {
+    // One line holds one value, so exactly one of the two helpers below can
+    // fire and the "first error wins" guard this carried while `failure` spanned
+    // the whole FILE has nothing left to guard.
+    std::optional<std::string> failure;
+
+    const auto num = [&](const std::string& text, float& dst, float lo, float hi) {
+        float v{};
+        if (!parseFloat(text, v)) {
+            failure = "expected a number, got '" + text + "'";
+            return;
+        }
+        dst = std::clamp(v, lo, hi);
+    };
+
+    // Colours went through `(void)readColor(...)`, so `diffuseColor 0.5 0.5`
+    // and `diffuseColor 0.5 zzz 0.5` both loaded as pure white with no
+    // diagnostic. The oracle raises ValueError on both
+    // (`[float(w) for w in words[1:4]]`), and a known key with an unparseable
+    // value is an error. Make it one.
+    const auto color = [&](const std::vector<std::string>& t, Vec3& dst) {
+        if (readColor(t, dst)) return;
+        failure = "expected three numbers for '" + t[0] + "'";
+    };
+
+    bool known            = true;
+    const std::string key = toLower(tok[0]);
+    const auto need       = [&](size_t n) { return tok.size() > n; };
+
+    if (key == "name" && need(1)) {
+        m.name = tok[1];
+    } else if (key == "tag" && need(1)) {
+        std::string t;
+        for (size_t i = 1; i < tok.size(); ++i) {
+            if (i > 1) t.push_back(' ');
+            t += tok[i];
+        }
+        m.tags.insert(toLower(t));
+    } else if (key == "description" && need(1)) {
+        // ASSIGNED, not appended: the oracle is
+        // `self.description = " ".join(words[1:])` (material.py:372), so a
+        // second `description` line replaces the first. Appending concatenated
+        // them with no separator -- measured against the reference on a file
+        // with two lines, which gives the second alone.
+        m.description.clear();
+        for (size_t i = 1; i < tok.size(); ++i) {
+            if (i > 1) m.description.push_back(' ');
+            m.description += tok[i];
+        }
+    } else if (key == "ambientcolor") {
+        color(tok, m.ambient);
+    } else if (key == "diffusecolor") {
+        color(tok, m.diffuse);
+    } else if (key == "specularcolor") {
+        color(tok, m.specular);
+    } else if (key == "emissivecolor") {
+        color(tok, m.emissive);
+    } else if (key == "viewportcolor") {
+        color(tok, m.viewPortColor);
+        m.hasViewPortColor = true;  // material.py:389, set unconditionally
+    } else if (key == "viewportalpha" && need(1)) {
+        num(tok[1], m.viewPortAlpha, 0.0F, 1.0F);
+        m.hasViewPortColor = true;  // material.py:392 -- alpha sets it too
+    } else if (key == "shininess" && need(1)) {
+        num(tok[1], m.shininess, 0.0F, 1.0F);
+    } else if (key == "opacity" && need(1)) {
+        num(tok[1], m.opacity, 0.0F, 1.0F);
+    } else if (key == "translucency" && need(1)) {
+        num(tok[1], m.translucency, 0.0F, 1.0F);
+    } else if (key == "shadeless" && need(1)) {
+        m.shadeless = readBool(tok[1]);
+    } else if (key == "wireframe" && need(1)) {
+        m.wireframe = readBool(tok[1]);
+    } else if (key == "transparent" && need(1)) {
+        m.transparent = readBool(tok[1]);
+    } else if (key == "alphatocoverage" && need(1)) {
+        m.alphaToCoverage = readBool(tok[1]);
+    } else if (key == "backfacecull" && need(1)) {
+        m.backfaceCull = readBool(tok[1]);
+    } else if (key == "depthless" && need(1)) {
+        m.depthless = readBool(tok[1]);
+    } else if (key == "castshadows" && need(1)) {
+        m.castShadows = readBool(tok[1]);
+    } else if (key == "receiveshadows" && need(1)) {
+        m.receiveShadows = readBool(tok[1]);
+    } else if (key == "autoblendskin" && need(1)) {
+        m.autoBlendSkin = readBool(tok[1]);
+    } else if (key == "sssenabled" && need(1)) {
+        m.sssEnabled = readBool(tok[1]);
+    } else if (key == "sssrscale" && need(1)) {
+        num(tok[1], m.sssRScale, 0.0F, 1e30F);
+    } else if (key == "sssgscale" && need(1)) {
+        num(tok[1], m.sssGScale, 0.0F, 1e30F);
+    } else if (key == "sssbscale" && need(1)) {
+        num(tok[1], m.sssBScale, 0.0F, 1e30F);
+    } else if (key == "shader" && need(1)) {
+        m.shader = shaderStem(tok[1]);
+    } else if (key == "uvmap" && need(1)) {
+        // "uvs/default.mhuv" is a sentinel meaning "no override"
+        // (material.py:451-458).
+        const std::string v = tok[1];
+        if (v.find("default.mhuv") == std::string::npos) m.uvMap = dir / v;
+    } else if (key == "shaderparam" && need(2)) {
+        ShaderParam p;
+        for (size_t i = 2; i < tok.size(); ++i)
+            p.push_back(tok[i]);
+        m.shaderParams[tok[1]] = std::move(p);
+    } else if (key == "shaderdefine" && need(1)) {
+        m.shaderDefines.push_back(tok[1]);
+    } else if (key == "shaderconfig" && need(2)) {
+        const std::string opt = toLower(tok[1]);
+        const bool on         = readBool(tok[2]);
+        if (opt == "diffuse") {
+            m.shaderConfig.diffuse = on;
+        } else if (opt == "bump") {
+            m.shaderConfig.bump = on;
+        } else if (opt == "normal") {
+            m.shaderConfig.normal = on;
+        } else if (opt == "displacement") {
+            m.shaderConfig.displacement = on;
+        } else if (opt == "spec") {
+            m.shaderConfig.spec = on;
+        } else if (opt == "vertexcolors") {
+            m.shaderConfig.vertexColors = on;
+        } else if (opt == "transparency") {
+            m.shaderConfig.transparency = on;
+        } else if (opt == "ambientocclusion") {
+            m.shaderConfig.ambientOcclusion = on;
+        }
+    } else {
+        // Texture channels and their intensities.
+        known = false;
+        for (const ChannelKey& ck : kChannels) {
+            const auto slot = static_cast<size_t>(ck.channel);
+            if (key == ck.texture && need(1)) {
+                // NORMALISED, because this path is two things: the key the
+                // exporters dedup on and the string they write into the
+                // file. Every shipped skin says `../textures/skin/<tone>.png`,
+                // so without this an FBX exported with `--skin-material
+                // african_deep` embedded
+                // `.../data/skins/../textures/skin/african_deep.png` --
+                // measured, four times in one file -- and two materials in
+                // different directories naming ONE image compared unequal,
+                // so `GltfWriter` embedded it twice.
+                //
+                // `lexically_normal`, not `weakly_canonical`: purely
+                // textual, so it needs no filesystem access, cannot throw
+                // on a missing or slow path, and does not silently rewrite
+                // a symlink that a bundle may depend on. The residual is
+                // that two spellings via a SYMLINK still compare unequal;
+                // nothing in `data/` uses one.
+                m.textures[slot].path = (dir / tok[1]).lexically_normal();
+                known                 = true;
+                break;
+            }
+            if (ck.intensity != nullptr && key == ck.intensity && need(1)) {
+                num(tok[1], m.textures[slot].intensity, 0.0F, 1.0F);
+                known = true;
+                break;
+            }
+        }
+        // diffuseIntensity / specularIntensity are deprecated and warned on
+        // by the reference (material.py:377-382); everything else is simply
+        // not part of the format. Both are ignored rather than fatal, since
+        // community assets carry keys this build has never seen.
+    }
+
+    if (failure) return std::unexpected(*failure);
+    return known;
+}
+
 }  // namespace
 
 std::vector<std::string> Material::effectiveDefines() const {
@@ -176,35 +364,6 @@ std::expected<Material, MaterialError> loadMaterial(const std::filesystem::path&
     uint32_t lineNo = 0;
     std::optional<MaterialError> failure;
 
-    // A KNOWN key with an unparseable value is an error: silently keeping the
-    // default would give the asset a different appearance with no diagnostic.
-    // An UNKNOWN key is ignored -- community assets carry keys this build has
-    // never seen, and the reference tolerates them too.
-    const auto num = [&](const std::string& text, float& dst, float lo, float hi) {
-        float v{};
-        if (!parseFloat(text, v)) {
-            if (!failure) {
-                failure = MaterialError{MaterialErrorKind::MalformedLine, path.string(), lineNo,
-                                        "expected a number, got '" + text + "'"};
-            }
-            return;
-        }
-        dst = std::clamp(v, lo, hi);
-    };
-
-    // Colours went through `(void)readColor(...)`, so `diffuseColor 0.5 0.5`
-    // and `diffuseColor 0.5 zzz 0.5` both loaded as pure white with no
-    // diagnostic. The oracle raises ValueError on both
-    // (`[float(w) for w in words[1:4]]`), and the policy stated above says a
-    // known key with an unparseable value is an error. Make it one.
-    const auto color = [&](const std::vector<std::string>& t, Vec3& dst) {
-        if (readColor(t, dst)) return;
-        if (!failure) {
-            failure = MaterialError{MaterialErrorKind::MalformedLine, path.string(), lineNo,
-                                    "expected three numbers for '" + t[0] + "'"};
-        }
-    };
-
     while (std::getline(in, line)) {
         ++lineNo;
         if (!line.empty() && line.back() == '\r') line.pop_back();
@@ -214,137 +373,15 @@ std::expected<Material, MaterialError> loadMaterial(const std::filesystem::path&
         // '#' and '//' are comments only as the FIRST token (material.py:364-365).
         if (tok[0] == "#" || tok[0] == "//" || tok[0].starts_with("//")) continue;
 
-        const std::string key = toLower(tok[0]);
-        const auto need       = [&](size_t n) { return tok.size() > n; };
-
-        if (key == "name" && need(1)) {
-            m.name = tok[1];
-        } else if (key == "tag" && need(1)) {
-            std::string t;
-            for (size_t i = 1; i < tok.size(); ++i) {
-                if (i > 1) t.push_back(' ');
-                t += tok[i];
-            }
-            m.tags.insert(toLower(t));
-        } else if (key == "description" && need(1)) {
-            for (size_t i = 1; i < tok.size(); ++i) {
-                if (i > 1) m.description.push_back(' ');
-                m.description += tok[i];
-            }
-        } else if (key == "ambientcolor") {
-            color(tok, m.ambient);
-        } else if (key == "diffusecolor") {
-            color(tok, m.diffuse);
-        } else if (key == "specularcolor") {
-            color(tok, m.specular);
-        } else if (key == "emissivecolor") {
-            color(tok, m.emissive);
-        } else if (key == "viewportcolor") {
-            color(tok, m.viewPortColor);
-            m.hasViewPortColor = true;  // material.py:389, set unconditionally
-        } else if (key == "viewportalpha" && need(1)) {
-            num(tok[1], m.viewPortAlpha, 0.0F, 1.0F);
-            m.hasViewPortColor = true;  // material.py:392 -- alpha sets it too
-        } else if (key == "shininess" && need(1)) {
-            num(tok[1], m.shininess, 0.0F, 1.0F);
-        } else if (key == "opacity" && need(1)) {
-            num(tok[1], m.opacity, 0.0F, 1.0F);
-        } else if (key == "translucency" && need(1)) {
-            num(tok[1], m.translucency, 0.0F, 1.0F);
-        } else if (key == "shadeless" && need(1)) {
-            m.shadeless = readBool(tok[1]);
-        } else if (key == "wireframe" && need(1)) {
-            m.wireframe = readBool(tok[1]);
-        } else if (key == "transparent" && need(1)) {
-            m.transparent = readBool(tok[1]);
-        } else if (key == "alphatocoverage" && need(1)) {
-            m.alphaToCoverage = readBool(tok[1]);
-        } else if (key == "backfacecull" && need(1)) {
-            m.backfaceCull = readBool(tok[1]);
-        } else if (key == "depthless" && need(1)) {
-            m.depthless = readBool(tok[1]);
-        } else if (key == "castshadows" && need(1)) {
-            m.castShadows = readBool(tok[1]);
-        } else if (key == "receiveshadows" && need(1)) {
-            m.receiveShadows = readBool(tok[1]);
-        } else if (key == "autoblendskin" && need(1)) {
-            m.autoBlendSkin = readBool(tok[1]);
-        } else if (key == "sssenabled" && need(1)) {
-            m.sssEnabled = readBool(tok[1]);
-        } else if (key == "sssrscale" && need(1)) {
-            num(tok[1], m.sssRScale, 0.0F, 1e30F);
-        } else if (key == "sssgscale" && need(1)) {
-            num(tok[1], m.sssGScale, 0.0F, 1e30F);
-        } else if (key == "sssbscale" && need(1)) {
-            num(tok[1], m.sssBScale, 0.0F, 1e30F);
-        } else if (key == "shader" && need(1)) {
-            m.shader = shaderStem(tok[1]);
-        } else if (key == "uvmap" && need(1)) {
-            // "uvs/default.mhuv" is a sentinel meaning "no override"
-            // (material.py:451-458).
-            const std::string v = tok[1];
-            if (v.find("default.mhuv") == std::string::npos) m.uvMap = dir / v;
-        } else if (key == "shaderparam" && need(2)) {
-            ShaderParam p;
-            for (size_t i = 2; i < tok.size(); ++i)
-                p.push_back(tok[i]);
-            m.shaderParams[tok[1]] = std::move(p);
-        } else if (key == "shaderdefine" && need(1)) {
-            m.shaderDefines.push_back(tok[1]);
-        } else if (key == "shaderconfig" && need(2)) {
-            const std::string opt = toLower(tok[1]);
-            const bool on         = readBool(tok[2]);
-            if (opt == "diffuse") {
-                m.shaderConfig.diffuse = on;
-            } else if (opt == "bump") {
-                m.shaderConfig.bump = on;
-            } else if (opt == "normal") {
-                m.shaderConfig.normal = on;
-            } else if (opt == "displacement") {
-                m.shaderConfig.displacement = on;
-            } else if (opt == "spec") {
-                m.shaderConfig.spec = on;
-            } else if (opt == "vertexcolors") {
-                m.shaderConfig.vertexColors = on;
-            } else if (opt == "transparency") {
-                m.shaderConfig.transparency = on;
-            } else if (opt == "ambientocclusion") {
-                m.shaderConfig.ambientOcclusion = on;
-            }
-        } else {
-            // Texture channels and their intensities.
-            for (const ChannelKey& ck : kChannels) {
-                const auto slot = static_cast<size_t>(ck.channel);
-                if (key == ck.texture && need(1)) {
-                    // NORMALISED, because this path is two things: the key the
-                    // exporters dedup on and the string they write into the
-                    // file. Every shipped skin says `../textures/skin/<tone>.png`,
-                    // so without this an FBX exported with `--skin-material
-                    // african_deep` embedded
-                    // `.../data/skins/../textures/skin/african_deep.png` --
-                    // measured, four times in one file -- and two materials in
-                    // different directories naming ONE image compared unequal,
-                    // so `GltfWriter` embedded it twice.
-                    //
-                    // `lexically_normal`, not `weakly_canonical`: purely
-                    // textual, so it needs no filesystem access, cannot throw
-                    // on a missing or slow path, and does not silently rewrite
-                    // a symlink that a bundle may depend on. The residual is
-                    // that two spellings via a SYMLINK still compare unequal;
-                    // nothing in `data/` uses one.
-                    m.textures[slot].path = (dir / tok[1]).lexically_normal();
-                    break;
-                }
-                if (ck.intensity != nullptr && key == ck.intensity && need(1)) {
-                    num(tok[1], m.textures[slot].intensity, 0.0F, 1.0F);
-                    break;
-                }
-            }
-            // diffuseIntensity / specularIntensity are deprecated and warned on
-            // by the reference (material.py:377-382); everything else is simply
-            // not part of the format. Both are ignored rather than fatal, since
-            // community assets carry keys this build has never seen.
+        auto applied = applyLine(m, tok, dir);
+        if (!applied && !failure) {
+            failure = MaterialError{MaterialErrorKind::MalformedLine, path.string(), lineNo,
+                                    applied.error()};
         }
+        // `*applied == false` -- an unrecognised key -- is deliberately not an
+        // error: see applyLine. diffuseIntensity / specularIntensity are
+        // deprecated and warned on by the reference (material.py:377-382);
+        // everything else is simply not part of the format.
     }
 
     if (failure) return std::unexpected(*failure);
@@ -500,6 +537,38 @@ foundation::MaterialDesc Material::desc() const {
                                     transparent,
                                     texture(TextureChannel::Diffuse).path,
                                     texture(TextureChannel::NormalMap).path};
+}
+
+std::expected<void, std::string> setMaterialProperty(Material& material, std::string_view spec,
+                                                     const std::filesystem::path& dir) {
+    const auto eq = spec.find('=');
+    if (eq == std::string_view::npos || eq == 0) {
+        return std::unexpected("expected key=value, got '" + std::string(spec) + "'");
+    }
+
+    // Commas become spaces so `diffuseColor=0.8,0.1,0.1` and
+    // `diffuseColor=0.8 0.1 0.1` are one edit. Nothing the format can hold has
+    // a comma in it: paths are split on whitespace by the parser too, so a
+    // texture whose filename contained one was already unreachable.
+    std::string joined(spec);
+    joined[eq] = ' ';
+    std::ranges::replace(joined, ',', ' ');
+
+    const std::vector<std::string> tok = splitWs(joined);
+    if (tok.size() < 2) {
+        return std::unexpected("no value for '" + std::string(spec.substr(0, eq)) + "'");
+    }
+
+    // A COPY, so a rejected edit leaves the material exactly as it was. The
+    // dispatch writes fields as it goes, so `diffuseColor=0.5,zzz,0.5` would
+    // otherwise leave two of three channels changed and report an error.
+    Material edited       = material;
+    const auto recognised = applyLine(edited, tok, dir);
+    if (!recognised) return std::unexpected(recognised.error());
+    if (!*recognised) return std::unexpected("unknown material property '" + tok[0] + "'");
+
+    material = std::move(edited);
+    return {};
 }
 
 }  // namespace mh::core

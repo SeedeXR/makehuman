@@ -12,6 +12,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace mh::core {
@@ -156,5 +157,27 @@ struct MaterialError {
 /// intent (`:497-509`) without its dependency on the app's data-path registry.
 [[nodiscard]] std::expected<void, MaterialError> saveMaterial(const std::filesystem::path& path,
                                                               const Material& material);
+
+/// Applies one `property=value` edit to @p material, in place.
+///
+/// The editor and the parser are ONE dispatch: `loadMaterial` routes every
+/// line through the same function, so anything the format can express is
+/// editable and the two can never drift into disagreeing about a key's name,
+/// its clamp range, or its side effects (`viewPortAlpha` also setting
+/// `hasViewPortColor`, for one).
+///
+/// @p spec is `key=value`; the value is split on whitespace and commas, so
+/// `diffuseColor=0.8,0.1,0.1` and `diffuseColor=0.8 0.1 0.1` are the same
+/// edit, as is the multi-token `shaderConfig=spec False`.
+///
+/// @p dir is what a texture path is resolved against, exactly as the
+/// material's own directory is when loading.
+///
+/// An UNKNOWN key is an error here, though `loadMaterial` ignores one: a
+/// community asset carrying a key this build has never seen must still load,
+/// but a person typing `--set-material diffusColor=1,0,0` has made a mistake
+/// and silently doing nothing is the worst possible answer.
+[[nodiscard]] std::expected<void, std::string> setMaterialProperty(
+    Material& material, std::string_view spec, const std::filesystem::path& dir);
 
 }  // namespace mh::core

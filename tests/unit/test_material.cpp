@@ -357,3 +357,145 @@ TEST_CASE("normalising a texture path does not need the file to exist", "[core][
     // that answer either way.
     CHECK(m->texture(TextureChannel::Diffuse).present());
 }
+
+// --- editing (M8, the material editor) -------------------------------------
+//
+// The gap the editor fills: the port could READ a .mhmat and WRITE one, and had
+// no way to CHANGE one. These pin the one function both the CLI and the panel
+// go through.
+
+namespace {
+
+/// A material with non-default values everywhere the edits below touch, so a
+/// test that asserts a new value cannot pass by finding the default already
+/// there.
+Material editable() {
+    Material m;
+    m.name        = "start";
+    m.diffuse     = Vec3{0.25F, 0.25F, 0.25F};
+    m.shininess   = 0.3F;
+    m.transparent = false;
+    return m;
+}
+
+}  // namespace
+
+TEST_CASE("an edit sets a scalar, clamped like the parser", "[core][material][edit]") {
+    Material m = editable();
+    REQUIRE(setMaterialProperty(m, "shininess=0.7", "."));
+    CHECK_THAT(m.shininess, WithinAbs(0.7, 1e-6));
+
+    // The parser clamps shininess to [0,1] (material.py:62-69 for colours, the
+    // same policy here). An editor that did not would let a slider write a
+    // file the reader then silently re-clamps.
+    REQUIRE(setMaterialProperty(m, "shininess=5", "."));
+    CHECK_THAT(m.shininess, WithinAbs(1.0, 1e-6));
+}
+
+TEST_CASE("an edit sets a colour, comma or space separated", "[core][material][edit]") {
+    Material m = editable();
+    REQUIRE(setMaterialProperty(m, "diffuseColor=0.8,0.1,0.1", "."));
+    CHECK_THAT(m.diffuse.x, WithinAbs(0.8, 1e-6));
+    CHECK_THAT(m.diffuse.y, WithinAbs(0.1, 1e-6));
+    CHECK_THAT(m.diffuse.z, WithinAbs(0.1, 1e-6));
+
+    REQUIRE(setMaterialProperty(m, "specularColor=0.2 0.3 0.4", "."));
+    CHECK_THAT(m.specular.x, WithinAbs(0.2, 1e-6));
+    CHECK_THAT(m.specular.z, WithinAbs(0.4, 1e-6));
+}
+
+TEST_CASE("an edit sets a boolean the way the format spells one", "[core][material][edit]") {
+    Material m = editable();
+    REQUIRE(setMaterialProperty(m, "transparent=yes", "."));
+    CHECK(m.transparent);
+    REQUIRE(setMaterialProperty(m, "transparent=False", "."));
+    CHECK_FALSE(m.transparent);
+}
+
+TEST_CASE("an edit carries the parser's side effects", "[core][material][edit]") {
+    // viewPortAlpha sets hasViewPortColor too (material.py:392). Sharing the
+    // dispatch with the parser is what makes this true for free; a second
+    // hand-written table is where it would have been forgotten.
+    Material m = editable();
+    REQUIRE_FALSE(m.hasViewPortColor);
+    REQUIRE(setMaterialProperty(m, "viewPortAlpha=0.5", "."));
+    CHECK(m.hasViewPortColor);
+}
+
+TEST_CASE("an edit sets a shaderConfig flag by name", "[core][material][edit]") {
+    Material m = editable();
+    REQUIRE(m.shaderConfig.spec);
+    REQUIRE(setMaterialProperty(m, "shaderConfig=spec False", "."));
+    CHECK_FALSE(m.shaderConfig.spec);
+    CHECK(m.shaderConfig.diffuse);  // and nothing else moved
+}
+
+TEST_CASE("an edit resolves a texture against the given directory", "[core][material][edit]") {
+    Material m = editable();
+    REQUIRE(setMaterialProperty(m, "diffuseTexture=../textures/skin/x.png", "/data/skins"));
+    CHECK(m.texture(TextureChannel::Diffuse).path == "/data/textures/skin/x.png");
+}
+
+TEST_CASE("an unknown property is rejected, not ignored", "[core][material][edit]") {
+    // The parser ignores an unknown key on purpose -- community assets carry
+    // keys this build has never seen. An EDIT must not: a typo that changes
+    // nothing and says nothing is how a chooser ships doing nothing.
+    Material m         = editable();
+    const auto refused = setMaterialProperty(m, "diffusColor=1,0,0", ".");
+    REQUIRE_FALSE(refused);
+    CHECK(refused.error().find("diffusColor") != std::string::npos);
+    CHECK_THAT(m.diffuse.x, WithinAbs(0.25, 1e-6));  // and left the material alone
+}
+
+TEST_CASE("an unparseable value is rejected", "[core][material][edit]") {
+    Material m = editable();
+    CHECK_FALSE(setMaterialProperty(m, "shininess=abc", "."));
+    CHECK_FALSE(setMaterialProperty(m, "diffuseColor=0.5,0.5", "."));
+    CHECK_THAT(m.shininess, WithinAbs(0.3, 1e-6));
+}
+
+TEST_CASE("a spec with no '=' is rejected", "[core][material][edit]") {
+    Material m = editable();
+    CHECK_FALSE(setMaterialProperty(m, "shininess", "."));
+    CHECK_FALSE(setMaterialProperty(m, "=0.5", "."));
+}
+
+TEST_CASE("an edit survives a save and reload", "[core][material][edit]") {
+    // The editor is only useful if what it changes reaches the file. Saving
+    // and re-reading is the whole round trip the panel's Save button will do.
+    Material m = editable();
+    REQUIRE(setMaterialProperty(m, "diffuseColor=0.8,0.1,0.1", "."));
+    REQUIRE(setMaterialProperty(m, "shininess=0.42", "."));
+
+    const auto path = std::filesystem::temp_directory_path() / "mh_edit_roundtrip.mhmat";
+    REQUIRE(saveMaterial(path, m));
+    const auto back = loadMaterial(path);
+    std::filesystem::remove(path);
+    REQUIRE(back);
+    CHECK_THAT(back->diffuse.x, WithinAbs(0.8, 1e-6));
+    CHECK_THAT(back->diffuse.y, WithinAbs(0.1, 1e-6));
+    CHECK_THAT(back->shininess, WithinAbs(0.42, 1e-6));
+}
+
+TEST_CASE("a repeated description REPLACES, as the reference does", "[core][material]") {
+    // Found reviewing the editor, which is what made it matter: the parser
+    // APPENDED, so a second `description` line concatenated onto the first
+    // without even a space, and `--set-material description=...` on a material
+    // that already had one produced "old onenew one".
+    //
+    // The oracle assigns (`self.description = " ".join(words[1:])`,
+    // material.py:372). MEASURED against it on this exact file: the reference
+    // gives 'second one'.
+    TempMat mat("name T\ndescription first one\ndescription second one\n");
+    const auto m = loadMaterial(mat.path());
+    REQUIRE(m);
+    CHECK(m->description == "second one");
+}
+
+TEST_CASE("an edit replaces the description rather than appending", "[core][material][edit]") {
+    Material m = editable();
+    REQUIRE(setMaterialProperty(m, "description=a shipped skin", "."));
+    REQUIRE(m.description == "a shipped skin");
+    REQUIRE(setMaterialProperty(m, "description=edited", "."));
+    CHECK(m.description == "edited");
+}

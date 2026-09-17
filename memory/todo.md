@@ -2995,6 +2995,43 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         buttons, and those URLs belong to the upstream community rather than to
         a port. **Raised with the owner.**
 
+- [~] **MaterialEditorTaskView — the EDITING ENGINE is done; the PANEL is not**
+      (2026-09-17). The reference's is `legacy/python/plugins/7_material_editor.py`
+      (903 lines). Reading and writing `.mhmat` both already existed here
+      (`loadMaterial`, `saveMaterial`); the gap was **editing**, and that half
+      now exists.
+      - `mh::core::setMaterialProperty(Material&, "key=value", dir)`
+        (`include/makehuman/core/Material.h:163`). The per-line key dispatch was
+        EXTRACTED out of `loadMaterial`'s loop into `applyLine`, so the parser
+        and the editor are **one dispatch**. A second name-to-field table was
+        the obvious alternative and is where the two would have drifted apart
+        — over a key's spelling, its clamp range, or `viewPortAlpha` also
+        setting `hasViewPortColor`.
+      - `applyLine` returns `expected<bool, string>`: true = known, false =
+        unknown, error = known key with a bad value. The parser IGNORES an
+        unknown key on purpose; the EDITOR refuses one, because a typo that
+        changes nothing and says nothing is how the Expression chooser shipped.
+      - `--set-material <name>=<value>` (repeatable, commas or spaces) and
+        `--save-material <path>`. `data/skins` is never modified: the edits are
+        applied on every load, through the ONE door `editedSkinMaterial()`,
+        which both `bodyMaterial()` (every export) and `skinViewportMaps()`
+        (the screen) come through.
+      - **MEASURED, the matcap trap, both halves**: under `--shading pbr` a
+        `diffuseColor` edit moves **85,359 of 1,048,576 pixels**; under the
+        default litsphere it moves **0** — `litsphere.frag` declares `base`
+        and deliberately never reads it (`:70-76`). Both pinned, and the second
+        is NOT decorative: mutating the shader to read it builds clean and fails
+        `app_matcap_ignores_the_diffuse_colour`.
+      - A parity bug the review found on the way: `description` **APPENDED**, so
+        two such lines concatenated with no separator. The oracle assigns
+        (`material.py:372`); measured against the reference on a two-line file,
+        it gives the second alone. Fixed, two tests.
+      **STILL OPEN: the panel.** The view stays `todo` in
+      `memory/taskviews.md` until it lands. The CLI is what makes it gateable
+      when it does — the panel will edit through the same function.
+      Note `applyChoice` is not reachable headlessly, so the panel's apply path
+      needs checking BY HAND.
+
 - [x] **ExpressionTaskView reclassified todo → BLOCKED** (2026-09-17).
       MEASURED: `legacy/python/data/expressions/` **does not exist in the
       reference** and there are **zero** `.mhpose` files anywhere in it. So it
