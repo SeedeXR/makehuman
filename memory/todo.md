@@ -728,7 +728,7 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       0.01 ms. Both comfortably per-frame.
       It is *accumulated matrix skinning*: blend the MATRICES, apply once —
       one matrix-vector multiply per vertex rather than one per influence.
-- [~] **Skin normals/tangents (the w=0 direction path) — deliberately NOT built**
+- [x] **Skin normals/tangents (the w=0 direction path) — DECIDED, not built**
       (decided 2026-09-05, with the evidence, not deferred again).
       `skinMesh` takes `coords[n,4]` and uses the homogeneous coordinate to
       switch: **w=1 for positions, w=0 for directions** — normals, tangents and
@@ -1112,7 +1112,7 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       Tests generate their texture in-process — no skin texture ships, and this
       also keeps the suite free of any third-party asset licence.
       Mutation-verified: forcing the shared white back fails 2 of the 3.
-- [~] **Skin tones: eight textured materials, generated** (2026-09-05, owner:
+- [x] **Skin tones: eight textured materials, generated** (2026-09-05, owner:
       *"use the available textures and you can learn from the ones forbidden and
       we can generate ours procedurally"*).
       **Licence triage decided it.** `texturing.xyz` VFace is paid and forbids
@@ -1233,7 +1233,7 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `[core][macro][ethnic]`.
       A size-mismatched in-memory litsphere is refused rather than trusted —
       reading past the buffer would be a heap overflow.
-- [~] **Blinn-Phong→PBR conversion: done and shared** (2026-09-05).
+- [x] **Blinn-Phong→PBR conversion: done and shared** (2026-09-05).
       `foundation::metallicRoughnessOf` is the one conversion every writer uses.
       It already existed in effect — `GltfWriter.cpp` and `UsdWriter.cpp` each
       computed `clamp(1 - shininess, 0, 1)` separately, with the reasoning for
@@ -1498,7 +1498,7 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 
 ## M7 — Interchange (`mh-io`)
 
-- [~] **`mh::io::Scene` IR / shared export options — the type was the wrong
+- [x] **`mh::io::Scene` IR / shared export options — the type was the wrong
       answer.** Four writers carry five identically-named, identically-meaning
       settings (`unit`, `scale`, `feetOnGround`, `writeNormals`, `writeUVs`),
       and this session found **six** defects that were exactly one writer
@@ -1570,7 +1570,7 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       scene would be lifted by -inf and write a file of NaNs); offset x and z as
       well as y.
       Verified end to end: Blender still **11/11**, so no export geometry moved.
-- [~] **Import: multi-mesh now works** (`io::importScene`). Formats come from
+- [x] **Import: multi-mesh now works** (`io::importScene`). Formats come from
       assimp, so FBX, glTF/GLB, DAE, STL and OBJ all read.
       **The gap this closed**: export has been multi-mesh for a while — a
       dressed character is body + one entry per worn proxy — while import read
@@ -1763,7 +1763,7 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         dependency check now covers `find_package` as well as `FetchContent` —
         it previously checked only the latter, so anything found on the system
         could be linked with nothing recorded about its licence.
-- [~] **Export FBX — measured before writing anything, and the item's premise
+- [x] **Export FBX — measured before writing anything, and the item's premise
       has moved.** assimp already writes **FBX 7500** (verified from the file
       header: `Kaydara FBX Binary`, version field 7500), it is BSD-3-Clause, and
       Blender validates the result. So "write our own from spec to get 7.4/7.5"
@@ -2189,6 +2189,16 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         solver all landing on 1.6863 × 0.3009 × 1.663 m.
 
 - [~] Texture packing (ORM), GLB embedding, KTX2/Basis, optional Draco — three
+      of four settled; **KTX2/Basis is the ONE open item left in M5, M6 and M7
+      combined, and it is an OWNER DECISION, not work** (restated 2026-09-17
+      after auditing every partial in those three milestones). The measurement
+      that frames it: with Draco on, **74.5% of the GLB is PNG** (1,749,562 of
+      2,348,760 bytes, three distinct images). The cost is that there is no
+      linkable library — Homebrew's `basis_universal` installs only the
+      `basisu` CLI and `libktx` is not in Homebrew at all — so adopting it
+      means FetchContent of KTX-Software, its CI cost, and a SECOND required
+      glTF extension (`KHR_texture_basisu`) stacked on Draco, narrowing which
+      tools can open our files twice over. Ask before building.
       of the four are settled.
       - **GLB embedding**: done.
       - **Optional Draco**: done, `--draco`.

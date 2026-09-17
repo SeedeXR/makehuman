@@ -4,6 +4,56 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-17 (hundred-and-seventh) — Session · **M5, M6 and M7 were already finished**
+
+*Owner asked to "finish the M5, M6, M7 remaining items". Audited all seven
+partials: six were already done or already decided, and the plan had not said
+so.*
+
+### The finding
+`memory/todo.md` carried **seven `[~]` items** across M5–M7. Read in full and
+checked against `src/`, six of them were not pending work at all:
+
+| item | what it actually was |
+|---|---|
+| M5 skin normals/tangents (w=0) | a DECISION, with evidence — it would have no caller; every `poseInPlace` site recomputes from deformed geometry. Reopen when GPU skinning lands |
+| M6 skin tones | complete; its own stated remainder (the `--skin` → `--litsphere` rename) says DONE inside the entry |
+| M6 Blinn-Phong→PBR | complete — `metallicRoughnessOf` shared, exported numbers verified unchanged |
+| M7 Scene IR | a DECISION AGAINST the type: a shared base "expresses the relationship without enforcing it". Tests became the mechanism instead |
+| M7 import multi-mesh | complete, mutation-verified |
+| M7 export FBX | all five stages DONE; the application's `.fbx` goes through OUR writer and Maya reports a LIVE rig |
+
+**Verified rather than taken on trust**, because this plan has been wrong
+before: `io::writeFbxScene` is called at `main.cpp:2554`;
+`metallicRoughnessOf` is shared by GltfWriter, UsdWriter, SceneResources and
+main.cpp; `--litsphere` is the primary flag with `--skin-material` separate;
+`SceneIO` sets `mNumMeshes` from the entry list.
+
+All six closed. **M5 and M6 are now 0 open / 0 partial.**
+
+### The one thing left, and it is not work
+M7's remaining partial is **KTX2/Basis**, and it is an **owner decision**.
+Measured: with Draco on, **74.5% of the GLB is PNG** (1,749,562 of 2,348,760
+bytes across three distinct images). The cost is that no linkable library
+exists — Homebrew's `basis_universal` ships only the `basisu` CLI and `libktx`
+is not packaged — so it means FetchContent of KTX-Software, its CI cost, and a
+SECOND required glTF extension stacked on Draco, narrowing which tools can open
+our files twice over. Framed in the entry; not taken.
+
+ORM packing is recorded N/A on the shipped data: no `.mhmat` names an AO map,
+so R would be constant white while G and B are already exact scalars.
+
+### Why this kept happening
+Three separate milestones each carried items marked partial that were finished
+months earlier — the same shape as the taskviews prose drifting from its table,
+and as the "verified" cornrow recipe that did not survive re-measurement. **A
+plan file records intent at the moment of writing and nothing re-checks it.**
+The auditors that exist (`audit_taskviews.py`, `audit_version.py`,
+`audit_licences.py`) are exactly the answer to this, and nothing plays that role
+for milestone state.
+
+---
+
 ## 2026-09-17 (hundred-and-sixth) — Session · **Face units, expressions, and a chooser that did nothing**
 
 *Three owner instructions in one chunk: bundle the ARKit face units, fill the
