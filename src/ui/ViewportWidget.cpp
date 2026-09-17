@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "makehuman/ui/ViewportWidget.h"
 
+#include "makehuman/ui/Backdrop.h"
+
 #include "makehuman/ui/MouseBindings.h"
 
 #include "makehuman/render/Picking.h"
@@ -32,6 +34,13 @@ struct ViewportWidget::Impl {
     render::ShadingModel shading{render::ShadingModel::Litsphere};
     bool wireframe{false};
     bool grid{false};
+    /// The backdrop lives HERE as well as in `scene`, for the reason the
+    /// shading model does: `scene` is destroyed and rebuilt on every device or
+    /// render-pass change, and a photograph that vanished when the window was
+    /// resized would be the same defect the shading toggle already remembers.
+    QImage backdrop;
+    BackdropSide backdropSide{BackdropSide::Front};
+    float backdropOpacity{1.0F};
     QString error;
 
     /// What `scene` was built against. initialize() runs on every resize, but
@@ -104,6 +113,14 @@ bool ViewportWidget::wireframeSupported() const {
     return d_->scene && d_->scene->wireframeSupported();
 }
 
+void ViewportWidget::setBackdrop(const QImage& image, BackdropSide side, float opacity) {
+    d_->backdrop        = image;
+    d_->backdropSide    = side;
+    d_->backdropOpacity = opacity;
+    if (d_->scene) d_->scene->setBackdrop(image, opacity);
+    update();
+}
+
 void ViewportWidget::setGrid(bool on) {
     d_->grid = on;
     if (d_->scene) d_->scene->setGrid(on);
@@ -155,6 +172,8 @@ void ViewportWidget::initialize(QRhiCommandBuffer* cb) {
     d_->scene->setShadingModel(d_->shading);
     d_->scene->setWireframe(d_->wireframe);
     d_->scene->setGrid(d_->grid);
+    // ...and the backdrop, for the same reason: a resize rebuilds the scene.
+    d_->scene->setBackdrop(d_->backdrop, d_->backdropOpacity);
     d_->builtAgainstRhi  = rhi();
     d_->builtAgainstPass = pass;
     d_->needsUpload      = true;
@@ -183,6 +202,17 @@ void ViewportWidget::render(QRhiCommandBuffer* cb) {
                              ? static_cast<float>(pix.width()) / static_cast<float>(pix.height())
                              : 1.0F;
     d_->scene->updateCamera(u, d_->camera, aspect);
+
+    // Where the backdrop sits is recomputed every frame rather than cached on
+    // resize: it depends on the viewport's pixel size AND on the camera angle,
+    // and it is four divisions. An empty rectangle is how a backdrop bound to a
+    // side the camera is not looking from gets hidden -- `SceneResources` draws
+    // nothing for one, so a hidden backdrop costs no pixels either.
+    const bool facing =
+        !d_->backdrop.isNull() &&
+        facingSide(d_->backdropSide, d_->camera.yawDegrees, d_->camera.pitchDegrees);
+    d_->scene->setBackdropSource(facing ? coverSource(pix, d_->backdrop.size()) : QRectF{});
+    d_->scene->updateBackdrop(u);
 
     cb->beginPass(renderTarget(), theme::palette().bgViewport, {1.0F, 0}, u);
     d_->scene->draw(cb, pix);

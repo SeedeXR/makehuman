@@ -4,9 +4,12 @@
 #include "makehuman/foundation/Geometry.h"
 #include "makehuman/foundation/Types.h"
 
+#include <QImage>
 #include <QMatrix4x4>
+#include <QRectF>
 #include <QSize>
 
+#include <array>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -21,6 +24,24 @@ class QRhiRenderPassDescriptor;
 class QRhiResourceUpdateBatch;
 
 namespace mh::render {
+
+/// The UV transform a backdrop's cover rectangle becomes, as
+/// (scaleU, scaleV, offsetU, offsetV) for `uv = corner * xy + zw`.
+///
+/// Free and pure so the one rule with a backend in it can be TESTED. It was
+/// written inline first and shipped upside down on Metal: a fullscreen
+/// triangle's first corner is at NDC y = -1, which is the BOTTOM of the frame
+/// where the API puts +1 at the top, while v = 0 is always the image's FIRST
+/// row. A symmetric test image cannot show that and neither can a
+/// "differs from plain" pixel check -- so the flip belongs somewhere a unit
+/// test can reach it.
+///
+/// @param yUpInNdc `QRhi::isYUpInNDC()`. Asked rather than assumed: baking in
+///                 Metal's answer would be a latent bug on any other backend.
+/// @return all zeroes for a degenerate image or an empty rectangle, which the
+///         caller treats as "draw nothing".
+[[nodiscard]] std::array<float, 4> backdropUvTransform(const QRectF& source, QSize image,
+                                                       bool yUpInNdc);
 
 /// MSAA samples every target in this application asks for.
 ///
@@ -274,6 +295,42 @@ public:
     /// lines at a normal camera distance.
     static constexpr float kGridExtent = 12.0F;
     static constexpr float kGridStep   = 1.0F;
+
+    /// A photograph behind the model, so a user can model TO a reference image
+    /// -- what the reference's BackgroundChooser is for
+    /// (`plugins/0_modeling_background.py:104`).
+    ///
+    /// Drawn FIRST, in screen space, with the depth test OFF and blending on:
+    /// it is behind everything by construction rather than by depth, and the
+    /// camera orbits by rotating the MODEL, so a backdrop sharing the scene's
+    /// transform would swing away with it.
+    ///
+    /// @param image   a null image CLEARS the backdrop, which is how the
+    ///                caller turns it off without a second entry point.
+    /// @param opacity 0..1, applied as ALPHA against the already-cleared
+    ///                framebuffer -- so it fades toward the viewport's own
+    ///                background colour rather than toward black.
+    void setBackdrop(const QImage& image, float opacity);
+
+    /// Which part of the backdrop image to show, in IMAGE pixels.
+    ///
+    /// Separate from `setBackdrop` because it changes for a different reason:
+    /// the image changes when the user picks one, the visible rectangle every
+    /// time the viewport is resized, and folding them together would re-upload
+    /// the texture on every drag of a splitter.
+    ///
+    /// The CALLER computes it, with `mh::ui::coverSource`. That function owns
+    /// the cover rule and both consumers read it, but it cannot live here:
+    /// `mh::ui` already depends on `mh::render`, so depending back would be a
+    /// cycle, and `mh::foundation` deliberately links no Qt.
+    void setBackdropSource(const QRectF& sourceInImage);
+
+    /// Uploads a pending backdrop image and writes its uniform block.
+    ///
+    /// Per FRAME, beside `updateCamera`, rather than inside `upload` -- the
+    /// placement depends on the viewport's size, which changes without any mesh
+    /// changing, and `upload` only runs when the scene does.
+    void updateBackdrop(QRhiResourceUpdateBatch* batch);
 
     /// Records one draw per uploaded mesh. `upload` must have run in an earlier
     /// or the same batch.

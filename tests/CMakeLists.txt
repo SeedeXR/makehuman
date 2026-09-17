@@ -155,6 +155,13 @@ catch_discover_tests(mh_tests PROPERTIES ENVIRONMENT "TMPDIR=${MH_TEST_TMPDIR}")
 # check them in a third implementation. Not a test target: it produces files for
 # another process rather than asserting anything.
 add_executable(mh_export_fixture mh_export_fixture.cpp)
+
+# Tolerant image comparison, because two GPU renders of one scene are not
+# bit-identical. C++ and Qt rather than Pillow so it runs in CI, where the
+# Python image checks skip for want of a wheel.
+add_executable(mh_png_compare mh_png_compare.cpp)
+target_link_libraries(mh_png_compare PRIVATE Qt6::Gui mh::warnings mh::sanitize)
+set_target_properties(mh_png_compare PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
 # mh::core is NOT listed: mh::rig PUBLIC-links it since PosedMesh, so naming it
 # here too makes the linker see libmh_core.a twice and warn -- the same trap the
 # comment above records for libmh_io.a.
@@ -167,7 +174,8 @@ set_target_properties(mh_export_fixture PROPERTIES CXX_STANDARD 23 CXX_STANDARD_
 if(MH_HAVE_RENDER)
     add_executable(mh_render_tests render/test_offscreen_render.cpp
                                    render/test_proxy_render.cpp
-                                   unit/test_picking.cpp)
+                                   unit/test_picking.cpp
+                                   render/test_backdrop_uv.cpp)
     target_link_libraries(mh_render_tests
         PRIVATE mh::core mh::render mh::io Catch2::Catch2WithMain mh::warnings mh::sanitize)
     target_compile_definitions(mh_render_tests PRIVATE
@@ -191,7 +199,8 @@ if(MH_HAVE_RENDER)
                                ui/test_mouse_bindings.cpp
                                ui/test_shortcuts_dialog.cpp
                                ui/test_render_request.cpp
-                               ui/test_background.cpp)
+                               ui/test_background.cpp
+                               ui/test_backdrop.cpp)
     target_link_libraries(mh_ui_tests
         PRIVATE mh::ui mh::core Catch2::Catch2 mh::warnings mh::sanitize)
     target_compile_definitions(mh_ui_tests PRIVATE
@@ -1922,6 +1931,161 @@ if(MH_HAVE_RENDER)
     #
     # --screenshot needs a real Metal device and a surface; it skips where
     # app_screenshot does.
+    # THE VIEWPORT BACKDROP -- a reference photograph to model to, which is what
+    # the reference's BackgroundChooser is for (0_modeling_background.py:104).
+    # Until now `--background` reached only `--render`, compositing a backdrop
+    # into a finished frame; the viewport, the thing you actually model in, had
+    # none.
+    #
+    # The fixture image is GENERATED here rather than committed: it has to be a
+    # deliberately wrong aspect ratio (2:1 into a portrait viewport) so that
+    # cover-fit is exercised rather than bypassed, and a committed PNG would
+    # also be a second thing to keep in step with the test that reads it.
+    add_test(NAME app_backdrop_fixture COMMAND ${CMAKE_COMMAND}
+             -DOUT=${CMAKE_CURRENT_BINARY_DIR}/backdrop_ref.ppm
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/make_backdrop_fixture.cmake)
+    set_tests_properties(app_backdrop_fixture PROPERTIES FIXTURES_SETUP app_backdrop_fixture)
+
+    add_test(NAME app_backdrop_front COMMAND makehuman
+             --background ${CMAKE_CURRENT_BINARY_DIR}/backdrop_ref.ppm
+             --background-side front --view front
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/backdrop_front.png)
+    set_tests_properties(app_backdrop_front PROPERTIES
+        PASS_REGULAR_EXPRESSION "backdrop: .* behind the front view"
+        # The pass-regex alone would DISCARD the exit code, and that line is
+        # printed long before the screenshot is taken -- so a blank frame or an
+        # unwritable PNG would still set this fixture and the three gates below
+        # would compare a stale file from an earlier run.
+        FAIL_REGULAR_EXPRESSION "covered 0 of;could not write"
+        SKIP_REGULAR_EXPRESSION "viewport error"
+        FIXTURES_REQUIRED app_backdrop_fixture
+        FIXTURES_SETUP app_backdrop_front)
+    add_test(NAME app_backdrop_plain_front COMMAND makehuman
+             --view front --screenshot ${CMAKE_CURRENT_BINARY_DIR}/plain_front.png)
+    set_tests_properties(app_backdrop_plain_front PROPERTIES
+        SKIP_REGULAR_EXPRESSION "viewport error"
+        FIXTURES_SETUP app_backdrop_plain_front)
+    # Counted, not byte-compared, and in BOTH directions. MEASURED on this
+    # machine: two runs of the same scene differ in 0 to 3 pixels of 4,096,000
+    # (MSAA resolve order is not promised to be stable), while a real backdrop
+    # moves 2,473,836. A `files_differ` check would therefore have been
+    # satisfied by the noise alone -- it would pass with the feature removed --
+    # and `files_identical` was genuinely FLAKY, which is how this was found.
+    add_test(NAME app_backdrop_changes_the_window COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/backdrop_front.png
+             ${CMAKE_CURRENT_BINARY_DIR}/plain_front.png --min-differing 100000)
+    set_tests_properties(app_backdrop_changes_the_window PROPERTIES
+        FIXTURES_REQUIRED "app_backdrop_front;app_backdrop_plain_front")
+
+    # THE DISCRIMINATING ONE. A backdrop bound to the FRONT must be invisible
+    # from the right, because a reference photo is orthographic and one hanging
+    # behind a side view is worse than none. Without this, a `facingSide` that
+    # always returned true would pass every check above -- the backdrop would be
+    # on permanently and "it changed the window" would still hold.
+    add_test(NAME app_backdrop_right COMMAND makehuman
+             --background ${CMAKE_CURRENT_BINARY_DIR}/backdrop_ref.ppm
+             --background-side front --view right
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/backdrop_right.png)
+    set_tests_properties(app_backdrop_right PROPERTIES
+        SKIP_REGULAR_EXPRESSION "viewport error"
+        FIXTURES_REQUIRED app_backdrop_fixture
+        FIXTURES_SETUP app_backdrop_right)
+    add_test(NAME app_backdrop_plain_right COMMAND makehuman
+             --view right --screenshot ${CMAKE_CURRENT_BINARY_DIR}/plain_right.png)
+    set_tests_properties(app_backdrop_plain_right PROPERTIES
+        SKIP_REGULAR_EXPRESSION "viewport error"
+        FIXTURES_SETUP app_backdrop_plain_right)
+    add_test(NAME app_backdrop_hidden_from_another_side COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/backdrop_right.png
+             ${CMAKE_CURRENT_BINARY_DIR}/plain_right.png --max-differing 100)
+    set_tests_properties(app_backdrop_hidden_from_another_side PROPERTIES
+        FIXTURES_REQUIRED "app_backdrop_right;app_backdrop_plain_right")
+
+    # ...and the backdrop must not EAT the model. It is drawn before the body
+    # with its depth write off; if it ever wrote depth it would occlude the
+    # character, and every differs-from-plain check above would still pass while
+    # the model vanished. So the torso's pixels must be UNCHANGED by adding a
+    # backdrop, and the empty viewport's must change.
+    #
+    # `MH_PIL_PYTHON`, not `Python3_EXECUTABLE`: the wheels live in `.venv-mh`
+    # and not in the system interpreter. Written with the latter first, and both
+    # checks then SKIPPED on the developer machine -- the one place they can run
+    # -- which is the exact mistake the genitals check above already records.
+    #
+    # They skip in the macOS CI jobs, which do not install those wheels. Said
+    # out loud because a gate that skips everywhere is no gate. What runs
+    # everywhere is `app_backdrop_hidden_from_another_side` and the unit tests
+    # on `facingSide` and `coverSource`.
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME app_backdrop_does_not_eat_the_model COMMAND ${MH_PIL_PYTHON}
+                 ${CMAKE_SOURCE_DIR}/tools/png_region_response.py
+                 --a ${CMAKE_CURRENT_BINARY_DIR}/backdrop_front.png
+                 --b ${CMAKE_CURRENT_BINARY_DIR}/plain_front.png
+                 --cx 1300 --cy 560 --radius 40 --max-response 2.0)
+        set_tests_properties(app_backdrop_does_not_eat_the_model PROPERTIES
+            SKIP_RETURN_CODE 77
+            FIXTURES_REQUIRED "app_backdrop_front;app_backdrop_plain_front")
+        add_test(NAME app_backdrop_reaches_the_pixels COMMAND ${MH_PIL_PYTHON}
+                 ${CMAKE_SOURCE_DIR}/tools/png_region_response.py
+                 --a ${CMAKE_CURRENT_BINARY_DIR}/backdrop_front.png
+                 --b ${CMAKE_CURRENT_BINARY_DIR}/plain_front.png
+                 --cx 800 --cy 300 --radius 40 --min-response 20.0)
+        set_tests_properties(app_backdrop_reaches_the_pixels PROPERTIES
+            SKIP_RETURN_CODE 77
+            FIXTURES_REQUIRED "app_backdrop_front;app_backdrop_plain_front")
+    endif()
+
+    # Opacity 0 must be INVISIBLE, not merely faint. It is alpha against the
+    # already-cleared framebuffer, so a fully transparent backdrop has to leave
+    # the frame byte-for-byte as if none were set -- which also proves the
+    # opacity reaches the shader at all, rather than being parsed and dropped.
+    add_test(NAME app_backdrop_transparent COMMAND makehuman
+             --background ${CMAKE_CURRENT_BINARY_DIR}/backdrop_ref.ppm
+             --background-side front --background-opacity 0 --view front
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/backdrop_clear.png)
+    set_tests_properties(app_backdrop_transparent PROPERTIES
+        SKIP_REGULAR_EXPRESSION "viewport error"
+        FIXTURES_REQUIRED app_backdrop_fixture
+        FIXTURES_SETUP app_backdrop_transparent)
+    add_test(NAME app_backdrop_transparent_shows_nothing COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/backdrop_clear.png
+             ${CMAKE_CURRENT_BINARY_DIR}/plain_front.png --max-differing 100)
+    set_tests_properties(app_backdrop_transparent_shows_nothing PROPERTIES
+        FIXTURES_REQUIRED "app_backdrop_transparent;app_backdrop_plain_front")
+
+    # An opacity outside 0..1 is refused rather than clamped in silence.
+    add_test(NAME app_backdrop_opacity_bad COMMAND makehuman
+             --background ${CMAKE_CURRENT_BINARY_DIR}/backdrop_ref.ppm
+             --background-opacity 7
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/never.png)
+    set_tests_properties(app_backdrop_opacity_bad PROPERTIES
+        PASS_REGULAR_EXPRESSION "--background-opacity takes a number from 0 to 1"
+        FIXTURES_REQUIRED app_backdrop_fixture)
+
+    # ...and both flags are REFUSED under --render rather than ignored. --render
+    # draws its own fixed view and composites its backdrop unconditionally, so
+    # accepting them there would be a flag that does nothing while its help says
+    # otherwise.
+    add_test(NAME app_view_refused_with_render COMMAND makehuman --view left
+             --render ${CMAKE_CURRENT_BINARY_DIR}/never.png)
+    set_tests_properties(app_view_refused_with_render PROPERTIES
+        PASS_REGULAR_EXPRESSION "steer the viewport")
+
+    # A name that is not one of the six is REFUSED, not defaulted to front. A
+    # typo that silently means "front" is the painted no-op this codebase keeps
+    # finding: the flag appears to work.
+    add_test(NAME app_view_unknown COMMAND makehuman --view sideways
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/never.png)
+    set_tests_properties(app_view_unknown PROPERTIES
+        WILL_FAIL TRUE)
+    add_test(NAME app_backdrop_side_unknown COMMAND makehuman
+             --background ${CMAKE_CURRENT_BINARY_DIR}/backdrop_ref.ppm
+             --background-side sideways
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/never.png)
+    set_tests_properties(app_backdrop_side_unknown PROPERTIES
+        WILL_FAIL TRUE
+        FIXTURES_REQUIRED app_backdrop_fixture)
+
     add_test(NAME app_grid_window COMMAND makehuman
              --grid --screenshot ${CMAKE_CURRENT_BINARY_DIR}/app_grid.png)
     set_tests_properties(app_grid_window PROPERTIES
@@ -3038,12 +3202,16 @@ if(MH_HAVE_RENDER)
              --background ${CMAKE_CURRENT_BINARY_DIR}/bg/not-an-image.png)
     set_tests_properties(app_background_unreadable PROPERTIES
         PASS_REGULAR_EXPRESSION "cannot read --background image")
-    add_test(NAME app_background_needs_render COMMAND makehuman
+    # NARROWED 2026-09-17, not relaxed. `--background` used to require
+    # `--render`; it now also feeds the VIEWPORT, so the rule became "it needs a
+    # frame to sit behind". This test's premise is unchanged -- an --export has
+    # no frame, and is still refused -- so only the message it expects moved.
+    add_test(NAME app_background_needs_a_frame COMMAND makehuman
              --background ${CMAKE_CURRENT_BINARY_DIR}/bg/backdrop.png
              --export ${CMAKE_CURRENT_BINARY_DIR}/bg/never.obj)
-    set_tests_properties(app_background_needs_render PROPERTIES
+    set_tests_properties(app_background_needs_a_frame PROPERTIES
         FIXTURES_REQUIRED app_bg_backdrop
-        PASS_REGULAR_EXPRESSION "--background is the backdrop for --render")
+        PASS_REGULAR_EXPRESSION "--background needs a frame to sit behind")
 
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/pframe)
 

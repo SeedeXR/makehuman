@@ -12,6 +12,25 @@
 #include <vector>
 
 namespace mh::render {
+
+std::array<float, 4> backdropUvTransform(const QRectF& source, QSize image, bool yUpInNdc) {
+    const double iw = image.width();
+    const double ih = image.height();
+    if (iw <= 0.0 || ih <= 0.0 || source.isEmpty()) return {0.0F, 0.0F, 0.0F, 0.0F};
+
+    const auto f  = [](double v) { return static_cast<float>(v); };
+    float scaleV  = f(source.height() / ih);
+    float offsetV = f(source.y() / ih);
+    // v = (1 - t)*S + O is still affine in t, so negating the scale and moving
+    // the origin expresses the flip exactly -- and the shader stays a plain
+    // `corner * xy + zw` with no branch in it.
+    if (yUpInNdc) {
+        offsetV += scaleV;
+        scaleV = -scaleV;
+    }
+    return {f(source.width() / iw), scaleV, f(source.x() / iw), offsetV};
+}
+
 namespace {
 
 /// The binding list, in one place. It has to be identical where the pipeline is
@@ -181,6 +200,19 @@ struct SceneResources::Impl {
     std::unique_ptr<QRhiGraphicsPipeline> gridPipeline;
     std::unique_ptr<QRhiShaderResourceBindings> gridSrb;
     quint32 gridVertices{};
+    /// The viewport backdrop: a screen-space photograph drawn before
+    /// everything. Its own pipeline, uniform block, sampler and texture --
+    /// it shares nothing with the scene, because it must NOT be rotated by the
+    /// camera and it samples one image with no material.
+    QImage backdropImage;
+    bool backdropDirty{false};
+    float backdropOpacity{1.0F};
+    QRectF backdropSource;
+    std::unique_ptr<QRhiTexture> backdropTex;
+    std::unique_ptr<QRhiBuffer> backdropUbuf;
+    std::unique_ptr<QRhiSampler> backdropSampler;
+    std::unique_ptr<QRhiGraphicsPipeline> backdropPipeline;
+    std::unique_ptr<QRhiShaderResourceBindings> backdropSrb;
     std::vector<Drawable> drawables;
 
     [[nodiscard]] const Pipelines& active() const { return pipelines[static_cast<size_t>(model)]; }
@@ -424,6 +456,69 @@ std::expected<std::unique_ptr<SceneResources>, RenderError> SceneResources::crea
     r->d_->gridPipeline->setSampleCount(sampleCount);
     if (!r->d_->gridPipeline->create()) {
         return std::unexpected(RenderError{RenderErrorKind::Failed, "grid pipeline"});
+    }
+
+    // The backdrop. Reported like any other missing shader rather than left
+    // inert, for the reason the grid states: a control that ticks and draws
+    // nothing is worse than one that is absent.
+    auto bdVs = loadShader(shaderDir / "backdrop.vert.qsb");
+    if (!bdVs) return std::unexpected(bdVs.error());
+    auto bdFs = loadShader(shaderDir / "backdrop.frag.qsb");
+    if (!bdFs) return std::unexpected(bdFs.error());
+
+    // Two vec4s: the UV transform and the opacity. std140 rounds to 16 bytes.
+    r->d_->backdropUbuf.reset(
+        rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 2 * 4 * sizeof(float)));
+    if (!r->d_->backdropUbuf->create()) {
+        return std::unexpected(RenderError{RenderErrorKind::Failed, "backdrop uniform buffer"});
+    }
+    r->d_->backdropSampler.reset(rhi->newSampler(QRhiSampler::Linear, QRhiSampler::Linear,
+                                                 QRhiSampler::None, QRhiSampler::ClampToEdge,
+                                                 QRhiSampler::ClampToEdge));
+    if (!r->d_->backdropSampler->create()) {
+        return std::unexpected(RenderError{RenderErrorKind::Failed, "backdrop sampler"});
+    }
+    // A 1x1 placeholder so the SRB -- which a pipeline needs for its LAYOUT at
+    // create() time -- is valid before any photograph exists. Replaced, along
+    // with the SRB, the first time one is set.
+    r->d_->backdropTex.reset(rhi->newTexture(QRhiTexture::RGBA8, QSize(1, 1)));
+    if (!r->d_->backdropTex->create()) {
+        return std::unexpected(RenderError{RenderErrorKind::Failed, "backdrop texture"});
+    }
+    r->d_->backdropSrb.reset(rhi->newShaderResourceBindings());
+    r->d_->backdropSrb->setBindings(
+        {QRhiShaderResourceBinding::uniformBuffer(
+             0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
+             r->d_->backdropUbuf.get()),
+         QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage,
+                                                   r->d_->backdropTex.get(),
+                                                   r->d_->backdropSampler.get())});
+    if (!r->d_->backdropSrb->create()) {
+        return std::unexpected(RenderError{RenderErrorKind::Failed, "backdrop bindings"});
+    }
+
+    r->d_->backdropPipeline.reset(rhi->newGraphicsPipeline());
+    r->d_->backdropPipeline->setShaderStages(
+        {{QRhiShaderStage::Vertex, *bdVs}, {QRhiShaderStage::Fragment, *bdFs}});
+    // NO vertex input layout: the three corners come from `gl_VertexIndex`.
+    r->d_->backdropPipeline->setVertexInputLayout({});
+    r->d_->backdropPipeline->setShaderResourceBindings(r->d_->backdropSrb.get());
+    r->d_->backdropPipeline->setRenderPassDescriptor(rp);
+    // Depth OFF, both ways. The backdrop is behind everything by construction,
+    // and a depth WRITE would make it occlude the body it sits behind.
+    r->d_->backdropPipeline->setDepthTest(false);
+    r->d_->backdropPipeline->setDepthWrite(false);
+    r->d_->backdropPipeline->setCullMode(QRhiGraphicsPipeline::None);
+    QRhiGraphicsPipeline::TargetBlend blend;
+    blend.enable   = true;
+    blend.srcColor = QRhiGraphicsPipeline::SrcAlpha;
+    blend.dstColor = QRhiGraphicsPipeline::OneMinusSrcAlpha;
+    blend.srcAlpha = QRhiGraphicsPipeline::One;
+    blend.dstAlpha = QRhiGraphicsPipeline::OneMinusSrcAlpha;
+    r->d_->backdropPipeline->setTargetBlends({blend});
+    r->d_->backdropPipeline->setSampleCount(sampleCount);
+    if (!r->d_->backdropPipeline->create()) {
+        return std::unexpected(RenderError{RenderErrorKind::Failed, "backdrop pipeline"});
     }
     return r;
 }
@@ -743,6 +838,83 @@ bool SceneResources::wireframe() const {
     return d_->wireframe;
 }
 
+void SceneResources::setBackdrop(const QImage& image, float opacity) {
+    // Converted once, here, rather than per upload: QRhi wants RGBA8 and a
+    // photograph off disk is usually RGB32 or indexed.
+    d_->backdropImage = image.isNull() ? QImage{} : image.convertToFormat(QImage::Format_RGBA8888);
+    d_->backdropOpacity = std::clamp(opacity, 0.0F, 1.0F);
+    d_->backdropDirty   = true;
+}
+
+void SceneResources::setBackdropSource(const QRectF& sourceInImage) {
+    d_->backdropSource = sourceInImage;
+}
+
+void SceneResources::updateBackdrop(QRhiResourceUpdateBatch* batch) {
+    if (!d_->backdropUbuf) return;
+
+    if (d_->backdropDirty) {
+        // Cleared before anything can fail, so a texture that cannot be made is
+        // not retried on every frame for the rest of the session.
+        d_->backdropDirty = false;
+
+        // Built into a LOCAL first. `reset()` destroys the old texture before
+        // the new one exists, and if creation then failed the SRB would still
+        // name freed memory -- which `draw` would happily bind. A reference
+        // photograph is exactly the kind of file that is sometimes a 12000 px
+        // scan, so this is an ordinary path, not a defensive one.
+        std::unique_ptr<QRhiTexture> tex;
+        const int maxDim = d_->rhi->resourceLimit(QRhi::TextureSizeMax);
+        if (!d_->backdropImage.isNull() && d_->backdropImage.width() <= maxDim &&
+            d_->backdropImage.height() <= maxDim) {
+            tex.reset(d_->rhi->newTexture(QRhiTexture::RGBA8, d_->backdropImage.size()));
+            if (!tex->create()) tex.reset();
+        } else if (!d_->backdropImage.isNull()) {
+            std::fprintf(stderr, "backdrop: %dx%d exceeds this device's %d px limit\n",
+                         d_->backdropImage.width(), d_->backdropImage.height(), maxDim);
+        }
+
+        if (!tex) {
+            // Too big, failed, or simply cleared. Drop the IMAGE as well as the
+            // texture: leaving it set would keep `draw` drawing a photograph the
+            // GPU no longer holds, and leaving the texture would keep a cleared
+            // 96 MB backdrop resident for the rest of the session.
+            d_->backdropImage = QImage{};
+            tex.reset(d_->rhi->newTexture(QRhiTexture::RGBA8, QSize(1, 1)));
+            if (!tex->create()) {
+                std::fprintf(stderr, "backdrop: cannot create even a 1x1 texture\n");
+                return;
+            }
+        }
+
+        d_->backdropTex = std::move(tex);
+        d_->backdropSrb->setBindings(
+            {QRhiShaderResourceBinding::uniformBuffer(
+                 0,
+                 QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
+                 d_->backdropUbuf.get()),
+             QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage,
+                                                       d_->backdropTex.get(),
+                                                       d_->backdropSampler.get())});
+        if (!d_->backdropSrb->create()) {
+            // Checked, not dropped: an SRB that failed to build is one `draw`
+            // would bind anyway.
+            std::fprintf(stderr, "backdrop: shader resource bindings failed\n");
+            d_->backdropImage = QImage{};
+            return;
+        }
+        if (!d_->backdropImage.isNull()) {
+            batch->uploadTexture(d_->backdropTex.get(), d_->backdropImage);
+        }
+    }
+
+    const std::array<float, 4> uv =
+        backdropUvTransform(d_->backdropSource, d_->backdropImage.size(), d_->rhi->isYUpInNDC());
+    const float params[4] = {d_->backdropOpacity, 0.0F, 0.0F, 0.0F};
+    batch->updateDynamicBuffer(d_->backdropUbuf.get(), 0, sizeof(uv), uv.data());
+    batch->updateDynamicBuffer(d_->backdropUbuf.get(), sizeof(uv), sizeof(params), params);
+}
+
 void SceneResources::setGrid(bool on) {
     d_->grid = on;
 }
@@ -764,6 +936,18 @@ void SceneResources::draw(QRhiCommandBuffer* cb, const QSize& pixelSize) {
 
     cb->setViewport(
         {0, 0, static_cast<float>(pixelSize.width()), static_cast<float>(pixelSize.height())});
+
+    // The photograph before even the floor: it is behind everything by
+    // construction, with no depth of its own, so anything drawn after covers it.
+    // An EMPTY source rectangle means "show nothing", which is also how the
+    // caller hides a backdrop bound to a side it is not currently looking from.
+    // One mechanism -- where to show it, and nowhere means hidden -- rather
+    // than a separate visibility flag that could disagree with it.
+    if (!d_->backdropImage.isNull() && !d_->backdropSource.isEmpty() && d_->backdropPipeline) {
+        cb->setGraphicsPipeline(d_->backdropPipeline.get());
+        cb->setShaderResources(d_->backdropSrb.get());
+        cb->draw(3);  // one fullscreen triangle, no vertex buffer
+    }
 
     // The floor first: it is opaque and it is behind everything, so drawing it
     // before the body lets the depth test do the occluding. Skipped entirely

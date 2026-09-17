@@ -4,6 +4,112 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-17 (hundred-and-fourth) — Session · **The viewport backdrop, and two gates that could not fail**
+
+*The owner's "complete the UI to match the reference", taken at the one `todo`
+task view that was actually buildable.*
+
+### What shipped
+A **reference photograph behind the model in the viewport** — the reference's
+`BackgroundChooser` (`plugins/0_modeling_background.py:104`). `--background`
+had existed for a year but reached only `--render`, compositing a backdrop into
+a finished frame; the viewport, the thing you model in, had none.
+
+* `resources/shaders/rhi/backdrop.{vert,frag}` — a fullscreen triangle from
+  `gl_VertexIndex`, so **no vertex buffer, no vertex layout, no upload**.
+* A screen-space pipeline, texture, sampler and SRB in `SceneResources`, drawn
+  first with depth test AND write off and alpha blending on.
+* Bound to one of the six axis views and hidden from every other, because a
+  reference photo is orthographic — one behind a three-quarter view is worse
+  than none.
+* `--view`, `--background-side`, `--background-opacity`, and **View ▸ Background
+  Image…**, which binds the photo to the view you are already looking from.
+
+### READING THE PROSE FIRST PAID, AGAIN
+Of the four `todo` views, `audit_taskviews.py` records that
+**ExpressionTaskView is content-blocked** — it chooses `.mhpose` files and this
+port ships ZERO. Building it would have been a chooser over nothing.
+
+It also settled the follow-up this loop asked for. `memory/taskviews.md` said
+"have the auditor re-derive this list from its own bucket map". **The auditor
+already audits the `### <bucket> (N)` heading counts**, and the tool explains
+why it declines to match the NAMES: those sections are prose that legitimately
+mentions other buckets' views while explaining a move. So the follow-up is
+closed, and not the way the note proposed. The note is corrected in place.
+
+### THE BACKDROP SHIPPED UPSIDE DOWN, AND I LOOKED RIGHT AT IT
+A fullscreen triangle's first corner is at NDC y = −1. Metal puts +1 at the
+TOP, so that corner is the frame's BOTTOM — while v = 0 is always the image's
+FIRST row. Every photograph was drawn inverted.
+
+**I rendered it and looked, and the render could not show it.** The fixture was
+a chequerboard, and a chequerboard is symmetric. Every pixel gate was
+"differs from plain", and an upside-down image differs from plain just as well.
+The code review caught it; a red-over-blue image confirmed it in one command.
+
+The lesson is sharper than "look at the render": **look at a render that is
+capable of failing.** The fix moved the rule into
+`render::backdropUvTransform`, a pure function asking `QRhi::isYUpInNDC()`
+rather than assuming Metal, with four unit tests — because the pixel checks that
+could also catch it need Pillow, which the macOS CI jobs do not install.
+
+### TWO GATES THAT COULD NOT FAIL, AND ONE THAT WAS FLAKY
+`files_identical` on two screenshots **flaked**, passing alone and failing in
+the full suite. Measured rather than retried: two runs of the same scene differ
+in **0 to 3 pixels of 4,096,000**, by up to 37 in a channel. MSAA resolve order
+is not promised to be stable.
+
+That cuts both ways, and the other way is worse: `files_differ` on two renders
+is satisfied by that same noise, so **`app_backdrop_changes_the_window` would
+have passed with the feature deleted**. Both directions now go through
+`tests/mh_png_compare.cpp`, which counts differing pixels with a channel
+tolerance — C++ and Qt so it runs in CI. The separation is not marginal: a real
+backdrop moves **2,473,836** pixels against a noise floor of 3.
+
+### The code review found seven things, and was right about all of them
+Beyond the flip: a **dangling `QRhiTexture*`** in the SRB when texture creation
+fails (an ordinary path — reference photographs are sometimes 12000 px scans);
+an unchecked `create()`; `--view` and `--background-side` silently doing
+NOTHING under `--render`, which now refuses them; a **downscale quality
+regression** I introduced in `overBackground` by replacing `QImage::scaled`
+with a scaled `drawImage` (bilinear, not area-averaged); "Clear Background"
+leaving `backdropDirty` stuck true and a 96 MB texture resident; a dead
+accessor; and a `PASS_REGULAR_EXPRESSION` that discards the exit code, so a
+blank frame would still have set the fixture three gates depend on.
+
+My own ponytail pass then found **a second dead accessor in the same diff** —
+`ViewportWidget::backdropVisible()`, written with a comment about what a
+screenshot would show, called by nothing.
+
+### Mutations, each with the build verified first
+Tolerance so wide every side faces (killed — and ONLY the side gate caught it);
+depth write on, which eats the model (killed, only by the gate written for it);
+the cover rule's crop removed (killed); the V flip applied to the wrong backend
+(killed). Two earlier attempts failed to COMPILE under `-Werror` and were
+inconclusive, not survivors — and one of those runs reported "tests passed"
+against the stale binary, which is exactly why the build is checked first.
+
+### Stated, not hidden
+* Drag-to-move and scale are NOT built, so `BackgroundChooser` is `covered`
+  rather than `done`. Counts: covered 21 → 22, todo 4 → 3.
+* The menu test triggers only **Clear**; triggering **Set** opens a modal
+  dialog and would hang the suite.
+* The two Pillow pixel checks skip in CI. What runs everywhere is the side gate,
+  the tolerant comparator and the unit tests.
+
+### The toolchain, which is the owner's call
+The macOS 27 upgrade left Command Line Tools shipping a 27.0 SDK whose `.tbd`
+files carry an `arm64e.x1-macos` slice that the installed `ld` cannot parse, so
+**every link fails**. Xcode's own SDK stops at `arm64e-macos` and links fine,
+so every preset is configured with `-DCMAKE_OSX_SYSROOT=` pointing at it.
+Nothing in the repo changed and CI is unaffected. **Updating Xcode is the real
+fix and has been raised with the owner.**
+
+And a correction: I said "toolchain OK" after the reboot on the strength of
+`ninja: no work to do` and a clean clang-format. **Neither links.**
+
+---
+
 ## 2026-09-16 (hundred-and-third) — Session · **Cornrows, and a gate that passed the mutant**
 
 *The owner asked on 2026-09-15 for "a full hair cage feature with different hair

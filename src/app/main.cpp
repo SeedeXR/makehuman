@@ -73,6 +73,7 @@
 #include <QStatusBar>
 #include <QTimer>
 #include <QUndoStack>
+#include "makehuman/ui/Backdrop.h"
 #include "makehuman/ui/ViewportWidget.h"
 
 #include <QImage>
@@ -1236,6 +1237,44 @@ struct ProxySlot {
     /// character used to open toothless with an empty open mouth.
     const char* defaultChoice;
 };
+
+/// The six axis views, by the name the CLI uses.
+///
+/// ONE table, read by both `--view` and `--background-side`, because they name
+/// the same six things: two lists would be free to disagree about whether
+/// "rear" or "back" is the word. The angles are the View menu's own
+/// (`MainWindow.cpp:510-537`) rather than fresh literals.
+///
+/// Top and bottom pitch to `kMaxPitchDegrees`, not to 90, because that is the
+/// limit the MOUSE obeys -- a camera placed past it would jump on the first
+/// drag. The menu keeps the current heading when pitching; from the command
+/// line the heading is still the default, so yaw is simply 0.
+struct AxisView {
+    const char* name;
+    float yaw;
+    float pitch;
+    mh::ui::BackdropSide side;
+};
+
+constexpr float kTop = mh::ui::ViewportWidget::kMaxPitchDegrees;
+constexpr std::array<AxisView, 6> kAxisViews{{
+    {"front", 0.0F, 0.0F, mh::ui::BackdropSide::Front},
+    {"back", 180.0F, 0.0F, mh::ui::BackdropSide::Back},
+    {"right", 90.0F, 0.0F, mh::ui::BackdropSide::Right},
+    {"left", -90.0F, 0.0F, mh::ui::BackdropSide::Left},
+    {"top", 0.0F, kTop, mh::ui::BackdropSide::Top},
+    {"bottom", 0.0F, -kTop, mh::ui::BackdropSide::Bottom},
+}};
+constexpr const char* kSideNames = "expected front, back, left, right, top or bottom";
+
+[[nodiscard]] const AxisView* findAxisView(const QString& name) {
+    for (const AxisView& v : kAxisViews) {
+        if (name.compare(QLatin1String(v.name), Qt::CaseInsensitive) == 0) return &v;
+    }
+    // Named rather than defaulted. A typo that silently meant "front" is the
+    // painted no-op this codebase keeps finding: the flag appears to work.
+    return nullptr;
+}
 
 constexpr std::array<ProxySlot, 6> kProxySlots{{{"teeth", "Teeth", "teeth"},
                                                 {"genitals", "Genitals", "genitals"},
@@ -2656,10 +2695,28 @@ int main(int argc, char** argv) {
         QStringLiteral("naming"), QStringLiteral("native"));
     const QCommandLineOption backgroundOpt(
         QStringLiteral("background"),
-        QStringLiteral("An image to put BEHIND --render's character, scaled to cover the "
-                       "frame and centred. Implies --transparent, since the character has "
-                       "to have alpha for anything to show through."),
+        QStringLiteral("An image to put BEHIND the character, scaled to cover the frame and "
+                       "centred. In the VIEWPORT it is a reference photograph to model to, "
+                       "shown only from the view named by --background-side; under --render "
+                       "it is a backdrop to composite over, and implies --transparent."),
         QStringLiteral("file"));
+    const QCommandLineOption backgroundSideOpt(
+        QStringLiteral("background-side"),
+        QStringLiteral("Which view --background belongs to: front (default), back, left, "
+                       "right, top or bottom. A reference photo is orthographic, so it is "
+                       "hidden from every other angle rather than swinging round with the "
+                       "camera."),
+        QStringLiteral("side"), QStringLiteral("front"));
+    const QCommandLineOption backgroundOpacityOpt(
+        QStringLiteral("background-opacity"),
+        QStringLiteral("How strongly --background shows in the viewport, 0 to 1. It fades "
+                       "toward the viewport's own colour so the model stays readable."),
+        QStringLiteral("fraction"), QStringLiteral("1.0"));
+    const QCommandLineOption viewOpt(
+        QStringLiteral("view"),
+        QStringLiteral("Point the camera down an axis before drawing: front, back, left, "
+                       "right, top or bottom -- the same six the View menu offers."),
+        QStringLiteral("name"));
     const QCommandLineOption renderOpt(
         QStringLiteral("render"),
         QStringLiteral("Production render to this PNG and exit. Needs a GPU but NO window, "
@@ -2842,6 +2899,9 @@ int main(int argc, char** argv) {
     parser.addOption(setOpt);
     parser.addOption(renderOpt);
     parser.addOption(backgroundOpt);
+    parser.addOption(backgroundSideOpt);
+    parser.addOption(backgroundOpacityOpt);
+    parser.addOption(viewOpt);
     parser.addOption(transparentOpt);
     parser.addOption(eyeColourOpt);
     parser.addOption(randomOpt);
@@ -3531,10 +3591,30 @@ int main(int argc, char** argv) {
                          file.toStdString().c_str());
             return 1;
         }
-        if (!parser.isSet(renderOpt)) {
-            std::fprintf(stderr, "--background is the backdrop for --render; give one\n");
+        // No longer "--render or nothing". A backdrop is now ALSO the viewport's
+        // reference photograph, which is what the reference's BackgroundChooser
+        // is for -- so the only invalid use left is one that reaches neither,
+        // and that is an export, which has no frame to put an image behind.
+        if (parser.isSet(exportOpt) && !parser.isSet(renderOpt) && !parser.isSet(shotOpt)) {
+            std::fprintf(stderr,
+                         "--background needs a frame to sit behind, and an "
+                         "--export has none; give --render or --screenshot\n");
             return 1;
         }
+    }
+
+    // `--view` and `--background-side` steer the VIEWPORT. `--render` draws its
+    // own fixed view through `renderSettingsFor`, and composites its backdrop
+    // unconditionally -- so under `--render` both flags would do exactly
+    // nothing while their help text promised otherwise. Refused rather than
+    // ignored, which is the same rule `--view sideways` already obeys: a flag
+    // that silently does nothing is the painted no-op this codebase keeps
+    // finding.
+    if (parser.isSet(renderOpt) && (parser.isSet(viewOpt) || parser.isSet(backgroundSideOpt))) {
+        std::fprintf(stderr,
+                     "--view and --background-side steer the viewport; --render "
+                     "draws its own fixed view\n");
+        return 1;
     }
 
     if (parser.isSet(poseFrameOpt)) {
@@ -4921,6 +5001,72 @@ int main(int argc, char** argv) {
     }
     QObject::connect(&window, &mh::ui::MainWindow::gridChanged,
                      [&](bool on) { window.viewport()->setGrid(on); });
+
+    // The reference photograph, from the View menu. Bound to the view the user
+    // is CURRENTLY looking from, which is the reference's per-side radio
+    // buttons expressed as a gesture: orbit to the side, load that side's
+    // photo. From a three-quarter view there is no right answer, so it says so
+    // rather than guessing at Front and hiding the image it just loaded.
+    QObject::connect(&window, &mh::ui::MainWindow::backgroundRequested, [&] {
+        const mh::render::Camera cam = window.viewport()->camera();
+        const auto side              = mh::ui::sideFacing(cam.yawDegrees, cam.pitchDegrees);
+        if (!side) {
+            window.statusBar()->showMessage(
+                QObject::tr("Turn to a front, back, side, top or bottom view first \u2014 a "
+                            "reference photograph belongs to one of them."),
+                5000);
+            return;
+        }
+        const QString file = QFileDialog::getOpenFileName(
+            &window, QObject::tr("Background image"), {},
+            QObject::tr("Images (*.png *.jpg *.jpeg *.bmp *.ppm *.webp)"));
+        if (file.isEmpty()) return;
+        QImage image;
+        if (!image.load(file)) {
+            window.statusBar()->showMessage(QObject::tr("Could not read %1").arg(file), 5000);
+            return;
+        }
+        window.viewport()->setBackdrop(image, *side, 1.0F);
+    });
+    QObject::connect(&window, &mh::ui::MainWindow::backgroundClearRequested, [&] {
+        window.viewport()->setBackdrop(QImage{}, mh::ui::BackdropSide::Front, 1.0F);
+    });
+
+    // --view, and the backdrop it makes testable. Both name the same six axis
+    // views the View menu offers (MainWindow.cpp:510-537), and both take the
+    // angles from there rather than repeating them as literals.
+    if (parser.isSet(viewOpt)) {
+        const AxisView* axis = findAxisView(parser.value(viewOpt));
+        if (axis == nullptr) {
+            std::fprintf(stderr, "unknown --view \"%s\"; %s\n",
+                         parser.value(viewOpt).toStdString().c_str(), kSideNames);
+            return 1;
+        }
+        mh::render::Camera c = window.viewport()->camera();
+        c.yawDegrees         = axis->yaw;
+        c.pitchDegrees       = axis->pitch;
+        window.viewport()->setCamera(c);
+    }
+
+    if (!backdrop.isNull()) {
+        const AxisView* side = findAxisView(parser.value(backgroundSideOpt));
+        if (side == nullptr) {
+            std::fprintf(stderr, "unknown --background-side \"%s\"; %s\n",
+                         parser.value(backgroundSideOpt).toStdString().c_str(), kSideNames);
+            return 1;
+        }
+        bool ok            = false;
+        const double alpha = parser.value(backgroundOpacityOpt).toDouble(&ok);
+        if (!ok || alpha < 0.0 || alpha > 1.0) {
+            std::fprintf(stderr, "--background-opacity takes a number from 0 to 1, not \"%s\"\n",
+                         parser.value(backgroundOpacityOpt).toStdString().c_str());
+            return 1;
+        }
+        window.viewport()->setBackdrop(backdrop, side->side, static_cast<float>(alpha));
+        std::printf("backdrop: %s behind the %s view at %.2f opacity\n",
+                    parser.value(backgroundOpt).toStdString().c_str(),
+                    parser.value(backgroundSideOpt).toStdString().c_str(), alpha);
+    }
 
     QObject::connect(&window, &mh::ui::MainWindow::wireframeChanged, [&](bool on) {
         window.viewport()->setWireframe(on);

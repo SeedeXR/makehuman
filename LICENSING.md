@@ -438,6 +438,7 @@ Check the SPDX header before moving or reusing any of them.
 | File | Licence | Why |
 |---|---|---|
 | `litsphere.vert`, `litsphere.frag` | **AGPL-3.0-or-later** | Ports of the reference's `data/shaders/glsl/litsphere_*_shader.txt`. Derivative works; may never be moved into a permissive module. See §4. |
+| `grid.vert`, `grid.frag`, `backdrop.vert`, `backdrop.frag` | **Apache-2.0** | Original work, and nothing in the reference to translate: it draws its floor grid with fixed-function immediate-mode GL and its background as a textured `gui3d.Object` in the scene graph, neither of which has a shader. The backdrop pair is a screen-space fullscreen triangle with a UV transform and an opacity. `grid.*` was absent from this table until 2026-09-17 although its own header pointed here; added with the backdrop rather than left to be noticed again. |
 | `pbr.vert`, `pbr.frag` | **Apache-2.0** | Original work. The reference has **no PBR path at all** — it shades exclusively with the litsphere matcap — so there was nothing to translate. The equations are the published microfacet model (Cook-Torrance/GGX, height-correlated Smith, Schlick's Fresnel) as written up in Karis, *Real Shading in Unreal Engine 4* (2013) and Lagarde & de Rousiers, *Moving Frostbite to PBR* (2014). |
 
 **Verified, not assumed** (2026-09-05): `legacy/python/data/shaders/glsl/`

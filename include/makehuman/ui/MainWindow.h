@@ -296,6 +296,13 @@ signals:
     /// module can render a frame but must not decide where a PNG goes.
     void screenshotRequested();
 
+    /// The user asked for a reference photograph behind the model, or to remove
+    /// the one there. Emitted rather than handled here for the reason `open`
+    /// and `save as` are: the window owns no file dialog, so the application
+    /// decides what a path means.
+    void backgroundRequested();
+    void backgroundClearRequested();
+
 protected:
     void changeEvent(QEvent* e) override;
 

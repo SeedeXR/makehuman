@@ -51,8 +51,8 @@ dev-gated, so a default release build shows **40**.
 | Bucket | N | Meaning |
 |---|---|---|
 | done | 7 | the dynamic modifier views — shipped |
-| covered | 21 | the capability reaches the user, just not as a TAB |
-| todo | 4 | to port, nothing blocking |
+| covered | 22 | the capability reaches the user, just not as a TAB |
+| todo | 3 | to port, nothing blocking |
 | blocked | 3 | needs content or an engine capability first |
 | declined | 16 | Python-runtime or dev-only tooling |
 
@@ -108,7 +108,7 @@ The views `guimodifier.loadModifierTaskViews` builds from the `*_sliders.json`
 files — Face, Torso, Arms and Legs, Gender, Macro modelling, Body shapes,
 Measure. One view per top-level key, `apps/gui/guimodifier.py:226-232`.
 
-### covered (21)
+### covered (22)
 Not a gap: this port is dockable, so what the reference makes a tab arrives as
 a menu action or as a group in the Assets panel.
 
@@ -138,20 +138,36 @@ render has been shown in since M8; and the mixer is sixty sliders with a Save
 and a Load, which `--pose-unit` (all sixty — `--facs` names only 48),
 `--list-pose-units`, `--save-expression` and `--expression` already cover.
 
-### todo (4)
-`BackgroundChooser`, `ExpressionTaskView`, `HelpTaskView`,
-`MaterialEditorTaskView`.
+`BackgroundChooser` moved here on **2026-09-17**. `--background` had existed
+for a year, but only as a backdrop composited into a `--render`; the reference
+task is a MODELLING AID -- a reference photograph in the VIEWPORT, bound to a
+side, to model to. That half now exists: a screen-space pass in
+`SceneResources` drawn before everything with its depth write off, bound to one
+of the six axis views and hidden from every other, with an opacity; `--view`
+and `--background-side` on the command line and **View > Background Image…**
+in the window, which binds the image to the view you are already looking from.
+
+`covered` and not `done`, because the reference also lets a user DRAG and SCALE
+the image and that is not built. The cover-fit rule is shared with
+`overBackground` rather than reimplemented in GLSL -- one rule, two consumers.
+
+### todo (3)
+`ExpressionTaskView`, `HelpTaskView`, `MaterialEditorTaskView`.
 
 This list said EIGHT until 2026-09-13, and still named `ViewerTaskView`,
 `MouseActionsTaskView` and `ExpressionMixerTaskView` after the auditor had
 moved all three to `covered` above. The summary table said 5 the whole time and
 was right -- 7+20+5+3+16 is 51, while 8 would have made 54. `audit_taskviews.py`
-validates the TABLE and not this prose, so only the prose could drift, which is
-the same shape as the other decorative gates this session found: it checked
-something adjacent to the claim. **Follow-up worth doing: have the auditor
-re-derive this list from its own bucket map**, so the two cannot disagree
-again. Until then the auditor's map in `tools/audit_taskviews.py` is the
-authority and this paragraph is a copy.
+validated the TABLE and not this prose, so only the prose could drift.
+
+**That follow-up is CLOSED, and not the way this paragraph proposed**
+(2026-09-17). `recorded_section_counts` already audits the N in every
+`### <bucket> (N)` heading, so a view that changes bucket without the heading
+following it fails CI -- which is the drift that actually happened. Matching
+the NAMES was considered and rejected in the tool itself, with a reason worth
+keeping: these sections are prose, and they legitimately mention views from
+other buckets while explaining a move, so a name match would fail on correct
+text. The auditor's map remains the authority and this paragraph a copy.
 
 `AnimationLibrary` is **no longer blocked on content** (2026-09-14).
 `--rig-names auto` reads any shipped animation through the naming that drives

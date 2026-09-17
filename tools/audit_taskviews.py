@@ -102,7 +102,13 @@ BUCKETS = {
     # ExpressionTaskView chooses .mhpose files and this port ships NONE
     # (measured: zero under data/), so its expressions arrive as --facs units.
     "AnimationLibrary": "covered", "ExpressionTaskView": "todo",
-    "BackgroundChooser": "todo", "MaterialEditorTaskView": "todo",
+    "MaterialEditorTaskView": "todo",
+    # SHIPPED 2026-09-17. `covered` rather than `done` on purpose: the reference
+    # task also lets a user DRAG and SCALE the image, and that half is not
+    # built. What is built is the half the tab exists for -- a reference
+    # photograph in the VIEWPORT, bound to an axis view and hidden from every
+    # other one, with an opacity.
+    "BackgroundChooser": "covered",
     "HelpTaskView": "todo",
 
     "ShellTaskView": "declined", "ScriptingView": "declined",
@@ -294,6 +300,11 @@ EVIDENCE = {
     # live again in the second attempt until they were looked for by name.
     "AnimationLibrary": '"Animation"',
     "SkeletonLibrary": '"Skeleton"',
+    # The MENU ENTRY, not the flag. `--background` existed for a year as a
+    # `--render` backdrop while the modelling aid the reference task actually is
+    # did not, so a literal matching the flag would have reported this covered
+    # throughout. This one appears only when the window can ask for it.
+    "BackgroundChooser": '"view.background.set"',
     # NO BRACES on the five helper-cage slots. These match a `kProxySlots`
     # row, and the row GREW a third field when teeth became default-on --
     # `{"teeth", "Teeth"}` stopped matching `{"teeth", "Teeth", "teeth"}` and
@@ -342,11 +353,6 @@ ABSENT = {
                            "a chooser needs files to choose; still 0 .mhpose "
                            "under data/, though --save-expression can now "
                            "author them"),
-    "BackgroundChooser": ('"Background image"',
-                          "--background puts one behind a RENDER; the reference "
-                          "task is a modelling aid -- an image in the VIEWPORT, "
-                          "per side, with position and scale, to model to a "
-                          "photograph. None of that half exists"),
     "MaterialEditorTaskView": ('"Material editor"',
                                "materials can be PICKED but not edited; no "
                                "property editor"),

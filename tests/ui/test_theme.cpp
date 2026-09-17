@@ -2848,3 +2848,33 @@ TEST_CASE("Edit offers symmetry as a mode as well as a command", "[ui][symmetry]
     CHECK_FALSE(w2.symmetryMode());
     CHECK_FALSE(stored().contains(QStringLiteral("symmetryMode")));
 }
+
+TEST_CASE("the View menu can set and clear a background image", "[ui][backdrop]") {
+    // The capability is gated by the app's screenshot tests; what THOSE cannot
+    // see is whether the window offers it at all. The reference reaches it
+    // through a whole task view (`0_modeling_background.py`), so a port that
+    // shipped the rendering and no way to ask for it would have closed nothing.
+    useShippedIcons();
+    mh::ui::MainWindow window{MH_SHADER_DIR, shippedTasks()};
+
+    auto* set   = window.findChild<QAction*>(QStringLiteral("view.background.set"));
+    auto* clear = window.findChild<QAction*>(QStringLiteral("view.background.clear"));
+    REQUIRE(set != nullptr);
+    REQUIRE(clear != nullptr);
+
+    // ...and that each is WIRED. An action that exists and emits nothing is the
+    // painted no-op this codebase keeps finding -- it looks complete in a
+    // screenshot of the menu and does nothing when chosen.
+    int asked   = 0;
+    int cleared = 0;
+    QObject::connect(&window, &mh::ui::MainWindow::backgroundRequested, [&] { ++asked; });
+    QObject::connect(&window, &mh::ui::MainWindow::backgroundClearRequested, [&] { ++cleared; });
+    //
+    // COVERAGE LIMIT, stated rather than left implicit: only `clear` is
+    // triggered. Triggering `set` opens a MODAL file dialog, which would hang
+    // the suite -- so its connection is checked by existing, and the `asked`
+    // count is here to prove `clear` does not fire the wrong one.
+    clear->trigger();
+    CHECK(cleared == 1);
+    CHECK(asked == 0);
+}

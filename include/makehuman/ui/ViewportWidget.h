@@ -4,6 +4,10 @@
 #include "makehuman/foundation/Geometry.h"
 #include "makehuman/render/SceneResources.h"
 
+#include "makehuman/ui/Backdrop.h"
+
+#include <QImage>
+
 #include <QRhiWidget>
 
 #include <filesystem>
@@ -98,6 +102,17 @@ public:
     /// answer comes from a pipeline that is built with the scene, and the scene
     /// is built on first paint. Ask after showing the window.
     [[nodiscard]] bool wireframeSupported() const;
+
+    /// A reference photograph behind the model, bound to an axis view.
+    ///
+    /// Bound to a SIDE because that is what the capability is for: you model to
+    /// an orthographic reference photo, and a front photo hanging behind a
+    /// three-quarter view is worse than no photo at all. The reference does the
+    /// same (`plugins/0_modeling_background.py`), and this port already has the
+    /// same six views on the View menu.
+    ///
+    /// A null @p image removes it.
+    void setBackdrop(const QImage& image, BackdropSide side, float opacity);
 
     /// Draws the ground grid and the backplane behind the figure.
     void setGrid(bool on);

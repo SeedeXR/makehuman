@@ -16,6 +16,7 @@ add_library(mh_ui STATIC
     MainWindow.cpp
     MacroStatus.cpp
     Background.cpp
+    Backdrop.cpp
     FrameStats.cpp
     ImageViewer.cpp
     MouseBindings.cpp

@@ -538,6 +538,25 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
                  -ViewportWidget::kMaxPitchDegrees);
 
     viewMenu->addSeparator();
+
+    // The reference photograph. The reference puts this on a tab of its own
+    // with radio buttons per side (`plugins/0_modeling_background.py`); this
+    // port is dockable and has the six views on this very menu, so the image is
+    // simply bound to the view you are looking from -- orbit to the left, load
+    // the left photo. That is the same gesture with one fewer control.
+    QAction* bgImage = viewMenu->addAction(theme::icon("image", theme::palette().textSecondary, 16),
+                                           tr("Background Image…"));
+    registerText(bgImage, QT_TR_NOOP("Background Image…"));
+    bgImage->setObjectName(QStringLiteral("view.background.set"));
+    connect(bgImage, &QAction::triggered, this, [this] { emit backgroundRequested(); });
+
+    QAction* bgClear = viewMenu->addAction(theme::icon("x", theme::palette().textSecondary, 16),
+                                           tr("Clear Background"));
+    registerText(bgClear, QT_TR_NOOP("Clear Background"));
+    bgClear->setObjectName(QStringLiteral("view.background.clear"));
+    connect(bgClear, &QAction::triggered, this, [this] { emit backgroundClearRequested(); });
+
+    viewMenu->addSeparator();
     QAction* resetCam = viewMenu->addAction(
         theme::icon("focus", theme::palette().textSecondary, 16), tr("Reset Camera"));
     registerText(resetCam, QT_TR_NOOP("Reset Camera"));

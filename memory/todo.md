@@ -2897,6 +2897,42 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       vertices in CMake script mode -- and use the RELEASE binary, which is
       several times faster than debug for exports.
 
+- [x] **The VIEWPORT BACKDROP — a reference photograph to model to** (2026-09-17).
+      The reference's `BackgroundChooser`, and the first of the four `todo` task
+      views to be closed. `--background` had existed for a year but reached only
+      `--render`; the viewport had none, which is the half the reference tab
+      exists for.
+      - A fullscreen triangle from `gl_VertexIndex` — **no vertex buffer, no
+        vertex layout, no upload**; a screen-space pipeline in `SceneResources`
+        drawn first, depth test AND write off, alpha blended.
+      - Bound to one of the six axis views and hidden from every other.
+        `--view`, `--background-side`, `--background-opacity`, and **View ▸
+        Background Image…**, which binds it to the view you are looking from.
+      - **The cover rule has ONE implementation.** `mh::ui::coverSource` is read
+        by `overBackground` (the `--render` composite) and by the viewport;
+        computing cover twice is how the two would disagree.
+      - **IT SHIPPED UPSIDE DOWN AND THE RENDER COULD NOT SHOW IT.** Metal puts
+        NDC +1 at the top, so the triangle's first corner is the frame's BOTTOM,
+        while v = 0 is the image's FIRST row. The fixture was a chequerboard —
+        symmetric — and every gate was "differs from plain", which an inverted
+        image satisfies. Caught by review, confirmed by a red-over-blue image.
+        The rule now lives in `render::backdropUvTransform`, pure, asking
+        `QRhi::isYUpInNDC()` rather than assuming, with unit tests that run in
+        CI (the pixel checks need Pillow and skip there).
+      - **Two screenshots of one scene are NOT bit-identical.** MEASURED: 0 to 3
+        pixels of 4,096,000 differ between runs; a real backdrop moves
+        2,473,836. So `files_identical` was flaky AND `files_differ` would have
+        passed with the feature deleted. Both now go through
+        `tests/mh_png_compare.cpp` — C++/Qt, so it runs in CI.
+      - Seven review findings, all real: a dangling `QRhiTexture*` when creation
+        fails, an unchecked `create()`, `--view`/`--background-side` silently
+        doing nothing under `--render` (now refused), a downscale quality
+        regression I introduced in `overBackground`, a clear that leaked the
+        texture, a dead accessor — and my own ponytail pass found a SECOND dead
+        accessor in the same diff.
+      - NOT built, which is why this is `covered` and not `done`: drag-to-move
+        and scale. Counts moved covered 21 → 22, todo 4 → 3.
+
 - [ ] **OWNER REQUEST (2026-09-05): complete the UI to match the reference.**
       **>>> THIS IS THE NEXT CHUNK, ahead of any more hair-style work. <<<**
       Routing decided 2026-09-13 and written down so it is not re-derived:

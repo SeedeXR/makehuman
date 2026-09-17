@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assert a region of two PNGs differs by at least a threshold.
+"""Assert a region of two PNGs differs by at least -- or at most -- a threshold.
 
 Written for one claim that a printed line cannot make: that a worn proxy's
 SKIN TONE actually follows the ethnic sliders. `wearing Genitals ... blended to
@@ -37,8 +37,18 @@ def main() -> int:
     ap.add_argument("--cx", type=int, required=True)
     ap.add_argument("--cy", type=int, required=True)
     ap.add_argument("--radius", type=int, default=6)
-    ap.add_argument("--min-response", type=float, required=True)
+    ap.add_argument("--min-response", type=float)
+    # The opposite claim, and it needs saying separately because it is the one
+    # a "the window changed" check cannot make. The viewport backdrop is drawn
+    # BEFORE the body with its depth write off; if it ever wrote depth it would
+    # OCCLUDE the model, and every differs-from-plain gate would still pass
+    # while the character vanished. So: adding a backdrop must leave the pixels
+    # where the model is UNCHANGED.
+    ap.add_argument("--max-response", type=float)
     args = ap.parse_args()
+    if (args.min_response is None) == (args.max_response is None):
+        print("give exactly one of --min-response or --max-response", file=sys.stderr)
+        return 2
 
     for f in (args.a, args.b):
         if not os.path.exists(f):
@@ -58,12 +68,16 @@ def main() -> int:
 
     pa, pb = patch(args.a), patch(args.b)
     response = float(np.abs(pa - pb).mean())
+    want = (f">= {args.min_response}" if args.min_response is not None
+            else f"<= {args.max_response}")
     print(f"region ({args.cx},{args.cy}) r{args.radius}: "
-          f"{pa.round(1)} vs {pb.round(1)}, response {response:.1f} "
-          f"(need >= {args.min_response})")
-    if response < args.min_response:
+          f"{pa.round(1)} vs {pb.round(1)}, response {response:.1f} (need {want})")
+    if args.min_response is not None and response < args.min_response:
         print("the region did not follow; the blend is not reaching the pixels",
               file=sys.stderr)
+        return 1
+    if args.max_response is not None and response > args.max_response:
+        print("the region moved when it should not have", file=sys.stderr)
         return 1
     return 0
 
