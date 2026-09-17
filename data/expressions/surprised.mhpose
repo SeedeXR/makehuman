@@ -1,0 +1,16 @@
+{
+    "name": "Surprised",
+    "description": "Action Units: AU1=0.9, AU2=0.9, AU5=0.8, AU26=0.7",
+    "tags": [
+        "facs"
+    ],
+    "unit_poses": {
+        "LeftInnerBrowUp": 0.8999999761581421,
+        "RightInnerBrowUp": 0.8999999761581421,
+        "LeftOuterBrowUp": 0.8999999761581421,
+        "RightOuterBrowUp": 0.8999999761581421,
+        "LeftUpperLidOpen": 0.800000011920929,
+        "RightUpperLidOpen": 0.800000011920929,
+        "JawDrop": 0.699999988079071
+    }
+}

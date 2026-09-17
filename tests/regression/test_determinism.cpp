@@ -117,7 +117,13 @@ TEST_CASE("the same parameters give a bit-identical mesh", "[core][determinism][
     // is the weakest of the three and still worth pinning: it is what a
     // generative pipeline assumes before it assumes anything else.
     const auto params = everyModifier(false);
-    REQUIRE(params.size() == 288);
+    // 288 -> 340 on 2026-09-17. `everyModifier()` walks the whole standard
+    // layout, which now includes the 52 bundled ARKit face units, so the
+    // determinism sweep drives them as well. Re-baselined DELIBERATELY rather
+    // than excluded: a bit-identical-mesh sweep is the strongest coverage those
+    // 52 targets get anywhere, and narrowing it to keep an old number would
+    // have thrown that away.
+    REQUIRE(params.size() == 340);
     CHECK(verticesDiffering(meshFor(params), meshFor(params)) == 0);
 }
 

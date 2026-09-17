@@ -42,10 +42,33 @@ TEST_CASE("every target group matches the Python reference", "[golden][parity][f
     const auto idx = TargetIndex::build(MH_DATA_DIR);
     if (idx.componentCount() == 0) SKIP("target data not present");
 
-    // Measured from the reference: 653 groups over 1,280 targets.
+    // Measured from the reference: 653 groups over 1,280 targets. The FIXTURE
+    // still says exactly that, and must -- it is what the reference has.
     CHECK(expected.size() == 653);
-    CHECK(idx.groupCount() == expected.size());
-    CHECK(idx.componentCount() == 1280);
+
+    // WE now ship more, and that is an addition rather than a parity break.
+    // `data/targets/faceunits/` holds 52 CC0 ARKit morphs from the MakeHuman
+    // community asset repository (see LICENSING.md and
+    // tools/make_faceunits.py); the reference has no such targets, so every one
+    // of them is a group it cannot know about. Excluded BY PREFIX and counted,
+    // per CLAUDE.md rule 3 -- never by relaxing the comparison, which would
+    // also swallow a group we got wrong.
+    const auto isOurs = [](const std::string& name) { return name.starts_with("faceunits-"); };
+    // Groups and COMPONENTS counted separately. Subtracting a group count from a
+    // component count happens to work while each faceunits group holds exactly
+    // one component, and would quietly stop meaning anything the moment one did
+    // not -- so each total is reduced by its own kind.
+    size_t ourGroups     = 0;
+    size_t ourComponents = 0;
+    for (const std::string& name : idx.groupNames()) {
+        if (!isOurs(name)) continue;
+        ++ourGroups;
+        ourComponents += idx.group(name).size();
+    }
+    CHECK(ourGroups == 52);
+    CHECK(ourComponents == 52);
+    CHECK(idx.groupCount() - ourGroups == expected.size());
+    CHECK(idx.componentCount() - ourComponents == 1280);
 
     // Every group the reference has, we have, at the same size.
     size_t missing   = 0;
@@ -68,6 +91,7 @@ TEST_CASE("every target group matches the Python reference", "[golden][parity][f
     // ...and no group we invented that the reference does not have.
     size_t extra = 0;
     for (const std::string& name : idx.groupNames()) {
+        if (isOurs(name)) continue;  // ours, counted above
         if (!expected.contains(name)) {
             ++extra;
             UNSCOPED_INFO("unexpected group: " << name);

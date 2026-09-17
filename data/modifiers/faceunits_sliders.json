@@ -1,0 +1,281 @@
+{
+    "Face units": {
+        "cameraView": "faceCamera",
+        "modifiers": {
+            "Brows": [
+                {
+                    "cam": "frontView",
+                    "label": "Brow down left",
+                    "mod": "faceunits/browDownLeft"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Brow down right",
+                    "mod": "faceunits/browDownRight"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Brow inner up",
+                    "mod": "faceunits/browInnerUp"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Brow outer up left",
+                    "mod": "faceunits/browOuterUpLeft"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Brow outer up right",
+                    "mod": "faceunits/browOuterUpRight"
+                }
+            ],
+            "Cheeks": [
+                {
+                    "cam": "frontView",
+                    "label": "Cheek puff",
+                    "mod": "faceunits/cheekPuff"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Cheek squint left",
+                    "mod": "faceunits/cheekSquintLeft"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Cheek squint right",
+                    "mod": "faceunits/cheekSquintRight"
+                }
+            ],
+            "Eyes": [
+                {
+                    "cam": "frontView",
+                    "label": "Eye blink left",
+                    "mod": "faceunits/eyeBlinkLeft"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Eye blink right",
+                    "mod": "faceunits/eyeBlinkRight"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Eye look down left",
+                    "mod": "faceunits/eyeLookDownLeft"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Eye look down right",
+                    "mod": "faceunits/eyeLookDownRight"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Eye look in left",
+                    "mod": "faceunits/eyeLookInLeft"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Eye look in right",
+                    "mod": "faceunits/eyeLookInRight"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Eye look out left",
+                    "mod": "faceunits/eyeLookOutLeft"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Eye look out right",
+                    "mod": "faceunits/eyeLookOutRight"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Eye look up left",
+                    "mod": "faceunits/eyeLookUpLeft"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Eye look up right",
+                    "mod": "faceunits/eyeLookUpRight"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Eye squint left",
+                    "mod": "faceunits/eyeSquintLeft"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Eye squint right",
+                    "mod": "faceunits/eyeSquintRight"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Eye wide left",
+                    "mod": "faceunits/eyeWideLeft"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Eye wide right",
+                    "mod": "faceunits/eyeWideRight"
+                }
+            ],
+            "Jaw": [
+                {
+                    "cam": "frontView",
+                    "label": "Jaw forward",
+                    "mod": "faceunits/jawForward"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Jaw left",
+                    "mod": "faceunits/jawLeft"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Jaw open",
+                    "mod": "faceunits/jawOpen"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Jaw right",
+                    "mod": "faceunits/jawRight"
+                }
+            ],
+            "Mouth": [
+                {
+                    "cam": "frontView",
+                    "label": "Mouth close",
+                    "mod": "faceunits/mouthClose"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth dimple left",
+                    "mod": "faceunits/mouthDimpleLeft"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth dimple right",
+                    "mod": "faceunits/mouthDimpleRight"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth frown left",
+                    "mod": "faceunits/mouthFrownLeft"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth frown right",
+                    "mod": "faceunits/mouthFrownRight"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth funnel",
+                    "mod": "faceunits/mouthFunnel"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth left",
+                    "mod": "faceunits/mouthLeft"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth lower down left",
+                    "mod": "faceunits/mouthLowerDownLeft"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth lower down right",
+                    "mod": "faceunits/mouthLowerDownRight"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth press left",
+                    "mod": "faceunits/mouthPressLeft"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth press right",
+                    "mod": "faceunits/mouthPressRight"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth pucker",
+                    "mod": "faceunits/mouthPucker"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth right",
+                    "mod": "faceunits/mouthRight"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth roll lower",
+                    "mod": "faceunits/mouthRollLower"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth roll upper",
+                    "mod": "faceunits/mouthRollUpper"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth shrug lower",
+                    "mod": "faceunits/mouthShrugLower"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth shrug upper",
+                    "mod": "faceunits/mouthShrugUpper"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth smile left",
+                    "mod": "faceunits/mouthSmileLeft"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth smile right",
+                    "mod": "faceunits/mouthSmileRight"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth stretch left",
+                    "mod": "faceunits/mouthStretchLeft"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth stretch right",
+                    "mod": "faceunits/mouthStretchRight"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth upper up left",
+                    "mod": "faceunits/mouthUpperUpLeft"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Mouth upper up right",
+                    "mod": "faceunits/mouthUpperUpRight"
+                }
+            ],
+            "Nose": [
+                {
+                    "cam": "frontView",
+                    "label": "Nose sneer left",
+                    "mod": "faceunits/noseSneerLeft"
+                },
+                {
+                    "cam": "frontView",
+                    "label": "Nose sneer right",
+                    "mod": "faceunits/noseSneerRight"
+                }
+            ],
+            "Tongue": [
+                {
+                    "cam": "frontView",
+                    "label": "Tongue out",
+                    "mod": "faceunits/tongueOut"
+                }
+            ]
+        }
+    }
+}

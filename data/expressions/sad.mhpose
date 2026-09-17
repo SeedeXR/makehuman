@@ -1,0 +1,15 @@
+{
+    "name": "Sad",
+    "description": "Action Units: AU1=0.8, AU4=0.6, AU15=0.9",
+    "tags": [
+        "facs"
+    ],
+    "unit_poses": {
+        "LeftInnerBrowUp": 0.800000011920929,
+        "RightInnerBrowUp": 0.800000011920929,
+        "LeftBrowDown": 0.6000000238418579,
+        "RightBrowDown": 0.6000000238418579,
+        "MouthLeftPullDown": 0.8999999761581421,
+        "MouthRightPullDown": 0.8999999761581421
+    }
+}

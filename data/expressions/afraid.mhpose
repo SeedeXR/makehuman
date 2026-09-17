@@ -1,0 +1,22 @@
+{
+    "name": "Afraid",
+    "description": "Action Units: AU1=0.9, AU2=0.7, AU4=0.7, AU5=1, AU7=0.4, AU20=0.8, AU26=0.5",
+    "tags": [
+        "facs"
+    ],
+    "unit_poses": {
+        "LeftInnerBrowUp": 0.8999999761581421,
+        "RightInnerBrowUp": 0.8999999761581421,
+        "LeftOuterBrowUp": 0.699999988079071,
+        "RightOuterBrowUp": 0.699999988079071,
+        "LeftBrowDown": 0.699999988079071,
+        "RightBrowDown": 0.699999988079071,
+        "LeftUpperLidOpen": 1.0,
+        "RightUpperLidOpen": 1.0,
+        "LeftLowerLidUp": 0.4000000059604645,
+        "RightLowerLidUp": 0.4000000059604645,
+        "MouthLeftPlatysma": 0.800000011920929,
+        "MouthRightPlatysma": 0.800000011920929,
+        "JawDrop": 0.5
+    }
+}

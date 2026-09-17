@@ -150,8 +150,14 @@ std::expected<StandardLayout, SliderLayoutError> loadStandardLayout(
     const std::filesystem::path& dataDir) {
     StandardLayout out;
 
-    for (const char* f :
-         {"modeling_modifiers.json", "bodyshapes_modifiers.json", "measurement_modifiers.json"}) {
+    // `faceunits_*` is OURS and the other three are the reference's, which is
+    // why it is a fourth file rather than rows appended to
+    // `modeling_modifiers.json`: the inherited data stays byte-for-byte
+    // inherited, so provenance is readable from the file list alone. It is
+    // also generated -- `tools/make_faceunits.py` derives it from the targets
+    // on disk, and `--check` fails if the two drift apart.
+    for (const char* f : {"modeling_modifiers.json", "bodyshapes_modifiers.json",
+                          "measurement_modifiers.json", "faceunits_modifiers.json"}) {
         auto m = loadModifiers(dataDir / f);
         if (!m) {
             return std::unexpected(SliderLayoutError{SliderLayoutErrorKind::Malformed,
@@ -160,8 +166,8 @@ std::expected<StandardLayout, SliderLayoutError> loadStandardLayout(
         out.modifiers.insert(out.modifiers.end(), m->begin(), m->end());
     }
 
-    for (const char* f :
-         {"modeling_sliders.json", "bodyshapes_sliders.json", "measurement_sliders.json"}) {
+    for (const char* f : {"modeling_sliders.json", "bodyshapes_sliders.json",
+                          "measurement_sliders.json", "faceunits_sliders.json"}) {
         auto v = loadSliderLayout(dataDir / f, out.modifiers);
         if (!v) return std::unexpected(v.error());
         out.views.insert(out.views.end(), v->begin(), v->end());

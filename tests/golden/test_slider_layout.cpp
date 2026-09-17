@@ -175,8 +175,13 @@ TEST_CASE("loadStandardLayout puts the task views in the reference's tab order",
     // that gives none the lowest non-negative integer not already taken --
     // Measure is the only one, and gets 1 because 0 is used twice. Ties keep
     // load order, so Macro modelling (modeling) precedes Body shapes.
-    const std::vector<std::string> expected{"Macro modelling", "Body shapes",   "Gender", "Face",
-                                            "Torso",           "Arms and Legs", "Measure"};
+    // "Face units" is OURS -- the 52 bundled ARKit morphs, declared by
+    // `faceunits_sliders.json`, which `loadStandardLayout` reads as a fourth
+    // file alongside the reference's three. Listed here rather than filtered
+    // out, so that a view appearing or vanishing still fails this.
+    const std::vector<std::string> expected{
+        "Macro modelling", "Body shapes",   "Gender",  "Face",
+        "Torso",           "Arms and Legs", "Measure", "Face units"};
     std::vector<std::string> got;
     got.reserve(standard->views.size());
     for (const auto& v : standard->views)
@@ -193,5 +198,5 @@ TEST_CASE("loadStandardLayout puts the task views in the reference's tab order",
     REQUIRE(measure != standard->views.end());
     CHECK_THAT(static_cast<double>(measure->sortOrder), WithinAbs(1.0, 1e-6));
 
-    CHECK(standard->modifiers.size() == 291);
+    CHECK(standard->modifiers.size() == 343);
 }

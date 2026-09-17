@@ -1,0 +1,17 @@
+{
+    "name": "Angry",
+    "description": "Action Units: AU4=1, AU5=0.6, AU7=0.8, AU23=0.9",
+    "tags": [
+        "facs"
+    ],
+    "unit_poses": {
+        "LeftBrowDown": 1.0,
+        "RightBrowDown": 1.0,
+        "LeftUpperLidOpen": 0.6000000238418579,
+        "RightUpperLidOpen": 0.6000000238418579,
+        "LeftLowerLidUp": 0.800000011920929,
+        "RightLowerLidUp": 0.800000011920929,
+        "UpperLipBackward": 0.8999999761581421,
+        "lowerLipBackward": 0.8999999761581421
+    }
+}

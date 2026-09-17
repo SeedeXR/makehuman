@@ -4,6 +4,90 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-17 (hundred-and-sixth) — Session · **Face units, expressions, and a chooser that did nothing**
+
+*Three owner instructions in one chunk: bundle the ARKit face units, fill the
+expression chooser, and go through the eight known reference defects.*
+
+### What shipped
+* **52 CC0 ARKit face units** at `data/targets/faceunits/`, wired as a real
+  modifier group and slider view — `--set faceunits/jawOpen=1.0` with no
+  `--custom-targets`. Rendered and looked at: the jaw opens, teeth visible.
+* **Six authored expressions** at `data/expressions/`, and an **Expression
+  chooser** (asset groups 13 → 14), independent of Pose and Animation because
+  an expression LAYERS rather than competing for the rig slot.
+* A real bug fixed in our own Collada path (below).
+
+### THE EXPRESSIONS COULD NOT BE PORTED, SO THEY WERE AUTHORED
+Measured, not assumed: `legacy/python/data/expressions/` **does not exist** in
+the reference, and MakeHuman2's three demo `.mhpose` name pose units
+(`LeftBrow`, `UpperLip`) that are **none of this rig's sixty** — they would
+parse and drive nothing, the `walk1.bvh` problem again.
+
+So `tools/make_expressions.py` composes six expressions from published FACS
+Action Units through this application's own `--facs`, which means the mapping
+that writes them is the mapping that reads them. Ekman & Friesen's basic set;
+the AU lists are theirs, the weights ours. Rendered all six as a contact sheet
+and looked: each reads as its label and is clearly distinct from neutral.
+
+### THE CHOOSER DID NOTHING, AND THAT WAS MINE
+Review caught it: `applyChoice` had branches for every other group and **none
+for Expression**. Picking "Happy" changed the combo, pushed a
+`ChoiceChangeCommand` onto the undo stack, and moved not one vertex — because
+nothing but `--expression` ever wrote `expressionFileRef()`. Start-up worked,
+which is exactly what made it easy to miss.
+
+**The painted no-op this codebase keeps finding, shipped by me, in a chunk
+whose whole point was the chooser.** Now wired, and it re-runs `loadPoseRig`
+rather than only writing the reference, because the expression is read inside
+that call.
+
+COVERAGE LIMIT, stated: `applyChoice` is not reachable headlessly, so no gate
+covers it — the same limit already recorded for Pose. That limit is what let
+this through.
+
+### A REAL DEFECT FOUND BY THE DEFECT SURVEY
+Going through the eight known reference defects, seven needed nothing:
+
+| Defect | State here |
+|---|---|
+| Tangents (3 bugs) | correct; 8 test cases incl. a golden base-mesh check |
+| FBX 10× units | correct; pinned by a round-trip asserting 140–210 cm |
+| FBX forged Creator | correct; says what it is. The fixed FileId is DELIBERATE and evidence-based — Maya rejects a mismatched footer, proven by experiment |
+| `.mhscene` pickle (RCE) | **N/A** — no scene format ported |
+| `sparsify` | **N/A** — not ported |
+| `.mhp` loader | **N/A** — not ported |
+| Bare `except: pass` | correct; reports and exits 1 |
+
+The eighth found something. `kMorphCapable` claimed `.dae` carried blendshapes.
+MEASURED by counting markers in the bytes: **.glb 34 targets, .fbx 35
+`BlendShape` records, .usda 38 — and .dae ZERO.** assimp takes the
+`aiAnimMesh`es and its Collada writer drops them; the file has one `<skin>`
+controller and no `<morph>`. So a `.dae` user was told "34 blendshapes" and
+handed none — the same hole the reference has, approached from the other side.
+Fixed, and gated in both directions.
+
+### Twelve review findings, all real
+Beyond the dead chooser: two test suites turned red by the new content and not
+re-baselined (`test_slider_layout` 291 → 343 modifiers and a new view;
+`test_determinism` 288 → 340 — **kept as a re-baseline rather than an
+exclusion, because a bit-identical sweep is the strongest coverage those 52
+targets get**); seven slider headings reading like API paths
+(`faceunits/brows`) next to the reference's prose; a LICENSING row whose only
+evidence was a URL — now the pack metadata is **vendored** at
+`PROVENANCE.json` with the zip's SHA-256, so the audit tool can see it;
+**nothing pinned the 52 ARKit names** — rename `jawOpen.target` to `jawOpn` and
+every gate stayed green, so the names are now a literal list `--check`
+compares against; a group count subtracted from a component count; a `--check`
+with no gate; stem-only preselection that named the bundled `happy` over a
+user's own file; and a `find_package` guard that made a gate vanish silently.
+
+### Numbers
+Suite 1365 → **1373**, no-Qt 868 → **869**. Task views: covered **24**, todo 1
+(MaterialEditorTaskView), blocked 3, declined 16, done 7.
+
+---
+
 ## 2026-09-17 (hundred-and-fifth) — Session · **Help, About, and a licence box that overstated the licence**
 
 *The owner's "complete the UI to match the reference", at the view this port had

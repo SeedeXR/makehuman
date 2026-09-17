@@ -51,9 +51,9 @@ dev-gated, so a default release build shows **40**.
 | Bucket | N | Meaning |
 |---|---|---|
 | done | 7 | the dynamic modifier views — shipped |
-| covered | 23 | the capability reaches the user, just not as a TAB |
+| covered | 24 | the capability reaches the user, just not as a TAB |
 | todo | 1 | to port, nothing blocking |
-| blocked | 4 | needs content or an engine capability first |
+| blocked | 3 | needs content or an engine capability first |
 | declined | 16 | Python-runtime or dev-only tooling |
 
 ## The buckets were wrong about FOURTEEN views, in both directions
@@ -108,7 +108,7 @@ The views `guimodifier.loadModifierTaskViews` builds from the `*_sliders.json`
 files — Face, Torso, Arms and Legs, Gender, Macro modelling, Body shapes,
 Measure. One view per top-level key, `apps/gui/guimodifier.py:226-232`.
 
-### covered (23)
+### covered (24)
 Not a gap: this port is dockable, so what the reference makes a tab arrives as
 a menu action or as a group in the Assets panel.
 
@@ -164,6 +164,20 @@ still say them. Relicense the project and the pair disagrees. `covered` and not
 those URLs belong to the upstream community rather than to a port — an owner
 decision, deliberately not invented.
 
+`ExpressionTaskView` moved to covered on **2026-09-17**, and the route there is
+worth recording because it was not a port. Upstream ships **no** expressions —
+`legacy/python/data/expressions/` does not exist in the reference and there is
+not one `.mhpose` in it — and MakeHuman2's three demos name pose units
+(`LeftBrow`, `UpperLip`) that are none of this rig's sixty, so they would load
+and drive nothing. There was nothing portable.
+
+So the content is **authored**: `tools/make_expressions.py` composes six
+expressions from published FACS Action Units (Ekman & Friesen's basic set)
+through this application's own `--facs`, which means the mapping that writes
+them is the mapping that reads them. Our own work under the project's CC0 asset
+licence. The chooser lists them beside Pose and Animation and is independent of
+both — an expression layers over a body pose rather than competing for the rig.
+
 ### todo (1)
 `MaterialEditorTaskView`.
 
@@ -208,15 +222,7 @@ undo entry. Design that interaction first; the loading half already works.
 (measured under `data/`), so expressions arrive as `--facs` action units
 instead; the chooser needs content before it needs code.
 
-`ExpressionTaskView` was moved here from `todo` on **2026-09-17**, on a
-measurement that changes what "blocked on content" means for it:
-`legacy/python/data/expressions/` **does not exist in the reference** and there
-are **zero** `.mhpose` files anywhere in it. So it is not that this port lacks
-content the reference ships — expressions are community content upstream too,
-and authoring a set would go BEYOND the reference rather than toward it.
-`--save-expression` can author them whenever the owner decides that is wanted.
-
-### blocked (4)
+### blocked (3)
 `EyebrowsTaskView` has no helper cage in the base mesh. `ProxyTaskView` would
 choose between alternate BODY topologies, and the only proxymesh-shaped assets
 shipped are `data/3dobjs/base.mhclo` (`basemesh alpha_7`, 434 verts — the OLD

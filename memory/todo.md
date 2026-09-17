@@ -2897,6 +2897,53 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       vertices in CMake script mode -- and use the RELEASE binary, which is
       several times faster than debug for exports.
 
+- [x] **52 ARKit FACE UNITS bundled, and six EXPRESSIONS authored** (2026-09-17,
+      both on the owner's instruction).
+      - `data/targets/faceunits/` — the community "Faceunits 01" pack, CC0,
+        contributed by Mika Suominen. Wired as a real modifier group and slider
+        view via `tools/make_faceunits.py`, so `--set faceunits/jawOpen=1.0`
+        works with no `--custom-targets`. Rendered and looked at.
+      - **The 52 ARKit NAMES are pinned** in the generator. Without that,
+        renaming `jawOpen.target` to `jawOpn` kept every gate green — the parity
+        test only counts, and `--check` regenerated the JSON from the typo.
+        ARKit-name fidelity is the whole reason to bundle these.
+      - Provenance is **vendored**: `data/targets/faceunits/PROVENANCE.json`
+        holds the pack's own metadata verbatim plus the zip's SHA-256, because
+        every other LICENSING.md row cites evidence a reader can open and a URL
+        is not that. The `.target` files carry no header of their own.
+      - `data/expressions/` — six expressions AUTHORED, not ported. Upstream
+        ships none and MakeHuman2's demos name pose units this rig lacks, so
+        nothing was portable; `tools/make_expressions.py` composes them from
+        published FACS Action Units through this app's own `--facs`. An
+        **Expression chooser** lists them (asset groups 13 → 14), independent of
+        Pose and Animation because an expression LAYERS.
+      - **THE CHOOSER DID NOTHING AT FIRST.** `applyChoice` had a branch for
+        every other group and none for Expression, so picking one changed the
+        combo, pushed an undo command, and moved no vertex. Start-up
+        `--expression` worked, which is what hid it. COVERAGE LIMIT, stated:
+        `applyChoice` is not reachable headlessly, which is what let it through.
+      - Re-baselines made deliberately: modifiers 291 → 343, determinism sweep
+        288 → 340 (**kept as a re-baseline, not an exclusion — that sweep is the
+        strongest coverage the 52 targets get**), targets 1280 → 1332, asset
+        groups 13 → 14, parity groups/components counted by their own kind.
+
+- [x] **The eight known reference defects, surveyed — and one found in OUR
+      code** (2026-09-17). Seven needed nothing: tangents (3 bugs) are correct
+      with 8 test cases; the FBX 10× unit error is pinned by a round-trip
+      asserting 140–210 cm; the forged Creator is honest here, and the fixed
+      FileId is a DELIBERATE evidence-based divergence (Maya rejects a
+      mismatched footer, proven by experiment); export failures report and exit
+      1. `.mhscene` (the pickle/RCE one), `sparsify` and the `.mhp` loader are
+      **N/A — those features are not ported at all**, so the defects are moot
+      rather than fixed. If a scene format is ever built it must be JSON.
+      - **The eighth found a real bug here.** `kMorphCapable` claimed `.dae`
+        carried blendshapes. MEASURED by counting markers in the bytes: .glb 34
+        targets, .fbx 35 `BlendShape` records, .usda 38, **.dae ZERO** — assimp
+        takes the `aiAnimMesh`es and its Collada writer drops them, leaving one
+        `<skin>` controller and no `<morph>`. A `.dae` user was told "34
+        blendshapes" and given none: the same hole the reference has, from the
+        other side. Fixed and gated in both directions.
+
 - [x] **HELP ▸ ABOUT, and a licence box that overstated the licence**
       (2026-09-17). The window had File, Edit, Workspace, Settings, View and
       Language and **no Help menu and no licence surface at all** — for an AGPL

@@ -1,0 +1,163 @@
+[
+    {
+        "group": "faceunits",
+        "modifiers": [
+            {
+                "target": "browDownLeft"
+            },
+            {
+                "target": "browDownRight"
+            },
+            {
+                "target": "browInnerUp"
+            },
+            {
+                "target": "browOuterUpLeft"
+            },
+            {
+                "target": "browOuterUpRight"
+            },
+            {
+                "target": "cheekPuff"
+            },
+            {
+                "target": "cheekSquintLeft"
+            },
+            {
+                "target": "cheekSquintRight"
+            },
+            {
+                "target": "eyeBlinkLeft"
+            },
+            {
+                "target": "eyeBlinkRight"
+            },
+            {
+                "target": "eyeLookDownLeft"
+            },
+            {
+                "target": "eyeLookDownRight"
+            },
+            {
+                "target": "eyeLookInLeft"
+            },
+            {
+                "target": "eyeLookInRight"
+            },
+            {
+                "target": "eyeLookOutLeft"
+            },
+            {
+                "target": "eyeLookOutRight"
+            },
+            {
+                "target": "eyeLookUpLeft"
+            },
+            {
+                "target": "eyeLookUpRight"
+            },
+            {
+                "target": "eyeSquintLeft"
+            },
+            {
+                "target": "eyeSquintRight"
+            },
+            {
+                "target": "eyeWideLeft"
+            },
+            {
+                "target": "eyeWideRight"
+            },
+            {
+                "target": "jawForward"
+            },
+            {
+                "target": "jawLeft"
+            },
+            {
+                "target": "jawOpen"
+            },
+            {
+                "target": "jawRight"
+            },
+            {
+                "target": "mouthClose"
+            },
+            {
+                "target": "mouthDimpleLeft"
+            },
+            {
+                "target": "mouthDimpleRight"
+            },
+            {
+                "target": "mouthFrownLeft"
+            },
+            {
+                "target": "mouthFrownRight"
+            },
+            {
+                "target": "mouthFunnel"
+            },
+            {
+                "target": "mouthLeft"
+            },
+            {
+                "target": "mouthLowerDownLeft"
+            },
+            {
+                "target": "mouthLowerDownRight"
+            },
+            {
+                "target": "mouthPressLeft"
+            },
+            {
+                "target": "mouthPressRight"
+            },
+            {
+                "target": "mouthPucker"
+            },
+            {
+                "target": "mouthRight"
+            },
+            {
+                "target": "mouthRollLower"
+            },
+            {
+                "target": "mouthRollUpper"
+            },
+            {
+                "target": "mouthShrugLower"
+            },
+            {
+                "target": "mouthShrugUpper"
+            },
+            {
+                "target": "mouthSmileLeft"
+            },
+            {
+                "target": "mouthSmileRight"
+            },
+            {
+                "target": "mouthStretchLeft"
+            },
+            {
+                "target": "mouthStretchRight"
+            },
+            {
+                "target": "mouthUpperUpLeft"
+            },
+            {
+                "target": "mouthUpperUpRight"
+            },
+            {
+                "target": "noseSneerLeft"
+            },
+            {
+                "target": "noseSneerRight"
+            },
+            {
+                "target": "tongueOut"
+            }
+        ]
+    }
+]

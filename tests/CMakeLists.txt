@@ -154,6 +154,27 @@ catch_discover_tests(mh_tests PROPERTIES ENVIRONMENT "TMPDIR=${MH_TEST_TMPDIR}")
 # Writes the base mesh through every exporter so tools/blender_validate.py can
 # check them in a third implementation. Not a test target: it produces files for
 # another process rather than asserting anything.
+add_executable(mh_export_fixture mh_export_fixture.cpp)
+
+# The bundled ARKit face units. `tools/make_faceunits.py` derives their modifier
+# and slider declarations FROM the target files on disk, so 52 names cannot
+# drift out of step with 52 files across two JSON documents in two shapes.
+#
+# Needs Python but NOT Qt, so it lives out here where the Qt-less CI jobs can
+# run it -- the lesson from the commit that put `mh_png_compare` in the wrong
+# place, applied in the other direction.
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME faceunit_declarations_are_generated
+             COMMAND ${Python3_EXECUTABLE}
+                     ${CMAKE_SOURCE_DIR}/tools/make_faceunits.py --check)
+else()
+    # SAID OUT LOUD. A bare `if(FOUND)` makes the gate vanish where Python is
+    # absent and the CI log then shows a green run with one fewer test, which is
+    # indistinguishable from a passing one.
+    message(WARNING "no Python3: faceunit_declarations_are_generated will not run")
+endif()
+
 # The licence FILES must still say what the About box claims. These are the
 # half of that pair which needs neither Qt nor a GPU -- they are `cmake -P`
 # scripts -- so they live OUTSIDE the render guard and run on the two CI jobs
@@ -172,8 +193,6 @@ add_test(NAME asset_licence_file_still_says_cc0 COMMAND ${CMAKE_COMMAND}
          -DFILE=${CMAKE_SOURCE_DIR}/LICENSE.ASSETS.md
          "-DKEYS=Creative Commons CC0 1.0 Universal"
          -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
-
-add_executable(mh_export_fixture mh_export_fixture.cpp)
 
 # Tolerant image comparison, because two GPU renders of one scene are not
 # bit-identical. C++ and Qt rather than Pillow so it runs in CI, where the
@@ -371,7 +390,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 13 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 14 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # The rig had no picker either: two ship, --rig has always chosen between
@@ -1960,6 +1979,70 @@ if(MH_HAVE_RENDER)
     #
     # --screenshot needs a real Metal device and a surface; it skips where
     # app_screenshot does.
+
+    # WHICH FORMATS ACTUALLY CARRY BLENDSHAPES. `kMorphCapable` listed `.dae`
+    # and it does not belong: MEASURED by exporting the 34 expression units and
+    # counting markers in the bytes -- .glb 34 targets, .fbx 35 `BlendShape`
+    # records, .usda 38 `blendShape`, and **.dae ZERO**. assimp takes the
+    # aiAnimMeshes and its Collada writer drops them, so the file has one
+    # `<skin>` controller and no `<morph>`.
+    #
+    # A user was therefore told "34 blendshapes" and handed a .dae with none --
+    # the same hole the reference has from the other side, where its Collada
+    # morph controller is dead code behind a NameError (project_context.md 8).
+    # This is the gate for that claim, in both directions.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/morphcap)
+    add_test(NAME app_dae_says_it_drops_blendshapes COMMAND makehuman --blendshapes
+             --export ${CMAKE_CURRENT_BINARY_DIR}/morphcap/m.dae)
+    set_tests_properties(app_dae_says_it_drops_blendshapes PROPERTIES
+        PASS_REGULAR_EXPRESSION "dae carries no blendshapes")
+    add_test(NAME app_glb_keeps_blendshapes_quietly COMMAND makehuman --blendshapes
+             --export ${CMAKE_CURRENT_BINARY_DIR}/morphcap/m.glb)
+    set_tests_properties(app_glb_keeps_blendshapes_quietly PROPERTIES
+        FAIL_REGULAR_EXPRESSION "carries no blendshapes")
+
+    # The shipped expressions must still match what the FACS table composes.
+    # `make_faceunits.py --check` got a gate and this did not, so
+    # `data/expressions/*.mhpose` could drift from the EXPRESSIONS table with
+    # nothing noticing. It needs the built application -- the AU-to-pose-unit
+    # mapping lives there -- so it belongs inside this block, unlike the
+    # faceunits check which needs only Python.
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME expressions_are_generated COMMAND ${Python3_EXECUTABLE}
+                 ${CMAKE_SOURCE_DIR}/tools/make_expressions.py --check
+                 --app $<TARGET_FILE:makehuman>)
+    endif()
+
+    # The face units must actually MOVE THE FACE, not merely be accepted. They
+    # are bundled as ordinary targets, so `--set faceunits/<name>` reaches them
+    # with no `--custom-targets` -- which is the whole point of bundling.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/faceunits)
+    add_test(NAME app_faceunit_jaw COMMAND makehuman --set faceunits/jawOpen=1.0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/faceunits/jaw.obj)
+    set_tests_properties(app_faceunit_jaw PROPERTIES
+        FAIL_REGULAR_EXPRESSION "no such modifier"
+        FIXTURES_SETUP app_faceunit_jaw)
+    add_test(NAME app_faceunit_plain COMMAND makehuman
+             --export ${CMAKE_CURRENT_BINARY_DIR}/faceunits/plain.obj)
+    set_tests_properties(app_faceunit_plain PROPERTIES FIXTURES_SETUP app_faceunit_plain)
+    # An EXACT count, not a minimum: 2,317 of 14,780 vertices, measured. The
+    # script is built for exactness and a threshold would pass on a morph that
+    # had quietly shrunk to nothing much.
+    add_test(NAME app_faceunit_moves_the_face COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/faceunits/jaw.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/faceunits/plain.obj
+             -DEXPECT_DIFFERENT=2317
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
+    set_tests_properties(app_faceunit_moves_the_face PROPERTIES
+        FIXTURES_REQUIRED "app_faceunit_jaw;app_faceunit_plain")
+
+    # ...and a name that is not one of the 52 is REFUSED, so a typo cannot read
+    # as a face unit that happens to do nothing.
+    add_test(NAME app_faceunit_unknown_refused COMMAND makehuman
+             --set faceunits/noSuchUnit=1.0
+             --export ${CMAKE_CURRENT_BINARY_DIR}/faceunits/never.obj)
+    set_tests_properties(app_faceunit_unknown_refused PROPERTIES
+        PASS_REGULAR_EXPRESSION "no such modifier")
 
     # HELP -- About and Credits, the whole of the reference's help tab that this
     # port can honestly supply (`legacy/python/plugins/6_help.py`). The window
@@ -4571,7 +4654,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 13 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 14 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # Refused rather than silently defaulted to brown, which would make a typo

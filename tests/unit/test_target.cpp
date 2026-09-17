@@ -213,9 +213,13 @@ TEST_CASE("every shipped target parses", "[core][target][golden]") {
     }
 
     CHECK(failed == 0);
-    CHECK(ok == 1280);          // measured: 1,280 .target files ship
+    // 1280 -> 1332 on 2026-09-17: data/targets/faceunits/ adds 52 CC0 ARKit
+    // morphs from the community asset repository. Re-baselined, not relaxed --
+    // the count is still exact, and tools/make_faceunits.py --check holds the
+    // modifier declarations in step with the files.
+    CHECK(ok == 1332);
     CHECK(skippedTotal == 0);   // no malformed lines in the shipped set
-    CHECK(entries == 6147800);  // measured total sparse entries
+    CHECK(entries == 6200020);  // measured total sparse entries
     CHECK(maxIdx == 19157);     // exactly base mesh vertexCount - 1
 }
 

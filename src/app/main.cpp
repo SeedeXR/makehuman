@@ -1537,6 +1537,44 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(
     }
     groups.push_back(std::move(animations));
 
+    // EXPRESSION: the face, and the one chooser here that is NOT exclusive with
+    // anything. `--expression` layers onto whatever `--pose` gives -- the body
+    // rig and the 60 face pose units are separate slots -- so a user picks a
+    // pose AND an expression, and neither clears the other.
+    //
+    // The shipped set is AUTHORED, not ported: measured, upstream ships no
+    // expressions at all and MakeHuman2's three demos name pose units this rig
+    // does not have. `tools/make_expressions.py` composes them from published
+    // FACS Action Units through this application's own `--facs`, so the
+    // mapping used to write them is the mapping used to read them.
+    mh::foundation::AssetGroup expressions;
+    expressions.name = "Expression";
+    // "None" is the face at rest, and unlike Pose's "rest" it has no file:
+    // an expression is an overlay, and no overlay IS the neutral face.
+    expressions.choices.push_back({kNoProxy, "None"});
+    expressions.selected = 0;
+    // `namesPose` rather than a stem compare, for the reasons it documents: it
+    // matches a full path first, then folds case and hyphens. A bare stem test
+    // preselected the BUNDLED `happy` when the user had asked for their own
+    // `~/mine/happy.mhpose` -- the panel naming one file over another's face.
+    bool namedShipped = false;
+    for (const fs::path& p : filesWithExtension(dataDir() / "expressions", ".mhpose")) {
+        expressions.choices.push_back({p.string(), chooserLabel(p)});
+        if (!expressionFileRef().empty() && namesPose(p, expressionFileRef().string())) {
+            expressions.selected = static_cast<int>(expressions.choices.size()) - 1;
+            namedShipped         = true;
+        }
+    }
+    // An expression from OUTSIDE data/ is listed too, the way the Pose chooser
+    // keeps a current pose it would otherwise hide. Without this the combo read
+    // "None" while the face was plainly expressing something.
+    if (!expressionFileRef().empty() && !namedShipped) {
+        expressions.choices.push_back(
+            {expressionFileRef().string(), chooserLabel(expressionFileRef())});
+        expressions.selected = static_cast<int>(expressions.choices.size()) - 1;
+    }
+    groups.push_back(std::move(expressions));
+
     // Eyes: the first proxy chooser. Only the two shipped eye proxies exist in
     // data/, so this is a real chooser over a small set rather than a stub.
     mh::foundation::AssetGroup eyes;
@@ -2287,10 +2325,17 @@ std::optional<mh::rig::SkinData> exportSkin(const PoseRig& rig, const mh::core::
 ///        rather than writing a statue in silence.
 /// @param body the body's render geometry, already compacted. Every format
 ///        except OBJ writes from this.
-/// @param morphs blendshapes for the body. **Only GLB carries them**:
-///        `GltfSceneEntry` has a morphTargets field and `io::SceneEntry` does
-///        not, so the assimp and USD paths say what they are dropping rather
-///        than writing an expressionless mesh in silence.
+/// @param morphs blendshapes for the body. **GLB, FBX and USD carry them;
+///        COLLADA DOES NOT** -- and the list below said otherwise until it was
+///        measured. Exporting the 34 expression units to each format and
+///        counting the markers in the bytes: .glb 34 targets, .fbx 35
+///        `BlendShape` records, .usda 38 `blendShape` records, **.dae zero**.
+///        assimp takes the `aiAnimMesh`es `attachMorphs` builds and its Collada
+///        writer drops them; the file comes out with one `<skin>` controller and
+///        no `<morph>` at all. So a `.dae` user was told "34 blendshapes" and
+///        given none, which is the same hole the reference has from the other
+///        side -- its Collada morph controller is dead code behind a `NameError`
+///        (project_context.md 8).
 /// @param provenance what the file says about itself: the product version, the
 ///        content-format version and the BASE topology hash. Built once by the
 ///        caller and handed to all four writers, so the four formats cannot
@@ -2302,13 +2347,15 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
                 std::span<const mh::foundation::MorphTarget> morphs = {}, bool draco = false) {
     const std::string ext = lowerExtension(path);
 
-    // OBJ is the only format left with no blendshape channel -- its format
-    // simply has none. glTF, the assimp formats and UsdSkel all carry them.
-    static constexpr std::array kMorphCapable{".glb", ".fbx", ".dae", ".usd", ".usda", ".usdz"};
+    // MEASURED, not assumed -- `.dae` was in this list and does not belong.
+    // OBJ has no blendshape channel at all, and Collada's writer here silently
+    // drops the ones it is handed, so both must warn rather than let a user
+    // believe the expressions travelled.
+    static constexpr std::array kMorphCapable{".glb", ".fbx", ".usd", ".usda", ".usdz"};
     if (!morphs.empty() && std::ranges::find(kMorphCapable, ext) == kMorphCapable.end()) {
         std::fprintf(stderr,
-                     "%s carries no blendshapes; writing %zu expression targets needs .glb, .fbx, "
-                     ".dae or .usd\n",
+                     "%s carries no blendshapes; writing %zu expression targets needs .glb, "
+                     ".fbx or .usd\n",
                      ext.c_str(), morphs.size());
     }
 
@@ -4878,6 +4925,35 @@ int main(int argc, char** argv) {
             rebuildInto(*shell);
             return;
         }
+        // EXPRESSION: the face, layered over whatever the body is doing.
+        //
+        // Wired HERE and not only at start-up, which is the defect review
+        // caught: the chooser existed, `setChoice` stuck, a
+        // `ChoiceChangeCommand` went onto the undo stack -- and the face did
+        // not move, because nothing but `--expression` ever wrote
+        // `expressionFileRef()`. A combo that changes and does nothing is the
+        // painted no-op this codebase keeps finding, and this one was mine.
+        //
+        // It re-runs the SAME path a pose change does, because the expression
+        // is read inside `loadPoseRig`: the units are layered onto the rig
+        // there, so writing the reference alone would change nothing until the
+        // next unrelated pose pick.
+        if (group == QLatin1String("Expression")) {
+            expressionFileRef() = id == QLatin1String(kNoProxy)
+                                      ? std::filesystem::path{}
+                                      : std::filesystem::path(id.toStdString());
+            // applyStack FIRST, for the reason the pose branch gives at length:
+            // loadPoseRig fits the skeleton to whatever the mesh holds, and the
+            // mesh is left posed after every rebuild.
+            human.applyStack(*mesh, targets);
+            PoseRig next;
+            if (loadPoseRig(*mesh, poseChoice, next, poseIsAnimation, poseFrameLive)) {
+                rig = std::move(next);
+            }
+            rebuildInto(*shell);
+            return;
+        }
+
         // POSE AND ANIMATION ARE ONE SLOT, REACHED TWO WAYS.
         //
         // Mutual exclusion is not a rule enforced here -- it falls out of both

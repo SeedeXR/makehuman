@@ -1,0 +1,13 @@
+{
+    "name": "Disgusted",
+    "description": "Action Units: AU9=1, AU15=0.6, AU16=0.7",
+    "tags": [
+        "facs"
+    ],
+    "unit_poses": {
+        "NoseWrinkler": 1.0,
+        "MouthLeftPullDown": 0.6000000238418579,
+        "MouthRightPullDown": 0.6000000238418579,
+        "lowerLipDown": 0.699999988079071
+    }
+}

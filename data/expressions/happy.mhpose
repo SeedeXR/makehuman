@@ -1,0 +1,13 @@
+{
+    "name": "Happy",
+    "description": "Action Units: AU6=0.7, AU12=1",
+    "tags": [
+        "facs"
+    ],
+    "unit_poses": {
+        "LeftCheekUp": 0.699999988079071,
+        "RightCheekUp": 0.699999988079071,
+        "MouthLeftPullUp": 1.0,
+        "MouthRightPullUp": 1.0
+    }
+}

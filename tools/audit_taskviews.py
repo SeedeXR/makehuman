@@ -102,14 +102,14 @@ BUCKETS = {
     # ExpressionTaskView chooses .mhpose files and this port ships NONE
     # (measured: zero under data/), so its expressions arrive as --facs units.
     "AnimationLibrary": "covered",
-    # RECLASSIFIED 2026-09-17, todo -> blocked, on a measurement that changes
-    # what the word means here. It was listed as needing content THIS port
-    # lacks; in fact `legacy/python/data/expressions/` DOES NOT EXIST in the
-    # reference and there are ZERO .mhpose files anywhere in it. Expressions are
-    # community content upstream too, so authoring a set would go BEYOND the
-    # reference rather than toward it -- a product decision for the owner,
-    # exactly like Eyebrows and Proxy are blocked on content nobody has made.
-    "ExpressionTaskView": "blocked",
+    # blocked -> COVERED, same day, because the owner took that decision: the
+    # content is now AUTHORED rather than ported. `legacy/python/data/
+    # expressions/` still does not exist in the reference and MakeHuman2's
+    # demos still name pose units this rig lacks -- so nothing was portable --
+    # but `tools/make_expressions.py` composes six expressions from published
+    # FACS Action Units through this application's own `--facs`, and an
+    # Expression chooser lists them beside Pose and Animation.
+    "ExpressionTaskView": "covered",
     "MaterialEditorTaskView": "todo",
     # SHIPPED 2026-09-17 as Help > About / Credits plus `--about`/`--credits`.
     # `covered`, not `done`: the reference also offers Website, FAQ and Forum
@@ -316,6 +316,10 @@ EVIDENCE = {
     # a string in a header comment; this appears only when the window builds the
     # action.
     "HelpTaskView": '"help.about"',
+    # The CHOOSER, not the `--expression` flag: the flag shipped long before
+    # the view did, so a literal matching it would have reported this covered
+    # while the window offered nothing.
+    "ExpressionTaskView": '"Expression"',
     # The MENU ENTRY, not the flag. `--background` existed for a year as a
     # `--render` backdrop while the modelling aid the reference task actually is
     # did not, so a literal matching the flag would have reported this covered
@@ -365,13 +369,6 @@ def shipped(literal) -> bool:
 # So an entry here asserts the same kind of fact an EVIDENCE entry does, in the
 # opposite direction, and the moment the view ships the gate says so.
 ABSENT = {
-    "ExpressionTaskView": ('"Expression"',
-                           "blocked on content that does not exist anywhere: "
-                           "legacy/python/data/expressions/ is ABSENT from the "
-                           "reference and there are 0 .mhpose files in it, so "
-                           "authoring a set goes beyond the reference rather "
-                           "than toward it. --save-expression can author them "
-                           "when someone decides to"),
     "MaterialEditorTaskView": ('"Material editor"',
                                "materials can be PICKED but not edited; no "
                                "property editor"),
