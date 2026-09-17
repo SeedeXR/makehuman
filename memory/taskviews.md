@@ -51,8 +51,8 @@ dev-gated, so a default release build shows **40**.
 | Bucket | N | Meaning |
 |---|---|---|
 | done | 7 | the dynamic modifier views — shipped |
-| covered | 24 | the capability reaches the user, just not as a TAB |
-| todo | 1 | to port, nothing blocking |
+| covered | 25 | the capability reaches the user, just not as a TAB |
+| todo | 0 | to port, nothing blocking |
 | blocked | 3 | needs content or an engine capability first |
 | declined | 16 | Python-runtime or dev-only tooling |
 
@@ -108,7 +108,7 @@ The views `guimodifier.loadModifierTaskViews` builds from the `*_sliders.json`
 files — Face, Torso, Arms and Legs, Gender, Macro modelling, Body shapes,
 Measure. One view per top-level key, `apps/gui/guimodifier.py:226-232`.
 
-### covered (24)
+### covered (25)
 Not a gap: this port is dockable, so what the reference makes a tab arrives as
 a menu action or as a group in the Assets panel.
 
@@ -178,8 +178,32 @@ them is the mapping that reads them. Our own work under the project's CC0 asset
 licence. The chooser lists them beside Pose and Animation and is independent of
 both — an expression layers over a body pose rather than competing for the rig.
 
-### todo (1)
-`MaterialEditorTaskView`.
+`MaterialEditorTaskView` moved to covered on **2026-09-17**, the last view to
+leave `todo`. A Material dock of 29 rows, built by `mh::core::editableProperties`
+in the reference's own order, and `--set-material` / `--save-material` for the
+command line. The rows are generated as the **exact inverse** of
+`setMaterialProperty`, so a row cannot name a key the parser will not take; the
+ids are pinned BY NAME in the test, because a lowercased key round-trips through
+our parser and is then silently ignored by MakeHuman 1.x — the inverse property
+alone would not have caught that. `covered` rather than `done`: the reference
+edits the material of whichever object is selected, and this edits the skin's.
+
+Its evidence literal is the **connect**, not the class. The panel existing
+proves nothing: it first reached the window as a one-row sliver — a third dock
+on the right stacks rather than tabs — and the tests were green throughout. What
+the dock is for is that an edited row reaches the character, so the literal is
+the one place that happens.
+
+### todo (0)
+**Empty as of 2026-09-17**, when `MaterialEditorTaskView` shipped. Nothing
+remains in this bucket: what is left is `blocked` (3, on content or an engine
+capability) or `declined` (16, Python-runtime and dev-only tooling).
+
+A zero here is audited like any other number. `Counter` drops a bucket that
+reaches zero, so the auditor would have demanded this row and heading be
+DELETED -- at the one moment the count is most worth stating, and leaving the
+bucket unwatched if a later view moved back into it. `counts` is seeded with
+every bucket name instead.
 
 This list said EIGHT until 2026-09-13, and still named `ViewerTaskView`,
 `MouseActionsTaskView` and `ExpressionMixerTaskView` after the auditor had

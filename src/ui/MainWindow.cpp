@@ -71,6 +71,20 @@ QDockWidget* makeDock(const QString& title, const QString& objectName, Qt::DockW
 constexpr auto kGeom  = "workspace/geometry";
 constexpr auto kState = "workspace/state";
 
+/// **Bump this whenever a dock is added or removed.**
+///
+/// `restoreState` refuses a state saved under a different version and returns
+/// false, which here means the shipped layout stands. Without it, a saved
+/// workspace from a build that had no Material dock restores the old two-dock
+/// arrangement and leaves the new one wherever it was added -- measured: a
+/// title bar and one row of a 29-row panel, wedged under Assets. The cost of
+/// bumping is that a user's own arrangement resets once; the cost of not
+/// bumping is a panel that arrives unusable for everyone who has run the app
+/// before.
+///
+/// 1: the Material dock joined Modelling and Assets (2026-09-17).
+constexpr int kLayoutVersion = 1;
+
 /// IniFormat rather than the platform default. On macOS the native backend is
 /// CFPreferences, which ignores QSettings::setPath -- so a test could not
 /// redirect it away from the real user preferences, and running the suite would
@@ -176,6 +190,10 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
     // The first goes left and the rest right, which is the shipped layout the
     // presets restore.
     bool first = true;
+    /// The first dock on the RIGHT, which every later one tabs behind. Only the
+    /// right side needs one: the loop puts the first category left and all the
+    /// rest right.
+    QDockWidget* rightAnchor = nullptr;
     for (const QString& category : tasks.categories()) {
         const Qt::DockWidgetArea area = first ? Qt::LeftDockWidgetArea : Qt::RightDockWidgetArea;
         // The category name is a DATA string -- it comes from the task
@@ -194,8 +212,27 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
                                           dockObjectName(category), area, this);
         registerText(dock, shown.constData());
         addDockWidget(area, dock);
+        // A THIRD task made the right-hand side stack two docks vertically, and
+        // the lower one got a title bar and about a line of content -- the
+        // material editor's 29 rows in a sliver. Tabbing is both the fix and
+        // what the reference does with task views, which are tabs there.
+        //
+        // The first dock in the area stays the anchor and is raised below, so
+        // the window opens on the same panel it always did rather than on
+        // whichever task was registered last.
+        if (area == Qt::RightDockWidgetArea) {
+            if (rightAnchor == nullptr) {
+                rightAnchor = dock;
+            } else {
+                tabifyDockWidget(rightAnchor, dock);
+            }
+        }
         first = false;
     }
+
+    // Raised because tabifyDockWidget leaves the LAST tab current, and the
+    // window should open on the panel it always did.
+    if (rightAnchor != nullptr) rightAnchor->raise();
 
     // A renderer failure is otherwise a black rectangle and a status bar saying
     // "Ready" -- the message exists, it just never reached anyone.
@@ -1167,7 +1204,7 @@ void MainWindow::setDocumentPath(const QString& path) {
 void MainWindow::saveWorkspace() const {
     QSettings s = workspaceSettings();
     s.setValue(kGeom, saveGeometry());
-    s.setValue(kState, saveState());
+    s.setValue(kState, saveState(kLayoutVersion));
 }
 
 void MainWindow::restoreWorkspace() {
@@ -1178,7 +1215,7 @@ void MainWindow::restoreWorkspace() {
     const QByteArray geom  = s.value(kGeom).toByteArray();
     const QByteArray state = s.value(kState).toByteArray();
     if (!geom.isEmpty()) restoreGeometry(geom);
-    if (!state.isEmpty()) restoreState(state);
+    if (!state.isEmpty()) restoreState(state, kLayoutVersion);
 }
 
 void MainWindow::resetWorkspace() {

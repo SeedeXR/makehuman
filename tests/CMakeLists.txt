@@ -248,7 +248,8 @@ if(MH_HAVE_RENDER)
                                ui/test_render_request.cpp
                                ui/test_background.cpp
                                ui/test_backdrop.cpp
-                               ui/test_about.cpp)
+                               ui/test_about.cpp
+                               ui/test_material_panel.cpp)
     target_link_libraries(mh_ui_tests
         PRIVATE mh::ui mh::core Catch2::Catch2 mh::warnings mh::sanitize)
     target_compile_definitions(mh_ui_tests PRIVATE
@@ -2171,7 +2172,16 @@ if(MH_HAVE_RENDER)
                  ${CMAKE_SOURCE_DIR}/tools/png_region_response.py
                  --a ${CMAKE_CURRENT_BINARY_DIR}/backdrop_front.png
                  --b ${CMAKE_CURRENT_BINARY_DIR}/plain_front.png
-                 --cx 1300 --cy 560 --radius 40 --max-response 2.0)
+                 # WINDOW-LAYOUT DEPENDENT, and it moved once: adding the
+                 # Material dock tabbed the right-hand side, which changed the
+                 # viewport's size, and (1300,560) -- solidly on the torso
+                 # before -- landed on the shoulder EDGE, where a pixel of
+                 # camera difference reads as 4.8. Re-measured on the new
+                 # layout: (1152,640) is interior torso and reads 0.0, while
+                 # the companion check below still reads far above 20 on the
+                 # empty viewport. Re-derive both from the image if the docks
+                 # change again; do not relax the threshold.
+                 --cx 1152 --cy 640 --radius 40 --max-response 2.0)
         set_tests_properties(app_backdrop_does_not_eat_the_model PROPERTIES
             SKIP_RETURN_CODE 77
             FIXTURES_REQUIRED "app_backdrop_front;app_backdrop_plain_front")

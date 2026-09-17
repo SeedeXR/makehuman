@@ -4,6 +4,96 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-17 20:50:00 (hundred-and-ninth) — Session · **The material editor panel, and a dock that arrived as a sliver**
+
+*The other half of the material editor. The engine shipped in `895be6a8` with a
+headless surface only; this is the dock. With it `MaterialEditorTaskView` moves
+to `covered` and the `todo` bucket reaches **0** — the first time since the
+inventory was written.*
+
+### The design: the panel is the parser's inverse
+`mh::core::editableProperties(const Material&)` returns the 29 rows of the
+reference's material box, in its order, as `foundation::MaterialProperty`
+records. `mh::ui::MaterialPanel` renders them and emits `edited("id=value")`,
+which goes straight back into `mh::core::setMaterialProperty`.
+
+The two are the **exact inverse** of one another by construction — the emitter
+uses the same `num()`/`boolStr()` spellings `saveMaterial` writes, and the same
+`ck.writeTexture`/`ck.writeIntensity` names, not the lowercased lookup keys. A
+row therefore cannot name a key the parser will not take.
+
+`MaterialProperty` lives in `include/makehuman/foundation/` — **Apache-2.0** —
+which is what lets the AGPL core hand a description of a material to the
+Apache-2.0 UI. `src/ui` still includes no core header.
+
+### The inverse property is not enough on its own
+A lowercased key like `diffusecolor` round-trips through OUR parser perfectly
+and is **silently ignored by MakeHuman 1.x**. A property test asserting only
+"every emitted row survives `setMaterialProperty`" passes on that. So the test
+pins all 29 ids **BY NAME**, as a literal list.
+
+`editingFinished`, not `textChanged`: a per-keystroke signal would apply "0.3"
+as three separate edits, two of them wrong. And the apply path is driven
+through the real `QLineEdit` rather than a test-only hook — a hook would have
+proved the signal works and left the widget-to-signal wiring uncovered.
+
+### Two defects the BY-HAND check caught; neither was reachable headlessly
+1. **A third dock on the right STACKS.** The 29-row panel arrived as a title bar
+   and one row. `shippedTasks()` in `test_ui.cpp` registers TWO categories, so
+   no assertion had ever described a three-dock layout. Fixed by tabifying;
+   gated by `a third task TABS rather than stacking`.
+2. **Still a sliver after that**, because `restoreWorkspace()` replays a layout
+   saved before the dock existed — so every existing user would have seen it
+   anyway. Fixed with `kLayoutVersion`, **bump it whenever a dock is added or
+   removed**; gated by `a workspace saved before the Material dock is IGNORED`.
+
+The panel's own tests were green through both. **Look at the thing.**
+
+### A real regression the gate caught
+`app_backdrop_does_not_eat_the_model` failed **4.8 against a 2.0 limit**.
+Tabbing changed the viewport's size, so its hard-coded sample point (1300,560)
+— interior torso before — landed on the shoulder EDGE. Re-measured from the
+image to **(1152,640), which reads 0.0**; the companion
+`app_backdrop_reaches_the_pixels` at (800,300) still clears its 20.0 floor.
+**Thresholds untouched.** Screenshot tests are coupled to the window layout.
+
+### The zero bucket had to be made auditable
+`audit_taskviews.py` built its live counts with a bare `Counter`, which **drops
+a bucket that reaches zero**. The only way to pass would have been to DELETE the
+`todo` row and its section — at the one moment the count is most worth stating,
+and leaving the bucket unwatched if a view later moved back into it. `counts` is
+now seeded with every bucket name. Both this and the bucket flip were
+mutation-tested: each fails, each restore is byte-identical.
+
+The view's EVIDENCE literal is `&mh::ui::MaterialPanel::edited` — **the connect,
+not the class**. A literal naming the class would be satisfied by
+`MaterialPanel.cpp` existing, and this chunk's whole lesson is that the panel
+can exist, build and pass its tests without reaching the user.
+
+### Gate
+4 mutations killed with clean builds; ponytail applied (−4 lines);
+clang-format clean; **debug 1393/1393, release 1393/1393, no-Qt 881/881,
+ASan 470+471+456, TSan 470/471/233/224 across four slices**; tree verified
+untouched since `gate.log`, with all four presets regenerating
+`tests/CTestTestfile.cmake` after the last `tests/CMakeLists.txt` edit.
+SonarQube **gate OK, 0 open issues**, CE task SUCCESS; `m2m-sonarqube` stopped
+alone, the owner's six containers untouched. CI on `895be6a8` confirmed green,
+all 9 jobs.
+
+`tools/audit_taskviews.py` was edited AFTER that Sonar run and `tools/` is in
+`sonar.sources`, so Sonar was re-run rather than assumed; `audit_taskviews` is
+also a ctest test, re-run in all four presets and under CI's `python3`.
+
+### Left open
+`todo` is 0, but M8 is not finished: the `.mhm` round trip is not exact
+(759/14,780 verts for `--pose tpose`, 832 for `--animation walk1`; decimal
+precision SUSPECTED, not confirmed), Save As/Open ignore the pose, the `.mhm`
+does not record the EXPRESSION, the render viewer holds only the last image,
+and **no workspace PRESET lists the Material dock** (`src/ui/Workspace.cpp:79`)
+so it is reachable only by its tab — a small follow-up.
+
+---
+
 ## 2026-09-17 (hundred-and-eighth) — Session · **The material editor, and a description that appended**
 
 *M8 opens. `MaterialEditorTaskView` was the last `todo` task view. The port

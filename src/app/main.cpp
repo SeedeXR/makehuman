@@ -56,6 +56,7 @@
 #include "makehuman/ui/Language.h"
 #include "makehuman/ui/MacroStatus.h"
 #include "makehuman/ui/MainWindow.h"
+#include "makehuman/ui/MaterialPanel.h"
 #include "makehuman/ui/ModifierPanel.h"
 #include "makehuman/ui/RenderDialog.h"
 #include "makehuman/ui/TaskRegistry.h"
@@ -2123,6 +2124,26 @@ std::filesystem::path skinMaterialPath() {
 std::vector<std::string>& materialOverridesRef() {
     static std::vector<std::string> edits;
     return edits;
+}
+
+/// Records one `name=value` edit, REPLACING any earlier edit of the same
+/// property.
+///
+/// Appending would work -- `editedSkinMaterial` applies them in order, so the
+/// last wins -- but dragging one slider would grow the list without bound and
+/// `--save-material`'s "N edits" would count keystrokes rather than properties.
+void setMaterialOverride(const std::string& spec) {
+    const auto eq = spec.find('=');
+    if (eq == std::string::npos) return;
+    const std::string key = spec.substr(0, eq + 1);
+    auto& edits           = materialOverridesRef();
+    for (std::string& existing : edits) {
+        if (existing.starts_with(key)) {
+            existing = spec;
+            return;
+        }
+    }
+    edits.push_back(spec);
 }
 
 /// The skin material as EDITED: the file on disk with every override applied.
@@ -4900,11 +4921,12 @@ int main(int argc, char** argv) {
     // QUndoStack is the window's child and every command holds a copy of
     // applyModifier, so these must outlive it. `panel` and `shell` are filled
     // in once the window exists.
-    int mergeGroup               = 0;
-    mh::ui::AssetPanel* assets   = nullptr;
-    mh::ui::ModifierPanel* panel = nullptr;
-    mh::ui::MainWindow* shell    = nullptr;
-    const auto applyModifier     = [&](const QString& id, float value) {
+    int mergeGroup                        = 0;
+    mh::ui::AssetPanel* assets            = nullptr;
+    mh::ui::MaterialPanel* materialEditor = nullptr;
+    mh::ui::ModifierPanel* panel          = nullptr;
+    mh::ui::MainWindow* shell             = nullptr;
+    const auto applyModifier              = [&](const QString& id, float value) {
         // No re-entrancy guard: ModifierPanel::setValue blocks the slider's
         // signals, so this cannot come back round through valueChanged. The
         // "setValue moves the slider without emitting" test pins that.
@@ -4927,6 +4949,20 @@ int main(int argc, char** argv) {
         rebuildInto(*shell);
     };
 
+    // Every row of the material editor put back to what the material now says.
+    //
+    // setValue does not emit (`MaterialPanel::setValue`), so showing a loaded
+    // material cannot be mistaken for a fresh edit and fed back through the
+    // override list.
+    const auto refreshMaterialEditor = [&] {
+        if (materialEditor == nullptr) return;
+        const auto edited = editedSkinMaterial();
+        if (!edited) return;
+        for (const auto& p : mh::core::editableProperties(*edited)) {
+            materialEditor->setValue(QString::fromStdString(p.id), QString::fromStdString(p.value));
+        }
+    };
+
     // Skin and pose go through the undo stack too, so Cmd+Z means the same
     // thing whichever panel the user last touched.
     const auto applyChoice = [&](const QString& group, const QString& id) {
@@ -4944,6 +4980,11 @@ int main(int argc, char** argv) {
             // normal and roughness maps the PBR viewport and every exporter
             // read. Rebuild so the body's MeshInstance picks up the new maps.
             skinMaterialRef() = id.toStdString();
+            // The editor is showing the OLD material's values, so refresh every
+            // row. Without this, picking a different skin left the editor
+            // describing a material that is no longer on the character -- the
+            // panel would look right and mean nothing.
+            refreshMaterialEditor();
             rebuildInto(*shell);
             return;
         }
@@ -5115,6 +5156,9 @@ int main(int argc, char** argv) {
     // with the other.
     const QString kModelling = QStringLiteral("Modelling");
     const QString kMaterials = QStringLiteral("Materials");
+    // The reference's `7_material_editor.py`, which this port had no equivalent
+    // of: reading and writing `.mhmat` both existed, and changing one did not.
+    const QString kMaterialEditor = QStringLiteral("Material");
 
     mh::ui::TaskRegistry tasks;
     // The id stays "Materials" forever -- `saveState` keys on it, so changing
@@ -5124,7 +5168,8 @@ int main(int argc, char** argv) {
     // code calls the widget inside it (`ui::AssetPanel`); the reference has no
     // single name for this set, splitting it across Materials, Geometries and
     // Pose/Animate.
-    if (!tasks.add(kModelling) || !tasks.add(kMaterials, QStringLiteral("Assets"))) {
+    if (!tasks.add(kModelling) || !tasks.add(kMaterials, QStringLiteral("Assets")) ||
+        !tasks.add(kMaterialEditor)) {
         std::fprintf(stderr, "duplicate task category\n");
         return 1;
     }
@@ -5368,6 +5413,42 @@ int main(int argc, char** argv) {
         return 1;
     }
     skin = chosenSkin.toStdString();
+
+    // The material editor dock. Built from the SAME `editableProperties` the
+    // round-trip test walks, so what it shows is what `--set-material` would
+    // accept, property for property.
+    {
+        const auto shown = editedSkinMaterial();
+        if (!shown) {
+            std::fprintf(stderr, "%s\n", shown.error().c_str());
+            return 1;
+        }
+        materialEditor = new mh::ui::MaterialPanel(mh::core::editableProperties(*shown));
+        if (!window.setPanel(kMaterialEditor, materialEditor)) {
+            std::fprintf(stderr, "no dock for %s\n", kMaterialEditor.toStdString().c_str());
+            return 1;
+        }
+        QObject::connect(materialEditor, &mh::ui::MaterialPanel::edited, [&](const QString& spec) {
+            const std::string edit = spec.toStdString();
+            // Validated against the material it will actually be applied
+            // to, and REFUSED rather than recorded if it will not take:
+            // a row that accepts "abc" for shininess and silently does
+            // nothing is the failure this whole chunk is about.
+            auto probe = editedSkinMaterial();
+            if (!probe) return;
+            if (auto ok =
+                    mh::core::setMaterialProperty(*probe, edit, skinMaterialPath().parent_path());
+                !ok) {
+                window.statusBar()->showMessage(QString::fromStdString(ok.error()), 4000);
+                // Put the row back to what the material still says, so the
+                // panel never shows a value the character does not have.
+                refreshMaterialEditor();
+                return;
+            }
+            setMaterialOverride(edit);
+            rebuildInto(window);
+        });
+    }
 
     rebuildInto(window);
 

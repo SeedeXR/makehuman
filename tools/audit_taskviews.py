@@ -110,7 +110,12 @@ BUCKETS = {
     # FACS Action Units through this application's own `--facs`, and an
     # Expression chooser lists them beside Pose and Animation.
     "ExpressionTaskView": "covered",
-    "MaterialEditorTaskView": "todo",
+    # SHIPPED 2026-09-17 as a Material dock: 29 rows built from
+    # `editableProperties`, the exact inverse of `setMaterialProperty`, plus
+    # `--set-material` and `--save-material`. `covered`, not `done`: the
+    # reference edits the material of ANY selected object and this edits the
+    # skin's.
+    "MaterialEditorTaskView": "covered",
     # SHIPPED 2026-09-17 as Help > About / Credits plus `--about`/`--credits`.
     # `covered`, not `done`: the reference also offers Website, FAQ and Forum
     # buttons, and those URLs belong to the upstream community rather than to a
@@ -342,6 +347,12 @@ EVIDENCE = {
     "MouseActionsTaskView": '"mouse.orbit"',
     "ViewerTaskView": 'ImageViewer(&window)',
     "ExpressionMixerTaskView": '"pose-unit"',
+    # The CONNECT, not the panel. A literal naming the class would be satisfied
+    # by `MaterialPanel.cpp` existing, and this chunk's own lesson is that the
+    # panel can exist, build, pass its tests and still not reach the user -- it
+    # first arrived as a one-row sliver, and before that an edit had nowhere to
+    # go. This appears only where an edited row is applied to the character.
+    "MaterialEditorTaskView": '&mh::ui::MaterialPanel::edited',
 }
 
 SRC = REPO / "src"
@@ -369,9 +380,6 @@ def shipped(literal) -> bool:
 # So an entry here asserts the same kind of fact an EVIDENCE entry does, in the
 # opposite direction, and the moment the view ships the gate says so.
 ABSENT = {
-    "MaterialEditorTaskView": ('"Material editor"',
-                               "materials can be PICKED but not edited; no "
-                               "property editor"),
     # NO BRACES here either -- same reason as EVIDENCE above, and the inverse
     # failure. `absence_mismatches` fires when the literal IS in src/, so a
     # brace-pinned string would keep reporting these views absent after they
@@ -475,7 +483,13 @@ def main():
             print(f"  {line}", file=sys.stderr)
         return 1
 
-    counts = Counter(BUCKETS[name] for name in standalone)
+    # Seeded with every bucket name, because a Counter drops the ones that
+    # reach zero -- and `todo` reached zero on 2026-09-17. Without the seed the
+    # only way to pass would be to DELETE the `todo` row and its section, which
+    # is the one moment the count is most worth stating, and it would leave the
+    # bucket unaudited if a later view moved back into it.
+    counts = Counter(dict.fromkeys(BUCKET_NAMES, 0))
+    counts.update(BUCKETS[name] for name in standalone)
     counts["done"] = len(dynamic)
 
     # The plan file states these numbers in a table nobody was reading. Two

@@ -2995,8 +2995,8 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         buttons, and those URLs belong to the upstream community rather than to
         a port. **Raised with the owner.**
 
-- [~] **MaterialEditorTaskView — the EDITING ENGINE is done; the PANEL is not**
-      (2026-09-17). The reference's is `legacy/python/plugins/7_material_editor.py`
+- [x] **MaterialEditorTaskView — the editing engine, then the PANEL**
+      (2026-09-17). **CLOSED**; the last view to leave `todo`, which is now 0. The reference's is `legacy/python/plugins/7_material_editor.py`
       (903 lines). Reading and writing `.mhmat` both already existed here
       (`loadMaterial`, `saveMaterial`); the gap was **editing**, and that half
       now exists.
@@ -3026,11 +3026,33 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         two such lines concatenated with no separator. The oracle assigns
         (`material.py:372`); measured against the reference on a two-line file,
         it gives the second alone. Fixed, two tests.
-      **STILL OPEN: the panel.** The view stays `todo` in
-      `memory/taskviews.md` until it lands. The CLI is what makes it gateable
-      when it does — the panel will edit through the same function.
-      Note `applyChoice` is not reachable headlessly, so the panel's apply path
-      needs checking BY HAND.
+      **THE PANEL LANDED** in the following chunk, same day.
+      - `mh::ui::MaterialPanel` takes `std::span<const MaterialProperty>` and
+        emits `edited("id=value")`; `mh::core::editableProperties` builds the
+        29 rows in the reference's own order. The two are the **exact inverse**
+        of `setMaterialProperty`, so a row cannot name a key the parser will
+        not take. `MaterialProperty` lives in `foundation/` — Apache-2.0 — so
+        `src/ui` still includes no core header.
+      - The inverse property alone is NOT enough, and the test says so: a
+        lowercased lookup key round-trips through OUR parser and is then
+        silently ignored by MakeHuman 1.x. The 29 ids are pinned BY NAME.
+      - `editingFinished`, not `textChanged`: per keystroke, "0.3" would apply
+        as "0", "0." and "0.3" — three edits, two of them wrong.
+      - **The by-hand check earned its place twice.** A third dock on the right
+        STACKS, so the 29-row panel arrived as a title bar and one row; fixed by
+        tabifying. Then it was STILL a sliver, because `restoreWorkspace()`
+        replays a layout saved before the dock existed — fixed with
+        `kLayoutVersion`, **which must be bumped whenever a dock is added or
+        removed**. Both are gated now. The tests were green through both.
+      - `app_backdrop_does_not_eat_the_model` failed 4.8 against a 2.0 limit —
+        a REAL regression from the layout change, not a flaky test. Its
+        hard-coded sample point (1300,560) had been interior torso and became
+        the shoulder edge. Re-measured to (1152,640), which reads 0.0.
+        **Screenshot tests are coupled to the window layout.**
+      - `covered`, not `done`: the reference edits whichever object is
+        selected; this edits the skin's.
+      **Follow-up, small:** no workspace PRESET lists the Material dock
+      (`src/ui/Workspace.cpp:79`), so it is reachable only by its tab.
 
 - [x] **ExpressionTaskView reclassified todo → BLOCKED** (2026-09-17).
       MEASURED: `legacy/python/data/expressions/` **does not exist in the
@@ -3039,8 +3061,9 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       community content upstream too, and authoring a set would go BEYOND the
       reference rather than toward it. **An owner decision**, raised as one;
       `--save-expression` can author them whenever it is wanted.
-      Task views: covered 23 / **todo 1** (MaterialEditorTaskView) / blocked 4 /
-      declined 16 / done 7.
+      Task views AT THAT TIME: covered 23 / **todo 1** (MaterialEditorTaskView) /
+      blocked 4 / declined 16 / done 7. As of 2026-09-17 they are covered 25 /
+      **todo 0** / blocked 3 / declined 16 / done 7.
 
 - [x] **The VIEWPORT BACKDROP — a reference photograph to model to** (2026-09-17).
       The reference's `BackgroundChooser`, and the first of the four `todo` task

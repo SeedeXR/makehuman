@@ -216,7 +216,11 @@ std::expected<bool, std::string> applyLine(Material& m, const std::vector<std::s
         // "uvs/default.mhuv" is a sentinel meaning "no override"
         // (material.py:451-458).
         const std::string v = tok[1];
-        if (v.find("default.mhuv") == std::string::npos) m.uvMap = dir / v;
+        if (v.empty()) {
+            m.uvMap.reset();  // cleared, the same way a texture row clears
+        } else if (v.find("default.mhuv") == std::string::npos) {
+            m.uvMap = dir / v;
+        }
     } else if (key == "shaderparam" && need(2)) {
         ShaderParam p;
         for (size_t i = 2; i < tok.size(); ++i)
@@ -266,8 +270,13 @@ std::expected<bool, std::string> applyLine(Material& m, const std::vector<std::s
                 // a symlink that a bundle may depend on. The residual is
                 // that two spellings via a SYMLINK still compare unequal;
                 // nothing in `data/` uses one.
-                m.textures[slot].path = (dir / tok[1]).lexically_normal();
-                known                 = true;
+                // An EMPTY value clears the slot. The editor needs it -- taking a
+                // texture OFF is as ordinary an edit as putting one on -- and
+                // without it `dir / ""` would store the directory itself as the
+                // texture path.
+                m.textures[slot].path =
+                    tok[1].empty() ? std::filesystem::path{} : (dir / tok[1]).lexically_normal();
+                known = true;
                 break;
             }
             if (ck.intensity != nullptr && key == ck.intensity && need(1)) {
@@ -554,10 +563,11 @@ std::expected<void, std::string> setMaterialProperty(Material& material, std::st
     joined[eq] = ' ';
     std::ranges::replace(joined, ',', ' ');
 
-    const std::vector<std::string> tok = splitWs(joined);
-    if (tok.size() < 2) {
-        return std::unexpected("no value for '" + std::string(spec.substr(0, eq)) + "'");
-    }
+    std::vector<std::string> tok = splitWs(joined);
+    // An EMPTY value is a real edit -- clearing a texture or a UV map -- so it
+    // becomes an empty TOKEN rather than a refusal. A key that wants a number
+    // still rejects it, because "" does not parse as one.
+    if (tok.size() == 1) tok.emplace_back();
 
     // A COPY, so a rejected edit leaves the material exactly as it was. The
     // dispatch writes fields as it goes, so `diffuseColor=0.5,zzz,0.5` would
@@ -569,6 +579,97 @@ std::expected<void, std::string> setMaterialProperty(Material& material, std::st
 
     material = std::move(edited);
     return {};
+}
+
+std::vector<foundation::MaterialProperty> editableProperties(const Material& material) {
+    using Kind = foundation::MaterialProperty::Kind;
+    std::vector<foundation::MaterialProperty> out;
+
+    // The value spellings are `saveMaterial`'s, deliberately: `num` is the same
+    // `formatShortest`, and flags the same `True`/`False` its `boolStr` writes.
+    // That is what makes this the EXACT inverse of setMaterialProperty rather
+    // than approximately its inverse -- the numbers a row shows are the numbers
+    // a saved file holds.
+    const auto colour = [&out](const char* id, const char* label, const Vec3& c) {
+        out.push_back({id, label, Kind::Colour, num(c.x) + " " + num(c.y) + " " + num(c.z)});
+    };
+    const auto scalar = [&out](const char* id, const char* label, float v) {
+        out.push_back({id, label, Kind::Scalar, num(v)});
+    };
+    const auto flag = [&out](const char* id, const char* label, bool v) {
+        out.push_back({id, label, Kind::Flag, boolStr(v)});
+    };
+    const auto texture = [&out](const char* id, const char* label, const std::filesystem::path& p) {
+        // generic_string, not native: the value round-trips through a parser
+        // that splits on whitespace and rebuilds a path, and '/' is what every
+        // shipped `.mhmat` uses.
+        out.push_back({id, label, Kind::Texture, p.generic_string()});
+    };
+
+    out.reserve(29);
+    colour("diffuseColor", "Diffuse", material.diffuse);
+    texture("diffuseTexture", "Diffuse texture", material.texture(TextureChannel::Diffuse).path);
+    colour("ambientColor", "Ambient", material.ambient);
+    colour("specularColor", "Specular", material.specular);
+    scalar("shininess", "Specular shininess", material.shininess);
+    colour("emissiveColor", "Emissive", material.emissive);
+    scalar("opacity", "Opacity", material.opacity);
+    scalar("translucency", "Translucency", material.translucency);
+
+    flag("shadeless", "Shadeless", material.shadeless);
+    flag("wireframe", "Wireframe", material.wireframe);
+    flag("transparent", "Transparent", material.transparent);
+    flag("alphaToCoverage", "Alpha to coverage", material.alphaToCoverage);
+    flag("backfaceCull", "Backface culling", material.backfaceCull);
+    flag("depthless", "Depthless", material.depthless);
+    flag("autoBlendSkin", "Auto ethnic skin", material.autoBlendSkin);
+
+    // Each mapped channel with its intensity, in the reference's order. The
+    // WRITE spellings from kChannels, never the lowercased lookup keys: the
+    // reference's parser compares case-sensitively, so a file saying
+    // `normalmaptexture` is silently ignored by MakeHuman 1.x.
+    //
+    // DIFFUSE IS NOT IN THIS LOOP -- it is written above, without an intensity.
+    // The reference has no diffuse-intensity row either, and `diffuseIntensity`
+    // is one of the two deprecated keys material.py:377-382 warns on, so a row
+    // for it would write a line nothing reads.
+    struct MappedChannel {
+        TextureChannel channel;
+        const char* textureLabel;
+        const char* intensityLabel;
+    };
+
+    static constexpr std::array<MappedChannel, 5> kMapped{{
+        {TextureChannel::TransparencyMap, "Transparency map", "Transparency map intensity"},
+        {TextureChannel::BumpMap, "Bump map", "Bump map intensity"},
+        {TextureChannel::NormalMap, "Normal map", "Normal map intensity"},
+        {TextureChannel::DisplacementMap, "Displacement map", "Displacement map intensity"},
+        {TextureChannel::SpecularMap, "Specular map", "Specular map intensity"},
+    }};
+    const auto channelKey = [](TextureChannel c) -> const ChannelKey& {
+        return kChannels[static_cast<size_t>(c)];
+    };
+    for (const MappedChannel& mc : kMapped) {
+        const ChannelKey& ck    = channelKey(mc.channel);
+        const TextureSlot& slot = material.texture(mc.channel);
+        texture(ck.writeTexture, mc.textureLabel, slot.path);
+        scalar(ck.writeIntensity, mc.intensityLabel, slot.intensity);
+    }
+    // AO is last in the reference's box, after the five above.
+    const ChannelKey& ao = channelKey(TextureChannel::AoMap);
+    texture(ao.writeTexture, "Ambient occlusion", material.texture(TextureChannel::AoMap).path);
+    scalar(ao.writeIntensity, "AO map intensity",
+           material.texture(TextureChannel::AoMap).intensity);
+
+    // `uvs/default.mhuv` is a sentinel the parser DROPS, so an empty row here
+    // means "no override" rather than a value that failed to load.
+    texture("uvMap", "UV map", material.uvMap.value_or(std::filesystem::path{}));
+
+    // Last, as in the reference. A single token: the format's `name` line takes
+    // one word (`m.name = tok[1]`, and the oracle does the same), so a name with
+    // a space cannot survive a save either way.
+    out.push_back({"name", "Material name", Kind::Text, material.name});
+    return out;
 }
 
 }  // namespace mh::core

@@ -3,6 +3,7 @@
 
 #include "makehuman/core/Types.h"
 #include "makehuman/foundation/Geometry.h"
+#include "makehuman/foundation/MaterialProperty.h"
 
 #include <array>
 #include <cstdint>
@@ -179,5 +180,26 @@ struct MaterialError {
 /// and silently doing nothing is the worst possible answer.
 [[nodiscard]] std::expected<void, std::string> setMaterialProperty(
     Material& material, std::string_view spec, const std::filesystem::path& dir);
+
+/// Every property of @p material the editor offers, in the reference's order.
+///
+/// The **exact inverse** of `setMaterialProperty`: feeding any returned row
+/// back as `id + "=" + value` leaves the material unchanged. That is what makes
+/// a panel built from these rows non-decorative, and there is a test that walks
+/// every row asserting it.
+///
+/// The rows are the reference's own material box
+/// (`legacy/python/plugins/7_material_editor.py:138-358`), in its order: four
+/// colours, the scalars, the flags, each texture with its intensity, the UV map
+/// and the name. `shaderConfig` is deliberately NOT here -- its line is
+/// `shaderConfig <name> <bool>`, so eight rows would share one id and the
+/// `id=value` contract above would not hold. The reference keeps those
+/// checkboxes in a separate box too (`:68-70`), and `setMaterialProperty`
+/// already accepts `shaderConfig=spec False` from the command line.
+///
+/// Returns a `foundation` type on purpose: AGPL may depend on Apache-2.0, never
+/// the reverse, and this is what lets `mh_ui` show a material it cannot include.
+[[nodiscard]] std::vector<foundation::MaterialProperty> editableProperties(
+    const Material& material);
 
 }  // namespace mh::core
