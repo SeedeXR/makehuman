@@ -2878,3 +2878,23 @@ TEST_CASE("the View menu can set and clear a background image", "[ui][backdrop]"
     CHECK(cleared == 1);
     CHECK(asked == 0);
 }
+
+TEST_CASE("the window offers Help with About and Credits", "[ui][about]") {
+    // The TEXT is gated by test_about.cpp and by ctest against the licence
+    // files; what neither can see is whether the window offers it at all. The
+    // reference reaches this through a whole task view, so a port with the text
+    // and no way to ask for it would have closed nothing.
+    //
+    // COVERAGE LIMIT, stated: neither action is TRIGGERED. Both open a modal
+    // QMessageBox, which would hang the suite. Their connection is checked by
+    // existing; `--about` and `--credits` exercise the same text end to end.
+    useShippedIcons();
+    mh::ui::MainWindow window{MH_SHADER_DIR, shippedTasks()};
+
+    auto* about   = window.findChild<QAction*>(QStringLiteral("help.about"));
+    auto* credits = window.findChild<QAction*>(QStringLiteral("help.credits"));
+    REQUIRE(about != nullptr);
+    REQUIRE(credits != nullptr);
+    CHECK_FALSE(about->text().isEmpty());
+    CHECK_FALSE(credits->text().isEmpty());
+}

@@ -101,15 +101,27 @@ BUCKETS = {
     # `--animation` for the command line. Its EVIDENCE literal is below.
     # ExpressionTaskView chooses .mhpose files and this port ships NONE
     # (measured: zero under data/), so its expressions arrive as --facs units.
-    "AnimationLibrary": "covered", "ExpressionTaskView": "todo",
+    "AnimationLibrary": "covered",
+    # RECLASSIFIED 2026-09-17, todo -> blocked, on a measurement that changes
+    # what the word means here. It was listed as needing content THIS port
+    # lacks; in fact `legacy/python/data/expressions/` DOES NOT EXIST in the
+    # reference and there are ZERO .mhpose files anywhere in it. Expressions are
+    # community content upstream too, so authoring a set would go BEYOND the
+    # reference rather than toward it -- a product decision for the owner,
+    # exactly like Eyebrows and Proxy are blocked on content nobody has made.
+    "ExpressionTaskView": "blocked",
     "MaterialEditorTaskView": "todo",
+    # SHIPPED 2026-09-17 as Help > About / Credits plus `--about`/`--credits`.
+    # `covered`, not `done`: the reference also offers Website, FAQ and Forum
+    # buttons, and those URLs belong to the upstream community rather than to a
+    # port -- an owner decision, not an omission to fix quietly.
+    "HelpTaskView": "covered",
     # SHIPPED 2026-09-17. `covered` rather than `done` on purpose: the reference
     # task also lets a user DRAG and SCALE the image, and that half is not
     # built. What is built is the half the tab exists for -- a reference
     # photograph in the VIEWPORT, bound to an axis view and hidden from every
     # other one, with an opacity.
     "BackgroundChooser": "covered",
-    "HelpTaskView": "todo",
 
     "ShellTaskView": "declined", "ScriptingView": "declined",
     "ScriptingExecuteTab": "declined", "SocketTaskView": "declined",
@@ -300,6 +312,10 @@ EVIDENCE = {
     # live again in the second attempt until they were looked for by name.
     "AnimationLibrary": '"Animation"',
     "SkeletonLibrary": '"Skeleton"',
+    # The MENU ENTRY. A literal matching the licence TEXT would be satisfied by
+    # a string in a header comment; this appears only when the window builds the
+    # action.
+    "HelpTaskView": '"help.about"',
     # The MENU ENTRY, not the flag. `--background` existed for a year as a
     # `--render` backdrop while the modelling aid the reference task actually is
     # did not, so a literal matching the flag would have reported this covered
@@ -350,13 +366,15 @@ def shipped(literal) -> bool:
 # opposite direction, and the moment the view ships the gate says so.
 ABSENT = {
     "ExpressionTaskView": ('"Expression"',
-                           "a chooser needs files to choose; still 0 .mhpose "
-                           "under data/, though --save-expression can now "
-                           "author them"),
+                           "blocked on content that does not exist anywhere: "
+                           "legacy/python/data/expressions/ is ABSENT from the "
+                           "reference and there are 0 .mhpose files in it, so "
+                           "authoring a set goes beyond the reference rather "
+                           "than toward it. --save-expression can author them "
+                           "when someone decides to"),
     "MaterialEditorTaskView": ('"Material editor"',
                                "materials can be PICKED but not edited; no "
                                "property editor"),
-    "HelpTaskView": ('"help.manual"', "no Help menu in the window"),
     # NO BRACES here either -- same reason as EVIDENCE above, and the inverse
     # failure. `absence_mismatches` fires when the literal IS in src/, so a
     # brace-pinned string would keep reporting these views absent after they

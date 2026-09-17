@@ -154,6 +154,25 @@ catch_discover_tests(mh_tests PROPERTIES ENVIRONMENT "TMPDIR=${MH_TEST_TMPDIR}")
 # Writes the base mesh through every exporter so tools/blender_validate.py can
 # check them in a third implementation. Not a test target: it produces files for
 # another process rather than asserting anything.
+# The licence FILES must still say what the About box claims. These are the
+# half of that pair which needs neither Qt nor a GPU -- they are `cmake -P`
+# scripts -- so they live OUTSIDE the render guard and run on the two CI jobs
+# that install only ninja and assimp. Putting them inside it was the same
+# mistake as the commit before this one, in the direction that matters less
+# but for the same reason: the check that could run everywhere did not.
+#
+# Relicense the project and these fail, which is the prompt to go and fix the
+# application's own text rather than ship it asserting a licence it no longer
+# carries.
+add_test(NAME licence_file_still_says_affero COMMAND ${CMAKE_COMMAND}
+         -DFILE=${CMAKE_SOURCE_DIR}/LICENSE.CODE.md
+         "-DKEYS=GNU Affero General Public License"
+         -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+add_test(NAME asset_licence_file_still_says_cc0 COMMAND ${CMAKE_COMMAND}
+         -DFILE=${CMAKE_SOURCE_DIR}/LICENSE.ASSETS.md
+         "-DKEYS=Creative Commons CC0 1.0 Universal"
+         -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+
 add_executable(mh_export_fixture mh_export_fixture.cpp)
 
 # Tolerant image comparison, because two GPU renders of one scene are not
@@ -209,7 +228,8 @@ if(MH_HAVE_RENDER)
                                ui/test_shortcuts_dialog.cpp
                                ui/test_render_request.cpp
                                ui/test_background.cpp
-                               ui/test_backdrop.cpp)
+                               ui/test_backdrop.cpp
+                               ui/test_about.cpp)
     target_link_libraries(mh_ui_tests
         PRIVATE mh::ui mh::core Catch2::Catch2 mh::warnings mh::sanitize)
     target_compile_definitions(mh_ui_tests PRIVATE
@@ -1940,6 +1960,44 @@ if(MH_HAVE_RENDER)
     #
     # --screenshot needs a real Metal device and a surface; it skips where
     # app_screenshot does.
+
+    # HELP -- About and Credits, the whole of the reference's help tab that this
+    # port can honestly supply (`legacy/python/plugins/6_help.py`). The window
+    # had no Help menu and no licence surface anywhere, which for an AGPL
+    # application is nearer a compliance gap than missing chrome.
+    #
+    # THE POINT OF THESE IS ANTI-DRIFT. Asserting the text "contains 2.0.0"
+    # would be satisfied by a hardcoded string and would rot silently at the
+    # next release, so the expected version is `${MH_VERSION}` -- the value
+    # CMake read from `/VERSION`, the same single source `audit_version.py`
+    # holds everything else to.
+    add_test(NAME app_about_states_the_version COMMAND makehuman --about)
+    set_tests_properties(app_about_states_the_version PROPERTIES
+        PASS_REGULAR_EXPRESSION "MakeHuman ${MH_VERSION}")
+
+    # ...and the two licences, which are DIFFERENT and whose difference is the
+    # commercially consequential fact: naming only the AGPL tells a user the
+    # opposite of the truth about what they may sell.
+    add_test(NAME app_about_names_both_licences COMMAND makehuman --about)
+    set_tests_properties(app_about_names_both_licences PROPERTIES
+        PASS_REGULAR_EXPRESSION "Affero")
+    add_test(NAME app_about_names_the_asset_licence COMMAND makehuman --about)
+    set_tests_properties(app_about_names_the_asset_licence PROPERTIES
+        PASS_REGULAR_EXPRESSION "CC0 1.0")
+
+    # The licence surface must be reachable when NOTHING ELSE IS. Placed after
+    # the asset-tree check at first, which meant a damaged or mis-pointed data/
+    # answered --about with "cannot find the asset tree" and exit 1.
+    add_test(NAME app_about_survives_a_missing_asset_tree COMMAND makehuman --about)
+    set_tests_properties(app_about_survives_a_missing_asset_tree PROPERTIES
+        ENVIRONMENT "MH_DATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/no-such-assets"
+        PASS_REGULAR_EXPRESSION "MakeHuman ${MH_VERSION}"
+        FAIL_REGULAR_EXPRESSION "cannot find the asset tree")
+
+    add_test(NAME app_credits_name_the_upstream_project COMMAND makehuman --credits)
+    set_tests_properties(app_credits_name_the_upstream_project PROPERTIES
+        PASS_REGULAR_EXPRESSION "port of MakeHuman")
+
     # THE VIEWPORT BACKDROP -- a reference photograph to model to, which is what
     # the reference's BackgroundChooser is for (0_modeling_background.py:104).
     # Until now `--background` reached only `--render`, compositing a backdrop

@@ -2897,6 +2897,57 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       vertices in CMake script mode -- and use the RELEASE binary, which is
       several times faster than debug for exports.
 
+- [x] **HELP ▸ ABOUT, and a licence box that overstated the licence**
+      (2026-09-17). The window had File, Edit, Workspace, Settings, View and
+      Language and **no Help menu and no licence surface at all** — for an AGPL
+      application, nearer a compliance gap than missing chrome. Now Help ▸
+      About MakeHuman and Credits, plus `--about` / `--credits` headlessly.
+      - **THE FIRST DRAFT WAS MORE GENEROUS THAN THE DOCUMENTS IT SUMMARISED**,
+        three times, all caught by review and all fixed against the source:
+        (1) "no licence obligation at all" dropped `LICENSE.md` §C's caveat that
+        the CC0 grant covers BUNDLED assets and a third-party one "might be
+        different" — and this app loads those; (2) "derivatives stay under the
+        same licence" erased the Apache-2.0 boundary (LICENSING.md §4 rule 5:
+        the combined BINARY is AGPL, the Apache modules are reusable AS
+        SOURCE); (3) AGPL §5's "Appropriate Legal Notices" — copyright, no
+        warranty, may convey, how to view — was half-supplied while the text
+        called itself a compliance surface.
+        **When the text IS the deliverable, read the source document line by
+        line.** No gate here can catch a wrong claim; they grep for NAMES.
+      - The gates are ANTI-DRIFT: `--about` is matched against `${MH_VERSION}`,
+        which CMake reads from `/VERSION`, and the two licence names are paired
+        with `file_contains` checks that `LICENSE.CODE.md` and
+        `LICENSE.ASSETS.md` still say them. Relicense and the pair disagrees.
+        Both mutations killed; a third failed to build and was inconclusive.
+      - **`--about` sat behind the asset-tree gate**, so a mis-pointed `data/`
+        answered it with "cannot find the asset tree" and exit 1. Moved beside
+        `--inspect`; gated with `MH_DATA_DIR` pointed at nothing.
+      - The Help menu was built inside `buildLanguageMenu()` by accident (a
+        second call would add a second menu `findChild` would never notice);
+        `&Help` never retranslated because it was not `registerText`ed; and
+        `QAction`'s default `TextHeuristicRole` let Qt move About into the
+        macOS application menu **on the translated text**, so placement changed
+        with language. Now `AboutRole` explicitly.
+      - **The same mistake as the commit before it**: the two `cmake -P` licence
+        checks sat inside `if(MH_HAVE_RENDER)`, so the Qt-less CI jobs never
+        registered them. Moved out — the no-Qt suite went 866 → 868, which is
+        how that was confirmed rather than asserted.
+      - An existing gate caught me: `every action in the window has a real icon`
+        failed on a Lucide name (`users`) that does not ship.
+      - `covered`, not `done`: the reference also offers Website, FAQ and Forum
+        buttons, and those URLs belong to the upstream community rather than to
+        a port. **Raised with the owner.**
+
+- [x] **ExpressionTaskView reclassified todo → BLOCKED** (2026-09-17).
+      MEASURED: `legacy/python/data/expressions/` **does not exist in the
+      reference** and there are **zero** `.mhpose` files anywhere in it. So it
+      is not that this port lacks content the reference ships — expressions are
+      community content upstream too, and authoring a set would go BEYOND the
+      reference rather than toward it. **An owner decision**, raised as one;
+      `--save-expression` can author them whenever it is wanted.
+      Task views: covered 23 / **todo 1** (MaterialEditorTaskView) / blocked 4 /
+      declined 16 / done 7.
+
 - [x] **The VIEWPORT BACKDROP — a reference photograph to model to** (2026-09-17).
       The reference's `BackgroundChooser`, and the first of the four `todo` task
       views to be closed. `--background` had existed for a year but reached only

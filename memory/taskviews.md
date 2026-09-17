@@ -51,9 +51,9 @@ dev-gated, so a default release build shows **40**.
 | Bucket | N | Meaning |
 |---|---|---|
 | done | 7 | the dynamic modifier views — shipped |
-| covered | 22 | the capability reaches the user, just not as a TAB |
-| todo | 3 | to port, nothing blocking |
-| blocked | 3 | needs content or an engine capability first |
+| covered | 23 | the capability reaches the user, just not as a TAB |
+| todo | 1 | to port, nothing blocking |
+| blocked | 4 | needs content or an engine capability first |
 | declined | 16 | Python-runtime or dev-only tooling |
 
 ## The buckets were wrong about FOURTEEN views, in both directions
@@ -108,7 +108,7 @@ The views `guimodifier.loadModifierTaskViews` builds from the `*_sliders.json`
 files — Face, Torso, Arms and Legs, Gender, Macro modelling, Body shapes,
 Measure. One view per top-level key, `apps/gui/guimodifier.py:226-232`.
 
-### covered (22)
+### covered (23)
 Not a gap: this port is dockable, so what the reference makes a tab arrives as
 a menu action or as a group in the Assets panel.
 
@@ -151,8 +151,21 @@ in the window, which binds the image to the view you are already looking from.
 the image and that is not built. The cover-fit rule is shared with
 `overBackground` rather than reimplemented in GLSL -- one rule, two consumers.
 
-### todo (3)
-`ExpressionTaskView`, `HelpTaskView`, `MaterialEditorTaskView`.
+`HelpTaskView` moved to covered on **2026-09-17**: **Help ▸ About MakeHuman**
+and **Credits**, with `--about` and `--credits` for the same text headlessly.
+The window had no Help menu and no licence surface at all, which for an AGPL
+application is nearer a compliance gap than missing chrome.
+
+The gates are ANTI-DRIFT rather than "contains a string": the version is matched
+against `${MH_VERSION}`, which CMake reads from `/VERSION`, and the two licence
+names are paired with checks that `LICENSE.CODE.md` and `LICENSE.ASSETS.md`
+still say them. Relicense the project and the pair disagrees. `covered` and not
+`done`, because the reference also offers Website, FAQ and Forum buttons and
+those URLs belong to the upstream community rather than to a port — an owner
+decision, deliberately not invented.
+
+### todo (1)
+`MaterialEditorTaskView`.
 
 This list said EIGHT until 2026-09-13, and still named `ViewerTaskView`,
 `MouseActionsTaskView` and `ExpressionMixerTaskView` after the auditor had
@@ -195,7 +208,15 @@ undo entry. Design that interaction first; the loading half already works.
 (measured under `data/`), so expressions arrive as `--facs` action units
 instead; the chooser needs content before it needs code.
 
-### blocked (3)
+`ExpressionTaskView` was moved here from `todo` on **2026-09-17**, on a
+measurement that changes what "blocked on content" means for it:
+`legacy/python/data/expressions/` **does not exist in the reference** and there
+are **zero** `.mhpose` files anywhere in it. So it is not that this port lacks
+content the reference ships — expressions are community content upstream too,
+and authoring a set would go BEYOND the reference rather than toward it.
+`--save-expression` can author them whenever the owner decides that is wanted.
+
+### blocked (4)
 `EyebrowsTaskView` has no helper cage in the base mesh. `ProxyTaskView` would
 choose between alternate BODY topologies, and the only proxymesh-shaped assets
 shipped are `data/3dobjs/base.mhclo` (`basemesh alpha_7`, 434 verts — the OLD

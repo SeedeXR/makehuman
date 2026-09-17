@@ -4,6 +4,99 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-17 (hundred-and-fifth) — Session · **Help, About, and a licence box that overstated the licence**
+
+*The owner's "complete the UI to match the reference", at the view this port had
+nothing of.*
+
+### What shipped
+**Help ▸ About MakeHuman** and **Credits**, plus `--about` and `--credits` for
+the same text headlessly. The window had menus File, Edit, Workspace, Settings,
+View and Language — **no Help menu and no licence surface anywhere**, which for
+an AGPL application is nearer a compliance gap than missing chrome.
+
+`HelpTaskView` moves todo → **covered**: the reference also offers Website, FAQ
+and Forum buttons, and those URLs belong to the upstream community rather than
+to a port. **Raised with the owner rather than invented.**
+
+### THE FIRST DRAFT WAS MORE GENEROUS THAN THE DOCUMENTS IT SUMMARISED
+Three licence claims, all wrong in the same direction, all caught by review:
+
+1. **"carry no licence obligation at all."** `LICENSE.md` §C ends with a caveat
+   that draft dropped: the CC0 grant covers assets BUNDLED with MakeHuman, and a
+   third-party asset "might be different". This application loads those —
+   `--custom-targets`, the Assets panel, any `.mhclo` — so the unconditional
+   wording would have told a user the wrong thing about a downloaded CC-BY-NC
+   garment they had just exported.
+2. **"derivatives of the application code stay under the same licence"**, which
+   erases the Apache-2.0 boundary. LICENSING.md §4 rule 5: the combined BINARY
+   is AGPL; the Apache modules are separately reusable AS SOURCE. The box stated
+   the opposite of the architecture CLAUDE.md hard rule 4 exists to protect —
+   from inside a file whose own SPDX header is Apache-2.0.
+3. **The compliance half was skipped.** AGPL-3.0 §5 (`LICENSE.CODE.md:93-98`)
+   defines what an interactive UI owes: a copyright notice, AND that there is no
+   warranty, that licensees may convey, and how to view the licence. The draft
+   supplied part of one clause while calling itself a compliance surface.
+
+All three are fixed against the documents, quoted at the call site. The lesson
+is narrow and worth keeping: **when the text IS the deliverable, read the source
+document line by line** — none of the new gates could catch this, because they
+grep for licence NAMES.
+
+### The gates are anti-drift, not "contains a string"
+`--about` is matched against **`${MH_VERSION}`**, the value CMake reads from
+`/VERSION`, so a hardcoded version fails at the next bump rather than rotting
+quietly. The two licence names are paired with `file_contains` checks that
+`LICENSE.CODE.md` and `LICENSE.ASSETS.md` still say them; relicense the project
+and the pair disagrees.
+
+**Both mutations killed** (build verified first): the version stops tracking
+`/VERSION` → the ctest AND the unit test fail; the asset licence goes unnamed →
+`app_about_names_the_asset_licence` fails. A third failed to compile under
+`-Werror` and was inconclusive, not a survivor.
+
+### Three placement bugs, each a different kind
+* **`--about` sat behind the asset-tree gate.** A damaged or mis-pointed `data/`
+  answered it with "cannot find the asset tree" and exit 1 — the one surface
+  that must always be reachable. Moved beside `--inspect`, and gated with
+  `MH_DATA_DIR` pointed at nothing.
+* **The Help menu was built inside `buildLanguageMenu()`** by accident. Harmless
+  today with one caller; a second call would add a SECOND Help menu that
+  `findChild` — which returns the first match — would never notice.
+* **`&Help` never retranslated**, because it was not passed to `registerText`
+  like every other top-level menu. Pick any language and File, Edit, View,
+  Settings, Workspace and Language change while Help stays English.
+
+Also `QAction`'s default `TextHeuristicRole` lets Qt's Cocoa layer move anything
+matching /about/i into the application menu — **on the translated text**, so the
+placement would change with the language. Now `AboutRole` explicitly, chosen
+rather than inherited from a regex.
+
+### The same mistake as the commit before it, in the gentler direction
+`licence_file_still_says_affero` and `asset_licence_file_still_says_cc0` are
+`cmake -P` scripts needing neither Qt nor a GPU — and they sat INSIDE
+`if(MH_HAVE_RENDER)`, so the two CI jobs without Qt never registered them.
+Moved out; the no-Qt suite went 866 → **868**, which is how that was confirmed
+rather than asserted.
+
+### ExpressionTaskView reclassified, todo → blocked
+MEASURED: `legacy/python/data/expressions/` **does not exist in the reference**
+and there are **zero** `.mhpose` files anywhere in it. So it is not that this
+port lacks content the reference ships — expressions are community content
+upstream too, and authoring a set would go BEYOND the reference rather than
+toward it. **An owner decision**, and raised as one. `--save-expression` can
+author them whenever it is wanted.
+
+Task views: covered 22 → **23**, todo 3 → **1** (MaterialEditorTaskView alone),
+blocked 3 → **4**.
+
+### An existing gate caught me
+`every action in the window has a real icon` failed: I used a Lucide name,
+`users`, that does not ship — only `user.svg` does. The project's own audit
+found it before any human would have.
+
+---
+
 ## 2026-09-17 (hundred-and-fourth) — Session · **The viewport backdrop, and two gates that could not fail**
 
 *The owner's "complete the UI to match the reference", taken at the one `todo`

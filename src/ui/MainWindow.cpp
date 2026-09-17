@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "makehuman/ui/MainWindow.h"
 
+#include "makehuman/ui/About.h"
+
 #include "makehuman/ui/UndoCommands.h"
 
 #include "makehuman/ui/Language.h"
@@ -26,6 +28,7 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QMenuBar>
+#include <QMessageBox>
 #include <QPointer>
 #include <QSaveFile>
 #include <QSettings>
@@ -567,6 +570,47 @@ MainWindow::MainWindow(std::filesystem::path shaderDir, TaskRegistry tasks, QWid
         // Front (`resetView`, `mhmain.py:1631-1636`).
         d_->viewport->setCamera(render::Camera{});
     });
+
+    // HELP, last on the bar as it conventionally is, and built HERE with the
+    // other menus rather than inside `buildLanguageMenu()`, where it was first
+    // written by accident. That function has one caller today, but its name
+    // invites a future "rebuild when the languages arrive" call, and a second
+    // call would silently add a second Help menu that `findChild` -- which
+    // returns the FIRST match -- would never notice.
+    //
+    // About and Credits are shown here rather than emitted as requests, unlike
+    // Open and Save As: they need no file and no decision from the application,
+    // so a round trip would be ceremony.
+    //
+    // The reference also offers Website, FAQ and Forum buttons. Those URLs
+    // belong to the upstream MakeHuman community and this is a port, so
+    // pointing users there on its behalf is the project owner's call and is
+    // deliberately not invented here.
+    QMenu* help = menuBar()->addMenu(tr("&Help"));
+    // Registered like every other top-level menu. Missed at first, which left
+    // "&Help" in English while File, Edit, View, Settings, Workspace and
+    // Language all followed the Language menu.
+    registerText(help, QT_TR_NOOP("&Help"));
+    QAction* aboutAct = help->addAction(theme::icon("info", theme::palette().textSecondary, 16),
+                                        tr("About MakeHuman"));
+    registerText(aboutAct, QT_TR_NOOP("About MakeHuman"));
+    aboutAct->setObjectName(QStringLiteral("help.about"));
+    // EXPLICIT, because the default is `TextHeuristicRole` and Qt's Cocoa menu
+    // layer moves anything matching /about/i into the application menu -- on
+    // the TRANSLATED text, so the placement would otherwise change with the
+    // language. macOS convention is the application menu, so that is chosen on
+    // purpose rather than inherited from a regex.
+    aboutAct->setMenuRole(QAction::AboutRole);
+    connect(aboutAct, &QAction::triggered, this,
+            [this] { QMessageBox::about(this, tr("About MakeHuman"), aboutText()); });
+
+    QAction* creditsAct =
+        help->addAction(theme::icon("user", theme::palette().textSecondary, 16), tr("Credits"));
+    registerText(creditsAct, QT_TR_NOOP("Credits"));
+    creditsAct->setObjectName(QStringLiteral("help.credits"));
+    creditsAct->setMenuRole(QAction::NoRole);
+    connect(creditsAct, &QAction::triggered, this,
+            [this] { QMessageBox::about(this, tr("Credits"), creditsText()); });
 
     buildLanguageMenu();
 

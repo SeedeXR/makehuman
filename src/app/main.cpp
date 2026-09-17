@@ -71,8 +71,10 @@
 #include <QMessageBox>
 #include <QPixmap>
 #include <QStatusBar>
+#include <QTextDocumentFragment>
 #include <QTimer>
 #include <QUndoStack>
+#include "makehuman/ui/About.h"
 #include "makehuman/ui/Backdrop.h"
 #include "makehuman/ui/ViewportWidget.h"
 
@@ -2712,6 +2714,13 @@ int main(int argc, char** argv) {
         QStringLiteral("How strongly --background shows in the viewport, 0 to 1. It fades "
                        "toward the viewport's own colour so the model stays readable."),
         QStringLiteral("fraction"), QStringLiteral("1.0"));
+    const QCommandLineOption aboutOpt(
+        QStringLiteral("about"),
+        QStringLiteral("Print the version, what this is and the licences it carries, then "
+                       "exit -- the same text Help > About shows in the window."));
+    const QCommandLineOption creditsOpt(
+        QStringLiteral("credits"),
+        QStringLiteral("Print what this is built on and derived from, then exit."));
     const QCommandLineOption viewOpt(
         QStringLiteral("view"),
         QStringLiteral("Point the camera down an axis before drawing: front, back, left, "
@@ -2901,6 +2910,8 @@ int main(int argc, char** argv) {
     parser.addOption(backgroundOpt);
     parser.addOption(backgroundSideOpt);
     parser.addOption(backgroundOpacityOpt);
+    parser.addOption(aboutOpt);
+    parser.addOption(creditsOpt);
     parser.addOption(viewOpt);
     parser.addOption(transparentOpt);
     parser.addOption(eyeColourOpt);
@@ -3017,6 +3028,25 @@ int main(int argc, char** argv) {
     // than about a character: no base mesh, no rig, no assets.
     if (parser.isSet(inspectOpt)) {
         return inspectFile(parser.value(inspectOpt).toStdString()) ? 0 : 1;
+    }
+
+    // Beside --inspect and BEFORE the asset-tree check, for the same reason it
+    // is: neither flag touches an asset -- the text is a static string. Placed
+    // after the gate at first, which meant a damaged or mis-pointed `data/`
+    // answered `--about` with "cannot find the asset tree" and exit 1. The one
+    // surface that must always be reachable is the licence.
+    if (parser.isSet(aboutOpt) || parser.isSet(creditsOpt)) {
+        // The SAME text the window shows. A licence stated two ways is a
+        // licence stated wrongly in one of them, so `mh::ui::aboutText` is the
+        // one source and this only flattens its markup.
+        //
+        // `QTextDocumentFragment` rather than a hand-rolled tag strip: it is
+        // Qt's own HTML reader, already linked, and it turns the paragraphs
+        // into blank-line-separated prose instead of one run-on.
+        const QString html = parser.isSet(aboutOpt) ? mh::ui::aboutText() : mh::ui::creditsText();
+        std::printf("%s\n",
+                    QTextDocumentFragment::fromHtml(html).toPlainText().toUtf8().constData());
+        return 0;
     }
 
     // Everything past here needs the asset tree, so this is where the check
