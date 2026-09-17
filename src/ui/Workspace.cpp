@@ -79,7 +79,17 @@ const std::vector<WorkspacePreset>& workspacePresets() {
     static const std::vector<WorkspacePreset> presets{
         {QStringLiteral("Modelling"), std::nullopt, false},  // everything
         {QStringLiteral("Rigging"), QStringList{QStringLiteral("Modelling")}, false},
-        {QStringLiteral("Materials"), QStringList{QStringLiteral("Materials")}, false},
+        // Both material panels, the EDITOR first: the first category named is
+        // the one the preset is about, so it gets the room and the front, and
+        // the editor is 29 labelled rows while the Assets dock's material half
+        // is one combo. (These arrive as TABS, not columns -- the shipped
+        // right-hand layout tabifies -- so "first" decides which tab opens.)
+        // This named only "Materials" -- the Assets dock, holding the skin
+        // CHOOSER -- for as long as the editor existed, so the preset a user
+        // picks to work on materials was the one preset that hid the material
+        // editor.
+        {QStringLiteral("Materials"),
+         QStringList{QStringLiteral("Material"), QStringLiteral("Materials")}, false},
         {QStringLiteral("Export"), QStringList{}, false},  // nothing
         {QStringLiteral("Tabbed"), std::nullopt, true},
     };

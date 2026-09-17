@@ -3035,6 +3035,29 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION "teeth \\(default\\)"
         FAIL_REGULAR_EXPRESSION "none \\(default\\), none")
 
+    # The workspace presets, resolved against the registry the APPLICATION
+    # builds -- not the one tests/ui/test_ui.cpp constructs. That distinction is
+    # the whole point: `shippedTasks()` went on describing a two-dock window for
+    # a whole chunk after main.cpp registered a third category, and no unit test
+    # could notice, because the fixture IS the thing that drifted.
+    # This one carries no regex ON PURPOSE: PASS_REGULAR_EXPRESSION makes ctest
+    # ignore the exit code entirely, so the two below would pass on a run that
+    # printed the right line and then crashed.
+    add_test(NAME app_list_workspaces COMMAND makehuman --list-workspaces)
+    # The preset a user picks to work on materials must show the material
+    # EDITOR, not only the Assets dock that holds the skin chooser. Tab-separated
+    # so a preset naming just "Materials" cannot satisfy a match for "Material".
+    add_test(NAME app_list_workspaces_materials_has_the_editor
+             COMMAND makehuman --list-workspaces)
+    set_tests_properties(app_list_workspaces_materials_has_the_editor PROPERTIES
+        PASS_REGULAR_EXPRESSION "Materials\tMaterial\tMaterials")
+    # Export resolves to nothing on purpose, and is the one preset that may.
+    # Without this, "every preset lists the editor" could be satisfied by
+    # quietly giving Export everything.
+    add_test(NAME app_list_workspaces_export_is_empty COMMAND makehuman --list-workspaces)
+    set_tests_properties(app_list_workspaces_export_is_empty PROPERTIES
+        PASS_REGULAR_EXPRESSION "Export\t-")
+
     # The Pose chooser, and what it must NOT offer.
     #
     # `data/poses/benchmark.bvh` is a developer fixture: its own .meta says

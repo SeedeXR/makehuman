@@ -3053,6 +3053,24 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         selected; this edits the skin's.
       **Follow-up, small:** no workspace PRESET lists the Material dock
       (`src/ui/Workspace.cpp:79`), so it is reachable only by its tab.
+      **CLOSED 2026-09-17**, and it was two defects rather than one.
+      - The `"Materials"` preset named only the category `"Materials"` -- the
+        Assets dock, which holds the skin CHOOSER -- so the preset a user picks
+        to work on materials was the one preset that HID the editor. It now
+        names `{"Material", "Materials"}`, editor first because the first
+        category named gets the room and the front.
+      - Adding it was not enough: `applyWorkspacePreset` raised the first dock
+        only inside `if (preset.tabbed)`. That read as sufficient while tabs
+        were something a preset opted into, and they are not -- the shipped
+        right-hand layout tabifies and `restoreState` puts that back, so EVERY
+        preset showing two right-hand panels lands on a tab bar. The preset
+        opened on Assets with the editor behind a tab. **Found by looking at a
+        screenshot; the tests were green.** The raise moved beside `resizeDocks`.
+      - **`--list-workspaces`** prints what each preset resolves to against the
+        registry the REAL binary builds, so `app_list_workspaces*` gates the
+        presets instead of the test fixture -- which is the half that drifted:
+        `shippedTasks()` had registered TWO categories since the editor made it
+        three. It now mirrors main.cpp, title included.
 
 - [x] **ExpressionTaskView reclassified todo → BLOCKED** (2026-09-17).
       MEASURED: `legacy/python/data/expressions/` **does not exist in the

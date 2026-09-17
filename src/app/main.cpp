@@ -62,6 +62,7 @@
 #include "makehuman/ui/TaskRegistry.h"
 #include "makehuman/ui/Theme.h"
 #include "makehuman/ui/UndoCommands.h"
+#include "makehuman/ui/Workspace.h"
 
 #include <QApplication>
 #include <QCommandLineParser>
@@ -2762,6 +2763,13 @@ int main(int argc, char** argv) {
                        "and exit. Development fixtures are omitted: they are tagged as such "
                        "in their .meta and are not poses anyone browses to, though --pose "
                        "still loads one by name or path."));
+    const QCommandLineOption listWorkspacesOpt(
+        QStringLiteral("list-workspaces"),
+        QStringLiteral("Print the workspace presets the Workspace menu offers, as "
+                       "\"<name>\\t<category>...\", and exit. A preset showing no panel "
+                       "prints \"-\". A preset that names no category shows every one this "
+                       "build registers, so this is the list the Workspace menu acts on "
+                       "rather than a copy of it."));
     const QCommandLineOption listPoseUnitsOpt(
         QStringLiteral("list-pose-units"),
         QStringLiteral("Print the pose units --pose-unit accepts -- sixty face and "
@@ -3100,6 +3108,7 @@ int main(int argc, char** argv) {
     parser.addOption(listAnimationsOpt);
     parser.addOption(listPosesOpt);
     parser.addOption(listPoseUnitsOpt);
+    parser.addOption(listWorkspacesOpt);
     parser.addOption(spreadRootsOpt);
     parser.addOption(scalpPathOpt);
     parser.addOption(bindPointsOpt);
@@ -5172,6 +5181,33 @@ int main(int argc, char** argv) {
         !tasks.add(kMaterialEditor)) {
         std::fprintf(stderr, "duplicate task category\n");
         return 1;
+    }
+
+    // After registration, because a preset carrying no category list means
+    // "every registered one" -- so the listing can only be right once they are
+    // registered. That is the resolution this prints.
+    //
+    // It does NOT filter the explicit lists against the registry. A first draft
+    // did, and the mutation dropping that filter survived a clean build and all
+    // three gates, because no preset names a category that is not registered
+    // and `every category a preset names is a registered one` is what keeps it
+    // that way. An untested branch guarding a state its own gate forbids is
+    // just more code to be wrong.
+    //
+    // It costs a full model load to answer a question about menus, because the
+    // registry is built here. Using the real one is the point -- a second list
+    // for the listing to read is the drift this exists to catch -- and the one
+    // visible consequence is that it needs the assets present.
+    if (parser.isSet(listWorkspacesOpt)) {
+        for (const mh::ui::WorkspacePreset& preset : mh::ui::workspacePresets()) {
+            const QStringList shown = preset.categories.value_or(tasks.categories());
+            // "-" rather than an empty tail, so "shows nothing" is something a
+            // reader and a gate can both match on. Export is deliberately empty.
+            std::printf(
+                "%s\t%s\n", preset.name.toStdString().c_str(),
+                shown.isEmpty() ? "-" : shown.join(QLatin1Char('\t')).toStdString().c_str());
+        }
+        return 0;
     }
 
     mh::ui::MainWindow window(parser.value(shaderOpt).toStdString(), tasks);

@@ -57,11 +57,19 @@ std::vector<mh::foundation::TaskViewSpec> shippedModifierViews() {
     return layout->views;
 }
 
-/// The two panels the app registers.
+/// The categories `src/app/main.cpp` registers, in its order.
+///
+/// It listed TWO for as long as the window shipped two, and went on listing two
+/// after the Material editor made it three -- so every assertion in this file
+/// described a window that no longer existed, and nothing here could see the
+/// three-dock layout at all. A suite only covers the shapes it constructs.
+/// `app_list_workspaces_*` gates the same list against the real binary, because
+/// this function is still a copy of main.cpp's intent rather than main.cpp.
 mh::ui::TaskRegistry shippedTasks() {
     mh::ui::TaskRegistry tasks;
     (void)tasks.add(QStringLiteral("Modelling"));
-    (void)tasks.add(QStringLiteral("Materials"));
+    (void)tasks.add(QStringLiteral("Materials"), QStringLiteral("Assets"));
+    (void)tasks.add(QStringLiteral("Material"));
     return tasks;
 }
 
@@ -684,6 +692,68 @@ TEST_CASE("the Tabbed preset really tabs the panels", "[ui][workspace][tabs]") {
     CHECK_FALSE(modelling->isHidden());
     CHECK_FALSE(materials->isHidden());
     CHECK(window.tabifiedDockWidgets(modelling).contains(materials));
+}
+
+TEST_CASE("the Materials preset shows the material EDITOR", "[ui][workspace][preset]") {
+    // The preset a user picks to work on materials was the one preset that hid
+    // the material editor: it named the category "Materials" -- the Assets dock,
+    // which holds the skin CHOOSER -- and not "Material", the editor added
+    // beside it. Choosing a skin and changing one are the same task.
+    mh::ui::MainWindow window(std::filesystem::path{}, shippedTasks());
+    REQUIRE(window.applyWorkspacePreset(QStringLiteral("Materials")));
+    auto* editor = window.findChild<QDockWidget*>(
+        mh::ui::MainWindow::dockObjectName(QStringLiteral("Material")));
+    REQUIRE(editor != nullptr);
+    // isHidden(), not isVisible(): this window is never shown.
+    CHECK_FALSE(editor->isHidden());
+}
+
+TEST_CASE("a preset RAISES the panel it is about", "[ui][workspace][preset]") {
+    // Showing the dock is not the same as putting it in front. The shipped
+    // right-hand layout is TABBED, so the Materials preset left the Assets
+    // chooser current and the editor behind a tab the user still had to find --
+    // the panel the preset exists for, one click away, exactly the complaint the
+    // preset was meant to answer. `applyWorkspacePreset` raised the first
+    // category only when the preset itself asked for tabs.
+    //
+    // Read off the tab bar rather than visibility: a window that was never shown
+    // reports isVisible() == false for every child, so an isVisible() check here
+    // passes on any arrangement at all.
+    mh::ui::MainWindow window(std::filesystem::path{}, shippedTasks());
+    REQUIRE(window.applyWorkspacePreset(QStringLiteral("Materials")));
+
+    auto* editor = window.findChild<QDockWidget*>(
+        mh::ui::MainWindow::dockObjectName(QStringLiteral("Material")));
+    REQUIRE(editor != nullptr);
+    // `any_of` over the tab bars, not `findChild<QTabBar*>()`, and the reason is
+    // measured rather than assumed: this window holds THREE QTabBars -- Qt keeps
+    // one per dock area -- carrying identical tabs and indistinguishable by
+    // isHidden(), isVisibleTo() or parent, and `findChild` returns whichever
+    // comes first in child order, which is not the one that is laid out.
+    //
+    // It still discriminates. With the raise removed, all three report
+    // "Materials" current; with it, the ones showing this dock report
+    // "Material". So this goes red on exactly the regression it describes.
+    const auto bars = window.findChildren<QTabBar*>();
+    REQUIRE_FALSE(bars.isEmpty());
+    CHECK(std::ranges::any_of(bars, [&](const QTabBar* bar) {
+        return bar->tabText(bar->currentIndex()) == editor->windowTitle();
+    }));
+}
+
+TEST_CASE("every category a preset names is a registered one", "[ui][workspace][preset]") {
+    // A preset naming a category nothing registers is dropped SILENTLY --
+    // `applyWorkspacePreset` filters to the categories that have a live dock and
+    // only refuses when NONE of them do. So one typo among several valid names
+    // hides that panel and still reports success.
+    const QStringList registered = shippedTasks().categories();
+    for (const auto& preset : mh::ui::workspacePresets()) {
+        if (!preset.categories) continue;  // nullopt means "every registered one"
+        for (const QString& category : *preset.categories) {
+            INFO("preset " << preset.name.toStdString() << " names " << category.toStdString());
+            CHECK(registered.contains(category));
+        }
+    }
 }
 
 TEST_CASE("a side-by-side preset un-tabs what Tabbed did", "[ui][workspace][tabs]") {

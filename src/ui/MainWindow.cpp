@@ -1115,15 +1115,22 @@ bool MainWindow::applyWorkspacePreset(const QString& name) {
             }
             tabifyDockWidget(anchor, dock);
         }
-        // The first category named is the one the preset is about, so it is the
-        // tab the user is looking at rather than whichever Qt raised last.
-        if (anchor != nullptr) anchor->raise();
     }
 
-    // The first category named is the one the preset is about, so it gets room.
+    // The first category named is the one the preset is about, so it gets the
+    // room AND the front.
+    //
+    // The raise used to happen only for a preset that asked for tabs, which
+    // read as sufficient while tabs were something a preset opted into. They
+    // are not: the shipped right-hand layout tabifies, and `restoreState` above
+    // puts that back, so EVERY preset showing two right-hand panels lands on a
+    // tab bar. The Materials preset therefore opened on the Assets chooser with
+    // the material editor behind a tab -- the panel it exists for, still one
+    // click away.
     if (!visible.isEmpty()) {
         if (auto* dock = findChild<QDockWidget*>(visible.front())) {
             resizeDocks({dock}, {380}, Qt::Horizontal);
+            dock->raise();
         }
     }
     // One undo step for the whole layout change. Without this, Cmd+1 followed by

@@ -4,6 +4,89 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-17 23:55:00 (hundred-and-tenth) — Session · **The workspace preset that hid the material editor**
+
+*The follow-up left open by `beb0eb77`, which turned out to be two defects, the
+second of which no assertion in the suite could see.*
+
+### The preset that hid the thing it is named after
+`workspacePresets()` shipped `{"Materials", {"Materials"}}`. That inner
+`"Materials"` is the **Assets** dock — the skin CHOOSER — and the editor added
+last chunk registers as `"Material"`. So the workspace a user picks to work on
+materials was the one workspace that hid the material editor. It now names
+`{"Material", "Materials"}`, the editor first, because the first category named
+is the one the preset is about and gets the room and the front.
+
+### Adding it to the list was not enough
+With both docks shown, the preset still opened on **Assets**, the editor behind
+a tab — the panel it exists for, one click away, which is the complaint the
+whole chunk was answering. `applyWorkspacePreset` raised the first dock only
+inside `if (preset.tabbed)`. That read as sufficient while tabs were something a
+preset opted into; they are not. The shipped right-hand layout tabifies and
+`restoreState(d_->defaultState)` puts that back, so every preset showing two
+right-hand panels lands on a tab bar. The raise moved beside the `resizeDocks`
+that already applies "first category named" — in the tabbed branch `anchor` WAS
+`visible.front()`, so it is the same rule stated once.
+
+**The tests were green for this.** It was found by running
+`--workspace Materials --screenshot` and looking at the image, before and after.
+
+### Gating the real thing instead of the fixture
+`shippedTasks()` in `test_ui.cpp` registered TWO categories — it had described a
+window that no longer existed since the editor made it three, which is why
+nothing in the file could see a three-dock layout. It now mirrors main.cpp,
+including the `"Assets"` title.
+
+But a fixture is a copy of intent, and the copy is what drifted. So
+**`--list-workspaces`** prints what each preset resolves to against the registry
+the **real binary** builds, and three ctests gate it. Today:
+
+    Modelling  Modelling  Materials  Material
+    Rigging    Modelling
+    Materials  Material   Materials
+    Export     -
+    Tabbed     Modelling  Materials  Material
+
+### A mutation that survived, and what it bought
+A first draft filtered each preset's categories against the registry before
+printing. The mutation deleting that filter **survived a clean build and all
+three gates**, because no preset names an unregistered category and the new
+`every category a preset names is a registered one` keeps it so. The filter was
+deleted rather than gated: an untested branch guarding a state its own gate
+forbids is just more code to be wrong. The other two mutations — dropping the
+editor from the preset, removing the `raise()` — were killed, each with a clean
+build confirmed first.
+
+### Two process notes worth keeping
+- **`findChild<QTabBar*>()` is not the laid-out tab bar.** This window holds
+  THREE QTabBars, carrying identical tabs and indistinguishable by `isHidden()`,
+  `isVisibleTo()` or parent. The test uses `any_of` over `findChildren`, and the
+  comment records the measurement that with the raise removed all three report
+  "Materials" while with it the ones showing the dock report "Material" — so it
+  still goes red on exactly the regression it describes.
+- **Run the Qt suites through ctest.** `tests/CMakeLists.txt:240` gives the `ui`
+  test `QT_QPA_PLATFORM=offscreen`. Run `mh_ui_tests` from the shell and the
+  retina DPR makes an icon test fail `img.width() == 32` with **64** — which
+  looks exactly like a seed flake. Four tool calls went into chasing it with
+  `--rng-seed` and a `git show HEAD:` rebuild before checking how ctest invokes
+  the binary. Nothing was broken.
+
+### Gate
+Ponytail applied (−11 lines: a stale "the two panels" doc, a data assertion the
+behavioural one already proved, and a ctest block that had been inserted into
+the middle of the `app_list_poses` comment). clang-format clean with CI's exact
+command. **debug 1396/1396, release 1396/1396, no-Qt 881/881** — the last
+verified from `build/no-qt/CMakeCache.txt` (`MH_BUILD_RENDER:BOOL=OFF`, only
+core/foundation/io/rig built) rather than inferred from the count. ASan and TSan
+in slices. SonarQube **gate OK, 0 open issues**; `m2m-sonarqube` stopped alone,
+the owner's six containers untouched. Tree verified untouched since the gate
+stamp.
+
+Two ASan slices ran 57 min and 8 min for comparable work: the first was
+competing with a from-scratch no-Qt build. **Do not run two builds at once here.**
+
+---
+
 ## 2026-09-17 20:50:00 (hundred-and-ninth) — Session · **The material editor panel, and a dock that arrived as a sliver**
 
 *The other half of the material editor. The engine shipped in `895be6a8` with a
