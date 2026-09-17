@@ -159,9 +159,18 @@ add_executable(mh_export_fixture mh_export_fixture.cpp)
 # Tolerant image comparison, because two GPU renders of one scene are not
 # bit-identical. C++ and Qt rather than Pillow so it runs in CI, where the
 # Python image checks skip for want of a wheel.
-add_executable(mh_png_compare mh_png_compare.cpp)
-target_link_libraries(mh_png_compare PRIVATE Qt6::Gui mh::warnings mh::sanitize)
-set_target_properties(mh_png_compare PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
+#
+# GUARDED, because "Qt rather than Pillow" cuts both ways: two CI jobs -- the
+# forced-charconv build and the benchmark -- install only ninja and assimp, so
+# `Qt6::Gui` does not exist there and an unguarded `target_link_libraries`
+# failed their CONFIGURE outright. A four-preset local gate cannot see that;
+# every preset here has Qt. Reproduce it with
+# `-DCMAKE_DISABLE_FIND_PACKAGE_Qt6=TRUE`.
+if(MH_HAVE_RENDER)
+    add_executable(mh_png_compare mh_png_compare.cpp)
+    target_link_libraries(mh_png_compare PRIVATE Qt6::Gui mh::warnings mh::sanitize)
+    set_target_properties(mh_png_compare PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
+endif()
 # mh::core is NOT listed: mh::rig PUBLIC-links it since PosedMesh, so naming it
 # here too makes the linker see libmh_core.a twice and warn -- the same trap the
 # comment above records for libmh_io.a.

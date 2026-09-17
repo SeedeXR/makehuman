@@ -97,6 +97,32 @@ against the stale binary, which is exactly why the build is checked first.
 * The two Pillow pixel checks skip in CI. What runs everywhere is the side gate,
   the tolerant comparator and the unit tests.
 
+### AND IT BROKE CI, IN A WAY THE LOCAL GATE CANNOT SEE
+`de1a6fd8` failed two jobs — **forced charconv fallback** and **benchmark vs
+python baseline** — both at CONFIGURE, before a line was compiled.
+
+`tests/mh_png_compare.cpp` was added to run in CI *because* the Pillow checks
+skip there. Its target linked `Qt6::Gui` unguarded, and those two jobs install
+**only ninja and assimp**: no Qt, so the target does not exist and
+`target_link_libraries` fails the configure outright.
+
+**A four-preset local gate cannot catch this.** Every preset here has Qt, so
+the whole no-Qt configuration is invisible locally — which is exactly the shape
+of gap worth naming: the gate covers four *build types*, not four
+*environments*. Reproduced before fixing and verified after, with
+`-DCMAKE_DISABLE_FIND_PACKAGE_Qt6=TRUE`:
+
+    CMake Error at tests/CMakeLists.txt:163 (target_link_libraries):
+      Qt6::Gui but the target was not found.
+
+The target now sits inside `if(MH_HAVE_RENDER)`. Both CI jobs were then run
+END TO END locally rather than assumed: the charconv job configures, builds
+with 0 errors and passes **866/866**; the benchmark job's release tree
+configures and `mh_bench` builds. Debug stays 1358/1358.
+
+**Worth adding to the routine:** a no-Qt configure is cheap and belongs in the
+gate. Nothing local exercised it before this.
+
 ### The toolchain, which is the owner's call
 The macOS 27 upgrade left Command Line Tools shipping a 27.0 SDK whose `.tbd`
 files carry an `arm64e.x1-macos` slice that the installed `ld` cannot parse, so
