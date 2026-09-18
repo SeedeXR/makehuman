@@ -2997,6 +2997,50 @@ if(MH_HAVE_RENDER)
     # gap is the DOCUMENT's, pre-existing and the same order either way. An
     # identity assertion here would fail for poses too and would be pinning
     # someone else's bug to this feature.
+    # WHAT A DOCUMENT MEANS TO THE CHOOSERS.
+    #
+    # The window's Open restores the modifiers, the camera and Smooth, and
+    # nothing else: it never read the document's `pose`, `skeleton`,
+    # `skinMaterial`, `litsphere`, `eyeMaterial` or proxy lines back into the
+    # choosers, so opening a posed character landed at rest with the startup rig
+    # and every combo still showing the previous character's pick.
+    #
+    # `applyChoice` already applies a choice AND sets its combo for every group,
+    # so the missing half was only the mapping from document line to chooser id.
+    # That mapping is what `--print-choices` prints, and it is the half a test
+    # can reach: `applyLoaded` itself is GUI-only, which is how it drifted.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/choices)
+    add_test(NAME app_choices_saved COMMAND makehuman
+             --pose tpose --rig mixamo_superset --skin-material african_deep
+             --save ${CMAKE_CURRENT_BINARY_DIR}/choices/c.mhm)
+    set_tests_properties(app_choices_saved PROPERTIES
+        TIMEOUT 60 FIXTURES_SETUP app_choices_saved)
+    # Bare, for the exit code: PASS_REGULAR_EXPRESSION discards it.
+    add_test(NAME app_print_choices COMMAND makehuman
+             --print-choices ${CMAKE_CURRENT_BINARY_DIR}/choices/c.mhm)
+    set_tests_properties(app_print_choices PROPERTIES
+        FIXTURES_REQUIRED app_choices_saved)
+    add_test(NAME app_print_choices_has_the_rig COMMAND makehuman
+             --print-choices ${CMAKE_CURRENT_BINARY_DIR}/choices/c.mhm)
+    set_tests_properties(app_print_choices_has_the_rig PROPERTIES
+        FIXTURES_REQUIRED app_choices_saved
+        PASS_REGULAR_EXPRESSION "Skeleton\tmixamo_superset")
+    # The stem, not the path the file stores (`skins/african_deep.mhmat`) --
+    # the chooser's id is what `applyChoice` takes.
+    add_test(NAME app_print_choices_has_the_skin COMMAND makehuman
+             --print-choices ${CMAKE_CURRENT_BINARY_DIR}/choices/c.mhm)
+    set_tests_properties(app_print_choices_has_the_skin PROPERTIES
+        FIXTURES_REQUIRED app_choices_saved
+        PASS_REGULAR_EXPRESSION "Skin material\tafrican_deep")
+    # Pose and animation share one slot and one `pose` key, so the mapping has
+    # to decide WHICH chooser a value belongs to. A `.bvh` under data/poses is
+    # a Pose; one under data/animations is an Animation.
+    add_test(NAME app_print_choices_pose_is_a_pose COMMAND makehuman
+             --print-choices ${CMAKE_CURRENT_BINARY_DIR}/choices/c.mhm)
+    set_tests_properties(app_print_choices_pose_is_a_pose PROPERTIES
+        FIXTURES_REQUIRED app_choices_saved
+        PASS_REGULAR_EXPRESSION "Pose\t"
+        FAIL_REGULAR_EXPRESSION "Animation\t")
     add_test(NAME app_animation_saved COMMAND makehuman
              --animation walk1 --save ${CMAKE_CURRENT_BINARY_DIR}/anim/w.mhm)
     set_tests_properties(app_animation_saved PROPERTIES

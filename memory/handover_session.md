@@ -4,6 +4,65 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-18 13:40:00 (hundred-and-twelfth) — Session · **Open walks through the same door a click does**
+
+*The other half of the document defect, and the fix was almost entirely
+deletion of a wrong assumption rather than new code.*
+
+### The applying half already existed
+`applyLoaded` restored the modifiers, the camera and Smooth and nothing else,
+so opening a posed character landed at rest with the startup rig and every combo
+still showing the previous character's pick.
+
+The expectation going in was a large job: read each slot, apply it, set its
+combo, and keep the delicate ordering (the 33 cm skeleton-fitting bug). Reading
+the code first changed that completely — **`applyChoice(group, id)` already
+handles every group and already sets the combo.** Open had simply never called
+it. What was missing was one mapping: document line to chooser id.
+
+### What was added
+- **`documentChoices(const MhmFile&)`** — `(group, id)` pairs. Stems where the
+  chooser uses them (`skins/african_deep.mhmat` → `african_deep`), the raw value
+  for litsphere (which has no stem to take), and **pose vs animation decided by
+  `livesInAnimations`**, because the two share ONE `pose` key.
+- **`livesInAnimations` hoisted** from a lambda in `main()` to file scope, so
+  the mapping and `main()` share one copy — it carries a comment about an
+  infinite loop that once burned fourteen minutes of CPU.
+- **`applyOne` hoisted** beside `currentChoice`: it does `currentChoice.insert`
+  **and** `applyChoice`. The undo mirror is exactly the second step a second
+  caller forgets, so now there is one definition and both the choosers and Open
+  use it.
+- **`--print-choices <file.mhm>`**, so five ctests gate the real mapping.
+
+### The coverage boundary, measured rather than asserted
+**Deleting the `applyLoaded` loop entirely leaves all 1401 tests green.** The
+mapping is gated — two mutations killed with clean builds (calling every pose an
+Animation; skipping the stem) — but the single line that consumes it is not,
+because `applyLoaded` is a lambda bound to a GUI signal. That is the same
+structural reason the bug existed, and it is in the commit message rather than
+glossed.
+
+### Gate
+Hostile read by hand, then `/ponytail-review`, which turned three near-identical
+document reads into a table so the two genuinely special cases read as special;
+`--print-choices` output is byte-identical after it. clang-format clean.
+**debug 1401/1401, release 1401/1401, no-Qt 881/881** (verified from
+`CMakeCache.txt`), **ASan 470+471+464**, **TSan 470+471+233+232**, SonarQube
+**gate OK, 0 open issues**, tree untouched since the stamp.
+
+### Machine note
+The owner's Virtualization VM (~29% CPU, load average ~6.8) stretched one ASan
+slice from ~10 minutes to two hours. External load, not a hang: a fresh
+`makehuman` child under the running `ctest` is the check. Second time this
+session that a slow suite had an external cause.
+
+### Next
+`expression` is written by neither save path, and is now nearly free:
+`applyChoice` already handles the Expression group and `documentChoices` would
+map it, so it is one `recordLine` in `documentNow` plus one mapping entry.
+
+---
+
 ## 2026-09-18 08:15:00 (hundred-and-eleventh) — Session · **One door for saving, and a builder named for what it leaves out**
 
 *The owner asked for the shared recorder directly. Scoping it by reading the

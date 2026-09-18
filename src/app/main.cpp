@@ -1761,6 +1761,26 @@ std::optional<std::string> proxyFromDocument(const mh::core::MhmFile& doc,
 }
 
 /// The first value token of @p doc's `<key> ...` line, if it has one.
+/// Whether @p choice names a file under `data/animations`.
+///
+/// File scope rather than a lambda in `main`, because the document-to-chooser
+/// mapping needs the same answer: pose and animation share ONE `.mhm` key, so
+/// this is what decides which of the two choosers a saved value belongs to.
+bool livesInAnimations(const std::string& choice) {
+    // A PREFIX comparison, not a walk up the parents. The walk was an
+    // infinite loop: `path("/").parent_path()` is `"/"` and
+    // `has_parent_path()` stays true there, so anything outside
+    // data/animations span forever -- `--pose tpose --save` sat at 100% CPU
+    // for fourteen minutes before it was noticed as a hung process.
+    std::error_code ec;
+    const auto dir = std::filesystem::weakly_canonical(dataDir() / "animations", ec);
+    auto path      = std::filesystem::weakly_canonical(std::filesystem::path(choice), ec);
+    if (ec) return false;
+    const auto d = dir.string();
+    const auto c = path.string();
+    return c.size() > d.size() && c.compare(0, d.size(), d) == 0 && c[d.size()] == '/';
+}
+
 std::optional<std::string> valueFromDocument(const mh::core::MhmFile& doc, std::string_view key) {
     for (const std::string& line : doc.unhandled) {
         std::istringstream in(line);
@@ -1769,6 +1789,52 @@ std::optional<std::string> valueFromDocument(const mh::core::MhmFile& doc, std::
         if ((in >> k) && k == key && (in >> v)) return v;
     }
     return std::nullopt;
+}
+
+/// What a saved document means to the CHOOSERS, as `(group, id)` pairs.
+///
+/// `applyChoice` already applies a choice and sets its combo for every group,
+/// so this is the only half that was missing when the window's Open restored
+/// the modifiers, the camera and Smooth and nothing else. Both `--print-choices`
+/// and `applyLoaded` read it, so the listing a test can see is the mapping the
+/// window uses rather than a description of it.
+///
+/// Ids are the chooser's spelling, not the file's: the document stores
+/// `skins/african_deep.mhmat` and the chooser's id is `african_deep`. A slot the
+/// document does not mention is omitted -- absent is not the same as "none",
+/// which is the explicit sentinel `recordProxy` writes.
+std::vector<std::pair<QString, QString>> documentChoices(const mh::core::MhmFile& doc) {
+    std::vector<std::pair<QString, QString>> out;
+    const auto add = [&out](const char* group, const std::string& id) {
+        out.emplace_back(QString::fromLatin1(group), QString::fromStdString(id));
+    };
+    const auto stemOf = [](const std::string& v) {
+        return std::filesystem::path(v).stem().string();
+    };
+
+    // Pose and animation are ONE key. Which chooser it belongs to is decided by
+    // where the file lives, the same question `poseIsAnimation` asks at startup.
+    if (const auto pose = valueFromDocument(doc, "pose"); pose && !pose->empty()) {
+        add(livesInAnimations(*pose) ? "Animation" : "Pose", *pose);
+    }
+    // The three that are only a key and a group. Kept as a table so the two
+    // that are NOT -- pose, whose group depends on the value, and litsphere,
+    // which has no stem to take -- read as the special cases they are.
+    for (const auto& [key, group] :
+         {std::pair{"skeleton", "Skeleton"}, std::pair{"skinMaterial", "Skin material"},
+          std::pair{"eyeMaterial", "Eye colour"}}) {
+        if (const auto v = valueFromDocument(doc, key); v && !v->empty()) add(group, stemOf(*v));
+    }
+    // The litsphere is stored under its own name already -- no stem to take,
+    // and taking one would be wrong the day a matcap lives in a subdirectory.
+    if (const auto lit = valueFromDocument(doc, "litsphere"); lit && !lit->empty()) {
+        add("Litsphere", *lit);
+    }
+    if (const auto eyes = proxyFromDocument(doc, kEyesSaveName)) add("Eyes", *eyes);
+    for (const ProxySlot& slot : kProxySlots) {
+        if (const auto worn = proxyFromDocument(doc, slot.key)) add(slot.group, *worn);
+    }
+    return out;
 }
 
 /// The pose the run will actually use: the `--pose` flag, or the loaded
@@ -2773,6 +2839,14 @@ int main(int argc, char** argv) {
                        "and exit. Development fixtures are omitted: they are tagged as such "
                        "in their .meta and are not poses anyone browses to, though --pose "
                        "still loads one by name or path."));
+    const QCommandLineOption printChoicesOpt(
+        QStringLiteral("print-choices"),
+        QStringLiteral("Print what a saved .mhm means to the choosers, as "
+                       "\"<group>\\t<id>\", and exit. Ids are the chooser's spelling, not "
+                       "the file's: a document storing skins/x.mhmat prints \"x\". A slot "
+                       "the file does not mention is omitted. This is the same mapping the "
+                       "window's Open applies, not a description of it."),
+        QStringLiteral("file.mhm"));
     const QCommandLineOption listWorkspacesOpt(
         QStringLiteral("list-workspaces"),
         QStringLiteral("Print the workspace presets the Workspace menu offers, as "
@@ -3119,6 +3193,7 @@ int main(int argc, char** argv) {
     parser.addOption(listPosesOpt);
     parser.addOption(listPoseUnitsOpt);
     parser.addOption(listWorkspacesOpt);
+    parser.addOption(printChoicesOpt);
     parser.addOption(spreadRootsOpt);
     parser.addOption(scalpPathOpt);
     parser.addOption(bindPointsOpt);
@@ -3494,6 +3569,21 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "no animations found in %s\n",
                          (dataDir() / "animations").string().c_str());
             return 1;
+        }
+        return 0;
+    }
+
+    // Before the model is built: this answers a question about a FILE, and
+    // needs nothing but the file.
+    if (parser.isSet(printChoicesOpt)) {
+        const std::filesystem::path file = parser.value(printChoicesOpt).toStdString();
+        const auto loaded                = mh::core::loadMhm(file);
+        if (!loaded) {
+            std::fprintf(stderr, "%s\n", loaded.error().message().c_str());
+            return 1;
+        }
+        for (const auto& [group, id] : documentChoices(*loaded)) {
+            std::printf("%s\t%s\n", group.toStdString().c_str(), id.toStdString().c_str());
         }
         return 0;
     }
@@ -4037,20 +4127,6 @@ int main(int argc, char** argv) {
     // drives 0 bones under native naming), and the Animation combo preselecting
     // itself from `currentPose`. With the flag alone the combo read "Dance1"
     // over a body at rest.
-    const auto livesInAnimations = [](const std::string& choice) {
-        // A PREFIX comparison, not a walk up the parents. The walk was an
-        // infinite loop: `path("/").parent_path()` is `"/"` and
-        // `has_parent_path()` stays true there, so anything outside
-        // data/animations span forever -- `--pose tpose --save` sat at 100% CPU
-        // for fourteen minutes before it was noticed as a hung process.
-        std::error_code ec;
-        const auto dir = std::filesystem::weakly_canonical(dataDir() / "animations", ec);
-        auto path      = std::filesystem::weakly_canonical(std::filesystem::path(choice), ec);
-        if (ec) return false;
-        const auto d = dir.string();
-        const auto c = path.string();
-        return c.size() > d.size() && c.compare(0, d.size(), d) == 0 && c[d.size()] == '/';
-    };
     // Frame-0 intent only. `--pose` NEVER gets it, even when it names a file
     // under data/animations -- that is the guard that stops frame 0 of a walk
     // being served as though it had been asked for. A `.mhm` reload sets no
@@ -5476,6 +5552,16 @@ int main(int argc, char** argv) {
         const QString name = QString::fromStdString(group.name);
         currentChoice.insert(name, assets->choice(name));
     }
+
+    // Apply a choice AND remember it. `applyChoice` sets the combo and the
+    // state; `currentChoice` is the mirror the undo stack reads to find what a
+    // change was made FROM. Anything that applies a choice must do both, so
+    // there is one place that does, rather than a second caller to forget --
+    // which is the shape of the bug this file keeps growing.
+    const auto applyOne = [&](const QString& g, const QString& value) {
+        currentChoice.insert(g, value);
+        applyChoice(g, value);
+    };
     // Taken from the picker, so the viewport and the panel cannot start out
     // disagreeing about which skin is shown.
     const QString chosenSkin = assets->choice(QStringLiteral("Litsphere"));
@@ -5555,11 +5641,6 @@ int main(int argc, char** argv) {
                 }
             }
 
-            const auto applyOne = [&](const QString& g, const QString& value) {
-                currentChoice.insert(g, value);
-                applyChoice(g, value);
-            };
-
             // Pose and Animation fill ONE slot, so picking in either has to
             // empty the other -- and that emptying must be part of the same
             // undo entry, or undo reverses half the edit. Two commands inside a
@@ -5626,6 +5707,26 @@ int main(int argc, char** argv) {
             applyPan(c, view, halfExtents(*mesh));
             window.viewport()->setCamera(c);
         }
+        // The file's own choices, through the same door a click goes through.
+        //
+        // Open used to restore the modifiers, the camera and Smooth and nothing
+        // else, so opening a posed character landed at rest with the startup rig
+        // and every combo still showing the previous character's pick. The
+        // applying half already existed -- `applyChoice` handles every group and
+        // sets its combo -- so all that was missing was reading the document,
+        // which is what `documentChoices` does and what `--print-choices` shows.
+        //
+        // Slots the file does not mention are left alone deliberately: absent is
+        // not "none", which is the explicit sentinel `recordProxy` writes and
+        // which arrives here as a value like any other.
+        //
+        // Each `applyChoice` rebuilds, so opening rebuilds once per slot the
+        // file names. Accepted: Open happens once, and one rebuild per choice is
+        // what makes each slot land through exactly the path a click uses.
+        for (const auto& [group, id] : documentChoices(*loaded)) {
+            applyOne(group, id);
+        }
+
         subdivided = loaded->subdivide;
         // The file decides, so the button has to follow it. Without this,
         // opening a subdivided character leaves Smooth reading "off".

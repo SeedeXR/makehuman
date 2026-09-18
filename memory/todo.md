@@ -2874,8 +2874,31 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       behaviour it changed: an animation saved and reloaded now POSES (before,
       the reload exited 1 with "is an animation, not a pose").
 
-- [~] **The window's Save As and Open ignore the pose entirely.**
-      **THE SAVE HALF IS FIXED (2026-09-18); OPEN IS NOT.**
+- [x] **The window's Save As and Open ignore the pose entirely.**
+      **BOTH HALVES FIXED 2026-09-18.** Save first, then Open.
+
+      **OPEN (the second half).** `applyLoaded` restored the modifiers, the
+      camera and Smooth and nothing else. The applying half already existed and
+      nobody had noticed: **`applyChoice(group, id)` handles EVERY group**
+      (Litsphere, Skin material, Skeleton, Eye colour, each proxy slot, Eyes,
+      Expression, Pose/Animation) **and sets its combo**. Open simply never
+      called it. So the fix is a mapping, not a mechanism:
+      - `documentChoices(const MhmFile&)` returns `(group, id)` pairs -- stems
+        where the chooser uses them (`skins/x.mhmat` -> `x`), the raw value for
+        litsphere, and **pose vs animation decided by `livesInAnimations`**,
+        because the two share ONE `pose` key.
+      - `livesInAnimations` and `applyOne` were both HOISTED to a single
+        definition. `applyOne` does `currentChoice.insert` AND `applyChoice`;
+        the undo mirror is exactly the kind of second step a second caller
+        forgets.
+      - **`--print-choices <file.mhm>`** prints `<group>\t<id>`, so five ctests
+        gate the REAL mapping rather than a description of it.
+      - **Coverage boundary, MEASURED:** deleting the `applyLoaded` loop leaves
+        all 1401 tests green. The mapping is gated (two mutations killed); the
+        one line consuming it is not, because `applyLoaded` is a lambda bound to
+        a GUI signal -- the same structural reason the bug existed.
+
+      The save half, for the record:
       - `documentFor` was renamed **`documentWithoutChoices`** -- named for what
         it leaves out, because the old name read like the whole document and
         that is how Save As came to use it -- and a **`documentNow(file, view)`**
