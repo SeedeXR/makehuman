@@ -2874,6 +2874,33 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       behaviour it changed: an animation saved and reloaded now POSES (before,
       the reload exited 1 with "is an animation, not a pose").
 
+- [~] **The window's Save As and Open ignore the pose entirely.**
+      **THE SAVE HALF IS FIXED (2026-09-18); OPEN IS NOT.**
+      - `documentFor` was renamed **`documentWithoutChoices`** -- named for what
+        it leaves out, because the old name read like the whole document and
+        that is how Save As came to use it -- and a **`documentNow(file, view)`**
+        lambda in `main()` now builds AND records. **Both** save paths call it,
+        so there is one builder and nothing to forget; the incomplete one has
+        exactly one caller, inside `documentNow`.
+      - Scope was wider than this entry said: Save As recorded **nothing**
+        current -- not the pose, skin, skeleton, eye colour or any proxy.
+      - **Correction to the note below:** animation is NOT missing from the
+        file. Pose and animation are ONE slot, so `poseChoice` is the `.bvh`
+        either way and the `pose` key carries it --
+        `app_animation_save_records_the_path` asserts `walk1.bvh` appears.
+      - **STILL OPEN: Open.** `applyLoaded` resets the human and syncs the
+        sliders from `human`, but never reads the document's `pose`,
+        `skeleton` or `skinMaterial` back into the choosers, so opening a posed
+        `.mhm` from the menu still lands at rest with the startup rig. That is
+        the natural next chunk. `expression` is written by neither path and
+        needs a write AND a read, or it is a dead key.
+      - No red-first test: the window's Save As is not reachable headlessly,
+        which is exactly how it drifted. 244 save/reload ctests pass unchanged,
+        and blanking the recorded `pose` line inside `documentNow` kills three
+        of them with a clean build, which is what shows the shared code is
+        covered.
+
+      The original entry follows.
 - [ ] **The window's Save As and Open ignore the pose entirely.**
       Found by /code-review 2026-09-16 while reviewing the Animation chooser,
       and PRE-EXISTING -- it affects Pose exactly as much as Animation, which is

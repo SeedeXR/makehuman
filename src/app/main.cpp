@@ -1863,9 +1863,19 @@ std::array<float, 3> panToTranslation(const mh::render::Camera& c,
     return {half.x > 0.0F ? -c.panX / half.x : 0.0F, half.y > 0.0F ? -c.panY / half.y : 0.0F, 0.0F};
 }
 
-mh::core::MhmFile documentFor(const mh::core::Human& human, const mh::core::MhmFile& base,
-                              const std::filesystem::path& path,
-                              const std::optional<mh::core::OrbitView>& view, bool subdivided) {
+/// The morphs, the framing and whatever the loaded file said -- and **none of
+/// the live choices**: no pose, skin, skeleton or proxy.
+///
+/// Named for what it leaves out, because the name `documentFor` read like the
+/// whole document and the window's Save As used it as one. Everything a user
+/// picked in the window then went unrecorded, since `unhandled` carries only
+/// what the LOADED file already held. The only caller is `documentNow`, which
+/// adds the choices; save through that.
+mh::core::MhmFile documentWithoutChoices(const mh::core::Human& human,
+                                         const mh::core::MhmFile& base,
+                                         const std::filesystem::path& path,
+                                         const std::optional<mh::core::OrbitView>& view,
+                                         bool subdivided) {
     mh::core::MhmFile out = mh::core::mhmFromHuman(human, path.stem().string());
     out.writtenBy         = base.writtenBy;
     out.uuid              = base.uuid;
@@ -4008,12 +4018,16 @@ int main(int argc, char** argv) {
     //
     // NOT for `--save`: that is handled before the window is ever constructed
     // and returns, so it can only ever see the startup value. An earlier
-    // version of this comment claimed otherwise. The window's own Save As goes
-    // through `documentFor`, which copies `unhandled` verbatim and writes no
-    // `pose` line at all -- so a character animated in the window and saved
-    // from the File menu still loses the animation. That is a real gap and it
-    // is NOT fixed here; it belongs with Open, which likewise never reads the
-    // document's `pose`/`skeleton` lines back into the choosers.
+    // version of this comment claimed otherwise.
+    //
+    // The window's Save As used to go through the incomplete builder now called
+    // `documentWithoutChoices`, which copies `unhandled` verbatim and wrote no
+    // `pose` line at all, so a character animated in the window and saved from
+    // the File menu lost the animation. **That half is fixed**: both save paths
+    // now build through `documentNow`. The OTHER half is not -- `applyLoaded`
+    // resets the human and syncs the sliders but never reads the document's
+    // `pose`/`skeleton`/`skinMaterial` lines back into the choosers, so Open
+    // still lands at rest with the startup rig.
     // ANIMATION-NESS IS A PROPERTY OF THE FILE, not of how it was asked for.
     //
     // Derived rather than taken from the flag, because three other paths arrive
@@ -4230,14 +4244,18 @@ int main(int argc, char** argv) {
         }
     }
 
-    // AFTER the choosers, deliberately. This used to run before them, so a save
-    // could not know what was worn and wrote no proxy line at all -- and a
-    // character saved wearing Low-Poly reopened wearing High-Poly, while one
-    // saved wearing NONE reopened wearing eyes.
-    if (parser.isSet(saveOpt)) {
-        const std::filesystem::path file = parser.value(saveOpt).toStdString();
-        // No window, so no framing to record: the camera line stays as loaded.
-        mh::core::MhmFile doc = documentFor(human, document, file, std::nullopt, subdivided);
+    // THE ONE DOOR FOR SAVING. Both save paths build their document here.
+    //
+    // They did not. `--save` recorded the live choices itself, while the
+    // window's Save As called the incomplete builder alone -- which carries
+    // the LOADED file's `unhandled` lines forward verbatim, so a pose, skin,
+    // skeleton or proxy chosen in the window was never written. A character
+    // posed in the UI and saved reopened at rest; one saved from a fresh start
+    // recorded none of it at all. The recording lived where only one of the two
+    // callers could reach it, which is the whole of the defect.
+    const auto documentNow = [&](const std::filesystem::path& file,
+                                 const std::optional<mh::core::OrbitView>& view) {
+        mh::core::MhmFile doc = documentWithoutChoices(human, document, file, view, subdivided);
         const auto* eyesWorn  = wornProxies.count(QStringLiteral("Eyes")) != 0
                                     ? &wornProxies.at(QStringLiteral("Eyes")).proxy
                                     : nullptr;
@@ -4266,14 +4284,34 @@ int main(int argc, char** argv) {
         recordLine(doc, "skinMaterial", "skins/" + skinMaterialRef() + ".mhmat");
         recordLine(doc, "eyeMaterial", "eyes/materials/" + eyeColourRef() + ".mhmat");
         recordLine(doc, "skeleton", rig.loaded() ? rigNameRef() + ".mhskel" : std::string{});
+        // Pose and animation are ONE slot reached two ways, so this key carries
+        // whichever is loaded -- `poseChoice` is the .bvh either way.
         recordLine(doc, "pose", rig.posed() ? poseChoice : std::string{});
+        return doc;
+    };
+
+    // AFTER the choosers, deliberately. This used to run before them, so a save
+    // could not know what was worn and wrote no proxy line at all -- and a
+    // character saved wearing Low-Poly reopened wearing High-Poly, while one
+    // saved wearing NONE reopened wearing eyes.
+    if (parser.isSet(saveOpt)) {
+        const std::filesystem::path file = parser.value(saveOpt).toStdString();
+        // No window, so no framing to record: the camera line stays as loaded.
+        const mh::core::MhmFile doc = documentNow(file, std::nullopt);
+        // For the message only -- `documentNow` records the proxy line itself,
+        // and has to look this up per call because the window's choosers change
+        // `wornProxies` between saves.
+        const auto* eyesForMessage = wornProxies.count(QStringLiteral("Eyes")) != 0
+                                         ? &wornProxies.at(QStringLiteral("Eyes")).proxy
+                                         : nullptr;
         if (const auto ok = mh::core::saveMhm(file, doc); !ok) {
             std::fprintf(stderr, "cannot save %s: %s\n", file.string().c_str(),
                          ok.error().message().c_str());
             return 1;
         }
         std::printf("wrote %s (%zu modifiers, eyes: %s)\n", file.string().c_str(),
-                    doc.modifiers.size(), eyesWorn != nullptr ? eyesWorn->name.c_str() : "none");
+                    doc.modifiers.size(),
+                    eyesForMessage != nullptr ? eyesForMessage->name.c_str() : "none");
         return 0;  // --save means save and exit, as its help says
     }
 
@@ -5607,10 +5645,9 @@ int main(int argc, char** argv) {
         // What the user is looking at, so Save records the framing.
         const mh::render::Camera c = window.viewport()->camera();
         const mh::core::MhmFile doc =
-            documentFor(human, document, std::filesystem::path(file.toStdString()),
+            documentNow(std::filesystem::path(file.toStdString()),
                         mh::core::OrbitView{c.pitchDegrees, c.yawDegrees, c.distance,
-                                            panToTranslation(c, halfExtents(*mesh))},
-                        subdivided);
+                                            panToTranslation(c, halfExtents(*mesh))});
 
         if (const auto ok = mh::core::saveMhm(file.toStdString(), doc); !ok) {
             QMessageBox::warning(&window, QObject::tr("Cannot save"),

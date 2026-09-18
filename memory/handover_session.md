@@ -4,6 +4,72 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-18 08:15:00 (hundred-and-eleventh) — Session · **One door for saving, and a builder named for what it leaves out**
+
+*The owner asked for the shared recorder directly. Scoping it by reading the
+code rather than the notes changed what the defect was — and corrected the
+notes.*
+
+### Two save paths, one of which recorded nothing
+`--save` recorded the live choices: a proxy line per slot, then `litsphere`,
+`skinMaterial`, `eyeMaterial`, `skeleton`, `pose`. The window's **Save As did
+not**. It called `documentFor`, which copies `base.unhandled` — the lines from
+the file that was **loaded** — verbatim. So a pose, skin, skeleton, eye colour
+or proxy chosen in the window was never written, and a character saved from a
+fresh start recorded none of it at all.
+
+The recording lived where only one of the two callers could reach it. That is
+the whole of the defect, so the fix is where both callers route through:
+**`documentNow(file, view)`** builds and records, and both paths call it.
+
+`documentFor` is now **`documentWithoutChoices`**, named for what it leaves out
+and documented as having one caller. The old name read like the whole document,
+which is how Save As came to use it — the rename is the part that stops this
+recurring.
+
+### The notes were wrong, and reading the code is what found it
+`memory/todo.md` said the `.mhm` "does not record the EXPRESSION" and implied
+animation was the other gap. **Animation is recorded** — pose and animation are
+ONE slot, `poseChoice` holds the `.bvh` either way, and the `pose` key carries
+it; `app_animation_save_records_the_path` asserts `walk1.bvh` appears in the
+file. The real gaps were Save As recording *nothing*, and `expression`, which is
+written by neither path.
+
+### No red-first test, and why
+The window's Save As is not reachable headlessly — which is **exactly how it
+drifted**. So this chunk has no failing-first test and the gate is indirect:
+**244 save/reload ctests pass unchanged**, and a mutation blanking
+`recordLine(doc, "pose", ...)` inside `documentNow` **kills three of them** with
+a clean build, which is what shows the shared code is covered rather than
+bypassed. Stated here because a chunk without a red test deserves saying so.
+
+### Still open — the other half
+`applyLoaded` (Open) resets the human and syncs the sliders from `human`, but
+never reads the document's `pose`/`skeleton`/`skinMaterial` back into the
+choosers, so opening a posed `.mhm` still lands at rest with the startup rig.
+The in-code comment that claimed the save half was unfixed has been corrected
+rather than left to lie.
+
+### Gate
+Hostile read by hand (there is no `/code-review` here) and `/ponytail-review`,
+which found a comment I had **orphaned from its statement** — the
+"AFTER the choosers, deliberately" note was left stranded above the new lambda.
+That is the second time in two chunks; when code moves, check what comment sat
+above it. clang-format clean with CI's exact command.
+**debug 1396/1396, release 1396/1396, no-Qt 881/881** (verified from
+`CMakeCache.txt`), **ASan 470+471+459**, **TSan 470+471+233+227**, SonarQube
+**gate OK, 0 open issues**, tree untouched since the gate stamp.
+
+### Machine note
+A runaway `mds_stores` (Spotlight) at 98% CPU made the debug suite take 64
+minutes instead of 6, and release 147 — almost certainly indexing the fresh
+`build/no-qt` tree. It settled on its own and later gates ran at normal speed.
+**Check `ps -Ao etime,%cpu,comm -r | head` before blaming the code.** Excluding
+`build/` from Spotlight would prevent the repeat; that is the owner's call and
+was raised, not done.
+
+---
+
 ## 2026-09-17 23:55:00 (hundred-and-tenth) — Session · **The workspace preset that hid the material editor**
 
 *The follow-up left open by `beb0eb77`, which turned out to be two defects, the
