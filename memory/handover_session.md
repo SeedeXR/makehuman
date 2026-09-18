@@ -4,6 +4,120 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-18 21:30:00 (hundred-and-fifteenth) — Session · **The ethnicity a saved file forgot to renormalise**
+
+*The suspicion in the todo was decimal precision. It was half right, and the
+half it missed made a saved character come back 6 cm shorter.*
+
+### Confirm first, as the item demanded
+Three exports settled it before a line changed. Direct vs round-trip: 759 of
+14,780 vertices. Direct vs a direct run with the ethnicity **pre-quantised** to
+the six decimals the file stores: the same 759. Quantised vs round-trip: **0**.
+So the quantisation was total and reproducible — and ten of the eleven
+modifiers are `0.500000`, exact in binary. The only lossy line was the
+three-way ethnic split at `0.333333`.
+
+### Why the format was innocent
+The reference loads modifiers with `skipDependencies=True`, then at
+`human.py:1570-1572` releases `blockEthnicUpdates` and calls `_setEthnicVals()`
+— **one** renormalisation over all three. Three values of `0.333333` sum to
+`0.999999`; dividing that out lands each back on exactly a third (verified in
+float32 before asserting it). Six decimals was never the bug, and changing the
+format would have broken the byte-identity parity fixture for nothing.
+
+### The bug that was actually there
+`setEthnicVals` rewrites all three values, but only `factors_` saw them.
+`values_` — what `modifierValue` returns, what the `.mhm` writer records, what
+the sliders show — kept whatever the two untouched ones held before. Setting
+African to 1.0 saved `African 1 / Asian 0.333333 / Caucasian 0.333333`, an
+ethnicity summing to **1.667**. That file reloaded as a character **15.76 dm
+tall against 16.37** — all 14,780 vertices moved.
+
+It had been found ONCE already. The `blendedSkinTone` comment in `main.cpp`
+describes the same 1.667 and reads `factors()` to dodge it — patched at the call
+site, root cause left in place, and it surfaced next in the document layer.
+
+### The fix
+Three parts, all the reference's own design: `setEthnicUpdatesBlocked` +
+`normaliseEthnic` on `MacroFactors`; `Human::syncEthnicValues` writing the
+renormalised triple back so there is ONE truth instead of two drifting stores;
+and `Human::setModifierValues` as the single door a load goes through — block,
+set, unblock, normalise once. `applyMhm` and `randomize` both use it.
+
+`randomize` now reports what the character ENDED UP as rather than what it drew:
+those values become the undo step's "after" state and the panel's slider
+positions, so the drawn value put back a character it never produced.
+
+**Measured:** African=1.0 went from 14,780 differing to **0**; `--pose tpose`
+from 759 to **254**.
+
+### The residual, chased rather than waved off
+254 is not this bug. A document containing only `version` — no modifiers at all
+— plus `--pose tpose` still differs by 254, so it is not ethnicity and not the
+document's pose. A probe found the cause: `stack_` is an `unordered_map` and
+`applyTargets` iterates it directly, so **float accumulation order depends on
+bucket order**. Same 8 entries, two of them swapped between the two paths; every
+differing vertex is off by exactly 0.0001 dm, one ULP of the writer's four
+decimals. `resetToDefaults()` — which every `--load` runs — is the trigger.
+
+**Verified pre-existing**, not introduced here: 254 before and after, measured
+against a binary built from `a2a056c1` with the working tree stashed, and the
+direct export byte-identical across both. Filed as its own item; it changes
+accumulation for every character and will move golden fixtures by an ULP.
+
+### One existing test was rewritten, deliberately
+`"ethnic sliders are not the renormalised weights"` asserted the divergence this
+chunk removes. It is not weakened but inverted, and the note above it says why:
+the reference keeps ONE value per ethnicity (`EthnicModifier.getValue()` reads
+`human.<ethnic>Val`), so the split was a divergence FROM the reference. The
+enduring claim — a blend must never see weights summing to 1.667 — now holds on
+both paths. The random test's range check went vacuous as a side effect
+(`applied` reports post-clamp values), so it gained the claim that costs
+something: the reported ethnic triple sums to 1. That assertion is the only
+thing mutation M4 killed.
+
+### What ponytail-review caught
+The blocked-check had been copied into all three ethnic setters. All three
+already funnel through `setEthnicVals`, so it became one guard at the top of
+that function — which is also the more honest place, since `exclude` is what a
+single setter holds fixed and honouring it mid-load would renormalise the other
+two against half-applied values.
+
+That edit landed while the ASan gate was running, which invalidated it. The run
+was stopped at ~10 minutes rather than allowed to certify a tree that was about
+to change, strays were checked for after the kill, and the whole five-config
+gate restarted behind a marker file so `find -newer` can prove no source moved
+under it.
+
+### Gate
+Five mutations, all KILLED with clean builds, re-run AFTER the shrink because
+the earlier four described code that no longer existed: dropping the sync,
+dropping the normalise, never blocking, reporting the drawn value, and making
+the new guard never fire. Sources restored from backup and `cmp`-verified.
+
+debug **1412/1412**, release **1412/1412**, no-Qt **884/884**, TSan
+**353+353+354+354**, ASan **353+353+354+354**. The gate script's
+`find -newer` check printed **empty**, so it described the tree that shipped.
+
+### One ASan failure, diagnosed rather than re-run until green
+`app_backdrop_transparent_shows_nothing` failed once under ASan with **2,399 of
+4,495,360** pixels differing against a limit of 100 — 800x the documented noise
+floor, so "GPU flake" was not a good enough answer.
+
+Looking at WHERE they differed settled it in two minutes: **2,462 of 2,481 were
+one 50x50 toolbar button**, the "Smooth" toggle, drawn checked in one render and
+not the other with its icon pixels identical. Everywhere else: **19 pixels at
+channel delta 4**, the noise floor. So the claim the test exists to make — a
+backdrop at opacity 0 shows nothing — held.
+
+The same source passes in debug, release and TSan with **1** differing pixel,
+and the ASan slice came back **354/354** on a clean re-run, also at 1 pixel. Not
+this chunk: nothing here can touch toolbar state. Both the state-sync gap and
+the fact that a whole-window compare fails a viewport test on chrome are filed
+as their own item.
+
+---
+
 ## 2026-09-18 19:45:00 (hundred-and-fourteenth) — Session · **A pose path that only opened on the machine that saved it**
 
 *The last non-portable spelling in the document format, and a TSan timeout that

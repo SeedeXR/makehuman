@@ -191,17 +191,10 @@ std::expected<MhmFile, MhmError> loadMhm(const std::filesystem::path& path) {
 }
 
 uint32_t applyMhm(const MhmFile& mhm, Human& human, uint32_t* unknown) {
-    uint32_t applied  = 0;
-    uint32_t notKnown = 0;
-    for (const auto& [name, value] : mhm.modifiers) {
-        if (human.setModifierValue(name, value)) {
-            ++applied;
-        } else {
-            ++notKnown;
-        }
-    }
-    if (unknown != nullptr) *unknown = notKnown;
-    return applied;
+    // One call rather than a loop of `setModifierValue`: the three ethnic
+    // values renormalise one another, so applying them one at a time makes the
+    // character depend on the order this file happens to list them in.
+    return human.setModifierValues(mhm.modifiers, unknown);
 }
 
 std::expected<void, MhmError> saveMhm(const std::filesystem::path& path, const MhmFile& mhm) {

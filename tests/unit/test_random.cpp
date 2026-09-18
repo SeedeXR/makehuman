@@ -150,6 +150,24 @@ TEST_CASE("every randomised value is inside its modifier's range", "[random]") {
         // And it actually reached the character, rather than only the map.
         REQUIRE_THAT(human.modifierValue(name), WithinAbs(static_cast<double>(value), 1e-5));
     }
+
+    // The range check above is nearly free -- `randomValue` clamps, so the
+    // values it draws are in range by construction. This is the claim that
+    // costs something: the three ethnic values are renormalised together, so
+    // what comes back describes ONE character rather than three independent
+    // draws summing to anything at all. These values become the undo step's
+    // "after" state, so a sum of 1.667 here would put back a character the
+    // randomiser never produced.
+    const auto reported = [&applied](const char* name) {
+        const auto it =
+            std::ranges::find_if(applied, [&](const auto& kv) { return kv.first == name; });
+        REQUIRE(it != applied.end());
+        return it->second;
+    };
+    const float ethnicSum = reported("macrodetails/African") + reported("macrodetails/Asian") +
+                            reported("macrodetails/Caucasian");
+    INFO("ethnic sum " << ethnicSum);
+    CHECK_THAT(static_cast<double>(ethnicSum), WithinAbs(1.0, 1e-5));
 }
 
 TEST_CASE("full symmetry gives a symmetric face", "[random]") {

@@ -89,10 +89,12 @@ std::vector<std::pair<std::string, float>> randomize(Human& human, const RandomO
         if (wanted(m, options)) chosen.push_back(&m);
     }
 
-    // Shuffled so dependent modifiers do not always resolve in the same order.
-    // The three ethnic scalars renormalise each other, so whichever is set last
-    // effectively wins; a fixed order would make one of them systematically
-    // dominant across every character a user generates (`:125-127`).
+    // Shuffled so dependent modifiers do not always resolve in the same order:
+    // a symmetric pair is drawn from whichever side comes first, so a fixed
+    // order would bias every character the same way (`:125-127`). The three
+    // ethnic scalars used to need this too, because each renormalised the ones
+    // before it; they are now applied together and normalised once, so their
+    // outcome no longer depends on any order.
     std::mt19937_64 shuffler(seed);
     std::ranges::shuffle(chosen, shuffler);
 
@@ -153,11 +155,19 @@ std::vector<std::pair<std::string, float>> randomize(Human& human, const RandomO
         }
     }
 
+    // Applied in ONE call so the three ethnic values normalise together
+    // rather than each rescaling the two drawn before it.
+    const std::vector<std::pair<std::string, float>> drawn(values.begin(), values.end());
+    human.setModifierValues(drawn);
+
+    // Reported as the character ENDED UP, not as drawn: renormalisation scales
+    // the ethnic three, and these values become the undo step's "after" state
+    // and the panel's slider positions. Returning the drawn value there would
+    // put back a character the randomiser never produced.
     std::vector<std::pair<std::string, float>> applied;
-    applied.reserve(values.size());
-    for (const auto& [name, v] : values) {
-        if (!human.setModifierValue(name, v)) continue;  // a name with no live modifier
-        applied.emplace_back(name, v);
+    applied.reserve(drawn.size());
+    for (const auto& [name, v] : drawn) {
+        applied.emplace_back(name, human.modifierValue(name));
     }
     return applied;
 }

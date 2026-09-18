@@ -312,10 +312,48 @@ bool Human::setModifierValue(std::string_view fullName, float value) {
         } else if (v == "Caucasian") {
             factors_.setCaucasian(values_[m->fullName]);
         }
+        if (m->kind == ModifierKind::Ethnic) syncEthnicValues();
     }
 
     rebuildStack();
     return true;
+}
+
+void Human::syncEthnicValues() {
+    for (const Modifier& m : modifiers_) {
+        if (m.kind != ModifierKind::Ethnic) continue;
+        const std::string& v = m.macroVariable;
+        if (v == "African") {
+            values_[m.fullName] = factors_.african();
+        } else if (v == "Asian") {
+            values_[m.fullName] = factors_.asian();
+        } else if (v == "Caucasian") {
+            values_[m.fullName] = factors_.caucasian();
+        }
+    }
+}
+
+uint32_t Human::setModifierValues(std::span<const std::pair<std::string, float>> values,
+                                  uint32_t* unknown) {
+    // human.py:1570-1572. The three ethnic sliders renormalise one another, so
+    // they are stored as the file gives them and normalised once at the end.
+    factors_.setEthnicUpdatesBlocked(true);
+    uint32_t applied  = 0;
+    uint32_t notKnown = 0;
+    for (const auto& [name, value] : values) {
+        if (setModifierValue(name, value)) {
+            ++applied;
+        } else {
+            ++notKnown;
+        }
+    }
+    factors_.setEthnicUpdatesBlocked(false);
+    factors_.normaliseEthnic();
+    syncEthnicValues();
+    rebuildStack();
+
+    if (unknown != nullptr) *unknown = notKnown;
+    return applied;
 }
 
 void Human::accumulate(const Modifier& m, float value) {

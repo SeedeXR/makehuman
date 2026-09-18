@@ -5,11 +5,14 @@
 #include "makehuman/core/Target.h"
 #include "makehuman/core/TargetIndex.h"
 
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace mh::core {
@@ -131,6 +134,18 @@ public:
     /// Sets a slider and recomputes the affected part of the stack.
     bool setModifierValue(std::string_view fullName, float value);
 
+    /// Sets many sliders as loading a document does, and returns how many
+    /// were recognised; @p unknown optionally receives the rest.
+    ///
+    /// Not a loop over `setModifierValue`, because the three ethnic sliders
+    /// renormalise one another: setting them one at a time leaves the result
+    /// depending on the order the caller happened to use. The reference blocks
+    /// those updates until every value is in and normalises once
+    /// (human.py:1570-1572), and so does this -- behind one call, so a caller
+    /// cannot set a document's values and forget the normalise.
+    uint32_t setModifierValues(std::span<const std::pair<std::string, float>> values,
+                               uint32_t* unknown = nullptr);
+
     /// Every modifier back to its default, and the macro scalars with them.
     ///
     /// The reference calls this before applying a loaded `.mhm`
@@ -161,6 +176,18 @@ public:
 
 private:
     void accumulate(const Modifier& m, float value);
+
+    /// Copies the renormalised ethnic triple back into the slider values.
+    ///
+    /// `setEthnicVals` rewrites all three, so the two that were NOT set keep
+    /// whatever they held before -- and those are what `modifierValue`
+    /// returns, what a `.mhm` records and what the sliders show. Setting
+    /// African to 1.0 left the other two at a third each, so a saved file
+    /// described an ethnicity summing to 1.667 and reopening it gave back a
+    /// different character. The reference has one value per ethnicity
+    /// (`EthnicModifier.getValue()` reads `human.<ethnic>Val`); this keeps the
+    /// two stores from drifting.
+    void syncEthnicValues();
 
     const TargetIndex* index_{};
     std::vector<Modifier> modifiers_;

@@ -227,7 +227,20 @@ void MacroFactors::writeEthnicValues() {
     set(values_, MacroValue::African, african_);
 }
 
+void MacroFactors::normaliseEthnic() {
+    setEthnicVals(std::nullopt);
+}
+
 void MacroFactors::setEthnicVals(std::optional<MacroValue> exclude) {
+    // Blocked: keep the value that was just set and leave the renormalising to
+    // the one `normaliseEthnic` at the end (human.py:821, 839). `exclude` is
+    // what a single setter holds fixed, so honouring it here would renormalise
+    // the other two against a file's half-applied values.
+    if (ethnicBlocked_) {
+        writeEthnicValues();
+        return;
+    }
+
     // human.py:847-888. Renormalises so the three sum to 1, holding `exclude`
     // fixed, with three degenerate branches when the others sum to zero.
     auto ref = [&](MacroValue v) -> float& {

@@ -2150,11 +2150,13 @@ std::optional<std::pair<int, int>> blendedSkinTone(const mh::core::Human& human,
     const EthnicLitspheres& e = ethnicLitspheres();
     if (!e.ok) return std::nullopt;
 
-    // From `factors()`, NOT modifierValue(): the raw sliders are not
-    // renormalised. Setting Caucasian to 1.0 leaves the other two at 1/3 each,
-    // so reading them directly gives weights summing to 1.667 and blends a
-    // "pure" caucasian skin as 1.0/0.33/0.33 of all three. The reference reads
-    // the renormalised values (`human.getCaucasian()`), and so does this.
+    // From `factors()`, the renormalised weights -- which `modifierValue()`
+    // now agrees with, since `syncEthnicValues` writes the triple back into the
+    // sliders. Before that it did not: setting Caucasian to 1.0 left the other
+    // two at 1/3 each, so reading them blended a "pure" caucasian skin as
+    // 1.0/0.33/0.33 of all three. This still reads `factors()` because that is
+    // where the weights are defined; the reference does the same
+    // (`human.getCaucasian()`).
     const mh::core::EthnicWeights w{human.factors().caucasian(), human.factors().african(),
                                     human.factors().asian()};
     const std::array<std::span<const uint8_t>, 3> images{e.caucasian, e.african, e.asian};

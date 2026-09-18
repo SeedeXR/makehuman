@@ -2956,21 +2956,120 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       both choosers is its own piece of work. The code comment beside
       `poseIsAnimation` says so rather than implying the tracking covers it.
 
-- [ ] **A `.mhm` round trip does not reproduce the character exactly.**
-      MEASURED 2026-09-16 with the RELEASE binary, comparing a direct export
-      against a save-then-reload of the same character:
-        `--pose tpose`      759 of 14,780 vertices differ
-        `--animation walk1` 832 of 14,780 vertices differ
-      Same order for both, so it is not about poses or animations -- it is the
-      document. Prime suspect is precision: the file records "11 modifiers" as
-      decimal text, so a value that does not round-trip exactly re-morphs the
-      mesh slightly. NOT yet confirmed; confirm before fixing.
-      Worth a chunk of its own because "save and reopen gives you back what you
-      had" is the claim a save format exists to make, and 5% of vertices moving
-      is not nothing. Compare with python (`[l for l in open(p) if
-      l.startswith("v ")]`) -- `obj_verts_differ.cmake` takes >120 s on 14,780
-      vertices in CMake script mode -- and use the RELEASE binary, which is
-      several times faster than debug for exports.
+- [x] **A `.mhm` round trip does not reproduce the character exactly.**
+      **THE ETHNICITY HALF IS FIXED 2026-09-18.** The suspicion recorded here
+      was decimal precision. It was half right, and the half it missed was the
+      serious one.
+
+      **What the measurement actually said.** Three exports, release binary:
+      direct vs round-trip differed in 759 of 14,780 vertices; direct vs a
+      direct run with the ethnicity values PRE-QUANTISED to the six decimals
+      the file stores differed in the same 759; and the quantised run vs the
+      round trip differed in **0**. So the quantisation was reproducible and
+      total -- and ten of the eleven modifiers are `0.500000`, exact in binary.
+      The only lossy line was the three-way ethnic split at `0.333333`.
+
+      **But the reference is not lossy there, and neither should we be.** It
+      loads modifiers with `skipDependencies=True` and then, at
+      `human.py:1570-1572`, releases `blockEthnicUpdates` and calls
+      `_setEthnicVals()` -- one renormalisation over all three. Three values of
+      `0.333333` sum to `0.999999`; dividing that out lands each back on
+      exactly a third. Six decimals was never the bug.
+
+      **The bug we had was worse than rounding.** `setEthnicVals` rewrites all
+      three values, but only `factors_` saw them: `values_` -- what
+      `modifierValue` returns, what the `.mhm` writer records and what the
+      sliders show -- kept whatever the untouched two held before. Setting
+      African to 1.0 wrote `African 1 / Asian 0.333333 / Caucasian 0.333333`,
+      an ethnicity summing to **1.667**. Reloading that file gave a character
+      **16.37 dm tall against 15.76 dm** -- 6 cm shorter, all 14,780 vertices
+      moved. Saving a non-default-ethnicity human and reopening it returned a
+      visibly different person.
+
+      This had been found ONCE already and patched at the call site: the
+      `blendedSkinTone` comment in `main.cpp` described the same 1.667 and read
+      `factors()` to dodge it. The root cause was left in place and reached the
+      document layer next.
+
+      **Fixed in three places, all mirroring the reference:**
+      - `MacroFactors::setEthnicUpdatesBlocked` + `normaliseEthnic` -- the
+        reference's own `blockEthnicUpdates` and its single `_setEthnicVals()`.
+      - `Human::syncEthnicValues` writes the renormalised triple back into
+        `values_`, so there is ONE truth rather than two stores that drift.
+      - `Human::setModifierValues` is the one door a document load goes
+        through: block, set, unblock, normalise once. `applyMhm` and
+        `randomize` both use it, so neither can forget the normalise.
+
+      `randomize` also now reports the values the character ENDED UP with
+      rather than the ones it drew -- those become the undo step's "after"
+      state and the panel's slider positions, so returning the drawn value put
+      back a character the randomiser never produced.
+
+      **MEASURED after the fix:** `--set macrodetails/African=1.0` went from
+      **14,780 of 14,780 differing to 0**, and the saved file now records
+      `1 / 0 / 0`. `--pose tpose` went from **759 to 254**. The residual 254 is
+      NOT this bug -- see the next item; it is present before and after this
+      change, byte for byte.
+
+- [ ] **The Smooth toggle can show CHECKED while the mesh is not subdivided,
+      and a backdrop test compares the whole window to catch it.**
+      FOUND 2026-09-18 while diagnosing a one-off ASan failure of
+      `app_backdrop_transparent_shows_nothing`.
+      The test compares two full-window screenshots with `--max-differing 100`.
+      In the failing run **2,462 of 2,481 differing pixels were ONE 50x50
+      toolbar button** at x 390-439, y 2-51 -- the **"Smooth" toggle**, icon
+      `spline` (`src/ui/MainWindow.cpp:692-693`, checked state synced at
+      `:856`) -- drawn with its checked highlight in one run and without it in
+      the other, the icon pixels identical. Only **19 pixels differed anywhere
+      else, at channel delta 4**, which is the documented GPU noise floor.
+      Two separate things to fix:
+      1. **The toggle's checked state does not track the mesh.** Subdivision
+         would move far more than 19 vertices' worth of pixels, so in the run
+         that drew it checked the mesh was NOT subdivided. The button can lie
+         about the viewport. Timing-dependent: it reproduced once under ASan
+         and not on a re-run.
+      2. **The threshold is calibrated for the VIEWPORT but the compare covers
+         the whole window.** 100 differing pixels is generous against a noise
+         floor of 0-3 in the 3D view, but any chrome -- a toolbar highlight, a
+         focus ring, a status-bar string -- lands in the same count and fails a
+         test about backdrop compositing. Either crop the comparison to the
+         viewport or state that chrome is in scope and raise the floor.
+      NOT a regression: the same source passes in debug, release and TSan with
+      **1 of 4,495,360** pixels differing, and the ASan slice passed 354/354 on
+      a clean re-run showing the same 1 pixel.
+
+- [ ] **The exported mesh depends on `unordered_map` iteration order.**
+      FOUND 2026-09-18 as the residual of the item above, and CONFIRMED rather
+      than suspected.
+      `Human::rebuildStack` fills `stack_`, an
+      `unordered_map<std::string, float>`, and `applyTargets` iterates it
+      directly, accumulating float displacements into the mesh. Float addition
+      is not associative, so a different iteration order moves vertices by an
+      ULP. Two characters with **identical stack contents** can therefore
+      export different geometry depending on how they were built.
+      **The evidence.** A document containing ONLY `version` -- no modifiers at
+      all -- plus `--pose tpose` on the command line still differs from a plain
+      `--pose tpose` in **254 of 14,780 vertices**, scattered over 246 runs
+      across the whole body, each off by exactly 0.0001 dm, one unit in the
+      last place of the OBJ writer's four decimals. A probe comparing the two
+      stacks found the same 8 entries in a DIFFERENT order:
+      `... asian-female-young, caucasian-male-young, african-female-young ...`
+      against
+      `... asian-female-young, african-female-young, caucasian-male-young ...`.
+      The trigger is `resetToDefaults()`, which every `--load` runs: it clears
+      and refills the map, and the bucket order need not come back the same.
+      Rest meshes match exactly; posing amplifies the ULP across the rounding
+      boundary, which is why it only shows with a pose.
+      **VERIFIED PRE-EXISTING:** measured at 254 with a binary built from
+      `a2a056c1` (stashed working tree) and 254 after the ethnicity fix, with
+      the direct export byte-identical across both.
+      The fix is to apply targets in a deterministic order -- sort `stack_`'s
+      keys before the apply loop, or make `stack_` ordered. Its own chunk,
+      because it changes the accumulation order for EVERY character and will
+      move golden fixtures by an ULP; expect to re-gate the parity suite.
+      Compare with python (`[l for l in open(p) if l.startswith("v ")]`) --
+      `obj_verts_differ.cmake` takes >120 s on 14,780 vertices in CMake script
+      mode -- and use the RELEASE binary, several times faster for exports.
 
 - [x] **52 ARKit FACE UNITS bundled, and six EXPRESSIONS authored** (2026-09-17,
       both on the owner's instruction).

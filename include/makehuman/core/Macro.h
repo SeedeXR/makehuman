@@ -102,6 +102,19 @@ public:
     void setAsian(float v);
     void setAfrican(float v);
 
+    /// While set, the three ethnic setters store their value WITHOUT
+    /// renormalising -- the reference's `blockEthnicUpdates` (human.py:821,
+    /// 839, 1570). A `.mhm` carries all three, and renormalising after each
+    /// one in turn makes the result depend on the order the file lists them.
+    void setEthnicUpdatesBlocked(bool blocked) noexcept { ethnicBlocked_ = blocked; }
+
+    /// Renormalises the three so they sum to 1, holding none of them fixed.
+    ///
+    /// What the reference does ONCE, after a file's values are all in
+    /// (human.py:1571). Three values the format rounded to 0.333333 sum to
+    /// 0.999999; dividing that out lands each back on exactly a third.
+    void normaliseEthnic();
+
     [[nodiscard]] float gender() const noexcept { return gender_; }
 
     [[nodiscard]] float age() const noexcept { return age_; }
@@ -154,6 +167,7 @@ private:
     float breastSize_{0.5F};
     float breastFirmness_{0.5F};
     float bodyProportions_{0.5F};
+    bool ethnicBlocked_{false};
 
     float caucasian_{1.0F / 3.0F};
     float asian_{1.0F / 3.0F};

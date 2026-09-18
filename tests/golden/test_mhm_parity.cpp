@@ -490,3 +490,79 @@ TEST_CASE("a zero or absent zoom falls back rather than dividing by zero", "[mhm
     // A distance of zero on the way out would divide by zero too.
     CHECK_THAT(mhmCameraFrom({0.0F, 0.0F, 0.0F})[5], WithinAbs(1.0, 1e-9));
 }
+
+TEST_CASE("setting one ethnicity drives the other two, as the file sees them", "[mhm][ethnic]") {
+    const TargetIndex idx = TargetIndex::build(std::filesystem::path(MH_DATA_DIR) / "targets");
+    auto mods =
+        loadModifiers(std::filesystem::path(MH_DATA_DIR) / "modifiers" / "modeling_modifiers.json");
+    REQUIRE(mods.has_value());
+    Human h(&idx, *mods);
+
+    REQUIRE(h.setModifierValue("macrodetails/African", 1.0F));
+
+    // `_setEthnicVals` holds African at 1 and drives the other two to 0
+    // (human.py:877-881). It rewrites ALL THREE, so reading back only the one
+    // that was set is not the test: the other two are what `modifierValue`
+    // returns, what a `.mhm` records and what the sliders show.
+    CHECK(h.factors().african() == 1.0F);
+    CHECK(h.modifierValue("macrodetails/African") == 1.0F);
+    CHECK(h.modifierValue("macrodetails/Asian") == 0.0F);
+    CHECK(h.modifierValue("macrodetails/Caucasian") == 0.0F);
+}
+
+TEST_CASE("a saved file records the ethnicity the character actually has", "[mhm][ethnic]") {
+    const TargetIndex idx = TargetIndex::build(std::filesystem::path(MH_DATA_DIR) / "targets");
+    auto mods =
+        loadModifiers(std::filesystem::path(MH_DATA_DIR) / "modifiers" / "modeling_modifiers.json");
+    REQUIRE(mods.has_value());
+    Human h(&idx, *mods);
+    REQUIRE(h.setModifierValue("macrodetails/African", 1.0F));
+
+    const MhmFile file = mhmFromHuman(h, "african");
+    const auto stored  = [&](const char* name) {
+        const auto it = std::find_if(file.modifiers.begin(), file.modifiers.end(),
+                                      [&](const auto& kv) { return kv.first == name; });
+        REQUIRE(it != file.modifiers.end());
+        return it->second;
+    };
+
+    // Left stale, the file says African 1 with Asian and Caucasian still at a
+    // third each -- an ethnicity summing to 1.667, which reloads as a
+    // different character than the one that was saved.
+    CHECK(stored("macrodetails/African") == 1.0F);
+    CHECK(stored("macrodetails/Asian") == 0.0F);
+    CHECK(stored("macrodetails/Caucasian") == 0.0F);
+    CHECK(stored("macrodetails/African") + stored("macrodetails/Asian") +
+              stored("macrodetails/Caucasian") ==
+          1.0F);
+}
+
+TEST_CASE("the six decimals a .mhm stores reload as the thirds they came from", "[mhm][ethnic]") {
+    const TargetIndex idx = TargetIndex::build(std::filesystem::path(MH_DATA_DIR) / "targets");
+    auto mods =
+        loadModifiers(std::filesystem::path(MH_DATA_DIR) / "modifiers" / "modeling_modifiers.json");
+    REQUIRE(mods.has_value());
+
+    const Human fresh(&idx, *mods);
+    const float third = fresh.factors().african();
+    REQUIRE(third == 1.0F / 3.0F);
+
+    MhmFile doc;
+    doc.version = "v1.3.0";
+    // Exactly what saveMhm writes for a default character: a third at the
+    // format's six decimals, three values that now sum to 0.999999.
+    doc.modifiers = {{"macrodetails/African", 0.333333F},
+                     {"macrodetails/Asian", 0.333333F},
+                     {"macrodetails/Caucasian", 0.333333F}};
+
+    Human loaded(&idx, *mods);
+    CHECK(applyMhm(doc, loaded) == 3);
+
+    // Renormalising after EACH of the three makes the result depend on the
+    // order the file happens to list them. The reference blocks until all
+    // three are in and normalises once (human.py:1570-1572), which divides
+    // 0.999999 out again and lands back on exactly a third.
+    CHECK(loaded.factors().african() == third);
+    CHECK(loaded.factors().asian() == third);
+    CHECK(loaded.factors().caucasian() == third);
+}
