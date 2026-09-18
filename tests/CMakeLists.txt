@@ -3009,6 +3009,53 @@ if(MH_HAVE_RENDER)
     # so the missing half was only the mapping from document line to chooser id.
     # That mapping is what `--print-choices` prints, and it is the half a test
     # can reach: `applyLoaded` itself is GUI-only, which is how it drifted.
+    # THE EXPRESSION, WHICH NEITHER SAVE PATH RECORDED.
+    #
+    # A character saved with an expression reopened with a neutral face: the
+    # value was live in `expressionFileRef()` and reachable from the chooser,
+    # and simply never written. Stored RELATIVE to data/ like `skinMaterial`
+    # and `eyeMaterial` -- not as the absolute path the `pose` key writes for an
+    # animation, which cannot open on another machine.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/expr)
+    add_test(NAME app_expression_saved COMMAND makehuman
+             --expression ${CMAKE_SOURCE_DIR}/data/expressions/happy.mhpose
+             --save ${CMAKE_CURRENT_BINARY_DIR}/expr/e.mhm)
+    set_tests_properties(app_expression_saved PROPERTIES
+        TIMEOUT 60 FIXTURES_SETUP app_expr_saved)
+    add_test(NAME app_expression_save_records_it COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/expr/e.mhm
+             "-DKEYS=expression expressions/happy.mhpose"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_expression_save_records_it PROPERTIES
+        FIXTURES_REQUIRED app_expr_saved)
+    # ...and means the right thing to the chooser, whose ids are full paths.
+    add_test(NAME app_expression_is_a_choice COMMAND makehuman
+             --print-choices ${CMAKE_CURRENT_BINARY_DIR}/expr/e.mhm)
+    set_tests_properties(app_expression_is_a_choice PROPERTIES
+        FIXTURES_REQUIRED app_expr_saved
+        PASS_REGULAR_EXPRESSION "Expression\t.*expressions/happy.mhpose")
+
+    # An expression from OUTSIDE data/ is kept WHOLE, not relativised.
+    #
+    # Without the `..` guard, `std::filesystem::relative` happily produces
+    # `../../../../../../private/tmp/...` -- a path that depends on where data/
+    # happens to sit and breaks the moment the file moves. The mutation dropping
+    # that guard passed every other test in this file, which is why this one
+    # exists.
+    file(COPY ${CMAKE_SOURCE_DIR}/data/expressions/sad.mhpose
+         DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/expr)
+    add_test(NAME app_expression_outside_data_saved COMMAND makehuman
+             --expression ${CMAKE_CURRENT_BINARY_DIR}/expr/sad.mhpose
+             --save ${CMAKE_CURRENT_BINARY_DIR}/expr/outside.mhm)
+    set_tests_properties(app_expression_outside_data_saved PROPERTIES
+        TIMEOUT 60 FIXTURES_SETUP app_expr_outside)
+    add_test(NAME app_expression_outside_data_is_whole COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/expr/outside.mhm
+             "-DKEYS=expression ${CMAKE_CURRENT_BINARY_DIR}/expr/sad.mhpose"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_expression_outside_data_is_whole PROPERTIES
+        FIXTURES_REQUIRED app_expr_outside)
+
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/choices)
     add_test(NAME app_choices_saved COMMAND makehuman
              --pose tpose --rig mixamo_superset --skin-material african_deep

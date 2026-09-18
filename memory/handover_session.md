@@ -4,6 +4,60 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-18 16:30:00 (hundred-and-thirteenth) — Session · **The expression the file never kept**
+
+*The last of the `.mhm` document gaps, and the first chunk in three with a
+genuine red-first test.*
+
+### What was wrong
+`expression` was written by **neither** save path, so a character saved with a
+face reopened neutral. Everything else was already in place: `applyChoice`
+handles the Expression group, and `documentChoices` maps document lines to
+chooser ids — the value simply never reached the file.
+
+### What it stores, and why that spelling
+`documentNow` (the one save door) now records it **relative to `data/`** —
+`expression expressions/happy.mhpose` — which is what `skinMaterial
+skins/x.mhmat` and `eyeMaterial eyes/materials/x.mhmat` already do, and what the
+reference writes.
+
+It is deliberately **not** what the `pose` key does. Reading a saved file to
+choose the convention turned up a pre-existing wart: `pose` stores `tpose` for a
+pose but `/Users/.../walk1.bvh` for an animation — an absolute path that cannot
+open on another machine. That is now a small, well-defined follow-up, since
+`underData` exists.
+
+An expression from outside `data/` has no relative form, so it is kept whole.
+
+### The mutation that survived, and what it bought
+Dropping the outside-`data/` guard **passed every test** and wrote
+`expression ../../../../../../private/tmp/mine.mhpose` — a path that depends on
+where `data/` happens to sit. The guard was worth keeping, so it got a gate
+rather than a deletion: `app_expression_outside_data_is_whole`, with a fixture
+copied outside `data/` via `file(COPY ...)`. Re-run afterwards, the mutation
+dies.
+
+The hostile read then replaced `rel.native().starts_with("..")` with a
+first-**component** comparison: the prefix test also matches a directory
+honestly named `..hidden`.
+
+### Two process slips worth keeping
+- **Restore then REBUILD.** After a mutation I restored `main.cpp`, confirmed it
+  with `cmp`, and did not rebuild — so the next test ran against the *mutated*
+  binary and its failure looked like a bug in the new code. `cmp` proves the
+  source; only a rebuild proves the binary.
+- **A mutation whose build failed is inconclusive.** Removing the `recordLine`
+  orphaned `underData` and tripped `-Werror,-Wunused-function`. Redone as a
+  version that compiles.
+
+### Gate
+5 new ctests, red-first. clang-format clean. **debug 1406/1406, release
+1406/1406, no-Qt 881/881** (verified from `CMakeCache.txt`; suite size confirmed
+with `ctest -N`, not assumed), **ASan 470+471+469**, **TSan 470+471+233+237**,
+SonarQube **gate OK, 0 open issues**, tree untouched since the stamp.
+
+---
+
 ## 2026-09-18 13:40:00 (hundred-and-twelfth) — Session · **Open walks through the same door a click does**
 
 *The other half of the document defect, and the fix was almost entirely

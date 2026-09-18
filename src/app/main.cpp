@@ -1761,6 +1761,22 @@ std::optional<std::string> proxyFromDocument(const mh::core::MhmFile& doc,
 }
 
 /// The first value token of @p doc's `<key> ...` line, if it has one.
+/// @p path relative to `data/` when it lives there, else unchanged.
+///
+/// The spelling `skinMaterial skins/x.mhmat` and `eyeMaterial
+/// eyes/materials/x.mhmat` already use, and the reference's own. NOT the
+/// absolute path the `pose` key writes for an animation -- that cannot open on
+/// another machine, which is a pre-existing wart this deliberately does not
+/// copy. A file from outside `data/` has no relative form and is kept whole.
+std::string underData(const std::filesystem::path& path) {
+    std::error_code ec;
+    const auto rel = std::filesystem::relative(path, dataDir(), ec);
+    // The first COMPONENT, not a prefix of the string: `starts_with("..")` also
+    // matches a directory honestly named `..hidden`.
+    if (ec || rel.empty() || *rel.begin() == "..") return path.string();
+    return rel.generic_string();
+}
+
 /// Whether @p choice names a file under `data/animations`.
 ///
 /// File scope rather than a lambda in `main`, because the document-to-chooser
@@ -1829,6 +1845,13 @@ std::vector<std::pair<QString, QString>> documentChoices(const mh::core::MhmFile
     // and taking one would be wrong the day a matcap lives in a subdirectory.
     if (const auto lit = valueFromDocument(doc, "litsphere"); lit && !lit->empty()) {
         add("Litsphere", *lit);
+    }
+    // Back to the chooser's spelling: its ids are full paths (`buildAssetGroups`
+    // pushes `p.string()`), so a value stored relative to `data/` is resolved
+    // against it and one from outside is already absolute.
+    if (const auto expr = valueFromDocument(doc, "expression"); expr && !expr->empty()) {
+        const std::filesystem::path p{*expr};
+        add("Expression", p.is_absolute() ? *expr : (dataDir() / p).string());
     }
     if (const auto eyes = proxyFromDocument(doc, kEyesSaveName)) add("Eyes", *eyes);
     for (const ProxySlot& slot : kProxySlots) {
@@ -4363,6 +4386,11 @@ int main(int argc, char** argv) {
         // Pose and animation are ONE slot reached two ways, so this key carries
         // whichever is loaded -- `poseChoice` is the .bvh either way.
         recordLine(doc, "pose", rig.posed() ? poseChoice : std::string{});
+        // The expression, which NEITHER save path recorded: the value was live
+        // in `expressionFileRef()` and offered by its own chooser, and was
+        // simply never written, so a saved face reopened neutral.
+        recordLine(doc, "expression",
+                   expressionFileRef().empty() ? std::string{} : underData(expressionFileRef()));
         return doc;
     };
 

@@ -2917,6 +2917,16 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         `.mhm` from the menu still lands at rest with the startup rig. That is
         the natural next chunk. `expression` is written by neither path and
         needs a write AND a read, or it is a dead key.
+      - **`expression` DONE 2026-09-18.** `documentNow` records it and
+        `documentChoices` maps it back, so it is written AND read. Stored
+        **relative to `data/`** (`expression expressions/happy.mhpose`) like
+        `skinMaterial` and `eyeMaterial`, via a new `underData(path)` that keeps
+        a path from OUTSIDE `data/` whole. **NOT** the absolute path the `pose`
+        key writes for an animation.
+      - **STILL OPEN, and now a small well-defined follow-up:** the `pose` key
+        writes `/Users/.../walk1.bvh` for an animation while a pose is a bare
+        name. That cannot open on another machine, and `underData` already
+        exists to fix it.
       - No red-first test: the window's Save As is not reachable headlessly,
         which is exactly how it drifted. 244 save/reload ctests pass unchanged,
         and blanking the recorded `pose` line inside `documentNow` kills three
