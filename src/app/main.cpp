@@ -1777,6 +1777,24 @@ std::string underData(const std::filesystem::path& path) {
     return rel.generic_string();
 }
 
+/// The inverse of `underData`: a value stored relative to `data/`, made whole.
+///
+/// Only when it resolves to a file that EXISTS, because a stored value is not
+/// always a path. `--pose tpose` is a NAME the pose loader resolves itself, and
+/// `data/tpose` is nothing -- so a name passes through untouched and only a real
+/// relative path is expanded.
+///
+/// Every reader of a stored path needs this, and `livesInAnimations` is why:
+/// it decides Pose versus Animation by asking whether the path sits under
+/// `data/animations`, which a relative value cannot answer.
+std::string fromUnderData(const std::string& value) {
+    const std::filesystem::path p{value};
+    if (p.is_absolute()) return value;
+    std::error_code ec;
+    const auto full = dataDir() / p;
+    return std::filesystem::exists(full, ec) ? full.string() : value;
+}
+
 /// Whether @p choice names a file under `data/animations`.
 ///
 /// File scope rather than a lambda in `main`, because the document-to-chooser
@@ -1831,7 +1849,8 @@ std::vector<std::pair<QString, QString>> documentChoices(const mh::core::MhmFile
     // Pose and animation are ONE key. Which chooser it belongs to is decided by
     // where the file lives, the same question `poseIsAnimation` asks at startup.
     if (const auto pose = valueFromDocument(doc, "pose"); pose && !pose->empty()) {
-        add(livesInAnimations(*pose) ? "Animation" : "Pose", *pose);
+        const std::string whole = fromUnderData(*pose);
+        add(livesInAnimations(whole) ? "Animation" : "Pose", whole);
     }
     // The three that are only a key and a group. Kept as a table so the two
     // that are NOT -- pose, whose group depends on the value, and litsphere,
@@ -1850,8 +1869,7 @@ std::vector<std::pair<QString, QString>> documentChoices(const mh::core::MhmFile
     // pushes `p.string()`), so a value stored relative to `data/` is resolved
     // against it and one from outside is already absolute.
     if (const auto expr = valueFromDocument(doc, "expression"); expr && !expr->empty()) {
-        const std::filesystem::path p{*expr};
-        add("Expression", p.is_absolute() ? *expr : (dataDir() / p).string());
+        add("Expression", fromUnderData(*expr));
     }
     if (const auto eyes = proxyFromDocument(doc, kEyesSaveName)) add("Eyes", *eyes);
     for (const ProxySlot& slot : kProxySlots) {
@@ -1872,7 +1890,9 @@ std::string poseFromArgsOrDocument(const QCommandLineParser& parser,
                                    const QCommandLineOption& poseOpt,
                                    const mh::core::MhmFile& document) {
     if (!parser.isSet(poseOpt)) {
-        if (const auto fromDoc = valueFromDocument(document, "pose")) return *fromDoc;
+        if (const auto fromDoc = valueFromDocument(document, "pose")) {
+            return fromUnderData(*fromDoc);
+        }
     }
     return parser.value(poseOpt).toStdString();
 }
@@ -4385,7 +4405,12 @@ int main(int argc, char** argv) {
         recordLine(doc, "skeleton", rig.loaded() ? rigNameRef() + ".mhskel" : std::string{});
         // Pose and animation are ONE slot reached two ways, so this key carries
         // whichever is loaded -- `poseChoice` is the .bvh either way.
-        recordLine(doc, "pose", rig.posed() ? poseChoice : std::string{});
+        // Relative to `data/` when it is a path that lives there. This wrote the
+        // absolute path of the machine that saved it, so a `.mhm` naming an
+        // animation could not open anywhere else -- the last spelling that was
+        // not portable. A bare name like `tpose` has no relative form and
+        // `underData` leaves it alone.
+        recordLine(doc, "pose", rig.posed() ? underData(poseChoice) : std::string{});
         // The expression, which NEITHER save path recorded: the value was live
         // in `expressionFileRef()` and offered by its own chooser, and was
         // simply never written, so a saved face reopened neutral.

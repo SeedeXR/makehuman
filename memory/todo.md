@@ -2923,10 +2923,15 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         `skinMaterial` and `eyeMaterial`, via a new `underData(path)` that keeps
         a path from OUTSIDE `data/` whole. **NOT** the absolute path the `pose`
         key writes for an animation.
-      - **STILL OPEN, and now a small well-defined follow-up:** the `pose` key
-        writes `/Users/.../walk1.bvh` for an animation while a pose is a bare
-        name. That cannot open on another machine, and `underData` already
-        exists to fix it.
+      - **The `pose` key's absolute path: DONE 2026-09-18.** It wrote
+        `/Users/.../walk1.bvh` for an animation while a pose was a bare name.
+        Now `underData` on the way out and a new **`fromUnderData`** on the way
+        back in, so **every key a `.mhm` carries is portable**. `fromUnderData`
+        expands a relative value ONLY when the resolved file exists, which is
+        what keeps the bare name `tpose` a name; both readers
+        (`poseFromArgsOrDocument`, `documentChoices`) go through it, because
+        `livesInAnimations` decides Pose vs Animation by asking whether the path
+        is under `data/animations` and a relative value cannot answer that.
       - No red-first test: the window's Save As is not reachable headlessly,
         which is exactly how it drifted. 244 save/reload ctests pass unchanged,
         and blanking the recorded `pose` line inside `documentNow` kills three

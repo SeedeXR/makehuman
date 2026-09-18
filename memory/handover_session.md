@@ -4,6 +4,65 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-18 19:45:00 (hundred-and-fourteenth) — Session · **A pose path that only opened on the machine that saved it**
+
+*The last non-portable spelling in the document format, and a TSan timeout that
+had to be disproved rather than dismissed.*
+
+### The defect
+A saved `.mhm` recorded
+`pose /Users/alexmkwizu/.../data/animations/walks/walk1.bvh` — the absolute path
+of the machine that saved it — while a pose was the bare name `tpose`. Found by
+reading a saved file while choosing the convention for `expression`, and left as
+a follow-up then rather than folded in.
+
+### The fix, and the trap
+`underData` on the way out. The trap was the way back in: **`livesInAnimations`
+decides Pose versus Animation by asking whether the path sits under
+`data/animations`**, which a relative value cannot answer — so a naive change
+would have made every saved animation reopen as a pose.
+
+So `fromUnderData` is the inverse, and it expands a relative value **only when
+the resolved file exists**. That is what keeps `tpose` a name: `data/tpose` is
+nothing, so it passes through untouched. Both readers use it —
+`poseFromArgsOrDocument` (startup and reload) and `documentChoices` (the
+choosers). The hostile read then found that `documentChoices` had a **second
+inline spelling of the same inverse**, left behind by the expression chunk; one
+helper now, two callers.
+
+**Every key a `.mhm` carries is now portable.**
+
+### A TSan timeout that was not dismissed
+`app_pose_in_animations_drives_by_default` **timed out** in the `1171,1409`
+slice. That test exercises `livesInAnimations` — exactly what this chunk changed
+— and that function carries a comment about an infinite loop that once burned
+fourteen minutes of CPU. So it was treated as a possible hang.
+
+Measured instead of assumed: alone under TSan it passes in **7.35 s** against
+its `TIMEOUT 60`, an 8× margin; it passed in debug, release and ASan; and load
+average was ~6.8 (the owner's VM) when it failed, having already been measured
+turning a 10-minute ASan slice into two hours. **A single-test pass is not a
+gate**, so the whole slice was re-run clean: **240/240**.
+
+### Gate
+3 new ctests, red-first (only `app_animation_path_is_relative` was red; the
+other two are regression guards). Three mutations, each with a clean build, all
+killed: writing the absolute path again, and each reader dropping the
+resolution — the startup one caught by the pre-existing
+`app_animation_reload_still_poses`. clang-format clean. **debug 1409/1409,
+release 1409/1409, no-Qt 881/881** (verified from `CMakeCache.txt`; suite size
+measured with `ctest -N`), **ASan 470+471+472**, **TSan 470+471+233+240**,
+SonarQube **gate OK, 0 open issues**, tree untouched since the stamp.
+
+### Next
+The biggest remaining document item is that the `.mhm` round trip is **not
+exact** — 759 of 14,780 verts differ for `--pose tpose`, 832 for
+`--animation walk1`. Decimal precision is SUSPECTED and **NOT CONFIRMED**:
+confirm by comparing a saved file's modifier values against `human`'s live
+values before touching any formatting.
+
+---
+
 ## 2026-09-18 16:30:00 (hundred-and-thirteenth) — Session · **The expression the file never kept**
 
 *The last of the `.mhm` document gaps, and the first chunk in three with a

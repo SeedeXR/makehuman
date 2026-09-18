@@ -3063,6 +3063,14 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_choices_saved PROPERTIES
         TIMEOUT 60 FIXTURES_SETUP app_choices_saved)
     # Bare, for the exit code: PASS_REGULAR_EXPRESSION discards it.
+    # `--pose tpose` is a NAME, not a path, and stays one: relativising a bare
+    # name would turn it into something no reader resolves.
+    add_test(NAME app_pose_name_stays_a_name COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/choices/c.mhm
+             "-DKEYS=pose tpose"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_pose_name_stays_a_name PROPERTIES
+        FIXTURES_REQUIRED app_choices_saved)
     add_test(NAME app_print_choices COMMAND makehuman
              --print-choices ${CMAKE_CURRENT_BINARY_DIR}/choices/c.mhm)
     set_tests_properties(app_print_choices PROPERTIES
@@ -3092,6 +3100,24 @@ if(MH_HAVE_RENDER)
              --animation walk1 --save ${CMAKE_CURRENT_BINARY_DIR}/anim/w.mhm)
     set_tests_properties(app_animation_saved PROPERTIES
         TIMEOUT 60 FIXTURES_SETUP app_anim_saved)
+    # ...RELATIVE to data/, like `skinMaterial` and `expression`. It used to be
+    # the absolute path of the machine that saved it, which no other machine can
+    # open -- the one remaining spelling that was not portable.
+    add_test(NAME app_animation_path_is_relative COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/anim/w.mhm
+             "-DKEYS=pose animations/walks/walk1.bvh"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_animation_path_is_relative PROPERTIES
+        FIXTURES_REQUIRED app_anim_saved)
+    # And the READ side still knows it is an animation. `livesInAnimations`
+    # decides Pose vs Animation by asking whether the path is under
+    # data/animations, so a relative value has to be resolved before that test
+    # or every saved animation comes back as a pose.
+    add_test(NAME app_animation_relative_is_still_an_animation COMMAND makehuman
+             --print-choices ${CMAKE_CURRENT_BINARY_DIR}/anim/w.mhm)
+    set_tests_properties(app_animation_relative_is_still_an_animation PROPERTIES
+        FIXTURES_REQUIRED app_anim_saved
+        PASS_REGULAR_EXPRESSION "Animation\t.*walk1.bvh")
     add_test(NAME app_animation_save_records_the_path COMMAND ${CMAKE_COMMAND}
              -DFILE=${CMAKE_CURRENT_BINARY_DIR}/anim/w.mhm
              "-DKEYS=walk1.bvh"
