@@ -470,6 +470,41 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_restore_matches PROPERTIES
         DEPENDS "app_restore_after_live_rig;app_restore_baseline")
 
+    # Loading a document must not change a character the document says nothing
+    # about. This one holds a `version` line and NOTHING else -- no modifiers,
+    # no pose -- so the character it produces with --pose tpose has to be the
+    # character --pose tpose produces on its own.
+    #
+    # It did not. `applyStack` walked `stack_`, an unordered container, and
+    # float addition is not associative, so the bucket order decided the last
+    # bit of every vertex; `resetToDefaults()`, which every --load runs, clears
+    # and refills the map and need not hand back the same order. 254 of 14,780
+    # vertices differed, each by exactly 0.0001 dm -- one unit in the last place
+    # of the writer's four decimals, invisible at rest and pushed over the
+    # rounding boundary by a pose.
+    #
+    # The empty document is the point: any difference at all is the bug, with no
+    # argument about which of two characters is right.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/emptydoc)
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/emptydoc/empty.mhm "version v1.3.0\n")
+    add_test(NAME app_empty_document_baseline COMMAND makehuman
+             --pose tpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/emptydoc/direct.obj)
+    set_tests_properties(app_empty_document_baseline PROPERTIES
+        FIXTURES_SETUP app_emptydoc_direct)
+    add_test(NAME app_empty_document_loaded COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/emptydoc/empty.mhm --pose tpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/emptydoc/loaded.obj)
+    set_tests_properties(app_empty_document_loaded PROPERTIES
+        FIXTURES_SETUP app_emptydoc_loaded)
+    add_test(NAME app_empty_document_changes_nothing COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/emptydoc/direct.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/emptydoc/loaded.obj
+             -DEXPECT_DIFFERENT=0
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
+    set_tests_properties(app_empty_document_changes_nothing PROPERTIES
+        FIXTURES_REQUIRED "app_emptydoc_direct;app_emptydoc_loaded")
+
     add_test(NAME app_rig_superset COMMAND makehuman
              --rig mixamo_superset
              --pose tpose
@@ -2839,10 +2874,13 @@ if(MH_HAVE_RENDER)
              --pose-unit UpperLegForwardLeft=1.0
              --export ${CMAKE_CURRENT_BINARY_DIR}/bodyunits/revived.obj)
     set_tests_properties(app_body_pose_unit_revived PROPERTIES FIXTURES_SETUP app_bpu_revived)
+    # 1,917 before the target stack became ordered, 1,887 after -- 30 of them
+    # were accumulation-order noise across the writer's fourth decimal, not leg
+    # movement. Re-measured; debug and release agree exactly.
     add_test(NAME app_body_pose_unit_moves_the_leg COMMAND ${CMAKE_COMMAND}
              -DA=${CMAKE_CURRENT_BINARY_DIR}/bodyunits/rest.obj
              -DB=${CMAKE_CURRENT_BINARY_DIR}/bodyunits/revived.obj
-             -DEXPECT_DIFFERENT=1917
+             -DEXPECT_DIFFERENT=1887
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
     set_tests_properties(app_body_pose_unit_moves_the_leg PROPERTIES
         FIXTURES_REQUIRED "app_bpu_rest;app_bpu_revived")
@@ -3363,10 +3401,15 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_pose_unit_brow PROPERTIES FIXTURES_SETUP app_punit_brow)
     # The premise: a unit actually moves the face. Without this every assertion
     # below passes on a flag that parsed and did nothing.
+    #
+    # 425 before the target stack became ordered, 407 after. The 18 that went
+    # away were never moved by the pose unit -- they differed because the two
+    # exports accumulated their morphs in different orders and landed either
+    # side of the writer's fourth decimal. Re-measured; debug and release agree.
     add_test(NAME app_pose_unit_moves_the_face COMMAND ${CMAKE_COMMAND}
              -DA=${CMAKE_CURRENT_BINARY_DIR}/punit/neutral.obj
              -DB=${CMAKE_CURRENT_BINARY_DIR}/punit/brow.obj
-             -DEXPECT_DIFFERENT=425
+             -DEXPECT_DIFFERENT=407
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
     set_tests_properties(app_pose_unit_moves_the_face PROPERTIES
         FIXTURES_REQUIRED "app_punit_neutral;app_punit_brow")
@@ -3378,10 +3421,15 @@ if(MH_HAVE_RENDER)
              --pose-unit TongueUp=1.0
              --export ${CMAKE_CURRENT_BINARY_DIR}/punit/tongue.obj)
     set_tests_properties(app_pose_unit_without_an_au PROPERTIES FIXTURES_SETUP app_punit_tongue)
+    # 110 before the target stack became ordered, 72 after. The largest
+    # proportional drop of the five, because this unit moves the least to begin
+    # with -- which is exactly where ULP noise across the fourth decimal weighs
+    # most. 72 still says "this moves the face" against the 0 it would read if
+    # the unit did nothing. Re-measured; debug and release agree exactly.
     add_test(NAME app_pose_unit_au_free_unit_moves COMMAND ${CMAKE_COMMAND}
              -DA=${CMAKE_CURRENT_BINARY_DIR}/punit/neutral.obj
              -DB=${CMAKE_CURRENT_BINARY_DIR}/punit/tongue.obj
-             -DEXPECT_DIFFERENT=110
+             -DEXPECT_DIFFERENT=72
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
     set_tests_properties(app_pose_unit_au_free_unit_moves PROPERTIES
         FIXTURES_REQUIRED "app_punit_neutral;app_punit_tongue")
@@ -3543,10 +3591,15 @@ if(MH_HAVE_RENDER)
     # upper arch on `head` stays put. 68 of 136 is the same split
     # app_teeth_lower_follows_jaw measures independently from a FACS jaw drop,
     # so two separately written tests agree about the rigging.
+    # 2,333 before the target stack became ordered, 2,329 after: FOUR vertices
+    # used to differ only because the two exports accumulated their morphs in
+    # different orders, landing either side of the writer's fourth decimal.
+    # Re-measured, not adjusted to taste -- debug and release now agree on
+    # 2,329 exactly, which they had no reason to before.
     add_test(NAME app_pose_frame_differs COMMAND ${CMAKE_COMMAND}
              -DA=${CMAKE_CURRENT_BINARY_DIR}/pframe/f0.obj
              -DB=${CMAKE_CURRENT_BINARY_DIR}/pframe/f40.obj
-             -DEXPECT_DIFFERENT=2333
+             -DEXPECT_DIFFERENT=2329
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
     set_tests_properties(app_pose_frame_differs PROPERTIES
         FIXTURES_REQUIRED "app_pframe_0;app_pframe_40")
@@ -3671,14 +3724,20 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
     set_tests_properties(app_save_expression_round_trips PROPERTIES
         FIXTURES_REQUIRED "app_expr_facs_obj;app_expr_file_obj")
-    # And the premise, measured: 1,949 of 14,444 vertices. Counting differing
-    # TEXT lines says 2,042 -- the extra 93 are midline vertices written
-    # `0.0000` in one export and `-0.0000` in the other, which is why the
-    # comparison is done in fixed point.
+    # And the premise, measured: 1,902 of 14,444 vertices. Counting differing
+    # TEXT lines says more -- midline vertices come out `0.0000` in one export
+    # and `-0.0000` in the other, which is why the comparison is done in fixed
+    # point.
+    #
+    # It read 1,949 until the target stack became ordered. Those 47 differed
+    # only because the two exports accumulated their morphs in different
+    # orders and landed either side of the fourth decimal; the expression
+    # never moved them. Re-measured rather than adjusted: debug and release
+    # now agree on 1,902 exactly.
     add_test(NAME app_save_expression_moves_the_face COMMAND ${CMAKE_COMMAND}
              -DA=${CMAKE_CURRENT_BINARY_DIR}/expr/neutral.obj
              -DB=${CMAKE_CURRENT_BINARY_DIR}/expr/from_facs.obj
-             -DEXPECT_DIFFERENT=1949
+             -DEXPECT_DIFFERENT=1902
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_verts_differ.cmake)
     set_tests_properties(app_save_expression_moves_the_face PROPERTIES
         FIXTURES_REQUIRED "app_expr_neutral_obj;app_expr_facs_obj")

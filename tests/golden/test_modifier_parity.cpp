@@ -11,7 +11,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cmath>
+#include <ranges>
 
 #include <filesystem>
 #include <fstream>
@@ -206,4 +208,33 @@ TEST_CASE("a universal slider adds exactly one side", "[golden][parity][modifier
     // Back to zero: the slider leaves no trace.
     REQUIRE(h.setModifierValue("head/head-age-decr|incr", 0.0F));
     CHECK(h.stackSize() == before);
+}
+
+TEST_CASE("the target stack is walked in a deterministic order",
+          "[golden][parity][modifier][determinism]") {
+    const auto idx = TargetIndex::build(MH_DATA_DIR);
+    if (idx.componentCount() == 0) SKIP("target data not present");
+    const auto all = loadAll();
+    if (all.empty()) SKIP("modifier data not present");
+
+    const Human h(&idx, all);
+    REQUIRE(h.stackSize() > 1);
+
+    // `applyStack` walks the stack and accumulates float offsets into the
+    // mesh, and float addition is not associative -- so the ORDER decides the
+    // last bit of every vertex. An unordered container gives an order that
+    // depends on the bucket layout, which depends on the insert and erase
+    // history rather than on the character: a document holding nothing but
+    // `version`, loaded with --pose tpose, exported 254 of 14,780 vertices
+    // differently from the same pose reached without a document, every one of
+    // them off by exactly one unit in the OBJ writer's fourth decimal.
+    //
+    // Sorted is not the interesting property in itself -- REPEATABLE is. It is
+    // what sortedness is being used to buy, and it is the cheap thing to
+    // assert: two routes to one character cannot diverge if both walk the same
+    // keys in the same collating order.
+    std::vector<std::string> keys;
+    for (const auto& [path, w] : h.stack())
+        keys.push_back(path);
+    CHECK(std::ranges::is_sorted(keys));
 }

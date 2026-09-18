@@ -2218,8 +2218,156 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         CLI (`bin.install "bin/basisu"`), and `libktx` is not in Homebrew at
         all. So it means FetchContent of KTX-Software, its CI cost, and a
         **second required extension** (`KHR_texture_basisu`) on top of Draco —
-        narrowing which tools can open our files twice over. I have not taken
-        that decision.
+        narrowing which tools can open our files twice over.
+
+        **OWNER DECIDED 2026-09-19: BUILD IT.** The owner gave the go-ahead
+        explicitly ("for m7 ... here are so work on it and fix it") and supplied
+        https://evergine.com/ktx2-texture-compression/ as reference. So the
+        FetchContent cost, the CI cost and the second required extension are all
+        ACCEPTED; they are no longer reasons to stop and ask. What still has to
+        be true is engineering, not permission:
+          - the new dependency goes in LICENSING.md before it is used;
+          - `io` is Apache-2.0 and may take an Apache-2.0 dependency, but the
+            licence boundary still holds — check KTX-Software's actual licence
+            rather than assuming;
+          - `KHR_texture_basisu` must be OPTIONAL the way `--draco` is, so a
+            plain GLB still opens everywhere;
+          - re-measure the 74.5% PNG share afterwards, from the file, not from
+            the flag having been passed.
+
+        **OWNER 2026-09-19, second directive:** *"use ktx2 the app is
+        opensource worked produced by it should be able to be used commercially
+        like blender if it's an issue, understand the specifications and let's
+        build a custom one that matches exactly the existing one and supersedes
+        it."*
+        **The licence was never the issue** -- KTX-Software is Apache-2.0,
+        commercially usable, compatible with both the AGPL modules and the
+        Apache-2.0 `io` module. The real objections were CI cost and an
+        unenumerated vendored set. So "build our own" is chosen on THOSE
+        grounds, and it also removes the FetchContent cost entirely.
+
+        **SPECIFICATIONS READ (registry.khronos.org KTX 2.0; the
+        KHR_texture_basisu README), and the measurement that decides the shape:**
+        * The KTX2 CONTAINER is tractable from spec: 12-byte identifier
+          `AB 4B 54 58 20 32 30 BB 0D 0A 1A 0A`, a fixed header
+          (`vkFormat`, `typeSize`, `pixelWidth/Height/Depth`, `layerCount`,
+          `faceCount`, `levelCount`, `supercompressionScheme`), an index
+          (`dfd*`, `kvd*` as UInt32, `sgd*` as UInt64), a level index of
+          `{byteOffset, byteLength, uncompressedByteLength}` UInt64 triples, a
+          DFD (Khronos Data Format 1.4), key/value data, and 8-byte-aligned
+          supercompression global data.
+        * **`KHR_texture_basisu` permits only TWO payloads**, so a plain
+          Zstd'd KTX2 with an ordinary `vkFormat` does NOT satisfy it:
+          ETC1S + BasisLZ (`supercompressionScheme = 1`, DFD model
+          `KHR_DF_MODEL_ETC1S`), or UASTC (scheme 0 or 2, DFD model
+          `KHR_DF_MODEL_UASTC`). Width and height MUST be multiples of 4.
+        * **MEASURED on the three images that reach the GLB** (every shipped
+          texture is 1024x1024, so this is not an estimate of dimensions):
+
+              PNG today            2,053,871   1.00x
+              JPEG q92               258,352   0.13x   no deps, no extension
+              ETC1S+BasisLZ (est)   ~196,608  ~0.10x
+              UASTC raw            3,145,728   1.53x   BIGGER than PNG
+
+        **Two consequences, and they change the plan:**
+        1. **UASTC -- the easy format to write from spec -- LOSES.** It is
+           fixed-rate 8 bpp, so on 1024x1024 textures it is 1.5x larger than
+           the PNGs it would replace. It cannot be the payload if file size is
+           the goal.
+        2. **ETC1S beats JPEG by only ~24% on disk**, and glTF 2.0 already
+           takes JPEG natively -- `GltfWriter.cpp:574-587` detects it by magic
+           bytes today, so that path needs no writer change and no extension.
+        **Therefore the justification for KTX2 is NOT bytes on disk.** It is
+        **GPU memory and transcode**: JPEG decodes to full RGBA in VRAM
+        (1024x1024x4 = 4 MB per texture), while ETC1S stays compressed on the
+        GPU at roughly 0.5 MB. That is the win the owner's own reference
+        (evergine.com/ktx2-texture-compression) describes as 128 MB vs 32 MB.
+        **Say that in the commit.** Shipping KTX2 and claiming a file-size win
+        over JPEG would be claiming 24% and calling it the reason.
+
+        **STAGED PLAN, each stage its own gated chunk:**
+        0. **Measurement harness first** (see fact 1 below) -- a tool that
+           reports GLB composition by byte. Without it every later claim here
+           is unfalsifiable.
+        1. **KTX2 container writer, written from the spec.** No dependency,
+           tractable, and it is the part we would own either way.
+        2. **ETC1S encoder + BasisLZ payload.** This is the large one: 4x4
+           blocks, global endpoint and selector codebooks, VQ clustering, and a
+           Huffman-coded BasisLZ payload in supercompression global data. Do
+           not under-scope it; UASTC is easier and already ruled out above.
+        3. Wire `KHR_texture_basisu` as OPTIONAL, exactly like `--draco`, so a
+           plain GLB still opens everywhere.
+        **THE DFD, read from the spec and the authoritative header so the
+        writer chunk does not have to re-derive it.** Basic Data Format
+        Descriptor Block, 32-bit little-endian words:
+          word 0: bits 0-16 `vendorId` (17b), bits 17-31 `descriptorType` (15b)
+          word 1: bits 0-15 `versionNumber`, bits 16-31 `descriptorBlockSize`
+                  (= 24 bytes shared + 16 bytes per sample)
+          word 2: `colorModel`, `colorPrimaries`, `transferFunction`, `flags`
+                  (8 bits each, in that order)
+          word 3: `texelBlockDimension0..3`, 8 bits each
+          words 4-5: `bytesPlane0..7`, 8 bits each
+          then 16 bytes PER SAMPLE: `bitOffset` (16b), `bitLength` (16b),
+          `channelType` (8b), `channelFlags` (8b), `samplePosition0..3`
+          (8b each), `sampleLower` (s32), `sampleUpper` (s32).
+        **Enum values, from `KTX-Software/external/dfdutils/KHR/khr_df.h`
+        (fetched, not remembered):**
+          `KHR_DF_VENDORID_KHRONOS` = 0; `..DESCRIPTORTYPE_BASICFORMAT` = 0;
+          `KHR_DF_VERSIONNUMBER_1_3` = **2**
+          `KHR_DF_MODEL_RGBSDA` = 1; **`KHR_DF_MODEL_ETC1S` = 163**;
+          **`KHR_DF_MODEL_UASTC` = 166** (= `UASTC_LDR_4x4`; HDR 4x4 is 167)
+          ETC1S channels: RGB 0, RRR 3, GGG 4, AAA 15
+          UASTC channels: RGB 0, RGBA 3, RRR 4, RRRG 5, RG 6
+          `KHR_DF_PRIMARIES_UNSPECIFIED` = 0, `..BT709` = 1
+          `KHR_DF_TRANSFER_LINEAR` = 1, `..SRGB` = 2
+        Per `KHR_texture_basisu`: colour textures take BT709 + SRGB, non-colour
+        (the normal map) takes UNSPECIFIED + LINEAR. Both of ours are 1024x1024,
+        so the multiple-of-4 requirement is already satisfied.
+
+        **VALIDATION, and it fits this project's method:** use the `basisu` CLI
+        (Homebrew `basis_universal` 2.50, Apache-2.0, CLI only) as a
+        TEST-TIME ORACLE that transcodes what we write -- the same role
+        `legacy/python` plays for the port. A CLI oracle is not a linked
+        dependency and costs CI nothing, which is the whole reason for writing
+        our own. Installing it is the owner's machine, so ASK first.
+
+        **FOUR FACTS ESTABLISHED 2026-09-19 BEFORE ANY CODE**, each verified
+        directly rather than taken on trust from the investigation that
+        surfaced it:
+        1. **The 74.5% figure has NO committed harness.** It exists only as
+           prose here and in the handover. No tool, test or benchmark produces
+           it: `tests/mh_export_fixture.cpp:39` writes `base.glb` with no
+           `MaterialDesc` at all, so it has no textures and cannot be the
+           2.3 MB file. The closest artefact,
+           `tests/golden/test_gltf_writer.cpp:2205` ("the Draco file is smaller
+           than the plain one"), is geometry-only and `MH_HAVE_DRACO`-guarded.
+           **So a measurement tool is the FIRST piece of KTX2 work** -- without
+           it the before/after claim cannot be falsified, and "74.5% -> x%"
+           would be exactly the kind of number this project does not ship.
+        2. **`third_party/licenses/` DOES NOT EXIST** (`ls` confirms), yet
+           LICENSING.md section 8 step 6 requires the dependency's licence text
+           to be placed there, and section 8 ends "A dependency not listed in
+           5.1 fails CI." The procedure is unfulfillable as written; KTX2 is the
+           first dependency to hit it, so adoption either creates the directory
+           or amends the step. Raise it rather than quietly skipping step 6.
+        3. **CI HAS NEVER BUILT THE DRACO PATH**, so the "optional compression"
+           precedent is thinner than it looks. `.github/workflows/ci.yml:42`
+           installs `ninja assimp qt`; `:71` and `:90` install `ninja assimp`.
+           No draco anywhere, so `draco_FOUND` is false, `MH_HAVE_DRACO` is
+           never defined, and `tests/golden/test_draco.cpp` has never run in CI.
+           KTX2 cannot inherit that escape hatch: there is no formula to
+           `find_package(... QUIET)` -- `brew info libktx` reports no such
+           formula and `basis_universal` 2.50 is a CLI tool -- so FetchContent
+           runs at configure time in ALL SIX configuring jobs, with no build
+           cache in the workflow, against a run already 73-75 min bounded by the
+           tsan job at 75m20s.
+        4. **Licence, fetched from the source repo rather than assumed:**
+           KTX-Software is **Apache-2.0** at the root, with an **Ericsson**
+           licence for `lib/etcdec.cxx`. The file does not enumerate the full
+           vendored set, so that must be audited at adoption -- the Ceres
+           precedent (LICENSING.md section 5.2) refused a BSD-3-Clause core
+           because `otool -L` showed GPL-2.0-or-later behind it, and `mh_io` is
+           Apache-2.0. Check what it LINKS, not just its root LICENSE.
 - [x] **Unit-correctness at dm/m/cm/inch, for every writer.** Each height is
       measured back out of the file the writer produced, not taken from its
       return value: OBJ from its `v` lines, glTF from the POSITION min/max, USD
@@ -3007,69 +3155,180 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
 
       **MEASURED after the fix:** `--set macrodetails/African=1.0` went from
       **14,780 of 14,780 differing to 0**, and the saved file now records
-      `1 / 0 / 0`. `--pose tpose` went from **759 to 254**. The residual 254 is
-      NOT this bug -- see the next item; it is present before and after this
-      change, byte for byte.
+      `1 / 0 / 0`. `--pose tpose` went from **759 to 254**. The residual 254 was
+      NOT this bug -- it was the `unordered_map` walk order, fixed in the item
+      below, after which `--pose tpose` and `--animation walk1` both reach
+      **0 of 14,780**. **The `.mhm` round trip is now exact.**
 
-- [ ] **The Smooth toggle can show CHECKED while the mesh is not subdivided,
-      and a backdrop test compares the whole window to catch it.**
-      FOUND 2026-09-18 while diagnosing a one-off ASan failure of
-      `app_backdrop_transparent_shows_nothing`.
-      The test compares two full-window screenshots with `--max-differing 100`.
-      In the failing run **2,462 of 2,481 differing pixels were ONE 50x50
-      toolbar button** at x 390-439, y 2-51 -- the **"Smooth" toggle**, icon
-      `spline` (`src/ui/MainWindow.cpp:692-693`, checked state synced at
-      `:856`) -- drawn with its checked highlight in one run and without it in
-      the other, the icon pixels identical. Only **19 pixels differed anywhere
-      else, at channel delta 4**, which is the documented GPU noise floor.
-      Two separate things to fix:
-      1. **The toggle's checked state does not track the mesh.** Subdivision
-         would move far more than 19 vertices' worth of pixels, so in the run
-         that drew it checked the mesh was NOT subdivided. The button can lie
-         about the viewport. Timing-dependent: it reproduced once under ASan
-         and not on a re-run.
-      2. **The threshold is calibrated for the VIEWPORT but the compare covers
-         the whole window.** 100 differing pixels is generous against a noise
-         floor of 0-3 in the 3D view, but any chrome -- a toolbar highlight, a
-         focus ring, a status-bar string -- lands in the same count and fails a
-         test about backdrop compositing. Either crop the comparison to the
-         viewport or state that chrome is in scope and raise the floor.
-      NOT a regression: the same source passes in debug, release and TSan with
-      **1 of 4,495,360** pixels differing, and the ASan slice passed 354/354 on
-      a clean re-run showing the same 1 pixel.
+- [ ] **Whole-window screenshot gates compare against the developer's mouse.**
+      **CORRECTED 2026-09-19. The first diagnosis of this was WRONG and is
+      kept here because the wrong version is the instructive part.**
 
-- [ ] **The exported mesh depends on `unordered_map` iteration order.**
-      FOUND 2026-09-18 as the residual of the item above, and CONFIRMED rather
-      than suspected.
-      `Human::rebuildStack` fills `stack_`, an
-      `unordered_map<std::string, float>`, and `applyTargets` iterates it
-      directly, accumulating float displacements into the mesh. Float addition
-      is not associative, so a different iteration order moves vertices by an
-      ULP. Two characters with **identical stack contents** can therefore
-      export different geometry depending on how they were built.
-      **The evidence.** A document containing ONLY `version` -- no modifiers at
-      all -- plus `--pose tpose` on the command line still differs from a plain
-      `--pose tpose` in **254 of 14,780 vertices**, scattered over 246 runs
-      across the whole body, each off by exactly 0.0001 dm, one unit in the
-      last place of the OBJ writer's four decimals. A probe comparing the two
-      stacks found the same 8 entries in a DIFFERENT order:
-      `... asian-female-young, caucasian-male-young, african-female-young ...`
-      against
-      `... asian-female-young, african-female-young, caucasian-male-young ...`.
-      The trigger is `resetToDefaults()`, which every `--load` runs: it clears
-      and refills the map, and the bucket order need not come back the same.
-      Rest meshes match exactly; posing amplifies the ULP across the rounding
-      boundary, which is why it only shows with a pose.
-      **VERIFIED PRE-EXISTING:** measured at 254 with a binary built from
-      `a2a056c1` (stashed working tree) and 254 after the ethnicity fix, with
-      the direct export byte-identical across both.
-      The fix is to apply targets in a deterministic order -- sort `stack_`'s
-      keys before the apply loop, or make `stack_` ordered. Its own chunk,
-      because it changes the accumulation order for EVERY character and will
-      move golden fixtures by an ULP; expect to re-gate the parity suite.
-      Compare with python (`[l for l in open(p) if l.startswith("v ")]`) --
-      `obj_verts_differ.cmake` takes >120 s on 14,780 vertices in CMake script
-      mode -- and use the RELEASE binary, several times faster for exports.
+      What was written on 2026-09-18: that the one-off ASan failure of
+      `app_backdrop_transparent_shows_nothing` (2,462 of 2,481 differing pixels
+      in one 50x50 toolbar button at x 390-439, y 2-51) was the **Smooth**
+      toggle drawn CHECKED in one run and not the other.
+
+      **That cannot be true, and checking the stylesheet settles it in one
+      grep:** `src/ui/Theme.cpp:190-197` defines `QToolButton`, `QToolButton
+      :hover { background: %8 }` and `QToolButton:pressed { background: %11 }`
+      -- and **NO `:checked` rule at all** (`grep -c "QToolButton:checked"` is
+      0). Once a stylesheet claims `QToolButton`, `QStyleSheetStyle` draws it,
+      so a checked toggle is pixel-identical to an unchecked one. A checked
+      state could not have moved a single pixel.
+
+      **What it actually was:** the button interior measured `#3a3a41` =
+      `(58,58,65)`, which is exactly `Palette::bgHover`
+      (`include/makehuman/ui/Theme.h:25`); `bgActive` is `#45454e` and does not
+      match. It was the **hover** highlight.
+
+      **And the reason a hover can reach a test at all is the real defect.**
+      Only three tests force `QT_QPA_PLATFORM=offscreen` --
+      `tests/CMakeLists.txt:240`, `:5038`, `:5040` -- and they cover `ui` and
+      `ui_icons_hidpi`, **not** the `app_backdrop_*` tests. So `--screenshot`
+      opens a REAL cocoa window on the developer's display and `window.grab()`
+      captures whatever the chrome happened to be doing, **including the hover
+      highlight under the physical mouse pointer**. The gate compares against
+      where the mouse was sitting. A second, quieter instance of the same class:
+      `main.cpp:5984` calls `restoreWorkspace()`, which reads the developer's
+      real `~/.config/MakeHuman/MakeHumanCpp.ini`, so a dock layout saved once
+      by hand would bake itself into the fixture pair.
+
+      **Two gates are exposed**, both whole-window at `--max-differing 100`,
+      against a hovered button worth ~2,400 device pixels -- 24x the budget:
+      `app_backdrop_hidden_from_another_side` (`tests/CMakeLists.txt:2184`) and
+      `app_backdrop_transparent_shows_nothing` (`:2245`).
+      `app_backdrop_changes_the_window` (`:2160`) is a `--min-differing` gate
+      and is not at risk. The two `--render`-based compares (`:5006`, `:5030`)
+      are immune: `--render` is offscreen with no chrome.
+
+      **The fix is already sitting in the code, thrown away.**
+      `src/app/main.cpp:6030` does `window.viewport()->grabFramebuffer()` -- the
+      VIEWPORT ONLY -- and uses it merely to feed the blank-frame guard, while
+      `:6031` `window.grab()` (whole window, chrome included) is what gets saved
+      at `:6048`. A `--screenshot-viewport` flag beside `shotOpt`
+      (`main.cpp:2825`) plus one branch at `:6048` lets the two exposed gates
+      compare chrome-free pixels and keeps the 100-pixel MSAA budget honest.
+      **Do NOT instead raise the threshold** to swallow a 2,400-pixel button:
+      that gate is the one proving opacity 0 is invisible.
+      Carry-over: `app_backdrop_does_not_eat_the_model` and
+      `app_backdrop_reaches_the_pixels` sample the SAME pngs at hard-coded
+      window coordinates (`--cx 1152 --cy 640`, `--cx 800 --cy 300`) which
+      already moved once when the Material dock changed the layout. Either
+      re-derive both pairs, or keep a `_win.png` and a `_vp.png` and point only
+      the `mh_png_compare` gates at the viewport one.
+
+- [ ] **The Smooth tick and the mesh are two stores that can drift.**
+      A real defect, but NOT the one above and NOT what the screenshot showed.
+      `src/app/main.cpp:4239` holds `bool subdivided` as a plain local in
+      `main()`, and `displayMesh`'s failure path at `:4250-4251` prints
+      `cannot subdivide; drawing the base mesh` and sets `subdivided = false`
+      **without telling the window**, so the toolbar tick would stay on over an
+      unsubdivided body. Every other writer syncs: `:5435` came from the UI and
+      `:5785` calls `setSmooth` at `:5788`.
+      **Severity low, probably unreachable today:** `Subdivider::build` fails
+      only when `vertsPerPrimitive() != 4 || vertsPerFaceForExport() != 4`
+      (`src/core/Subdivider.cpp:84-89`), and `displayMesh` always subdivides the
+      quad base mesh. INFERRED that no current CLI path reaches it; `grep
+      "cannot subdivide" tests/` finds nothing, so it is also untested.
+      Fix: hoist the assignment into one `setSubdivided(bool)` defined after the
+      window so `:4251`, `:5435` and `:5785` all route through one door -- the
+      same shape as `setModifierValues` and `documentNow`. One file.
+
+- [ ] **The decimator has the same `unordered_map` bug, latent rather than live.**
+      CONFIRMED 2026-09-19 by reading every unordered container in
+      `src/core/Decimator.cpp`, then spot-checking the cited lines directly.
+      **Two of the five are AT RISK:**
+      - `edgeFaces`, `std::unordered_map<uint64_t, std::pair<uint32_t, size_t>>`
+        (`Decimator.cpp:278`), iterated at `:286`. The body accumulates
+        `quad[a] = quad[a] + constraint` (`:313-314`) -- ten non-associative
+        **double** adds, with the constraint scaled by `* 1000.0` at `:306`, so
+        the cancellation is large rather than marginal. Those quadrics reach
+        `pos[a] = to` (`:454`), i.e. emitted vertex coordinates, AND the
+        accept/reject ceiling `(quad[a] + quad[b]).rms(to) > maxError`
+        (`:386`), i.e. the triangle count.
+      - `ring`, `std::unordered_set<uint32_t>` (`:480`), iterated at `:487`.
+        `push` stamps `.tiebreak = pushed++` and `Candidate::operator<`
+        (`:156-158`) breaks EXACT cost ties by it, so two bit-identical costs in
+        one ring collapse in bucket order. Distinct costs are unaffected -- the
+        comparator is a total order, so the queue's pop sequence does not depend
+        on insertion order.
+      **Three are SAFE:** `vuv` (`:260`) is immutable after `:266` and its
+      `*begin()` at `:471` is past a guard that proves the set has one element;
+      `vgroup` (`:261`) is only compared with `operator!=` (a content compare)
+      and unioned, and contents are order-independent; `seen` (`:352`) is only
+      `insert(...).second`.
+      **Why it is latent, not live:** unlike `Human::applyStack`, the insertion
+      order into `edgeFaces` is fixed by the `tris` vector, which is fixed by
+      the source mesh. Same binary, same mesh, same bytes. The exposure is
+      (1) a toolchain or libc++ change altering bucket growth, and (2) the same
+      surface with its faces listed in a different order.
+      **The existing test CANNOT catch it.** `tests/unit/test_decimator.cpp:335`
+      `"decimation is deterministic"` calls `decimate` twice **in the same
+      process on the same `Mesh`**, so both runs build the map in the same order
+      and walk it identically. It is green over the defect and will stay green.
+      A test suite only covers the shapes it constructs.
+      **Pinned to today's hashing, so they may move:** `test_decimator.cpp:371`
+      `faceCount() == 5451`; `tests/CMakeLists.txt:3815`
+      `"decimated 13378 faces to 6688 triangles"`; `:3847` `EXPECT=7986`.
+      (`:3856` `EXPECT=14676` is the undecimated control, unaffected.)
+      **THE EXPERIMENT THAT SETTLES WHETHER IT IS LIVE TODAY**, and the fix are
+      the same one line each: make `:278` a `std::map` and `:480` a `std::set`
+      -- both drop-in, both loops unchanged -- then run `ctest -R decimate`. If
+      5451 / 6688 / 7986 move, the defect reaches output TODAY and those
+      constants have been recording a hash artefact. If nothing moves, the
+      mechanism is real but latent and the ordered containers pin it before a
+      compiler bump does the flipping. Either way the numbers must be
+      RE-MEASURED with the reason written down, never edited to pass.
+      Cost: one `std::map` build over 55,850 edges at startup; `std::set` over a
+      ring of about 6 per collapse.
+      Worth adding while there: `vuv` as a `std::set` removes a latent trap --
+      `*vuv[a].begin()` (`:471`) is safe only because nothing inserts into `vuv`
+      after `:266`, and the symmetric insert already exists for `vgroup` at
+      `:476-477`.
+
+- [x] **The exported mesh depends on `unordered_map` iteration order.**
+      **FIXED 2026-09-18, and it closes the `.mhm` round-trip item above.**
+      `Human::rebuildStack` filled `stack_`, an
+      `unordered_map<std::string, float>`, and `applyStack` iterated it
+      directly, accumulating float offsets into the mesh. Float addition is not
+      associative, so the walk order decided the last bit of every vertex -- and
+      an unordered container's order follows the bucket layout, which follows
+      the insert and erase history rather than the character.
+      `resetToDefaults()`, which every `--load` runs, clears and refills the
+      map and need not hand back the same order.
+      **The evidence, before the fix:** a document containing ONLY `version` --
+      no modifiers, no pose -- loaded with `--pose tpose` differed from a plain
+      `--pose tpose` in **254 of 14,780** vertices (247 in debug), scattered
+      over 246 runs across the whole body, each off by exactly 0.0001 dm, one
+      unit in the last place of the OBJ writer's four decimals. A probe found
+      the same 8 stack entries in a different order. Rest meshes matched
+      exactly; posing pushed the ULP over the rounding boundary, which is why
+      it only showed with a pose.
+      **The fix is the container.** `stack_` is now a `std::map`, with the
+      reason written into `stack()`'s doc comment so it does not get
+      "optimised" back -- the ordering is load-bearing, not tidiness.
+      **MEASURED after the fix**, release binary:
+        `--pose tpose` round trip        759 -> 254 -> **0** of 14,780
+        `--animation walk1` round trip   832 -> **0**
+        empty document + `--pose tpose`  254 -> **0**
+      **It is also FASTER**, which was not the expectation -- the change was
+      gated for a 5% regression and delivered a ~2x improvement. Medians of
+      seven runs each, same machine, only the container swapped:
+        apply 200 targets @0.5      0.29 ms -> **0.13 ms**
+        `Human::rebuildStack`       0.02 ms -> **0.01 ms**
+        `Human::applyStack`         0.16 ms -> **0.08 ms**
+      The ranges do not overlap. The likely reason is that
+      `unordered_map<std::string, float>` hashes a whole target path on every
+      insert and lookup, while the tree's comparisons short-circuit on the
+      first differing character.
+      Gated by `the target stack is walked in a deterministic order` (core) and
+      `app_empty_document_changes_nothing` (a document holding nothing but
+      `version` must change nothing), both watched RED first and both killed by
+      putting the container back.
+      **The same class is CONFIRMED in the decimator** -- see its own item
+      below. It was recorded here as an unverified lead and has since been
+      checked line by line.
 
 - [x] **52 ARKit FACE UNITS bundled, and six EXPRESSIONS authored** (2026-09-17,
       both on the owner's instruction).
@@ -3282,6 +3541,58 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         accessor in the same diff.
       - NOT built, which is why this is `covered` and not `done`: drag-to-move
         and scale. Counts moved covered 21 → 22, todo 4 → 3.
+      - **SCOPED 2026-09-19, read-only, before any code.**
+        **The good news first: no shader, pipeline or uniform work.**
+        `resources/shaders/rhi/backdrop.vert` already computes
+        `vUV = corner * ubuf.uvTransform.xy + ubuf.uvTransform.zw` -- an
+        arbitrary affine scale+offset -- and `render::backdropUvTransform`
+        (`src/render/SceneResources.cpp:16-31`) already turns a source rect into
+        exactly that. Pan and zoom need only a DIFFERENT RECTANGLE handed to
+        `setBackdropSource`.
+        **What is actually missing:**
+        * No transform state anywhere. `mh::ui::coverSource`
+          (`src/ui/Backdrop.cpp:22-42`) is a pure cover-fit taking two SIZES --
+          no offset, no scale parameter. The viewport holds three members only
+          (`src/ui/ViewportWidget.cpp:41-43`: image, side, opacity) and exposes
+          a setter with **no getter** (`ViewportWidget.h:114`), which is also
+          why nothing about placement is headlessly assertable today.
+        * No mouse handling for it. `ViewportWidget`'s mouse events
+          (`ViewportWidget.cpp:232-313`) are entirely camera-owned and never
+          touch `backdrop*`. The RIGHT button is free by deliberate choice
+          (`include/makehuman/ui/MouseBindings.h:36-38`) -- and right-drag is
+          exactly what the reference uses for scale.
+        * No modal edit state; the reference gates the gesture behind a
+          `Move && Resize` checkbox (`0_modeling_background.py:217`) whose
+          handler makes the backdrop pickable and **the human un-pickable**
+          (`:250-255`).
+        * No persistence: the port's `.mhm` has no `background` key at all
+          (`grep background src/core/Mhm.cpp` is empty), while the reference
+          writes `background <side> <file> <aspect> <x> <y> <scale>` (`:473`).
+        **The reference, for parity:** per-side state for seven sides
+        (`:128-132`); drag deltas `30.0` normal / `150.0` with Shift, scale
+        `dy/100.0` normal / `500.0` with Shift (`:169-187`).
+        **Do NOT port its scale clamp:** `setBackgroundScale` does
+        `scale = abs(float(scale))` with no upper bound (`:419-426`), so a
+        right-drag through zero flips to the mirror value instead of stopping.
+        Its undo does not capture the transform either (`# TODO` at `:57`).
+        **Four decisions to settle BEFORE code, since they change the shape:**
+        1. Does the transform reach `--render`? Today the viewport and
+           `mh::ui::overBackground` (`src/ui/Background.cpp:4,15`) share one
+           `coverSource`; a viewport-only transform is the first place they
+           diverge.
+        2. Per-side transforms (reference keeps 7) or one for the single
+           backdrop this port holds?
+        3. `.mhm` persistence -- a NEW document key, which is a format change.
+        4. Undo: the reference explicitly does not. We might.
+        **Size:** ~5-7 files (`Backdrop.h/.cpp`, `ViewportWidget.h/.cpp`,
+        `MainWindow.cpp`, `main.cpp`, `tests/ui/test_backdrop.cpp`). The
+        transform math is pure and unit-testable beside `coverSource`; the drag
+        is testable headlessly by posting `QMouseEvent`s, the pattern already at
+        `tests/ui/test_ui.cpp:556-590` -- but it needs that missing getter.
+        **Unrelated gap found while scoping:** the GUI backdrop path hardcodes
+        opacity to `1.0F` (`src/app/main.cpp:5486`) even though the CLI has
+        `--background-opacity`. The menu offers only "Background Image…" and a
+        clear (`src/ui/MainWindow.cpp:588-597`).
 
 - [ ] **OWNER REQUEST (2026-09-05): complete the UI to match the reference.**
       **>>> THIS IS THE NEXT CHUNK, ahead of any more hair-style work. <<<**
@@ -3964,9 +4275,28 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         refuses one — so it is gone and the test asserts the behaviour instead.
 - [ ] **The viewer only ever holds the last render.** The reference's version
       doubles as a general image viewer with a Refresh button that re-reads its
-      path (`4_rendering_9_viewer.py:71-75`). Ours has no path to re-read
-      because nothing is written until Save As. Open a file into it if a use
-      appears; do not add Refresh with nothing to refresh.
+      path (`4_rendering_9_viewer.py:56` is the button and `:74-78` the handler
+      -- the old citation `:71-75` was a few lines off). Ours has no path to
+      re-read because nothing is written until Save As. Open a file into it if a
+      use appears; do not add Refresh with nothing to refresh.
+      **AND THE REFERENCE'S REFRESH IS BROKEN, so hard rule 3 applies.**
+      Save As stores `self.path = os.path.dirname(filename)` -- a DIRECTORY,
+      not the file (`4_rendering_9_viewer.py:72`) -- and Refresh then calls
+      `self.image.setImage(self.path)` on that directory (`:78`). Porting
+      Refresh would mean porting that. Do not. (Also: the reference's only
+      feeder, `mh2opengl.py:122-123`, passes an Image object, not a str, so
+      `setImage` leaves `self.path` None and Refresh early-returns anyway --
+      the reference's own Refresh does nothing after a render either.)
+      **Scope if built to this entry's own terms** -- an `open`/`setImage(path)`
+      entry point plus one button on the existing 4-button toolbar.
+      `mh::ui::ImageViewer` holds ONE `QImage` (`src/ui/ImageViewer.cpp:46`),
+      overwritten by `setImage` (`:117-120`), with no path member and no open
+      API; one production caller (`src/app/main.cpp:5955`). Three files, no new
+      UI surface, headlessly testable -- `tests/ui/test_image_viewer.cpp`
+      already writes and re-reads a PNG at `:118-137`.
+      **A gallery/history is explicitly NOT this item** and would go beyond the
+      reference, which also holds exactly one image
+      (`4_rendering_9_viewer.py:52-53`).
 - [x] **The rig had no picker.** Two ship (`default` 163-bone, `mixamo_superset`
       179-bone), `--rig` has always chosen between them, and the `.mhm` already
       round-trips the choice (`skeleton <name>.mhskel`, written AND read — I

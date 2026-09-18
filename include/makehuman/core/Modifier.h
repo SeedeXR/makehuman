@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <span>
 #include <string>
@@ -158,9 +159,17 @@ public:
     void rebuildStack();
 
     /// Target relative path -> weight. Never contains a zero.
-    [[nodiscard]] const std::unordered_map<std::string, float>& stack() const noexcept {
-        return stack_;
-    }
+    ///
+    /// ORDERED, and that is load-bearing rather than tidy. `applyStack` walks
+    /// this and accumulates float offsets into the mesh; float addition is not
+    /// associative, so the walk order decides the last bit of every vertex. An
+    /// unordered container orders by bucket layout, which follows the insert
+    /// and erase history rather than the character -- so a human reached by
+    /// `resetToDefaults()` and a document load exported a different mesh from
+    /// an identical human reached straight from the constructor. Same entries,
+    /// same weights, different order: 254 of 14,780 vertices off by one unit in
+    /// the last place the OBJ writer prints.
+    [[nodiscard]] const std::map<std::string, float>& stack() const noexcept { return stack_; }
 
     [[nodiscard]] size_t stackSize() const noexcept { return stack_.size(); }
 
@@ -192,7 +201,7 @@ private:
     const TargetIndex* index_{};
     std::vector<Modifier> modifiers_;
     std::unordered_map<std::string, float> values_;
-    std::unordered_map<std::string, float> stack_;
+    std::map<std::string, float> stack_;  // ordered: see stack()
     MacroFactors factors_;
 };
 

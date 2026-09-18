@@ -4,6 +4,108 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-18 23:15:00 (hundred-and-sixteenth) — Session · **The mesh that depended on how you got there**
+
+*Two characters with identical modifier values exported different geometry,
+because the target stack was walked in bucket order.*
+
+### The defect
+`Human::rebuildStack` filled `stack_`, an `unordered_map<std::string, float>`,
+and `applyStack` iterated it directly, accumulating float offsets into the
+mesh. Float addition is not associative, so the walk order decides the last bit
+of every vertex — and an unordered container's order follows the bucket layout,
+which follows the insert and erase history rather than the character.
+`resetToDefaults()`, which every `--load` runs, clears and refills the map and
+need not hand back the same order.
+
+Found as the residual of the ethnicity chunk: after that fix `--pose tpose`
+still round-tripped 254 of 14,780 vertices differently. A document containing
+only `version` — no modifiers at all — reproduced it, which ruled out the
+document's contents entirely.
+
+### The fix is the container
+`stack_` is a `std::map`. The reason is written into `stack()`'s doc comment,
+because the ordering is load-bearing and otherwise reads as tidiness that a
+later change would "optimise" away.
+
+**Measured, release binary:**
+
+    --pose tpose round trip        759 -> 254 -> 0 of 14,780
+    --animation walk1 round trip   832 -> 0
+    empty document + --pose tpose  254 -> 0
+
+**The `.mhm` round trip is now exact**, which closes the item that has been
+open since 2026-09-16.
+
+### It got faster, which was not the expectation
+The change was gated for a 5% REGRESSION on a hot path. Medians of seven runs
+each, same machine, only the container swapped:
+
+    apply 200 targets @0.5   0.29 ms -> 0.13 ms
+    Human::rebuildStack      0.02 ms -> 0.01 ms
+    Human::applyStack        0.16 ms -> 0.08 ms
+
+The ranges do not overlap. Single runs would have proved nothing — run-to-run
+variance on these sub-0.2 ms lines is ±20%, four times the bar being tested
+against, so the comparison had to be medians of many runs.
+Likely reason: `unordered_map<std::string, float>` hashes a whole target path
+on every insert and lookup, while the tree's comparisons short-circuit on the
+first differing character.
+
+### Tests
+Both watched RED first, and the first attempt was thrown away:
+
+* A core test comparing two ROUTES to the same character **passed** — the order
+  happened to agree for that modifier set. A test that only fails on a
+  particular hash accident is not a gate, so it was replaced by one asserting
+  the invariant that buys determinism: the stack is walked in sorted order.
+  That one failed.
+* `app_empty_document_changes_nothing` — a document holding nothing but
+  `version`, loaded with `--pose tpose`, must export what `--pose tpose`
+  exports alone. It reported **247 of 14,780 differ, expected 0** before the
+  fix. The empty document is the point: any difference at all is the bug, with
+  no argument about which of two characters is right.
+
+Putting the container back kills both, with a clean build.
+
+### FIVE exact-count assertions moved, and that is the fix showing its work
+
+    app_pose_frame_differs                2,333 -> 2,329
+    app_save_expression_moves_the_face    1,949 -> 1,902
+    app_body_pose_unit_moves_the_leg      1,917 -> 1,887
+    app_pose_unit_moves_the_face            425 ->   407
+    app_pose_unit_au_free_unit_moves        110 ->    72
+
+All five assert that a pose, expression or unit MOVES something, all five
+failed identically in debug and release, and all five fell because vertices
+that used to differ only by an ULP straddling the writer's fourth decimal now
+agree. The expression never moved those 47; the accumulation order did. The
+sixth mid-range assertion, `app_faceunit_moves_the_face` at 2,317, passed
+UNCHANGED, so this is not a blanket shift.
+
+Re-measured, not adjusted to taste, and the reason is written beside each
+number. The evidence that these are better numbers rather than merely different
+ones: **debug and release agree exactly**, which they had no reason to before.
+
+### My own gate script was under-reporting failures
+It piped `ctest` through `tail -3`, so a run with THREE failures printed only
+the last two. `app_body_pose_unit_moves_the_leg` was failing from the first
+gate and was not seen until a gate-run later, which cost a restart. The script
+now prints the summary line and EVERY `N - name (Failed)` line, however many
+there are.
+
+A gate that hides part of its own output is worse than no gate, because it
+reads as green-ish. This one had been in use for several chunks.
+
+Worth noting for later: an exact `EXPECT_DIFFERENT` is brittle by construction
+-- every legitimate change to the mesh pipeline breaks it, and the fix is to
+re-measure each time. `obj_verts_differ.cmake` refuses a compare with no
+expectation for good reason, but a tolerance band would express "this moves a
+lot of vertices" without pinning the last four of them. Seventeen of these
+exist. Not changed here; this chunk was about determinism.
+
+---
+
 ## 2026-09-18 21:30:00 (hundred-and-fifteenth) — Session · **The ethnicity a saved file forgot to renormalise**
 
 *The suspicion in the todo was decimal precision. It was half right, and the
@@ -112,9 +214,25 @@ backdrop at opacity 0 shows nothing — held.
 
 The same source passes in debug, release and TSan with **1** differing pixel,
 and the ASan slice came back **354/354** on a clean re-run, also at 1 pixel. Not
-this chunk: nothing here can touch toolbar state. Both the state-sync gap and
-the fact that a whole-window compare fails a viewport test on chrome are filed
-as their own item.
+this chunk: nothing here can touch toolbar state.
+
+**CORRECTION, 2026-09-19.** The conclusion above that the button was drawn
+CHECKED was WRONG. `src/ui/Theme.cpp:190-197` has `QToolButton:hover` and
+`QToolButton:pressed` and **no `:checked` rule at all**, so a checked toggle is
+pixel-identical to an unchecked one and could not have moved a pixel. The
+measured interior `#3a3a41` is exactly `Palette::bgHover`
+(`include/makehuman/ui/Theme.h:25`). It was a **hover** highlight -- and it
+reached a test because the `app_backdrop_*` tests do **not** force
+`QT_QPA_PLATFORM=offscreen` (only `tests/CMakeLists.txt:240`, `:5038`, `:5040`
+do), so `--screenshot` opens a real window and `window.grab()` captures the
+chrome under the developer's physical mouse. The gate was comparing against
+where the pointer happened to be.
+
+Right conclusion, wrong reason, and the wrong reason was plausible enough to
+write down twice. What settled it was sampling the pixel colour and grepping the
+stylesheet -- two commands. Filed properly as "Whole-window screenshot gates
+compare against the developer's mouse", with the separate and much smaller
+Smooth-tick drift (`main.cpp:4250-4251`) as its own item.
 
 ---
 
