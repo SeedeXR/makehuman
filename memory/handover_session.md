@@ -4,6 +4,80 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-19 15:55:00 — Session · **A quality gate that could not tell 38 dB from 48**
+
+### What landed
+PSNR in `mh_png_compare`: `--min-psnr DB`, `--max-psnr DB`, and a `--selftest`
+that checks the metric against arithmetic. The metric itself is extracted into
+`psnrOf()`, so the self-check exercises the same code `main` uses rather than a
+parallel copy that could drift.
+
+This is the **prerequisite for KTX2 chunk 2a**, not part of it. The encoder has
+to hold 38.92 dB, and the tool counted differing PIXELS with no PSNR mode at
+all — useless for a lossy codec, which changes nearly every pixel a little.
+
+### The part worth remembering: my first version was a gate that pinned nothing
+Two frame comparisons were written first, using pairs the suite already
+produces: a near-identical one (**inf dB**, 0 differing pixels) and a changed
+one (**11.28 dB**), against a 40 dB threshold. It looked complete.
+
+**Five mutations survived it.** Anything that merely RESCALED the result —
+dividing by pixels instead of samples, MAX instead of MAX squared, not squaring
+the error at all — still landed on the correct side of 40 while making every
+reported number wrong. A metric off by a constant factor would have certified
+the wrong quality in total silence, which is precisely the failure the 38.92 dB
+bar exists to prevent.
+
+The fix pins the FORMULA rather than a threshold. Two images differing by
+exactly d in every channel have MSE = d squared, so PSNR = 20 log10(255/d)
+exactly: **48.13 / 42.11 / 34.15 dB** for d of 1, 2, 5, plus infinity for an
+identical pair. Four-by-four images, no fixture, no GPU. Mutation score went
+from **4/9 to 9/9 killed, 0 survived**.
+
+**The lesson generalises:** a test that separates infinity from 11 dB
+discriminates coarsely, and coarse discrimination pins nothing. When the NUMBER
+is the deliverable, check it against arithmetic, not against a threshold.
+
+### Three traps, all mine, all caught by the mutations
+* **`WILL_FAIL` accepts ANY non-zero exit.** The changed-frame test was first
+  written as `--min-psnr 40` with `WILL_FAIL`, and it **passed while the mode
+  did not exist** — the tool's "unknown mode" usage error (exit 2) satisfied it
+  exactly as well as a real low-PSNR verdict (exit 1). Restated as a positive
+  `--max-psnr` assertion, a usage error still fails it.
+* **NaN makes both comparisons false — again.** The self-test's own tolerance
+  check, `abs(got - want) > 0.01`, silently passed a NaN. A mutant that stopped
+  squaring the error made the sum negative, log10 of it NaN, and sailed
+  through. Spelled `!(... <= 0.01)` now. **This is the same hole found in
+  `mh_glb_stat`'s bound parsing the same day**, this time in the check written
+  to catch bugs.
+* **A fractional bound is itself a test.** `--max-psnr 11.9` is fractional on
+  purpose: parsed as an integer it truncates to 11, which the measured 11.28
+  exceeds, so the test fails. It is the only thing proving the threshold is
+  read as a real number — and 38.92 truncating to 38 would quietly install a
+  weaker bar. The margin is deliberately small; if a render change moves 11.28,
+  RE-MEASURE rather than widening the bound.
+
+### And one about the harness, not the code
+**A mutation run leaves the BINARY mutated.** Restoring the source is not
+enough. A test failure immediately after a mutation sweep looked like a real
+regression and was the stale mutant still installed; rebuild before believing
+anything.
+
+### Gate
+debug 1429/1429 · release 1429/1429 · no-Qt 888/888 · ASan 358+358+359+356 ·
+TSan 358+358+359+356. no-Qt stays at 888 because `mh_png_compare` needs Qt, so
+its tests sit inside `if(MH_HAVE_RENDER)` — unlike the KTX2 tests, which are
+pure `mh_io` and did raise it from 885. `find -newer` empty; clang-format clean;
+SonarQube GATE OK with 0 issues.
+
+Both earlier chunks are CI-green: `3a502662` at 1h10m31s, `0d60174f` at 1h7m10s.
+
+### Next
+KTX2 chunk 2a, the ETC1S block encoder — now gateable on quality, which is the
+whole reason this came first.
+
+---
+
 ## 2026-09-19 14:10:00 — Session · **The KTX2 container, checked against an encoder that already exists**
 
 ### What landed

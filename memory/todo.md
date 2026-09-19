@@ -2321,12 +2321,43 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
             and the supercompression global data. Gateable against the decoded
             reference layout already recorded above, and finally end-to-end
             with `basisu -unpack` on a file we encoded ourselves.
-        **A PSNR comparer is a PREREQUISITE, not part of 2a.** The quality bar
-        is 38.92 dB and `mh_png_compare` counts DIFFERING PIXELS with no PSNR
-        mode (`tests/mh_png_compare.cpp:58-70`). Add `--min-psnr DB` to that
-        tool — it already loads both PNGs through QImage, so it is the smaller
-        change — and watch it go red against a deliberately degraded image
-        before trusting any encoder number.
+        **[DONE] The PSNR comparer.** `mh_png_compare` now has `--min-psnr DB`
+        and `--max-psnr DB` beside its differing-pixel modes, plus a
+        `--selftest` that checks the metric against arithmetic.
+
+        **Why the self-test exists, and it is the whole lesson of this piece.**
+        Two frame comparisons were written first — a near-identical pair
+        (**inf dB**, 0 differing pixels) and a changed pair (**11.28 dB**)
+        against a 40 dB threshold. They looked like a complete gate and were
+        not: **five mutations survived them**. Anything that merely RESCALED
+        the result — dividing by pixels instead of samples, MAX instead of MAX
+        squared, not squaring the error at all — still landed on the correct
+        side of 40 while making every reported number wrong. For a chunk whose
+        entire purpose is holding 38.92 dB, a metric off by a constant factor
+        would certify the wrong quality in silence.
+        The fix pins the FORMULA instead of a threshold: two images differing
+        by exactly d in every channel have MSE = d squared, so PSNR is exactly
+        20 log10(255/d) — **48.13 / 42.11 / 34.15 dB** for d of 1, 2, 5, plus
+        infinity for an identical pair. No fixture, no GPU. Mutation score went
+        from 4/9 to **9/9 killed, 0 survived**.
+
+        **Two traps worth not repeating:**
+        * The changed-frame test was first written as `--min-psnr 40` with
+          `WILL_FAIL`, and it **passed while the mode did not exist** — WILL_FAIL
+          accepts ANY non-zero exit, so the "unknown mode" usage error (2)
+          satisfied it exactly as well as a real verdict (1). Restated as a
+          positive `--max-psnr` assertion it cannot pass that way.
+        * The self-test's own tolerance check `std::abs(got - want) > 0.01` is
+          **false for NaN**, so a mutant that stopped squaring the error (making
+          the sum negative, and log10 of it NaN) sailed through. Spelled
+          `!(... <= 0.01)` now. **Same NaN hole as `mh_glb_stat`'s bound
+          parsing, found the same day, in the check written to catch bugs.**
+        * The `--max-psnr 11.9` bound is FRACTIONAL on purpose: parsed as an
+          integer it truncates to 11, which the measured 11.28 exceeds, so the
+          test fails. It is the only thing proving the threshold is read as a
+          real number — and 38.92 truncating to 38 would quietly install a
+          weaker bar. If a render change moves 11.28, RE-MEASURE rather than
+          widening the bound.
 
         2. **ETC1S encoder + BasisLZ payload.** This is the large one: 4x4
            blocks, global endpoint and selector codebooks, VQ clustering, and a

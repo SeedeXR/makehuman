@@ -209,6 +209,21 @@ if(MH_HAVE_RENDER)
     add_executable(mh_png_compare mh_png_compare.cpp)
     target_link_libraries(mh_png_compare PRIVATE Qt6::Gui mh::warnings mh::sanitize)
     set_target_properties(mh_png_compare PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
+
+    # The metric checked against arithmetic, not against another screenshot.
+    #
+    # Needed because the two frame comparisons further down cannot pin the
+    # FORMULA: they separate infinity from 11 dB and nothing finer, so five
+    # mutations that merely RESCALED the result -- dividing by pixels instead
+    # of samples, MAX instead of MAX squared, not squaring the error -- passed
+    # both while making every reported number wrong. The KTX2 encoder has to
+    # hold a specific 38.92 dB, so a constant factor would certify the wrong
+    # quality in silence.
+    #
+    # Two images differing by exactly d in every channel have MSE = d squared,
+    # so PSNR = 20 log10(255/d): 48.13, 42.11 and 34.15 dB for d of 1, 2 and 5.
+    # No fixture, no GPU, no screenshot.
+    add_test(NAME png_compare_psnr_matches_arithmetic COMMAND mh_png_compare --selftest)
 endif()
 
 # NOT guarded, unlike mh_png_compare above: this one needs no Qt, only the
@@ -2285,6 +2300,53 @@ if(MH_HAVE_RENDER)
              ${CMAKE_CURRENT_BINARY_DIR}/plain_right.png --max-differing 100)
     set_tests_properties(app_backdrop_hidden_from_another_side PROPERTIES
         FIXTURES_REQUIRED "app_backdrop_right;app_backdrop_plain_right")
+
+    # PSNR, which counting pixels cannot express.
+    #
+    # The KTX2 encoder work needs a QUALITY number, not a count: a lossy codec
+    # changes nearly every pixel a little, so `--max-differing` is useless
+    # there -- basisu's ETC1S decodes to 38.92 dB while differing almost
+    # everywhere. So `--min-psnr` exists, and these two tests are what prove it
+    # discriminates, using pairs the suite already produces.
+    #
+    # MEASURED on this machine, not guessed:
+    #     backdrop_right vs plain_right   **inf dB** (0 differing pixels)
+    #     backdrop_front vs plain_front   **11.28 dB**
+    # The right-view pair is the same scene twice -- the backdrop is correctly
+    # invisible from the side -- so it is near-identical; the front-view pair
+    # differs by 2.47 million pixels. 40 dB sits far from both, which is what
+    # makes it a threshold rather than a coin toss. The MSAA noise the comment
+    # above documents (up to 3 pixels differing by 37) computes to about 78 dB,
+    # still nowhere near the floor.
+    #
+    # The PAIR is the point: `--min-psnr` alone would pass if the metric were
+    # stuck at infinity, and `--max-psnr` alone would pass if it were stuck at
+    # zero. Only both together pin it.
+    #
+    # The ceiling is 11.9 and not 12 ON PURPOSE, and the FRACTION is the test:
+    # parsed as an integer it truncates to 11, which the measured 11.28 dB
+    # exceeds, so the test fails. That is the only thing here proving the
+    # threshold is read as a real number -- and it matters, because the KTX2
+    # quality bar is 38.92 dB and truncation to 38 would quietly install a
+    # weaker gate that still passed. The margin over 11.28 is deliberately
+    # small; if a render change moves it, RE-MEASURE and write the new number
+    # down rather than widening the bound.
+    add_test(NAME app_psnr_sees_two_near_identical_frames COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/backdrop_right.png
+             ${CMAKE_CURRENT_BINARY_DIR}/plain_right.png --min-psnr 40)
+    set_tests_properties(app_psnr_sees_two_near_identical_frames PROPERTIES
+        FIXTURES_REQUIRED "app_backdrop_right;app_backdrop_plain_right")
+    # `--max-psnr`, NOT `WILL_FAIL` with `--min-psnr`. Written the obvious way
+    # first, this test passed while the mode did not exist at all: WILL_FAIL
+    # accepts ANY non-zero exit, so the tool's "unknown mode" usage error (2)
+    # satisfied it just as well as a real low-PSNR verdict (1). Stated as a
+    # POSITIVE assertion it cannot pass that way -- a usage error still exits 2
+    # and still fails the test.
+    add_test(NAME app_psnr_sees_a_changed_frame COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/backdrop_front.png
+             ${CMAKE_CURRENT_BINARY_DIR}/plain_front.png --max-psnr 11.9)
+    set_tests_properties(app_psnr_sees_a_changed_frame PROPERTIES
+        FIXTURES_REQUIRED "app_backdrop_front;app_backdrop_plain_front")
 
     # ...and the backdrop must not EAT the model. It is drawn before the body
     # with its depth write off; if it ever wrote depth it would occlude the
