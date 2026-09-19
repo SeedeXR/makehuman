@@ -85,6 +85,7 @@ add_executable(mh_tests
     golden/test_blendshapes.cpp
     golden/test_fbx_writer.cpp
     golden/test_gltf_writer.cpp
+    golden/test_ktx2_writer.cpp
     golden/test_scene_io.cpp
     golden/test_roundtrip.cpp
     regression/test_repose.cpp

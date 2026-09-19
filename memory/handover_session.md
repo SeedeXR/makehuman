@@ -4,6 +4,97 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-19 14:10:00 — Session · **The KTX2 container, checked against an encoder that already exists**
+
+### What landed
+The KTX2 container writer, written from the Khronos specification:
+`include/makehuman/io/Ktx2Writer.h`, `src/io/Ktx2Writer.cpp`,
+`tests/golden/test_ktx2_writer.cpp`, fixtures in `tests/golden/ktx2/`.
+
+It wraps an **already-encoded** ETC1S + BasisLZ payload and does not encode
+anything. Separating the container from the codec is the whole reason this half
+could be finished and proved on its own, against files a real encoder produced,
+while the codec is still unwritten.
+
+### Why it is believable
+Not "it compiles and the spec says so" — three independent checks, all run:
+
+1. **Byte-for-byte reproduction of real `basisu` 2.50 files.** Given each
+   file's own payload and its own `KTXwriter` string, our writer reproduces it
+   exactly: 54,975 / 26,204 / 21,014 / 37,595 bytes. Those cover BOTH DFD
+   shapes (one sample opaque, two with alpha) and BOTH transfer functions.
+2. **22 mutations, 22 killed, 0 survived**, with a passing control first.
+3. **`basisu -unpack` returned Success, exit 0, 61 files** — transcoding to
+   ASTC 4x4, BC1/3/4/5/7, ATC, ETC1/2, PVRTC1/2 and FXT1 — on a 55,007-byte
+   container carrying OUR `KTXwriter` string. That file is NOT byte-identical
+   to any reference: the longer string shifts every downstream offset, so this
+   exercised the layout rather than replaying a known-good byte stream.
+
+### The specification was wrong where it mattered, and the bytes settled it
+A spec summary said a DFD sample's `bitLength` was a 16-bit field. The
+reference's alpha sample reads `40 00 3F 0F`; as two 16-bit fields that is a
+nonsensical `bitLength` of 3904. Read correctly it is bitOffset 64, **bitLength
+8 bits stored MINUS ONE**, channelType 15. Three more the prose would have got
+wrong: `texelBlockDimension` is stored minus one (4x4 appears as 3,3),
+`uncompressedByteLength` is **0** for a BasisLZ level, and `vkFormat` is **0**
+because ETC1S carries its format in the DFD colour model.
+
+And one the spec text does not make obvious at all: **level alignment is 1 for
+a supercompressed file.** The three references put their level at 8925, 931 and
+797 — not one of those is even 4-aligned.
+
+### Two coverage gaps that review did not find — surviving mutants did
+* **The mandatory 8-byte pad before the global data.** Every reference happens
+  to end its key/value data at 184 or 200, both already 8-aligned, so a mutant
+  aligning to 4 instead passed all of them. Covered now by a synthetic case: a
+  15-character writer string gives kvdEnd 180 and forces four pad bytes.
+* **The refusal path.** Deleting the multiple-of-4 guard outright changed
+  nothing any check could see. Covered by five negative cases, with a control
+  asserting the valid input is accepted first — otherwise every negative case
+  could pass because the base case was broken.
+
+### Watched red honestly
+Breaking `texelBlockDimension` to 4,4 made test 795 fail with "first difference
+at byte 120: got 0x4, reference 0x3" — the byte where it was broken. Worth
+recording that the tempting shortcut is wrong: adding the test before wiring
+`Ktx2Writer.cpp` into CMake gives a LINK ERROR, which is a build failure
+wearing a red test's clothes and proves nothing about the assertion.
+
+### Decided: NO `basisu` ctest
+The oracle exists and was run, but a test would add almost nothing. Byte
+equality against a file basisu itself produced already implies basisu accepts
+it; the only new information is a container basisu did NOT write, and the
+synthetic writer-string case covers exactly that offset shift without the tool.
+CI has no basisu, so a guarded test would be a second `test_draco.cpp` —
+present, reassuring, never run. The manual command and its result are recorded
+in the test's header instead.
+
+### The honest weakness
+`ktx2Write` has **no production caller**. It is exercised only by its own test
+until chunk 2 produces a payload and chunk 3 wires `KHR_texture_basisu`.
+Flagged in review and accepted as the cost of splitting the work, not hidden.
+
+### Chunk 2 is now split into three
+"ETC1S encoder + BasisLZ payload" is one line of plan and roughly 1,500 lines
+of code across three unrelated problems; bundled, it cannot be gated until all
+of it works. Chunk 1 is the evidence for splitting: **2a** block encoder
+(gateable on PSNR alone), **2b** shared VQ codebooks (gateable on size and
+quantisation cost), **2c** BasisLZ serialisation. A **PSNR comparer is a
+prerequisite** — the bar is 38.92 dB and `mh_png_compare` counts differing
+pixels with no PSNR mode at all.
+
+### Gate
+debug 1426/1426 · release 1426/1426 · **no-Qt 888/888** · ASan 357+357+358+356 ·
+TSan 357+357+358+356. no-Qt rose from 885 because the KTX2 tests are pure
+`mh_io` and need no Qt. `find -newer` empty; clang-format clean; SonarQube
+GATE OK with 0 issues.
+
+**Note for future index comparisons:** inserting these three tests at 795-797
+shifted every later ctest index, so the animation-reload pair that timed out
+earlier moved from 1209/1210 to **1212/1213**.
+
+---
+
 ## 2026-09-19 12:40:00 — Session · **Chunk 0 lands: a timeout measured, and a gate that could not fail**
 
 ### The Xcode block is gone

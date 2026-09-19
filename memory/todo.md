@@ -2298,8 +2298,36 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         0. **Measurement harness first** (see fact 1 below) -- a tool that
            reports GLB composition by byte. Without it every later claim here
            is unfalsifiable.
-        1. **KTX2 container writer, written from the spec.** No dependency,
+        1. **[DONE — see the KTX2 CONTAINER WRITER note below] KTX2 container
+           writer, written from the spec.** No dependency,
            tractable, and it is the part we would own either way.
+        **CHUNK 2 SHOULD BE SPLIT INTO THREE, decided 2026-09-19 after chunk 1
+        landed.** "ETC1S encoder + BasisLZ payload" is one line of plan and
+        easily 1,500 lines of code — block encoding, global VQ clustering and
+        an entropy coder are three unrelated problems, and bundling them gives
+        a chunk that cannot be gated until all of it works. Chunk 1 proved the
+        opposite approach pays: splitting the CONTAINER from the CODEC is what
+        made the container testable byte-for-byte on its own, against files a
+        real encoder produced.
+          * **2a — ETC1S block encoder.** 4x4 blocks to per-block endpoints and
+            selectors. Gateable ALONE on quality: decode our own blocks back
+            and hold PSNR against the source. No codebooks, no entropy coding.
+          * **2b — global VQ codebooks.** Cluster the per-block endpoints and
+            selectors into the shared tables. Gateable on codebook SIZE and on
+            the PSNR cost of quantising to them. Note the reference's numbers
+            (563 endpoints / 2,681 selectors) come from THREE images sharing
+            codebooks — a single-image encoder will not reproduce them.
+          * **2c — BasisLZ serialization.** Huffman tables, the slice layout,
+            and the supercompression global data. Gateable against the decoded
+            reference layout already recorded above, and finally end-to-end
+            with `basisu -unpack` on a file we encoded ourselves.
+        **A PSNR comparer is a PREREQUISITE, not part of 2a.** The quality bar
+        is 38.92 dB and `mh_png_compare` counts DIFFERING PIXELS with no PSNR
+        mode (`tests/mh_png_compare.cpp:58-70`). Add `--min-psnr DB` to that
+        tool — it already loads both PNGs through QImage, so it is the smaller
+        change — and watch it go red against a deliberately degraded image
+        before trusting any encoder number.
+
         2. **ETC1S encoder + BasisLZ payload.** This is the large one: 4x4
            blocks, global endpoint and selector codebooks, VQ clustering, and a
            Huffman-coded BasisLZ payload in supercompression global data. Do
@@ -2447,6 +2475,48 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         `legacy/python` plays for the port. A CLI oracle is not a linked
         dependency and costs CI nothing, which is the whole reason for writing
         our own. Installing it is the owner's machine, so ASK first.
+
+        **THE KTX2 CONTAINER WRITER IS DONE (chunk 1).**
+        `include/makehuman/io/Ktx2Writer.h`, `src/io/Ktx2Writer.cpp`,
+        `tests/golden/test_ktx2_writer.cpp`, fixtures in `tests/golden/ktx2/`.
+        It wraps an ALREADY-ENCODED ETC1S+BasisLZ payload; the codec is chunk 2.
+        Separating them is what made this half testable on its own.
+
+        **Proven three ways, all run:**
+        * **Byte-identical** reproduction of real `basisu` 2.50 files, given
+          each file's own payload and its own `KTXwriter` string — 54,975 /
+          26,204 / 21,014 / 37,595 bytes, covering BOTH DFD shapes (1 sample
+          opaque, 2 with alpha) and BOTH transfer functions.
+        * **22 mutations, 22 killed, 0 survived** against the committed test,
+          with a passing control run first.
+        * `basisu -unpack` returned **Success, exit 0, 61 files**, transcoding
+          to ASTC 4x4, BC1/3/4/5/7, ATC, ETC1/2, PVRTC1/2 and FXT1, on a
+          55,007-byte container carrying OUR `KTXwriter` string — so NOT
+          byte-identical to any reference, every downstream offset shifted.
+
+        **TWO THINGS THE REFERENCE FILES CANNOT TEST**, both found because a
+        mutation SURVIVED them, and both now covered by synthetic cases:
+        * the mandatory **8-byte pad before the global data** — every reference
+          ends its key/value data at 184 or 200, already 8-aligned, so aligning
+          to 4 instead passed all of them. A 15-character writer string gives
+          kvdEnd 180 and forces the pad.
+        * the **refusal path** — deleting the multiple-of-4 guard outright
+          changed nothing any check could see.
+
+        **NO `basisu` ctest, deliberately.** Byte-equality against a file
+        basisu itself produced already implies basisu accepts it, so a test
+        would only add information for a container basisu did NOT write — and
+        the synthetic case covers exactly that. CI has no basisu, so a guarded
+        test would be a second `test_draco.cpp`: present, reassuring, never
+        run. The manual command is recorded in the test's header comment.
+
+        **One honest weakness:** `ktx2Write` has NO production caller yet. It
+        is exercised only by its own test until chunk 2 produces a payload and
+        chunk 3 wires the extension. Flagged in review and accepted, not hidden.
+
+        **Level index is SINGLE-LEVEL on purpose.** A multi-level KTX2 stores
+        levels in REVERSE order (smallest first); nothing encodes a mip pyramid
+        yet, so that trap is not walked into. Marked `ponytail:` in the header.
 
         **FOUR FACTS ESTABLISHED 2026-09-19 BEFORE ANY CODE**, each verified
         directly rather than taken on trust from the investigation that

@@ -1,0 +1,63 @@
+{
+  "subsystem": "ktx2",
+  "what": "Reference KTX2 containers produced by an INDEPENDENT encoder, used to prove our container writer byte-for-byte. Committed rather than regenerated because a claim that cannot be re-measured cannot be falsified -- the same reason mh_glb_stat exists.",
+  "encoder": "Basis Universal LDR/HDR GPU Texture Supercompression System v2.50.0",
+  "encoder_licence": "Apache-2.0 (CLI oracle only, NOT linked)",
+  "source_licence": "CC0 (data/ textures)",
+  "captured_at": "2026-09-19T08:41:13.733702+00:00",
+  "invariants_checked": [
+    "sgd_offset + sgd_length == level_offset",
+    "level_offset + level_length == bytes",
+    "dfd_offset + dfd_length == kvd_offset"
+  ],
+  "entries": {
+    "brown_eye.ktx2": {
+      "why_this_one": "colour with alpha: TWO DFD samples, sRGB",
+      "source_png": "brown_eye.png",
+      "command": "basisu brown_eye.png -ktx2",
+      "bytes": 54975,
+      "sha256": "a67cbbe4ed455274b7b8562f7df77a811f20c22b41d1d5431cd579a5149e2fa7",
+      "width": 1024,
+      "height": 1024,
+      "samples": 2,
+      "transfer_function": 2,
+      "sgd_offset": 200,
+      "sgd_length": 8725,
+      "level_offset": 8925,
+      "level_length": 46050,
+      "ktxwriter": "Basis Universal 2.50"
+    },
+    "skin_normal.ktx2": {
+      "why_this_one": "opaque: ONE DFD sample, sRGB",
+      "source_png": "skin_normal.png",
+      "command": "basisu skin_normal.png -ktx2",
+      "bytes": 26204,
+      "sha256": "19d1f7bb5dc87f5b375278051af4f10a0df1468f24f498637bfa898d6cd746a9",
+      "width": 1024,
+      "height": 1024,
+      "samples": 1,
+      "transfer_function": 2,
+      "sgd_offset": 184,
+      "sgd_length": 747,
+      "level_offset": 931,
+      "level_length": 25273,
+      "ktxwriter": "Basis Universal 2.50"
+    },
+    "normal_map_linear.ktx2": {
+      "why_this_one": "opaque, LINEAR transfer -- what KHR_texture_basisu wants for non-colour, and 20% smaller",
+      "source_png": "skin_normal.png",
+      "command": "basisu skin_normal.png -ktx2 -normal_map",
+      "bytes": 21014,
+      "sha256": "b92b158c1e36d7a48bbe23f4ea5aa4d6e774b5b441fa255b641ed0663ba792c4",
+      "width": 1024,
+      "height": 1024,
+      "samples": 1,
+      "transfer_function": 1,
+      "sgd_offset": 184,
+      "sgd_length": 613,
+      "level_offset": 797,
+      "level_length": 20217,
+      "ktxwriter": "Basis Universal 2.50"
+    }
+  }
+}
