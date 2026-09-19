@@ -2261,29 +2261,38 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
           ETC1S + BasisLZ (`supercompressionScheme = 1`, DFD model
           `KHR_DF_MODEL_ETC1S`), or UASTC (scheme 0 or 2, DFD model
           `KHR_DF_MODEL_UASTC`). Width and height MUST be multiples of 4.
-        * **MEASURED on the three images that reach the GLB** (every shipped
-          texture is 1024x1024, so this is not an estimate of dimensions):
+        * **MEASURED, then RE-MEASURED with the real encoder 2026-09-19.** The
+          first pass estimated ETC1S and compared against the wrong skin; the
+          numbers below are `basisu` output on the EXACT three images the GLB
+          carries (`african_deep`, `skin_normal`, `brown_eye`, all 1024x1024):
 
-              PNG today            2,053,871   1.00x
-              JPEG q92               258,352   0.13x   no deps, no extension
-              ETC1S+BasisLZ (est)   ~196,608  ~0.10x
-              UASTC raw            3,145,728   1.53x   BIGGER than PNG
+              PNG today             1,749,562   1.000x
+              JPEG q92                190,924   0.109x  no deps, no extension
+              ETC1S+BasisLZ         **118,774** 0.068x  MEASURED, not estimated
+              UASTC raw             3,145,728   1.798x  BIGGER than PNG
 
-        **Two consequences, and they change the plan:**
-        1. **UASTC -- the easy format to write from spec -- LOSES.** It is
-           fixed-rate 8 bpp, so on 1024x1024 textures it is 1.5x larger than
-           the PNGs it would replace. It cannot be the payload if file size is
-           the goal.
-        2. **ETC1S beats JPEG by only ~24% on disk**, and glTF 2.0 already
-           takes JPEG natively -- `GltfWriter.cpp:574-587` detects it by magic
-           bytes today, so that path needs no writer change and no extension.
-        **Therefore the justification for KTX2 is NOT bytes on disk.** It is
-        **GPU memory and transcode**: JPEG decodes to full RGBA in VRAM
-        (1024x1024x4 = 4 MB per texture), while ETC1S stays compressed on the
-        GPU at roughly 0.5 MB. That is the win the owner's own reference
-        (evergine.com/ktx2-texture-compression) describes as 128 MB vs 32 MB.
-        **Say that in the commit.** Shipping KTX2 and claiming a file-size win
-        over JPEG would be claiming 24% and calling it the reason.
+          Per image, PNG -> ETC1S: african_deep 481,440 -> 37,595 (12.8x);
+          skin_normal 657,305 -> 26,204 (25.1x); brown_eye 610,817 -> 54,975
+          (11.1x). basisu reports 0.210 bits/texel on the eye.
+
+        **Two consequences:**
+        1. **UASTC -- the easy format to write from spec -- LOSES.** Fixed-rate
+           8 bpp, so on 1024x1024 textures it is larger than the PNGs it would
+           replace. It cannot be the payload.
+        2. **CORRECTION, and it reverses an earlier conclusion recorded here.**
+           The estimate said ETC1S beat JPEG by "only ~24%", and that was used
+           to argue the justification was VRAM alone. The estimate
+           (~196,608) was **65% too high**. Measured, ETC1S is **118,774
+           against JPEG's 190,924 -- 38% smaller, 1.6x** -- and **14.7x
+           smaller than PNG**.
+        **So KTX2 wins on BOTH counts, and the commit should say both:**
+          - **disk**: 14.7x smaller than PNG, 1.6x smaller than JPEG q92;
+          - **GPU memory**: ETC1S stays compressed on the GPU at roughly 0.5 MB
+            where JPEG decodes to full RGBA at 1024x1024x4 = 4 MB -- the
+            128 MB vs 32 MB figure in the owner's reference.
+        JPEG remains the cheap partial alternative (no dependency, no
+        extension, `GltfWriter.cpp:574-587` already accepts it) but it buys
+        only the disk half, and less of it.
 
         **STAGED PLAN, each stage its own gated chunk:**
         0. **Measurement harness first** (see fact 1 below) -- a tool that
@@ -2307,9 +2316,17 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
                   (8 bits each, in that order)
           word 3: `texelBlockDimension0..3`, 8 bits each
           words 4-5: `bytesPlane0..7`, 8 bits each
-          then 16 bytes PER SAMPLE: `bitOffset` (16b), `bitLength` (16b),
-          `channelType` (8b), `channelFlags` (8b), `samplePosition0..3`
-          (8b each), `sampleLower` (s32), `sampleUpper` (s32).
+          then 16 bytes PER SAMPLE: `bitOffset` (**16b**), `bitLength`
+          (**8b, stored MINUS ONE**), `channelType` (**8b**),
+          `samplePosition0..3` (8b each), `sampleLower` (s32),
+          `sampleUpper` (s32).
+          **CORRECTED 2026-09-19 against the reference bytes.** A spec summary
+          read here earlier said `bitLength` was 16 bits. That is WRONG and
+          would have produced a malformed DFD. The reference's second sample
+          reads `40 00 3F 0F`: as two 16-bit fields that gives a nonsensical
+          `bitLength=3904`; read correctly it is bitOffset 64, bitLength 63
+          (+1 = 64), channelType **0x0F = 15 = AAA**. Reading the bytes settled
+          in seconds what the prose had got wrong.
         **Enum values, from `KTX-Software/external/dfdutils/KHR/khr_df.h`
         (fetched, not remembered):**
           `KHR_DF_VENDORID_KHRONOS` = 0; `..DESCRIPTORTYPE_BASICFORMAT` = 0;
@@ -2323,6 +2340,106 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         Per `KHR_texture_basisu`: colour textures take BT709 + SRGB, non-colour
         (the normal map) takes UNSPECIFIED + LINEAR. Both of ours are 1024x1024,
         so the multiple-of-4 requirement is already satisfied.
+
+        **A REFERENCE KTX2 WAS PRODUCED AND DISSECTED 2026-09-19** with
+        `basisu brown_eye.png -ktx2` (1024x1024, 610,817 -> 54,975 bytes,
+        0.210 bits/texel). Every field below is READ OUT OF THAT FILE, not
+        taken from the spec text, so the writer has something to be checked
+        against rather than only a document to follow:
+
+            identifier  AB 4B 54 58 20 32 30 BB 0D 0A 1A 0A   (exact match)
+            vkFormat 0   typeSize 1   1024 x 1024 x 0
+            layerCount 0  faceCount 1  levelCount 1
+            supercompressionScheme 1                (BasisLZ)
+            dfd off=104 len=60 | kvd off=164 len=36 | sgd off=200 len=8725
+            level[0] byteOffset=8925 byteLength=46050 uncompressedByteLength=0
+            DFD: version=2, descriptorBlockSize=56 (= 24 + 2 samples x 16)
+                 colorModel=163 (ETC1S), colorPrimaries=1 (BT709),
+                 transferFunction=2 (sRGB), flags=0
+                 texelBlockDimension0..3 = 3,3,0,0
+            KVD: one key, `KTXwriter`
+
+        **THE DFD IS NOT FIXED-SHAPE -- IT DEPENDS ON THE IMAGE.** Measured
+        across three reference encodes:
+
+            brown_eye  (colour, has alpha)  transfer=sRGB   2 samples:
+                                             RGB(ch 0) @0 len 64,
+                                             AAA(ch 15) @64 len 64    54,975 B
+            skin_normal (no flag)           transfer=sRGB   1 sample  26,204 B
+            skin_normal -normal_map         transfer=LINEAR 1 sample  21,014 B
+
+        The writer must emit **one sample when opaque, two when there is
+        alpha**, and set the transfer function per image. `basisu -normal_map`
+        produces exactly the LINEAR transfer `KHR_texture_basisu` requires for
+        non-colour data **and is 20% smaller** (21,014 vs 26,204) -- the
+        correct flag is also the cheaper one. Using it for the normal map takes
+        the three-image total from 118,774 to **113,584**.
+        One divergence to settle when wiring the extension: basisu leaves
+        `colorPrimaries` at BT709 even with `-normal_map`, where the extension
+        text says non-colour data should be unspecified. Transfer is what
+        affects rendering; primaries is worth a look.
+
+        **Three things a from-spec writer would plausibly get WRONG, and the
+        reference settles all three:**
+        1. **`uncompressedByteLength` is 0** for a BasisLZ level, not the
+           inflated size. Putting the real size there would be wrong.
+        2. **`texelBlockDimension` is stored MINUS ONE** -- 4x4 appears as
+           `3,3`, not `4,4`.
+        3. **`vkFormat` is 0** (`VK_FORMAT_UNDEFINED`) for ETC1S; the format is
+           carried by the DFD's colorModel, not by vkFormat.
+        Also measured for chunk 2's sizing: the supercompression global data --
+        the BasisLZ endpoint/selector codebooks -- is **8,725 bytes, 16% of the
+        file**, against 46,050 bytes of level payload.
+
+        **THE VALIDATION LOOP IS PROVEN TO WORK, not assumed.** Run
+        2026-09-19 against the reference: `basisu -unpack brown_eye.ktx2`
+        transcodes the file to **every** GPU target -- ASTC 4x4, BC1/BC3/BC4/
+        BC5/BC7, ATC, ETC, PVRTC -- writes a `.ktx`/`.dds` per format plus
+        decoded PNGs, and reports `Success`. So the oracle gives three things,
+        not one:
+          1. **conformance** -- our file parses at all;
+          2. **portability** -- it transcodes to every format a consumer wants;
+          3. **QUALITY** -- the decoded PNG can be pixel-compared with the
+             source, which turns "our encoder works" into a number.
+        **THE QUALITY BAR, measured:** basisu ETC1S at its default quality
+        (128) on `brown_eye.png` decodes to **PSNR 38.92 dB** (MSE 8.333, max
+        channel delta 69). **Our own ETC1S encoder has to be held to that**, or
+        "it works" is unfalsifiable in exactly the way the 74.5% figure was.
+        A `mh_png_compare`-style PSNR gate against a committed reference is the
+        obvious shape; note the existing tool counts DIFFERING PIXELS and has
+        no PSNR mode, so chunk 2 needs either a small addition there or its own
+        comparison.
+
+        **THE BasisLZ SUPERCOMPRESSION GLOBAL DATA IS DECODED** -- chunk 2's
+        biggest unknown, read out of the reference and cross-checked twice, so
+        the layout is verified rather than assumed:
+
+            UInt16 endpointCount        563
+            UInt16 selectorCount       2681
+            UInt32 endpointsByteLength 1041
+            UInt32 selectorsByteLength 6543
+            UInt32 tablesByteLength    1101
+            UInt32 extendedByteLength     0
+            imageDesc[imageCount], 20 bytes each:
+                UInt32 imageFlags, rgbSliceByteOffset, rgbSliceByteLength,
+                       alphaSliceByteOffset, alphaSliceByteLength
+            then endpointsData | selectorsData | tablesData | extendedData
+
+        **Two independent invariants both hold**, which is what makes this a
+        verification and not a plausible parse:
+          * 20 (header) + 20 (one imageDesc) + 1041 + 6543 + 1101 + 0 =
+            **8725**, exactly `sgdByteLength`;
+          * rgbSliceByteLength 45,192 + alphaSliceByteLength 858 = **46,050**,
+            exactly `level[0].byteLength`.
+        The reference's imageDesc reads flags=0, rgb slice at offset 0 length
+        45,192, alpha slice at offset 45,192 length 858.
+
+        **So chunk 2's real shape, in numbers:** an encoder must produce 563
+        endpoints (1,041 B) and 2,681 selectors (6,543 B) as global VQ
+        codebooks, 1,101 B of Huffman tables, and per-image RGB and alpha
+        slices. The codebooks are shared across images, which is where BasisLZ
+        gets its ratio -- and which means a single-image encoder will NOT match
+        the reference's numbers on a multi-image set.
 
         **VALIDATION, and it fits this project's method:** use the `basisu` CLI
         (Homebrew `basis_universal` 2.50, Apache-2.0, CLI only) as a
@@ -3575,15 +3692,39 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         `scale = abs(float(scale))` with no upper bound (`:419-426`), so a
         right-drag through zero flips to the mirror value instead of stopping.
         Its undo does not capture the transform either (`# TODO` at `:57`).
-        **Four decisions to settle BEFORE code, since they change the shape:**
-        1. Does the transform reach `--render`? Today the viewport and
+        **ALL FOUR DECIDED BY THE OWNER 2026-09-19: YES to every one**
+        ("answer to these all are yes, assuming this is the best course; if
+        not, pick one, don't wait for me to review again"). Each was then
+        checked rather than just accepted, and yes holds for all four:
+        1. **The transform REACHES `--render`.** Right: the viewport and
            `mh::ui::overBackground` (`src/ui/Background.cpp:4,15`) share one
-           `coverSource`; a viewport-only transform is the first place they
-           diverge.
-        2. Per-side transforms (reference keeps 7) or one for the single
-           backdrop this port holds?
-        3. `.mhm` persistence -- a NEW document key, which is a format change.
-        4. Undo: the reference explicitly does not. We might.
+           `coverSource` today. A viewport-only transform would mean
+           positioning a backdrop by eye and rendering something else -- the
+           what-you-see-isn't-what-you-get defect this project keeps fixing.
+        2. **PER-SIDE transforms**, as the reference keeps (7 sides,
+           `0_modeling_background.py:128-132`). This is the biggest part of the
+           chunk, because the port currently holds ONE backdrop
+           (`ViewportWidget.cpp:41-43` is image + side + opacity) and that
+           state has to become per-side. Warranted: modelling from a front AND
+           a side photograph at once is the normal workflow, and
+           `--background-side` already implies the concept.
+        3. **`.mhm` PERSISTENCE**, using the reference's exact key so it
+           round-trips both ways: `background <side> <file> <aspect> <x> <y>
+           <scale>` plus `background enabled <bool>`
+           (`0_modeling_background.py:461-475`). A new document key is a format
+           change, but an unknown key is preserved verbatim in
+           `MhmFile::unhandled`, so older files and older readers are unharmed.
+        4. **UNDO -- and this one IMPROVES on the reference**, which
+           explicitly does not (`# TODO store position and scale in action`,
+           `:57`). Hard rule 3 says never port a known-broken behaviour, and
+           the reference admits this one in its own source.
+           **The caveat, already solved by the house pattern:** a drag emits
+           many mouse-move events, and one command per event would flood the
+           stack and make undo useless. `QUndoCommand::mergeWith` is already
+           overridden by both `ValueChangeCommand` and
+           `MultiValueChangeCommand` (`include/makehuman/ui/UndoCommands.h:36`,
+           `:85`), so coalescing a drag into a single command is the existing
+           idiom here, not new machinery.
         **Size:** ~5-7 files (`Backdrop.h/.cpp`, `ViewportWidget.h/.cpp`,
         `MainWindow.cpp`, `main.cpp`, `tests/ui/test_backdrop.cpp`). The
         transform math is pure and unit-testable beside `coverSource`; the drag

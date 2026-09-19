@@ -209,6 +209,14 @@ if(MH_HAVE_RENDER)
     target_link_libraries(mh_png_compare PRIVATE Qt6::Gui mh::warnings mh::sanitize)
     set_target_properties(mh_png_compare PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
 endif()
+
+# NOT guarded, unlike mh_png_compare above: this one needs no Qt, only the
+# header-only JSON already fetched for `.mhskel` parsing. Keeping it out of the
+# guard means the no-Qt configure builds it too, so a GLB written there can
+# still be measured.
+add_executable(mh_glb_stat mh_glb_stat.cpp)
+target_link_libraries(mh_glb_stat PRIVATE mh_json mh::warnings mh::sanitize)
+set_target_properties(mh_glb_stat PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
 # mh::core is NOT listed: mh::rig PUBLIC-links it since PosedMesh, so naming it
 # here too makes the linker see libmh_core.a twice and warn -- the same trap the
 # comment above records for libmh_io.a.
@@ -2032,6 +2040,96 @@ if(MH_HAVE_RENDER)
              --export ${CMAKE_CURRENT_BINARY_DIR}/morphcap/m.dae)
     set_tests_properties(app_dae_says_it_drops_blendshapes PROPERTIES
         PASS_REGULAR_EXPRESSION "dae carries no blendshapes")
+    # What a .glb is actually made of, measured rather than asserted from
+    # memory. A figure -- "74.5% of the GLB is PNG (1,749,562 of 2,348,760
+    # bytes)" -- was carried in memory for two days as the whole justification
+    # for adopting KTX2, and NOTHING in the tree reproduced it: the export
+    # fixture writes its GLB with no material, so it has no textures at all.
+    #
+    # Re-measured with mh_glb_stat: the image bytes are 1,749,562 EXACTLY, as
+    # recorded. The denominator had drifted (the geometry grew), so the share
+    # is 53.0% here and 73.4% with --draco, against the 74.5% written down.
+    # `--skin-material` matters: the DEFAULT skin names no texture at all, so a
+    # plain export carries one image (the eye) and reads 28.3%.
+    #
+    # Draco is deliberately NOT used here. CI installs only ninja/assimp/qt, so
+    # draco_FOUND is false there and a --draco fixture would never run --
+    # the same blind spot test_draco.cpp already sits in.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/glbstat)
+    add_test(NAME app_glb_textured COMMAND makehuman
+             --skin-material african_deep
+             --export ${CMAKE_CURRENT_BINARY_DIR}/glbstat/textured.glb)
+    set_tests_properties(app_glb_textured PROPERTIES FIXTURES_SETUP app_glb_textured)
+
+    # BOTH bounds, for two different reasons.
+    #
+    # The FLOOR carries the claim: textures really are most of this file, which
+    # is the whole premise for compressing them. It is also the non-vacuous
+    # direction -- `--max-image-share` alone passes on a GLB with NO images at
+    # all, since 0% is under any ceiling, the trap obj_verts_differ.cmake
+    # documents as "a compare with no expectation passes on anything".
+    #
+    # The CEILING is here for coverage, and that is the honest reason rather
+    # than a regression anyone has seen: it is the only thing exercising the
+    # `--max-image-share` branch, and a mutation inverting that comparison is
+    # killed by this test and nothing else. The KTX2 chunk will then have a
+    # tested branch waiting to assert the share DROPPED.
+    #
+    # When KTX2 moves these numbers they must be RE-MEASURED with the reason
+    # written down, the way the five vertex counts were, not nudged to pass.
+    add_test(NAME app_glb_textures_are_most_of_the_file COMMAND mh_glb_stat
+             ${CMAKE_CURRENT_BINARY_DIR}/glbstat/textured.glb --min-image-share 45)
+    set_tests_properties(app_glb_textures_are_most_of_the_file PROPERTIES
+        FIXTURES_REQUIRED app_glb_textured)
+    add_test(NAME app_glb_textures_are_not_all_of_it COMMAND mh_glb_stat
+             ${CMAKE_CURRENT_BINARY_DIR}/glbstat/textured.glb --max-image-share 65)
+    set_tests_properties(app_glb_textures_are_not_all_of_it PROPERTIES
+        FIXTURES_REQUIRED app_glb_textured)
+
+    # The tool refuses a bound it cannot compare against.
+    #
+    # Found by reading its own doc comment back: strict parsing is there because
+    # "a FLOOR of zero is a gate that cannot fail", and `strtod` accepts "nan",
+    # for which BOTH `bound < 0.0` and `bound > 100.0` are false -- so it passed
+    # validation, and `share < NaN` is false, so the gate passed vacuously. The
+    # exact failure the parsing exists to prevent, inside the tool that exists
+    # to prevent it. `inf` and `-inf` were already rejected; only NaN slipped.
+    #
+    # The fixture is REQUIRED, not decoration: the file is opened before the
+    # bound is parsed, so without a real GLB this would exit non-zero for a
+    # missing file and pass for the wrong reason.
+    add_test(NAME app_glb_stat_refuses_a_bound_it_cannot_compare COMMAND mh_glb_stat
+             ${CMAKE_CURRENT_BINARY_DIR}/glbstat/textured.glb --min-image-share nan)
+    set_tests_properties(app_glb_stat_refuses_a_bound_it_cannot_compare PROPERTIES
+        FIXTURES_REQUIRED app_glb_textured WILL_FAIL TRUE)
+
+    # The other way to write a gate that cannot fail: a ceiling above 100, which
+    # no share can ever exceed. Already rejected -- this pins it, so narrowing
+    # the range check to just the NaN case does not pass unnoticed.
+    add_test(NAME app_glb_stat_refuses_an_impossible_ceiling COMMAND mh_glb_stat
+             ${CMAKE_CURRENT_BINARY_DIR}/glbstat/textured.glb --max-image-share 150)
+    set_tests_properties(app_glb_stat_refuses_an_impossible_ceiling PROPERTIES
+        FIXTURES_REQUIRED app_glb_textured WILL_FAIL TRUE)
+
+    # And the third: a negative floor, which every share clears. Three tests
+    # rather than one because each kills a DIFFERENT narrowing of the range
+    # check -- dropping the upper half, the lower half, or the NaN-safe
+    # spelling -- and a mutation that survives is a branch nothing tests.
+    add_test(NAME app_glb_stat_refuses_a_negative_floor COMMAND mh_glb_stat
+             ${CMAKE_CURRENT_BINARY_DIR}/glbstat/textured.glb --min-image-share -5)
+    set_tests_properties(app_glb_stat_refuses_a_negative_floor PROPERTIES
+        FIXTURES_REQUIRED app_glb_textured WILL_FAIL TRUE)
+
+    # And a bound with trailing garbage, which `strtod` alone would silently
+    # read as 45 and act on. Not the unfalsifiable class -- 45 can still fail --
+    # but it is a typo acted on instead of reported, which is what the strict
+    # parsing was for. Pinned because a mutation dropping the check survived
+    # everything else.
+    add_test(NAME app_glb_stat_refuses_a_bound_with_trailing_garbage COMMAND mh_glb_stat
+             ${CMAKE_CURRENT_BINARY_DIR}/glbstat/textured.glb --min-image-share 45abc)
+    set_tests_properties(app_glb_stat_refuses_a_bound_with_trailing_garbage PROPERTIES
+        FIXTURES_REQUIRED app_glb_textured WILL_FAIL TRUE)
+
     add_test(NAME app_glb_keeps_blendshapes_quietly COMMAND makehuman --blendshapes
              --export ${CMAKE_CURRENT_BINARY_DIR}/morphcap/m.glb)
     set_tests_properties(app_glb_keeps_blendshapes_quietly PROPERTIES

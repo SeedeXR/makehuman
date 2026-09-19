@@ -293,3 +293,53 @@ Every commit that changes structure updates the relevant `memory/` file in the
 - Universal binary (`arm64;x86_64`) is a later milestone, not the first release.
 - **Ship the LGPL relinking notice** for Qt and the full `LICENSING.md` inside the
   bundle. AGPL §13 and LGPL §4 obligations are met by including the source offer.
+
+### Telling a SLOW ctest slice from a HUNG one
+
+`CTestCheckpoint.txt` in `<build>/Testing/Temporary/` is the LIVE progress file:
+one completed test id per line, rewritten as the run proceeds. Read it twice a
+few minutes apart -- if the line count and the last id advance, the run is slow,
+not stuck.
+
+Two traps make the obvious checks lie:
+* **`LastTest.log` still holds the PREVIOUS slice** until the current one ends,
+  so grepping it mid-run shows stale numbers that look like a stall. There is
+  no `LastTest.log.tmp` to read instead.
+* **Elapsed time alone proves nothing.** A TSan slice carrying the app tests ran
+  **1:31:56** against the previous slice's **21:52** and was healthy throughout:
+  every app test spawns a real `makehuman`, and TSan multiplies process startup.
+
+The cheap corroborating signal is the child process age: a hung test shows a
+child with a LONG elapsed time, while a healthy run shows a fresh one every few
+seconds.
+
+### Mutation testing: the runner needs its own control
+
+A mutation verdict is only as trustworthy as the harness reporting it, and this
+harness has lied twice in one session.
+
+**Run an unmutated CONTROL first and require it to PASS.** Without one, every
+mutant "dies" for whatever is actually broken. Six mutants were once reported
+KILLED because the runner invoked `./probe $REFS` in **zsh, which does not
+word-split an unquoted parameter** -- the whole list arrived as one argument,
+the binary segfaulted with 139, and the mutation was never exercised at all.
+Use an array (`"${REFS[@]}"`), or drive the runner from python.
+
+**Assert the FILE CHANGED, not that the search string exists.** `s.count(pat)
+== 1` passes for a pattern that `replace` then fails to apply -- multi-line
+patterns are the usual cause. Assert `new != orig`. A two-line "undo" that
+silently matched nothing once left a test function calling itself; ASan caught
+the resulting stack overflow, nothing else would have.
+
+**`grep -cF` mis-counts a multi-line pattern** -- it matches lines against
+*either* line of the pattern and reports a count that means nothing. Count in
+python over the whole file text.
+
+**A surviving mutation is an answer, not a nuisance.** Three real coverage gaps
+in one session came from survivors rather than from review: an 8-byte alignment
+no fixture happened to exercise, a refusal path nothing called, and a strict
+parser whose branches no test distinguished.
+
+**A negative-case suite needs a control too** -- assert the VALID input is
+accepted before asserting the invalid ones are rejected, or every negative case
+can pass because the base case is broken.

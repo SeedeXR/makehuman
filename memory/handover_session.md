@@ -4,6 +4,154 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-19 12:40:00 — Session · **Chunk 0 lands: a timeout measured, and a gate that could not fail**
+
+### The Xcode block is gone
+The owner ran `sudo xcodebuild -license` and started Docker. The entry below
+(02:50) records that block as live; it is resolved. Everything since compiled
+and ran.
+
+### The TSan timeout was contention, and it took three measurements to say so
+`1209 - app_animation_reload_still_poses` timed out in the final TSan slice,
+taking `1210` down with it (`FIXTURES_SETUP app_anim_reload`). It passed in
+debug, release AND ASan, and nothing in the diff can reach an animation-reload
+test. Three measurements settled it:
+
+| run | slice elapsed | 1209 |
+|---|---|---|
+| the failure | 6,075 s | **Timeout** at `TIMEOUT 60` |
+| isolated, idle machine | — | **passed in 17.85 s** (3.4x margin) |
+| clean re-run of the slice | 8,451 s | passed |
+| this gate's slice | **1,559 s** | passed |
+
+**The `TIMEOUT 60` was NOT raised.** It is correct for a machine that is not
+oversubscribed, and the isolated 17.85 s is what proves that.
+
+**An honest caveat, because the obvious reading is wrong.** The first clean
+re-run took 8,451 s — *slower* than the 6,075 s run that failed — and still
+passed. So **slice elapsed time predicts nothing about an individual test**;
+only the isolated measurement settles it. My initial reasoning leaned on the
+slice duration and that half was weak. This gate's slice then ran in 1,559 s,
+4x faster, on an idle machine.
+
+### A gate that could not fail, inside the tool written to prevent exactly that
+Found in my own hostile read, by reading `mh_glb_stat.cpp`'s doc comment back
+against its code. The comment justifies strict bound parsing because "a FLOOR
+of zero is a gate that cannot fail". But `strtod` accepts `"nan"`, and **both**
+halves of `bound < 0.0 || bound > 100.0` are false for NaN — so the bound was
+accepted, `share < NaN` is false, and `--min-image-share nan` passed while
+asserting nothing.
+
+Confirmed against the built binary before touching it: `nan` and `NAN` exited
+0; `inf`, `-inf`, `101`, `abc` all correctly exited 2. Only NaN slipped.
+
+Fixed by writing the range as a positive test, `!(bound >= 0.0 && bound <=
+100.0)`, which is NaN-safe. **Four negative tests** now pin it — NaN, a >100
+ceiling, a negative floor, and trailing garbage — each killing a DIFFERENT
+narrowing of the check. Three of the four exist because a mutation SURVIVED
+the first version. **7/7 mutations killed, with a passing control first.**
+
+### The measurement harness itself
+`tests/mh_glb_stat.cpp` reports what a `.glb` is made of by byte. Reproduced
+again this session: image bytes **1,749,562 exactly**, **53.0%** without draco
+(the gate asserts this, because CI has never had draco — `ci.yml:42` installs
+ninja/assimp/qt) and 73.4% with it. The sharpest mutation was on the FIXTURE,
+not the code: dropping `--skin-material` makes the file read 28.3%, because
+`default.mhmat` names no texture at all.
+
+### Process failures worth not repeating
+- **zsh does not word-split unquoted parameters** — a recorded lesson I walked
+  into anyway. `./probe $REFS` passed ONE argument, the binary segfaulted, and
+  SIX mutants were reported "killed" for a reason unrelated to the mutation.
+  Both mutation runners now assert a **passing control** before any verdict.
+- **A string-replace whose pattern is absent does nothing**, and asserting the
+  count of the SEARCH string is not enough — assert the FILE CHANGED. A
+  two-line "undo" that never matched left a test function calling itself; ASan
+  found the stack overflow. `grep -cF` also mis-counts a multi-line pattern.
+- **`-Wall` caught my own test bug**: "function is not needed and will not be
+  emitted" meant a new case was never called and its green run proved nothing.
+
+### Gate, all five configs
+debug 1423/1423 · release 1423/1423 · no-Qt 885/885 · ASan 356+356+357+356 ·
+TSan 356+356+357+356. Test count **1423** (was 1419), counted not assumed.
+no-Qt stays at 885 because the new tests are inside `if(MH_HAVE_RENDER)`.
+`find -newer` empty. clang-format clean with CI's exact command.
+
+### Ponytail review, and where I overrode it
+It correctly called `--max-image-share` speculative: the floor alone carries
+the claim and is not vacuous, while the ceiling exists largely so a test can
+cover it. **Overridden on timing, not principle** — the KTX2 extension chunk
+asserts the share DROPPED, which is a ceiling. It also suggested trimming the
+new comments; I reversed that after checking that neighbouring single
+`add_test` blocks in the same file carry 14-line comments.
+
+### Next: chunk 1, already drafted and proven OUTSIDE the tree
+The KTX2 container writer is written, and held in the session scratchpad rather
+than the tree so chunk 0 commits as exactly what was gated. It reproduces four
+real `basisu` 2.50 files **byte for byte**, kills 17/17 mutations, and
+`basisu -unpack` returns Success on a file written with OUR `KTXwriter` string
+(55,007 B — not byte-identical to any reference, every downstream offset
+shifted). Two coverage gaps were found by SURVIVING mutants and must survive
+into the committed test: the 8-byte pad before the global data (every
+reference is already 8-aligned, so aligning to 4 passed them all) and the
+refusal path.
+
+---
+
+## 2026-09-19 02:50:00 — Session · **BLOCKED: the Xcode licence, and a gate that under-reported twice**
+
+### Blocked, and it needs the owner
+`/usr/bin/c++ -c` on a two-line file returns *"You have not agreed to the Xcode
+license agreements. Please run `sudo xcodebuild -license`"*. Both presets use
+`/usr/bin/c++`, so **nothing can compile at all** — no gate, no chunk, nothing.
+
+It appeared mid-gate: the debug leg compiled and ran **1419/1419 green at
+02:36**, and by 02:45 the same compiler refused every file. The machine had
+rebooted at ~02:14 (uptime went from 2 days to minutes), which also wiped
+`/private/tmp` and took `gate_full.sh` and `sonar_run.sh` with it — both
+rewritten — and left the **Docker daemon down**, so the owner's six containers
+are stopped and SonarQube cannot run either. None of that was us.
+
+`sudo xcodebuild -license` is the owner's to run; it needs sudo and a licence
+to be read and accepted.
+
+### My own gate script under-reported failures. Twice.
+First it piped ctest through `tail -3`, so a three-failure run printed two and
+`app_body_pose_unit_moves_the_leg` went unseen for a whole cycle. That was
+fixed — and the fix was **also wrong**: the replacement matched only
+`(Failed)`, so when two tests came back **`(Not Run)`** they were dropped and
+the release leg reported "2 tests failed out of 1419" with no names.
+
+ctest's reasons include `Failed`, `Not Run`, `Timeout`, `Subprocess aborted`.
+Hand-listing them was the bug both times. It now prints the whole
+"The following tests FAILED:" block. **A gate that under-reports its own
+failures reads as green-ish, which is worse than no gate** — and the second
+version looked like a fix while still hiding a different class.
+
+The two `(Not Run)` tests were honest, not flaky: `mh_glb_stat` had never
+compiled, for the licence reason above.
+
+### What is finished and waiting, uncommitted
+KTX2 chunk 0, the measurement harness. `tests/mh_glb_stat.cpp` (new) plus three
+ctests. **Debug was 1419/1419 green before the compiler died**, format is
+clean, the hostile and ponytail reads are done, and three mutations were killed
+(never accumulate image bytes; invert the max comparison; fixture drops
+`--skin-material`).
+
+**It did its job before it was even committed.** The "74.5% of the GLB is PNG
+(1,749,562 of 2,348,760)" figure had no producer anywhere in the tree. Measured
+now: the image bytes are **1,749,562 exactly**, and the DENOMINATOR had drifted
+to 2,382,920 as geometry grew, so the true share is **73.4%** with `--draco`
+and **53.0%** without. The committed gate asserts the no-Draco figure because
+**CI has never had draco** (`ci.yml:42` installs ninja/assimp/qt only).
+
+The sharpest mutation was on the fixture, not the code: dropping
+`--skin-material` makes the file read 28.3%, because `default.mhmat` names no
+texture at all. Without that flag the gate would have looked green while
+measuring a single eye texture.
+
+---
+
 ## 2026-09-18 23:15:00 (hundred-and-sixteenth) — Session · **The mesh that depended on how you got there**
 
 *Two characters with identical modifier values exported different geometry,
