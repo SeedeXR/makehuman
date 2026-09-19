@@ -2309,9 +2309,36 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         opposite approach pays: splitting the CONTAINER from the CODEC is what
         made the container testable byte-for-byte on its own, against files a
         real encoder produced.
-          * **2a — ETC1S block encoder.** 4x4 blocks to per-block endpoints and
-            selectors. Gateable ALONE on quality: decode our own blocks back
-            and hold PSNR against the source. No codebooks, no entropy coding.
+          * **[DONE] 2a — ETC1S block encoder.** `include/makehuman/io/Etc1s.h`,
+            `src/io/Etc1s.cpp`, `tests/golden/test_etc1s.cpp`,
+            `tests/mh_etc1s_roundtrip.cpp`.
+            **The decoder was validated against an INDEPENDENT oracle BEFORE
+            the encoder existed**, because "decode our own blocks back" is not
+            enough on its own: an encoder and decoder written together are
+            self-consistent, so a wrong intensity table or selector order
+            round-trips perfectly and reports excellent PSNR while emitting
+            blocks no real decoder can read. `basisu -unpack` writes both the
+            raw ETC1 blocks and its own decode of them, and ours reproduces
+            that with **0 of 3,145,728 channel samples differing**.
+            **Conventions pinned by trying every plausible one against the
+            oracle, not recalled:** the stored 2-bit selector maps to the
+            intensity table through **`[2,3,1,0]`** — the obvious `[0,1,2,3]`
+            was off by 55. Block byte 3 is flip/diff/table2/table1; the base is
+            5 bits per channel with a 3-bit SIGNED delta; the block is read as
+            a BIG-ENDIAN 64-bit word with bits 16-31 the MSB plane and 0-15 the
+            LSB plane; pixel i is COLUMN-major (`px = i/4, py = i%4`).
+            **ETC1S's constraints were MEASURED over 65,536 real blocks** —
+            differential 100%, flip 0%, colour delta zero 100%, equal table
+            index 100% — so a block is exactly base RGB555 + ONE 3-bit table
+            index + 16 two-bit selectors.
+            **Quality: 40.20 dB on `brown_eye`, gated at [39.9, 40.5].** The
+            floor is NOT basisu's 38.92, and that is the point: 38.92 leaves
+            1.28 dB of slack and three real degradations fit inside it, each
+            measured by building the mutant — 5-bit rounding by shift 39.74,
+            L1 selector error 39.47, one refinement pass instead of three
+            39.08. A fourth (mean rounds down) measured 40.21, marginally
+            BETTER, so that rounding is not load-bearing and no test was
+            contrived for it. **14 mutations, 14 killed, 0 survived.**
           * **2b — global VQ codebooks.** Cluster the per-block endpoints and
             selectors into the shared tables. Gateable on codebook SIZE and on
             the PSNR cost of quantising to them. Note the reference's numbers

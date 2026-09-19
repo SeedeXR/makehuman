@@ -14,6 +14,7 @@ add_library(mh_io STATIC
     UsdWriter.cpp
     GltfWriter.cpp
     Ktx2Writer.cpp
+    Etc1s.cpp
     FbxWriter.cpp
     DracoMesh.cpp
     SceneIO.cpp)

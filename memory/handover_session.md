@@ -4,6 +4,98 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-19 18:35:00 — Session · **CI caught a gate I had tied to my own screen**
+
+### The failure, and it was mine
+`1f007efe` went red in CI on `app_psnr_sees_a_changed_frame`, in all four
+configurations:
+
+    CI     12.72 dB over   899,072 pixels   (--max-psnr 11.90)   FAILED
+    local  11.28 dB over 4,495,360 pixels                        PASSED
+
+**The pixel counts differ.** CI's offscreen render is a different SIZE, so the
+two frames are not the same content and their PSNR is not comparable between
+machines at all. I had set the ceiling 0.6 dB above a locally measured number,
+deliberately tight so that an integer-parse bug would trip it — and tied it to
+a quantity that varies by machine. The comment I wrote saying "if a render
+change moves it, re-measure" reads, in hindsight, as having noticed the
+brittleness and shipped it anyway. **A note acknowledging a risk is not a
+mitigation.**
+
+### The fix keeps the coverage and moves it somewhere deterministic
+* That test's ceiling is now **20**, which both 11.28 and 12.72 clear by a wide
+  margin. It keeps only the job it can do honestly: proving the metric is not
+  stuck high.
+* The fractional-parse duty moved to **`app_etc1s_quality_is_pinned_from_above`**
+  (`--max-psnr 40.5`) on the ETC1S round trip — a PNG committed to the
+  repository, through an encoder that is integer arithmetic end to end, so the
+  number is identical on every machine. **Verified the int-truncation mutant
+  dies there**: 40.5 truncates to 40, which the measured 40.20 exceeds.
+* With the existing `--min-psnr 39.9`, the encoder is now pinned from BOTH
+  sides: 40.20 inside [39.9, 40.5].
+
+**The rule worth keeping: a tight bound belongs only on something
+deterministic.** A committed input through integer-only code qualifies; a
+rendered frame does not, however stable it looks locally.
+
+### Chunk 2a landed in the same gate
+The ETC1S block encoder. **The decoder was validated against an INDEPENDENT
+oracle before the encoder existed**, because an encoder and decoder written
+together are self-consistent: a wrong intensity table or selector order
+round-trips perfectly and reports excellent PSNR while emitting blocks no real
+decoder can read. `basisu -unpack` writes both the raw ETC1 blocks and its own
+decode of them, and ours reproduces that with **0 of 3,145,728 channel samples
+differing**.
+
+Conventions were pinned by trying every plausible one against that oracle
+rather than recalled: the stored 2-bit selector maps through **`[2,3,1,0]`**,
+and the obvious `[0,1,2,3]` was off by 55. ETC1S's own constraints were
+**measured over 65,536 real blocks** — differential 100%, flip 0%, colour delta
+zero 100%, equal table index 100% — so a block is exactly base RGB555 plus one
+3-bit table index plus sixteen 2-bit selectors.
+
+**Quality is 40.20 dB, gated at [39.9, 40.5], and the floor is deliberately not
+basisu's 38.92.** That figure leaves 1.28 dB of slack, and three real
+degradations fit inside it. Each was measured by building the mutant and
+reading the number: 5-bit rounding by shift **39.74**, L1 selector error
+instead of L2 **39.47**, one refinement pass instead of three **39.08**. All
+clear 38.92; all fail 39.9. A fourth mutant (mean rounds down) measured
+**40.21** — marginally better than baseline, which means that rounding is not
+load-bearing, so it is recorded rather than tested around.
+
+A surviving mutant also caught a **refusal test passing for the wrong reason**:
+the non-multiple-of-4 cases were fed a buffer sized for a different image, so
+the buffer-length guard rejected them before the dimension guard could, and
+deleting the multiple-of-4 rule entirely changed nothing. Each buffer is now
+sized exactly. Final score **14 mutations, 14 killed, 0 survived**, across both
+the source and the header.
+
+### Process notes
+* **ONE gate covered both changes.** The earlier 2a-only gate was stopped
+  deliberately once the CI fix was known to be needed, since its tree lacked
+  the fix and its result would have had to be redone. Two commits, one gate —
+  said plainly rather than implied otherwise.
+* **A mutation runner that touches two files must restore both.** The header
+  stayed mutated in the working tree because the runner's final-restore edit
+  silently did not match; `cmp` caught it. Check every file the runner writes.
+* **The benign-zombie rule is about the PARENT PROCESS, not a PID.** The
+  long-running `node` changed instance (6334 to 81623) after a tooling restart,
+  and a new zombie under the new parent is the same benign case.
+
+### Gate
+debug 1438/1438 · release 1438/1438 · **no-Qt 894/894** · ASan 360+360+361+359 ·
+TSan 360+360+361+359. no-Qt rose from 888 because the six ETC1S Catch2 tests are
+pure `mh_io`. `find -newer` empty; clang-format clean; SonarQube GATE OK, 0
+issues. **CI runs 1417 tests, not 1438** — no draco, some GPU work skipped.
+
+### Next
+2b, the shared VQ codebooks. **PSNR will drop toward or below 38.92 there, and
+that is what quantising to a codebook costs — expected, not a regression.**
+Re-measure and state the new figure; do not loosen 2a's floor, and re-measure
+the 40.5 ceiling too.
+
+---
+
 ## 2026-09-19 15:55:00 — Session · **A quality gate that could not tell 38 dB from 48**
 
 ### What landed

@@ -86,6 +86,7 @@ add_executable(mh_tests
     golden/test_fbx_writer.cpp
     golden/test_gltf_writer.cpp
     golden/test_ktx2_writer.cpp
+    golden/test_etc1s.cpp
     golden/test_scene_io.cpp
     golden/test_roundtrip.cpp
     regression/test_repose.cpp
@@ -224,6 +225,14 @@ if(MH_HAVE_RENDER)
     # so PSNR = 20 log10(255/d): 48.13, 42.11 and 34.15 dB for d of 1, 2 and 5.
     # No fixture, no GPU, no screenshot.
     add_test(NAME png_compare_psnr_matches_arithmetic COMMAND mh_png_compare --selftest)
+
+    # ETC1S round-trip, for the QUALITY gate below. It asserts nothing itself:
+    # "how far did the image move" is exactly what `mh_png_compare --min-psnr`
+    # answers, so this only produces the second image and the existing, already
+    # mutation-tested comparer does the judging.
+    add_executable(mh_etc1s_roundtrip mh_etc1s_roundtrip.cpp)
+    target_link_libraries(mh_etc1s_roundtrip PRIVATE mh::io Qt6::Gui mh::warnings mh::sanitize)
+    set_target_properties(mh_etc1s_roundtrip PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
 endif()
 
 # NOT guarded, unlike mh_png_compare above: this one needs no Qt, only the
@@ -2323,14 +2332,22 @@ if(MH_HAVE_RENDER)
     # stuck at infinity, and `--max-psnr` alone would pass if it were stuck at
     # zero. Only both together pin it.
     #
-    # The ceiling is 11.9 and not 12 ON PURPOSE, and the FRACTION is the test:
-    # parsed as an integer it truncates to 11, which the measured 11.28 dB
-    # exceeds, so the test fails. That is the only thing here proving the
-    # threshold is read as a real number -- and it matters, because the KTX2
-    # quality bar is 38.92 dB and truncation to 38 would quietly install a
-    # weaker gate that still passed. The margin over 11.28 is deliberately
-    # small; if a render change moves it, RE-MEASURE and write the new number
-    # down rather than widening the bound.
+    # The ceiling is 20, which is nowhere near either measurement, and that is
+    # deliberate after this test FAILED IN CI.
+    #
+    # It was first written as `--max-psnr 11.9`, a hair above the 11.28 dB
+    # measured here, so that an integer parse truncating to 11 would fail it.
+    # CI measured **12.72 dB over 899,072 pixels** against this machine's
+    # **11.28 dB over 4,495,360**: the offscreen render is a DIFFERENT SIZE, so
+    # the two frames are not the same content and their PSNR is not comparable
+    # at all. A bound tight enough to detect a parsing bug was therefore tied to
+    # a number that varies by machine.
+    #
+    # This test keeps only the job it can do honestly -- proving the metric is
+    # not stuck high -- with a ceiling both machines clear by a wide margin. The
+    # fractional-parse check moved to the ETC1S gate below, whose input is a
+    # file in the repository and whose encoder is integer arithmetic, so its
+    # number is identical everywhere.
     add_test(NAME app_psnr_sees_two_near_identical_frames COMMAND mh_png_compare
              ${CMAKE_CURRENT_BINARY_DIR}/backdrop_right.png
              ${CMAKE_CURRENT_BINARY_DIR}/plain_right.png --min-psnr 40)
@@ -2344,9 +2361,71 @@ if(MH_HAVE_RENDER)
     # and still fails the test.
     add_test(NAME app_psnr_sees_a_changed_frame COMMAND mh_png_compare
              ${CMAKE_CURRENT_BINARY_DIR}/backdrop_front.png
-             ${CMAKE_CURRENT_BINARY_DIR}/plain_front.png --max-psnr 11.9)
+             ${CMAKE_CURRENT_BINARY_DIR}/plain_front.png --max-psnr 20)
     set_tests_properties(app_psnr_sees_a_changed_frame PROPERTIES
         FIXTURES_REQUIRED "app_backdrop_front;app_backdrop_plain_front")
+
+    # What the ETC1S encoder actually costs, on a texture already in the repo.
+    #
+    # The input is `data/eyes/materials/brown_eye.png` -- the exact image the
+    # KTX2 investigation measured, so the number below is comparable to the one
+    # it produced. NOTHING is written into data/: the round-trip goes to the
+    # build directory.
+    #
+    # MEASURED: our per-block encoder gives **40.20 dB** here, against basisu's
+    # full pipeline at **38.92 dB** -- per-block optimal SHOULD beat it, since
+    # basisu's figure includes the loss from quantising to shared codebooks.
+    #
+    # The bar is 39.9, NOT basisu's 38.92, and the difference is the whole point:
+    # 38.92 leaves 1.28 dB of slack, and THREE real degradations fit inside it.
+    # Measured, each by building the mutant and reading the number off:
+    #     baseline                         40.20 dB
+    #     5-bit rounding by shift          39.74
+    #     L1 selector error instead of L2  39.47
+    #     one refinement pass instead of 3 39.08
+    # Every one clears 38.92, so that floor would have passed all of them. At
+    # 39.9 they all fail, with 0.3 dB still in hand below the baseline -- and
+    # 39.9 clears basisu's figure by construction, so the external claim holds
+    # without a second assertion.
+    #
+    # The encoder is integer arithmetic throughout, so this number is not
+    # platform noise. If it ever moves, RE-MEASURE and write the new figure
+    # here rather than widening the bound.
+    #
+    # NOTE FOR THE CODEBOOK CHUNK: adding shared codebooks will push this DOWN,
+    # because that is what quantising to a codebook costs. That is expected, not
+    # a regression -- re-measure and state the new figure there rather than
+    # loosening this one.
+    add_test(NAME app_etc1s_roundtrip COMMAND mh_etc1s_roundtrip
+             ${MH_DATA_DIR}/eyes/materials/brown_eye.png
+             ${CMAKE_CURRENT_BINARY_DIR}/etc1s_brown_eye.png)
+    set_tests_properties(app_etc1s_roundtrip PROPERTIES FIXTURES_SETUP app_etc1s_roundtrip)
+    add_test(NAME app_etc1s_holds_the_quality_bar COMMAND mh_png_compare
+             ${MH_DATA_DIR}/eyes/materials/brown_eye.png
+             ${CMAKE_CURRENT_BINARY_DIR}/etc1s_brown_eye.png --min-psnr 39.9)
+    set_tests_properties(app_etc1s_holds_the_quality_bar PROPERTIES
+        FIXTURES_REQUIRED app_etc1s_roundtrip)
+
+    # The same round trip from above, bounded from the other side.
+    #
+    # Two jobs. It pins the encoder's quality EXACTLY rather than from below --
+    # 40.20 dB sits inside [39.9, 40.5], so a change in either direction has to
+    # be re-measured and explained rather than absorbed. And the fraction is
+    # load-bearing: parsed as an integer, 40.5 truncates to 40, which the
+    # measured 40.20 exceeds, so the test fails. That is what now proves the
+    # bound is read as a real number -- the check used to live on a pair of
+    # rendered frames, and CI proved their PSNR is not the same from one machine
+    # to the next. This pair is a committed PNG through an integer-only encoder,
+    # so it is.
+    #
+    # An encoder that gets genuinely BETTER will fail this ceiling. That is the
+    # same re-measure-and-say-why discipline the exact vertex counts get, not an
+    # accident.
+    add_test(NAME app_etc1s_quality_is_pinned_from_above COMMAND mh_png_compare
+             ${MH_DATA_DIR}/eyes/materials/brown_eye.png
+             ${CMAKE_CURRENT_BINARY_DIR}/etc1s_brown_eye.png --max-psnr 40.5)
+    set_tests_properties(app_etc1s_quality_is_pinned_from_above PROPERTIES
+        FIXTURES_REQUIRED app_etc1s_roundtrip)
 
     # ...and the backdrop must not EAT the model. It is drawn before the body
     # with its depth write off; if it ever wrote depth it would occlude the
