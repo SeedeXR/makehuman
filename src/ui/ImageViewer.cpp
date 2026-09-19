@@ -70,6 +70,7 @@ ImageViewer::ImageViewer(QWidget* parent) : QWidget(parent), d_(std::make_unique
     auto* out   = makeButton("zoom-out", QStringLiteral("viewer.zoomOut"), tr("Zoom out"), this);
     auto* in    = makeButton("zoom-in", QStringLiteral("viewer.zoomIn"), tr("Zoom in"), this);
     auto* fit   = makeButton("maximize-2", QStringLiteral("viewer.fit"), tr("Fit to window"), this);
+    auto* load  = makeButton("folder-open", QStringLiteral("viewer.open"), tr("Open image…"), this);
     auto* save  = makeButton("save", QStringLiteral("viewer.save"), tr("Save image as…"), this);
     d_->readout = new QLabel(this);
     d_->readout->setObjectName(QStringLiteral("viewer.zoomLabel"));
@@ -78,6 +79,7 @@ ImageViewer::ImageViewer(QWidget* parent) : QWidget(parent), d_(std::make_unique
     bar->addWidget(fit);
     bar->addWidget(d_->readout);
     bar->addStretch(1);
+    bar->addWidget(load);
     bar->addWidget(save);
     root->addLayout(bar);
 
@@ -95,6 +97,11 @@ ImageViewer::ImageViewer(QWidget* parent) : QWidget(parent), d_(std::make_unique
     connect(out, &QToolButton::clicked, this, [this] { setZoom(d_->zoom / kZoomStep); });
     connect(in, &QToolButton::clicked, this, [this] { setZoom(d_->zoom * kZoomStep); });
     connect(fit, &QToolButton::clicked, this, [this] { fitToWindow(); });
+    connect(load, &QToolButton::clicked, this, [this] {
+        const QString path = QFileDialog::getOpenFileName(this, tr("Open image"), {},
+                                                          tr("Images (*.png *.jpg *.jpeg)"));
+        if (!path.isEmpty()) (void)open(path);
+    });
     connect(save, &QToolButton::clicked, this, [this] {
         const QString path =
             QFileDialog::getSaveFileName(this, tr("Save render as"), {}, tr("PNG image (*.png)"));
@@ -133,6 +140,17 @@ bool ImageViewer::saveAs(const QString& path) const {
     // test asserts the behaviour rather than the guard, so a Qt that started
     // writing an empty PNG would be caught.
     return d_->image.save(path);
+}
+
+bool ImageViewer::open(const QString& path) {
+    // Load into a temporary FIRST. Loading into `d_->image` would blank the
+    // render already on screen when the path turns out to be bad, which is the
+    // one behaviour a viewer must not have.
+    QImage loaded;
+    if (!loaded.load(path)) return false;
+    setImage(std::move(loaded));  // via setImage, so the zero-sized-viewport
+                                  // fit handling is not duplicated here
+    return true;
 }
 
 double ImageViewer::zoom() const {

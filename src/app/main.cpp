@@ -2827,6 +2827,16 @@ int main(int argc, char** argv) {
         QStringLiteral("Render one frame to this PNG and exit -- how the window is checked "
                        "without a human looking at it"),
         QStringLiteral("path"));
+    // A MODIFIER on --screenshot, not a second path option, and deliberately.
+    // A `--screenshot-viewport <path>` spelling would also have to be added to
+    // the two other `isSet(shotOpt)` sites or it silently breaks them: one
+    // rejects --background when there is no frame to sit behind, the other
+    // skips saveWorkspace so a screenshot run cannot overwrite the dock layout
+    // the user arranged. A modifier makes both of those questions vanish.
+    const QCommandLineOption shotViewportOpt(
+        QStringLiteral("screenshot-viewport"),
+        QStringLiteral("Make --screenshot save the VIEWPORT alone, without window chrome -- "
+                       "so a pixel gate cannot be moved by a mouse hovering a toolbar"));
     const QCommandLineOption expressionOpt(
         QStringLiteral("expression"),
         QStringLiteral("A .mhpose expression file: named face pose units with weights. Layered "
@@ -3254,6 +3264,7 @@ int main(int argc, char** argv) {
     parser.addOption(inspectOpt);
     parser.addOption(shaderOpt);
     parser.addOption(shotOpt);
+    parser.addOption(shotViewportOpt);
     parser.process(app);
 
     // An unrecognised model is refused rather than defaulted: silently falling
@@ -6021,14 +6032,23 @@ int main(int argc, char** argv) {
     if (parser.isSet(shotOpt)) {
         const QString out = parser.value(shotOpt);
         // Let the widget initialise its RHI and draw before grabbing, then quit.
-        QTimer::singleShot(600, &app, [&app, &window, out] {
+        const bool viewportOnly = parser.isSet(shotViewportOpt);
+        QTimer::singleShot(600, &app, [&app, &window, out, viewportOnly] {
             // Two grabs, deliberately. grabFramebuffer is the viewport's own
             // output and is what the blank-frame guard must judge -- on a
             // platform with no RHI, window.grab() returns chrome over a hole
-            // and would pass a blank check. window.grab() is what gets saved,
-            // because the chrome is half of what a screenshot is for.
+            // and would pass a blank check. Which one gets SAVED depends on
+            // --screenshot-viewport: the window by default, because chrome is
+            // half of what a screenshot is for, but the viewport alone when a
+            // pixel gate is what is being fed, so a mouse hovering a toolbar
+            // cannot move the result.
             const QImage frame = window.viewport()->grabFramebuffer();
-            const QPixmap shot = window.grab();
+            // The viewport grab already happened above and used to be thrown
+            // away after the blank-frame check. Saving THAT image is strictly
+            // more honest than a second, separately composited window grab:
+            // the bytes written become exactly the bytes `describeFrame`
+            // validated.
+            const QImage shot = viewportOnly ? frame : window.grab().toImage();
 
             // Errors first: reporting success and then contradicting it makes
             // the tool useless as a check.

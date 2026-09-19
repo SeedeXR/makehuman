@@ -10,6 +10,7 @@
 // grab, in the same session that changes it.
 #include "makehuman/ui/ImageViewer.h"
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
@@ -18,6 +19,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <system_error>
 
 using Catch::Matchers::WithinAbs;
@@ -184,4 +186,64 @@ TEST_CASE("the viewer actually paints the image", "[ui][viewer]") {
     }
     CHECK(sawRed);
     CHECK(sawBlue);
+}
+
+TEST_CASE("the viewer opens an image from a path", "[ui][viewer]") {
+    // The counterpart to Save As: the viewer used to hold only whatever the
+    // last render handed it, so a PNG on disk could not be looked at without
+    // leaving the application.
+    const auto path = std::filesystem::temp_directory_path() / "mh_viewer_open.png";
+    mh::ui::ImageViewer writer;
+    writer.setImage(solid(40, 24, Qt::cyan));
+    REQUIRE(writer.saveAs(QString::fromStdString(path.string())));
+
+    mh::ui::ImageViewer v;
+    REQUIRE(v.open(QString::fromStdString(path.string())));
+    CHECK(v.image().size() == QSize(40, 24));
+    CHECK(v.image().pixelColor(5, 5) == QColor(Qt::cyan));
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("a failed open leaves the image already on screen alone", "[ui][viewer]") {
+    // The one behaviour a viewer must not have. Loading into the member rather
+    // than into a temporary would blank a finished render because the user
+    // mistyped a path.
+    mh::ui::ImageViewer v;
+    v.setImage(solid(48, 32, Qt::magenta));
+
+    CHECK_FALSE(v.open(QStringLiteral("/no/such/file/at/all.png")));
+    CHECK(v.image().size() == QSize(48, 32));
+    CHECK(v.image().pixelColor(1, 1) == QColor(Qt::magenta));
+
+    // A file that exists but is not an image is the same refusal, and is worth
+    // its own case: `QImage::load` sniffs content, it does not trust the suffix.
+    const auto bogus = std::filesystem::temp_directory_path() / "mh_viewer_notapng.png";
+    {
+        std::ofstream out(bogus);
+        out << "this is not a PNG";
+    }
+    CHECK_FALSE(v.open(QString::fromStdString(bogus.string())));
+    CHECK(v.image().size() == QSize(48, 32));
+    std::filesystem::remove(bogus);
+}
+
+TEST_CASE("an opened image is fitted, not left at the previous zoom", "[ui][viewer]") {
+    // The same promise `setImage` makes, and `open` keeps it only by going
+    // through `setImage`. Assigning the member directly would leave a freshly
+    // opened image at whatever zoom the last one happened to use -- a mutation
+    // that did exactly that survived every other case here.
+    const auto path = std::filesystem::temp_directory_path() / "mh_viewer_fit.png";
+    mh::ui::ImageViewer writer;
+    writer.setImage(solid(2000, 1600, Qt::yellow));
+    REQUIRE(writer.saveAs(QString::fromStdString(path.string())));
+
+    mh::ui::ImageViewer v;
+    v.resize(400, 300);
+    v.setImage(solid(16, 16, Qt::blue));
+    v.setZoom(4.0);
+    REQUIRE(v.zoom() == Catch::Approx(4.0));
+
+    REQUIRE(v.open(QString::fromStdString(path.string())));
+    CHECK(v.zoom() < 4.0);  // refitted for the much larger image
+    std::filesystem::remove(path);
 }

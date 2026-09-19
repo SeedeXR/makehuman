@@ -54,6 +54,14 @@ public:
     ///         wrong rather than one that was never made.
     [[nodiscard]] bool saveAs(const QString& path) const;
 
+    /// Loads @p path and shows it, or returns false and leaves the current
+    /// image alone.
+    ///
+    /// No existence check and no format sniffing: `QImage::load` already
+    /// refuses both a missing file and a non-image, and a pre-check here would
+    /// be the same dead guard `saveAs` measured and deleted.
+    [[nodiscard]] bool open(const QString& path);
+
     [[nodiscard]] double zoom() const;
     /// Clamped to [kMinZoom, kMaxZoom].
     void setZoom(double factor);

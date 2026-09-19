@@ -4,6 +4,108 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-19 21:00:00 — Session · **Three M8 items on one gate, and one of them fixed nothing**
+
+### The pace change, stated plainly
+A full gate costs ~2.5 h and CI ~70 min **whether it carries one change or
+five**. So this chunk carried THREE fully-planned items through one gate,
+with each item's targeted tests run as it was written (seconds each). That is
+the whole pace fix: batch the gate, never the verification.
+
+### 1. Decimator ordered containers — INSURANCE, NOT A BUG FIX
+`edgeFaces` is now a `std::map` (`Decimator.cpp:290`) and `ring` a `std::set`
+(`:497`). The unordered headers stay, because `:260`, `:261` and `:352` still
+use them.
+
+The todo entry had specified an experiment that would settle whether the
+`unordered_map` walk order reaches output **today**. I ran it. **All three
+pinned counts are UNCHANGED: 5451, 6688, 7986.** A second probe iterating
+`edgeFaces` BACKWARDS also changed nothing.
+
+**So no live defect was fixed, and I am not going to write one up as if it
+were.** The mechanism is real and the containers pin it before a compiler bump
+does the flipping, but today this is insurance. A change with no observable
+effect cannot be mutation-tested — the backwards probe is the evidence in its
+place, and the code comment says so at the site.
+
+### 2. `ImageViewer::open` — built to the entry's own scope, and no further
+`[[nodiscard]] bool open(const QString&)` beside `saveAs`, one `folder-open`
+toolbar button, one `QFileDialog::getOpenFileName`. **No Refresh** — the
+reference's is broken (it stores a directory and re-reads that) and there is
+still nothing to re-read. **No gallery.**
+
+Two decisions worth keeping:
+* `open` loads into a **temporary** and only then calls `setImage`. Loading
+  straight into `d_->image` would blank the render already on screen whenever
+  the path turns out to be bad, which is the one thing a viewer must not do.
+  Routing through `setImage` also avoids duplicating the zero-sized-viewport
+  fit handling.
+* **No existence pre-check.** That is the same dead guard a mutation already
+  proved unnecessary in `saveAs`; Qt refuses the load on its own.
+
+Three Catch2 cases: open succeeds; a failed open leaves the image intact
+(including for a non-image file, not just a missing one); an opened image is
+fitted.
+
+### 3. `--screenshot-viewport` — a boolean modifier, and the numbers re-derived
+A **boolean modifier** on `--screenshot`, not a second path option: a path
+variant would also have had to be threaded through `main.cpp:3932` and
+`:6065`. `isSet` is evaluated **outside** the timer lambda and captured by
+value, because the lambda does not capture `parser`.
+
+**Measured, not estimated:** window 2560x1756 = 4,495,360 px; viewport
+1402x1648 = 2,310,496 px; viewport origin (454, 54) in device pixels.
+
+Five producers repointed **in matched sets**, since `mh_png_compare` hard-fails
+on a size mismatch: `app_backdrop_front`, `app_backdrop_plain_front`,
+`app_backdrop_right`, `app_backdrop_plain_right`, `app_backdrop_transparent`.
+The two hard-coded sampling coordinates were **re-derived**, not guessed:
+(1152,640) → (698,586) and (800,300) → (346,246), both passing as positive
+assertions. **The 100-px thresholds were not raised** — swallowing a chrome
+button with a bigger threshold would have gutted the gate that proves opacity
+0 is invisible.
+
+### Verification
+* **4 mutations, 4 killed, 0 survived.** One survivor was found first and
+  closed before the count was taken. One mutant had to be reworked as an
+  inversion, because deleting the ternary left `viewportOnly` unused and
+  `-Werror` rejected it — **a mutant that does not compile is inconclusive,
+  not killed.**
+* Full gate `bcqsp81nb`, 19:31 → 20:56, **exit 0**: debug 1438/1438 (398 s),
+  release 1438/1438 (148 s), no-Qt 894/894 (73 s), ASan 360/360/361/359,
+  TSan 360 (122.54 s) / 360 (328.87 s) / 361 (1200.59 s) / **359 (1862.27 s)**.
+  The last TSan slice ran ~300 s over my estimate and stayed green — the
+  contention finding from earlier, not a defect. `sources changed DURING the
+  gate` was empty.
+* SonarQube: `ce status=SUCCESS`, `GATE: OK`, **0 open issues**. Read in that
+  order, because the gate API returns the previous analysis until the compute
+  task reports SUCCESS.
+* clang-format clean with CI's exact command. Hostile self-read and
+  `/ponytail-review` done; no `/code-review` this chunk.
+
+### Test count did not move, on purpose
+Still **1438** local / 894 no-Qt. `mh_ui_tests` is ONE ctest entry via
+`add_test(NAME ui ...)`, so new UI cases never move the number — unlike
+`mh_tests`, which discovers each case. Worth knowing before reading an
+unchanged count as "no tests were added".
+
+### Next session starts here
+1. Run `memory/session_start.md` in full.
+2. **Batch B**, two small items together: the **Open half of the pose round
+   trip** (`applyLoaded` never reads `pose`/`skeleton`/`skinMaterial` back into
+   the choosers; both SAVE paths already go through `documentNow`, so Save As
+   is fixed and that todo entry needs correcting), and
+   **`app_grid_changes_the_window`**, which is satisfied by the mouse rather
+   than the grid (`tests/CMakeLists.txt:2534` byte-compares two whole-window
+   PNGs and would pass with `--grid` removed) — now repointable at
+   `--screenshot-viewport` with a counted compare.
+3. **Batch C**: backdrop drag/scale, fully planned, its own batch.
+4. **M7**: 2b global VQ codebooks, then 2c BasisLZ into `ktx2Write` — which
+   still has **no production caller**. Also **raise that `third_party/licenses/`
+   does not exist** though LICENSING.md §8 step 6 requires it.
+
+---
+
 ## 2026-09-19 18:35:00 — Session · **CI caught a gate I had tied to my own screen**
 
 ### The failure, and it was mine

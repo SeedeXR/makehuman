@@ -3405,7 +3405,123 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       below, after which `--pose tpose` and `--animation walk1` both reach
       **0 of 14,780**. **The `.mhm` round trip is now exact.**
 
-- [ ] **Whole-window screenshot gates compare against the developer's mouse.**
+- [x] **Whole-window screenshot gates compare against the developer's mouse.**
+      **DONE 2026-09-19 as a BOOLEAN MODIFIER**, `--screenshot-viewport`, not a
+      second path option -- a path variant would also have had to be threaded
+      through `main.cpp:3932` and `:6065`. `isSet` is evaluated OUTSIDE the
+      timer lambda and captured by value (the lambda does not capture `parser`).
+      **MEASURED: window 2560x1756 = 4,495,360 px; viewport 1402x1648 =
+      2,310,496 px; viewport origin (454, 54) in device pixels.**
+      Five producers repointed in MATCHED SETS, as this entry required:
+      `app_backdrop_front`, `app_backdrop_plain_front`, `app_backdrop_right`,
+      `app_backdrop_plain_right`, `app_backdrop_transparent`.
+      The two hard-coded sampling coordinates were RE-DERIVED rather than
+      guessed: (1152,640) -> (698,586) and (800,300) -> (346,246), and both
+      PASS as positive assertions. **The 100-px thresholds were NOT raised.**
+      `app_screenshot` still covers the whole-window path, as required.
+      **PLANNED IN DETAIL 2026-09-19, and three recorded facts were STALE.**
+      `QT_QPA_PLATFORM` is set at `tests/CMakeLists.txt:273` (`render`), `:5278`
+      (`ui`) and `:5280` (`ui_icons_hidpi`) — NOT the 240/5038/5040 recorded
+      here, and the first is `render`, not `ui`. No `app_backdrop_*` test sets
+      it, so `--screenshot` opens a real Cocoa window. CONFIRMED.
+      **Make it a BOOLEAN MODIFIER, not a second path option.** `--screenshot`
+      already grabs the viewport at `src/app/main.cpp:6030` and throws it away,
+      saving `window.grab()` from `:6031` instead; the change is to pick between
+      them. A path-taking `--screenshot-viewport` would ALSO have to be added to
+      two other `isSet(shotOpt)` sites or it breaks them — `:3932` rejects
+      `--background` with no frame, and `:6065` skips `saveWorkspace()` so a
+      screenshot run does not clobber the user's dock layout. Both verified.
+      **Repoint PRODUCERS, and in matched sets** — `mh_png_compare` hard-fails
+      on a size mismatch (`tests/mh_png_compare.cpp:143-147`), so a pair must
+      move together; it fails loudly, not silently. For
+      `app_backdrop_hidden_from_another_side`: `app_backdrop_right` +
+      `app_backdrop_plain_right`. For `app_backdrop_transparent_shows_nothing`:
+      `app_backdrop_transparent` + `app_backdrop_plain_front` + **and
+      `app_backdrop_front` must follow**, or `app_backdrop_changes_the_window`
+      and `app_psnr_sees_a_changed_frame` die on size mismatch.
+      **Do NOT repoint `app_screenshot`** — covering the window path is its job.
+      **The 100-px thresholds stay at 100.** Every affected bound moves in the
+      SAFE direction (counts can only fall as chrome leaves the image), so no
+      `mh_png_compare` assertion needs re-measuring.
+      **THE REAL CASUALTY is two Python gates** that sample hard-coded WINDOW
+      coordinates: `app_backdrop_does_not_eat_the_model` (`--cx 1152 --cy 640`,
+      `tests/CMakeLists.txt:2459`) and `app_backdrop_reaches_the_pixels`
+      (`--cx 800 --cy 300`, `:2467`). `tools/png_region_response.py:37-38`
+      takes `type=int` only — no relative form — so both coordinate pairs must
+      be RE-DERIVED on the cropped image. They SKIP without `MH_PIL_PYTHON`
+      wheels, so a wrong coordinate skips in CI and only bites locally.
+      No DPR change: the viewport is a `QRhiWidget` and nothing calls
+      `setFixedColorBufferSize`, so it grabs at the same device pixel ratio —
+      the PNGs get SMALLER, not rescaled.
+
+- [ ] **Backdrop drag/scale — PLANNED IN DETAIL 2026-09-19, and the owner's
+      "per-side (7)" resolves to SIX. Decision taken under the standing
+      delegation; recorded here rather than asked.**
+      `include/makehuman/ui/Backdrop.h:19` is
+      `enum class BackdropSide { Front, Back, Left, Right, Top, Bottom }` —
+      **six**. The reference's seventh is `'other'`
+      (`0_modeling_background.py:127`), the THREE-QUARTER view, and this port
+      **deliberately refuses three-quarter views** (`main.cpp:5470-5477` says
+      so with a status message). Honouring "7" literally would mean reversing
+      that documented decision, which is a separate question from drag/scale.
+      **So: six transforms.** BUT a reference file's `background other ...`
+      line must be PRESERVED VERBATIM on round trip, not dropped — see the
+      writer trap below.
+      **THE WRITER CANNOT BE `recordLine`** (`main.cpp:1905`, verified): it
+      erases EVERY line whose first token matches the key and appends exactly
+      one, so applied to `background` it would collapse six per-side lines plus
+      `background enabled` into a single line. Needs its own `recordBackgrounds`
+      that erases the `background` lines it OWNS and re-emits them, leaving an
+      unrecognised side (`other`) untouched.
+      **PARSE FROM THE TAIL.** The reference's filenames may contain spaces
+      (`0_modeling_background.py:439-445`); take token 1 as the side, the LAST
+      FOUR as `aspect transX transY scale`, and join the middle as the filename.
+      Handle `background enabled <bool>` before any arity check.
+      **`src/core/Mhm.cpp` IS NOT TOUCHED** — `background` already round-trips
+      through `unhandled` (`Mhm.cpp:184-188`, written back at `:241-242`).
+      **THE SILENT-NO-OP TRAP, and it is the one that matters:**
+      `overBackground` computes its OWN `coverSource` at `src/ui/Background.cpp:19`
+      (verified). Add the transform to the viewport only and `--render` keeps
+      compositing the untransformed cover-fit **with no error and no visual
+      cue**. Fix structurally: make `overBackground` TAKE the source rect so it
+      cannot compute a stale one. One call site (`main.cpp:5057`).
+      **Viewport and render disagree outside the image**: the viewport sampler
+      is `ClampToEdge` (`SceneResources.cpp:475`) so panning past the edge
+      SMEARS, while `QImage::copy` of an out-of-bounds rect fills TRANSPARENT
+      BLACK. Clamp the source rect to the image inside the shared `coverSource`
+      so both see the same thing.
+      **Derive the render's side from `RenderSettings::camera`, never hardcode
+      Front.** `renderSettingsFor` (`RenderDialog.cpp:13-24`) never sets
+      `s.camera`, so today it is always the default front view — but
+      `--render` also REFUSES `--background-side` (`main.cpp:3947`), so taking
+      "the side the viewport last faced" would be wrong the moment a render
+      camera is added.
+      **Undo needs NO new class.** Push a `MultiValueChangeCommand` with keys
+      `backdrop.<side>.{x,y,scale}` and `mergeId = mergeGroup`; `id()` hashes
+      the key set so consecutive right-drags on ONE side merge and a different
+      side does not, and `mergeWith` re-checks the keys so a hash collision
+      refuses rather than merges wrongly (`src/ui/UndoCommands.cpp:17-46`).
+      `++mergeGroup` on right-button release, mirroring `main.cpp:5553`.
+      **Right button is genuinely free** — `MouseBindings::reset` binds only
+      Pan=Middle and Orbit=Left (`src/ui/MouseBindings.cpp:59-66`), and
+      `verbFor` requires an exact modifier match. Put the backdrop branch after
+      the facing check so it cannot drag a side the camera is not looking at;
+      yield to `verbFor` first so a user who rebinds Orbit onto Right keeps it.
+      **A scale of 0 makes the source rect empty and `SceneResources::draw`
+      SKIPS an empty rect** (`:947`) — the backdrop vanishes silently rather
+      than erroring. Clamp on parse and on drag.
+      **`app_backdrop_hidden_from_another_side` stays green** provided the
+      transform defaults to identity and visibility remains driven by
+      `facingSide` — that test passes no mouse input and no `.mhm`.
+
+- [ ] **`app_grid_changes_the_window` is satisfied by the mouse, not the grid.**
+      Found 2026-09-19 while planning the item above. `tests/CMakeLists.txt:2534`
+      compares two whole-window PNGs with a `files_differ` byte check. Hover
+      noise MAKES IT PASS, so it would still pass with `--grid` removed if the
+      pointer moved between the two runs — the same class of defect as the
+      backdrop gates, but inverted: there the mouse caused a false FAILURE,
+      here it causes a false PASS. Separate fix; needs a counted compare
+      (`mh_png_compare --min-differing`) rather than a byte compare.
       **CORRECTED 2026-09-19. The first diagnosis of this was WRONG and is
       kept here because the wrong version is the instructive part.**
 
@@ -3480,7 +3596,18 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       window so `:4251`, `:5435` and `:5785` all route through one door -- the
       same shape as `setModifierValues` and `documentNow`. One file.
 
-- [ ] **The decimator has the same `unordered_map` bug, latent rather than live.**
+- [x] **The decimator has the same `unordered_map` bug, latent rather than live.**
+      **RESOLVED 2026-09-19, AND THE EXPERIMENT ANSWERED "LATENT".** `:290`
+      is a `std::map` and `:497` a `std::set`; `<map>`/`<set>` added and the
+      unordered headers KEPT, because `:260`, `:261` and `:352` still use them.
+      **MEASURED: all three pinned counts are UNCHANGED -- 5451, 6688, 7986.**
+      A second probe iterating `edgeFaces` BACKWARDS also changed nothing, so
+      the walk order genuinely does not reach output on this mesh with this
+      toolchain. **This is INSURANCE, not a bug fix: no live defect was fixed,
+      and nothing in the suite got stricter.** A change with no observable
+      effect cannot be mutation-tested; the probe is the evidence instead.
+      The code comment at `:288` says exactly this so the next reader does not
+      re-derive it.
       CONFIRMED 2026-09-19 by reading every unordered container in
       `src/core/Decimator.cpp`, then spot-checking the cited lines directly.
       **Two of the five are AT RISK:**
@@ -3513,9 +3640,28 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       process on the same `Mesh`**, so both runs build the map in the same order
       and walk it identically. It is green over the defect and will stay green.
       A test suite only covers the shapes it constructs.
-      **Pinned to today's hashing, so they may move:** `test_decimator.cpp:371`
-      `faceCount() == 5451`; `tests/CMakeLists.txt:3815`
-      `"decimated 13378 faces to 6688 triangles"`; `:3847` `EXPECT=7986`.
+      **Pinned to today's hashing, so they may move. RE-VERIFIED 2026-09-19 and
+      the earlier note was WRONG in two ways** -- the line numbers had drifted,
+      and 6688 is asserted in THREE places, not one, so a fix that re-measured
+      only the first would be surprised twice:
+        `tests/unit/test_decimator.cpp:371` `faceCount() == 5451` (with
+        `:370` comparing tenth to twentieth and `:375` `> 5000` leaning on it);
+        `tests/CMakeLists.txt:4055` `"decimated 13378 faces to 6688 triangles"`,
+        **`:4220` and `:4251` both `"6688 tris"`**;
+        `tests/CMakeLists.txt:4086` `EXPECT=7986` (its control `:4094`
+        `EXPECT=14676` is the undecimated export and is unaffected).
+      **`decimation is deterministic` (`test_decimator.cpp:335`) CANNOT catch
+      this bug**: it decimates twice in ONE process from one `Mesh`, so both
+      runs get the same bucket layout. It is green over the defect today and
+      will stay green after the fix -- do not mistake it for coverage.
+      **The path that actually bites is `:386`**, a raw `double` comparison with
+      no rounding, so a 1-ulp wobble flips one accept/reject and cascades into
+      the triangle count. `pos[a] = to` (`:454`) goes through
+      `static_cast<float>` in `minimiser` (`:125-127`), which usually rounds the
+      wobble away. **MEASURED: 784 boundary edges** in `data/3dobjs/base.obj`
+      (of 37,364 polygon edges), so the `edgeFaces` loop is not a
+      zero-iteration path, and the `* 1000.0` at `:306` makes the boundary term
+      dominate the interior quadric by three orders of magnitude.
       (`:3856` `EXPECT=14676` is the undecimated control, unaffected.)
       **THE EXPERIMENT THAT SETTLES WHETHER IT IS LIVE TODAY**, and the fix are
       the same one line each: make `:278` a `std::map` and `:480` a `std::set`
@@ -4542,7 +4688,19 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         of a two-colour source.
       - A mutation showed the null-image guard in `saveAs` was dead — Qt already
         refuses one — so it is gone and the test asserts the behaviour instead.
-- [ ] **The viewer only ever holds the last render.** The reference's version
+- [x] **The viewer only ever holds the last render.**
+      **DONE 2026-09-19, to this entry's own terms and no further.**
+      `[[nodiscard]] bool open(const QString&)` sits beside `saveAs`, plus one
+      `folder-open` toolbar button and a `QFileDialog::getOpenFileName`.
+      **NO Refresh**, for the reason recorded above -- the reference's is
+      broken and there is still nothing to re-read. **No gallery.**
+      `open` loads into a TEMPORARY and only then calls `setImage`, so a bad
+      path leaves the render already on screen intact; going through
+      `setImage` also avoids duplicating the zero-sized-viewport fit handling.
+      **No existence pre-check** -- that is the same dead guard a mutation
+      already proved unnecessary in `saveAs`. `src/app/main.cpp` untouched and
+      no CMake change. Three Catch2 cases: open succeeds; a failed open leaves
+      the image intact (including a non-image file); an opened image is fitted. The reference's version
       doubles as a general image viewer with a Refresh button that re-reads its
       path (`4_rendering_9_viewer.py:56` is the button and `:74-78` the handler
       -- the old citation `:71-75` was a few lines off). Ours has no path to

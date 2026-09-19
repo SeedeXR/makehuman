@@ -2258,7 +2258,7 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_backdrop_front COMMAND makehuman
              --background ${CMAKE_CURRENT_BINARY_DIR}/backdrop_ref.ppm
              --background-side front --view front
-             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/backdrop_front.png)
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/backdrop_front.png --screenshot-viewport)
     set_tests_properties(app_backdrop_front PROPERTIES
         PASS_REGULAR_EXPRESSION "backdrop: .* behind the front view"
         # The pass-regex alone would DISCARD the exit code, and that line is
@@ -2270,7 +2270,7 @@ if(MH_HAVE_RENDER)
         FIXTURES_REQUIRED app_backdrop_fixture
         FIXTURES_SETUP app_backdrop_front)
     add_test(NAME app_backdrop_plain_front COMMAND makehuman
-             --view front --screenshot ${CMAKE_CURRENT_BINARY_DIR}/plain_front.png)
+             --view front --screenshot ${CMAKE_CURRENT_BINARY_DIR}/plain_front.png --screenshot-viewport)
     set_tests_properties(app_backdrop_plain_front PROPERTIES
         SKIP_REGULAR_EXPRESSION "viewport error"
         FIXTURES_SETUP app_backdrop_plain_front)
@@ -2294,13 +2294,13 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_backdrop_right COMMAND makehuman
              --background ${CMAKE_CURRENT_BINARY_DIR}/backdrop_ref.ppm
              --background-side front --view right
-             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/backdrop_right.png)
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/backdrop_right.png --screenshot-viewport)
     set_tests_properties(app_backdrop_right PROPERTIES
         SKIP_REGULAR_EXPRESSION "viewport error"
         FIXTURES_REQUIRED app_backdrop_fixture
         FIXTURES_SETUP app_backdrop_right)
     add_test(NAME app_backdrop_plain_right COMMAND makehuman
-             --view right --screenshot ${CMAKE_CURRENT_BINARY_DIR}/plain_right.png)
+             --view right --screenshot ${CMAKE_CURRENT_BINARY_DIR}/plain_right.png --screenshot-viewport)
     set_tests_properties(app_backdrop_plain_right PROPERTIES
         SKIP_REGULAR_EXPRESSION "viewport error"
         FIXTURES_SETUP app_backdrop_plain_right)
@@ -2456,7 +2456,7 @@ if(MH_HAVE_RENDER)
                  # the companion check below still reads far above 20 on the
                  # empty viewport. Re-derive both from the image if the docks
                  # change again; do not relax the threshold.
-                 --cx 1152 --cy 640 --radius 40 --max-response 2.0)
+                 --cx 698 --cy 586 --radius 40 --max-response 2.0)
         set_tests_properties(app_backdrop_does_not_eat_the_model PROPERTIES
             SKIP_RETURN_CODE 77
             FIXTURES_REQUIRED "app_backdrop_front;app_backdrop_plain_front")
@@ -2464,7 +2464,7 @@ if(MH_HAVE_RENDER)
                  ${CMAKE_SOURCE_DIR}/tools/png_region_response.py
                  --a ${CMAKE_CURRENT_BINARY_DIR}/backdrop_front.png
                  --b ${CMAKE_CURRENT_BINARY_DIR}/plain_front.png
-                 --cx 800 --cy 300 --radius 40 --min-response 20.0)
+                 --cx 346 --cy 246 --radius 40 --min-response 20.0)
         set_tests_properties(app_backdrop_reaches_the_pixels PROPERTIES
             SKIP_RETURN_CODE 77
             FIXTURES_REQUIRED "app_backdrop_front;app_backdrop_plain_front")
@@ -2477,7 +2477,7 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_backdrop_transparent COMMAND makehuman
              --background ${CMAKE_CURRENT_BINARY_DIR}/backdrop_ref.ppm
              --background-side front --background-opacity 0 --view front
-             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/backdrop_clear.png)
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/backdrop_clear.png --screenshot-viewport)
     set_tests_properties(app_backdrop_transparent PROPERTIES
         SKIP_REGULAR_EXPRESSION "viewport error"
         FIXTURES_REQUIRED app_backdrop_fixture

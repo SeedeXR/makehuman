@@ -6,7 +6,9 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <queue>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -275,7 +277,25 @@ std::expected<Mesh, DecimateError> decimate(const Mesh& src, DecimateOptions opt
     // boundary is expensive. It also protects the base mesh's real boundary
     // loops -- eye sockets, the mouth bag, every helper cage's open rim.
     {
-        std::unordered_map<uint64_t, std::pair<uint32_t, size_t>> edgeFaces;
+        // ORDERED, and the ordering is load-bearing. The body below accumulates
+        // ten non-associative double adds per edge into `quad[a]`/`quad[b]`,
+        // with the boundary constraint scaled by 1000, so hash order changed
+        // the last bits of a quadric. Those quadrics reach the accept/reject
+        // ceiling at the raw `>` comparison below -- no rounding to absorb a
+        // 1-ulp flip -- and one flip changes the triangle count and cascades.
+        // MEASURED, and the measurement is worth stating plainly: the base
+        // mesh has 784 boundary edges, so the loop is not empty -- but
+        // iterating this map BACKWARDS changes no output at all. Every pinned
+        // count (5451, 6688, 7986) is identical either way, because a boundary
+        // vertex takes exactly two constraints and reordering two adds does
+        // not flip anything here. **So this is insurance, not a bug fix.** The
+        // mechanism is real and the hazard is real; today it is latent, and an
+        // ordered container pins it before a libc++ or compiler change does
+        // the flipping for us. `edgeKey` packs the low index high, so this
+        // iterates in
+        // (lo, hi) edge order: stable, and defined by the mesh rather than by
+        // libc++'s bucket count.
+        std::map<uint64_t, std::pair<uint32_t, size_t>> edgeFaces;
         for (size_t t = 0; t < tris.size(); ++t) {
             for (size_t i = 0; i < 3; ++i) {
                 auto& e = edgeFaces[edgeKey(tris[t].v[i], tris[t].v[(i + 1) % 3])];
@@ -477,7 +497,12 @@ std::expected<Mesh, DecimateError> decimate(const Mesh& src, DecimateOptions opt
             vgroup[a].insert(g);
 
         // Re-cost every edge that now touches a moved vertex.
-        std::unordered_set<uint32_t> ring;
+        // ORDERED for a different reason than `edgeFaces`: `push` stamps
+        // `.tiebreak = pushed++` and `Candidate::operator<` breaks EXACT cost
+        // ties by it, so two bit-identical costs in one ring popped in bucket
+        // order. Distinct costs were never affected -- the comparator is a
+        // total order -- which is why this stayed latent.
+        std::set<uint32_t> ring;
         for (const size_t t : vtris[a]) {
             if (!tris[t].live) continue;
             for (const uint32_t v : tris[t].v) {
