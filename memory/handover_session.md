@@ -4,6 +4,114 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-19 23:30:00 — Session · **Two records were wrong, and the gate that was supposed to catch a stale tree never could**
+
+### What actually shipped
+Two M8 items on one gate. **One of them needed no code at all**, and the
+other's recorded premise did not reproduce. The code delta is small on
+purpose; the value here is that three wrong records are now right.
+
+### 1. The Open half of the pose round trip — ALREADY DONE SINCE `b7cb1379`
+The todo entry said Open "still only restores the sliders". It does not.
+`applyLoaded` walks `documentChoices(*loaded)` and applies every pair through
+`applyOne` (`main.cpp:5792`) — pose, skeleton, skinMaterial, eyeMaterial,
+litsphere, expression, eyes and the proxy slots. The `app_print_choices*`
+gates already cover the mapping.
+
+**This is the FOURTH stale record this session**, and the entry contradicted
+its own opening paragraph. A `main.cpp` comment repeated the same stale claim,
+so both were corrected. **I wrote no new behaviour and claim no fix.**
+
+The lesson has earned its place: **check the todo against the code before
+working an item.** Four times now the check has been worth more than the
+entry.
+
+### 2. `app_grid_changes_the_window` — the premise was TOO STRONG, and is corrected, not quietly dropped
+The recorded diagnosis was that the gate "is satisfied by the mouse, not the
+grid". **It did not reproduce.** Two back-to-back whole-window shots taken
+with the SAME flags came out **byte-identical**, so the gate was **FRAGILE,
+not vacuous** — no live false pass was reproduced, and none is claimed.
+
+What IS measured: the grid moves **157,520 pixels and touches ZERO chrome**
+(the window diff and the viewport diff are the same 157,520), so **48.6% of
+the old input — 2,184,864 of 4,495,360 px — was pixels the grid cannot
+reach**. Two no-grid viewport shots differ by **0**, so the viewport carries
+no noise to threshold against.
+
+Both producers now pass `--screenshot-viewport` (a MATCHED SET — `mh_png_compare`
+hard-fails on a size mismatch) and `files_differ` became
+`mh_png_compare --min-differing 5000`.
+
+**The bound is deliberately 31x under the local 157,520 because CI renders at
+a different SIZE than this machine** (`1f007efe` went red proving it: 899,072
+px there against 4,495,360 here). Scaled to CI's window that is ~31,500, so
+5,000 clears CI by ~6x.
+
+**Mutation: `setGrid(false)` scores 0 of 2,310,496 and the gate FAILS — killed.**
+Source restored from backup, `cmp`-verified, rebuilt, control green (6/6).
+`files_differ.cmake` still has 30 other users, so it is not orphaned, and the
+test NAME is unchanged.
+
+### 3. The gate's own staleness check had never worked — FOUND, FIXED, BOTH BRANCHES VERIFIED
+The gate ends with `=== sources changed DURING the gate (must be empty) ===`.
+**This run printed `src/app/main.cpp` and still exited 0.** Neither half of
+that was right:
+
+* It compared against `$SP/gate_full.marker`, mtime **19:31:17** — left over
+  from the PREVIOUS gate. **Nothing has ever touched it.** The launcher
+  touched a differently-named `$SP/gate_marker` (21:29:09), which the check
+  never reads.
+* `src/app/main.cpp` is mtime **21:28:53 — sixteen seconds BEFORE this gate
+  started.** It is the Batch B edit, made before launch. It appeared only
+  because 21:28:53 > the stale 19:31:17.
+* A non-empty result **exited 0**, so "must be empty" was never enforced.
+
+**Re-run against the correct marker: 0 files.** Nothing changed during the
+gate; the results do describe the tree, and this batch is safe to commit.
+
+Fixed in the scratchpad's `gate_full.sh`: it now touches its OWN
+`gate_full.marker` immediately after `gate start`, and a non-empty result
+prints the list and `exit 1`. **Both branches verified in isolation** — stale
+marker lists 14 files and exits 1, fresh marker is silent and exits 0,
+`bash -n` clean. **This is scratchpad tooling, so it is NOT in this commit.**
+
+Recorded because it means **every "sources changed" line this session was
+uninformative**, not because it changed any result.
+
+### Gate and Sonar
+Green end to end: debug 1438/1438 (396.36 s), release, no-Qt 894, all four
+ASan slices, all four TSan slices. Sonar `ce status=SUCCESS`, `GATE: OK`,
+`OPEN ISSUES: 0` on a FRESH task id (`ff086d2d…`, distinct from the previous
+run's `b89e849d…`). `docker stop m2m-sonarqube` only; the owner's six
+containers verified still up.
+
+**TSan slice 4 took 3924.79 s — 65 minutes, 2.1x the previous gate's
+1862.27 s**, on 359 tests, with load ~2.7 and no contention. It was confirmed
+progressing rather than wedged by sampling the live test binary across ticks
+(`app_name_modern` → `app_rig` → `app_eye_colour`). **Second gate running
+over estimate on this slice; if a third does, slice 4 needs splitting.**
+
+### Also recorded, not worked
+The M7 vendoring question is **closed**. The owner proposed vendoring the
+not-in-Homebrew library in-tree for "performance and better ci"; the answer
+was no on five grounds (identical object code either way, so performance does
+not follow; likely WORSE CI — stated as an **estimate**, not a measurement; it
+contradicts the owner's own second directive; it would delete finished
+oracle-verified work; and it drags an unenumerated `external/` tree in while
+`third_party/` does not exist though LICENSING.md §8 step 6 requires it). The
+owner replied "proceed". **Course: build 2b and 2c ourselves, gated against
+the Homebrew `basisu` CLI as an external oracle.** Full reasoning is in
+`memory/todo.md` under "OWNER 2026-09-19, third exchange".
+
+**`third_party/licenses/` still does not exist.** Raised with the owner; not
+yet actioned.
+
+### Next
+Batch C — backdrop drag/scale, fully planned in `memory/todo.md`, its own
+batch. Then M7 2b, then 2c.
+
+---
+
 ## 2026-09-19 21:00:00 — Session · **Three M8 items on one gate, and one of them fixed nothing**
 
 ### The pace change, stated plainly

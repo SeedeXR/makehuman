@@ -2521,20 +2521,37 @@ if(MH_HAVE_RENDER)
         WILL_FAIL TRUE
         FIXTURES_REQUIRED app_backdrop_fixture)
 
+    # VIEWPORT-ONLY, and a COUNTED compare. This gate used to `files_differ`
+    # two whole-window PNGs -- "is any byte different", which chrome can answer
+    # without the grid. MEASURED: the grid moves 157,520 pixels and touches
+    # ZERO chrome (the window diff and the viewport diff are the same 157,520),
+    # so 48.6% of the old input was pixels the grid cannot reach -- a route to
+    # a false pass and a false red alike. Two no-grid viewport shots differ by
+    # 0, so the viewport has no noise to threshold against.
+    #
+    # THE BOUND IS DELIBERATELY FAR BELOW 157,520, because CI renders at a
+    # different SIZE than this machine (`1f007efe` went red proving it: 899,072
+    # pixels there against 4,495,360 here). Scaling the local figure to CI's
+    # window gives roughly 31,500, so 5,000 clears CI by ~6x and sits 31x under
+    # the local number -- while still killing the mutant this gate exists for,
+    # a `--grid` that draws nothing, which scores 0.
     add_test(NAME app_grid_window COMMAND makehuman
-             --grid --screenshot ${CMAKE_CURRENT_BINARY_DIR}/app_grid.png)
+             --grid --screenshot-viewport
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/app_grid.png)
     set_tests_properties(app_grid_window PROPERTIES
         SKIP_REGULAR_EXPRESSION "viewport error"
         FIXTURES_SETUP app_grid_png)
+    # Repointed as a MATCHED SET with the one above: `mh_png_compare` hard-fails
+    # on a size mismatch, so these two move together or not at all.
     add_test(NAME app_grid_window_plain COMMAND makehuman
+             --screenshot-viewport
              --screenshot ${CMAKE_CURRENT_BINARY_DIR}/app_nogrid.png)
     set_tests_properties(app_grid_window_plain PROPERTIES
         SKIP_REGULAR_EXPRESSION "viewport error"
         FIXTURES_SETUP app_nogrid_png)
-    add_test(NAME app_grid_changes_the_window COMMAND ${CMAKE_COMMAND}
-             -DA=${CMAKE_CURRENT_BINARY_DIR}/app_grid.png
-             -DB=${CMAKE_CURRENT_BINARY_DIR}/app_nogrid.png
-             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    add_test(NAME app_grid_changes_the_window COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/app_grid.png
+             ${CMAKE_CURRENT_BINARY_DIR}/app_nogrid.png --min-differing 5000)
     set_tests_properties(app_grid_changes_the_window PROPERTIES
         FIXTURES_REQUIRED "app_grid_png;app_nogrid_png")
     # ...and --render ignores it. `--grid --render` must be byte-identical to

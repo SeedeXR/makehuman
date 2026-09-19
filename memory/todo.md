@@ -2246,6 +2246,53 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         unenumerated vendored set. So "build our own" is chosen on THOSE
         grounds, and it also removes the FetchContent cost entirely.
 
+        **OWNER 2026-09-19, third exchange -- VENDORING PROPOSED, DECLINED,
+        AND THE COURSE CONFIRMED.** The owner asked whether to fetch the
+        not-in-Homebrew library and VENDOR it in-tree as a dependency, "the key
+        is performance and better ci", and asked for a verdict. Answered
+        "mostly no", on five grounds:
+          1. **Performance does not follow.** Vendoring and FetchContent
+             produce IDENTICAL object code -- same compiler, same flags.
+             Acquisition has ZERO effect on runtime speed. The performance
+             lever is WHICH encoder ships, not where its source sits.
+          2. **CI probably gets WORSE.** It adds compile time to all FIVE
+             presets, and the sanitiser builds are where the minutes already
+             are (TSan slice 4 ran 1862 s last gate). **Labelled an ESTIMATE,
+             not a measurement** -- libktx has not been built here.
+          3. It contradicts the second directive above, which rejected
+             adopting ON CI-COST GROUNDS -- the same ground now offered FOR
+             vendoring.
+          4. It would delete finished, oracle-verified work: chunk 1 (the
+             container writer) and 2a (40.20 dB, validated against
+             `basisu -unpack` with 0 of 3,145,728 channel samples differing,
+             BEATING basisu's own 38.92).
+          5. Vendoring drags KTX-Software's `external/` tree in, each entry
+             needing a LICENSING.md row -- and **`third_party/` DOES NOT
+             EXIST** though LICENSING.md section 8 step 6 requires it.
+             Cosmetic today; BLOCKING the moment anything is vendored.
+        **Where the owner is right, and was told so:** not-in-Homebrew is real
+        (see the paragraph above -- Homebrew's `basis_universal` ships only the
+        `basisu` CLI and `libktx` is absent), so `find_package` is off the
+        table; and **between vendoring and FetchContent, VENDORING WINS** on CI
+        reproducibility. That sub-judgement was correct; it is the
+        adopt-vs-build question underneath it that is answered differently.
+        **The argument that would have changed the answer is INTEROP, not
+        speed** -- our own BasisLZ risks being an encoder validated against our
+        own decoder, and self-consistent is not correct. **It is already
+        solved: the `basisu` CLI IS in Homebrew.** Useless as a library,
+        perfect as a TEST ORACLE. Oracle at test time, our code at runtime, no
+        shipped dependency -- exactly how 2a was validated, and how 2b and 2c
+        will be.
+        **OWNER REPLIED "proceed" (2026-09-19).** Read as: go with the
+        recommendation. **Course confirmed -- build 2b and 2c ourselves, each
+        gated against the `basisu` CLI oracle. No new dependency.**
+        **STILL UN-RUN, offered and available on request:** (i) libktx
+        configure+build time across the five presets, (ii) its full transitive
+        licence set. Both are cheap; neither has been measured, and no claim
+        here depends on them. **If the owner ever reverses this, vendor it
+        OPTIONAL the way draco is (`find_package(draco QUIET)`,
+        `src/io/CMakeLists.txt:45`) and EXCLUDE it from the sanitiser builds.**
+
         **SPECIFICATIONS READ (registry.khronos.org KTX 2.0; the
         KHR_texture_basisu README), and the measurement that decides the shape:**
         * The KTX2 CONTAINER is tractable from spec: 12-byte identifier
@@ -3304,12 +3351,19 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         file. Pose and animation are ONE slot, so `poseChoice` is the `.bvh`
         either way and the `pose` key carries it --
         `app_animation_save_records_the_path` asserts `walk1.bvh` appears.
-      - **STILL OPEN: Open.** `applyLoaded` resets the human and syncs the
-        sliders from `human`, but never reads the document's `pose`,
-        `skeleton` or `skinMaterial` back into the choosers, so opening a posed
-        `.mhm` from the menu still lands at rest with the startup rig. That is
-        the natural next chunk. `expression` is written by neither path and
-        needs a write AND a read, or it is a dead key.
+      - **~~STILL OPEN: Open.~~ NOT OPEN -- THIS NOTE WAS STALE, corrected
+        2026-09-19.** It claimed `applyLoaded` "never reads the document's
+        `pose`, `skeleton` or `skinMaterial` back into the choosers", and it
+        contradicted the top of this very entry, which describes the fix. READ
+        THE CODE: `applyLoaded` walks `documentChoices(*loaded)` and applies
+        every pair through `applyOne` (`src/app/main.cpp:5792`), covering
+        `pose`, `skeleton`, `skinMaterial`, `eyeMaterial`, `litsphere`,
+        `expression`, eyes and the proxy slots. It landed in `b7cb1379`, and
+        the `app_print_choices*` gates cover the mapping. The comment block in
+        `main.cpp` repeated the same stale claim and was corrected with it.
+        **Fourth stale record found by checking an entry against the code
+        before working it** -- that check is now worth more than the entry.
+        `expression` is handled below and is no longer a dead key.
       - **`expression` DONE 2026-09-18.** `documentNow` records it and
         `documentChoices` maps it back, so it is written AND read. Stored
         **relative to `data/`** (`expression expressions/happy.mhpose`) like
@@ -3514,7 +3568,32 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       transform defaults to identity and visibility remains driven by
       `facingSide` — that test passes no mouse input and no `.mhm`.
 
-- [ ] **`app_grid_changes_the_window` is satisfied by the mouse, not the grid.**
+- [x] **`app_grid_changes_the_window` is satisfied by the mouse, not the grid.**
+      **FIXED 2026-09-19, and the headline above is TOO STRONG -- corrected
+      here rather than edited away.** Two back-to-back whole-window shots
+      taken with the SAME flags came out BYTE-IDENTICAL on a quiet machine,
+      so the gate was FRAGILE, not vacuous: the mouse COULD satisfy it, and
+      was not satisfying it at that moment. I could not reproduce a live
+      false pass, and I am not going to claim one I did not observe.
+      What IS measured: the grid moves 157,520 pixels and touches ZERO
+      chrome pixels -- the window diff and the viewport diff are the SAME
+      157,520 -- so **48.6% of the old gate's input (2,184,864 of 4,495,360
+      pixels) was pixels the grid provably cannot touch.** That is the
+      defect, stated without overreach, and it is a route to a false RED as
+      much as a false green.
+      **Fix: both producers repointed to `--screenshot-viewport` as a
+      MATCHED SET, and `files_differ` replaced with
+      `mh_png_compare --min-differing 5000`.** Two no-grid viewport shots
+      differ by 0, so the viewport has no noise to threshold against.
+      **The bound is deliberately 31x under the local 157,520 because CI
+      RENDERS AT A DIFFERENT SIZE** (`1f007efe` proved it: 899,072 px there
+      against 4,495,360 here), which scales the grid's count to roughly
+      31,500 in CI -- 5,000 clears that by ~6x. A bound tuned tight to the
+      local figure would kill no extra mutant and would go red on a smaller
+      screen. **Mutation: `setGrid(false)` scores 0 of 2,310,496 and the
+      gate FAILS** -- killed, control green after restore.
+      **Name kept.** `--grid` does change the window; the gate now proves it
+      by looking at the part of the window the grid can actually reach.
       Found 2026-09-19 while planning the item above. `tests/CMakeLists.txt:2534`
       compares two whole-window PNGs with a `files_differ` byte check. Hover
       noise MAKES IT PASS, so it would still pass with `--grid` removed if the

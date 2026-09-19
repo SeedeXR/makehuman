@@ -4170,10 +4170,13 @@ int main(int argc, char** argv) {
     // `documentWithoutChoices`, which copies `unhandled` verbatim and wrote no
     // `pose` line at all, so a character animated in the window and saved from
     // the File menu lost the animation. **That half is fixed**: both save paths
-    // now build through `documentNow`. The OTHER half is not -- `applyLoaded`
-    // resets the human and syncs the sliders but never reads the document's
-    // `pose`/`skeleton`/`skinMaterial` lines back into the choosers, so Open
-    // still lands at rest with the startup rig.
+    // now build through `documentNow`.
+    //
+    // THE OTHER HALF IS FIXED TOO, and this comment claimed otherwise until
+    // 2026-09-19. `applyLoaded` walks `documentChoices(*loaded)` and applies
+    // each pair through `applyOne`, so Open restores the rig and the pose, not
+    // just the sliders. Landed in `b7cb1379`; the `app_print_choices*` gates
+    // cover the mapping.
     // ANIMATION-NESS IS A PROPERTY OF THE FILE, not of how it was asked for.
     //
     // Derived rather than taken from the flag, because three other paths arrive
