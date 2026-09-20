@@ -690,7 +690,27 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       the check that the rule is right.
       A THIRD attempt, walking our own skeleton for the nearest driven
       descendant, measured 13.692x and was rejected.
-      GATE: `tests/unit/test_rest_alignment.cpp`, six cases, plus the existing
+      **A THIRD rule, added 2026-09-21: a bone the file never TURNS is left at
+      our own rest.** MEASURED with the reference's parser -- not one of the
+      three shipped animations rotates the tongue, the jaw or a single finger
+      joint, 0.0 deg across every frame of all three -- while the correction
+      was turning `tongue01` by 132 deg and the finger joints by 72-90,
+      reshaping a hand the animation has no opinion about. A bone the file
+      never moves says nothing about where its rest belongs, so it inherits its
+      parent and the hand follows the corrected forearm rigidly.
+      Per FILE, never per frame, or a bone still at frame 0 and moving at
+      frame 7 would pop between them.
+      **The finger corrections were NOT a correspondence error** and this was
+      checked before changing anything: `finger2-1` really is the proximal
+      phalanx (our chain is `wrist -> metacarpal2 -> finger2-1`), and relative
+      to their own forearms the two hands rest only ~18 deg apart (index 22.7
+      vs 4.7, thumb 71.8 vs 36.5). The 72-90 deg was the ARM's T-vs-A
+      difference propagating into world space, which is real -- it was being
+      applied to bones that had no reason to move at all.
+      Worst stretch unchanged at 3.065x (the tongue is not visible geometry and
+      the fingers were never the worst edge); 2,394 of 1,048,576 pixels differ
+      in the render, all at the hands.
+      GATE: `tests/unit/test_rest_alignment.cpp`, seven cases, plus the existing
       tear gate. The last case is the one that matters -- it drives
       `loadBodyPoseFrame` and asserts the upper arm hangs within 30 deg of
       straight down (47.6 without the correction), because the first five call
@@ -703,6 +723,17 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       vectors; pick the minimal rotation and SAY SO.
       Gate it with `test_animation_no_tear.cpp` (bar 5.0x) plus renders, and
       keep `--pose tpose` as the control that must not move.
+- [ ] **`app_backdrop_transparent_shows_nothing` is INTERMITTENT, and not for
+      the settings reason below.** 2026-09-21: it failed twice in a row
+      (278,285 of 2,363,772 pixels against a bar of 100) and then passed four
+      times -- twice at the parent commit and twice with the working-tree
+      change -- on IDENTICAL code, with the settings file absent throughout.
+      I first attributed it to my own change and that was WRONG; the two
+      passes at the parent commit were coincidence. It compares two real
+      WINDOW screenshots (`--screenshot --screenshot-viewport`), which on a Mac
+      depend on the compositor having finished, so a partially composited frame
+      is the obvious suspect and nothing has confirmed it. Recorded, not
+      explained.
 - [ ] **Windowed pixel tests are not hermetic.** `app_backdrop_reopen_restores
       _the_framing` and `app_backdrop_transparent_shows_nothing` compare
       screenshots with `--max-differing 0`, and the app persists window

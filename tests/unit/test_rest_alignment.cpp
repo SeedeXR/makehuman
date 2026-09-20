@@ -167,6 +167,30 @@ TEST_CASE("an undriven bone inherits its parent rather than snapping back",
 // loader actually applies it -- deleting the call left every assertion above
 // green, because they ask the function directly. A gate has to read the
 // artefact the program really builds.
+TEST_CASE("a bone the file never turns keeps our own rest", "[rig][retarget][restalign]") {
+    const Aligned a = alignedWalk("mixamo_superset");
+
+    // MEASURED with the reference's own parser: not one of the three shipped
+    // animations rotates the tongue, the jaw or a single finger joint -- 0.0
+    // degrees across every frame of all three. A bone the file never moves
+    // says nothing about where its rest should be, so aligning it rewrites
+    // OUR rest into the source's for no reason: it was turning `tongue01` by
+    // 132 degrees and the finger joints by 72 to 90, reshaping a hand the
+    // animation has no opinion about.
+    //
+    // What such a bone must do instead is INHERIT, so the hand follows the
+    // corrected forearm rigidly and keeps the shape this rig was modelled
+    // with. Asserted as equality with the parent rather than as "small":
+    // `finger2-1.L` is nowhere near zero, because the wrist above it really
+    // is aligned -- it has to match THAT, exactly.
+    CHECK_THAT(a.of("finger2-1.L"), WithinAbs(a.of("metacarpal2.L"), 0.01));
+    CHECK_THAT(a.of("finger2-1.L"), WithinAbs(a.of("wrist.L"), 0.01));
+    CHECK_THAT(a.of("finger1-2.L"), WithinAbs(a.of("finger1-1.L"), 0.01));
+
+    // The tongue is inside the mouth and no render would ever have shown this.
+    CHECK_THAT(a.of("tongue01"), WithinAbs(a.of("head"), 0.01));
+}
+
 TEST_CASE("the loaded pose hangs the arm where the walk puts it", "[rig][retarget][restalign]") {
     auto skel = rig::loadSkeleton(dataDir() / "rigs" / "mixamo_superset.mhskel");
     REQUIRE(skel.has_value());

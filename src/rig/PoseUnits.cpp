@@ -329,6 +329,33 @@ foundation::Mat4 minimalRotation(const foundation::Vec3& from, const foundation:
     return out;
 }
 
+/// Whether @p joint is ever actually turned by the file.
+///
+/// A bone the animation never moves carries no instruction about its rest, so
+/// there is nothing to align it TO. Aligning it anyway rewrites our rest into
+/// the source's for no reason: MEASURED, none of the three shipped files
+/// rotates the tongue, the jaw or a single finger joint -- 0.0 degrees across
+/// every frame of all of them -- while the correction was turning `tongue01`
+/// by 132 degrees and the finger joints by 72 to 90, reshaping a hand the
+/// animation had no opinion about.
+///
+/// Per FILE, never per frame. A bone still at frame 0 and moving at frame 7
+/// must keep one rest for the whole clip, or it would pop between frames.
+///
+/// Such a bone then inherits its parent, so the hand still follows the
+/// corrected forearm rigidly -- which is what "the animation does not move the
+/// fingers" should look like.
+bool everRotates(const io::BvhJoint& joint) {
+    for (const foundation::Mat4& f : joint.frames) {
+        const double trace = static_cast<double>(f.m[0][0]) + static_cast<double>(f.m[1][1]) +
+                             static_cast<double>(f.m[2][2]);
+        // cos(angle) = (trace - 1) / 2; a hundredth of a degree is far below
+        // anything an author typed and well above float noise.
+        if ((trace - 1.0) / 2.0 < 0.999999999) return true;
+    }
+    return false;
+}
+
 /// The one joint @p joint drives, or none when that is not a single joint.
 ///
 /// A BRANCHING joint drives no single segment: `Hips` carries the spine and
@@ -374,7 +401,7 @@ std::vector<foundation::Mat4> restAlignment(const io::BvhFile& bvh, const Skelet
         // rotation is computed against its own rest, and the
         // `inv(R_parent)` term already absorbs whatever the parent did.
         const auto joint = byName.find(bone.name);
-        if (bone.parent < 0 || joint == byName.end()) {
+        if (bone.parent < 0 || joint == byName.end() || !everRotates(bvh.joints[joint->second])) {
             out[b] = inherited;
             continue;
         }

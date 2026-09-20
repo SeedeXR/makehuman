@@ -67,12 +67,34 @@ the program really builds.
   `Aligned{std::move(*skel), restAlignment(*bvh, *skel)}` read a moved-from
   skeleton.
 
-### Still open
-`tongue01` takes a 125.6° correction and the finger joints 72–84°. They are
-not obviously wrong — the two rigs really do rest their hands differently —
-but nothing has verified them, and the tear gate passes either way. The hands
-are small enough that a render says little; the honest next step is the
-reference oracle again, one joint at a time.
+### Settled 2026-09-21: the tongue and the fingers
+They were not a correspondence error, and they were not harmless either.
+
+Checked first, because the `UpArm -> shoulder01` class was the obvious
+suspicion: `finger2-1` really is the proximal phalanx (our chain is
+`wrist -> metacarpal2 -> finger2-1`), and relative to their own forearms the
+two hands rest only ~18° apart — index 22.7 against 4.7, thumb 71.8 against
+36.5. The 72–90° was the ARM's T-vs-A difference propagating into world space.
+
+What was wrong is that it was being applied at all. MEASURED with the
+reference's parser: **not one of the three shipped animations rotates the
+tongue, the jaw or a single finger joint — 0.0° across every frame of all
+three.** A bone the file never moves says nothing about where its rest
+belongs, so aligning it rewrote our rest into the source's for no reason,
+reshaping a hand the animation has no opinion about and swinging `tongue01`
+132° inside the head where no render would ever have shown it.
+
+Such a bone now inherits its parent, so the hand follows the corrected forearm
+rigidly and keeps the shape this rig was modelled with. Per FILE, never per
+frame — a bone still at frame 0 and moving at frame 7 must keep one rest for
+the whole clip or it would pop.
+
+Worst stretch unchanged at 3.065x, `--pose tpose` still byte-identical, and
+2,394 of 1,048,576 pixels differ in the render, all at the hands. The new test
+case asserts EQUALITY with the parent rather than "small", because
+`finger2-1.L` is nowhere near zero — the wrist above it really is aligned and
+the finger has to match that exactly. All four of its assertions go red when
+the rule is removed.
 
 ---
 
