@@ -3891,7 +3891,41 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       re-derive both pairs, or keep a `_win.png` and a `_vp.png` and point only
       the `mh_png_compare` gates at the viewport one.
 
-- [ ] **The Smooth tick and the mesh are two stores that can drift.**
+- [x] **The Smooth tick and the mesh are two stores that can drift.**
+      **DONE 2026-09-20. One door installed; NO runnable gate, and that is
+      stated rather than papered over.**
+      **THE LINE NUMBERS BELOW WERE STALE** -- the note said 4239/4250/5435/
+      5785; the real writers were **4385 (declaration), 4397 (the drift),
+      5641 (UI), 6029 (Open)**. Re-grepped rather than trusted.
+      The fix is `mh::ui::MainWindow* smoothTick = nullptr;` plus
+      `setSubdivided(bool)` immediately after the declaration; all four
+      writers route through it. **A raw pointer, not `std::function`** --
+      `<functional>` is not included, and the pointer says exactly what it
+      means: tell the window if there is one. It stays null for the whole of
+      a CLI run, which is correct rather than a special case.
+      **Re-entrancy checked at source, not assumed:** `MainWindow::setSmooth`
+      (`src/ui/MainWindow.cpp:851-857`) assigns `d_->smooth` BEFORE
+      `setChecked`, and the toggled handler early-outs on an unchanged value,
+      so routing `smoothChanged` back through the door cannot loop. Its own
+      comment says so.
+      **Invariant: `grep "subdivided = "` yields exactly TWO lines** -- the
+      declaration and the one inside the door.
+      **WHY THERE IS NO TEST, with the evidence:**
+      * the failure path needs `Subdivider::build` to fail, which needs a
+        non-quad mesh (`src/core/Subdivider.cpp:84-89`), and `displayMesh`
+        only ever subdivides the QUAD base mesh;
+      * **`--subdivide --decimate 0.25` does NOT reach it** --
+        `app_decimate_subdivided_still_refuses` shows that pair is accepted
+        and refuses only the RIG;
+      * the tick-sync half is **GUI-only**, which `tests/CMakeLists.txt:3540`
+        already records as how it drifted in the first place;
+      * a source-grep gate on `subdivided = ` was considered and **rejected**
+        as brittle to a rename and to whitespace -- false confidence.
+      So this is an **unreachable-today hardening**. Regression evidence is
+      the full sweep: **1458/1458, 0 failed.** If a non-quad display mesh ever
+      becomes possible, this is already correct instead of lying.
+
+      **THE ORIGINAL NOTE, kept for the measurements in it:**
       A real defect, but NOT the one above and NOT what the screenshot showed.
       `src/app/main.cpp:4239` holds `bool subdivided` as a plain local in
       `main()`, and `displayMesh`'s failure path at `:4250-4251` prints

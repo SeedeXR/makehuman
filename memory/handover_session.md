@@ -4,6 +4,63 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-20 17:00:00 — Session · **The ktx2 job proved itself by failing, and a tick that could lie**
+
+### The CI job earned its keep immediately
+The `ktx2` job added in `6b66ed4a` **failed on its first ever run**. Install,
+configure and build all succeeded — the 710 MB FetchContent works in CI — and
+then three tests reported `***Not Run` out of **886**. The count was the tell:
+the Qt jobs run ~1450, so that job had no Qt. The log said it outright:
+`Qt6 (...) not found: renderer and UI disabled`, `Could not find executable
+mh_ktx2_encode`.
+
+Two defects, fixed in `cc93aa9e`: the job now installs `qt`, and the three
+encode gates are registered under `MH_WITH_KTX2 AND MH_HAVE_RENDER`, matching
+where their target is built. The licence gate deliberately stays outside that
+guard — it reads the library with `nm`, needs no Qt, and must survive a no-Qt
+build.
+
+**Result on the follow-up run: `completed success, 100% of 1450 tests
+passed`**, with all four gates running:
+`ktx_excludes_ericsson_sla`, `app_ktx2_encode`, `app_ktx2_basisu_unpacks_it`,
+`app_ktx2_holds_the_quality_bar`. The **38.5 dB PSNR bar held on a different
+machine** — same architecture, so still not a cross-platform claim, but more
+than same-machine reproducibility.
+
+**A prediction I got wrong, in the good direction.** I expected
+`app_genitals_render_*` to SKIP on a device-less runner; they **passed**. The
+runner has a usable render device and `SKIP_REGULAR_EXPRESSION` never fired —
+so `app_genitals_render_default`, which carries
+`FAIL_REGULAR_EXPRESSION "wearing Genitals"`, now verifies the new default in
+CI and not only on my machine. `app_genitals_hidden_by_default_in_pixels` did
+skip, exactly as designed.
+
+### The Smooth tick
+`displayMesh` is a lambda defined more than a thousand lines before the window
+exists. When subdivision failed it cleared `subdivided` directly, with no way
+to tell the toolbar — so the tick would read ON over an unsubdivided body.
+
+All four writers now route through one `setSubdivided(bool)`, reached via a
+`MainWindow*` that is null until the window is constructed. A raw pointer
+rather than `std::function`: `<functional>` is not included, and "tell the
+window if there is one" is exactly what it means. Null for a whole CLI run,
+which is the correct behaviour rather than a special case. Re-entrancy checked
+at source — `MainWindow::setSmooth` assigns before `setChecked` and its
+toggled handler early-outs, so the door cannot loop.
+
+**There is no runnable gate for this, and the commit says so.** The failure
+path needs a non-quad display mesh; `displayMesh` only subdivides the quad
+base mesh, and `--subdivide --decimate` does not reach it (that pair refuses
+only the rig). The tick-sync half is GUI-only, which the test file already
+records as how it drifted. A source-grep gate was considered and rejected as
+brittle. Regression evidence: **1458/1458, 0 failed.**
+
+**The memory note's line numbers were stale** — 4239/4250/5435/5785 against a
+reality of 4385/4397/5641/6029. Re-grepped rather than trusted, and the note
+now records the real ones.
+
+---
+
 ## 2026-09-20 16:10:00 — Session · **The KTX2 encode path, a gate that only ran on my laptop, and a default the owner moved**
 
 ### Two unrelated pieces of work. Two commits.

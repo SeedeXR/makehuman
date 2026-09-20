@@ -4385,6 +4385,23 @@ int main(int argc, char** argv) {
     bool subdivided = document.subdivide || parser.isSet(subdivOpt);
     std::optional<mh::core::Subdivider> subdiv;
 
+    /// EVERY writer of `subdivided` goes through here, so the Smooth tick can
+    /// never disagree with the body on screen.
+    ///
+    /// It is a pointer rather than a direct call because `displayMesh` below
+    /// is defined more than a thousand lines before the window exists and has
+    /// to be able to clear the flag when subdivision fails. Null until the
+    /// window is constructed, and null for the whole of a CLI run -- there is
+    /// nothing to tell, which is the correct behaviour rather than a special
+    /// case. Re-entrancy is safe: `MainWindow::setSmooth` assigns before
+    /// `setChecked` and the toggled handler early-outs on an unchanged value,
+    /// so calling this from inside `smoothChanged` cannot loop.
+    mh::ui::MainWindow* smoothTick = nullptr;
+    const auto setSubdivided       = [&](bool on) {
+        subdivided = on;
+        if (smoothTick != nullptr) smoothTick->setSmooth(on);
+    };
+
     /// The mesh that actually gets drawn and exported.
     const auto displayMesh = [&]() -> const mh::core::Mesh& {
         if (!subdivided) return *mesh;
@@ -4394,7 +4411,10 @@ int main(int argc, char** argv) {
             auto built = mh::core::Subdivider::build(*mesh);
             if (!built) {
                 std::fprintf(stderr, "cannot subdivide; drawing the base mesh\n");
-                subdivided = false;
+                // THE DRIFT THIS CHUNK FIXES: this used to assign the local
+                // directly, leaving the toolbar tick ON over an unsubdivided
+                // body. Unreachable today -- see the commit message.
+                setSubdivided(false);
                 return *mesh;
             }
             subdiv = std::move(*built);
@@ -5636,9 +5656,10 @@ int main(int argc, char** argv) {
     // `subdivided` before the window exists, so the button is told rather than
     // asked -- a tick that disagreed with the body on screen would be worse
     // than no button. `displayMesh` reads this flag on every rebuild.
-    window.setSmooth(subdivided);
+    smoothTick = &window;
+    setSubdivided(subdivided);
     QObject::connect(&window, &mh::ui::MainWindow::smoothChanged, [&](bool on) {
-        subdivided = on;
+        setSubdivided(on);
         rebuildInto(window);
     });
 
@@ -6026,10 +6047,9 @@ int main(int argc, char** argv) {
             applyOne(group, id);
         }
 
-        subdivided = loaded->subdivide;
         // The file decides, so the button has to follow it. Without this,
         // opening a subdivided character leaves Smooth reading "off".
-        window.setSmooth(subdivided);
+        setSubdivided(loaded->subdivide);
 
         // The history belongs to the document that produced it. Kept, Ctrl+Z
         // would write the previous character's values into this one.
