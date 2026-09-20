@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "makehuman/io/GltfWriter.h"
 
+#include "makehuman/io/Ktx2Encode.h"
+
 #include "makehuman/foundation/Chars.h"
 #include "makehuman/io/DracoMesh.h"
 
@@ -595,6 +597,11 @@ struct EmbeddedImage {
     size_t offset{};
     size_t bytes{};
     int view{-1};
+
+    /// True when the payload is KTX2 rather than the original PNG/JPEG. Such
+    /// an image is reachable ONLY through `KHR_texture_basisu`, so the texture
+    /// that points at it omits its plain `source` -- see the textures block.
+    bool basis{false};
 };
 
 }  // namespace
@@ -745,13 +752,38 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
                                        " is neither, whatever its extension (" +
                                        texture.extension().string() + ") says"});
             }
+            // KHR_texture_basisu, when everything it needs is present: the
+            // option, a build with libktx, a decoder from the caller, and an
+            // image the encoder will actually take. Any of those missing and
+            // the original bytes go in unchanged -- the same silent
+            // degradation `draco` has, because a texture that fails to
+            // compress is not an error, it is just a texture.
+            //
+            // The encoder REFUSES dimensions that are not multiples of four,
+            // which is not hypothetical: 8 of the first 200 PNGs under data/
+            // are odd sizes (9x9, 7x5, 127x64 and friends). Those keep their
+            // PNG, in the same file as the compressed ones. Mixing is legal.
+            std::vector<uint8_t> ktx2;
+            if (options.basisu && ktx2Available() && options.decodeImage) {
+                if (const auto decoded = options.decodeImage(texture)) {
+                    if (auto enc = ktx2EncodeEtc1s(decoded->rgba, decoded->width, decoded->height,
+                                                   Ktx2Transfer::Srgb)) {
+                        ktx2 = std::move(*enc);
+                    }
+                }
+            }
+
             padTo4(bin);
             EmbeddedImage img;
             img.source   = texture;
-            img.mimeType = std::string(mime);
+            img.basis    = !ktx2.empty();
+            img.mimeType = img.basis ? "image/ktx2" : std::string(mime);
             img.offset   = bin.size();
-            img.bytes    = bytes.size();
-            bin.insert(bin.end(), bytes.begin(), bytes.end());
+            img.bytes    = img.basis ? ktx2.size() : bytes.size();
+            if (img.basis)
+                bin.insert(bin.end(), ktx2.begin(), ktx2.end());
+            else
+                bin.insert(bin.end(), bytes.begin(), bytes.end());
             into[i] = static_cast<int>(images.size());
             images.push_back(std::move(img));
         }
@@ -762,12 +794,28 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
     j.reserve(2048);
     j += R"({"asset":{"version":"2.0","generator":"MakeHuman C++ glTF writer)" +
          jsonEscape(options.provenance.stamp()) + R"("},)";
-    // REQUIRED, not merely used. The geometry exists in no other form in the
-    // file, so a consumer without a Draco decoder has to refuse it rather than
-    // open an empty scene -- which is what `extensionsUsed` alone would invite.
-    if (std::ranges::any_of(packs, [](const Packed& p) { return p.compressed(); })) {
-        j += R"("extensionsUsed":["KHR_draco_mesh_compression"],)"
-             R"("extensionsRequired":["KHR_draco_mesh_compression"],)";
+    // REQUIRED, not merely used. Neither the geometry nor a compressed texture
+    // exists in any other form in the file, so a consumer without the matching
+    // decoder has to refuse it rather than open an empty scene or an untextured
+    // one -- which is what `extensionsUsed` alone would invite.
+    //
+    // Built as a list because the two can appear together, and because
+    // `extensionsRequired` must be a SUBSET of `extensionsUsed`: naming one in
+    // Required and not in Used is a validator error, so they are emitted from
+    // the same vector rather than from two hand-written literals that could
+    // drift apart.
+    std::vector<std::string_view> needed;
+    if (std::ranges::any_of(packs, [](const Packed& p) { return p.compressed(); }))
+        needed.emplace_back("KHR_draco_mesh_compression");
+    if (std::ranges::any_of(images, [](const EmbeddedImage& e) { return e.basis; }))
+        needed.emplace_back("KHR_texture_basisu");
+    if (!needed.empty()) {
+        std::string list;
+        for (size_t n = 0; n < needed.size(); ++n) {
+            if (n != 0) list += ",";
+            list += R"(")" + std::string(needed[n]) + R"(")";
+        }
+        j += R"("extensionsUsed":[)" + list + R"(],"extensionsRequired":[)" + list + "],";
     }
 
     // Mesh nodes come first, so joints occupy nodes[entries.size() ..] and a
@@ -1088,7 +1136,15 @@ std::expected<GltfWriteResult, GltfWriteError> writeGlbScene(
         j += R"("textures":[)";
         for (size_t i = 0; i < images.size(); ++i) {
             if (i != 0) j += ",";
-            j += R"({"source":)" + std::to_string(i) + "}";
+            // A KTX2 image OMITS the plain `source`. Carrying both would mean
+            // embedding the PNG as well, making the file bigger than it was
+            // before compression; the extension is in `extensionsRequired`
+            // precisely so a consumer that cannot read it refuses instead.
+            if (images[i].basis)
+                j +=
+                    R"({"extensions":{"KHR_texture_basisu":{"source":)" + std::to_string(i) + "}}}";
+            else
+                j += R"({"source":)" + std::to_string(i) + "}";
         }
         j += "],";
     }

@@ -2188,6 +2188,58 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         strongest statement available: three writers, three importers and our own
         solver all landing on 1.6863 × 0.3009 × 1.663 m.
 
+- [x] Texture packing (ORM), GLB embedding, KTX2/Basis, optional Draco — **ALL
+      FOUR NOW SETTLED. KTX2/Basis SHIPPED 2026-09-20, closing the last open
+      item in M5, M6 and M7 combined.**
+      `--basisu` writes `KHR_texture_basisu` (ETC1S + BasisLZ via libktx).
+      **MEASURED TODAY on real exports, all four combinations:**
+          plain      2,138,940 bytes
+          --draco    1,234,084   (-42.3%)
+          --basisu   1,582,420   **(-26.0%)**
+          both         677,520   **(-68.3%)**
+      **THE OLD FRAMING FIGURE IN THIS NOTE IS STALE and is left below only as
+      history:** it says "74.5% of the GLB is PNG (1,749,562 of 2,348,760)".
+      Plain is **2,138,940** now — this session's genitals default change
+      removed geometry. Re-measure rather than repeating 2,348,760.
+      **THE COST THIS NOTE PREDICTED IS NOW CONCRETE.** It warned of "a SECOND
+      required glTF extension stacked on Draco, narrowing which tools can open
+      our files twice over". That is exactly what ships: a compressed texture
+      omits its plain `source`, so `KHR_texture_basisu` goes in
+      **extensionsRequired**, and `--draco --basisu` yields a file needing TWO
+      decoders. Keeping a PNG fallback beside the KTX2 would make the file
+      BIGGER than uncompressed, which defeats the purpose. **Both flags are
+      opt-in and default OFF, so nobody gets it unasked.**
+      **DESIGN: the CALLER supplies decoded pixels.** `GltfWriteOptions` has a
+      `decodeImage` hook and `mh_io` gains NO image decoder — it links only
+      `mh::foundation`, assimp, draco, ktx, and no Qt. The app passes a QImage
+      decoder (`src/app/main.cpp`), and tests pass a SYNTHETIC one, so neither
+      `mh_io` nor `mh_tests` needs an image library. Vendoring stb_image was
+      rejected: a second, less-hardened PNG parser beside the Qt one already in
+      the process, for data a user can point at, plus a dependency for
+      something the caller already does.
+      **A texture whose dimensions are not multiples of four keeps its PNG** —
+      8 of the first 200 PNGs under `data/` are odd sizes (9x9, 7x5, 6x6, 9x6,
+      24x25, 128x65, 127x64), so mixed files are the normal outcome.
+      **Gates:** 3 `[basisu]` cases in `tests/golden/test_gltf_writer.cpp`
+      under `#if defined(MH_HAVE_KTX2)`, 34 assertions. One checks the **KTX2
+      magic bytes in the BIN chunk** — the mimeType is our own label, so only
+      the magic is evidence. One is the positive control: `basisu` with NO
+      decoder must fall back to PNG and declare nothing, so the flag alone
+      cannot lie. Red-proven (`img.basis = false` fails 1 of 3, 4 assertions).
+      **Sweeps: KTX2=ON 1465/1465; default OFF 1458/1458 with the 3 tests
+      ABSENT** (verified by tag: 0 matching test cases).
+      **STILL OPEN, deliberately:** `ktx2Write`/`etc1sEncode` (430 lines) have
+      no production callers and **cannot** produce a conformant file — nothing
+      in `src/` sets `globalData`; only `test_ktx2_writer.cpp:119,141,172` do,
+      slicing it from a basisu reference, and `Ktx2Writer.cpp:74` refuses
+      without it. `etc1sEncode` takes RGB, not RGBA. An earlier note here
+      claimed they were the dependency-free fallback; **that was wrong.**
+      Keep-or-delete now rests on speculative value only: the container writer
+      is correct and reference-tested and the block encoder measures 40.20 dB,
+      so both would be needed IF the BasisLZ layer (codebooks, VQ clustering,
+      Huffman range coder) is ever written.
+
+      *(the original note follows, including the stale figure)*
 - [~] Texture packing (ORM), GLB embedding, KTX2/Basis, optional Draco — three
       of four settled; **KTX2/Basis is the ONE open item left in M5, M6 and M7
       combined, and it is an OWNER DECISION, not work** (restated 2026-09-17
@@ -8640,7 +8692,7 @@ GPU here, or Colab) and it comes back to the owner first.
         and run from a machine with no source tree since. A packaging check, not
         a design gap, and directive 13.12 puts it behind compile-from-source.
 - [ ] `macdeployqt` + CMake install
-- [ ] Codesign, hardened runtime, notarize, staple
+- [ ] Codesign, hardened runtime, notarize( can't notarize everyone will compile on their own or ahave to allow unknown app , I don't have cash to pay for apple developer membership), staple
 - [ ] DMG with background and layout
 - [ ] Bundle `LICENSING.md` + LGPL relinking notice + AGPL source offer
 - [ ] Universal binary (arm64 + x86_64)

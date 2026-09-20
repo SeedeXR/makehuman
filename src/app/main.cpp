@@ -88,6 +88,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <expected>
 #include <filesystem>
 #include <map>
@@ -2555,7 +2556,8 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
                 const mh::foundation::RenderView& body, const std::map<QString, WornProxy>& worn,
                 std::span<const uint8_t> bodyMask, const mh::foundation::SkinView* skin,
                 const PoseRig& rig, const mh::foundation::Provenance& provenance,
-                std::span<const mh::foundation::MorphTarget> morphs = {}, bool draco = false) {
+                std::span<const mh::foundation::MorphTarget> morphs = {}, bool draco = false,
+                bool basisu = false) {
     const std::string ext = lowerExtension(path);
 
     // MEASURED, not assumed -- `.dae` was in this list and does not belong.
@@ -2615,7 +2617,28 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
     mh::io::GltfWriteOptions gltfOpts;
     gltfOpts.feetOnGround = true;
     gltfOpts.draco        = draco;
+    gltfOpts.basisu       = basisu;
     gltfOpts.provenance   = provenance;
+
+    // `mh_io` has no image decoder and is deliberately Qt-free, so the caller
+    // supplies one. We already have Qt's, which is hardened and in the process
+    // either way; vendoring a second PNG parser into the io module to decode
+    // bytes we can already decode would add a dependency AND attack surface.
+    gltfOpts.decodeImage =
+        [](const std::filesystem::path& file) -> std::optional<mh::io::DecodedImage> {
+        QImage img(QString::fromStdString(file.string()));
+        if (img.isNull()) return std::nullopt;
+        img              = img.convertToFormat(QImage::Format_RGBA8888);
+        const uint32_t w = static_cast<uint32_t>(img.width());
+        const uint32_t h = static_cast<uint32_t>(img.height());
+        std::vector<uint8_t> rgba(size_t{w} * h * 4);
+        // Row by row: QImage pads scanlines to four bytes, so the buffer is
+        // not tightly packed and a single memcpy would copy the padding too.
+        for (uint32_t y = 0; y < h; ++y)
+            std::memcpy(rgba.data() + size_t{y} * w * 4, img.constScanLine(static_cast<int>(y)),
+                        size_t{w} * 4);
+        return mh::io::DecodedImage{w, h, std::move(rgba)};
+    };
     mh::io::UsdWriteOptions usdOpts;
     usdOpts.feetOnGround = true;
     usdOpts.provenance   = provenance;
@@ -3074,6 +3097,13 @@ int main(int argc, char** argv) {
         QStringLiteral("Compress glTF geometry with KHR_draco_mesh_compression. The extension "
                        "is REQUIRED in the file, so a consumer without a decoder cannot open "
                        "it -- the geometry exists in no other form."));
+    const QCommandLineOption basisuOpt(
+        QStringLiteral("basisu"),
+        QStringLiteral("Compress glTF textures with KHR_texture_basisu (ETC1S + BasisLZ). Like "
+                       "--draco the extension is REQUIRED in the file. Needs a build with "
+                       "libktx (-DMH_WITH_KTX2=ON); without one the textures are written "
+                       "uncompressed. A texture whose width or height is not a multiple of "
+                       "four keeps its PNG -- the format does not allow otherwise."));
     const QCommandLineOption inspectOpt(
         QStringLiteral("inspect"),
         QStringLiteral("Read a mesh file with our own importer, print what it holds, and exit. "
@@ -3288,6 +3318,7 @@ int main(int argc, char** argv) {
     parser.addOption(languageOpt);
     parser.addOption(blendshapesOpt);
     parser.addOption(dracoOpt);
+    parser.addOption(basisuOpt);
     parser.addOption(inspectOpt);
     parser.addOption(shaderOpt);
     parser.addOption(shotOpt);
@@ -4714,7 +4745,8 @@ int main(int argc, char** argv) {
     // it is how the menu and the command line quietly stop producing the same
     // file, and there are ~90 lines of live-rig restore, vertex compaction,
     // skin remapping and blendshape building to disagree about.
-    const bool wantDraco = parser.isSet(dracoOpt);
+    const bool wantDraco  = parser.isSet(dracoOpt);
+    const bool wantBasisu = parser.isSet(basisuOpt);
     // @param decimateTo the fraction of the body's triangles to keep, or 0 for
     //        none. A parameter rather than the captured flag because an LOD
     //        chain calls this once per level with a different one each time.
@@ -5020,10 +5052,10 @@ int main(int argc, char** argv) {
         // deltas, weights and correctives in the file are INDEXED AGAINST.
         const mh::foundation::Provenance provenance{.application  = mh::foundation::kVersion,
                                                     .topologyHash = mh::core::topologyHash(*mesh)};
-        const bool ok =
-            exportMesh(outPath, lod ? *lod : displayMesh(), written.view(), wornProxies,
-                       lod ? std::span<const uint8_t>{} : std::span(bodyMask),
-                       skinView ? &*skinView : nullptr, rig, provenance, morphs, wantDraco);
+        const bool ok = exportMesh(outPath, lod ? *lod : displayMesh(), written.view(), wornProxies,
+                                   lod ? std::span<const uint8_t>{} : std::span(bodyMask),
+                                   skinView ? &*skinView : nullptr, rig, provenance, morphs,
+                                   wantDraco, wantBasisu);
 
         // Put the character back the way it was. The CLI exits straight after
         // this so it never noticed, but File > Export happens with the window

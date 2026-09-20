@@ -15,10 +15,26 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <functional>
+#include <optional>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace mh::io {
+
+/// Decoded pixels for one texture: 8-bit RGBA, tightly packed, exactly
+/// `width * height * 4` bytes.
+///
+/// `mh_io` has NO image decoder and deliberately gains none. It links
+/// `mh::foundation`, assimp, draco and ktx, and no Qt; adding a PNG parser
+/// here would be a SECOND parser for bytes the caller has usually decoded
+/// already, on data a user can point at. So the caller hands pixels in.
+struct DecodedImage {
+    uint32_t width{};
+    uint32_t height{};
+    std::vector<uint8_t> rgba;
+};
 
 struct GltfWriteOptions {
     /// What this file says about itself: the product version, the
@@ -47,6 +63,28 @@ struct GltfWriteOptions {
     ///
     /// Silently ignored by a build without draco (`io::dracoAvailable()`).
     bool draco{false};
+
+    /// Compress textures with `KHR_texture_basisu` (ETC1S + BasisLZ).
+    ///
+    /// Off by default, and like `draco` it lands in `extensionsRequired`: a
+    /// compressed texture omits its plain `source`, so a consumer without a
+    /// transcoder cannot read the image at all. Keeping an uncompressed
+    /// fallback beside it is legal and would make the FILE BIGGER, which is
+    /// the opposite of the point.
+    ///
+    /// Needs BOTH a build with libktx (`io::ktx2Available()`) and a
+    /// `decodeImage` below. Missing either, textures embed as they always
+    /// did -- silently, the way a build without draco ignores `draco`.
+    bool basisu{false};
+
+    /// Decodes a texture file to RGBA for `basisu`. Empty means "cannot", and
+    /// that is the normal state for a caller that does not want compression.
+    ///
+    /// A hook rather than a decoder inside `mh_io`: the app already has one
+    /// (QImage), and a test can supply a synthetic one, so neither the module
+    /// nor the test binary needs an image library. Returning `nullopt` for a
+    /// particular file is not an error -- that texture just stays as it is.
+    std::function<std::optional<DecodedImage>(const std::filesystem::path&)> decodeImage;
 
     std::string meshName{"MakeHuman"};
     std::string materialName{"Skin"};

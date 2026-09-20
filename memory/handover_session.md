@@ -4,6 +4,69 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-20 19:30:00 — Session · **M7 closes: glTF writes KTX2, and the caller brings the decoder**
+
+`--basisu` writes `KHR_texture_basisu`. That was the last open item in M5, M6
+and M7 combined, and the milestone is done.
+
+### Measured, on real exports
+    plain      2,138,940 bytes
+    --draco    1,234,084   (-42.3%)
+    --basisu   1,582,420   (-26.0%)
+    both         677,520   (-68.3%)
+Verified as a real compression rather than a silent fallback: `plain` carries
+none of the three markers, while `--basisu` and `--draco --basisu` each carry
+`KHR_texture_basisu`, `image/ktx2` **and** the KTX2 magic bytes.
+
+**The note's framing figure was stale** — it cited 2,348,760 bytes plain and
+"74.5% is PNG". Plain is 2,138,940 today, because this session's genitals
+default removed geometry. Re-measured rather than repeated.
+
+### The design decision, and the one that was wrong
+The caller supplies decoded pixels. `GltfWriteOptions` gains a `decodeImage`
+hook; `mh_io` gains no decoder and stays Qt-free. The app passes QImage's,
+tests pass a synthetic one, so neither `mh_io` nor `mh_tests` needs an image
+library. Vendoring stb_image was rejected: a second, less-hardened PNG parser
+beside the Qt one already in the process, on data a user can point at.
+
+**I had concluded the opposite about our own encoder and was wrong.** I said
+`ktx2Write`/`etc1sEncode` should be kept as the dependency-free fallback. One
+grep killed it: nothing in `src/` ever sets `globalData`; only
+`test_ktx2_writer.cpp` does, slicing it out of a basisu reference, and
+`Ktx2Writer.cpp:74` refuses without it. `etc1sEncode` takes RGB, not RGBA.
+Our own code cannot produce a conformant file, so `KHR_texture_basisu`
+requires libktx and the guard is `ktx2Available()`. Keep-or-delete for those
+430 lines is now open on speculative grounds only, and is recorded as open
+rather than decided quietly.
+
+### The cost the old note predicted, now concrete
+It warned of "a SECOND required glTF extension stacked on Draco, narrowing
+which tools can open our files twice over". That is what ships: a compressed
+texture omits its plain `source`, so the extension lands in
+`extensionsRequired`, and `--draco --basisu` needs two decoders. Keeping a PNG
+fallback would make the file bigger than uncompressed. Both flags are opt-in
+and default off.
+
+`extensionsUsed`/`extensionsRequired` are built from one vector rather than two
+literals, because draco and basisu can co-occur and Required must be a subset
+of Used — two hand-written strings would drift.
+
+### Gates
+Three `[basisu]` cases, 34 assertions, under `#if defined(MH_HAVE_KTX2)`. One
+checks the **KTX2 magic bytes in the BIN chunk**: the mimeType is a label we
+wrote, so only the magic is evidence. One is the positive control — `basisu`
+with no decoder must fall back to PNG and declare nothing, so the flag alone
+cannot lie. Red-proven: neutering `img.basis` fails 1 of 3 cases.
+
+Sweeps: **KTX2=ON 1465/1465**, **default OFF 1458/1458** with the three tests
+absent (0 matching by tag). I predicted 1461 for the on-sweep and it was 1465
+— I had forgotten the four existing KTX2 gates return with the flag.
+
+A smaller catch: `memcpy` in the new app code compiled without `<cstring>`,
+reaching me transitively. Added explicitly.
+
+---
+
 ## 2026-09-20 17:00:00 — Session · **The ktx2 job proved itself by failing, and a tick that could lie**
 
 ### The CI job earned its keep immediately

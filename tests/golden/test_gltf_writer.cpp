@@ -2230,3 +2230,161 @@ TEST_CASE("the Draco file is smaller than the plain one", "[io][gltf][draco]") {
 }
 
 #endif  // MH_HAVE_DRACO
+
+// ---------------------------------------------------------------------------
+// KHR_texture_basisu.
+//
+// The encoder has its own gates (`app_ktx2_encode` and friends, which hand the
+// file to the `basisu` CLI and measure PSNR against the original). These are
+// about the FILE: a texture that keeps a plain `source` beside the extension,
+// or an extension declared when nothing was compressed, produces a glTF that
+// parses cleanly and is wrong.
+//
+// Guarded on MH_HAVE_KTX2 because there is genuinely no dependency-free KTX2
+// path: `etc1sEncode` emits raw ETC1S blocks with no BasisLZ codebooks, and
+// `ktx2Write` refuses without them. Nothing in src/ produces the global data.
+//
+// The decoder here is SYNTHETIC. `mh_io` has none by design and this binary
+// links no image library; the hook exists precisely so the caller supplies
+// one, and a solid-colour buffer exercises the wiring exactly as a PNG would.
+// ---------------------------------------------------------------------------
+
+#if defined(MH_HAVE_KTX2)
+
+namespace {
+
+/// A decoder that always succeeds, at a size the encoder accepts.
+[[nodiscard]] std::function<std::optional<io::DecodedImage>(const std::filesystem::path&)>
+solidDecoder(uint32_t w, uint32_t h) {
+    return [w, h](const std::filesystem::path&) -> std::optional<io::DecodedImage> {
+        return io::DecodedImage{w, h, std::vector<uint8_t>(size_t{w} * h * 4, 0xC8)};
+    };
+}
+
+/// A textured material pointing at a real PNG, so the non-compressed path has
+/// something valid to embed.
+[[nodiscard]] std::filesystem::path aRealPng() {
+    return std::filesystem::path(MH_DATA_DIR) / "textures" / "texture_notfound.png";
+}
+
+}  // namespace
+
+TEST_CASE("a Basis-compressed texture carries the extension and NO plain source",
+          "[io][gltf][basisu]") {
+    const auto tex = aRealPng();
+    REQUIRE(std::filesystem::exists(tex));
+
+    const auto out = tempGlb("basisu_ext");
+    const auto m   = quad();
+    const auto rm  = core::RenderMesh::build(m);
+    foundation::MaterialDesc mat;
+    mat.name           = "Painted";
+    mat.diffuseTexture = tex;
+
+    io::GltfWriteOptions opt;
+    opt.basisu      = true;
+    opt.decodeImage = solidDecoder(64, 64);
+    REQUIRE(io::writeGlb(out, rm.view(), opt, &mat).has_value());
+
+    const auto doc = jsonOf(out);
+    INFO(doc.dump());
+
+    REQUIRE(doc.contains("images"));
+    CHECK(doc["images"][0]["mimeType"] == "image/ktx2");
+
+    // The mimeType is OUR OWN label, so on its own it only proves we are
+    // self-consistent. The bytes in the BIN chunk must actually begin with the
+    // KTX2 identifier from the spec -- that is evidence rather than a claim.
+    static constexpr std::array<uint8_t, 12> kKtx2Id{0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32,
+                                                     0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A};
+    const auto bin = glbBin(out);
+    REQUIRE(bin.size() >= kKtx2Id.size());
+    CHECK(std::search(bin.begin(), bin.end(), kKtx2Id.begin(), kKtx2Id.end()) != bin.end());
+
+    // The whole point: the image is reachable ONLY through the extension. A
+    // plain `source` here would mean the PNG was embedded too, making the file
+    // larger than before compression.
+    REQUIRE(doc.contains("textures"));
+    const auto& t = doc["textures"][0];
+    CHECK_FALSE(t.contains("source"));
+    REQUIRE(t.contains("extensions"));
+    REQUIRE(t["extensions"].contains("KHR_texture_basisu"));
+    CHECK(t["extensions"]["KHR_texture_basisu"]["source"] == 0);
+
+    // Required, not merely used -- a consumer without a transcoder must refuse
+    // rather than open an untextured model.
+    REQUIRE(doc.contains("extensionsUsed"));
+    CHECK(std::ranges::find(doc["extensionsUsed"], "KHR_texture_basisu") !=
+          doc["extensionsUsed"].end());
+    REQUIRE(doc.contains("extensionsRequired"));
+    CHECK(std::ranges::find(doc["extensionsRequired"], "KHR_texture_basisu") !=
+          doc["extensionsRequired"].end());
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("the basisu flag ALONE compresses nothing and declares nothing", "[io][gltf][basisu]") {
+    // The positive control for the test above. Without a decoder the writer
+    // cannot compress, and the flag must not put an extension in the file
+    // describing a compression that did not happen -- that would be a glTF
+    // claiming a transcoder is required to read a plain PNG.
+    const auto tex = aRealPng();
+    REQUIRE(std::filesystem::exists(tex));
+
+    const auto out = tempGlb("basisu_nodecoder");
+    const auto m   = quad();
+    const auto rm  = core::RenderMesh::build(m);
+    foundation::MaterialDesc mat;
+    mat.name           = "Painted";
+    mat.diffuseTexture = tex;
+
+    io::GltfWriteOptions opt;
+    opt.basisu = true;  // and deliberately NO decodeImage
+    REQUIRE(io::writeGlb(out, rm.view(), opt, &mat).has_value());
+
+    const auto doc = jsonOf(out);
+    INFO(doc.dump());
+    CHECK(doc["images"][0]["mimeType"] == "image/png");
+    CHECK(doc["textures"][0].contains("source"));
+    CHECK_FALSE(doc["textures"][0].contains("extensions"));
+    if (doc.contains("extensionsUsed")) {
+        CHECK(std::ranges::find(doc["extensionsUsed"], "KHR_texture_basisu") ==
+              doc["extensionsUsed"].end());
+    }
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+TEST_CASE("a texture the encoder refuses keeps its PNG", "[io][gltf][basisu]") {
+    // Not hypothetical: 8 of the first 200 PNGs under data/ are not multiples
+    // of four (9x9, 7x5, 6x6, 9x6, 24x25, 128x65, 127x64), and
+    // `KHR_texture_basisu` requires multiples of four. A mixed file -- some
+    // textures compressed, some not -- is the normal outcome, not an edge case.
+    const auto tex = aRealPng();
+    REQUIRE(std::filesystem::exists(tex));
+
+    const auto out = tempGlb("basisu_odd");
+    const auto m   = quad();
+    const auto rm  = core::RenderMesh::build(m);
+    foundation::MaterialDesc mat;
+    mat.name           = "Painted";
+    mat.diffuseTexture = tex;
+
+    io::GltfWriteOptions opt;
+    opt.basisu      = true;
+    opt.decodeImage = solidDecoder(9, 9);  // the encoder refuses this
+    REQUIRE(io::writeGlb(out, rm.view(), opt, &mat).has_value());
+
+    const auto doc = jsonOf(out);
+    INFO(doc.dump());
+    CHECK(doc["images"][0]["mimeType"] == "image/png");
+    CHECK(doc["textures"][0].contains("source"));
+    CHECK_FALSE(doc["textures"][0].contains("extensions"));
+
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+}
+
+#endif  // MH_HAVE_KTX2
