@@ -6540,7 +6540,24 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         refuses an unknown unit name) and `saveExpression` are unit-tested
         where they live.
 
-- [ ] **The remaining two proxy choosers are BLOCKED ON CONTENT, not effort.**
+- [x] **The remaining two proxy choosers are BLOCKED ON CONTENT, not effort.**
+      **CLOSED 2026-09-20. The entry's own conclusion is the answer -- "the
+      proxy-slot line of M8 is therefore finished at five slots plus eyes" --
+      and it was re-verified rather than taken on trust.**
+      Every `.mhclo`/`.proxy` under `data/` today: `3dobjs/a7_converter.proxy`
+      and `3dobjs/base.mhclo` (the two legacy alpha_7 conversion assets), plus
+      `clothes/skirt`, `clothes/tights`, `eyelashes`, `eyes/high-poly`,
+      `eyes/low-poly`, `genitals`, `hair/afro`, `hair/cornrows`, `hair/hair`,
+      `teeth`, `tongue` -- every one of which already has a slot. So the
+      generic-proxy chooser still has nothing meaningful to choose between.
+      **No eyebrow cage exists**: `data/eyebrows/` holds one file, `clear.thumb`
+      (a thumbnail), and `data/targets/eyebrows/` holds MORPH TARGETS, not a
+      proxy mesh.
+      **What remains is asset AUTHORING, not porting**, so it does not belong on
+      this list as blocked work. If an eyebrow cage or an alternate body
+      topology is ever authored, the machinery is already there -- adding a slot
+      is a row in `kProxySlots` and costs no C++ (proven by the genitals slot).
+      **Reopen when an asset exists, not before.**
       Eyebrows have no helper cage. The "generic proxy" chooser has nothing to
       choose between: measured, the only proxymesh-shaped assets in `data/` are
       `data/3dobjs/base.mhclo` (`basemesh alpha_7`, 434 verts — the OLD
