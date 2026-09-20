@@ -38,8 +38,19 @@ jobs:
       # Qt is needed or MH_HAVE_RENDER stays FALSE and the whole render/ui/app
       # tree is silently skipped -- CI was green for weeks without ever
       # compiling a line of it.
+      # `draco` because `tests/golden/test_draco.cpp` has never run anywhere
+      # but a developer machine: `find_package(draco QUIET)` simply failed
+      # here, `MH_HAVE_DRACO` stayed undefined, and 13 test cases quietly did
+      # not exist. It is a bottled formula, so the install is a download.
+      #
+      # Deliberately in the MATRIX job, so draco is covered by asan and tsan
+      # too. That was MEASURED rather than assumed before being turned on:
+      # locally `mh_tests "[draco]"` passes 96 assertions in 13 cases under
+      # BOTH sanitisers, with zero ThreadSanitizer warnings. The libktx note
+      # in memory/todo.md had advised keeping such libraries out of the
+      # sanitiser builds; that advice was worth checking rather than obeying.
       - name: Install dependencies
-        run: brew install ninja assimp qt
+        run: brew install ninja assimp qt draco
 
       - name: Configure
         run: >-
