@@ -111,14 +111,45 @@ skeleton.
   of the clicks are clamped and move nothing. The test was wrong, not the
   widget.
 
-### Still open, and NOT claimed fixed
-The tear is gone; **the pose may still not be right**. In the fixed renders the
-forearms sit high across the chest where a walk cycle should have the arms
-hanging and swinging. Unverified hypothesis: MakeHuman 1.x BVHs are authored
-against a T-pose rest and this rig rests in an A-pose, and a name-only
-retarget applies no rest-offset compensation, so the A-to-T difference is
-added into every frame. The Python reference is the oracle that would settle
-it. Recorded as a suspicion with its evidence, not as a finding.
+### Still open -- and the hypothesis is now CONFIRMED
+The tear is gone; **the pose is still wrong**, and the cause is a missing
+rest-offset compensation. Settled with the reference's OWN BVH parser as an
+external oracle rather than by eye:
+
+| file | joint | rest offset | below horizontal |
+|---|---|---|---|
+| `walk1.bvh` (MakeHuman 1.x) | `UpArm_L` | `[1.472, -0.007, -0.545]` | **0.2 deg** -- a T-pose |
+| `tpose.bvh` (this rig) | `upperarm01.L` | `[0.715, -0.390, -0.033]` | **28.6 deg** -- an A-pose |
+
+walk1 frame 0 rotates `UpArm_L` by **81.3 deg**: the swing that drops a
+HORIZONTAL arm to hanging. We apply that delta from an A rest, so the arm
+lands in the wrong place.
+
+Prototyped numerically before writing any C++, as a full 3-D angle between
+rest bone DIRECTIONS: **42.3 deg apart at `upperarm01`, 53.6 deg at
+`lowerarm01`**. (The 0.2/28.6 elevation figures above are only the vertical
+component and understate it -- I quoted 28.4 deg first and it was wrong.) The
+elbow being worse than the shoulder is what folds the forearms across the
+chest.
+
+**The error is CONSTANT, not per-frame.** "Rest apart" and "posed apart" agree
+to the decimal, because applying one rotation to two directions preserves the
+angle between them. So one constant per-bone rotation closes it exactly --
+which is what makes the fix small and safe to gate.
+
+`tpose.bvh` is the control that makes this safe to reason about: it names THIS
+rig's bones and carries THIS rig's rest offsets, so source rest == our rest
+and nothing is due. **A fix must hang off the RETARGET, not the pose path**,
+or it breaks the one pose that renders correctly today.
+
+The derivation is written out in `memory/todo.md` so the next tick implements
+instead of re-deriving. Short version: a BVH joint has no rest ORIENTATION --
+the rest lives entirely in the offsets -- so both pipelines accumulate plain
+channel rotations from identity, and ours already applies the source's world
+rotation to OUR rest while the source applies it to ITS rest. The fix is a
+per-bone constant `R_b` aligning our rest bone direction to the source's,
+composed inside the conjugation. Not built this tick: it is a core-path
+change and deserves its own chunk with renders and the tear gate.
 
 ---
 

@@ -627,11 +627,55 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       -- 5,108 of 18,486 faces are never-drawn cages that stretch freely) and
       it excludes `dance1.bvh`, whose single frame is a genuine acrobatic
       split stretching the groin 8.80x identically in both states.
-      **STILL OPEN, not claimed fixed**: the forearms sit high across the
-      chest where a walk should have the arms hanging. Unverified hypothesis
-      -- MakeHuman 1.x BVHs rest in a T-pose and this rig rests in an A-pose,
-      and a name-only retarget applies no rest-offset compensation. The
-      Python reference is the oracle that settles it.
+      **STILL OPEN, and now CONFIRMED with numbers (2026-09-20).** The
+      forearms sit high across the chest where a walk should have the arms
+      hanging, and the cause is a missing REST-OFFSET COMPENSATION.
+      MEASURED through the reference's OWN parser (`legacy/python/shared/bvh.py`,
+      an external oracle rather than our reader agreeing with itself), both
+      files through the same `convertFromZUp="auto"` path:
+        * `walk1.bvh` `UpArm_L` rest offset `[1.472, -0.007, -0.545]` --
+          **0.2 deg below horizontal**, i.e. a T-POSE.
+        * `tpose.bvh` `upperarm01.L` rest offset `[0.715, -0.390, -0.033]` --
+          **28.6 deg below horizontal**, i.e. this rig's A-POSE.
+        * `walk1` frame 0 rotates `UpArm_L` by **81.3 deg** (`UpArm_R` 83.1) --
+          the swing that drops a HORIZONTAL arm to hanging.
+      So the file's rotations are deltas from a T rest and we apply them from
+      an A rest. MEASURED as a full 3-D angle between rest bone DIRECTIONS
+      (the elevation figures above are only the vertical component and
+      understate it): **42.3 deg apart at `upperarm01`, 53.6 deg at
+      `lowerarm01`** -- the elbow is worse than the shoulder, which is what
+      folds the forearms up across the chest.
+      **The error is CONSTANT, not per-frame**, and that is the finding that
+      fixes the design: prototyped numerically, "rest apart" and "posed apart"
+      agree to the decimal at every frame, because applying one rotation to
+      two directions preserves the angle between them. A single constant
+      per-bone rotation therefore closes it exactly.
+      **Why `tpose.bvh` is unaffected, which is the control**: it names THIS
+      rig's bones (`clavicle.L`, `shoulder01.L`, `upperarm01.L`) and carries
+      this rig's rest offsets, so source rest == our rest and no compensation
+      is due. **Any fix must therefore hang off the RETARGET, not the pose
+      path**, or it will break the one pose that currently renders correctly.
+      **The mechanism, derived so the next tick implements rather than
+      re-derives.** A BVH joint has NO rest orientation -- its local frame is
+      world-axis-aligned and the rest pose lives entirely in the OFFSETS -- so
+      the source's world rotation at frame f is a plain accumulation
+      `A_j(f) = PROD(ancestor L) * L_j`, from identity. Our reader does not
+      accumulate either (`src/io/BvhReader.cpp` accumulates POSITIONS only),
+      and `poseToBoneLocal`'s conjugation makes each bone apply its L about
+      its own origin in world space, so our pipeline already yields
+      `A_j(f)` applied to OUR rest `T_b`. The source yields `A_j(f)` applied
+      to ITS rest. The two differ by exactly the rest difference.
+      FIX: a per-bone CONSTANT world rotation `R_b` taking our rest bone
+      direction to the source's rest bone direction, composed inside the
+      conjugation -- `matPose_b = inv(T_b) * A_j(f) * R_b * T_b` -- so that
+      `A_j(f)` acts on the source's rest direction as the author intended.
+      Note the consequence and check it is wanted: at frame 0 of a file whose
+      `A_j` is identity the character would snap to the SOURCE's rest (T),
+      which is correct retarget behaviour but will look like a change.
+      The twist about the bone axis is underdetermined by two direction
+      vectors; pick the minimal rotation and SAY SO.
+      Gate it with `test_animation_no_tear.cpp` (bar 5.0x) plus renders, and
+      keep `--pose tpose` as the control that must not move.
 - [ ] **Windowed pixel tests are not hermetic.** `app_backdrop_reopen_restores
       _the_framing` and `app_backdrop_transparent_shows_nothing` compare
       screenshots with `--max-differing 0`, and the app persists window
