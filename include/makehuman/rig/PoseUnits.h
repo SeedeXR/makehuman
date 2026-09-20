@@ -229,6 +229,47 @@ struct PoseUnitsError {
     const std::filesystem::path& path, const Skeleton& skeleton, size_t frame,
     const RetargetMap* names = nullptr);
 
+/// Per-bone rotations aligning THIS rig's rest to the source file's rest.
+///
+/// **This is what makes a retargeted animation land where its author put it.**
+/// A BVH's rotations are deltas from the file's OWN rest, and the shipped
+/// `data/animations/*.bvh` rest in a T-pose while this rig rests in an A-pose.
+/// Applying the delta from the wrong rest leaves every bone off by the angle
+/// between the two rests -- MEASURED on walk1 before this existed:
+/// `upperarm01` 42.3 degrees out, `lowerarm01` 53.6, `wrist` 78.4, which is
+/// what folded the forearms up across the chest. The error is CONSTANT rather
+/// than per-frame, because one rotation applied to two directions preserves
+/// the angle between them, so one constant rotation per bone closes it.
+///
+/// Two rules earn their place, and both were found by rendering:
+///
+/// 1. A **branching** source joint is skipped. `Hips` carries the spine and
+///    both legs and has no single segment below it; taking one put `hips`
+///    150.7 degrees out and tore the pelvis open.
+/// 2. The comparison spans the **same anatomy** in both skeletons -- this
+///    bone's head to the head of the bone the source's child joint names --
+///    not "this bone's own direction". This rig splits the neck into three
+///    and interposes `upperarm02` in the humerus where the file has one bone
+///    each, so a bone-for-bone comparison measured a third of our neck
+///    against the whole of theirs and put `neck01` 22.2 degrees out.
+///
+/// An UNDRIVEN bone inherits its parent's rotation rather than taking
+/// identity: a bone that kept its own rest while its parent was re-oriented
+/// would refuse to follow the parent, tearing the mesh at exactly the joints
+/// this port has just finished untearing.
+///
+/// The twist about a bone's axis is underdetermined by two directions, and
+/// this takes the rotation that adds none -- the only defensible choice, since
+/// a BVH joint carries no roll to copy.
+///
+/// Exposed so it can be gated directly: the tear gate cannot see this, because
+/// removing the correction leaves the mesh whole and merely WRONG.
+///
+/// @param bvh joints ALREADY renamed through the retarget map, so a joint and
+///        the bone it drives share a name.
+/// @return one rotation per bone of @p skeleton, parents before children.
+[[nodiscard]] std::vector<Mat4> restAlignment(const io::BvhFile& bvh, const Skeleton& skeleton);
+
 [[nodiscard]] std::expected<std::vector<Mat4>, PoseUnitsError> loadBodyPose(
     const std::filesystem::path& path, const Skeleton& skeleton,
     const RetargetMap* names = nullptr);

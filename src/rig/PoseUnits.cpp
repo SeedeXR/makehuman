@@ -5,9 +5,12 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace mh::rig {
 namespace {
@@ -284,6 +287,164 @@ std::expected<PoseUnits, PoseUnitsError> poseUnitsOf(const std::filesystem::path
     return makePoseUnits(bvh, skeleton, std::move(names));
 }
 
+/// The least rotation taking unit @p from to unit @p to.
+///
+/// Two directions do not determine a rotation: any amount of twist about the
+/// shared axis also maps one to the other. This picks the one that adds none,
+/// which is the only defensible choice when the source gives no roll -- and a
+/// BVH does not, its joints having no rest orientation at all. Where the two
+/// skeletons disagree about a bone's roll, that disagreement survives; it
+/// shows as a twist about the bone rather than as the limb pointing the wrong
+/// way, which is the smaller of the two wrongs.
+///
+/// Rodrigues, written out rather than routed through a quaternion: the
+/// antiparallel case needs handling either way and this keeps it visible.
+foundation::Mat4 minimalRotation(const foundation::Vec3& from, const foundation::Vec3& to) {
+    const foundation::Vec3 v = foundation::cross(from, to);
+    const float s            = std::sqrt(foundation::dot(v, v));
+    const float c            = foundation::dot(from, to);
+    foundation::Mat4 out     = foundation::Mat4::identity();
+    if (s < 1e-6F) {
+        // Parallel is identity. ANTIparallel has no minimal rotation -- every
+        // half-turn about an axis perpendicular to the bone does it -- and it
+        // means the two skeletons point this bone in opposite directions,
+        // which is a mapping error rather than a rest difference. Identity
+        // leaves it visibly wrong instead of inventing an axis.
+        return out;
+    }
+    const float k = (1.0F - c) / (s * s);
+    const float x = v.x;
+    const float y = v.y;
+    const float z = v.z;
+    // I + [v]x + [v]x^2 * k
+    out.m[0][0] = 1.0F + k * (-z * z - y * y);
+    out.m[0][1] = -z + k * (y * x);
+    out.m[0][2] = y + k * (z * x);
+    out.m[1][0] = z + k * (x * y);
+    out.m[1][1] = 1.0F + k * (-z * z - x * x);
+    out.m[1][2] = -x + k * (z * y);
+    out.m[2][0] = -y + k * (x * z);
+    out.m[2][1] = x + k * (y * z);
+    out.m[2][2] = 1.0F + k * (-y * y - x * x);
+    return out;
+}
+
+/// The one joint @p joint drives, or none when that is not a single joint.
+///
+/// A BRANCHING joint drives no single segment: `Hips` carries the spine and
+/// both legs, and which comes first is file order, not anatomy. Taking one put
+/// our `hips` 150.7 degrees from the source's and tore the pelvis open --
+/// MEASURED as the worst edge in the mesh, the worst stretch going 3.8x to
+/// 7.4x. End sites are not candidates: they give a leaf a direction but there
+/// is no bone of ours to match them against.
+std::optional<size_t> soleChild(const io::BvhFile& bvh, size_t joint) {
+    std::optional<size_t> only;
+    for (size_t i = joint + 1; i < bvh.joints.size(); ++i) {
+        if (bvh.joints[i].parent != static_cast<int32_t>(joint) || bvh.joints[i].endSite) continue;
+        if (only) return std::nullopt;
+        only = i;
+    }
+    return only;
+}
+
+}  // namespace
+
+std::vector<foundation::Mat4> restAlignment(const io::BvhFile& bvh, const Skeleton& skeleton) {
+    std::unordered_map<std::string_view, size_t> byName;
+    byName.reserve(bvh.joints.size());
+    for (size_t i = 0; i < bvh.joints.size(); ++i) {
+        if (!bvh.joints[i].endSite) byName.emplace(bvh.joints[i].name, i);
+    }
+
+    std::vector<foundation::Mat4> out(skeleton.bones.size(), foundation::Mat4::identity());
+    for (size_t b = 0; b < skeleton.bones.size(); ++b) {
+        const Bone& bone = skeleton.bones[b];
+        // Parents precede children (loadSkeleton guarantees it), so the
+        // parent's rotation is already final here.
+        const foundation::Mat4 inherited =
+            bone.parent < 0 ? foundation::Mat4::identity() : out[static_cast<size_t>(bone.parent)];
+
+        // The ROOT is never aligned. It carries the character's placement in
+        // the world, not an anatomical direction: this rig's `root` runs to
+        // `spine05` while MakeHuman 1.x's runs to `Hips`, and MEASURED they
+        // sit 48.2 degrees apart. Turning the root by that swings the whole
+        // body against its own skin -- rendered, it bulges the waist and
+        // collapses the chest while the spine below dutifully turns back.
+        // Leaving it identity costs nothing elsewhere: every other bone's
+        // rotation is computed against its own rest, and the
+        // `inv(R_parent)` term already absorbs whatever the parent did.
+        const auto joint = byName.find(bone.name);
+        if (bone.parent < 0 || joint == byName.end()) {
+            out[b] = inherited;
+            continue;
+        }
+        // Compare the SAME anatomy in both skeletons, head to head of the
+        // next driven bone -- not "this bone's own direction", which spans a
+        // different amount of body in each. This rig splits the neck into
+        // three and interposes `upperarm02` in the humerus where a MakeHuman
+        // 1.x file has one bone for each, so a bone-for-bone comparison
+        // measures a third of our neck against the whole of theirs. MEASURED,
+        // that put `neck01` 22.2 degrees out and tipped the head back to stare
+        // at the sky -- while the file itself keeps the head 5.3 degrees from
+        // vertical, read from the reference's own parser.
+        const auto child = soleChild(bvh, joint->second);
+        if (!child) {
+            out[b] = inherited;
+            continue;
+        }
+        const auto tip = std::ranges::find_if(
+            skeleton.bones, [&](const Bone& x) { return x.name == bvh.joints[*child].name; });
+        if (tip == skeleton.bones.end()) {
+            out[b] = inherited;
+            continue;
+        }
+        const foundation::Vec3 ours = tip->head - bone.head;
+        const foundation::Vec3 theirs =
+            bvh.joints[*child].position - bvh.joints[joint->second].position;
+        const float lo = std::sqrt(foundation::dot(ours, ours));
+        const float lt = std::sqrt(foundation::dot(theirs, theirs));
+        if (lo < 1e-6F || lt < 1e-6F) {
+            out[b] = inherited;
+            continue;
+        }
+        const foundation::Vec3 u{ours.x / lo, ours.y / lo, ours.z / lo};
+        const foundation::Vec3 source{theirs.x / lt, theirs.y / lt, theirs.z / lt};
+        out[b] = minimalRotation(u, source);
+    }
+    return out;
+}
+
+namespace {
+
+/// Rewrites @p pose so the source's rotations act on the source's rest.
+///
+/// Derivation, because the `inv(parent)` is not guessable. Skinning composes
+/// `global_b = global_parent * matRestRelative_b * matPose_b`, and what is
+/// wanted is `global_b = A_b * R_b * T_b` -- the file's accumulated rotation
+/// `A_b` acting on our rest `T_b` once `R_b` has turned it to the source's.
+/// Substituting `matRestRelative_b = inv(T_parent) * T_b` and expanding by
+/// induction gives `matPose_b = inv(T_b) * inv(R_parent) * L_b * R_b * T_b`.
+/// `poseToBoneLocal` already supplies the outer `inv(T_b) * ... * T_b`, so
+/// what belongs here is exactly the middle: `inv(R_parent) * L_b * R_b`.
+///
+/// VERIFIED by the induction and by a numeric prototype against the reference
+/// parser: every arm bone of walk1 frame 0 lands 0.0 degrees from where the
+/// file's author put it, against 42.3 to 78.4 degrees before.
+/// An undriven bone falls out as identity, which is the correct "keep your
+/// rest, relative to your corrected parent".
+void alignToSourceRest(std::vector<foundation::Mat4>& pose, const io::BvhFile& bvh,
+                       const Skeleton& skeleton) {
+    if (pose.size() != skeleton.bones.size()) return;
+    const std::vector<foundation::Mat4> r = restAlignment(bvh, skeleton);
+    for (size_t b = 0; b < pose.size(); ++b) {
+        const int32_t parent = skeleton.bones[b].parent;
+        const foundation::Mat4 inverseParent =
+            parent < 0 ? foundation::Mat4::identity()
+                       : foundation::rigidInverse(r[static_cast<size_t>(parent)]);
+        pose[b] = inverseParent * pose[b] * r[b];
+    }
+}
+
 /// The BVH at @p path, with the two error sets lined up.
 std::expected<io::BvhFile, PoseUnitsError> readBvhFor(const std::filesystem::path& path) {
     auto bvh = io::readBvh(path);
@@ -367,7 +528,14 @@ std::expected<std::vector<Mat4>, PoseUnitsError> loadBodyPoseFrame(
     auto bvh = readBvhFor(path);
     if (!bvh) return std::unexpected(bvh.error());
     if (names) retargetJoints(*bvh, *names);
-    return frameOf(path, skeleton, *bvh, frame);
+    auto pose = frameOf(path, skeleton, *bvh, frame);
+    // Only when a table was used. A file that already names this rig's bones
+    // was authored against this rig's rest -- `data/poses/tpose.bvh` carries
+    // this rig's own offsets -- so there is nothing to align and the
+    // correction would be identity anyway. Gating on the table says so
+    // outright rather than relying on that.
+    if (names && pose) alignToSourceRest(*pose, *bvh, skeleton);
+    return pose;
 }
 
 std::expected<std::vector<Mat4>, PoseUnitsError> loadBodyPose(const std::filesystem::path& path,
@@ -387,7 +555,10 @@ std::expected<std::vector<Mat4>, PoseUnitsError> loadBodyPose(const std::filesys
             "a body pose must hold exactly one frame; this file has " +
                 std::to_string(bvh->frameCount) + " and is an animation, not a pose"});
     }
-    return frameOf(path, skeleton, *bvh, 0);
+    auto pose = frameOf(path, skeleton, *bvh, 0);
+    // Same rule as loadBodyPoseFrame; see the note there.
+    if (names && pose) alignToSourceRest(*pose, *bvh, skeleton);
+    return pose;
 }
 
 std::expected<std::vector<Mat4>, PoseUnitsError> mixPoses(std::span<const Mat4> base,

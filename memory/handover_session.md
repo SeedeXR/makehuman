@@ -4,6 +4,78 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-21 00:55:00 — Session · **The animation lands where its author put it**
+
+`mh::rig::restAlignment` ships. The shipped walks rest in a T-pose and this rig
+rests in an A-pose, so every rotation in the file was a delta from the wrong
+starting orientation — `upperarm01` 42.3 degrees out, `lowerarm01` 53.6,
+`wrist` 78.4 — which is what folded the forearms up across the chest. One
+constant rotation per bone closes it, because the error is constant: one
+rotation applied to two directions preserves the angle between them.
+
+MEASURED after: worst visible-edge stretch **3.065x against 3.814x before**,
+`--pose tpose` **byte-identical**, head **7.0–8.8 degrees from vertical**
+against the file's own 5.3. Sweep **1465/1465**.
+
+### Three versions, and the render chose
+Reasoning got me the algebra; only rendering got me the rules.
+
+| | worst stretch | what was wrong |
+|---|---|---|
+| bone's own direction, any child | 7.363x | `hips` 150.7° out, pelvis torn open |
+| walk our skeleton for driven descendants | 13.692x | rejected |
+| **same anatomy, head to head** | **3.065x** | shipped |
+
+The first version's `hips` number is the lesson: a BRANCHING source joint has
+no "bone below" it — `Hips` carries the spine and both legs, and which comes
+first is file order, not anatomy. Skipping those is load-bearing: without it
+90 of the tear gate's 551 assertions fail.
+
+The second lesson is subtler and is why version three works. The two skeletons
+do not segment the body the same way — three neck bones here against one
+there, `upperarm02` interposed in the humerus — so "this bone's direction"
+measures a third of our neck against the whole of theirs. Comparing the same
+anatomy in both (this bone's head to the head of the bone the source's child
+names) took `neck01` from 22.2° to 4.5 and `clavicle.L` from 24.0 to 2.5,
+**while leaving the arms at 45.0 and 52.9**. Spurious corrections collapsing
+while real ones survive is what says the rule is right, rather than that the
+number got smaller.
+
+### The test that the other five needed
+Five cases pin what `restAlignment` computes. I then deleted the call site and
+**all five stayed green**, because they ask the function directly. The sixth
+drives `loadBodyPoseFrame` and asserts the upper arm hangs within 30° of
+straight down — 47.6° without the correction. A gate has to read the artefact
+the program really builds.
+
+### Corrections to my own work, on the record
+- I said twice that the fix tipped the head back. **It does not.** Measured,
+  the head sits 7.0–8.8° from vertical against the file's 5.3; I was reading a
+  render instead of measuring it, and `--render` uses a fixed camera so I
+  could not even blame framing.
+- I predicted the torso damage came from the root bone's 48.2° correction.
+  Wrong — excluding the root changed nothing; it was `hips` at 150.7°.
+- I built a wrist-below-shoulder gate and **dropped it**: measured, the wrist
+  sits *lower* without the fix than with it, so it does not discriminate. A
+  gate I cannot interpret is not a gate.
+- I overwrote a working version before saving it and had to reconstruct it —
+  confirmed faithful only because it reproduced 3.710x exactly. Save the newer
+  state first.
+- `grep -c` returning 1 on no match swallowed two controls behind `&&`. Both
+  had to be re-run.
+- My own test crashed with SIGSEGV: a braced init evaluates left to right, so
+  `Aligned{std::move(*skel), restAlignment(*bvh, *skel)}` read a moved-from
+  skeleton.
+
+### Still open
+`tongue01` takes a 125.6° correction and the finger joints 72–84°. They are
+not obviously wrong — the two rigs really do rest their hands differently —
+but nothing has verified them, and the tear gate passes either way. The hands
+are small enough that a render says little; the honest next step is the
+reference oracle again, one joint at a time.
+
+---
+
 ## 2026-09-20 23:05:00 — Session · **The arms were torn off, and 1,458 green tests never mentioned it**
 
 The owner ran the app, dragged the new frame scrubber and said the mesh was

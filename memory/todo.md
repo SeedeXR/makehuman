@@ -665,10 +665,37 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       its own origin in world space, so our pipeline already yields
       `A_j(f)` applied to OUR rest `T_b`. The source yields `A_j(f)` applied
       to ITS rest. The two differ by exactly the rest difference.
-      FIX: a per-bone CONSTANT world rotation `R_b` taking our rest bone
-      direction to the source's rest bone direction, composed inside the
-      conjugation -- `matPose_b = inv(T_b) * A_j(f) * R_b * T_b` -- so that
-      `A_j(f)` acts on the source's rest direction as the author intended.
+      **SHIPPED 2026-09-21** as `mh::rig::restAlignment` +
+      `alignToSourceRest` in `src/rig/PoseUnits.cpp`, applied only when a
+      retarget map is in use. `matPose_b = inv(T_b) * inv(R_parent) * L_b *
+      R_b * T_b`; `poseToBoneLocal` already supplies the outer conjugation, so
+      what is folded in is `inv(R_parent) * L_b * R_b` and nothing else in the
+      pipeline changed. MEASURED after: worst visible-edge stretch 3.065x
+      against 3.814x before (the gate's bar is 5.0x), `--pose tpose`
+      BYTE-IDENTICAL, and the head 7.0-8.8 deg from vertical against the
+      file's own 5.3.
+      **Two rules were found by RENDERING, not by reasoning, and both are
+      load-bearing:**
+      (1) a BRANCHING source joint is skipped -- `Hips` carries the spine and
+      both legs, and taking whichever child comes first put `hips` 150.7 deg
+      out, tore the pelvis open and took the stretch to 7.363x. Without this
+      rule 90 of the tear gate's 551 assertions fail.
+      (2) the comparison spans the SAME ANATOMY -- this bone's head to the
+      head of the bone the source's child joint names -- not "this bone's own
+      direction". This rig splits the neck into three and interposes
+      `upperarm02`, so a bone-for-bone comparison measured a third of our neck
+      against the whole of theirs: `neck01` 22.2 deg, `clavicle.L` 24.0. With
+      the span fixed they are 4.5 and 2.5, while the arms keep 45.0 and 52.9 --
+      the spurious corrections collapse and the real ones survive, which is
+      the check that the rule is right.
+      A THIRD attempt, walking our own skeleton for the nearest driven
+      descendant, measured 13.692x and was rejected.
+      GATE: `tests/unit/test_rest_alignment.cpp`, six cases, plus the existing
+      tear gate. The last case is the one that matters -- it drives
+      `loadBodyPoseFrame` and asserts the upper arm hangs within 30 deg of
+      straight down (47.6 without the correction), because the first five call
+      `restAlignment` DIRECTLY and stayed green when the call site was
+      deleted.
       Note the consequence and check it is wanted: at frame 0 of a file whose
       `A_j` is identity the character would snap to the SOURCE's rest (T),
       which is correct retarget behaviour but will look like a change.

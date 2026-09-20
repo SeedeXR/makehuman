@@ -18,6 +18,7 @@ add_executable(mh_tests
     unit/test_centers_of_rotation.cpp
     unit/test_retarget_export.cpp
     unit/test_retarget_map.cpp
+    unit/test_rest_alignment.cpp
     unit/test_scalp.cpp
     unit/test_surface_walk.cpp
     unit/test_surface_bind.cpp
