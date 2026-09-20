@@ -5593,7 +5593,16 @@ endif()
 # as an oracle. Oracle at test time, our code at runtime.
 #
 # Nothing is written into data/; everything lands in the build directory.
-if(MH_WITH_KTX2)
+#
+# `MH_HAVE_RENDER` as well as `MH_WITH_KTX2`, because `mh_ktx2_encode` links
+# Qt6::Gui for QImage and is therefore built inside `if(MH_HAVE_RENDER)` at
+# the top of this file. Registering these without it produced three ***Not
+# Run entries in CI -- "Could not find executable mh_ktx2_encode" -- which is
+# a red suite reporting a missing TOOL rather than a broken encoder. The
+# licence gate above deliberately stays outside this guard: it inspects the
+# built library with `nm` and needs no Qt at all, so it must still run in a
+# no-Qt build. That is the half that actually enforces the ETCSLA boundary.
+if(MH_WITH_KTX2 AND MH_HAVE_RENDER)
     add_test(NAME app_ktx2_encode COMMAND mh_ktx2_encode
              ${MH_DATA_DIR}/eyes/materials/brown_eye.png
              ${CMAKE_CURRENT_BINARY_DIR}/brown_eye.ktx2)

@@ -90,8 +90,11 @@ jobs:
 
       # basis_universal supplies the `basisu` CLI, which is the EXTERNAL
       # decoder the KTX2 gates read our encoder's output back with.
+      # `qt` as well: `mh_ktx2_encode` links Qt6::Gui for QImage, so without it
+      # the encoder gates are skipped rather than run and this job proves only
+      # the licence boundary. The whole point of the job is to run them.
       - name: Install dependencies
-        run: brew install ninja assimp basis_universal
+        run: brew install ninja assimp basis_universal qt
 
       # The only configuration in which libktx is built at all. MH_WITH_KTX2
       # defaults OFF, so without this job every KTX2 gate -- including the
