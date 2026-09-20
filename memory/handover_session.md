@@ -4,6 +4,99 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-20 14:20:00 — Session · **libktx adopted, and the licence file Khronos ships that we must not compile**
+
+### What this chunk is
+M7's last item. The owner's grant ("whatever is needed any library download
+it") reversed the earlier build-it-ourselves decision, so libktx is now a
+dependency: pinned, licence-audited, wired in optional, and fenced by a gate.
+**No encoder code is written yet** — this is the dependency landing, not the
+feature.
+
+### The finding worth waking someone for
+**KTX-Software ships a file we are not allowed to distribute.**
+`external/etcdec/etcdec.cxx` is the Ericsson Texture Compression Codec SLA
+(`LicenseRef-ETCSLA`): rights granted *only* for products doing compression
+"according to the Khronos standard specifications OpenGL, OpenGL ES and
+WebGL", plus a patent-litigation termination clause. That is a **field-of-use
+restriction**, which `LICENSING.md` §5.2 forbids outright and which AGPL-3.0
+distribution cannot carry. Upstream does not hide it: *"The file lib/etcdec.cxx
+is not open source."*
+
+It is cleanly excludable — `KTX_FEATURE_ETC_UNPACK=OFF`, verified in
+`CMakeLists.txt:47` (it defaults **ON**), `:435-438`, `:572`, and
+`lib/etcunpack.cxx` guarding its whole body across lines 29–277. We encode to
+ETC1S; software ETC *decoding* is not something a glTF exporter needs, so
+nothing is lost. **The flag is set with `CACHE BOOL "" FORCE`, which is the
+point: a FORCEd entry beats the command line, so no `-D` can smuggle that file
+into a build.** Changing the control requires editing a reviewable diff.
+
+### The gate, and why it is evidence rather than decoration
+`ktx_excludes_ericsson_sla` (Test #1457, registered only under
+`MH_WITH_KTX2`) reads **symbols with `nm`**, not archive members with `ar`,
+because libktx builds shared here and `ar` cannot read a Mach-O dylib. It
+carries a positive control: absent `ktxTexture2_CompressBasis`, it fails rather
+than passes, so a stripped or wrong file cannot produce a meaningless green.
+
+| Configuration | `etcdec` compiled | Gate |
+|---|---|---|
+| As shipped | 0 | **passes** |
+| File mutated to force ETC_UNPACK ON | 1 | **fails**, naming the cause |
+
+Restored from `<scratchpad>/io_cmake.bak`, `cmp`-verified, rebuilt, control
+green. `git checkout` was not used.
+
+### Four failures, each of which taught something
+1. First `MH_WITH_KTX2=ON` configure died rc=1 after 140 s: *No known features
+   for C compiler*. libktx is C; `project()` declares `LANGUAGES CXX` only.
+   Fixed with `enable_language(C)` **inside** the optional block, so a default
+   build still never looks for a C compiler.
+2. First real build died rc=1 on `ld: symbol(s) not found`,
+   `_ktxTexture1_glTypeSize` from `writer1.c.o`. **`KTX_FEATURE_KTX1=OFF` is
+   not a supported combination** — it compiles `lib/writer1.c` and drops the
+   implementation. Set back ON. **The earlier 7 s standalone build missed this
+   because a static archive is never linked.**
+3. The gate's first version used `ar -t` and died on the dylib. It failed
+   *safe* — refusing a pass it could not justify — but the tool was wrong.
+4. **The first red-proof was a no-op and nearly passed as success.** Passing
+   `-DKTX_FEATURE_ETC_UNPACK=ON` changed nothing, because the FORCEd cache
+   entry overrides it: etcdec stayed 0 and the gate "passed". The tell was the
+   etcdec count, not the verdict. Proving a forced flag's gate means mutating
+   the file.
+
+### Costs, measured — and one earlier claim corrected
+The todo carried an estimate that CI "probably gets worse"; it labelled itself
+an estimate, and the number contradicts it. But **quoting 9 s would have been
+the dishonest half**: a warm `ktx` rebuild is 3 s, while a cold runner pays
+**140 s for the first configure** and **710 MB** in `_deps/ktx-src` even with
+`GIT_SUBMODULES ""` and `GIT_SHALLOW TRUE`. That cold figure is exactly why
+`MH_WITH_KTX2` **defaults OFF** — unlike draco there is nothing for
+`find_package` to find, so opting in has to be deliberate. Default configure
+measured unchanged: rc 0 in 1 s, zero fetches.
+
+### The cost accepted knowingly
+Adopting libktx **discards the 2a encoder**, which measured **40.20 dB and beat
+basisu's own 38.92**. That is real work thrown away for interop and speed of
+finishing — not because it was worse.
+
+### State
+Pin `v4.4.2` = `4d6fc70eaf62ad0558e63e8d97eb9766118327a6`. `LICENSING.md` §5.1
+row written *before* any code calls the library; `third_party/licenses/`
+created, which §8 step 6 has always required and which did not exist.
+`audit_dependencies.py` rc=0. Transitively Apache-2.0 across everything we
+link (basisu, dfdutils, astc-encoder); zstd is the system BSD-3-Clause library.
+
+**Next:** the encode path (`ktxTexture2_CompressBasisEx` behind
+`MH_HAVE_KTX2`), gated against the `basisu` CLI oracle — oracle at test time,
+our code at runtime.
+
+**Still unexplained, and still claiming no cause:**
+`app_backdrop_transparent_shows_nothing` and
+`app_backdrop_hidden_from_another_side` each failed once, long ago, then passed
+every retry — and neither recurred anywhere in the full gate.
+
+---
+
 ## 2026-09-20 03:30:00 — Session · **Backdrop drag/scale, and the bug I wrote myself**
 
 ### What shipped

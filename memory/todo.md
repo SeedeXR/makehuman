@@ -2308,12 +2308,93 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         **`KHR_texture_basisu` stays OPTIONAL the way `--draco` is**, so a plain
         GLB still opens everywhere.
 
-        **STILL UN-RUN, offered and available on request:** (i) libktx
-        configure+build time across the five presets, (ii) its full transitive
-        licence set. Both are cheap; neither has been measured, and no claim
-        here depends on them. **If the owner ever reverses this, vendor it
-        OPTIONAL the way draco is (`find_package(draco QUIET)`,
-        `src/io/CMakeLists.txt:45`) and EXCLUDE it from the sanitiser builds.**
+        **~~STILL UN-RUN~~ -- BOTH HAVE NOW BEEN MEASURED, 2026-09-20.** They
+        were (i) libktx configure+build time, (ii) its full transitive licence
+        set. Results below; they did not all confirm what was expected.
+
+        **(i) BUILD COST -- THE OLD ESTIMATE ABOVE WAS WRONG, AND IT SAID SO.**
+        The "CI probably gets WORSE" argument labelled itself an ESTIMATE, and
+        the number contradicts it. Warm rebuild of the `ktx` target is **3 s**;
+        a standalone Release build of the library alone was **2 s configure +
+        7 s compile**, 66 objects, `libktx.a` 3,962,680 bytes, 0 errors.
+        **But quoting 9 s would be the dishonest half of the answer.** A cold
+        runner also pays the FETCH: **140 s for the first configure**, and
+        `_deps/ktx-src` lands at **710 MB** even with `GIT_SUBMODULES ""` and
+        `GIT_SHALLOW TRUE`. That is the real CI cost, and it is why
+        `MH_WITH_KTX2` **defaults OFF** -- a fetch at configure time would tax
+        every preset on every fresh job, and unlike draco there is nothing for
+        `find_package` to find.
+
+        **(ii) LICENCE SET -- ONE ENTRY IS FORBIDDEN, AND IT IS EXCLUDABLE.**
+        KTX-Software itself and its in-tree `external/basisu`,
+        `external/dfdutils`, `external/astc-encoder` are all **Apache-2.0**;
+        zstd resolves to the SYSTEM library (BSD-3-Clause) via its own
+        `Findzstd.cmake`; `fmt` (MIT OR CC0-1.0), `lodepng` (zlib), `cxxopts`
+        (MIT) and `SDL_gesture` build only the tools and viewer, which we do
+        not build. Its one submodule, `tests/cts`, is nearly the whole 987 MB
+        of a recursive clone.
+        **`external/etcdec/etcdec.cxx` is `LicenseRef-ETCSLA`, the Ericsson
+        Texture Compression Codec SLA: FIELD-OF-USE RESTRICTED** ("...according
+        to the Khronos standard specifications OpenGL, OpenGL ES and WebGL")
+        with a patent-litigation termination clause. **LICENSING.md section 5.2
+        already forbids field-of-use licences outright**, and upstream agrees in
+        its own words: *"The file lib/etcdec.cxx is not open source."*
+        `-DKTX_FEATURE_ETC_UNPACK=OFF` keeps it out -- verified in the v4.4.2
+        source (`CMakeLists.txt:47` where it defaults **ON**, `:435-438`,
+        `:572`; `lib/etcunpack.cxx` guards its whole body, lines 29-277) and in
+        a real build. We ENCODE to ETC1S; software ETC DECODING is not
+        something a glTF exporter needs, so nothing is given up.
+
+        **WHAT LANDED (pinned `v4.4.2` = commit `4d6fc70eaf62ad0558e63e8d97eb9766118327a6`):**
+        `LICENSING.md` 5.1 row written BEFORE any code called the library;
+        `third_party/licenses/` **created** -- it did not exist although
+        section 8 step 6 has always required it; `src/io/CMakeLists.txt` gained
+        `option(MH_WITH_KTX2 ... OFF)` with FetchContent at the SHA (never the
+        tag), `GIT_SUBMODULES ""`, and the nine `KTX_FEATURE_*` cache vars.
+        **`KTX_FEATURE_ETC_UNPACK` is set with `CACHE BOOL "" FORCE`, which is
+        deliberate: a FORCEd entry beats the command line, so
+        `-DKTX_FEATURE_ETC_UNPACK=ON` cannot smuggle the Ericsson file into a
+        build.** Changing that control means editing a file someone reviews.
+
+        **THE GATE `ktx_excludes_ericsson_sla` (Test #1457) IS PROVEN BOTH
+        DIRECTIONS.** As shipped: etcdec 0, PASSES. With the file mutated to
+        force ETC_UNPACK ON: etcdec 1, FAILS naming the cause. Then restored
+        from backup, `cmp`-verified, rebuilt, CONTROL green. It reads symbols
+        with **`nm`**, not archive members with `ar`, because libktx builds
+        SHARED here; and it carries a positive control that fails if
+        `ktxTexture2_CompressBasis` is absent, so it cannot pass on a stripped
+        or wrong file.
+
+        **FOUR FAILURES ON THE WAY, RECORDED BECAUSE EACH TAUGHT SOMETHING:**
+        1. First `MH_WITH_KTX2=ON` configure died rc=1 after 140 s with
+           `No known features for C compiler` -- libktx is C and `project()`
+           (`CMakeLists.txt:23-27`) declares `LANGUAGES CXX` only. Fixed with
+           `enable_language(C)` INSIDE the optional block, so a default build
+           still never looks for a C compiler.
+        2. First real build died rc=1, `ld: symbol(s) not found` on
+           `_ktxTexture1_glTypeSize` from `writer1.c.o`. **`KTX_FEATURE_KTX1=OFF`
+           is not a supported combination** -- it compiles `lib/writer1.c` but
+           drops the `ktxTexture1_*` implementation. Set back ON.
+           **The 7 s standalone build missed this because a STATIC ARCHIVE IS
+           NEVER LINKED**; only linking resolves symbols.
+        3. The gate's first version used `ar -t` and died with `Inappropriate
+           file type or format` on the dylib. It **failed safe** -- it refused
+           to report a pass it could not justify -- but the tool was wrong.
+        4. The first red-proof was a **NO-OP**: passing
+           `-DKTX_FEATURE_ETC_UNPACK=ON` changed nothing, because the FORCEd
+           cache entry overrides it. etcdec stayed 0 and the gate "passed".
+           **That pass was worthless and nearly went unnoticed** -- the tell was
+           the etcdec count, not the verdict. Proving a forced flag's gate
+           requires mutating the file.
+
+        **THE COST ACCEPTED KNOWINGLY:** adopting libktx **DISCARDS the 2a
+        encoder**, which measured **40.20 dB and beat basisu's own 38.92**.
+        That work is real and is being thrown away for interop and speed of
+        finishing, not because it was inferior.
+
+        **If the owner ever reverses this, vendor it OPTIONAL the way draco is
+        (`find_package(draco QUIET)`, `src/io/CMakeLists.txt:45`) and EXCLUDE
+        it from the sanitiser builds.**
 
         **SPECIFICATIONS READ (registry.khronos.org KTX 2.0; the
         KHR_texture_basisu README), and the measurement that decides the shape:**

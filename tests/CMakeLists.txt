@@ -5485,3 +5485,14 @@ if(MH_HAVE_RENDER)
     set_tests_properties(ui_icons_hidpi PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=2;TMPDIR=${MH_TEST_TMPDIR}")
 endif()
+
+# The Ericsson-SLA exclusion is a LICENCE boundary, and a comment cannot hold
+# one. Registered only when libktx is actually built: with MH_WITH_KTX2=OFF
+# there is no archive to inspect, and a test that "passes" with nothing to
+# check is worse than an absent one. See third_party/licenses/README.md.
+if(MH_WITH_KTX2)
+    add_test(NAME ktx_excludes_ericsson_sla COMMAND ${CMAKE_COMMAND}
+             "-DLIBRARY=$<TARGET_FILE:ktx>"
+             "-DNM=${CMAKE_NM}"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/ktx_excludes_ericsson_sla.cmake)
+endif()
