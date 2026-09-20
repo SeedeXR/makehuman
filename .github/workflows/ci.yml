@@ -82,6 +82,37 @@ jobs:
       - name: Test
         run: ctest --test-dir build/fallback --output-on-failure
 
+  ktx2:
+    name: build + test (libktx / KTX2)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      # basis_universal supplies the `basisu` CLI, which is the EXTERNAL
+      # decoder the KTX2 gates read our encoder's output back with.
+      - name: Install dependencies
+        run: brew install ninja assimp basis_universal
+
+      # The only configuration in which libktx is built at all. MH_WITH_KTX2
+      # defaults OFF, so without this job every KTX2 gate -- including the
+      # licence one -- runs on a contributor's laptop and nowhere else. This
+      # repository has already shipped that mistake once (see the commit
+      # "The gate that only worked on my screen").
+      - name: Configure with libktx on
+        run: >
+          cmake -S . -B build/ktx2 -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DMH_WITH_KTX2=ON
+
+      - name: Build
+        run: cmake --build build/ktx2 -j
+
+      # The FULL suite, not just -R ktx. The KTX2 gates are the point, but
+      # linking a new library into mh_io can break things that have nothing
+      # to do with textures, and the charconv job sets the same precedent.
+      - name: Test
+        run: ctest --test-dir build/ktx2 --output-on-failure
+
   benchmark:
     name: benchmark vs python baseline
     runs-on: macos-15

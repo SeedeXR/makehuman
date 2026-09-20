@@ -233,6 +233,14 @@ if(MH_HAVE_RENDER)
     add_executable(mh_etc1s_roundtrip mh_etc1s_roundtrip.cpp)
     target_link_libraries(mh_etc1s_roundtrip PRIVATE mh::io Qt6::Gui mh::warnings mh::sanitize)
     set_target_properties(mh_etc1s_roundtrip PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
+
+    # Encodes through libktx. Registered only when there IS an encoder --
+    # a target that cannot run is worse than an absent one.
+    if(MH_WITH_KTX2)
+        add_executable(mh_ktx2_encode mh_ktx2_encode.cpp)
+        target_link_libraries(mh_ktx2_encode PRIVATE mh::io Qt6::Gui mh::warnings mh::sanitize)
+        set_target_properties(mh_ktx2_encode PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
+    endif()
 endif()
 
 # NOT guarded, unlike mh_png_compare above: this one needs no Qt, only the
@@ -5495,4 +5503,66 @@ if(MH_WITH_KTX2)
              "-DLIBRARY=$<TARGET_FILE:ktx>"
              "-DNM=${CMAKE_NM}"
              -P ${CMAKE_CURRENT_SOURCE_DIR}/ktx_excludes_ericsson_sla.cmake)
+endif()
+
+# ---------------------------------------------------------------------------
+# KTX2 / BasisLZ through libktx, decoded by an INDEPENDENT transcoder.
+#
+# Registered only under MH_WITH_KTX2: with no encoder there is nothing to
+# check, and a test that passes with nothing to check is worse than absent.
+#
+# The decode leg is `basisu -unpack`, NOT our code. Our own transcoder reading
+# our own encoder would only prove we are self-consistent, and self-consistent
+# is not correct -- that is the whole reason this project keeps the basisu CLI
+# as an oracle. Oracle at test time, our code at runtime.
+#
+# Nothing is written into data/; everything lands in the build directory.
+if(MH_WITH_KTX2)
+    add_test(NAME app_ktx2_encode COMMAND mh_ktx2_encode
+             ${MH_DATA_DIR}/eyes/materials/brown_eye.png
+             ${CMAKE_CURRENT_BINARY_DIR}/brown_eye.ktx2)
+    set_tests_properties(app_ktx2_encode PROPERTIES FIXTURES_SETUP app_ktx2_encode)
+
+    # An EXTERNAL decoder reading what we wrote. If basisu cannot unpack it,
+    # the file is not conformant however happily our own code round-trips it.
+    add_test(NAME app_ktx2_basisu_unpacks_it COMMAND basisu -unpack -no_ktx
+             ${CMAKE_CURRENT_BINARY_DIR}/brown_eye.ktx2)
+    set_tests_properties(app_ktx2_basisu_unpacks_it PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        FIXTURES_REQUIRED app_ktx2_encode
+        FIXTURES_SETUP app_ktx2_unpacked)
+
+    # ...and what it unpacked has to still look like the photograph.
+    #
+    # "basisu exited 0" only says the container parsed. A lossy codec needs a
+    # quality number, so the image basisu decoded is compared against the
+    # original. `_rgba_RGBA32_` is the full-precision decode -- the other ~30
+    # PNGs `-unpack` writes are transcodes to specific GPU formats and carry
+    # that format's loss on top of ETC1S's.
+    #
+    # THE NUMBER IS MEASURED, NOT CHOSEN: 38.83 dB, read off this exact pair.
+    # The bar is 38.5, the same ~0.3 dB of headroom the 39.9 bar keeps below
+    # its 40.20 baseline.
+    #
+    # This is BELOW our own encoder's 40.20, and that is the expected outcome
+    # the note above `app_etc1s_holds_the_quality_bar` was written to predict:
+    # BasisLZ quantises to shared codebooks, and that is what codebooks cost.
+    # It is not a regression in our encoder, which this chunk does not touch,
+    # and the 39.9 bar is deliberately left alone. For scale, basisu's own
+    # figure on OUR encoder's output is 38.92 dB, measured by a different tool
+    # at settings we did not match -- close to this one, but not a comparison
+    # to lean on.
+    #
+    # No ceiling to match `app_etc1s_quality_is_pinned_from_above`. That one
+    # pins an encoder we own and can explain every digit of. This is a third
+    # party's, and a ceiling here would fail on a libktx upgrade that merely
+    # got better. Three consecutive encodes on this machine were byte-identical
+    # -- but same-machine reproducibility is not cross-platform reproducibility,
+    # and nothing here claims the latter.
+    add_test(NAME app_ktx2_holds_the_quality_bar COMMAND mh_png_compare
+             ${MH_DATA_DIR}/eyes/materials/brown_eye.png
+             ${CMAKE_CURRENT_BINARY_DIR}/brown_eye_unpacked_rgba_RGBA32_level_0_face_0_layer0000.png
+             --min-psnr 38.5)
+    set_tests_properties(app_ktx2_holds_the_quality_bar PROPERTIES
+        FIXTURES_REQUIRED app_ktx2_unpacked)
 endif()

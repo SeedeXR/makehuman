@@ -2763,6 +2763,116 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
            precedent (LICENSING.md section 5.2) refused a BSD-3-Clause core
            because `otool -L` showed GPL-2.0-or-later behind it, and `mh_io` is
            Apache-2.0. Check what it LINKS, not just its root LICENSE.
+
+        **THE ENCODE PATH LANDED 2026-09-20, and the gate that was missing.**
+
+        Item 2 above ("ETC1S encoder + BasisLZ payload", the large one) is
+        **DONE -- by libktx, not by us**. `io::ktx2EncodeEtc1s()`
+        (`include/makehuman/io/Ktx2Encode.h`, `src/io/Ktx2Encode.cpp`) takes
+        8-bit RGBA and returns a COMPLETE KTX2 file carrying ETC1S + BasisLZ:
+        `ktxTexture2_Create` -> `ktxTexture_SetImageFromMemory` ->
+        `ktxTexture2_CompressBasisEx` (`uastc = KTX_FALSE`, `qualityLevel = 128`,
+        the reference default) -> `ktxTexture_WriteToMemory`. Same
+        `#if defined(MH_HAVE_KTX2)` / `#else` split as `src/io/DracoMesh.cpp`,
+        so a build without libktx gets `false`/`nullopt` rather than a link
+        error. It **REFUSES** non-multiple-of-4 dimensions and a span-length
+        mismatch rather than padding: a padded image is silently the wrong size
+        to every consumer, a refusal is one loud failure where the mistake was
+        made. vkFormat 37/43 are spelled out rather than pulling in a Vulkan
+        dependency for two integers.
+
+        Because libktx emits a complete file, it **supersedes** our container
+        writer on this path rather than feeding it. `ktx2Write` and
+        `etc1sEncode` consequently have **no callers** -- greenfield, not
+        regression. Deleting them is a separate decision, deliberately not
+        taken here.
+
+        **THE QUALITY BAR IS MEASURED: 38.83 dB**, gate
+        `app_ktx2_holds_the_quality_bar` (#1460) set at **38.5**, the same
+        ~0.3 dB of headroom the 39.9 bar keeps below its 40.20 baseline.
+        This is **BELOW our own encoder's 40.20, and that is the predicted
+        outcome**, not a regression: the note written for this chunk at
+        `tests/CMakeLists.txt:2544` said adding shared codebooks would push the
+        figure down and to re-measure rather than loosen. BasisLZ is shared
+        codebooks. **The 39.9 bar was not touched** -- it gates
+        `mh_etc1s_roundtrip`, our own encoder, which this chunk does not change.
+
+        **Evidence the bar is not vacuous**, all measured on the same unpack:
+        `_rgba_RGBA32_` 38.83, `_rgba_ETC2_RGBA_` 38.83 (ETC1S transcodes
+        losslessly into ETC2 -- a good sanity signal), `_rgba_PVRTC1_4_RGBA_`
+        36.19, `_rgba_RGBA4444_` 34.68. The last two fail 38.5, so a real
+        ~2.6 dB degradation is caught. The gate reads the `_rgba_RGBA32_` file
+        specifically: it is the full-precision decode, while the other ~30 PNGs
+        `basisu -unpack` writes carry a specific GPU format's loss on top.
+
+        **Gate #1460 proven RED then GREEN**: 3/3 pass at 38.5 -> bar mutated to
+        39.5 -> ONLY #1460 fails (ctest rc=8) -> restored from a snapshot (NOT
+        `git checkout`), `cmp` identical, 3/3 pass again.
+
+        **NO `--max-psnr` CEILING, deliberately**, unlike
+        `app_etc1s_quality_is_pinned_from_above`. That one pins an encoder we
+        own and can explain every digit of; this is a third party's, and a
+        ceiling would fail on a libktx upgrade that merely got better. Three
+        consecutive encodes here were byte-identical (sha256 `4c02bcec...`),
+        but **same-machine reproducibility is not cross-platform
+        reproducibility** and nothing claims the latter.
+
+        **THE GATE THAT ONLY RAN ON ONE LAPTOP -- FOUND AND FIXED.**
+        `MH_WITH_KTX2` defaults OFF and **no CI job set it**, so #1457 (the
+        ETCSLA licence gate), #1458, #1459 and #1460 ran on the developer
+        machine and nowhere else. The licence gate is the CONDITION OF
+        ADOPTION, and it was not enforced anywhere durable. This repository
+        shipped that exact mistake three commits ago (`e8bbb214`, "The gate
+        that only worked on my screen"). A **`ktx2` job** now exists in
+        `.github/workflows/ci.yml`: `brew install ninja assimp basis_universal`
+        (the formula supplying the `basisu` oracle), `-DMH_WITH_KTX2=ON`, and
+        the **FULL** ctest, not `-R ktx` -- linking a new library into `mh_io`
+        can break things unrelated to textures, and the charconv job sets that
+        precedent.
+
+        **CORRECTION to concern 3 above, which this chunk falsified.** It
+        predicted FetchContent would run "in ALL SIX configuring jobs ...
+        against a run already 73-75 min". Wrong in both directions: because
+        `MH_WITH_KTX2` defaults OFF it ran in **ZERO** jobs, and the new job
+        makes it exactly **ONE**. The 140 s configure + 710 MB fetch is paid
+        once, in parallel with the other jobs, so it does not extend the
+        tsan-bounded critical path. **The draco half of that concern still
+        stands and is NOT fixed here: `draco_FOUND` is still false in CI and
+        `tests/golden/test_draco.cpp` has still never run there.**
+
+        **MEASURED on this machine:**
+        * `MH_WITH_KTX2=ON`: **1460/1460 passed, 0 failed**, 1207 s, 0 compile
+          errors. 1460 = 1456 + the four KTX2 gates. This is the exact
+          configuration the new CI job runs.
+
+        **`KHR_texture_basisu` IN THE glTF WRITER IS ITS OWN CHUNK -- item 3
+        above, and here is why it cannot be folded in.** `src/io/GltfWriter.cpp`
+        reads a texture from disk and embeds the PNG/JPEG bytes **verbatim**
+        (`:725-755`, mime sniffed from magic bytes by `mimeTypeOf`). Emitting
+        KTX2 instead means **decoding PNG to RGBA inside `mh_io`**, and
+        `src/io/CMakeLists.txt:37-39` links only `mh::foundation`, `assimp`,
+        `draco`, `ktx` -- **no Qt, and stb_image is not vendored** (grepped).
+        So the chunk opens a dependency question with a licence dimension:
+          (a) vendor **stb_image** -- new LICENSING.md 5.1 entry;
+          (b) link **Qt6::Gui** into the deliberately Qt-free Apache-2.0 io
+              module -- architecturally the wrong direction;
+          (c) have the **CALLER supply decoded pixels**, keeping `mh_io`
+              decoder-free -- cleanest, and reshapes `GltfWriteOptions`.
+        There is no one-line version, and **declaring the extension without
+        emitting KTX2 images would be wrong**. Guard precedent when it is
+        written: `src/io/GltfWriter.cpp:333`
+        `if (options.draco && dracoAvailable())`, with the
+        extensionsUsed/Required pair at `:767-770`.
+        **Measured for that chunk:** of the first 200 PNGs in `data/`, **192
+        are multiples of 4 and 8 are not** (9x9, 7x5, 6x6, 9x6, 24x25, 128x65,
+        127x64). Our encoder refuses those, so the chunk needs the extension's
+        per-texture **fallback `source`** rather than assuming every texture
+        can be compressed.
+
+        **STILL OPEN.** Whether to exclude libktx from the sanitiser builds is
+        **moot today**: the ASan and TSan presets do not set `MH_WITH_KTX2`, so
+        libktx is not in them at all. Measure if that changes.
+
 - [x] **Unit-correctness at dm/m/cm/inch, for every writer.** Each height is
       measured back out of the file the writer produced, not taken from its
       return value: OBJ from its `v` lines, glTF from the POSITION min/max, USD
