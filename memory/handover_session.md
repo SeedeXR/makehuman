@@ -4,6 +4,124 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-20 23:05:00 — Session · **The arms were torn off, and 1,458 green tests never mentioned it**
+
+The owner ran the app, dragged the new frame scrubber and said the mesh was
+distorted. It was — and **not because of the scrubber**. `--animation walk1
+--render`, which predates this session entirely, drew a body with its arms
+torn off at the deltoid: the shoulder skin pulled away from the torso, the
+upper arm missing, the forearm and hand left floating. Every frame, both rigs,
+and `--pose tpose` clean throughout, which is what proved the rig, the weights
+and the skinning innocent and localised the fault to the retarget table.
+
+**One line.** `UpArm_L` — MakeHuman 1.x's humerus — was mapped to
+`shoulder01.L`, the scapula bone this rig interposes between the clavicle and
+the humerus. Driving it swings the whole arm about a pivot ~10% of the arm's
+length too high, which is what rips the deltoid. The legs were right
+(`UpLeg -> upperleg01`); the arms were the one limb that was not, and the
+asymmetry was visible in the table all along.
+
+**The error was INHERITED, so both tables were wrong.**
+`tools/makehuman1_mapping.py` says outright that it reuses
+`mixamo_retarget.json`'s roles, so `LeftArm -> shoulder01.L` was copied
+unexamined. Fixed at the root: both tables regenerated, four data lines.
+
+### Why it survived: the number answered a different question
+The mapping was a DELIBERATE decision with a measurement behind it. The old
+comment: *"Mixamo's `Arm` head sits at 16.2% where `shoulder01` is at 16.0%
+and `upperarm01` at 26.8% ... binding the humerus rotation 10% down the arm
+leaves `shoulder01` rigid while the arm swings beneath it -- deltoid
+collapse."* Those numbers are still true and the conclusion was still wrong.
+An arc FRACTION is only a correspondence when the two chains hold the same
+joints, and these do not: this rig has `clavicle -> shoulder01 -> upperarm01`
+where Mixamo has `Shoulder -> Arm`, so every bone below the extra link reads
+~10 points further along. `upperarm01` at 26.8% is not "10% down the arm"; it
+IS the shoulder joint, measured on a chain with one more link in it. And the
+failure the comment feared is what the mapping CAUSED, not what it avoided.
+
+The generator's self-check still runs and still guards every other pair; the
+arm is an `ARC_EXCEPTIONS` entry of two, with the reason and the render.
+
+### Everything that looked at animation was counting
+"walk1 drives 59 of 179 bones" and "frames 0 and 7 differ in 14,444 of 14,444
+vertices" were both recorded as evidence the feature worked. Both are equally
+true of a body being pulled apart. **A count cannot tell motion from
+mutilation**, and this repository has now learned that twice.
+
+### The gate, and the two versions of it that did not work
+`tests/regression/test_animation_no_tear.cpp` poses the mesh with every frame
+of the shipped walks and asserts no visible edge stretches beyond 5.0x.
+MEASURED, both rigs, every frame:
+
+| file | torn | whole |
+|---|---|---|
+| walk1.bvh | 6.326x | 3.814x |
+| zombieWalk1.bvh | 4.217x | 2.837x |
+| dance1.bvh | 8.799x | 8.799x |
+
+Two drafts were wrong before this one:
+1. **Unmasked.** `base.obj` is 139 face groups of which 138 are `joint-*` and
+   `helper-*` cages, 5,108 faces of 18,486, never drawn and barely weighted —
+   they stretch freely under any pose and reported 3.62x on a frame whose
+   render is clean. `staticFaceMask()` is load-bearing, not a detail.
+2. **dance1 included.** Its single frame is an acrobatic full split — RENDERED
+   to check: one leg vertical, every limb attached — and the groin genuinely
+   stretches 8.80x. Identical in both states, so including it forces a bar
+   above 8.8, which catches nothing. Excluded, with the reason in the test.
+
+The bar discriminates on `walk1` (26% clear either side) and merely passes
+`zombieWalk1`, whose arms barely rotate. Said plainly in the test rather than
+tuned around: a second bar at 4.0 would be a 5% margin.
+Proven RED on the torn mapping and green on the fix, restored from backup and
+`cmp`-identical after the control.
+
+### Also shipped: the `AnimationLibrary` scrubber
+`mh::ui::FrameScrubber` — frame slider, four transport buttons, frame label
+and status line, in its own `Animations` dock. It is the reference's task view
+(`3_libraries_animation.py:48`) and **not** a chooser: no file list appears in
+those 189 lines. Step 5's "NOT shipped: the Animation CHOOSER" was stale and
+is ticked.
+
+Which of the withdrawn chooser's four state bugs it avoids, stated rather than
+assumed: **(a)** it writes the session's `poseFrameLive`, never the
+never-cleared `poseFrameRef()` global, and picking in either chooser still
+clears it — avoided by construction. **(c)** a Skeleton switch already re-loads
+with `poseFrameLive` passed through, so the frame survives — avoided by
+construction. **(b)** is NOT avoided by construction and needed the work: a
+31-frame animation replaced by a 14-frame one leaves a stale range, so every
+path that changes the pose goes through one `syncScrubber()`, and
+`setAnimation` resets to frame 0 rather than clamping, as the reference does
+at `:154`. **(d)** is inherited: the `chosen` handler's pre-flight probe
+already exists, and the scrubber's own handler restores the slider with
+`setFrame` (which does not emit) when a load fails.
+
+It emits on RELEASE, not per drag tick: this port has no cached `BvhFile` and
+no `setFrame`, so each frame change re-reads the `.bvh` and refits the
+skeleton.
+
+### Two things I got wrong, on the record
+- I predicted the two failing backdrop tests were caused by the new dock
+  changing the window layout. **Wrong**: I had launched the GUI interactively,
+  and the app persists window geometry to `~/.config/MakeHuman/MakeHumanCpp.ini`.
+  Those two are `--max-differing 0` screenshot gates and read it. With the
+  file moved aside all 20 backdrop tests pass. **Any windowed pixel test here
+  is contaminated by a saved layout** — see todo, it is not hermetic and CI
+  only escapes it by having no such file.
+- My own scrubber test asserted 4 reload requests for 5 clicks. It is 3: two
+  of the clicks are clamped and move nothing. The test was wrong, not the
+  widget.
+
+### Still open, and NOT claimed fixed
+The tear is gone; **the pose may still not be right**. In the fixed renders the
+forearms sit high across the chest where a walk cycle should have the arms
+hanging and swinging. Unverified hypothesis: MakeHuman 1.x BVHs are authored
+against a T-pose rest and this rig rests in an A-pose, and a name-only
+retarget applies no rest-offset compensation, so the A-to-T difference is
+added into every frame. The Python reference is the oracle that would settle
+it. Recorded as a suspicion with its evidence, not as a finding.
+
+---
+
 ## 2026-09-20 22:20:00 — Session · **A label the author spelled, and the second copy that didn't get it**
 
 Three shipped animations are authored `Walk1`, `Dance1` and `zombieWalk1` in

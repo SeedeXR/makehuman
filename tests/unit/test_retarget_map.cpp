@@ -41,13 +41,20 @@ TEST_CASE("the shipped retarget table loads every pair", "[rig][retarget]") {
     CHECK(map->size() == 65);
 
     // Spot values, so a table that loaded the wrong KEY for the right count
-    // cannot pass. `LeftArm -> shoulder01.L` is the interesting one: the
+    // cannot pass. `LeftArm -> upperarm01.L` is the interesting one: the
     // names share no substring, which is what makes a table necessary rather
     // than a name-mangling heuristic.
+    //
+    // It used to assert `shoulder01.L`, and that was pinning a DEFECT. The
+    // expectation now comes from `data/rigs/mixamo_retarget.json` as
+    // regenerated on 2026-09-20, and from the render that forced the change:
+    // with `shoulder01.L` every shipped animation drew a body with its arms
+    // torn off at the deltoid. The reasoning is in `tools/mixamo_mapping.py`
+    // beside the mapping.
     REQUIRE(map->toBone.contains("Head"));
     CHECK(map->toBone.at("Head") == "head");
     REQUIRE(map->toBone.contains("LeftArm"));
-    CHECK(map->toBone.at("LeftArm") == "shoulder01.L");
+    CHECK(map->toBone.at("LeftArm") == "upperarm01.L");
     REQUIRE(map->toBone.contains("Hips"));
     CHECK(map->toBone.at("Hips") == "hips");
 }

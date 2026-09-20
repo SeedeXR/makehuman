@@ -11,8 +11,13 @@ same anatomical role. That table was verified injective and descent-correct, so
 reusing its choices means this one inherits a correspondence somebody checked
 rather than one invented here: MakeHuman 1.x `Clavicle_L` and Mixamo
 `LeftShoulder` are the same bone, so both map to `clavicle.L`; `UpArm_L` and
-`LeftArm` both map to `shoulder01.L`; `Toe_L` and `LeftToeBase` both map to
+`LeftArm` both map to `upperarm01.L`; `Toe_L` and `LeftToeBase` both map to
 `ball.L`.
+
+That inheritance cuts both ways, and did: `UpArm_* -> shoulder01.*` was wrong
+in the Mixamo table and was copied here unexamined, so every shipped animation
+rendered with its arms torn off at the deltoid. Corrected 2026-09-20 in
+`tools/mixamo_mapping.py`, where the evidence is recorded.
 
 The 16 `__`-prefixed joints are NOT mapped, deliberately. They are the
 zero-length connectors the MakeHuman 1.x exporter inserts, they carry rotation
@@ -42,7 +47,7 @@ def mapping() -> dict[str, str]:
     out.update(HEAD)
     for side in ("L", "R"):
         out[f"Clavicle_{side}"] = f"clavicle.{side}"
-        out[f"UpArm_{side}"] = f"shoulder01.{side}"
+        out[f"UpArm_{side}"] = f"upperarm01.{side}"
         out[f"LoArm_{side}"] = f"lowerarm01.{side}"
         out[f"Hand_{side}"] = f"wrist.{side}"
         for name, index in FINGERS.items():

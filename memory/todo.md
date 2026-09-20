@@ -606,6 +606,41 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       would be a second, redundant translation. See
       `docs/rig/mixamo_bone_order.md` and mind the `$AssimpFbx$` decomposition
       trap documented there.
+- [x] **CORRECTED 2026-09-20: the arm was mapped to the wrong bone, in BOTH
+      tables, and every shipped animation rendered with its arms torn off at
+      the deltoid.** `{side}Arm` / `UpArm_*` is the humerus and was mapped to
+      `shoulder01`, the scapula bone this rig interposes between clavicle and
+      humerus; driving it pivots the arm ~10% of its length too high and rips
+      the shoulder. `--pose tpose` was clean throughout, which localised it.
+      MEASURED worst visible-edge stretch, both rigs, every frame: `walk1`
+      6.326x torn / 3.814x whole; `zombieWalk1` 4.217x / 2.837x.
+      The mistake was inherited -- `makehuman1_mapping.py` reuses the Mixamo
+      table's roles by design -- so the fix is four data lines at the root.
+      **The arc-position check that "settled" the old choice was answering a
+      different question**: an arc fraction is a correspondence only when the
+      two chains hold the same joints, and Mixamo's `Shoulder -> Arm` has no
+      counterpart for this rig's extra `shoulder01` link, so everything below
+      it reads ~10 points further along. `ARC_EXCEPTIONS` records the one pair
+      where the render overrules the metric.
+      GATE: `tests/regression/test_animation_no_tear.cpp`, bar 5.0x, proven
+      red on the torn mapping. It must mask helper geometry (`staticFaceMask`
+      -- 5,108 of 18,486 faces are never-drawn cages that stretch freely) and
+      it excludes `dance1.bvh`, whose single frame is a genuine acrobatic
+      split stretching the groin 8.80x identically in both states.
+      **STILL OPEN, not claimed fixed**: the forearms sit high across the
+      chest where a walk should have the arms hanging. Unverified hypothesis
+      -- MakeHuman 1.x BVHs rest in a T-pose and this rig rests in an A-pose,
+      and a name-only retarget applies no rest-offset compensation. The
+      Python reference is the oracle that settles it.
+- [ ] **Windowed pixel tests are not hermetic.** `app_backdrop_reopen_restores
+      _the_framing` and `app_backdrop_transparent_shows_nothing` compare
+      screenshots with `--max-differing 0`, and the app persists window
+      geometry to `~/.config/MakeHuman/MakeHumanCpp.ini`. MEASURED 2026-09-20:
+      after running the GUI once interactively, both fail (2,414 of 2,363,772
+      pixels; the viewport had grown 1402x1648 -> 1402x1686); with the file
+      moved aside all 20 backdrop tests pass. CI only escapes this by having
+      no such file. Either the tests should force a layout or the app should
+      take a "no stored workspace" switch for tests.
 - [x] **Retarget table shipped: `data/rigs/mixamo_retarget.json`.** And it is
       **not lossy** — that assumption was wrong once the superset existed.
       Against the 179-bone rig the table is **TOTAL**: all 65 Mixamo bones have
@@ -4633,8 +4668,23 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
          Neither is reachable with the shipped tables; both were PROVEN to fire
          with a transient probe table, since a warning nobody has seen run is
          not evidence.
-      5. The `AnimationLibrary` tab. **HALF DONE** (2026-09-14), and the half
-         that is missing is missing deliberately.
+      5. The `AnimationLibrary` tab. **DONE 2026-09-20.** `mh::ui::FrameScrubber`
+         ships in its own `Animations` dock: frame slider, four transport
+         buttons, frame label, status line. That IS the reference task view --
+         no file list appears in its 189 lines -- so the tab is finished.
+         Emits on slider RELEASE, not per tick, because each frame change
+         re-reads the `.bvh` and refits the skeleton.
+         Of the withdrawn chooser's four state bugs: (a) and (c) are avoided
+         BY CONSTRUCTION -- it writes the session's `poseFrameLive`, never the
+         never-cleared `poseFrameRef()`, and a Skeleton switch already passes
+         the frame through. (b) is NOT, and needed one `syncScrubber()` door
+         plus a reset-to-0 on a shorter animation (the reference does the same
+         at `:154`). (d) is inherited from the `chosen` handler's pre-flight
+         probe, plus a non-emitting `setFrame` to put the slider back.
+         **The line below saying the CHOOSER is not shipped was STALE and is
+         corrected there.** The chooser ships and always did.
+         *(the 2026-09-14 note follows)*
+         The half that was missing was missing deliberately.
          **Shipped**: `mh::rig::rankNamings` ranks candidate retarget tables
          PLUS the file's own names by how many of a skeleton's bones a BVH
          drives, best first, stably so a tie favours native -- a pose authored
@@ -4648,7 +4698,11 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
          frames 0 and 7 of walk1 differ in 14,444 of 14,444 vertices -- it
          really animates -- while `--pose tpose --rig-names auto` renames
          nothing.
-         **NOT shipped, and why**: the Animation CHOOSER. It was built and
+         **~~NOT shipped~~ -- WRONG, and stale from the day it was written:
+         the Animation chooser SHIPS** (`main.cpp`, `animations.name =
+         "Animation"`, mutually exclusive with Pose by construction). What was
+         withdrawn was a REDESIGN of it. Corrected 2026-09-20.
+         The history, which is still worth having: it was built and
          withdrawn the same day. Pose and Animation would be two combos over one
          `rig`, and review found four MAJOR state bugs in the first attempt:
          (a) `poseFrameRef() = 0` leaked into later Pose loads, routing them

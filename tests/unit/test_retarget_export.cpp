@@ -3,7 +3,7 @@
 // Retargeting on EXPORT: the other half of the owner's naming decision.
 //
 // Import asks "this file says UpArm_L, which of MY bones is that?". Export asks
-// the same question backwards: "this bone is shoulder01.L, what does Mixamo
+// the same question backwards: "this bone is upperarm01.L, what does Mixamo
 // call it?". One table answers both, read in opposite directions.
 //
 // The load-bearing facts are that the inversion is EXACT -- both shipped tables
@@ -91,14 +91,23 @@ TEST_CASE("a non-injective table reports its collisions", "[rig][retarget][expor
 TEST_CASE("renameBones renames what the table covers and nothing else", "[rig][retarget][export]") {
     const auto back = invertRetargetMap(table("makehuman1"));
 
-    std::vector<std::string> names{"shoulder01.L", "not-a-bone", "head", "shoulder01.R"};
+    // `upperarm01`, which is what MakeHuman 1.x calls `UpArm`. This read
+    // `shoulder01` until 2026-09-20, when a render showed that correspondence
+    // tearing the arms off; the expectation now comes from the regenerated
+    // `data/rigs/makehuman1_retarget.json`.
+    //
+    // `shoulder01.L` earns its place in the list as the UNCOVERED case, and it
+    // is a better one than a made-up name: MakeHuman 1.x has no scapula bone
+    // at all, so this is a real bone of this rig that the table genuinely has
+    // no word for, which is exactly what the clause after the comma is about.
+    std::vector<std::string> names{"upperarm01.L", "shoulder01.L", "head", "upperarm01.R"};
     const size_t renamed = renameBones(names, back);
 
     CHECK(renamed == 3);
     CHECK(names[0] == "UpArm_L");
     // Untouched, and NOT blanked: a bone the other skeleton has no word for
     // keeps this rig's own name.
-    CHECK(names[1] == "not-a-bone");
+    CHECK(names[1] == "shoulder01.L");
     CHECK(names[2] == "Head");
     CHECK(names[3] == "UpArm_R");
 }
@@ -108,7 +117,7 @@ TEST_CASE("renaming an already-renamed list is a no-op", "[rig][retarget][export
     // cannot here -- the targets are MakeHuman 1.x names and the sources are
     // this rig's -- and this pins that the two vocabularies stay disjoint.
     const auto back = invertRetargetMap(table("makehuman1"));
-    std::vector<std::string> names{"shoulder01.L", "head"};
+    std::vector<std::string> names{"upperarm01.L", "head"};
     CHECK(renameBones(names, back) == 2);
     const std::vector<std::string> once = names;
     CHECK(renameBones(names, back) == 0);

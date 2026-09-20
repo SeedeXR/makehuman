@@ -62,8 +62,8 @@
     "Tongue1": "tongue01",
     "Tongue2": "tongue02",
     "Tongue3": "tongue03",
-    "UpArm_L": "shoulder01.L",
-    "UpArm_R": "shoulder01.R",
+    "UpArm_L": "upperarm01.L",
+    "UpArm_R": "upperarm01.R",
     "UpLeg_L": "upperleg01.L",
     "UpLeg_R": "upperleg01.R"
   }

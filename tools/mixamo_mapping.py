@@ -103,9 +103,21 @@ for _side, _sfx in (("Left", ".L"), ("Right", ".R")):
                     f"lowerleg02{_sfx}", f"foot{_sfx}", f"toe1-1{_sfx}"]))
 
 # How far a mapped bone may sit from its Mixamo counterpart along the chain.
-# The worst legitimate gap measured is 5.8 points (ForeArm); 10 leaves headroom
-# without admitting the 10.6-point error that put `Arm` on the wrong bone.
+# The worst legitimate gap measured is 5.8 points (ForeArm); 10 leaves headroom.
 ARC_TOLERANCE = 0.10
+
+# Pairs where the arc check is KNOWN to disagree with the render, and the render
+# wins. One entry, and it is the reason this file has the concept at all.
+#
+# `{side}Arm -> upperarm01` measures 10.6 points apart and is nonetheless the
+# correct bone -- see the long note beside the mapping. The gap is an artefact
+# of this rig interposing `shoulder01`, a joint Mixamo's arm chain does not
+# have, so everything below it reads further along a chain with an extra link.
+#
+# Listed rather than absorbed by raising ARC_TOLERANCE to 11: the tolerance
+# guards every other pair, and loosening it globally to admit one known
+# exception is how a gate stops catching the next `Hips -> root`.
+ARC_EXCEPTIONS = {"LeftArm", "RightArm"}
 
 # Mixamo bone -> the MakeHuman bone that plays its part.
 #
@@ -133,12 +145,34 @@ MAPPING: dict[str, str | None] = {
 
 for side, suffix in (("Left", ".L"), ("Right", ".R")):
     MAPPING[f"{side}Shoulder"] = f"clavicle{suffix}"
-    # `shoulder01`, NOT `upperarm01`. Measured along the clavicle->wrist chain,
-    # Mixamo's `Arm` head sits at 16.2% where `shoulder01` is at 16.0% and
-    # `upperarm01` at 26.8%. `upperarm01` is the conventional humerus and carries
-    # the skin weight, but binding the humerus rotation 10% down the arm leaves
-    # `shoulder01` rigid while the arm swings beneath it -- deltoid collapse.
-    MAPPING[f"{side}Arm"] = f"shoulder01{suffix}"
+    # `upperarm01`, NOT `shoulder01`, and this REVERSES an earlier decision that
+    # was argued from arc position alone. The old comment read: "Mixamo's `Arm`
+    # head sits at 16.2% where `shoulder01` is at 16.0% and `upperarm01` at
+    # 26.8% ... binding the humerus rotation 10% down the arm leaves
+    # `shoulder01` rigid while the arm swings beneath it -- deltoid collapse."
+    # Those numbers are still true and the conclusion was still wrong.
+    #
+    # RENDERED, which is what settled it. `--animation walk1 --render`, on BOTH
+    # shipped rigs and at EVERY frame, drew a body whose arms were torn off at
+    # the deltoid: the shoulder skin pulled away from the torso and the upper
+    # arm was missing, with the forearm and hand left floating. Remapping this
+    # one entry -- nothing else -- put the arms back, continuous from shoulder
+    # to hand. `--pose tpose` was clean throughout, which is what proves the
+    # rig, the weights and the skinning innocent and localises the fault here.
+    #
+    # WHY the arc number misled: an arc FRACTION is only a correspondence when
+    # the two chains hold the same joints, and these do not. This rig interposes
+    # `shoulder01` between the clavicle and the humerus, where Mixamo has no
+    # joint at all, so every bone below it reads ~10 points further along than
+    # its Mixamo counterpart. `upperarm01` at 26.8% is not "10% down the arm"
+    # from the shoulder; it IS the shoulder joint, measured on a chain with one
+    # more link in it.
+    #
+    # The failure mode the old comment feared is real, but it is what the old
+    # mapping CAUSED, not what it avoided: driving `shoulder01` pivots the whole
+    # arm about a point ~10% of the chain above the true shoulder, which is what
+    # rips the deltoid. See ARC_EXCEPTIONS.
+    MAPPING[f"{side}Arm"] = f"upperarm01{suffix}"
     MAPPING[f"{side}ForeArm"] = f"lowerarm01{suffix}"
     MAPPING[f"{side}Hand"] = f"wrist{suffix}"
     MAPPING[f"{side}UpLeg"] = f"upperleg01{suffix}"
@@ -259,7 +293,7 @@ def _arc_position_problems(mixamo, makehuman) -> list[str]:
             continue
         for bone in mixamo_chain:
             target = MAPPING.get(bone)
-            if target is None or target not in hf:
+            if target is None or target not in hf or bone in ARC_EXCEPTIONS:
                 continue
             gap = abs(mf[bone] - hf[target])
             if gap > ARC_TOLERANCE:
@@ -274,9 +308,11 @@ def _arc_position_problems(mixamo, makehuman) -> list[str]:
 def geometric_problems() -> list[str]:
     """Where a mapped bone sits nowhere near its counterpart along the chain.
 
-    This is the check that would have caught `Hips -> root` without a reviewer,
-    and the one that settled `Arm -> shoulder01` with a number instead of an
-    argument.
+    This is the check that would have caught `Hips -> root` without a reviewer.
+
+    It is NOT the check that settles the arm: it once did, with a number, and
+    the number was answering a different question than the one asked. A render
+    overruled it. See ARC_EXCEPTIONS.
     """
     if not MIXAMO_REST.exists():
         return ["no measured Mixamo rest pose; geometric check skipped"]
