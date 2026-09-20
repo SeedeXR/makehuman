@@ -4,6 +4,170 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-20 16:10:00 — Session · **The KTX2 encode path, a gate that only ran on my laptop, and a default the owner moved**
+
+### Two unrelated pieces of work. Two commits.
+The KTX2 encoder finishes M7's last item. The genitals default is an owner
+request that arrived mid-chunk. They share only `tests/CMakeLists.txt`, and
+that is a reason to separate them carefully, not to merge them.
+
+---
+
+### 1. The ETC1S encode path
+
+`io::ktx2EncodeEtc1s()` (`include/makehuman/io/Ktx2Encode.h`,
+`src/io/Ktx2Encode.cpp`) turns 8-bit RGBA into a complete KTX2 file carrying
+ETC1S + BasisLZ, via libktx. DracoMesh's `#if defined(MH_HAVE_KTX2)` / `#else`
+split, so a build without the library returns `false`/`nullopt` rather than
+failing to link. It **refuses** non-multiple-of-4 dimensions and span-length
+mismatches instead of padding: a padded image is silently the wrong size to
+every consumer; a refusal is one loud failure at the point of the mistake.
+
+Because libktx emits a *complete* file, it **supersedes** our own container
+writer on this path. `ktx2Write` and `etc1sEncode` now have **no callers** —
+greenfield, not regression. Deleting them is a separate decision, not taken.
+
+**The quality bar is measured: 38.83 dB**, gate `app_ktx2_holds_the_quality_bar`
+set at **38.5**. That is *below* our own encoder's 40.20, and it is the
+outcome the note at `tests/CMakeLists.txt:2544` was written to predict —
+BasisLZ quantises to shared codebooks, and that is what codebooks cost. **The
+39.9 bar was not touched.** The bar discriminates: on the same unpack, RGBA32
+38.83, ETC2_RGBA 38.83 (ETC1S transcodes losslessly into ETC2), PVRTC1_4
+36.19, RGBA4444 34.68 — the last two fail it. Proven red then green: mutate
+the bar to 39.5, only that test fails (rc=8); restore from a snapshot, `cmp`
+identical, green again.
+
+Deliberately **no `--max-psnr` ceiling**, unlike our own encoder's. This is a
+third party's, and a ceiling would fail on a libktx upgrade that merely got
+better. Three encodes here were byte-identical (sha256 `4c02bcec...`), but
+same-machine reproducibility is not cross-platform reproducibility and nothing
+claims it is.
+
+### The finding worth waking someone for
+**The ETCSLA licence gate ran on one laptop and nowhere else.**
+`MH_WITH_KTX2` defaults OFF and **no CI job set it**, so gates #1457–#1460 —
+including the licence gate that is the *condition of adopting libktx* — were
+never enforced anywhere durable. This repository shipped that exact mistake
+three commits ago (`e8bbb214`, "The gate that only worked on my screen"). A
+**`ktx2` job** now exists in `.github/workflows/ci.yml`: `brew install ninja
+assimp basis_universal`, `-DMH_WITH_KTX2=ON`, and the **full** ctest rather
+than `-R ktx`, because linking a new library into `mh_io` can break things
+unrelated to textures.
+
+**A prediction this chunk falsified.** The adoption notes warned FetchContent
+would run "in ALL SIX configuring jobs ... against a run already 73–75 min".
+Wrong both ways: with the flag defaulting OFF it ran in **zero** jobs, and the
+new job makes it **one**, in parallel, off the tsan-bounded critical path. The
+draco half of that concern **still stands**: `draco_FOUND` is still false in
+CI and `tests/golden/test_draco.cpp` has still never run there.
+
+**Measured:** `MH_WITH_KTX2=ON` → **1460/1460, 0 failed**, 1207 s, 0 compile
+errors. `MH_WITH_KTX2=OFF` → **1456/1456, 0 failed**, 409 s, and `ktx2 tests
+registered: 0`, which is the part that matters — the gates *vanish* rather
+than passing vacuously.
+
+---
+
+### 2. The genitals default, at the owner's request
+
+> "now also can we untick showing genitals and cnfirm they are not visible if
+> done so. and make it default"
+
+One field: `src/app/main.cpp`, `ProxySlot` for genitals, `defaultChoice`
+`"genitals"` → `"none"`. No UI change — `src/ui/AssetPanel.cpp:118` derives
+the tick from the picker index, so the checkbox unticks itself.
+
+**Confirmed by looking, not by assertion.** Rendered both characters and
+viewed them: the default has a smooth, featureless crotch; `--genitals
+genitals` clearly shows the proxy. The positive control is the point — it
+proves the render *would* have shown them. Measured alongside: default export
+**14,494** faces and no "wearing Genitals" line, opt-in **14,676** with
+"wearing Genitals (200 verts) ... blended to the skin tone".
+
+**The real work was the test ripple, and the lesson in it.** About twelve
+tests silently assumed genitals were worn by default — the three deformation
+tests, the skin-blend test, both ethnicity renders. Left alone **they would
+not have gone red, they would have gone vacuous**, exercising a proxy that was
+no longer there. Every one of them now passes `--genitals genitals`
+explicitly, so nothing was weakened to accommodate the new default.
+`genitals/dflt` → `genitals/on`; `app_genitals_default_wears_them` →
+`app_genitals_default_omits_them` (PASS pinned on *teeth*, so it cannot pass
+on an export wearing nothing at all); `optout_drops_geometry` →
+`optin_adds_geometry`; `app_proxy_defaults_include_genitals` →
+`..._exclude_genitals`.
+
+Four face counts re-**measured**, never subtracted: 14,676 → **14,494**
+(smoke and lod_full), 7,986 → **7,804** (lod_quarter), 54,810 → **54,628**
+(subdivide). Three comments stating the old arithmetic corrected in the same
+edit.
+
+**New gate `app_genitals_hidden_by_default_in_pixels`**, because absent
+geometry and an unchanged picture are different failures and this project has
+shipped four visual bugs past a green suite. Crotch response at (512,508) r6,
+default vs opt-in: **measured 7.5, bar 5.0**.
+
+**AND THEN THE WIDE SWEEP FOUND NINE MORE, which is the real lesson of this
+piece.** A targeted 48-test run over everything matching
+`genitals|proxy_defaults|smoke_obj_faces|decimate|subdivide` was **100%
+green**. The full 1458-test sweep then failed **9**. My grep had found
+*face*-count dependencies and missed every other kind of count:
+
+| what failed | was | now | counted |
+|---|---|---|---|
+| 6 × animation / rig pose tests | 14,780 | **14,580** | whole-character vertices (−200) |
+| `app_body_pose_unit_moves_the_leg` | 1,887 | **1,828** | −59 cage verts on `upperleg01.L` |
+| `app_worn_skin_usda_bound` | 4 | **3** | `rel skel:skeleton` bindings |
+| `app_eye_is_blended` | 4 meshes | 4 (flag added) | meshes in the scene |
+
+Two of those were judgement calls, not arithmetic:
+* **`app_eye_is_blended` kept its 4 and got `--genitals genitals`.** Its whole
+  purpose is catching an anatomy slot that *starts* blending, and genitals is
+  the only proxy carrying `autoBlendSkin` — the likeliest candidate. Letting
+  the count fall to 3 would have quietly narrowed the exact coverage its own
+  comment claims.
+* **`app_body_pose_unit_moves_the_leg` did take the lower number**, because
+  those same 59 vertices are still asserted directly by
+  `app_genitals_hip_deforms_the_cage`, which now asks for the proxy. Nothing
+  was lost by letting them leave this total.
+
+Also corrected in passing: one of those sites carried a comment reading
+"MEASURED 14,444 of 14,444" while its assertion said 14,780 — stale from an
+earlier character, now 14,580 and consistent.
+
+**Two process failures of mine worth keeping.** The targeted filter gave a
+false all-clear — *narrow ctest filters hide regressions* is in the notes and
+I still leaned on one. And I first reported **7** failures rather than 9,
+because the summary I printed was `tail -8` and the list was longer than the
+tail; the real count came from grepping the log. *Grep, don't tail* is also
+already in the notes.
+
+**Red-proof, and an honest gap in it.** Reverting the default makes **9 tests
+fail**. But the new pixel gate showed **"Not Run", not "Failed"** — its
+fixture cascaded, so the revert was actually caught by a sibling's
+`FAIL_REGULAR_EXPRESSION`. The pixel assertion was therefore proven
+separately: identical images score 0.0 and fail the bar (rc=1); the real pair
+scores 7.5 and passes. Restored from a snapshot, `cmp` identical, 28/28 green.
+It **skips in CI** (Pillow is installed for `inventories`, not for the ctest
+jobs), so it is a local gate; the geometry assertion is what covers CI.
+
+---
+
+### What is NOT done
+* **`KHR_texture_basisu` in the glTF writer is its own chunk.**
+  `src/io/GltfWriter.cpp:725-755` embeds PNG/JPEG bytes verbatim; emitting
+  KTX2 needs a **PNG decoder inside `mh_io`**, which links only
+  `mh::foundation`, `assimp`, `draco`, `ktx` — no Qt, and stb_image is not
+  vendored. Three options with a licence dimension: vendor stb_image, link
+  Qt6::Gui into the deliberately Qt-free Apache-2.0 module (wrong direction),
+  or have the caller supply decoded pixels (cleanest; reshapes
+  `GltfWriteOptions`). Measured for it: **192 of the first 200 `data/` PNGs
+  are multiples of 4, 8 are not**, so it needs the extension's per-texture
+  fallback `source`.
+* Excluding libktx from the sanitiser builds is **moot** — the ASan and TSan
+  presets do not set `MH_WITH_KTX2`, so it is not in them at all.
+
+---
+
 ## 2026-09-20 14:20:00 — Session · **libktx adopted, and the licence file Khronos ships that we must not compile**
 
 ### What this chunk is

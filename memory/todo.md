@@ -6085,8 +6085,38 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         **Lesson: "dominated by bone X" is about the LARGEST weight and says
         nothing about the others.** Four influences per vertex; check for the
         rest before calling anything rigid.
+      - **DEFAULT CHANGED TO OFF 2026-09-20, AT THE OWNER'S REQUEST.**
+        `defaultChoice` is now `"none"`. The slot, the proxy, the rig, the
+        skin blend and the `--genitals` flag are all UNCHANGED -- only the
+        starting state moved, and one tick still wears it. **Do not "restore"
+        this**; the anatomy-is-default-on rule documented on
+        `ProxySlot::defaultChoice` now carries an explicit exception saying
+        why.
+        * Confirmed by LOOKING at two renders, not by assertion alone: the
+          default crotch is smooth and featureless, `--genitals genitals`
+          clearly shows the proxy (positive control, so the render would have
+          shown them).
+        * **~12 tests silently assumed default-worn and would have gone
+          VACUOUS, not red.** Each now passes `--genitals genitals`
+          explicitly. `genitals/dflt` -> `genitals/on`;
+          `app_genitals_default_wears_them` -> `..._default_omits_them` (PASS
+          pinned on TEETH so it cannot pass on an export wearing nothing);
+          `optout_drops_geometry` -> `optin_adds_geometry`;
+          `app_proxy_defaults_include_genitals` -> `..._exclude_genitals`.
+        * Four face counts **re-measured, not subtracted**: 14,676 ->
+          **14,494** (smoke, lod_full), 7,986 -> **7,804** (lod_quarter),
+          54,810 -> **54,628** (subdivide).
+        * New `app_genitals_hidden_by_default_in_pixels`: crotch response at
+          (512,508) r6, **measured 7.5, bar 5.0**. Reverting the default
+          fails 9 tests. **Honest gap: that gate reported "Not Run", not
+          "Failed", in the revert proof** -- its fixture cascaded and a
+          sibling's regex caught the revert. The assertion was proven
+          separately (identical images -> 0.0, rc=1; real pair -> 7.5, rc=0).
+          It SKIPS in CI (no Pillow in the ctest jobs), so the geometry
+          assertion is what covers CI.
       - **BUILT 2026-09-16.** Slot `genitals`, `kProxySlots` 5 -> 6,
-        `defaultChoice "genitals"`, z_depth 20. Tint (0.948, 0.602, 0.482)
+        `defaultChoice "genitals"` (**see the 2026-09-20 note above -- now
+        `"none"`**), z_depth 20. Tint (0.948, 0.602, 0.482)
         DERIVED to reproduce `skinmat_caucasian.png` through the generator's
         own shade curve (within half a level -- the tint is rounded to three
         decimals). `autoBlendSkin true`, and the worn-proxy render path now

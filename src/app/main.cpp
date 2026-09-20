@@ -1236,10 +1236,18 @@ struct ProxySlot {
     /// `"none"` for a slot nobody wears unasked.
     ///
     /// This is a per-slot FIELD rather than a special case for teeth because
-    /// the distinction it encodes is not about teeth: a slot is default-on
-    /// when it is ANATOMY and default-off when it is a GARMENT. Hair, clothes
-    /// and eyelashes are choices a character makes; teeth are not, and a
-    /// character used to open toothless with an empty open mouth.
+    /// the distinction it encodes is not about teeth. The first rule here was
+    /// "default-on when it is ANATOMY, default-off when it is a GARMENT":
+    /// hair, clothes and eyelashes are choices a character makes; teeth are
+    /// not, and a character used to open toothless with an empty open mouth.
+    ///
+    /// GENITALS ARE THE EXCEPTION, and deliberately so. They are anatomy by
+    /// that rule and were default-on because of it, but what a character
+    /// shows on first launch is a presentation decision rather than an
+    /// anatomical one, and the default is now `"none"`. The slot is
+    /// unchanged and one tick still wears it -- only the starting state
+    /// moved. This is why the field exists instead of a predicate over the
+    /// data: the rule has an exception, and a field can hold one.
     const char* defaultChoice;
 
     /// Offer a checkbox beside this slot's picker.
@@ -1293,7 +1301,7 @@ constexpr const char* kSideNames = "expected front, back, left, right, top or bo
 }
 
 constexpr std::array<ProxySlot, 6> kProxySlots{{{"teeth", "Teeth", "teeth"},
-                                                {"genitals", "Genitals", "genitals", true},
+                                                {"genitals", "Genitals", "none", true},
                                                 {"tongue", "Tongue", "none"},
                                                 {"hair", "Hair", "none"},
                                                 {"clothes", "Clothes", "none"},
