@@ -2010,7 +2010,13 @@ TEST_CASE("glTF flips V, because its origin is the other corner", "[io][gltf][uv
 // produce a glTF that parses cleanly and is wrong.
 // ---------------------------------------------------------------------------
 
-#if defined(MH_HAVE_DRACO)
+// Shared by the Draco and Basis blocks below. It lived inside the Draco guard
+// and CI caught the consequence the moment the two blocks stopped overlapping:
+// the `ktx2` job installs no draco, so `MH_HAVE_KTX2` was defined while
+// `MH_HAVE_DRACO` was not, and three uses of `jsonOf` failed to compile there.
+// It built locally only because this machine happens to have draco installed.
+// Nothing about reading a GLB's JSON chunk is draco-specific.
+#if defined(MH_HAVE_DRACO) || defined(MH_HAVE_KTX2)
 
 namespace {
 
@@ -2022,6 +2028,10 @@ nlohmann::json jsonOf(const std::filesystem::path& p) {
 }
 
 }  // namespace
+
+#endif  // MH_HAVE_DRACO || MH_HAVE_KTX2
+
+#if defined(MH_HAVE_DRACO)
 
 TEST_CASE("a Draco glTF declares the extension as REQUIRED", "[io][gltf][draco]") {
     const auto out = tempGlb("draco_ext");
