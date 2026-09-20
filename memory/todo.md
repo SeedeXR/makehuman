@@ -3515,9 +3515,17 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `setPanel` returns `[[nodiscard]] bool` and does **not** take ownership on
       failure: a mistyped category used to delete the panel while the caller
       went on connecting signals to it.
-- [ ] **OWNER DECISION TAKEN (2026-09-15): Pose and Animation get TWO
+- [x] **OWNER DECISION TAKEN (2026-09-15): Pose and Animation get TWO
       mutually-exclusive combos, AND the CLI keeps working.** Asked verbatim:
       *"2 and add cli"*.
+      **BUILT -- ticked 2026-09-20 after verifying in code.** The second combo
+      exists (`animations.name = "Animation"`, `src/app/main.cpp:1556`); the
+      mutual clearing is implemented and documented at `:1550` ("exactly one
+      live selection. The window clears the other combo"); the CLI still works
+      (`--list-animations` gated by `app_list_animations_labels_dance` and
+      `..._labels_walk`), and 28 `app_animation*` tests cover the slot.
+      It stayed unticked because the entry records the DECISION; the work that
+      answered it landed under the Animation-chooser entries below.
       So: a Pose chooser and an Animation chooser, side by side, where picking
       one CLEARS the other -- they both drive the same single `.bvh` slot, and
       two live selections would be a lie about what the character is doing.
@@ -3651,7 +3659,22 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         covered.
 
       The original entry follows.
-- [ ] **The window's Save As and Open ignore the pose entirely.**
+- [x] **The window's Save As and Open ignore the pose entirely.**
+      **ALREADY FIXED -- this entry is a STALE DUPLICATE of the one above,
+      which records the fix ("BOTH HALVES FIXED 2026-09-18"). Ticked
+      2026-09-20 after verifying in code, not from the other note.**
+      Evidence: `documentWithoutChoices` (the renamed `documentFor`) carries a
+      comment describing exactly this bug and directing callers through
+      `documentNow`, which writes `skeleton` (`src/app/main.cpp:4604`) and
+      `pose` (`:4612`). The Open half: `documentChoices` (`:1861`) maps the
+      single `pose` key to "Pose" or "Animation" via `livesInAnimations`, and
+      `applyLoaded` walks it at `:3699`. Gated by `app_print_choices_has_the_rig`,
+      `app_print_choices_pose_is_a_pose` and
+      `app_animation_relative_is_still_an_animation`.
+      **The lesson is about the LIST, not the bug: an unticked duplicate makes
+      a milestone look bigger than it is.** When a fix lands, tick the original
+      report as well as writing the new entry.
+      *(original report follows)*
       Found by /code-review 2026-09-16 while reviewing the Animation chooser,
       and PRE-EXISTING -- it affects Pose exactly as much as Animation, which is
       why it is filed here rather than folded into that chunk.
