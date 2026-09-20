@@ -5152,7 +5152,7 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       one. Added a "Skeleton" group; switching re-applies the CURRENT pose,
       because a user changing rig mid-pose expects to keep it, and puts the
       picker back if the rig will not load.
-- [ ] **OWNER DECISION TAKEN (2026-09-07): docks AND tabs, both.** Verbatim:
+- [x] **OWNER DECISION TAKEN (2026-09-07): docks AND tabs, both.** Verbatim:
       *"for docks vs tabs , we can design for both , just ensure it's intuitive
       and allows someone to configure their workspace and save or decided to
       reset to the default ui."*
@@ -5183,7 +5183,12 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         "Modelling | Materials" bar sat below 900 pixels of sliders, nowhere
         near the panel title it switches, and read as a status strip. Only
         visible by looking.
-      Still to do: the rename below, which needs a settings-key migration.
+      **CLOSED 2026-09-20.** The last line here read "Still to do: the rename
+      below, which needs a settings-key migration". Both halves turned out to
+      be void: the id/title split already ships as the naming profiles
+      (`setWorkspaceNames`, five tests at `tests/ui/test_ui.cpp:1140-1200`),
+      and nothing persists a preset name, so there is no migration. See the
+      "Materials" entry below for the evidence.
 - [x] **The two-level tab bar's labels no longer truncate to initials**
       (2026-09-07). At a 380 px panel the Modelling sub-tabs rendered as
       `Ma⋯ B⋯ G⋯ F⋯ T⋯ Ar⋯ M⋯`. They now read
@@ -5230,8 +5235,34 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       - Four mutations killed, including the expensive one — deriving the dock
         object name from the TITLE, which is exactly the mistake that would have
         made the rename break saved workspaces.
-- [ ] **The workspace preset named "Materials" now labels a dock called
-      "Assets".** Same id-versus-title problem one level up: a preset's name is
+- [x] **The workspace preset named "Materials" now labels a dock called
+      "Assets".**
+      **ALREADY DONE -- ticked 2026-09-20 after the owner said "unblock
+      whatever is blocked and complete it". There was nothing to unblock: the
+      split this entry asks for SHIPPED, and the entry simply was not updated.**
+      `MainWindow::setWorkspaceNames(table, NamingProfile::Modern|Legacy)`
+      relabels the menu from `data/naming/workspace.names` while identity stays
+      put. Five tests in `tests/ui/test_ui.cpp:1140-1200` pin it: the default
+      (Legacy) still reads "Materials" so nothing existing breaks; Modern reads
+      "Assets"; **`objectName` stays `workspace.Materials`**; the accelerator
+      survives; it flips back, so Modern is not a one-way door; and
+      `applyWorkspacePreset("Materials")` still succeeds.
+      **So both worries in the original entry are void.** `--workspace
+      Materials` never moves, and **no settings-key migration is needed** --
+      verified: nothing persists a preset name. `workspaceSettings()` stores
+      only `units`, `realWeight` and `skinning`, plus dock geometry/state keyed
+      on the dock object names, which the label never touches.
+      **I nearly shipped this twice.** I started adding a `title` field to
+      `WorkspacePreset` before checking what existed; it built clean and broke
+      "the workspace menu shows the legacy names by default", because the
+      mechanism was already there under a better design. Reverted from backup,
+      `cmp` identical, 17/17 naming assertions green again. **Look for the
+      existing mechanism before building the one the note describes** -- an
+      entry that predates the fix reads exactly like an entry describing
+      missing work.
+      **This also unblocks the docks-and-tabs entry above**, whose only
+      remaining line was "Still to do: the rename below, which needs a
+      settings-key migration". There is no rename left and no migration. Same id-versus-title problem one level up: a preset's name is
       its identity (`--workspace Materials`, the `workspace.<name>` object name)
       *and* its menu label. The fix is the same split, but renaming the preset
       changes a **CLI argument**, so it is user-facing — ask before doing it.
@@ -5672,7 +5703,14 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       that is exactly where the last attempt failed. Budget for
       render-and-look iterations, not for code.
       Measured context for the cage itself, kept because it is still true:
-- [ ] **(superseded) is the hair cage good enough to ship as a wearable?**
+- [x] **(superseded) is the hair cage good enough to ship as a wearable?**
+      **CLOSED 2026-09-20 as superseded, which the title already said.** The
+      question offered two options -- ship the envelope as a placeholder, or
+      hide the slot. The owner's later request (2026-09-15, the entry above)
+      chose NEITHER: *"a full hair cage feature with different hair styles"*.
+      So the cage stays and becomes the thing grooms are fitted to, and this
+      question has no remaining decision in it. The measurements below are kept
+      because they are still true and the hair work needs them.
       It is off by default and the machinery is proven, but RENDERED AND LOOKED
       AT it is long straight ribbons hanging over the face, not a groom. That
       is faithful, not a bug: measured, the cage reaches Z +1.742 while the nose
