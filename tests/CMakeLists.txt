@@ -3175,9 +3175,18 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_list_animations_labels_walk COMMAND makehuman --list-animations)
     set_tests_properties(app_list_animations_labels_walk PROPERTIES
         PASS_REGULAR_EXPRESSION "walk1\\.bvh\tWalk1\t14\t")
+    # "zombieWalk1", NOT "ZombieWalk1". This assertion used to pin the second,
+    # which was the title-cased STEM -- a guess. The authored name lives in
+    # `data/animations/zombie/zombie.mhanim` as
+    # `# anim zombieWalk1 zombieWalk1.bvh z_is_up`, and the author left that
+    # first letter lower on purpose. Correcting an assertion that recorded a
+    # defect, not loosening one: the expected string now comes from a file in
+    # the repository rather than from what the code happened to emit.
+    # Dance1 and Walk1 are unchanged -- title-casing agreed with the sidecar
+    # for those two, which is exactly why the bug survived.
     add_test(NAME app_list_animations_labels_zombie COMMAND makehuman --list-animations)
     set_tests_properties(app_list_animations_labels_zombie PROPERTIES
-        PASS_REGULAR_EXPRESSION "zombieWalk1\\.bvh\tZombieWalk1\t31\t")
+        PASS_REGULAR_EXPRESSION "zombieWalk1\\.bvh\tzombieWalk1\t31\t")
     # The frame count is reported, which is what a scrubber will need and what
     # tells a 1-frame file from a 31-frame one.
     # THE claim: the ranking names makehuman1, not native. If this ever says

@@ -71,4 +71,29 @@ struct AssetMeta {
 /// cannot contain, and can only ever produce the same defaults this returns.
 [[nodiscard]] AssetMeta loadAssetMeta(const std::filesystem::path& asset);
 
+/// The name a `.mhanim` gives @p bvh, or EMPTY when none does.
+///
+/// A DIFFERENT shape from `.meta`, which is why it is a second function rather
+/// than a flag on the first: `.meta` is one sidecar per asset and shares its
+/// stem, while one `.mhanim` describes SEVERAL motion files in its directory,
+/// one `# anim <Name> <file.bvh> [z_is_up]` line each. There is no path to
+/// guess -- the directory has to be read and the lines matched by filename.
+///
+/// Empty rather than a default, for the reason `AssetMeta::name` is empty:
+/// only the caller can tell "the author named it" from "no one did", and the
+/// two deserve different labels. Everything unnamed keeps going through
+/// `prettyAssetName` like every other chooser.
+///
+/// MEASURED, and it is why this exists: the shipped files are authored
+/// "Walk1", "Dance1" and "zombieWalk1". Title-casing the stem agrees for the
+/// first two and gets the third wrong -- the chooser read "ZombieWalk1",
+/// capitalising a letter the author deliberately left lower.
+///
+/// Only the NAME is read here. `.mhanim` also carries author, licence,
+/// homepage, uuid, `# tag` lines, `# rig` and `z_is_up`; the axis declaration
+/// already has a consumer in `tests/regression/test_animation_upaxis.cpp`,
+/// which cross-checks it against `io::readBvh`'s independent detection and
+/// should keep its own reader for exactly that independence.
+[[nodiscard]] std::string animationName(const std::filesystem::path& bvh);
+
 }  // namespace mh::core

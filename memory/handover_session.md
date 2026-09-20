@@ -4,6 +4,54 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-20 22:20:00 — Session · **A label the author spelled, and the second copy that didn't get it**
+
+Three shipped animations are authored `Walk1`, `Dance1` and `zombieWalk1` in
+their `.mhanim` sidecars. The app title-cased the stem instead, so the third
+read **`ZombieWalk1`** — a capital the author had deliberately left lower.
+Two of three agreed, which is why nobody noticed, and **an existing ctest
+pinned the wrong string**, so the defect was protected by its own gate.
+
+`mh::core::animationName(bvh)` now reads the authored name. It is a second
+function rather than a flag on `loadAssetMeta` because the shapes differ: a
+`.meta` is one sidecar per asset sharing its stem, while one `.mhanim`
+describes several motion files, one `# anim <Name> <file>` line each, so the
+directory has to be read and matched by filename.
+
+### The part worth remembering
+There were TWO label paths and they had drifted. `chooserLabel` and
+`--list-animations` each wrote `meta.name.empty() ? prettyName(...) : ...`
+separately — and `chooserLabel`'s own comment said it had been "written out
+three times before this existed", which was the warning that a site had been
+missed. **Fixing the chooser compiled clean and the CLI still printed the old
+label.** I only caught it because I re-ran the command instead of trusting the
+build. Both now go through one `assetLabel()` beside `prettyName`: a label a
+user reads in the picker and one a script reads from the CLI have to be the
+same string.
+
+Also worth noting: `.mhanim` had a *deliberate* decision against a production
+reader — "read by nothing in this port and nothing in the reference, so a
+production parser would be a format nobody consumes". That premise expired the
+moment a label needed the authored name. The axis declaration keeps its
+test-local reader in `test_animation_upaxis.cpp`, because that test's whole
+value is being independent of the code it checks.
+
+The test change is a correction, not a loosening: the expected string now
+comes from a file in the repository rather than from what the code emitted.
+
+Verified: `--list-animations` prints `Dance1 / Walk1 / zombieWalk1`;
+`--list-poses` still prints `A-pose (rest)` and `T-pose`. Sweep **1458/1458**.
+
+### Also this stretch
+CI on the `jsonOf` scope fix went fully green, sanitisers included. And the
+M8 audits closed four entries that described work already done — `M8 open went
+9 → 3` without a line of feature code. What remains is the `AnimationLibrary`
+**scrubber** (a frame slider, four transport buttons and a status line — not a
+chooser; the chooser already ships) and the hair feature, which is asset
+authoring rather than code.
+
+---
+
 ## 2026-09-20 19:30:00 — Session · **M7 closes: glTF writes KTX2, and the caller brings the decoder**
 
 `--basisu` writes `KHR_texture_basisu`. That was the last open item in M5, M6

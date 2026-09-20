@@ -4699,6 +4699,27 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
          `# rig soft1`, an optional `# scale`, and one
          `# anim <Name> <file> z_is_up` per BVH -- so `walk1.bvh` is authored
          "Walk1", `dance1.bvh` is "Dance1", `zombieWalk1.bvh` is "zombieWalk1".
+         **FIXED 2026-09-20.** `mh::core::animationName(bvh)` reads the
+         authored name from the `.mhanim`, and BOTH label sites now go through
+         one `assetLabel(path)` in `main.cpp` beside `prettyName`.
+         **The two sites had DRIFTED**: the picker's `chooserLabel` and
+         `--list-animations` each wrote `meta.name.empty() ? prettyName(...)`
+         separately, and `chooserLabel`'s own comment already warned it had
+         been "written out three times" -- the CLI was the site never
+         converted. Fixing only the chooser left `--list-animations` still
+         printing the wrong string; caught by RE-RUNNING the command rather
+         than trusting a clean build.
+         **An existing ctest pinned the defect**:
+         `app_list_animations_labels_zombie` asserted `ZombieWalk1`. It now
+         asserts `zombieWalk1`, which is a CORRECTION -- the expected string
+         comes from `data/animations/zombie/zombie.mhanim` rather than from
+         whatever the code emitted. Dance1 and Walk1 are unchanged because
+         title-casing agreed with the sidecar for those two, **which is exactly
+         why the bug survived**.
+         The `.mhanim` axis declaration keeps its own test-local reader in
+         `tests/regression/test_animation_upaxis.cpp` on purpose: that test's
+         value is being INDEPENDENT of the production path it checks.
+         Sweep 1458/1458. *(original note follows)*
          The chooser currently title-cases the stem instead, which agrees for
          two of the three. Reading `.mhanim` would give exact authored names,
          tags a filter could use, and a CROSS-CHECK worth having: `z_is_up` is

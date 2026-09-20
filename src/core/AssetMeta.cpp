@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <fstream>
 #include <sstream>
 #include <string>
 
@@ -85,6 +86,40 @@ AssetMeta loadAssetMeta(const std::filesystem::path& asset) {
         // itself writes.
     }
     return meta;
+}
+
+/// One `.mhanim` names several files, so the lookup is by FILENAME inside
+/// whichever sidecar sits in the same directory.
+std::string animationName(const std::filesystem::path& bvh) {
+    const std::filesystem::path dir = bvh.parent_path();
+    if (dir.empty()) return {};
+    const std::string wanted = bvh.filename().string();
+
+    std::error_code ec;
+    std::filesystem::directory_iterator it(dir, ec);
+    // A missing or unreadable directory is not an error here, exactly as a
+    // missing `.meta` is not: the caller falls back to a prettified stem.
+    if (ec) return {};
+
+    for (const auto& entry : it) {
+        if (entry.path().extension() != ".mhanim") continue;
+        std::ifstream in(entry.path());
+        std::string line;
+        while (std::getline(in, line)) {
+            // `# anim <Name> <file.bvh> [z_is_up]`. Anything else -- author,
+            // licence, `# tag`, `# rig`, `# scale` -- is skipped rather than
+            // refused; the format has no schema and authors add fields.
+            std::istringstream fields(line);
+            std::string hash;
+            std::string key;
+            std::string name;
+            std::string file;
+            if (!(fields >> hash >> key >> name >> file)) continue;
+            if (hash != "#" || key != "anim") continue;
+            if (file == wanted) return name;
+        }
+    }
+    return {};
 }
 
 }  // namespace mh::core

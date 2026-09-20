@@ -1205,6 +1205,23 @@ std::string prettyName(const std::filesystem::path& file, std::string_view prefi
     return mh::ui::prettyAssetName(file.stem().string(), prefix).toStdString();
 }
 
+/// What to CALL an asset, in one place.
+///
+/// Three sources in priority order, and the order is the point: the author's
+/// own spelling in a `.mhanim` beats a `.meta` `name`, which beats a
+/// prettified stem. The last is a guess and the first two are not.
+///
+/// One function because the rule was written out separately for the chooser
+/// and for `--list-animations`, and they drifted: `zombieWalk1.bvh` is
+/// authored "zombieWalk1", and the listing printed "ZombieWalk1" -- a letter
+/// the author had deliberately left lower. A label a user reads in the picker
+/// and a label a script reads from the CLI must be the same string.
+std::string assetLabel(const std::filesystem::path& file) {
+    if (std::string authored = mh::core::animationName(file); !authored.empty()) return authored;
+    const auto meta = mh::core::loadAssetMeta(file);
+    return meta.name.empty() ? prettyName(file, "") : meta.name;
+}
+
 /// The `.meta` tag that marks an asset as a development fixture rather than
 /// content. Spelled as the shipped files spell it -- `data/poses/benchmark.meta`
 /// says `tag Developement`, typo and all -- because this must match the DATA,
@@ -1502,10 +1519,7 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(
     // A sidecar's `name` wins; without one, `prettyName` -- so an asset with no
     // .meta is title-cased like every sibling chooser instead of showing a raw
     // stem such as `walk_cycle`. Written out three times before this existed.
-    const auto chooserLabel = [](const std::filesystem::path& f) {
-        const auto meta = mh::core::loadAssetMeta(f);
-        return meta.name.empty() ? prettyName(f, "") : meta.name;
-    };
+    const auto chooserLabel = [](const std::filesystem::path& f) { return assetLabel(f); };
 
     mh::foundation::AssetGroup poses;
     poses.name = "Pose";
@@ -3654,8 +3668,7 @@ int main(int argc, char** argv) {
         size_t listed = 0;
         for (const std::filesystem::path& p :
              filesWithExtension(dataDir() / "animations", ".bvh")) {
-            const auto meta  = mh::core::loadAssetMeta(p);
-            const auto label = meta.name.empty() ? prettyName(p, "") : meta.name;
+            const auto label = assetLabel(p);
 
             // A file that will not read is REPORTED and skipped, not fatal.
             // Failing here printed the earlier lines and then exited non-zero,
