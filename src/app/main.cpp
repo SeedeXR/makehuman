@@ -51,6 +51,7 @@
 #include "makehuman/rig/Wrinkles.h"
 #include "makehuman/ui/AssetPanel.h"
 #include "makehuman/ui/Background.h"
+#include "makehuman/ui/FrameScrubber.h"
 #include "makehuman/ui/FrameStats.h"
 #include "makehuman/ui/ImageViewer.h"
 #include "makehuman/ui/Language.h"
@@ -763,6 +764,51 @@ std::filesystem::path findPoseByStem(const std::string& spelling) {
 /// and a second literal "none" would be a coupling nothing checks.
 constexpr const char* kNoProxy = "none";
 
+/// The `.bvh` a pose choice names, or none when the choice has no file behind
+/// it -- "rest", either spelling of the A-pose, or a chooser's empty entry.
+///
+/// `none` is in that list because that is what every OTHER chooser in this app
+/// calls its empty entry, and the Animation chooser uses the same word.
+/// Without it, picking None went looking for a file called "none".
+///
+/// ONE door, because there are now two callers -- `loadPoseRig` and the frame
+/// scrubber, which has to know how many frames the current choice HAS without
+/// loading it. Resolving a stem twice in two places is the drift this file
+/// keeps finding; the scrubber offering a slider over a file `loadPoseRig`
+/// would have resolved differently is the shape it would take here.
+std::optional<std::filesystem::path> poseFile(const std::string& pose) {
+    if (pose == "rest" || pose == "apose" || pose == "a-pose" || pose == kNoProxy) {
+        return std::nullopt;
+    }
+    std::filesystem::path file = pose;
+    if (!std::filesystem::is_regular_file(file)) {
+        // Any pose in data/poses is reachable by its stem, hyphens optional.
+        // This used to special-case `tpose` alone, so `--pose benchmark` failed
+        // with "file not found" for a file sitting right beside it -- the GUI
+        // could reach it (the chooser stores full paths) and the CLI could not.
+        if (const auto resolved = findPoseByStem(pose); !resolved.empty()) {
+            file = resolved;
+        }
+    }
+    return file;
+}
+
+/// How many frames the animation @p pose names has, or 0 when it names no file.
+///
+/// Reads the BVH header only as far as `readBvh` does -- the scrubber needs
+/// this before it can offer a range, and asking the rig would mean loading a
+/// pose to find out whether there is one to load.
+///
+/// A file that will not parse reports 0, which disables the scrubber. The load
+/// that follows would have failed anyway and says why on stderr; a slider over
+/// a file nothing can read is the lying control this port already fixed once.
+int poseFrameCount(const std::string& pose) {
+    const auto file = poseFile(pose);
+    if (!file) return 0;
+    const auto bvh = mh::io::readBvh(*file, {});
+    return bvh ? static_cast<int>(bvh->frameCount) : 0;
+}
+
 /// Loads the rig, and the pose named by @p pose if there is one.
 ///
 /// "A-pose" is not a file: the MakeHuman base mesh is authored in one, so the
@@ -794,22 +840,9 @@ constexpr const char* kNoProxy = "none";
 bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& out,
                  bool asAnimation = false, std::optional<size_t> frame = std::nullopt) {
     const std::filesystem::path& expressionFile = expressionFileRef();
-    // `none` too, because that is what every OTHER chooser in this app calls
-    // its empty entry (`kNoProxy`), and the Animation chooser uses the same
-    // word. Without it, picking None went looking for a file called "none".
-    const bool wantPose =
-        !(pose == "rest" || pose == "apose" || pose == "a-pose" || pose == kNoProxy);
-
-    std::filesystem::path file = pose;
-    if (wantPose && !std::filesystem::is_regular_file(file)) {
-        // Any pose in data/poses is reachable by its stem, hyphens optional.
-        // This used to special-case `tpose` alone, so `--pose benchmark` failed
-        // with "file not found" for a file sitting right beside it -- the GUI
-        // could reach it (the chooser stores full paths) and the CLI could not.
-        if (const auto resolved = findPoseByStem(pose); !resolved.empty()) {
-            file = resolved;
-        }
-    }
+    const auto resolved                         = poseFile(pose);
+    const bool wantPose                         = resolved.has_value();
+    const std::filesystem::path file            = resolved.value_or(std::filesystem::path{});
 
     const auto skelPath = rigFile(".mhskel");
     if (!std::filesystem::exists(skelPath)) {
@@ -5372,6 +5405,7 @@ int main(int argc, char** argv) {
     // in once the window exists.
     int mergeGroup                        = 0;
     mh::ui::AssetPanel* assets            = nullptr;
+    mh::ui::FrameScrubber* scrubber       = nullptr;
     mh::ui::MaterialPanel* materialEditor = nullptr;
     mh::ui::ModifierPanel* panel          = nullptr;
     mh::ui::MainWindow* shell             = nullptr;
@@ -5414,6 +5448,20 @@ int main(int argc, char** argv) {
 
     // Skin and pose go through the undo stack too, so Cmd+Z means the same
     // thing whichever panel the user last touched.
+    // The scrubber's ONE door.
+    //
+    // Called after EVERY path that can change what the character is posed by,
+    // because the slider's range is a property of that file: switching from
+    // zombieWalk1 (31 frames) to walk1 (14) with a stale slider is defect (b)
+    // from the withdrawn Animation chooser, two controls disagreeing about
+    // what the model holds. `setAnimation` deliberately does not emit, so this
+    // cannot recurse into the load that called it.
+    const auto syncScrubber = [&] {
+        if (scrubber == nullptr) return;
+        scrubber->setAnimation(poseFrameCount(poseChoice));
+        if (poseFrameLive) scrubber->setFrame(static_cast<int>(*poseFrameLive));
+    };
+
     const auto applyChoice = [&](const QString& group, const QString& id) {
         assets->setChoice(group, id);  // does not emit; see AssetPanel::setChoice
         if (group == QLatin1String("Litsphere")) {
@@ -5590,6 +5638,7 @@ int main(int argc, char** argv) {
         // Its STATE is deliberately not touched: someone who switched posing
         // off and then picks a different pose expects it to stay off.
         shell->setPoseAvailable(rig.posed());
+        syncScrubber();
         rebuildInto(*shell);
     };
 
@@ -5608,6 +5657,14 @@ int main(int argc, char** argv) {
     // The reference's `7_material_editor.py`, which this port had no equivalent
     // of: reading and writing `.mhmat` both existed, and changing one did not.
     const QString kMaterialEditor = QStringLiteral("Material");
+    // The reference's `AnimationLibrary` task view, which lives in its own
+    // `Pose/Animate` category there (`3_libraries_animation.py:182`).
+    //
+    // "Animations", plural, and NOT "Animation": the Assets dock already has a
+    // chooser group by that name, and the two are different things -- the
+    // chooser picks the file, this dock scrubs it. The id is a persisted key
+    // (`saveState` records it), so it never changes.
+    const QString kAnimations = QStringLiteral("Animations");
 
     mh::ui::TaskRegistry tasks;
     // The id stays "Materials" forever -- `saveState` keys on it, so changing
@@ -5618,7 +5675,7 @@ int main(int argc, char** argv) {
     // single name for this set, splitting it across Materials, Geometries and
     // Pose/Animate.
     if (!tasks.add(kModelling) || !tasks.add(kMaterials, QStringLiteral("Assets")) ||
-        !tasks.add(kMaterialEditor)) {
+        !tasks.add(kMaterialEditor) || !tasks.add(kAnimations)) {
         std::fprintf(stderr, "duplicate task category\n");
         return 1;
     }
@@ -5917,6 +5974,43 @@ int main(int argc, char** argv) {
         const QString name = QString::fromStdString(group.name);
         currentChoice.insert(name, assets->choice(name));
     }
+
+    // The Animations dock: the frame scrubber over whatever the Animation
+    // chooser above put on the character. No file list -- the reference has
+    // none either, in all 189 lines of `3_libraries_animation.py`.
+    scrubber = new mh::ui::FrameScrubber;
+    if (!window.setPanel(kAnimations, scrubber)) {
+        std::fprintf(stderr, "no dock for %s\n", kAnimations.toStdString().c_str());
+        return 1;
+    }
+    syncScrubber();
+
+    QObject::connect(scrubber, &mh::ui::FrameScrubber::frameChosen, [&](int frame) {
+        // The frame is the GUI's `--pose-frame`, and it is written to the
+        // SESSION's `poseFrameLive`, never to `poseFrameRef()`. That global
+        // holds what the command line asked for and is never cleared; writing
+        // it here is defect (a) from the withdrawn chooser, where a leaked 0
+        // routed every later Pose load through `loadBodyPoseFrame` and past
+        // `loadBodyPose`'s multi-frame refusal (`src/rig/PoseUnits.cpp:384`).
+        // Picking in either chooser still clears `poseFrameLive`, so the frame
+        // cannot outlive the file it indexes.
+        const auto before = poseFrameLive;
+        human.applyStack(*mesh, targets);  // the 33 cm rule; see applyChoice
+        PoseRig next;
+        if (!loadPoseRig(*mesh, poseChoice, next, poseIsAnimation, static_cast<size_t>(frame))) {
+            // Defect (d): a failed load must not leave a control naming a
+            // frame the character is not in. Put the slider back -- `setFrame`
+            // does not emit, so this cannot loop -- and rebuild, because
+            // `applyStack` has already reset the mesh to its morph base.
+            poseFrameLive = before;
+            scrubber->setFrame(before ? static_cast<int>(*before) : 0);
+            rebuildInto(window);
+            return;
+        }
+        rig           = std::move(next);
+        poseFrameLive = static_cast<size_t>(frame);
+        rebuildInto(window);
+    });
 
     // Apply a choice AND remember it. `applyChoice` sets the combo and the
     // state; `currentChoice` is the mirror the undo stack reads to find what a

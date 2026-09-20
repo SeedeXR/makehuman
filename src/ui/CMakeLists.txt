@@ -28,6 +28,7 @@ add_library(mh_ui STATIC
     PanelTitleBar.cpp
     ModifierPanel.cpp
     AssetPanel.cpp
+    FrameScrubber.cpp
     MaterialPanel.cpp
     Workspace.cpp
     UndoCommands.cpp
@@ -44,6 +45,7 @@ add_library(mh_ui STATIC
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/ShortcutsDialog.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/ModifierPanel.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/AssetPanel.h
+    ${CMAKE_SOURCE_DIR}/include/makehuman/ui/FrameScrubber.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/MaterialPanel.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/Workspace.h
     ${CMAKE_SOURCE_DIR}/include/makehuman/ui/UndoCommands.h

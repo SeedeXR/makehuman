@@ -290,7 +290,8 @@ if(MH_HAVE_RENDER)
                                ui/test_background.cpp
                                ui/test_backdrop.cpp
                                ui/test_about.cpp
-                               ui/test_material_panel.cpp)
+                               ui/test_material_panel.cpp
+                               ui/test_frame_scrubber.cpp)
     target_link_libraries(mh_ui_tests
         PRIVATE mh::ui mh::core Catch2::Catch2 mh::warnings mh::sanitize)
     target_compile_definitions(mh_ui_tests PRIVATE
