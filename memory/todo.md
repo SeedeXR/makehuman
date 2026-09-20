@@ -2286,6 +2286,28 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
         **OWNER REPLIED "proceed" (2026-09-19).** Read as: go with the
         recommendation. **Course confirmed -- build 2b and 2c ourselves, each
         gated against the `basisu` CLI oracle. No new dependency.**
+        **OWNER 2026-09-20, FOURTH EXCHANGE — THIS REVERSES THE DECISION
+        ABOVE, AND THE REVERSAL IS STATED PLAINLY RATHER THAN SMOOTHED OVER.**
+        Owner: *"whatever is needed any library download it, just do what you
+        need to do to get project complete you have all the resource to
+        download, read and decide, get things done, proceed."*
+        Dependencies are now AUTHORISED, which removes the ground the previous
+        decision stood on. **So: ADOPT libktx for BasisLZ** — better interop
+        and faster to finish than hand-writing a range coder — **at the cost of
+        discarding the 2a encoder, which measures 40.20 dB and beats basisu's
+        own 38.92.** That cost is real and is being accepted knowingly, not
+        overlooked.
+        **WHAT DOES NOT CHANGE, because it is legal rather than stylistic
+        (CLAUDE.md hard rules 4 and 6):** the dependency goes in LICENSING.md
+        BEFORE it is used; `io` is Apache-2.0 and may take an Apache-2.0
+        dependency, but AGPL modules may never be depended upon BY Apache ones;
+        and Autodesk FBX SDK, GPL-2.0-only and non-commercial licences stay
+        forbidden outright. **`third_party/licenses/` must be created** — it
+        does not exist although LICENSING.md section 8 step 6 requires it, which
+        was raised with the owner and is now blocking rather than cosmetic.
+        **`KHR_texture_basisu` stays OPTIONAL the way `--draco` is**, so a plain
+        GLB still opens everywhere.
+
         **STILL UN-RUN, offered and available on request:** (i) libktx
         configure+build time across the five presets, (ii) its full transitive
         licence set. Both are cheap; neither has been measured, and no claim
@@ -3508,7 +3530,27 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `setFixedColorBufferSize`, so it grabs at the same device pixel ratio —
       the PNGs get SMALLER, not rescaled.
 
-- [ ] **Backdrop drag/scale — PLANNED IN DETAIL 2026-09-19, and the owner's
+- [x] **Backdrop drag/scale — DONE 2026-09-20.** Right-drag pans, Shift+right-drag
+      zooms, the placement round-trips through the `.mhm`, undo merges a drag
+      into one act, and `--render` composites the same framing.
+      **MEASURED: a backdrop placed, saved and reopened is BYTE-IDENTICAL to one
+      rendered with the same transform given explicitly — 0 of 2,310,496 pixels
+      — and differs from the untransformed one by 1,692,837.**
+      **THREE THINGS IN THE PLAN BELOW WERE WRONG, and are corrected rather than
+      quietly dropped:** (a) the `enabled`-before-arity guard it demanded is
+      **UNREACHABLE** — `sideNamed` rejects `enabled` exactly as it rejects
+      `other` — so that mutant SURVIVES and the guard was DELETED; (b) the
+      `overBackground` call site is **5071**, not 5057; (c) the same "defensive
+      ordering" instruction IS load-bearing for the right-drag branch, because
+      `mouseBindings()` is public and mutable. Identical instruction, opposite
+      verdict — only measuring separated them.
+      **I ALSO INTRODUCED DATA LOSS MID-BATCH AND CAUGHT IT BY TESTING THE
+      SUSPICION FIRST:** handing `recordBackgrounds` only the placed side
+      deleted every other side, because it replaces the whole OWNED set. Fixed
+      by merging from `doc.unhandled`, which repairs the in-UI Open path too.
+      See `memory/handover_session.md` 2026-09-20.
+
+- [x] ~~**Backdrop drag/scale — PLANNED IN DETAIL 2026-09-19, and the owner's
       "per-side (7)" resolves to SIX. Decision taken under the standing
       delegation; recorded here rather than asked.**
       `include/makehuman/ui/Backdrop.h:19` is

@@ -44,6 +44,15 @@ public:
     /// The selected id, or empty when the group is unknown or has no selection.
     [[nodiscard]] QString choice(const QString& group) const;
 
+private:
+    /// The checkbox's object name for @p group. Private: nothing outside needs
+    /// it -- it exists so the name is not concatenated at three call sites.
+    [[nodiscard]] static QString toggleName(const QString& group);
+
+    /// Makes @p group's checkbox agree with its picker. The ONE place that
+    /// decides what the tick shows.
+    void syncToggle(const QString& group);
+
 signals:
     void chosen(const QString& group, const QString& id);
 };

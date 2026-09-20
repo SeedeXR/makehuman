@@ -36,6 +36,18 @@ signals:
     /// a failure reaches the user instead of being a black rectangle.
     void statusChanged(const QString& error);
 
+    /// The backdrop was dragged. Carries the new placement.
+    ///
+    /// The widget does not own the undo stack; the application does. So this
+    /// reports WHAT changed and `backdropGestureFinished` reports WHEN the
+    /// gesture ended, and the application merges the flood of mouse events
+    /// into one undo entry -- the same division `ModifierPanel` already uses
+    /// for slider drags.
+    void backdropTransformChanged(BackdropTransform transform);
+
+    /// The right button came up, so the drag is one completed act.
+    void backdropGestureFinished();
+
 public:
     /// Navigation limits, public because a camera restored from a file has to
     /// respect the same ones the mouse does. MakeHuman's `maxZoomFactor` of 15
@@ -112,7 +124,28 @@ public:
     /// same six views on the View menu.
     ///
     /// A null @p image removes it.
-    void setBackdrop(const QImage& image, BackdropSide side, float opacity);
+    /// @param transform where the image sits within the frame. Travels WITH the
+    ///        backdrop rather than being set on its own, because the two are
+    ///        meaningless apart -- a pan belongs to the image the user dragged,
+    ///        and rebinding a side without its framing would show the new photo
+    ///        through the old window. Defaults to identity, which is what keeps
+    ///        an undragged backdrop rendering exactly as it always has.
+    ///
+    ///        The widget holds ONE backdrop, so it holds ONE transform. The six
+    ///        REMEMBERED placements live with the document, which is what the
+    ///        `.mhm`'s six `background` lines are; a six-slot table here would
+    ///        be five-sixths unused.
+    void setBackdrop(const QImage& image, BackdropSide side, float opacity,
+                     BackdropTransform transform = {});
+
+    [[nodiscard]] BackdropTransform backdropTransform() const;
+
+    /// Moves the backdrop without re-handing the image.
+    ///
+    /// Undo's entry point, and the reason it takes no `QImage`: re-uploading
+    /// the photograph to the scene in order to change where it sits would make
+    /// every undo step a texture upload.
+    void setBackdropTransform(BackdropTransform transform);
 
     /// Draws the ground grid and the backplane behind the figure.
     void setGrid(bool on);
@@ -131,6 +164,7 @@ protected:
     // the litsphere's fixed eye-space lighting read correctly.
     void mousePressEvent(QMouseEvent* e) override;
     void mouseMoveEvent(QMouseEvent* e) override;
+    void mouseReleaseEvent(QMouseEvent* e) override;
     /// Double-click focuses: the view recentres on the point under the cursor,
     /// without zooming. Matches what the reference does with a pick
     /// (`camera.py:774 mousePickHumanCenter`); a miss is a no-op.

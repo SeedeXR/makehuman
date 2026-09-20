@@ -41,6 +41,7 @@ struct ViewportWidget::Impl {
     QImage backdrop;
     BackdropSide backdropSide{BackdropSide::Front};
     float backdropOpacity{1.0F};
+    BackdropTransform backdropTransform;
     QString error;
 
     /// What `scene` was built against. initialize() runs on every resize, but
@@ -113,11 +114,24 @@ bool ViewportWidget::wireframeSupported() const {
     return d_->scene && d_->scene->wireframeSupported();
 }
 
-void ViewportWidget::setBackdrop(const QImage& image, BackdropSide side, float opacity) {
-    d_->backdrop        = image;
-    d_->backdropSide    = side;
-    d_->backdropOpacity = opacity;
+void ViewportWidget::setBackdrop(const QImage& image, BackdropSide side, float opacity,
+                                 BackdropTransform transform) {
+    d_->backdrop          = image;
+    d_->backdropSide      = side;
+    d_->backdropOpacity   = opacity;
+    d_->backdropTransform = transform;
     if (d_->scene) d_->scene->setBackdrop(image, opacity);
+    update();
+}
+
+BackdropTransform ViewportWidget::backdropTransform() const {
+    return d_->backdropTransform;
+}
+
+void ViewportWidget::setBackdropTransform(BackdropTransform transform) {
+    d_->backdropTransform = transform;
+    // No `scene->setBackdrop` here on purpose: the image has not changed, and
+    // the source rectangle is recomputed from this every frame anyway.
     update();
 }
 
@@ -211,7 +225,8 @@ void ViewportWidget::render(QRhiCommandBuffer* cb) {
     const bool facing =
         !d_->backdrop.isNull() &&
         facingSide(d_->backdropSide, d_->camera.yawDegrees, d_->camera.pitchDegrees);
-    d_->scene->setBackdropSource(facing ? coverSource(pix, d_->backdrop.size()) : QRectF{});
+    d_->scene->setBackdropSource(
+        facing ? coverSource(pix, d_->backdrop.size(), d_->backdropTransform) : QRectF{});
     d_->scene->updateBackdrop(u);
 
     cb->beginPass(renderTarget(), theme::palette().bgViewport, {1.0F, 0}, u);
@@ -265,6 +280,13 @@ void ViewportWidget::mouseDoubleClickEvent(QMouseEvent* e) {
     update();
 }
 
+/// How much one pixel of a shift-drag zooms the backdrop.
+///
+/// 1.01 per pixel: a 70-pixel drag doubles it, which is a comfortable flick
+/// rather than a twitch, and the multiplicative form means the gesture feels
+/// the same whatever the current zoom.
+constexpr float kBackdropZoomPerPixel = 1.01F;
+
 void ViewportWidget::mouseMoveEvent(QMouseEvent* e) {
     // The gesture table decides, not this handler. It used to test MIDDLE and
     // fall through to orbit, which was neither configurable nor testable
@@ -276,6 +298,35 @@ void ViewportWidget::mouseMoveEvent(QMouseEvent* e) {
     // through a drag pauses the motion instead of banking it up and applying it
     // in one jump when the modifier is released.
     d_->lastMouse = e->pos();
+
+    // The backdrop drag sits AFTER the gesture table, never before it: only an
+    // UNCLAIMED button reaches here, so a user who rebinds Orbit onto the right
+    // button keeps orbiting. And it is gated on `facingSide` for a blunt
+    // reason -- without that you could drag a photograph you cannot see, and
+    // find the damage only after orbiting back to it.
+    if (verb == NavVerb::None && (e->buttons() & Qt::RightButton) != 0 && !d_->backdrop.isNull() &&
+        facingSide(d_->backdropSide, d_->camera.yawDegrees, d_->camera.pitchDegrees)) {
+        BackdropTransform tf = d_->backdropTransform;
+        if ((e->modifiers() & Qt::ShiftModifier) != 0) {
+            // Multiplicative, for the same reason the wheel is: a fixed step
+            // crawls when zoomed out and leaps when zoomed in. Dragging UP
+            // (negative dy) makes the picture bigger, which shows LESS of it.
+            tf.scale *= std::pow(kBackdropZoomPerPixel, -static_cast<float>(delta.y()));
+            tf.scale = std::max(tf.scale, kMinBackdropScale);
+        } else {
+            // A fraction of the WIDGET, so the photo keeps pace with the
+            // pointer at any window size. The sign is inverted because the
+            // transform moves the SOURCE window: sliding that left is what
+            // makes the image travel right, with the hand that dragged it.
+            tf.x -= static_cast<float>(delta.x()) / static_cast<float>(std::max(1, width()));
+            tf.y -= static_cast<float>(delta.y()) / static_cast<float>(std::max(1, height()));
+        }
+        d_->backdropTransform = tf;
+        update();
+        emit backdropTransformChanged(tf);
+        return;
+    }
+
     if (verb == NavVerb::None) return;
 
     // MIDDLE drag pans, LEFT drags orbits. The reference binds pan to the arrow
@@ -302,6 +353,15 @@ void ViewportWidget::mouseMoveEvent(QMouseEvent* e) {
     d_->camera.pitchDegrees =
         std::clamp(d_->camera.pitchDegrees, -kMaxPitchDegrees, kMaxPitchDegrees);
     update();
+}
+
+void ViewportWidget::mouseReleaseEvent(QMouseEvent* e) {
+    // Only the right button ends a BACKDROP gesture. Announcing on every
+    // release would make an orbit or a pan close the backdrop's undo entry,
+    // so two drags separated by an orbit would refuse to merge -- and worse,
+    // an orbit alone would push an empty act onto the stack.
+    if (e->button() == Qt::RightButton) emit backdropGestureFinished();
+    QRhiWidget::mouseReleaseEvent(e);
 }
 
 void ViewportWidget::wheelEvent(QWheelEvent* e) {

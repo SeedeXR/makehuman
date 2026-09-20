@@ -68,6 +68,18 @@ struct AssetGroup {
     std::vector<AssetChoice> choices;
     /// Index into `choices` that starts selected; -1 for none.
     int selected{-1};
+
+    /// Offer a checkbox beside the picker as well.
+    ///
+    /// For a slot whose real answer is yes-or-no. `data/genitals` ships one
+    /// mesh, so its picker is a two-state control wearing a dropdown's
+    /// clothes, and a tick says what it means in one click.
+    ///
+    /// Set by the APPLICATION, which knows which slots are anatomical, rather
+    /// than by the panel matching on a group's name -- a generic widget that
+    /// special-cases a body part is a widget that has to be edited every time
+    /// the data changes.
+    bool toggle{false};
 };
 
 }  // namespace mh::foundation

@@ -1241,6 +1241,17 @@ struct ProxySlot {
     /// and eyelashes are choices a character makes; teeth are not, and a
     /// character used to open toothless with an empty open mouth.
     const char* defaultChoice;
+
+    /// Offer a checkbox beside this slot's picker.
+    ///
+    /// For a slot whose honest question is yes-or-no. `data/genitals` ships a
+    /// single mesh, so its picker has exactly two entries and a dropdown is
+    /// more ceremony than the choice deserves.
+    ///
+    /// Decided HERE and not in `AssetPanel`, because which slots are
+    /// anatomical is domain knowledge; a generic widget that matched on the
+    /// group's name would need editing every time the data changed.
+    bool toggle{false};
 };
 
 /// The six axis views, by the name the CLI uses.
@@ -1282,7 +1293,7 @@ constexpr const char* kSideNames = "expected front, back, left, right, top or bo
 }
 
 constexpr std::array<ProxySlot, 6> kProxySlots{{{"teeth", "Teeth", "teeth"},
-                                                {"genitals", "Genitals", "genitals"},
+                                                {"genitals", "Genitals", "genitals", true},
                                                 {"tongue", "Tongue", "none"},
                                                 {"hair", "Hair", "none"},
                                                 {"clothes", "Clothes", "none"},
@@ -1611,6 +1622,7 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(
         group.name = slot.group;
         group.choices.push_back({kNoProxy, "None"});
         group.selected     = 0;
+        group.toggle       = slot.toggle;
         const auto current = currentProxies.find(slot.group);
         for (const fs::path& p : filesWithExtension(dataDir() / slot.key, ".mhclo")) {
             group.choices.push_back({p.string(), prettyName(p, "")});
@@ -2972,6 +2984,12 @@ int main(int argc, char** argv) {
                        "hidden from every other angle rather than swinging round with the "
                        "camera."),
         QStringLiteral("side"), QStringLiteral("front"));
+    const QCommandLineOption backgroundTransformOpt(
+        QStringLiteral("background-transform"),
+        QStringLiteral("Where --background sits, as \"x,y,scale\". x and y pan by a fraction "
+                       "of the visible image, so 0.5 is half a window; scale zooms, so 2 shows "
+                       "half as much. Default \"0,0,1\"."),
+        QStringLiteral("x,y,scale"), QStringLiteral("0,0,1"));
     const QCommandLineOption backgroundOpacityOpt(
         QStringLiteral("background-opacity"),
         QStringLiteral("How strongly --background shows in the viewport, 0 to 1. It fades "
@@ -3192,6 +3210,7 @@ int main(int argc, char** argv) {
     parser.addOption(backgroundOpt);
     parser.addOption(backgroundSideOpt);
     parser.addOption(backgroundOpacityOpt);
+    parser.addOption(backgroundTransformOpt);
     parser.addOption(aboutOpt);
     parser.addOption(creditsOpt);
     parser.addOption(viewOpt);
@@ -3962,6 +3981,111 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Resolved HERE, once, and not at the viewport: the headless `--save` path
+    // runs long before the window exists (it says so itself -- "No window, so
+    // no framing to record"), and `MainWindow` is not even constructed until
+    // later. Parsing the side and the transform down there would mean a
+    // `--background-transform ... --save` recorded nothing at all, silently.
+    //
+    // `--background-side` is refused under `--render` just above, but
+    // `--background-transform` is NOT: `--render` does composite a backdrop, so
+    // where that backdrop sits is a question it has to answer.
+    mh::ui::BackdropSide backdropSide = mh::ui::BackdropSide::Front;
+    mh::ui::BackdropTransform backdropTf;
+
+    // A `.mhm` can NAME a backdrop, and until now this port read those lines
+    // only to write them back -- so a photograph placed, saved and reopened
+    // came back with no photograph at all. `--background` still wins: an
+    // explicit flag is a stronger statement than a remembered one.
+    std::optional<mh::ui::BackdropTransform> storedTransform;
+    std::string backdropSource = parser.value(backgroundOpt).toStdString();
+    if (backdrop.isNull()) {
+        for (const std::string& line : document.unhandled) {
+            const auto stored = mh::ui::parseBackgroundLine(line);
+            // Only the side this run is about to face. The others are kept in
+            // the file and applied when the user orbits to them.
+            if (!stored) continue;
+            const AxisView* wanted = findAxisView(parser.value(backgroundSideOpt));
+            if (wanted == nullptr || stored->side != wanted->side) continue;
+            const QString path = QString::fromStdString(fromUnderData(stored->file));
+            if (backdrop.load(path)) {
+                storedTransform = stored->transform;
+                backdropSource  = path.toStdString();
+            } else {
+                // A WARNING, not an error. A `.mhm` whose photograph has been
+                // moved or deleted must still open -- refusing the whole
+                // document over a missing reference image would make the file
+                // unopenable for the sake of a decoration.
+                std::fprintf(stderr, "warning: cannot read backdrop \"%s\" named by %s\n",
+                             path.toStdString().c_str(),
+                             parser.value(loadOpt).toStdString().c_str());
+            }
+            break;
+        }
+    }
+
+    if (!backdrop.isNull()) {
+        const AxisView* resolved = findAxisView(parser.value(backgroundSideOpt));
+        if (resolved == nullptr) {
+            std::fprintf(stderr, "unknown --background-side \"%s\"; %s\n",
+                         parser.value(backgroundSideOpt).toStdString().c_str(), kSideNames);
+            return 1;
+        }
+        backdropSide = resolved->side;
+
+        // Three numbers, each of them required to BE a number. A typo'd
+        // "0,0,x" would otherwise read as scale 0, and a zero scale empties the
+        // source rect -- which `SceneResources::draw` SKIPS, so the backdrop
+        // would simply not appear with nothing said about why.
+        const QStringList parts = parser.value(backgroundTransformOpt).split(QLatin1Char(','));
+        bool tfOk               = parts.size() == 3;
+        if (tfOk) {
+            bool xOk = false, yOk = false, sOk = false;
+            backdropTf.x     = parts[0].toFloat(&xOk);
+            backdropTf.y     = parts[1].toFloat(&yOk);
+            backdropTf.scale = parts[2].toFloat(&sOk);
+            tfOk             = xOk && yOk && sOk && backdropTf.scale > 0.0F;
+        }
+        if (!tfOk) {
+            std::fprintf(stderr,
+                         "--background-transform takes \"x,y,scale\" with a positive scale, "
+                         "not \"%s\"\n",
+                         parser.value(backgroundTransformOpt).toStdString().c_str());
+            return 1;
+        }
+    }
+
+    // The remembered framing, but only if the user did not state one. An
+    // explicit `--background-transform` is the stronger statement, and
+    // `isSet` is what distinguishes "asked for the default" from "said
+    // nothing" -- the default value alone cannot.
+    if (storedTransform && !parser.isSet(backgroundTransformOpt)) backdropTf = *storedTransform;
+
+    // What a save will write for the sides this run OWNS. A `.mhm` can carry one
+    // `background` line per side, and a loaded file's lines already survive
+    // verbatim through `unhandled` (`out.unhandled = base.unhandled`), so the
+    // only thing to add is the side this run actually placed.
+    //
+    // Relative to `data/` like every other path this file records, so a `.mhm`
+    // naming a backdrop can be opened on another machine. That was the last
+    // non-portable spelling in the pose line and it is not being reintroduced
+    // here.
+    std::vector<mh::ui::BackdropPlacement> backdropPlacements;
+    if (!backdrop.isNull()) {
+        mh::ui::BackdropPlacement placed;
+        placed.side = backdropSide;
+        placed.file = underData(parser.value(backgroundOpt).toStdString());
+        // The reference's own aspect field, which this port does not consume --
+        // it derives what it draws from the image and the frame. Written as the
+        // image's true aspect rather than a made-up 1, so a reference build
+        // reading the file back sees something honest.
+        placed.aspect    = backdrop.height() > 0 ? static_cast<float>(backdrop.width()) /
+                                                    static_cast<float>(backdrop.height())
+                                                 : 1.0F;
+        placed.transform = backdropTf;
+        backdropPlacements.push_back(placed);
+    }
+
     if (parser.isSet(poseFrameOpt)) {
         // A frame with no file to take it from is a mistake worth naming: the
         // default pose is the authored A-pose, which has no frames at all.
@@ -4432,6 +4556,39 @@ int main(int argc, char** argv) {
         // simply never written, so a saved face reopened neutral.
         recordLine(doc, "expression",
                    expressionFileRef().empty() ? std::string{} : underData(expressionFileRef()));
+        // NOT `recordLine`: that erases every line sharing the key and appends
+        // one, which would collapse six per-side backgrounds into a single
+        // line. `recordBackgrounds` owns them by SIDE, and leaves a line it
+        // does not own -- the reference's three-quarter `other`, or
+        // `background enabled` -- exactly where it found it.
+        //
+        // MERGED with what the document already carries, and this is not
+        // decoration: `recordBackgrounds` replaces the whole OWNED set, so
+        // handing it only the side this run placed DELETED every other side.
+        // Measured, not feared -- a file carrying `left` and `top`, loaded and
+        // saved with `--background-side front`, came back with both gone.
+        //
+        // The merge reads `doc.unhandled`, which already holds the loaded
+        // file's lines verbatim, so it repairs the in-UI Open path too rather
+        // than only the command line. Policy lives here; `recordBackgrounds`
+        // stays the plain mechanism its own tests describe.
+        // Keyed by side, so "this run placed it" simply overwrites "the file
+        // carried it" -- the upsert is the assignment. A vector plus a
+        // find_if said the same thing in twice the lines, and ordered the
+        // output by whatever order the file happened to use.
+        std::map<mh::ui::BackdropSide, mh::ui::BackdropPlacement> merged;
+        for (const std::string& line : doc.unhandled) {
+            if (auto existing = mh::ui::parseBackgroundLine(line))
+                merged[existing->side] = *existing;
+        }
+        for (const mh::ui::BackdropPlacement& placed : backdropPlacements)
+            merged[placed.side] = placed;
+
+        std::vector<mh::ui::BackdropPlacement> lines;
+        lines.reserve(merged.size());
+        for (const auto& [side, placement] : merged)
+            lines.push_back(placement);
+        mh::ui::recordBackgrounds(doc.unhandled, lines);
         return doc;
     };
 
@@ -5068,7 +5225,34 @@ int main(int argc, char** argv) {
         // flat fill of the clear colour. A backdrop composited first makes a
         // render that drew NOTHING look like a frame full of photograph, so the
         // guard would pass on exactly the failure it exists to catch.
-        const QImage framed = backdrop.isNull() ? *img : mh::ui::overBackground(*img, backdrop);
+        // WHICH backdrop the render composites is the render's own question,
+        // answered from the render's own camera -- not from `--background-side`,
+        // which `--render` refuses precisely because it steers the viewport.
+        //
+        // Built through `renderSettingsFor`, the SAME function the renderer was
+        // handed, so the two cannot answer differently. Reading a default
+        // `RenderSettings` here instead would drift the moment that function
+        // starts setting a camera.
+        //
+        // NO OBSERVABLE EFFECT TODAY, and it is not sold as one:
+        // `renderSettingsFor` never sets `camera`, so this resolves to Front --
+        // what the code did by assumption before. It is insurance for the
+        // render camera that does not exist yet, at which point compositing a
+        // FRONT photograph behind a LEFT render would be exactly the mistake
+        // this port refuses in the viewport. The assumption it rests on is
+        // pinned by a test ("the render's default camera faces FRONT"), so the
+        // day it stops holding, something says so.
+        const mh::render::RenderSettings renderRs = mh::ui::renderSettingsFor(req, skin);
+        const auto renderSide =
+            mh::ui::sideFacing(renderRs.camera.yawDegrees, renderRs.camera.pitchDegrees);
+        const bool belongsHere = renderSide && *renderSide == backdropSide;
+
+        const QImage framed =
+            (backdrop.isNull() || !belongsHere)
+                ? *img
+                : mh::ui::overBackground(
+                      *img, backdrop,
+                      mh::ui::coverSource(img->size(), backdrop.size(), backdropTf));
         if (!framed.save(QString::fromStdString(out.string()))) {
             return "cannot write " + out.string();
         }
@@ -5520,12 +5704,7 @@ int main(int argc, char** argv) {
     }
 
     if (!backdrop.isNull()) {
-        const AxisView* side = findAxisView(parser.value(backgroundSideOpt));
-        if (side == nullptr) {
-            std::fprintf(stderr, "unknown --background-side \"%s\"; %s\n",
-                         parser.value(backgroundSideOpt).toStdString().c_str(), kSideNames);
-            return 1;
-        }
+        // Side and transform were resolved before the save path; see there.
         bool ok            = false;
         const double alpha = parser.value(backgroundOpacityOpt).toDouble(&ok);
         if (!ok || alpha < 0.0 || alpha > 1.0) {
@@ -5533,9 +5712,14 @@ int main(int argc, char** argv) {
                          parser.value(backgroundOpacityOpt).toStdString().c_str());
             return 1;
         }
-        window.viewport()->setBackdrop(backdrop, side->side, static_cast<float>(alpha));
+        window.viewport()->setBackdrop(backdrop, backdropSide, static_cast<float>(alpha),
+                                       backdropTf);
+        // Name the real source. `--background` is empty when the image came
+        // from the document instead, and this line printed a blank where the
+        // filename should be -- which reads as a bug in the backdrop rather
+        // than a message that forgot where it got its picture.
         std::printf("backdrop: %s behind the %s view at %.2f opacity\n",
-                    parser.value(backgroundOpt).toStdString().c_str(),
+                    backdropSource.empty() ? "(none)" : backdropSource.c_str(),
                     parser.value(backgroundSideOpt).toStdString().c_str(), alpha);
     }
 
@@ -5565,6 +5749,44 @@ int main(int argc, char** argv) {
     // Closes the merge group, so a drag is one undo step but two deliberate
     // nudges of the same slider are two.
     QObject::connect(panel, &mh::ui::ModifierPanel::editingFinished, [&] { ++mergeGroup; });
+
+    // The backdrop drag, on the same footing as a slider drag: every mouse
+    // event is a change, and the gesture's END is what closes the undo entry.
+    // Without the merge a single drag across the viewport would push one undo
+    // step PER PIXEL of travel.
+    //
+    // Keyed by SIDE, so dragging the front photo and then the left one are two
+    // separate entries even inside one merge group -- `MultiValueChangeCommand`
+    // re-checks the key set in `mergeWith`, so a differing side refuses to
+    // merge rather than silently overwriting the wrong picture.
+    auto backdropWas         = std::make_shared<mh::ui::BackdropTransform>(backdropTf);
+    const auto applyBackdrop = [&window](const std::vector<std::pair<QString, float>>& values) {
+        mh::ui::BackdropTransform tf = window.viewport()->backdropTransform();
+        for (const auto& [key, value] : values) {
+            if (key.endsWith(QStringLiteral(".x"))) {
+                tf.x = value;
+            } else if (key.endsWith(QStringLiteral(".y"))) {
+                tf.y = value;
+            } else if (key.endsWith(QStringLiteral(".scale"))) {
+                tf.scale = value;
+            }
+        }
+        window.viewport()->setBackdropTransform(tf);
+    };
+    QObject::connect(
+        window.viewport(), &mh::ui::ViewportWidget::backdropTransformChanged,
+        [&, backdropWas](mh::ui::BackdropTransform now) {
+            const QString stem = QStringLiteral("backdrop.%1.").arg(static_cast<int>(backdropSide));
+            std::vector<mh::ui::MultiValueChangeCommand::Change> changes{
+                {stem + QStringLiteral("x"), backdropWas->x, now.x},
+                {stem + QStringLiteral("y"), backdropWas->y, now.y},
+                {stem + QStringLiteral("scale"), backdropWas->scale, now.scale}};
+            *backdropWas = now;
+            window.undoStack()->push(new mh::ui::MultiValueChangeCommand(
+                QObject::tr("Move backdrop"), std::move(changes), applyBackdrop, mergeGroup));
+        });
+    QObject::connect(window.viewport(), &mh::ui::ViewportWidget::backdropGestureFinished,
+                     [&] { ++mergeGroup; });
 
     // Reset touches every slider; a macro makes that one Ctrl+Z instead of 291.
     QObject::connect(panel, &mh::ui::ModifierPanel::resetInProgress, [&](bool active) {

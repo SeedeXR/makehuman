@@ -4,6 +4,120 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-20 03:30:00 — Session · **Backdrop drag/scale, and the bug I wrote myself**
+
+### What shipped
+Batch C — the backdrop drag/scale item, eleven pieces — plus a genitals
+checkbox the owner asked for mid-session. Every piece was written test-first,
+mutation-tested where mutation means anything, and formatted with CI's own
+command.
+
+**The feature, stated as a user sees it:** load a reference photograph, drag it
+with the right button, zoom it with Shift+right-drag, save, reopen — and it is
+exactly where you left it. Undo steps back through the drag as one act.
+
+### The measurement that matters
+A backdrop placed, saved and reopened is **byte-identical** to one rendered
+with the same transform given explicitly: **0 of 2,310,496 pixels differ**.
+Against the *untransformed* backdrop it differs by **1,692,837**. So the gate
+is `--max-differing 0`, which is not a tight-fitting number — it is the claim.
+
+### The bug I introduced, and how it was caught
+Wiring the save path, I handed `recordBackgrounds` only the side this run
+placed. That function replaces the whole **owned** set by design, so a `.mhm`
+carrying `background left` and `background top`, loaded and saved with
+`--background-side front`, came back with **both silently deleted**. The
+unowned `other` line survived, which is exactly what made it easy to miss.
+
+**It was found because the suspicion was TESTED before it was fixed.** The note
+said "verify that claim"; the claim reproduced on the first try.
+
+The fix merges from `doc.unhandled`, which already holds the loaded file's
+lines verbatim — so it repairs the **in-UI Open path** too, not only the
+command line, and needs no second copy of state. Policy lives in the app;
+`recordBackgrounds` stays the plain mechanism its own tests describe.
+
+### Three places the plan was wrong, and one where it was right
+* The todo demanded an `enabled`-before-arity guard in the line parser.
+  **MEASURED: that mutant SURVIVES — nothing reaches it**, because `sideNamed`
+  rejects `enabled` exactly as it rejects `other`. The guard was DELETED.
+* The todo recorded `overBackground`'s call site as `main.cpp:5057`. It is
+  **5071**.
+* The same "defensive ordering" instruction appeared for the right-drag branch,
+  and there it is **load-bearing**: `mouseBindings()` is public and mutable, so
+  a user really can rebind Orbit onto the right button, and dropping the
+  ordering fails two assertions. **Identical-sounding instruction, opposite
+  verdict. Only measuring told them apart.**
+
+### `app_help_mentions_body_pose_units` — a gate broken by text layout
+`--background-transform` is a long option name, and **Qt sizes the `--help`
+description column from the longest option**. Every description re-wrapped, and
+the literal `sixty-one pose the BODY` split across a line. The claim was
+present verbatim; the gate went red on layout.
+
+The pattern now spans the wrap. That is a **fix, not a relaxation**: the gate
+exists to catch a stale doc, and coupling it to Qt's column arithmetic made it
+sensitive to something its subject does not control — the same defect as the
+grid gate chrome could move. **Proved non-vacuous: making the help say the
+units pose the FACE fails it.**
+
+**This had been failing for several turns and my narrow ctest filters hid it.**
+`backdrop|background|^app_bg` never included `app_help_*`. Wide sweeps now run
+in the background; the 120 s foreground timeout is what encouraged the narrow
+filters in the first place.
+
+### The insurance, labelled as such
+`--render` now derives WHICH backdrop to composite from `RenderSettings::camera`
+rather than assuming Front. **This has no observable effect today** —
+`renderSettingsFor` never sets `camera` — and it is not being sold as a fix. It
+is insurance for a render camera that does not exist yet, at which point
+compositing a front photograph behind a left render would be the mistake this
+port refuses in the viewport.
+
+A change with no observable effect cannot be mutation-tested, so instead: the
+assumption is **pinned** by a test (the default render camera faces Front), and
+the mechanism is **probed** — forcing a left-facing camera withholds the front
+backdrop, 0 of 1,048,576 pixels.
+
+### The checkbox, and the heuristic that would have been wrong
+`AssetGroup::toggle`, set by the application for the genitals slot only, drawn
+by `AssetPanel`. **The checkbox holds no state**: `syncToggle` derives it from
+the picker, and every path calls it — including `setChoice`, which blocks the
+picker's signals and is precisely where a naive checkbox drifts. That drift is
+a real open defect here ("the Smooth tick and the mesh are two stores that can
+drift").
+
+The ponytail review asked whether a flag was needed at all, or whether any
+group with exactly two choices should get a checkbox. **MEASURED: `teeth`,
+`tongue` and `eyelashes` each ship exactly one `.mhclo` too**, so that
+heuristic would have put checkboxes on FOUR slots and grown a new one whenever
+a slot dropped to a single asset. The flag stays.
+
+Two cuts were applied from that review: `toggleName` made private (no external
+caller — the test used a string literal — and its comment claimed a stylesheet
+need that does not exist, though object-name styling IS real here at
+`Theme.cpp:131`), and the upsert loop became a `std::map` keyed by side. **The
+merge mutant was re-run against the REWRITTEN code** rather than trusting the
+earlier kill, and still fails two gates.
+
+### Two unexplained reds — recorded, not explained
+`app_backdrop_transparent_shows_nothing` and
+`app_backdrop_hidden_from_another_side` each failed **once** and then passed
+every retry. **Measured: the first has a 100x margin — 1 of 2,310,496 pixels
+against a bound of 100 — and five back-to-back producer re-runs all read
+exactly 1.** Both producers are a matched viewport-only set, so chrome and
+mouse noise are not the explanation.
+
+Both failures followed a relink, so that hypothesis was tested directly:
+**three forced relink-then-test rounds, all clean.** 2-for-2 correlation, zero
+reproductions. **No cause found and none invented.** If either recurs, capture
+the PNGs before anything overwrites them.
+
+### Next
+M7's last item, under the owner's new grant — see `memory/todo.md`.
+
+---
+
 ## 2026-09-19 23:30:00 — Session · **Two records were wrong, and the gate that was supposed to catch a stale tree never could**
 
 ### What actually shipped

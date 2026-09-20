@@ -4,6 +4,7 @@
 #include <cctype>
 #include <string>
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QLabel>
 #include <QVBoxLayout>
@@ -61,9 +62,32 @@ AssetPanel::AssetPanel(std::span<const foundation::AssetGroup> groups, QWidget* 
         }
         connect(picker, &QComboBox::currentIndexChanged, this, [this, picker, name](int index) {
             if (index < 0) return;
+            syncToggle(name);
             emit chosen(name, picker->itemData(index).toString());
         });
         column->addWidget(picker);
+
+        if (!group.toggle) continue;
+
+        // A checkbox for a slot whose real question is yes-or-no. It owns NO
+        // state: `syncToggle` derives what it shows from the picker, and every
+        // path that can move the picker calls it. That is the whole design --
+        // a tick that remembered its own answer would be a second store, free
+        // to disagree with the mesh actually worn.
+        auto* box = new QCheckBox(tr("Show %1").arg(name), this);
+        box->setObjectName(toggleName(name));
+        box->setAccessibleName(tr("Show %1").arg(name));
+        column->addWidget(box);
+        connect(box, &QCheckBox::toggled, this, [picker](bool on) {
+            // Index 1 is the first real choice; 0 is None by construction
+            // above. A group that asked for a toggle but shipped no wearable
+            // choice would leave the tick inert rather than crash.
+            if (on && picker->count() < 2) return;
+            // Setting the index makes the picker emit, which is what reaches
+            // `syncToggle` and `chosen`. One path, not two.
+            picker->setCurrentIndex(on ? 1 : 0);
+        });
+        syncToggle(name);
     }
     column->addStretch(1);
 }
@@ -75,6 +99,23 @@ void AssetPanel::setChoice(const QString& group, const QString& id) {
     if (index < 0) return;
     const QSignalBlocker block(picker);
     picker->setCurrentIndex(index);
+    // The blocker above is exactly why this is here: with the picker's signals
+    // suppressed, a tick wired only to `currentIndexChanged` would keep showing
+    // the previous answer. This is the drift, closed at its source.
+    syncToggle(group);
+}
+
+QString AssetPanel::toggleName(const QString& group) {
+    return QStringLiteral("assets.toggle:") + group;
+}
+
+void AssetPanel::syncToggle(const QString& group) {
+    auto* box = findChild<QCheckBox*>(toggleName(group));
+    if (box == nullptr) return;
+    const auto* picker = findChild<const QComboBox*>(pickerName(group));
+    if (picker == nullptr) return;
+    const QSignalBlocker block(box);
+    box->setChecked(picker->currentIndex() > 0);
 }
 
 QString AssetPanel::choice(const QString& group) const {

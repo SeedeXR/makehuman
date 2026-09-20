@@ -2,6 +2,7 @@
 #pragma once
 
 #include <QImage>
+#include <QRectF>
 
 namespace mh::ui {
 
@@ -35,6 +36,14 @@ namespace mh::ui {
 ///         -- which is what an unreadable `--background` file gives -- returns
 ///         the frame untouched, so a bad path is reported rather than silently
 ///         blanking the render.
-[[nodiscard]] QImage overBackground(const QImage& frame, const QImage& background);
+/// @param source which part of @p background to show, from `mh::ui::coverSource`.
+///        **Passed in, never computed here, and deliberately not defaulted.**
+///        This function used to work it out itself, which meant a pan/zoom
+///        applied to the viewport left `--render` compositing the plain
+///        cover-fit -- with no error and no visual cue, the worst kind of
+///        wrong. Taking the rectangle makes that failure impossible to write:
+///        there is one rule, in `coverSource`, and both consumers are handed
+///        its answer.
+[[nodiscard]] QImage overBackground(const QImage& frame, const QImage& background, QRectF source);
 
 }  // namespace mh::ui

@@ -1,22 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "makehuman/ui/Background.h"
 
-#include "makehuman/ui/Backdrop.h"
-
 #include <QPainter>
 
 namespace mh::ui {
 
-QImage overBackground(const QImage& frame, const QImage& background) {
+QImage overBackground(const QImage& frame, const QImage& background, QRectF source) {
     if (frame.isNull()) return frame;
     if (background.isNull()) return frame;
 
-    // The cover rule lives in ONE place. `coverSource` returns the part of the
-    // image a cover-fit draw shows, in image pixels; the viewport's backdrop
-    // shader turns the same rectangle into UV scale and offset. Computing it
-    // twice -- once here and once in GLSL -- is how the render and the viewport
-    // would come to disagree about where a photograph sits.
-    const QRectF src = coverSource(frame.size(), background.size());
+    // The cover rule lives in ONE place and this is NOT it -- the caller hands
+    // us `coverSource`'s answer. Computing it here as well is exactly how the
+    // render and the viewport came to be able to disagree about where a
+    // photograph sits; see the header.
+    const QRectF src = source;
     if (src.isEmpty()) return frame;
 
     QImage out(frame.size(), QImage::Format_ARGB32);

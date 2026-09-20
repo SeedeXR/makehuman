@@ -19,6 +19,7 @@
 // it exists to catch. The guard has to run on the render, and the backdrop goes
 // on afterwards.
 
+#include "makehuman/ui/Backdrop.h"
 #include "makehuman/ui/Background.h"
 
 #include "makehuman/ui/FrameStats.h"
@@ -30,6 +31,7 @@
 
 #include <string>
 
+using mh::ui::coverSource;
 using mh::ui::overBackground;
 
 namespace {
@@ -79,15 +81,16 @@ TEST_CASE("the result keeps the FRAME's size, whatever the backdrop's", "[ui][ba
 
     // A backdrop is a file a user chose; nothing says it matches the render.
     for (const auto& bg : {twoTone(64, 64), twoTone(4000, 100), twoTone(100, 4000)}) {
-        const QImage out = overBackground(f, bg);
+        const QImage out = overBackground(f, bg, coverSource(f.size(), bg.size()));
         CHECK(out.width() == 320);
         CHECK(out.height() == 240);
     }
 }
 
 TEST_CASE("an opaque frame hides the backdrop entirely", "[ui][background]") {
-    const QImage f   = frame(64, 64, QColor(200, 30, 40), 255);
-    const QImage out = overBackground(f, twoTone(64, 64));
+    const QImage f = frame(64, 64, QColor(200, 30, 40), 255);
+    const QImage out =
+        overBackground(f, twoTone(64, 64), coverSource(f.size(), twoTone(64, 64).size()));
 
     // Nothing of a red-and-blue backdrop survives under a fully opaque frame.
     for (int y = 0; y < 64; y += 8) {
@@ -99,8 +102,9 @@ TEST_CASE("an opaque frame hides the backdrop entirely", "[ui][background]") {
 }
 
 TEST_CASE("a fully transparent frame IS the backdrop", "[ui][background]") {
-    const QImage f   = frame(64, 64, QColor(200, 30, 40), 0);
-    const QImage out = overBackground(f, twoTone(64, 64));
+    const QImage f = frame(64, 64, QColor(200, 30, 40), 0);
+    const QImage out =
+        overBackground(f, twoTone(64, 64), coverSource(f.size(), twoTone(64, 64).size()));
 
     CHECK(out.pixelColor(8, 32) == QColor(255, 0, 0));
     CHECK(out.pixelColor(56, 32) == QColor(0, 0, 255));
@@ -113,7 +117,8 @@ TEST_CASE("the subject sits on the backdrop where it is opaque", "[ui][backgroun
         for (int x = 16; x < 48; ++x)
             f.setPixelColor(x, y, QColor(0, 255, 0, 255));
     }
-    const QImage out = overBackground(f, twoTone(64, 64));
+    const QImage out =
+        overBackground(f, twoTone(64, 64), coverSource(f.size(), twoTone(64, 64).size()));
 
     CHECK(out.pixelColor(32, 32) == QColor(0, 255, 0));  // the subject
     CHECK(out.pixelColor(4, 4) == QColor(255, 0, 0));    // backdrop, left half
@@ -125,7 +130,8 @@ TEST_CASE("the backdrop is COVERED and centred, not squashed", "[ui][background]
     // 2:1 over a square frame. Cover scales to 400x200 and crops 100 columns
     // from each side, so only the middle half is visible and the seam between
     // the halves lands at the centre of the result.
-    const QImage out = overBackground(f, twoToneWithMargin(400, 200));
+    const QImage out = overBackground(f, twoToneWithMargin(400, 200),
+                                      coverSource(f.size(), twoToneWithMargin(400, 200).size()));
 
     CHECK(out.pixelColor(99, 100) == QColor(255, 0, 0));
     CHECK(out.pixelColor(100, 100) == QColor(0, 0, 255));
@@ -152,7 +158,7 @@ TEST_CASE("a null backdrop leaves the frame exactly as it was", "[ui][background
     QImage f = frame(32, 32, QColor(1, 2, 3), 0);
     f.setPixelColor(4, 4, QColor(9, 8, 7, 255));
 
-    const QImage out = overBackground(f, QImage{});
+    const QImage out = overBackground(f, QImage{}, coverSource(f.size(), QImage{}.size()));
     REQUIRE(out.size() == f.size());
     CHECK(out.pixelColor(4, 4) == QColor(9, 8, 7, 255));
     // Still transparent where it was: not painted over anything, not garbage.
@@ -160,7 +166,8 @@ TEST_CASE("a null backdrop leaves the frame exactly as it was", "[ui][background
 }
 
 TEST_CASE("a null frame stays null", "[ui][background]") {
-    CHECK(overBackground(QImage{}, twoTone(8, 8)).isNull());
+    CHECK(overBackground(QImage{}, twoTone(8, 8), coverSource(QSize(8, 8), twoTone(8, 8).size()))
+              .isNull());
 }
 
 TEST_CASE("compositing does NOT make a blank render look drawn", "[ui][background]") {
@@ -175,7 +182,8 @@ TEST_CASE("compositing does NOT make a blank render look drawn", "[ui][backgroun
     std::string text;
     REQUIRE_FALSE(mh::ui::describeFrame(blank, text));
 
-    const QImage composited = overBackground(blank, twoTone(64, 64));
+    const QImage composited =
+        overBackground(blank, twoTone(64, 64), coverSource(blank.size(), twoTone(64, 64).size()));
     // Stated as a fact about the composite, so that the reason the application
     // must check BEFORE compositing is written down where it can fail:
     CHECK(mh::ui::describeFrame(composited, text));

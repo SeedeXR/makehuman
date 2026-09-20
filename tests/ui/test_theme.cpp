@@ -7,9 +7,12 @@
 #include "makehuman/core/Modifier.h"
 #include "makehuman/core/SliderLayout.h"
 #include "makehuman/ui/AssetPanel.h"
+
+#include <QCheckBox>
 #include "makehuman/ui/MacroStatus.h"
 #include "makehuman/ui/MainWindow.h"
 #include "makehuman/ui/ModifierPanel.h"
+#include "makehuman/ui/MouseBindings.h"
 #include "makehuman/ui/PanelTitleBar.h"
 #include "makehuman/ui/RenderDialog.h"
 #include "makehuman/ui/TaskRegistry.h"
@@ -632,6 +635,71 @@ TEST_CASE("the asset panel builds a picker per group with the right selection", 
     CHECK(panel.choice(QStringLiteral("Hair")).isEmpty());
 }
 
+TEST_CASE("a toggle group gets a checkbox that is a VIEW of the picker, not a second store",
+          "[assets]") {
+    // The whole risk in adding a second control for one value is that the two
+    // drift apart -- there is an open defect in this project of exactly that
+    // shape ("the Smooth tick and the mesh are two stores that can drift").
+    // So the checkbox holds NO state: every assertion here is about the two
+    // agreeing, in both directions and through the programmatic path too.
+    mh::foundation::AssetGroup genitals;
+    genitals.name     = "Genitals";
+    genitals.choices  = {{"none", "None"}, {"/d/genitals.mhclo", "Genitals"}};
+    genitals.selected = 0;
+    genitals.toggle   = true;
+
+    mh::foundation::AssetGroup skin;
+    skin.name     = "Skin";
+    skin.choices  = {{"a", "A"}, {"b", "B"}};
+    skin.selected = 0;
+
+    const std::vector<mh::foundation::AssetGroup> groups{genitals, skin};
+    mh::ui::AssetPanel panel(groups);
+
+    // ONLY the toggle group gets one. A checkbox on every picker would be a
+    // different feature than the one asked for.
+    CHECK(panel.findChildren<QCheckBox*>().size() == 1);
+    auto* box = panel.findChild<QCheckBox*>(QStringLiteral("assets.toggle:Genitals"));
+    REQUIRE(box != nullptr);
+    CHECK_FALSE(box->isChecked());
+
+    // Ticking it wears the one real choice, and reports it exactly as the
+    // picker would -- one signal, carrying the id and not the label.
+    QString gotGroup;
+    QString gotId;
+    int emissions = 0;
+    QObject::connect(&panel, &mh::ui::AssetPanel::chosen, [&](const QString& g, const QString& id) {
+        gotGroup = g;
+        gotId    = id;
+        ++emissions;
+    });
+    box->click();
+    CHECK(box->isChecked());
+    CHECK(panel.choice(QStringLiteral("Genitals")) == QStringLiteral("/d/genitals.mhclo"));
+    CHECK(gotGroup == QStringLiteral("Genitals"));
+    CHECK(gotId == QStringLiteral("/d/genitals.mhclo"));
+    CHECK(emissions == 1);
+
+    // Unticking takes it off again.
+    box->click();
+    CHECK(panel.choice(QStringLiteral("Genitals")) == QStringLiteral("none"));
+    CHECK(gotId == QStringLiteral("none"));
+
+    // The picker is the other direction: driving it must move the tick.
+    auto* picker = panel.findChild<QComboBox*>(QStringLiteral("assets:Genitals"));
+    REQUIRE(picker != nullptr);
+    picker->setCurrentIndex(1);
+    CHECK(box->isChecked());
+
+    // ...and so must the PROGRAMMATIC path, which blocks the picker's signals
+    // and would therefore never reach a checkbox that listened only to those.
+    // This is the drift, if it exists.
+    panel.setChoice(QStringLiteral("Genitals"), QStringLiteral("none"));
+    CHECK_FALSE(box->isChecked());
+    panel.setChoice(QStringLiteral("Genitals"), QStringLiteral("/d/genitals.mhclo"));
+    CHECK(box->isChecked());
+}
+
 TEST_CASE("choosing emits the group and the id, not the label", "[assets]") {
     const auto groups = toyAssets();
     mh::ui::AssetPanel panel(groups);
@@ -1204,6 +1272,143 @@ TEST_CASE("the dock panels are named for a screen reader", "[a11y]") {
         // asks for ("set, not left to inference").
         CHECK_FALSE(dock->accessibleName().isEmpty());
     }
+}
+
+TEST_CASE("the viewport carries the backdrop's pan and zoom alongside it", "[ui][backdrop]") {
+    // The transform travels WITH the backdrop rather than being set separately,
+    // because the two are meaningless apart: a pan belongs to the image the
+    // user dragged, and rebinding a side without its framing would show the
+    // new photo through the old window.
+    mh::ui::ViewportWidget v(MH_SHADER_DIR);
+
+    // Identity by default -- this is what keeps every existing backdrop, and
+    // `app_backdrop_hidden_from_another_side`, rendering exactly as before.
+    CHECK(v.backdropTransform().x == 0.0F);
+    CHECK(v.backdropTransform().y == 0.0F);
+    CHECK(v.backdropTransform().scale == 1.0F);
+
+    QImage img(4, 4, QImage::Format_ARGB32);
+    img.fill(Qt::red);
+    v.setBackdrop(img, mh::ui::BackdropSide::Left, 1.0F,
+                  mh::ui::BackdropTransform{0.25F, -0.5F, 2.0F});
+    CHECK(v.backdropTransform().x == 0.25F);
+    CHECK(v.backdropTransform().y == -0.5F);
+    CHECK(v.backdropTransform().scale == 2.0F);
+
+    // Clearing the backdrop returns the framing to identity, so the next image
+    // does not inherit the last one's window.
+    v.setBackdrop(QImage{}, mh::ui::BackdropSide::Front, 1.0F);
+    CHECK(v.backdropTransform().scale == 1.0F);
+}
+
+TEST_CASE("right-drag moves the backdrop, and only where that makes sense", "[ui][backdrop]") {
+    mh::ui::ViewportWidget v(MH_SHADER_DIR);
+    v.resize(400, 300);
+    QImage img(64, 64, QImage::Format_ARGB32);
+    img.fill(Qt::blue);
+
+    const auto drag = [&](Qt::MouseButton button, Qt::KeyboardModifiers mods, QPoint from,
+                          QPoint to) {
+        QMouseEvent press(QEvent::MouseButtonPress, QPointF(from), QPointF(from), button, button,
+                          mods);
+        QApplication::sendEvent(&v, &press);
+        QMouseEvent move(QEvent::MouseMove, QPointF(to), QPointF(to), Qt::NoButton, button, mods);
+        QApplication::sendEvent(&v, &move);
+    };
+
+    SECTION("dragging with the right button pans the image with the pointer") {
+        // Front is yaw 0, which the default camera already faces.
+        v.setBackdrop(img, mh::ui::BackdropSide::Front, 1.0F);
+        drag(Qt::RightButton, Qt::NoModifier, QPoint(200, 150), QPoint(240, 150));
+        // The photo follows the pointer, so the SOURCE window moves the other
+        // way -- a negative x for a rightward drag.
+        CHECK(v.backdropTransform().x < 0.0F);
+        CHECK(v.backdropTransform().scale == 1.0F);
+    }
+
+    SECTION("shift turns the same drag into a zoom") {
+        v.setBackdrop(img, mh::ui::BackdropSide::Front, 1.0F);
+        drag(Qt::RightButton, Qt::ShiftModifier, QPoint(200, 150), QPoint(200, 110));
+        // Dragging UP makes the picture bigger, which shows LESS of it.
+        CHECK(v.backdropTransform().scale > 1.0F);
+    }
+
+    SECTION("a backdrop the camera is not facing cannot be dragged") {
+        // THE POINT: without the facing check you could drag a photo you
+        // cannot see, and discover the damage only after orbiting back.
+        v.setBackdrop(img, mh::ui::BackdropSide::Back, 1.0F);
+        drag(Qt::RightButton, Qt::NoModifier, QPoint(200, 150), QPoint(240, 150));
+        CHECK(v.backdropTransform().x == 0.0F);
+    }
+
+    SECTION("with no backdrop at all there is nothing to drag") {
+        drag(Qt::RightButton, Qt::NoModifier, QPoint(200, 150), QPoint(240, 150));
+        CHECK(v.backdropTransform().x == 0.0F);
+    }
+
+    SECTION("a right button REBOUND to orbit still orbits, and does not drag") {
+        // This is why the backdrop branch sits after the gesture table rather
+        // than before it. `mouseBindings()` is public and mutable, so this is
+        // a configuration a real user can reach, not a hypothetical.
+        REQUIRE(v.mouseBindings().bind(mh::ui::NavVerb::Orbit, Qt::RightButton, Qt::NoModifier));
+        v.setBackdrop(img, mh::ui::BackdropSide::Front, 1.0F);
+        const auto before = v.camera().yawDegrees;
+        drag(Qt::RightButton, Qt::NoModifier, QPoint(200, 150), QPoint(240, 150));
+        CHECK(v.camera().yawDegrees != before);
+        CHECK(v.backdropTransform().x == 0.0F);
+    }
+
+    SECTION("left-drag still orbits -- the backdrop branch must not steal it") {
+        v.setBackdrop(img, mh::ui::BackdropSide::Front, 1.0F);
+        const auto before = v.camera().yawDegrees;
+        drag(Qt::LeftButton, Qt::NoModifier, QPoint(200, 150), QPoint(240, 150));
+        CHECK(v.camera().yawDegrees != before);
+        CHECK(v.backdropTransform().x == 0.0F);
+    }
+}
+
+TEST_CASE("a backdrop drag announces itself, so undo can record it", "[ui][backdrop]") {
+    // The widget does not own the undo stack -- the application does. So the
+    // drag's job is to SAY what happened and when the gesture ended; the
+    // merging of a hundred mouse events into one undo entry is the
+    // application's, exactly as it already is for slider drags
+    // (`ModifierPanel::editingFinished` -> `++mergeGroup`).
+    mh::ui::ViewportWidget v(MH_SHADER_DIR);
+    v.resize(400, 300);
+    QImage img(64, 64, QImage::Format_ARGB32);
+    img.fill(Qt::green);
+    v.setBackdrop(img, mh::ui::BackdropSide::Front, 1.0F);
+
+    int changes  = 0;
+    int finishes = 0;
+    mh::ui::BackdropTransform last;
+    QObject::connect(&v, &mh::ui::ViewportWidget::backdropTransformChanged,
+                     [&](mh::ui::BackdropTransform t) {
+                         ++changes;
+                         last = t;
+                     });
+    QObject::connect(&v, &mh::ui::ViewportWidget::backdropGestureFinished, [&] { ++finishes; });
+
+    QMouseEvent press(QEvent::MouseButtonPress, QPointF(200, 150), QPointF(200, 150),
+                      Qt::RightButton, Qt::RightButton, Qt::NoModifier);
+    QApplication::sendEvent(&v, &press);
+    QMouseEvent move(QEvent::MouseMove, QPointF(240, 150), QPointF(240, 150), Qt::NoButton,
+                     Qt::RightButton, Qt::NoModifier);
+    QApplication::sendEvent(&v, &move);
+    CHECK(changes == 1);
+    CHECK(last.x < 0.0F);
+    CHECK(finishes == 0);  // still dragging
+
+    QMouseEvent release(QEvent::MouseButtonRelease, QPointF(240, 150), QPointF(240, 150),
+                        Qt::RightButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&v, &release);
+    CHECK(finishes == 1);
+
+    // Undo puts a value back through a transform-ONLY setter. That it takes no
+    // image is the point: re-handing the photograph in order to move it would
+    // re-upload it to the scene on every undo step.
+    v.setBackdropTransform(mh::ui::BackdropTransform{});
+    CHECK(v.backdropTransform().x == 0.0F);
 }
 
 TEST_CASE("the viewport orbits from the keyboard", "[a11y]") {

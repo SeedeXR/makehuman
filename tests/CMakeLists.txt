@@ -2255,6 +2255,120 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/make_backdrop_fixture.cmake)
     set_tests_properties(app_backdrop_fixture PROPERTIES FIXTURES_SETUP app_backdrop_fixture)
 
+    # A save must RECORD where the backdrop sits, or the drag is lost the moment
+    # the file is closed.
+    add_test(NAME app_background_saves_the_placement COMMAND makehuman
+             --background ${CMAKE_CURRENT_BINARY_DIR}/backdrop_ref.ppm
+             --background-side left --background-transform 0.3,0.1,2
+             --save ${CMAKE_CURRENT_BINARY_DIR}/bg_placed.mhm)
+    set_tests_properties(app_background_saves_the_placement PROPERTIES
+        FIXTURES_REQUIRED app_backdrop_fixture
+        FIXTURES_SETUP app_bg_placed)
+    add_test(NAME app_background_placement_is_in_the_file COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/bg_placed.mhm
+             "-DPATTERN=^background[ ]left[ ].*[ ]0\\.3[ ]0\\.1[ ]2$"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_matches.cmake)
+    set_tests_properties(app_background_placement_is_in_the_file PROPERTIES
+        FIXTURES_REQUIRED app_bg_placed)
+
+    # ...and the lines this port does NOT own survive it. `recordLine` would
+    # have collapsed all of these into one; `recordBackgrounds` owns them by
+    # SIDE. The `other` line's filename contains a space, so this also proves
+    # the tail-parsing end to end rather than only in the unit test.
+    add_test(NAME app_background_rt_fixture COMMAND ${CMAKE_COMMAND}
+             -DOUT=${CMAKE_CURRENT_BINARY_DIR}/bg_rt_in.mhm
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/make_background_mhm_fixture.cmake)
+    set_tests_properties(app_background_rt_fixture PROPERTIES FIXTURES_SETUP app_bg_rt_fixture)
+    add_test(NAME app_background_round_trip COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/bg_rt_in.mhm
+             --background ${CMAKE_CURRENT_BINARY_DIR}/backdrop_ref.ppm
+             --background-side front --background-transform 0.4,0,3
+             --save ${CMAKE_CURRENT_BINARY_DIR}/bg_rt_out.mhm)
+    set_tests_properties(app_background_round_trip PROPERTIES
+        FIXTURES_REQUIRED "app_bg_rt_fixture;app_backdrop_fixture"
+        FIXTURES_SETUP app_bg_rt)
+    add_test(NAME app_background_round_trip_keeps_other COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/bg_rt_out.mhm
+             "-DPATTERN=^background[ ]other[ ]some[ ]photo\\.png[ ]1\\.5[ ]0\\.2[ ]0\\.3[ ]1\\.5$"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_matches.cmake)
+    set_tests_properties(app_background_round_trip_keeps_other PROPERTIES
+        FIXTURES_REQUIRED app_bg_rt)
+    add_test(NAME app_background_round_trip_keeps_enabled COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/bg_rt_out.mhm
+             "-DPATTERN=^background[ ]enabled[ ]True$"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_matches.cmake)
+    set_tests_properties(app_background_round_trip_keeps_enabled PROPERTIES
+        FIXTURES_REQUIRED app_bg_rt)
+    # Sides this port OWNS but this run did not place must SURVIVE. They did not:
+    # `recordBackgrounds` replaces the whole owned set, so handing it only the
+    # placed side deleted every other one. Measured on a real file, then fixed
+    # by merging what the document already carries.
+    add_test(NAME app_background_round_trip_keeps_unplaced_sides COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/bg_rt_out.mhm
+             "-DPATTERN=^background[ ]left[ ]leftphoto\\.png[ ]1[ ]0\\.1[ ]0\\.2[ ]1\\.5$"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_matches.cmake)
+    set_tests_properties(app_background_round_trip_keeps_unplaced_sides PROPERTIES
+        FIXTURES_REQUIRED app_bg_rt)
+    add_test(NAME app_background_round_trip_keeps_unplaced_top COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/bg_rt_out.mhm
+             "-DPATTERN=^background[ ]top[ ]topphoto\\.png[ ]1[ ]0\\.3[ ]0\\.4[ ]2$"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_matches.cmake)
+    set_tests_properties(app_background_round_trip_keeps_unplaced_top PROPERTIES
+        FIXTURES_REQUIRED app_bg_rt)
+
+    # The owned side is REPLACED, not duplicated: `stale.png` must be gone.
+    add_test(NAME app_background_round_trip_replaces_the_owned_side COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/bg_rt_out.mhm
+             "-DPATTERN=stale\\.png"
+             -DABSENT=1
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_matches.cmake)
+    set_tests_properties(app_background_round_trip_replaces_the_owned_side PROPERTIES
+        FIXTURES_REQUIRED app_bg_rt)
+
+    # A backdrop placed, saved and REOPENED must come back where it was left.
+    # Until this landed the port read `background` lines only to write them
+    # again, so a reopened document showed no photograph at all.
+    #
+    # Gated on PIXELS, not on the line being in the file: the file content is
+    # already covered above, and a stored value that never reaches the frame is
+    # the failure this project keeps finding.
+    add_test(NAME app_backdrop_reopen_save COMMAND makehuman
+             --background ${CMAKE_CURRENT_BINARY_DIR}/backdrop_ref.ppm
+             --background-side front --background-transform 0.3,0.1,2
+             --save ${CMAKE_CURRENT_BINARY_DIR}/reopen.mhm)
+    set_tests_properties(app_backdrop_reopen_save PROPERTIES
+        FIXTURES_REQUIRED app_backdrop_fixture
+        FIXTURES_SETUP app_backdrop_reopen_save)
+    # NOTE: no `--background` here. The image and its framing come from the
+    # document or they do not come at all.
+    add_test(NAME app_backdrop_reopened COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/reopen.mhm --view front
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/backdrop_reopened.png --screenshot-viewport)
+    set_tests_properties(app_backdrop_reopened PROPERTIES
+        SKIP_REGULAR_EXPRESSION "viewport error"
+        FAIL_REGULAR_EXPRESSION "covered 0 of;could not write;warning: cannot read backdrop"
+        FIXTURES_REQUIRED app_backdrop_reopen_save
+        FIXTURES_SETUP app_backdrop_reopened)
+    # MEASURED: the reopened frame is BYTE-IDENTICAL to one rendered with the
+    # same transform given explicitly -- 0 of 2,310,496 pixels differ -- and
+    # differs from the UNtransformed one by 1,692,837. So `--max-differing 0`
+    # is not a tight-fitting number here, it is the actual claim: the framing
+    # came back exactly.
+    add_test(NAME app_backdrop_reopen_restores_the_framing COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/backdrop_reopened.png
+             ${CMAKE_CURRENT_BINARY_DIR}/backdrop_tf.png --max-differing 0)
+    set_tests_properties(app_backdrop_reopen_restores_the_framing PROPERTIES
+        FIXTURES_REQUIRED "app_backdrop_reopened;app_backdrop_transformed")
+    # ...and it is NOT merely the plain cover fit: against the untransformed
+    # backdrop it must differ substantially. Bound 50,000, the same reasoning
+    # as the sibling gate -- 34x under the local 1,692,837 and ~13x clear of
+    # CI's smaller render.
+    add_test(NAME app_backdrop_reopen_is_not_the_plain_fit COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/backdrop_reopened.png
+             ${CMAKE_CURRENT_BINARY_DIR}/backdrop_front.png --min-differing 50000)
+    set_tests_properties(app_backdrop_reopen_is_not_the_plain_fit PROPERTIES
+        FIXTURES_REQUIRED "app_backdrop_reopened;app_backdrop_front")
+
     add_test(NAME app_backdrop_front COMMAND makehuman
              --background ${CMAKE_CURRENT_BINARY_DIR}/backdrop_ref.ppm
              --background-side front --view front
@@ -2269,6 +2383,45 @@ if(MH_HAVE_RENDER)
         SKIP_REGULAR_EXPRESSION "viewport error"
         FIXTURES_REQUIRED app_backdrop_fixture
         FIXTURES_SETUP app_backdrop_front)
+    # --background-transform must reach the PIXELS, not merely be parsed. Without
+    # this gate the viewport could drop the transform on the floor and every
+    # other test stays green -- MEASURED: that mutant survives the whole suite.
+    add_test(NAME app_backdrop_transformed COMMAND makehuman
+             --background ${CMAKE_CURRENT_BINARY_DIR}/backdrop_ref.ppm
+             --background-side front --view front --background-transform 0.3,0.1,2
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/backdrop_tf.png --screenshot-viewport)
+    set_tests_properties(app_backdrop_transformed PROPERTIES
+        FAIL_REGULAR_EXPRESSION "covered 0 of;could not write"
+        SKIP_REGULAR_EXPRESSION "viewport error"
+        FIXTURES_REQUIRED app_backdrop_fixture
+        FIXTURES_SETUP app_backdrop_transformed)
+
+    # A MATCHED viewport-only pair, so `mh_png_compare` cannot be comparing two
+    # different sizes (it hard-fails on that anyway).
+    #
+    # MEASURED: the transform moves 1,692,837 of 2,310,496 pixels here -- 73% of
+    # the viewport. The bound is 50,000, deliberately 34x under that, BECAUSE CI
+    # RENDERS AT A DIFFERENT SIZE (899,072 px there against 2,310,496 here, as
+    # `1f007efe` went red proving). Scaled to CI that is roughly 659,000, so
+    # 50,000 clears CI by ~13x while still killing the mutant this exists for --
+    # a viewport that ignores the transform scores 0.
+    add_test(NAME app_backdrop_transform_moves_pixels COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/backdrop_tf.png
+             ${CMAKE_CURRENT_BINARY_DIR}/backdrop_front.png --min-differing 50000)
+    set_tests_properties(app_backdrop_transform_moves_pixels PROPERTIES
+        FIXTURES_REQUIRED "app_backdrop_transformed;app_backdrop_front")
+
+    # A malformed transform is REFUSED, not quietly read as zero -- a zero scale
+    # empties the source rect and `SceneResources::draw` SKIPS it, so the
+    # backdrop would simply not appear.
+    add_test(NAME app_backdrop_transform_bad COMMAND makehuman
+             --background ${CMAKE_CURRENT_BINARY_DIR}/backdrop_ref.ppm
+             --background-transform 0,0,x
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/never_tf.png)
+    set_tests_properties(app_backdrop_transform_bad PROPERTIES
+        PASS_REGULAR_EXPRESSION "--background-transform takes"
+        FIXTURES_REQUIRED app_backdrop_fixture)
+
     add_test(NAME app_backdrop_plain_front COMMAND makehuman
              --view front --screenshot ${CMAKE_CURRENT_BINARY_DIR}/plain_front.png --screenshot-viewport)
     set_tests_properties(app_backdrop_plain_front PROPERTIES
@@ -3151,9 +3304,19 @@ if(MH_HAVE_RENDER)
     # "the expression mixer's sixty sliders" for a whole chunk after --pose-unit
     # started accepting 121 -- a stale doc ships as confidently as stale code,
     # and nothing gated it.
+    #
+    # WHITESPACE-TOLERANT, and that is a fix rather than a relaxation. The
+    # pattern used to be the literal "sixty-one pose the BODY", which coupled
+    # this gate to Qt's help LAYOUT: Qt sizes the description column from the
+    # longest option name, so adding `--background-transform` re-wrapped every
+    # description and split the phrase across a line -- the claim was still
+    # there, verbatim, and the gate still went red. That is the same defect as
+    # a pixel gate that chrome can move: sensitive to something its subject
+    # does not control. The claim is what is being tested, so the pattern now
+    # spans the wrap.
     add_test(NAME app_help_mentions_body_pose_units COMMAND makehuman --help)
     set_tests_properties(app_help_mentions_body_pose_units PROPERTIES
-        PASS_REGULAR_EXPRESSION "sixty-one pose the BODY")
+        PASS_REGULAR_EXPRESSION "sixty-one pose the[ \t\r\n]+BODY")
     # --help must name the REAL default for a proxy slot. The wording is built
     # from `ProxySlot::defaultChoice` so it cannot drift from the table, and
     # this is what proves that wiring rather than assuming it: teeth are worn
@@ -3790,6 +3953,32 @@ if(MH_HAVE_RENDER)
         FIXTURES_REQUIRED app_bg_backdrop
         PASS_REGULAR_EXPRESSION
             "1024x1024 covered [0-9]+ of 1048576 pixels \\([0-9]\\.[0-9]%\\)")
+    # --background-transform must reach `--render`, not only the viewport. This
+    # is the trap `overBackground` was reshaped to make unwritable: it used to
+    # compute its own cover-fit, so a transform applied to the viewport left the
+    # production render compositing the UNtransformed image, with no error and
+    # nothing on screen to notice.
+    #
+    # MEASURED: the transform moves 249,402 of 1,048,576 pixels (23.8%) -- less
+    # than the viewport's 73% because the figure covers much of the frame and
+    # only the exposed backdrop can move. The bound is 20,000, 12x under that.
+    #
+    # UNLIKE the viewport gates, this needs no allowance for CI's screen:
+    # `--render` is a fixed 1024x1024 everywhere, which the sibling gate above
+    # already asserts.
+    add_test(NAME app_background_render_transformed COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/bg/with_tf.png
+             --background ${CMAKE_CURRENT_BINARY_DIR}/bg/backdrop.png
+             --background-transform 0.3,0.1,2)
+    set_tests_properties(app_background_render_transformed PROPERTIES
+        FIXTURES_SETUP app_bg_with_tf
+        FIXTURES_REQUIRED app_bg_backdrop)
+    add_test(NAME app_background_transform_reaches_the_render COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/bg/with_tf.png
+             ${CMAKE_CURRENT_BINARY_DIR}/bg/with.png --min-differing 20000)
+    set_tests_properties(app_background_transform_reaches_the_render PROPERTIES
+        FIXTURES_REQUIRED "app_bg_with_tf;app_bg_with")
+
     # And the backdrop actually reached the file. Byte-comparing two PNGs is
     # only safe because both come from the SAME binary in one run: a different
     # zlib is what made an earlier byte-compare green locally and red in CI, and
