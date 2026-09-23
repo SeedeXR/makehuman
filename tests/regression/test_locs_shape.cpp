@@ -38,6 +38,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <tuple>
 #include <vector>
 
 using namespace mh::core;
@@ -122,8 +123,8 @@ TEST_CASE("no loc runs out along the arm", "[asset][hair][locs]") {
     // At shoulder height the widest thing in the body is the arm, so a rope
     // that follows the silhouette is carried out along it.
     //
-    // MEASURED over the 42 ropes: with the rule, max radius from the body axis
-    // is 1.433 dm; with it removed and nothing else changed, 2.763. The bar
+    // MEASURED over the 41 ropes: with the rule, max radius from the body axis
+    // is 1.178 dm; with it removed and nothing else changed, 2.763. The bar
     // sits between them and near neither, so it fails on a rope that reaches
     // for the arm and passes with room on one that does not.
     const auto pts = loadLocs();
@@ -142,8 +143,8 @@ TEST_CASE("the locs are cut level", "[asset][hair][locs]") {
     // Stated as a property of the point cloud rather than per rope, because
     // rope lengths differ: if every rope reaches the floor, its whole bottom
     // ring sits there, so the number of vertices at the lowest height is a
-    // multiple of the ropes. MEASURED on the shipped asset: 42 ropes x 5 sides
-    // = 210. A ragged style has a handful.
+    // multiple of the ropes. MEASURED on the shipped asset: 41 ropes x 5 sides
+    // = 205. A ragged style has a handful.
     const auto pts = loadLocs();
     float lowest   = pts.front().y;
     for (const auto& p : pts)
@@ -157,6 +158,39 @@ TEST_CASE("the locs are cut level", "[asset][hair][locs]") {
     }
     INFO("vertices at the cut line: " << atFloor);
     CHECK(atFloor >= 150);
+}
+
+TEST_CASE("the locs do not lie on top of each other", "[asset][hair][locs]") {
+    // A defect found by EXPORTING rather than by rendering, and invisible in
+    // both the render and every assertion above.
+    //
+    // Each rope is combed back to a rim vertex, and the first version let every
+    // root pick its own NEAREST rim vertex. MEASURED: that put 41 ropes through
+    // 15 exits -- one rim vertex was the target of ten ropes -- so the scalp
+    // legs ran along each other. 2,149 of the asset's 4,095 vertices were
+    // coincident (52.5%), while afro, cornrows and bantu knots each have
+    // EXACTLY ZERO. The FBX export gave it away: every other style exports its
+    // authored vertex count unchanged, and locs went 4,095 -> 2,110.
+    //
+    // Assigning each rope its own exit -- there are 41, and that is now what
+    // sets the rope count -- brings it to 494 of 3,760 (13.1%), the remainder
+    // being paths that genuinely cross over the crown. The bar sits between
+    // 13.1% and 52.5% and near neither.
+    //
+    // This is not only waste: overlapping tubes are why the ropes rendered as
+    // flat ribbons rather than as separate locs.
+    const auto pts = loadLocs();
+    std::vector<size_t> order(pts.size());
+    for (size_t i = 0; i < order.size(); ++i)
+        order[i] = i;
+    const auto key = [&pts](size_t i) { return std::tuple{pts[i].x, pts[i].y, pts[i].z}; };
+    std::sort(order.begin(), order.end(), [&key](size_t a, size_t b) { return key(a) < key(b); });
+    size_t coincident = 0;
+    for (size_t i = 1; i < order.size(); ++i) {
+        if (key(order[i]) == key(order[i - 1])) ++coincident;
+    }
+    INFO("coincident vertices: " << coincident << " of " << pts.size());
+    CHECK(coincident * 4 < pts.size());
 }
 
 TEST_CASE("every loc binding is inside its triangle", "[asset][hair][locs]") {

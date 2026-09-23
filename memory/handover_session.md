@@ -4,6 +4,61 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-24 02:55:00 — Session · **The export found what the render could not: half the locs were drawn twice**
+
+Network still down; ten commits queued.
+
+### Checking the integration turned up a defect
+The shape gates say nothing about whether a worn proxy is SKINNED — that is
+the eyes-protruding class, and the existing gate for it covers only `--eyes`.
+So I checked locs: the live-rig FBX reports `hair skin: 179 joints`, assimp
+reads back `mesh "hair": ... skin of 179 bones`, and under `--pose benchmark`
+the hair group moves 6.581–6.648 dm against the eyes' 6.585–6.593. Skinned to
+the head like every other worn proxy. Good.
+
+But the same `--inspect` output showed something else. **Every other style
+exports its authored vertex count unchanged — afro 475, cornrows 2,148, bantu
+1,087 — and locs went 4,095 → 2,110.**
+
+### Half the rope geometry was in the same place twice
+Each rope is combed back to a rim vertex, and I let every root take its own
+**nearest** one. Measured: that put 42 ropes through **15 exits**, one of them
+the target of **ten** ropes. The scalp legs ran along each other — 322 chain
+points with only 137 distinct, and **2,149 of 4,095 asset vertices coincident
+(52.5%)**, where afro, cornrows and bantu knots each have **exactly zero**.
+
+That overlap was not just waste. It is why the ropes rendered as flat ribbons
+rather than separate locs, and half of why the hanging mass was no wider than
+the neck — both things I had noticed in the renders and not explained.
+
+### The fix, and a number that stopped being arbitrary
+One rim exit per rope, assigned greedily shortest-first with none reused. And
+since there are 41 rim vertices, **the rim now sets the rope count**: 41 ropes
+is exactly as many as can hang without lying on each other. `LOC_WANTED` is
+deleted — the count is derived, not chosen.
+
+| | before | after |
+|---|---|---|
+| coincident vertices | 2,149 / 4,095 (52.5%) | **494 / 3,760 (13.1%)** |
+| distinct rim exits | 15 of 42 | **41 of 41** |
+| max radius from body axis | 1.433 dm | **1.178 dm** |
+
+The remaining 13.1% is paths that genuinely cross over the crown. Re-rendered
+back and left: the ropes now spread the full width of the head and hang as an
+even curtain. **Control** for the new fifth gate (restore shared exits): 2,043
+of 3,960 coincident, red.
+
+### Also
+`no UVs` is uniform across all four hair styles, so it is a limitation of the
+set rather than anything specific to locs. Worth knowing before anyone reports
+it as a locs bug.
+
+### Sweep
+**1495/1495**, clang-format clean. Predicted +1 and got +1. `--check` green on
+8 files; assets byte-identical after the control was reverted.
+
+---
+
 ## 2026-09-24 02:10:00 — Session · **LOCS SHIP.** Fourth attempt, and the idea was that a loc has two segments
 
 `data/hair/locs.{obj,mhclo}` — 4,095 vertices, 3,818 faces, 42 ropes.

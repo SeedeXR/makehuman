@@ -849,7 +849,6 @@ LOC_STANDOFF = LOC_HALF + 0.02
 LOC_STEP = 0.15
 # Shoulder-length. The shoulder line is y 5.0..5.5 (`memory/todo.md`).
 LOC_FLOOR = 5.85
-LOC_WANTED = 42
 # The body's vertical axis in x,z: the centroid of torso vertices between y 2.0
 # and 6.0. NOT `CENTRE`, which is the CRANIUM centre and the frame the hairline
 # is measured in.
@@ -888,30 +887,58 @@ def scalp_region(app):
     return reg
 
 
-def comb_back(app, region, root_index, root_pos):
-    """The scalp leg: the geodesic from a root BACK to the rear rim.
+def scalp_rim(region):
+    """The region's lower edge: where a rope leaves the head and starts to hang.
 
-    The target keeps the root's lateral offset, so the ropes stay spread across
-    the head instead of converging on one nape vertex. Combing back rather than
-    letting each rope fall from its own root is the whole point: MEASURED by
-    rendering, attempt 3 dropped ropes from the hairline straight across the
-    face.
+    The elevation cut alone is what keeps the forehead out, and that is
+    measured rather than hoped: the hairline sits at +12 degrees of elevation
+    at the front, so NO region vertex below -25 is on the face side. An azimuth
+    filter was written here as well and excluded exactly 0 of the 41 rim
+    vertices, so it was a knob that did nothing and is gone.
     """
-    # The rim is the region's whole lower edge MINUS the part over the face,
-    # and each root leaves by the NEAREST piece of it. Sending every root to
-    # the rear rim instead was tried and RENDERED: the ropes funnelled into a
-    # column about as wide as the neck, which is attempt 2's "bunched in a
-    # narrow column" arriving by a different route. A loc rooted above the ear
-    # leaves the scalp above the ear.
-    # The elevation cut alone is what keeps the forehead out, and that is
-    # measured rather than hoped: the hairline sits at +12 degrees of elevation
-    # at the front, so NO region vertex below -25 is on the face side. An
-    # azimuth filter was written here as well and excluded exactly 0 of the 41
-    # rim vertices, so it was a knob that did nothing and is gone.
     rim = [(i, p) for i, p in region.items() if spherical(p)[0] < LOC_REAR_ELEV]
     if not rim:
-        raise RuntimeError("the scalp region has no rim behind the face")
-    target = min(rim, key=lambda q: math.dist(q[1], root_pos))[0]
+        raise RuntimeError("the scalp region has no rim below the hairline")
+    return rim
+
+
+def assign_exits(roots, rim):
+    """One rim vertex per rope, nearest first and none used twice.
+
+    THE RIM IS WHAT LIMITS THE STYLE, and this is measured rather than
+    asserted. Letting every root take its own nearest rim vertex put 42 ropes
+    through 15 exits -- one rim vertex was the target of TEN ropes -- so the
+    scalp legs ran on top of each other: 322 chain points with only 137
+    distinct, and 2,149 of the asset's 4,095 vertices coincident. Every other
+    shipped style has ZERO duplicate positions.
+
+    Overlapping ropes are not merely wasteful. They are why the ropes rendered
+    as flat ribbons rather than as separate locs, and half of why the hanging
+    mass was no wider than the neck.
+
+    Greedy over all pairs shortest-first: an exact assignment would be the
+    Hungarian algorithm, and for a few dozen ropes on a convex scalp the greedy
+    answer is the same shape for a tenth of the code.
+    """
+    pairs = sorted((math.dist(rp, qp), ri, qi)
+                   for ri, rp in roots for qi, qp in rim)
+    taken, out = set(), {}
+    for _d, ri, qi in pairs:
+        if ri in out or qi in taken:
+            continue
+        out[ri] = qi
+        taken.add(qi)
+    return out
+
+
+def comb_back(app, root_index, root_pos, target):
+    """The scalp leg: the geodesic from a root back to its own rim exit.
+
+    Combing back rather than letting each rope fall from its own root is the
+    whole point: MEASURED by rendering, attempt 3 dropped ropes from the
+    hairline straight across the face, and removing the comb puts 240 vertices
+    there against 0 with it.
+    """
     if target == root_index:
         return [root_pos]
     out = subprocess.run([app, "--scalp-path", f"{root_index},{target}"],
@@ -1026,12 +1053,17 @@ def locs(verts, body_faces, app_path=""):
     """Ropes combed back over the scalp, then hanging down the back."""
     app = app_binary(app_path)
     region = scalp_region(app)
-    out = subprocess.run([app, "--spread-roots", str(LOC_WANTED)],
+    rim = scalp_rim(region)
+    # The COUNT is the rim's, not a number somebody liked: one loc per exit is
+    # exactly as many ropes as can hang without lying on top of each other.
+    # MEASURED on the shipped mesh, the rim holds 41 vertices.
+    out = subprocess.run([app, "--spread-roots", str(len(rim))],
                          capture_output=True, text=True, check=True).stdout
     roots = [(int(l.split()[0]), tuple(float(t) for t in l.split()[1:4]))
              for l in out.splitlines() if l.strip()]
-    if len(roots) != LOC_WANTED:
-        raise RuntimeError(f"{len(roots)} of {LOC_WANTED} roots")
+    if len(roots) != len(rim):
+        raise RuntimeError(f"{len(roots)} roots for {len(rim)} rim exits")
+    exits = assign_exits(roots, rim)
 
     # The WHOLE body, arms included, and that is measured rather than careless:
     # see the header. The shelf rule, not an exclusion, is what keeps the ropes
@@ -1052,7 +1084,7 @@ def locs(verts, body_faces, app_path=""):
                  for b in used]
     shortest = 10 ** 9
     for index, pos in roots:
-        scalp = comb_back(app, region, index, pos)
+        scalp = comb_back(app, index, pos, exits[index])
         # The scalp leg lies ON the head, so it is lifted clear of the skin by
         # the rope's own half width -- a path centred on the surface buries half
         # the tube, which is the mistake `ridge` records.

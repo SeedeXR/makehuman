@@ -6127,6 +6127,35 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       carries the TUBE's vertices. Re-derived from the measurement -- the real
       property is that nothing sits within 0.5 dm of the midline in front, and
       all 35 front vertices are at |x| 0.68..0.73, the temple.
+      **DEFECT FOUND AND FIXED THE SAME DAY, by EXPORTING rather than
+      rendering.** Every other style exports its authored vertex count
+      unchanged -- afro 475, cornrows 2,148, bantu 1,087 -- and locs went
+      **4,095 -> 2,110** in FBX. Cause: each root took its own NEAREST rim
+      vertex, which put 42 ropes through **15 exits**, one of them the target
+      of **ten** ropes. The scalp legs ran along each other: 322 chain points
+      with only 137 distinct, and **2,149 of 4,095 asset vertices coincident
+      (52.5%)** where the other three styles have EXACTLY ZERO. That overlap is
+      also why the ropes rendered as flat ribbons and why the hanging mass was
+      no wider than the neck.
+      **Fix: one rim exit per rope, assigned greedily shortest-first with none
+      reused -- and THE RIM NOW SETS THE ROPE COUNT.** 41 rim vertices, so 41
+      ropes: exactly as many as can hang without lying on each other, which is
+      a derived number rather than a chosen one. `LOC_WANTED` is deleted.
+      Result: **494 of 3,760 (13.1%)**, the remainder being paths that
+      genuinely cross over the crown; max radius from the body axis also fell
+      **1.433 -> 1.178** because the ropes no longer converge. Re-rendered back
+      and left: the ropes now spread the full width of the head and hang as an
+      even curtain. Gated by a fifth case with the bar between 13.1% and 52.5%;
+      **control** (restore shared exits) gives 2,043 of 3,960 and goes red.
+      **Verified the integration too**, which the shape tests do not cover: the
+      live-rig FBX reports `hair skin: 179 joints` and assimp reads back
+      `mesh "hair": ... skin of 179 bones`, and under `--pose benchmark` the
+      hair group moves 6.581..6.648 dm against the eyes' 6.585..6.593 -- i.e.
+      skinned to the head like every other worn proxy, not left in rest. That
+      is the eyes-protruding defect class, and the existing gate for it covers
+      only `--eyes`.
+      **`no UVs` is uniform across all four hair styles**, so it is a known
+      limitation of the set rather than anything specific to locs.
       Reverted cleanly both times: generator restored, `data/hair/locs.*`
       deleted, `--check` back to 6 files matching a fresh derivation.
       **BANTU KNOTS shipped 2026-09-23**, in four render-and-look iterations,
