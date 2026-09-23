@@ -142,6 +142,52 @@ jobs:
           name: benchmark-results
           path: bench.txt
 
+  package:
+    name: dmg (unsigned)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install ninja assimp qt
+      - name: Configure
+        run: >-
+          cmake --preset macos-arm64-release
+          -DCMAKE_PREFIX_PATH="$(brew --prefix qt)"
+          -DMH_REQUIRE_RENDER=ON
+      - name: Build
+        run: cmake --build --preset macos-arm64-release -j
+
+      # Nothing built this target in CI until now, and it is the one path
+      # `tools/audit_runtime_paths.py` exists because of: the DMG once shipped
+      # an app that only ran on the build machine.
+      - name: Build the disk image
+        run: cmake --build --preset macos-arm64-release --target dmg
+
+      # THE ACTUAL GATE. `--target dmg` exits 0 even when macdeployqt prints
+      # "codesign verification error" over a Homebrew dylib -- MEASURED
+      # locally -- so "the build succeeded" proves nothing about the artefact.
+      # What proves it is that the deployed binary no longer names an absolute
+      # Homebrew path: measured on this machine, the build-tree binary has 6
+      # such references and the deployed one has 0.
+      - name: The deployed app must not point at the build machine
+        run: |
+          app=build/macos-arm64-release/dmg/MakeHuman.app
+          leaked=$(otool -L "$app/Contents/MacOS/makehuman" \
+                   | grep -cE '/opt/homebrew|/usr/local' || true)
+          echo "absolute dependency paths in the deployed binary: $leaked"
+          test "$leaked" -eq 0
+
+      # ...and it has to start and read its own data, which a file listing
+      # cannot tell you.
+      - name: The deployed app must run
+        run: |
+          build/macos-arm64-release/dmg/MakeHuman.app/Contents/MacOS/makehuman \
+            --list-presets | grep -q 'Six-pack'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MakeHuman-dmg-unsigned
+          path: build/macos-arm64-release/MakeHuman.dmg
+
   licence:
     name: licence inventory
     runs-on: macos-15

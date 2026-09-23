@@ -9007,6 +9007,23 @@ GPU here, or Colab) and it comes back to the owner first.
       `app_install_carries_the_data` is the load-bearing gate of the pair, and
       the test says so.
 - [ ] Codesign, hardened runtime, notarize( can't notarize everyone will compile on their own or ahave to allow unknown app , I don't have cash to pay for apple developer membership), staple
+- [x] **A CI job builds and GATES the DMG -- DONE 2026-09-23.** Nothing built
+      that target in CI before, which is the one path
+      `tools/audit_runtime_paths.py` exists because of ("the DMG shipped an app
+      that only ran on the build machine").
+      **`--target dmg` EXITS 0 WHILE PRINTING AN ERROR** -- MEASURED: macdeployqt
+      reports `codesign verification error ... libbrotlicommon.1.dylib:
+      invalid signature` and the build still succeeds and still writes a 123 MB
+      image. So "the build passed" gates nothing, and the job asserts the
+      property that matters instead: the deployed binary must name **zero**
+      absolute `/opt/homebrew` or `/usr/local` paths. MEASURED on this machine:
+      build-tree binary **6**, deployed binary **0**, Qt frameworks staged
+      inside the bundle. The job then RUNS the deployed binary, because a file
+      listing cannot tell you it starts.
+      Positive control run locally: the same gate applied to the undeployed
+      build-tree binary fails, as it must.
+      `hdiutil create` prints a deprecation warning suggesting
+      `diskutil image create`; noted, not chased.
 - [ ] DMG with background and layout
 - [x] Bundle `LICENSING.md` + LGPL relinking notice + AGPL source offer --
       **DONE 2026-09-23**: all four licence files attach to the target with

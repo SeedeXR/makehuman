@@ -4,6 +4,61 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-23 23:10:00 — Session · **Packaging, a migration guide, and a README that lied**
+
+Network went down mid-tick (`gh`: "error connecting to api.github.com"), so two
+commits sit unpushed and the work moved to things that need no network. Worth
+knowing the loop survives that fine.
+
+### `cmake --install` and a CI job that gates the DMG
+There were no install rules at all — zero `install(` in any CMakeLists.txt —
+so the only way to get a runnable copy out of a build tree was the `dmg`
+target. The layout was not invented: `foundation::resolveDir` already searched
+`<bundle>/Contents/Resources/<name>` and `<prefix>/share/makehuman/<name>`, so
+the rules fill paths the binary already looks in.
+
+Then the CI job. **`--target dmg` exits 0 while printing an ERROR** —
+macdeployqt reports `codesign verification error ... libbrotlicommon.1.dylib:
+invalid signature` and the 123 MB image is still produced. So a job that only
+built it would be green on a broken artefact. What it asserts instead is the
+property that actually matters:
+
+| | absolute `/opt/homebrew`/`/usr/local` paths |
+|---|---|
+| build-tree binary | **6** |
+| deployed binary | **0** |
+
+Zero is what "runs on a machine that is not this one" means. The control was
+run: the same gate applied to the undeployed binary fails. The job then runs
+the deployed binary, because no file listing tells you it starts.
+
+### The migration guide found a data-loss bug by being written
+Every claim in `docs/migration.md` was measured by running things. That is why
+it found something: a `.mhm` naming an asset this port does not ship warns
+clearly at load, and then **on re-save the line becomes `clothes none`** — the
+record of what the character wore is gone. An *unrecognised* key is safer;
+`proxy Proxy741 1111...` survived a full round trip untouched.
+
+Whether an unresolvable slot should be PRESERVED instead is raised in
+`memory/todo.md` and deliberately not decided: preserving keeps the user's
+record, but makes the file name something the character is not wearing, which
+is the lying-control shape this project keeps removing.
+
+### The README had been wrong for a long time
+"Status: core complete, UI not started", with "Skeleton, skinning, pose" and
+"Renderer, UI" both marked NOT STARTED — while two rigs, three skinning
+methods, FACS, retargeting, a Metal renderer and a dockable Qt UI all ship.
+Corrected, each new claim checked (2 rigs, 20 languages, 51 task views with
+none left to do: 32 built, 16 declined, 3 blocked).
+
+**That is the sixth thing this session that was built or authored and simply
+unreachable or untrue** — after `skinPositionsCor`, the bundled licences, the
+291 slider descriptions, the `.mhanim` names and the install layout. The habit
+worth keeping: before building anything, grep for whether it already exists
+with no caller, and re-read what the docs claim about it.
+
+---
+
 ## 2026-09-23 19:30:00 — Session · **Two UX gaps closed, and a gate that moves when a dock does**
 
 ### A user searches with their own word
