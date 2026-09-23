@@ -53,6 +53,46 @@ endforeach()
 
 add_dependencies(makehuman mh_shaders)
 
+# --- Installing ----------------------------------------------------------
+#
+# `cmake --install build --prefix <dir>` puts a runnable MakeHuman there. This
+# is the case owner directive 13.11 puts FIRST -- "everyone will compile on
+# their own hardware" -- and until now there were no install rules at all, so
+# the only way to get a runnable copy out of a build tree was the `dmg` target.
+#
+# The layout is not invented here: `foundation::resolveDir` already looks for
+# `<bundle>/Contents/Resources/<name>` and then `<prefix>/share/makehuman/<name>`
+# (src/foundation/DataDir.cpp). These rules fill exactly those two, so the
+# installed binary finds its own assets by the search it already performs.
+#
+# NOT a redistributable bundle: `macdeployqt` is NOT run here, so the installed
+# app still links the Qt it was built against. That is correct for "build it
+# yourself" -- the Qt is right there -- and the `dmg` target below is what
+# produces a copy for a machine that has none. Said out loud because an
+# install rule that looked self-contained and was not is the packaging bug
+# `audit_runtime_paths.py` exists about.
+if(APPLE)
+    install(TARGETS makehuman BUNDLE DESTINATION ".")
+    # Trailing slashes: copy the CONTENTS of each directory, not the directory
+    # into itself (`.../data/data`).
+    install(DIRECTORY "${MH_DATA_DIR}/"
+            DESTINATION "makehuman.app/Contents/Resources/data")
+    install(DIRECTORY "${CMAKE_BINARY_DIR}/shaders/"
+            DESTINATION "makehuman.app/Contents/Resources/shaders")
+    install(DIRECTORY "${CMAKE_SOURCE_DIR}/resources/"
+            DESTINATION "makehuman.app/Contents/Resources/resources")
+else()
+    install(TARGETS makehuman RUNTIME DESTINATION "bin")
+    install(DIRECTORY "${MH_DATA_DIR}/" DESTINATION "share/makehuman/data")
+    install(DIRECTORY "${CMAKE_BINARY_DIR}/shaders/" DESTINATION "share/makehuman/shaders")
+    install(DIRECTORY "${CMAKE_SOURCE_DIR}/resources/" DESTINATION "share/makehuman/resources")
+    # The licences ride inside the bundle on macOS (MACOSX_PACKAGE_LOCATION
+    # above); off it they need a home of their own.
+    install(FILES "${CMAKE_SOURCE_DIR}/LICENSE.md" "${CMAKE_SOURCE_DIR}/LICENSE.CODE.md"
+                  "${CMAKE_SOURCE_DIR}/LICENSE.ASSETS.md" "${CMAKE_SOURCE_DIR}/LICENSING.md"
+            DESTINATION "share/doc/makehuman")
+endif()
+
 # --- Packaging -----------------------------------------------------------
 #
 # `cmake --build . --target dmg` produces a distributable disk image.

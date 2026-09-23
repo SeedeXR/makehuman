@@ -5260,6 +5260,56 @@ if(MH_HAVE_RENDER)
                  "-DKEYS=icns"
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
 
+        # `cmake --install` has to produce something that RUNS. There were no
+        # install rules at all until 2026-09-23 -- the only way to get a
+        # runnable copy out of a build tree was the `dmg` target -- and owner
+        # directive 13.11 puts exactly this case first: "everyone will compile
+        # on their own hardware".
+        #
+        # WHAT THIS PROVES, and what it leans on. It installs to a scratch
+        # prefix, checks the tree holds the sentinel `resolveDataDir` searches
+        # for, and then RUNS the installed binary on a command that needs the
+        # modifier data. That the binary prefers its own bundle over the
+        # compiled default is not re-proved here -- `test_data_dir.cpp`'s
+        # "a macOS bundle's Resources are found" owns that -- so the chain is
+        # those two together, which is why this one installs rather than just
+        # listing files.
+        add_test(NAME app_install_tree COMMAND ${CMAKE_COMMAND}
+                 --install ${CMAKE_BINARY_DIR}
+                 --prefix ${CMAKE_CURRENT_BINARY_DIR}/installed)
+        set_tests_properties(app_install_tree PROPERTIES FIXTURES_SETUP app_installed)
+        # The sentinel, by the same path `resolveDataDir` looks for it under.
+        add_test(NAME app_install_carries_the_data COMMAND ${CMAKE_COMMAND}
+                 -DFILE=${CMAKE_CURRENT_BINARY_DIR}/installed/makehuman.app/Contents/Resources/data/3dobjs/base.obj
+                 "-DKEYS=v "
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+        set_tests_properties(app_install_carries_the_data PROPERTIES
+            FIXTURES_REQUIRED app_installed)
+        # ...and the licences travel with it, as section 6 requires of anything
+        # distributed.
+        add_test(NAME app_install_carries_the_licence COMMAND ${CMAKE_COMMAND}
+                 -DFILE=${CMAKE_CURRENT_BINARY_DIR}/installed/makehuman.app/Contents/Resources/LICENSING.md
+                 "-DKEYS=authoritative inventory"
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+        set_tests_properties(app_install_carries_the_licence PROPERTIES
+            FIXTURES_REQUIRED app_installed)
+        # The installed copy RUNS. Listing files proves a copy happened; this
+        # proves the result starts and reads modifier data.
+        #
+        # MEASURED LIMIT, because the control said so: with the data install
+        # rule removed, THIS TEST STILL PASSES. The binary falls back to the
+        # build machine's source tree and works perfectly on this machine and
+        # nowhere else -- the exact failure `audit_runtime_paths.py` exists
+        # about. So `app_install_carries_the_data` above is the load-bearing
+        # gate of the pair, and this one is here to catch a tree that copies
+        # everything and still cannot start.
+        add_test(NAME app_installed_runs
+                 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/installed/makehuman.app/Contents/MacOS/makehuman
+                 --list-presets)
+        set_tests_properties(app_installed_runs PROPERTIES
+            PASS_REGULAR_EXPRESSION "Six-pack\tmacrodetails-universal/Muscle"
+            FIXTURES_REQUIRED app_installed)
+
         # The licence texts must BE in the bundle, not merely referenced by it.
         # `MACOSX_BUNDLE_COPYRIGHT` says "See LICENSING.md" and LICENSING.md
         # section 3 claims the bundle "includes this notice"; both were false

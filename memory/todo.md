@@ -8982,7 +8982,30 @@ GPU here, or Colab) and it comes back to the owner first.
         **What IS unverified**, and much narrower: the DMG has not been rebuilt
         and run from a machine with no source tree since. A packaging check, not
         a design gap, and directive 13.12 puts it behind compile-from-source.
-- [ ] `macdeployqt` + CMake install
+- [x] `macdeployqt` + CMake install -- **install rules DONE 2026-09-23.**
+      There were none at all: zero `install(` across every CMakeLists.txt and no
+      CPack, so the only way to get a runnable copy out of a build tree was the
+      `dmg` target. `cmake --install <build> --prefix <dir>` now produces a
+      runnable `makehuman.app` with `data`, `shaders`, `resources` and the four
+      licence files in `Contents/Resources`, and a non-APPLE branch fills
+      `bin/` + `share/makehuman/` + `share/doc/makehuman/`.
+      **The layout was not invented**: `foundation::resolveDir` already searched
+      `<bundle>/Contents/Resources/<name>` then `<prefix>/share/makehuman/<name>`,
+      so these rules fill the two paths the binary already looks in.
+      VERIFIED by hand before writing the gate: a probe preset added to the
+      INSTALLED copy only (repo copy untouched, 0 hits) shows up in the
+      installed app's `--list-presets`, so it reads its own data rather than
+      the source tree.
+      **NOT redistributable**: `macdeployqt` is deliberately NOT run by install,
+      so the installed app still links the Qt it was built against. That is
+      right for "build it yourself" (directive 13.11) and the `dmg` target
+      remains the way to make a copy for a machine with no Qt.
+      **The control taught the gate something**: with the data rule removed,
+      `app_installed_runs` STILL PASSES -- the binary falls back to the build
+      machine's source tree and works here and nowhere else, which is the exact
+      failure `audit_runtime_paths.py` exists about. So
+      `app_install_carries_the_data` is the load-bearing gate of the pair, and
+      the test says so.
 - [ ] Codesign, hardened runtime, notarize( can't notarize everyone will compile on their own or ahave to allow unknown app , I don't have cash to pay for apple developer membership), staple
 - [ ] DMG with background and layout
 - [x] Bundle `LICENSING.md` + LGPL relinking notice + AGPL source offer --
