@@ -296,11 +296,24 @@ def derive(verts, faces, app_path=""):
     wanted["cornrows.obj"] = cobj
     wanted["cornrows.mhclo"] = cmhclo
 
+    bpts, bfs, roots, _, cap_binds, ncap = bantu(verts, faces, app_path)
+    # Only the KNOT points go to the binder; the cap already carries its own
+    # bindings, one per base vertex it grew from.
+    bbinds = cap_binds + bind_points(app, bpts[ncap:])
+    if len(bbinds) != len(bpts):
+        raise RuntimeError(f"{len(bbinds)} bindings for {len(bpts)} bantu points")
+    bobj, bmhclo = write_bound_style("Bantu knots", "bantu_knots", bpts, bfs, bbinds)
+    wanted["bantu_knots.obj"] = bobj
+    wanted["bantu_knots.mhclo"] = bmhclo
+
     grown = [math.dist((0, 0, 0), placed[b]) for b in used]
     summary = (f"afro: {len(used)} vertices, {len(keep)} faces\n"
                f"  offset 0 at the hairline .. {max(grown):.4f} dm at the crown, "
                f"mean {sum(grown) / len(grown):.4f}\n"
-               f"cornrows: {len(pts)} vertices, {len(fs)} faces")
+               f"cornrows: {len(pts)} vertices, {len(fs)} faces\n"
+               f"bantu knots: {len(bpts)} vertices, {len(bfs)} faces, "
+               f"{len(roots)} roots, closest pair "
+               f"{min(math.dist(a, b) for i, a in enumerate(roots) for b in roots[i + 1:]):.4f} dm")
     return wanted, summary
 
 
@@ -651,6 +664,139 @@ def ridge(path, stand=0.13, half=0.06, sides=6):
 
 
 CORNROW_ROWS = 6
+
+
+# Bantu knots: a coiled bun at each of a handful of roots spread over the
+# cranium. Nine is the count the style is usually worn in, and it is what the
+# scalp can hold at this radius without the buns touching -- MEASURED below by
+# the closest-pair check, which is the gate.
+BANTU_KNOTS = 12
+BANTU_RADIUS = 0.24
+BANTU_HEIGHT = 0.20
+BANTU_SEGMENTS = 10
+BANTU_RINGS = 5
+# The base ring sits a little UNDER the scalp so the bun meets the head with no
+# rim of daylight between them. Small, because the fit is per-vertex and the
+# scalp is curved -- sink it far and the bun swallows itself on a flat crown.
+BANTU_SINK = 0.03
+# The knot's radius as an angle about the cranium centre, which is the frame
+# the hairline is measured in: atan(0.24 / ~1.0 dm) is about 14 degrees.
+BANTU_INSET_DEG = 14.0
+# A thin shell under the knots. Bantu knots are worn on a head OF HAIR -- the
+# sections between them are flat hair, not bare scalp -- and without this the
+# knots rendered as blobs stuck to a bald head, which is the same "too crude to
+# carry the name" the 2026-09-11 attempt stopped at. Reuses `afro`'s shell at a
+# fraction of its thickness, so the cap is the proven geometry, not new.
+BANTU_CAP = 0.10
+
+
+def _frame(axis):
+    """Two unit vectors across @p axis. Any pair will do -- a bun has no seam
+    to align, and the twist below is about the axis, not about these."""
+    up = (0.0, 0.0, 1.0) if abs(axis[1]) > 0.9 else (0.0, 1.0, 0.0)
+    u = [up[1] * axis[2] - up[2] * axis[1],
+         up[2] * axis[0] - up[0] * axis[2],
+         up[0] * axis[1] - up[1] * axis[0]]
+    lu = math.sqrt(sum(t * t for t in u)) or 1.0
+    u = [t / lu for t in u]
+    v = [axis[1] * u[2] - axis[2] * u[1],
+         axis[2] * u[0] - axis[0] * u[2],
+         axis[0] * u[1] - axis[1] * u[0]]
+    return u, v
+
+
+def knot_mesh(root, axis, base):
+    """One bun: rings up a dome profile, twisted, closed with a fan to the tip.
+
+    The profile is `sqrt(1 - t^2)` rather than a cone's `1 - t`, because a bantu
+    knot is round-shouldered and a cone reads as a spike. The twist is what
+    makes it a KNOT rather than a bump -- it is small on purpose, since the
+    facets are only eight around and a large twist reads as a shear.
+    """
+    u, v = _frame(axis)
+    pts, faces = [], []
+    for ring in range(BANTU_RINGS):
+        t = ring / BANTU_RINGS
+        radius = BANTU_RADIUS * math.sqrt(max(0.0, 1.0 - t * t))
+        rise = BANTU_HEIGHT * t - BANTU_SINK
+        twist = 0.45 * t
+        for seg in range(BANTU_SEGMENTS):
+            a = 2.0 * math.pi * seg / BANTU_SEGMENTS + twist
+            pts.append(tuple(root[i] + u[i] * radius * math.cos(a)
+                             + v[i] * radius * math.sin(a) + axis[i] * rise
+                             for i in range(3)))
+    pts.append(tuple(root[i] + axis[i] * BANTU_HEIGHT for i in range(3)))
+
+    for ring in range(BANTU_RINGS - 1):
+        for seg in range(BANTU_SEGMENTS):
+            nxt = (seg + 1) % BANTU_SEGMENTS
+            faces.append([base + ring * BANTU_SEGMENTS + seg,
+                          base + ring * BANTU_SEGMENTS + nxt,
+                          base + (ring + 1) * BANTU_SEGMENTS + nxt,
+                          base + (ring + 1) * BANTU_SEGMENTS + seg])
+    tip = base + BANTU_RINGS * BANTU_SEGMENTS
+    last = base + (BANTU_RINGS - 1) * BANTU_SEGMENTS
+    for seg in range(BANTU_SEGMENTS):
+        faces.append([last + seg, last + (seg + 1) % BANTU_SEGMENTS, tip])
+    return pts, faces
+
+
+def bantu(verts, body_faces, app_path=""):
+    """Knots at roots the APPLICATION spreads over the cranium.
+
+    The roots come from `--spread-roots`, which is farthest-point sampling over
+    the scalp SURFACE (`mh::core::spreadOverSurface`). That is the whole reason
+    the 2026-09-11 attempt is worth repeating: placing by casting rays from the
+    head centre silently collapsed every missed ray onto the scalp rim, so wide
+    arrangements piled up at the front edge and two rounds of retuning changed
+    nothing.
+    """
+    app = app_binary(app_path)
+    # Ask for MORE than are wanted, because roots on the hairline itself are
+    # dropped below. `spreadOverSurface` returns farthest-point order, so any
+    # prefix is still spread -- which is what makes "filter, then take the
+    # first N" keep the arrangement instead of clumping it.
+    out = subprocess.run([app, "--spread-roots", str(BANTU_KNOTS * 4)],
+                         capture_output=True, text=True, check=True).stdout
+    spread = [tuple(float(t) for t in line.split()[1:4])
+              for line in out.splitlines() if line.strip()]
+
+    # A knot is a BALL, so its whole footprint has to be inside the hair, not
+    # just its centre: a root sitting on the hairline hangs a 0.24 dm bun over
+    # the brow, which RENDERED as a knot on the forehead. The inset is that
+    # radius expressed as an angle about the cranium centre, which is what the
+    # hairline is measured in.
+    roots = [p for p in spread
+             if spherical(p)[0] >= hairline(spherical(p)[1]) + BANTU_INSET_DEG][:BANTU_KNOTS]
+    if len(roots) != BANTU_KNOTS:
+        raise RuntimeError(f"{len(roots)} of {BANTU_KNOTS} roots clear the hairline "
+                           f"by {BANTU_INSET_DEG:.0f} deg (spread {len(spread)})")
+
+    # The cap first, so the knots sit ON it. Each of its vertices binds to the
+    # base vertex it grew from with a world offset -- the same one-line-per-
+    # vertex form `--bind-points` emits, which is why the two can share one
+    # .mhclo.
+    used, keep, placed = afro(verts, body_faces, thickness=BANTU_CAP)
+    cap = {b: i for i, b in enumerate(used)}
+    allpts = [tuple(verts[b][i] + placed[b][i] for i in range(3)) for b in used]
+    allfaces = [[cap[v] for v in f] for f in keep]
+    cap_binds = [f"{b} {b} {b} 1.00000 0.00000 0.00000 "
+                 f"{placed[b][0]:.5f} {placed[b][1]:.5f} {placed[b][2]:.5f}"
+                 for b in used]
+
+    for root in roots:
+        # The knot's AXIS, not its placement: placement is the surface walk
+        # above. On a cranium this convex the outward direction from the centre
+        # and the surface normal agree closely, and unlike a ray it cannot miss.
+        axis = [root[i] - CENTRE[i] for i in range(3)]
+        la = math.sqrt(sum(t * t for t in axis)) or 1.0
+        axis = [t / la for t in axis]
+        # Lifted onto the cap, or the knot would sink into the hair it sits on.
+        seat = [root[i] + axis[i] * BANTU_CAP for i in range(3)]
+        pts, fs = knot_mesh(seat, axis, len(allpts))
+        allpts.extend(pts)
+        allfaces.extend(fs)
+    return allpts, allfaces, roots, app, cap_binds, len(cap_binds)
 
 
 def cornrows(verts, body_faces, app_path=""):

@@ -4,6 +4,63 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-23 16:05:00 — Session · **Bantu knots ship, and the cap is why**
+
+The third hair style. Four render-and-look iterations, which is what the
+2026-09-11 attempt budgeted for and ran out of.
+
+The shape work was ordinary: knots taller than wide render as HORNS (H must sit
+below R), and a knot is a BALL so its whole footprint has to clear the
+hairline, not just its centre — a root on the hairline hangs a 0.24 dm bun over
+the brow, which rendered as a knot on the forehead. `BANTU_INSET_DEG = 14` is
+that radius as an angle about the cranium centre, the frame the hairline is
+already measured in.
+
+**What actually decided it was not a parameter.** With the forehead knot gone
+it still read as blobs stuck to a bald head, and the reason is that bantu knots
+are worn on a head OF hair — the sections between them are flat hair, not bare
+scalp. A thin cap under the knots, reusing `afro`'s shell at `thickness=0.10`,
+turned it from blobs into a hairstyle in one iteration.
+
+That cap cost nothing because of a format coincidence worth remembering:
+`write_style`'s per-vertex line and `--bind-points`' output are the SAME shape,
+`v1 v2 v3 w1 w2 w3 dx dy dz`. So one .mhclo carries the cap (each vertex bound
+to the base vertex it grew from, weight 1/0/0) and the knots (true barycentric
+bindings from the application) side by side.
+
+MEASURED: 1087 vertices, 1008 faces, 12 roots, closest pair **0.3991 dm**.
+Said plainly rather than buried: that is below the 0.48 dm knot diameter, so
+the two closest knots intersect. Rendered from top, side and front they merge
+into one slightly larger mass and read correctly, so it ships; 11 roots or a
+smaller radius would close it.
+
+**The ragged hairline edge is the shipped bar, not a regression.** I rendered
+the existing afro from the same angle to check rather than assuming, and it has
+exactly the same zigzag where the shell meets skin.
+
+Roots come from `--spread-roots`, farthest-point sampling over the scalp
+SURFACE — the primitive built in 2026-09-12 precisely because raycasting from
+the head centre collapsed every missed ray onto the scalp rim. Asking for four
+times the wanted count and filtering keeps the spread, because that sampling
+returns farthest-point ORDER and any prefix of it is still spread.
+
+Sweep 1466/1466, including `hair_assets_are_generated` and the asset index
+re-baselined 36 → 37 with the reason, as the cornrows precedent did.
+
+### Found on arrival
+`build/` was gone entirely — the tree had been cleaned between sessions, disk
+at 93%. A full reconfigure and rebuild, then everything proceeded normally.
+Worth knowing that the first command of a session can fail for that reason
+rather than anything in the code.
+
+### Still open
+LOCS are the last style. They are harder than knots: a loc is a hanging rope
+that has to fall under gravity from its root and lie against the head, so the
+knot recipe (a compact shape at a root) does not carry over — the sweep along
+a falling path is closer to the cornrow row trace.
+
+---
+
 ## 2026-09-21 00:55:00 — Session · **The animation lands where its author put it**
 
 `mh::rig::restAlignment` ships. The shipped walks rest in a T-pose and this rig

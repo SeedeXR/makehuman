@@ -4650,7 +4650,12 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
          injective. Targets were NOT invented here -- each reuses the bone
          `mixamo_retarget.json` already uses for the same anatomical role
          (`Clavicle_L` and `LeftShoulder` -> `clavicle.L`; `UpArm_L` and
-         `LeftArm` -> `shoulder01.L`; `Toe_L` and `LeftToeBase` -> `ball.L`).
+         `LeftArm` -> `upperarm01.L`; `Toe_L` and `LeftToeBase` -> `ball.L`).
+         **That middle example read `shoulder01.L` until 2026-09-20 and it was
+         the BUG** -- inheriting a target from the Mixamo table is only as good
+         as that table, and `{side}Arm -> shoulder01` (the scapula, not the
+         humerus) tore the arms off every shipped animation. Corrected here so
+         the note stops teaching the defect as the method.
          The 16 connectors are deliberately unmapped: no oracle names them, and
          a mis-mapped metacarpal twists a finger where an unmapped one loses a
          joint that barely moves. **The descent test is the one that earns its
@@ -5895,7 +5900,38 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       for fitting a groom to, and it passes in front of the face by
       construction. Keep it as a placeholder, or hide the slot until a real
       groom asset exists? Everything else about it is done either way.
-- [ ] **Textured-Black hair styles -- afro and CORNROWS now ship; locs and
+- [ ] **Textured-Black hair styles -- afro, CORNROWS and BANTU KNOTS now ship;
+      LOCS remain.**
+      **BANTU KNOTS shipped 2026-09-23**, in four render-and-look iterations,
+      and the thing that made it work was not a parameter:
+      1. 9 knots, R 0.20 / H 0.26 -- taller than wide, so they rendered as
+         HORNS. A bun needs H below R.
+      2. 12 knots, R 0.24 / H 0.20, 5 rings, `sqrt(1-t^2)` profile -- round
+         now, but one knot sat on the FOREHEAD.
+      3. Roots inset from the hairline by `BANTU_INSET_DEG = 14` (the knot
+         radius as an angle about the cranium centre, which is the frame the
+         hairline is measured in). Forehead knot gone -- and it still read as
+         blobs stuck to a bald head.
+      4. **The fix was a thin CAP under the knots.** Bantu knots are worn on a
+         head OF hair; the sections between them are flat hair, not bare scalp.
+         Reusing `afro`'s shell at `thickness=0.10` -- proven geometry, not new
+         -- is what turned it from blobs into a hairstyle.
+      **`write_style`'s per-vertex line and `--bind-points`' output are the
+      SAME format** (`v1 v2 v3 w1 w2 w3 dx dy dz`), so one .mhclo carries the
+      cap (each vertex bound to the base vertex it grew from, weight 1/0/0) and
+      the knots (true barycentric bindings from the app) together. That is why
+      the cap cost nothing to add.
+      MEASURED: 1087 vertices, 1008 faces, 12 roots, closest pair 0.3991 dm.
+      **Stated rather than hidden: that is BELOW the 0.48 dm knot diameter, so
+      the two closest knots intersect.** Rendered from top, side and front they
+      merge into one slightly larger mass and read correctly, so it ships as
+      is; a future pass could drop to 11 roots or shrink the radius.
+      **The edge is at the shipped bar, not below it**: the cap's hairline is
+      ragged where it meets skin, and RENDERED side by side the shipped afro
+      has exactly the same zigzag -- it is the shared shell-edge treatment, not
+      a new defect.
+      *(the original entry follows)*
+      **Textured-Black hair styles -- afro and CORNROWS now ship; locs and
       bantu knots remain.** Asked
       for directly by the owner. ATTEMPTED 2026-09-11 and NOT SHIPPED: five
       generate-render-look iterations produced silhouettes too crude to carry
