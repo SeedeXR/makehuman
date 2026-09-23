@@ -4,6 +4,72 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-24 01:25:00 — Session · **Locs attempt 3: reverted, and it overturned two of my own conclusions**
+
+Network still down; seven commits queued, this is the eighth.
+
+### Correction 1 — the asymmetry I reported last tick was my own bug
+I said mirror sectors disagreed (135 reading 1.51 where 225 read 1.90) and
+blamed sampling. **Sector k spans [22.5k, 22.5(k+1)); its mirror is sector
+15−k, and I compared k with k+4.** Checked properly: **0 of 13,380** body
+vertices lack a mirrored twin, **0** mirrored pairs are classified differently
+by the arm closure, and the face-sampled profile matches its mirror to
+**0.0006 dm**. There is no asymmetry. The sparsity concern was real; the
+evidence I gave for it was not.
+
+### Correction 2 — excluding the arms is the WRONG fix
+This overturns the conclusion I shipped two ticks ago. Measured over 42 ropes:
+
+| drape surface | points inside skin | deepest | max radius |
+|---|---|---|---|
+| arm-excluded | 82 / 838 | 1.752 dm | 1.433 dm |
+| **whole body** | **10 / 766** | **0.444 dm** | **1.433 dm** |
+
+A rope beside the ear with the arm removed has nothing to land on and falls
+straight through the upper arm. **The locs generator needs no arm information
+at all.**
+
+### What actually fixes attempt 2 — a shelf-versus-wall rule
+Over one step down the surface moves out by `needed - running`. If that
+exceeds the step, the surface is flatter than 45° — a **shelf** the rope lands
+on, not a **wall** it slides down. **Control, same profile, rule removed: max
+radius 2.763 dm — the ropes run out along the arms exactly as in attempt 2.
+With the rule: 1.433.** That is attempt 2's entire failure, fixed by a rule
+about surfaces rather than a limit on drift.
+
+Two supporting facts: the rule must not apply while the rope is still on the
+head (near the crown apex the scalp reads as a shelf — radius grows ~0.6 dm
+over a 0.15 dm step — and every rope stopped at zero steps until it was
+suppressed above y 6.99); and cross-sectioning gives 46–300 segments per
+height where vertex binning gave ~45 vertices across 16 sectors.
+
+### Why it was still reverted — rendered and looked at
+Two NEW blockers, both missing information again:
+
+1. **Ropes hang over the FACE.** Roots near the hairline drop straight across
+   the forehead, eyes and chin. Every rope falls vertically from its root;
+   real hair at the hairline is combed **back**. The generator has no combing
+   direction. A bigger inset would only bald the hairline — the missing thing
+   is a direction field, which `--scalp-path` already produces for cornrows.
+2. **The ends are RAGGED.** The shelf rule *terminates* a rope where it lands,
+   so ropes finish at many heights and the style reads as a torn curtain. Hair
+   that meets a shoulder piles on it; it does not stop existing.
+
+Reverted completely: `data/hair/locs.*` deleted, the generator restored from
+backup and `cmp`-identical, `--check` green on 6 files, tree clean.
+
+### On the two flags shipped this session
+`--vertex-bones` and `--bone-parents` have **no production caller** — the
+locs generator does not need them. They are diagnostic CLI flags with a real
+gate (`app_vertex_bones` asserts the arm/torso separation, not a format), and
+they are what made both corrections above provable. Stated plainly rather than
+dressed up: they earned their keep as instruments, not as library code.
+
+### Sweep
+No C++ changed. `make_hair_styles.py --check` green on 6 files; tree clean.
+
+---
+
 ## 2026-09-24 00:40:00 — Session · **A prefix list is not a rig, and two corrections**
 
 Network still down; seven commits queued.

@@ -6033,6 +6033,54 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `region_triangles` + `closest_on_triangle` in `tools/make_hair_styles.py`.
       **DO NOT TUNE PARAMETERS, and do not smooth the vertex profile -- that
       would be fitting around a sampling problem.**
+      **ATTEMPT 3, 2026-09-24 -- REVERTED, and it overturned two of my own
+      conclusions. Read all of this before attempt 4.**
+      **(a) The "mirror sectors disagree" claim of the tick before was MY BUG,
+      not the data.** Sector k spans [22.5k, 22.5(k+1)); its mirror is sector
+      **15-k**, and I compared k with k+4. Checked properly: the body mesh has
+      **0 of 13,380 vertices without a mirrored twin**, **0 mirrored pairs
+      classified differently** by the arm closure, and the face-sampled profile
+      matches its mirror to **0.0006 dm** over y 4.0..8.0. There is no
+      asymmetry. The sparsity worry was real but the evidence I gave for it was
+      not.
+      **(b) EXCLUDING THE ARMS IS THE WRONG FIX.** This is the big one, and it
+      is measured over 42 ropes: arm-excluded leaves **82 of 838 path points
+      inside the skin, up to 1.752 dm deep**, because a rope beside the ear
+      then has nothing to land on and falls straight through the upper arm.
+      The **whole body** leaves **10 of 766, deepest 0.444**, at an IDENTICAL
+      maximum radius of 1.433 dm. The generator needs no arm information at all.
+      **WHAT ACTUALLY STOPS THE ARM-FLINGING IS A SHELF-VERSUS-WALL RULE, and
+      it is the one real result of this attempt.** Over one step down the
+      surface moves out by `needed - running`; if that exceeds the step itself
+      the surface is flatter than 45 degrees, so it is a SHELF the rope lands
+      on, not a WALL it slides down. **CONTROL, same profile, rule removed: max
+      radius 2.763 dm -- the ropes run out along the arms exactly as in attempt
+      2. With the rule: 1.433.** That is the whole of attempt 2's failure,
+      fixed, and it is a rule about surfaces rather than a limit on drift.
+      Two supporting facts worth keeping: the rule must NOT apply while the
+      rope is still on the head (near the crown apex the scalp itself reads as
+      a shelf -- section radius grows ~0.6 dm over a 0.15 dm step -- and every
+      rope stopped at zero steps until it was suppressed above the scalp's
+      lowest point, y 6.99); and cross-sectioning the mesh gives 46-300
+      segments per height where vertex binning gave ~45 vertices over 16
+      sectors.
+      **WHY IT WAS STILL REVERTED -- RENDERED AND LOOKED AT, from back and
+      left. Two NEW blockers, both missing information again, not parameters:**
+        1. **Ropes hang over the FACE.** Roots near the hairline fall straight
+           down across the forehead, eyes and chin. Every rope in this model
+           drops vertically from its root; real hair at the hairline is combed
+           BACK. **The generator has no combing direction.** A bigger inset
+           would only bald the hairline -- the missing thing is a direction
+           field over the scalp, which is what `--scalp-path` already produces
+           for cornrows.
+        2. **The ends are RAGGED.** The shelf rule TERMINATES a rope where it
+           lands, so ropes finish at many different heights and the style reads
+           as a torn curtain rather than as locs. Hair that meets a shoulder
+           piles ON it; it does not stop existing.
+      Reverted completely: `data/hair/locs.*` deleted, `tools/make_hair_styles.py`
+      restored from backup and `cmp`-identical, `--check` green on 6 files.
+      **DO NOT re-derive (a) or (b), and do not reach for a parameter for 1 or
+      2.**
       Reverted cleanly both times: generator restored, `data/hair/locs.*`
       deleted, `--check` back to 6 files matching a fresh derivation.
       **BANTU KNOTS shipped 2026-09-23**, in four render-and-look iterations,
