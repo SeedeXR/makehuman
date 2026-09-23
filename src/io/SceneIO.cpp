@@ -626,86 +626,28 @@ std::expected<SceneExportResult, SceneIoError> exportScene(
 }
 
 std::expected<ImportedMesh, SceneIoError> importMesh(const std::filesystem::path& path) {
-    std::error_code ec;
-    if (!std::filesystem::exists(path, ec)) {
-        return std::unexpected(SceneIoError{SceneIoErrorKind::NotFound, path.string(), {}});
-    }
-
-    Assimp::Importer importer;
-    // Importing is a trust boundary: the caller may hand us anything.
+    // ONE DOOR. This used to be a second, separately written import -- its own
+    // assimp setup, its own copy of the flag ORDER that keeps the trust
+    // boundary safe (ValidateDataStructure before JoinIdenticalVertices, which
+    // is what stopped a reproducible SIGSEGV on a file with out-of-range
+    // indices). Two copies of a security-critical ordering is exactly the
+    // drift this codebase keeps finding, and it was worse than usual here:
+    // `importMesh` had NO production caller, so the import path's regression
+    // tests entered through a door the application never opens. A change to
+    // one side would have left the other silently wrong, in whichever
+    // direction nobody was looking.
     //
-    // ValidateDataStructure is REQUIRED, not optional, and its ORDER in
-    // assimp's pipeline is what makes the rest safe. Verified against a file
-    // with out-of-range indices (one assimp itself wrote):
-    //   JoinIdenticalVertices alone            -> SIGSEGV, reproducibly
-    //   ValidateDataStructure + Join           -> clean error, 5/5 runs
-    //   Triangulate + Validate + Join          -> clean error, 5/5 runs
-    // Validation runs first and rejects the scene before any step dereferences
-    // the bad indices, so the join step is safe behind it and we keep the
-    // compact welded import it gives.
-    const aiScene* scene =
-        importer.ReadFile(path.string(), aiProcess_Triangulate | aiProcess_ValidateDataStructure |
-                                             aiProcess_JoinIdenticalVertices);
-
-    if (scene == nullptr || scene->mNumMeshes == 0 || scene->mMeshes == nullptr) {
+    // The measurements that chose those flags are recorded on `importScene`
+    // below, which is the implementation now.
+    auto scene = importScene(path);
+    if (!scene) return std::unexpected(scene.error());
+    if (scene->meshes.empty()) {
         return std::unexpected(
-            SceneIoError{SceneIoErrorKind::ImportFailed, path.string(), importer.GetErrorString()});
+            SceneIoError{SceneIoErrorKind::ImportFailed, path.string(), "no meshes"});
     }
-
-    const aiMesh* am = scene->mMeshes[0];
-    if (am->mNumVertices == 0 || am->mNumFaces == 0) {
-        return std::unexpected(
-            SceneIoError{SceneIoErrorKind::ImportFailed, path.string(), "first mesh is empty"});
-    }
-
-    ImportedMesh out;
-    out.meshCount              = scene->mNumMeshes;
-    out.mesh.name              = path.stem().string();
-    out.mesh.vertsPerPrimitive = 3;  // triangulated on import
-
-    // Import is a trust boundary. NaN and infinity survive assimp's validator
-    // (a NaN ASCII STL imports "successfully"), and once inside a mesh they
-    // poison bounding boxes, normals and every exporter downstream.
-    out.mesh.coord.resize(am->mNumVertices);
-    for (unsigned i = 0; i < am->mNumVertices; ++i) {
-        const auto& v = am->mVertices[i];
-        if (!std::isfinite(v.x) || !std::isfinite(v.y) || !std::isfinite(v.z)) {
-            return std::unexpected(SceneIoError{SceneIoErrorKind::ImportFailed, path.string(),
-                                                "file contains a non-finite vertex coordinate"});
-        }
-        out.mesh.coord[i] = Vec3{v.x, v.y, v.z};
-    }
-
-    const bool hasUV = am->HasTextureCoords(0);
-    if (hasUV) {
-        out.mesh.texco.resize(am->mNumVertices);
-        for (unsigned i = 0; i < am->mNumVertices; ++i) {
-            out.mesh.texco[i] = Vec2{am->mTextureCoords[0][i].x, am->mTextureCoords[0][i].y};
-        }
-    }
-
-    out.mesh.fvert.reserve(static_cast<size_t>(am->mNumFaces) * 3);
-    for (unsigned f = 0; f < am->mNumFaces; ++f) {
-        const aiFace& face = am->mFaces[f];
-        if (face.mNumIndices != 3) continue;  // Triangulate should prevent this
-        for (unsigned c = 0; c < 3; ++c) {
-            // MeshData is unvalidated by contract, but an index past the end is
-            // a corrupt file, not a caller error -- report it here rather than
-            // hand back something whose only safe consumer is Mesh::fromData.
-            if (face.mIndices[c] >= am->mNumVertices) {
-                return std::unexpected(SceneIoError{SceneIoErrorKind::ImportFailed, path.string(),
-                                                    "face index out of range"});
-            }
-            out.mesh.fvert.push_back(face.mIndices[c]);
-            if (hasUV) out.mesh.fuvs.push_back(face.mIndices[c]);
-        }
-    }
-    if (out.mesh.fvert.empty()) {
-        return std::unexpected(
-            SceneIoError{SceneIoErrorKind::ImportFailed, path.string(), "no triangular faces"});
-    }
-
-    return out;
+    // Still "the first mesh, and how many there were", which is the contract
+    // the header states and what every caller of this form wants.
+    return ImportedMesh{std::move(scene->meshes.front().mesh), scene->meshes.size()};
 }
 
 std::expected<ImportedScene, SceneIoError> importScene(const std::filesystem::path& path) {

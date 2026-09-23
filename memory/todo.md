@@ -723,6 +723,49 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       vectors; pick the minimal rotation and SAY SO.
       Gate it with `test_animation_no_tear.cpp` (bar 5.0x) plus renders, and
       keep `--pose tpose` as the control that must not move.
+- [ ] **THE UNREACHABLE-API LEDGER (audited 2026-09-23).** Every public
+      identifier in `include/makehuman/**/*.h` was greped for callers in `src/`
+      outside its own implementation. Kept because this session found SEVEN
+      such things and each was worth fixing; the rest are listed so the next
+      reader does not have to re-derive them.
+      **FIXED this session**: `importMesh` (was a SECOND import implementation
+      with its own copy of the trust-boundary flag order; now a wrapper over
+      `importScene`), and `skinPositionsCor` (now called from
+      `src/rig/PosedMesh.cpp` under `--skinning cor`).
+      **CONFIRMED DEAD, decision pending below**: `ktx2Write`
+      (`io/Ktx2Writer.h:64`, 92 lines) and the whole of `io/Etc1s.h`
+      (`etc1sEncode`, `etc1sEncodeBlock`, `etc1sDecodeBlock`, `etc1Expand5`).
+      **430 lines exactly.** `Etc1s.h` is included by ONE file in the repo --
+      its own `.cpp`. Superseded by libktx: `src/io/GltfWriter.cpp` calls
+      `ktx2Available()`/`ktx2EncodeEtc1s`, and `Ktx2Encode.h:8` says outright
+      that libktx "supersedes our container writer".
+      **STILL ORPHANED, small and harmless, listed not chased**:
+      `contrastRatio` (`ui/Theme.h:52`) -- the header says "the accessibility
+      claims in design.md are only worth something if something checks them",
+      and only the TEST checks them; `surfaceDistance` (`core/SurfaceWalk.h:47`,
+      its sibling `spreadOverSurface` is live); `macroValueName`,
+      `ethnicDiffuseColor`, `actionUnits`, `formatExtension`,
+      `eulerOrderNames`, `iconDir`.
+      **A SHAPE WORTH KNOWING**: `writeObj`, `writeGlb`, `writeFbx`, `writeUsda`
+      have ZERO production callers between them and **112 test call sites** --
+      the app calls only the `*Scene` forms. They are 5-6 line wrappers so
+      almost no code is dead, but the export regression suite enters four
+      1000+ line writers through a door the app never opens. Same shape as
+      `importMesh`, lower stakes.
+      `weightSimilarity` is NOT orphaned -- over-exposed in its header but
+      called internally by `computeCentersOfRotation`.
+- [ ] **DECISION NEEDED: delete the 430 lines of `Ktx2Writer` + `Etc1s`?**
+      MEASURED, not suspected: nothing in `src/` ever assigns
+      `KtxImage::globalData`, and `src/io/Ktx2Writer.cpp:74` returns `nullopt`
+      when it is empty -- so on any production path the function cannot write a
+      byte. The tests supply the supercompression data by slicing it out of a
+      file the real `basisu` produced.
+      FOR deleting: 430 lines that cannot work, plus their tests, maintained
+      and compiled for nothing. AGAINST: it is a hand-written ETC1S encoder and
+      KTX2 container, and it is the fallback if libktx is ever dropped as a
+      dependency.
+      **Raised, not taken** -- it removes a capability the project once chose
+      to write, and that is the owner's call, not a tidy-up.
 - [ ] **`app_backdrop_transparent_shows_nothing` is INTERMITTENT, and not for
       the settings reason below.** 2026-09-21: it failed twice in a row
       (278,285 of 2,363,772 pixels against a bar of 100) and then passed four
