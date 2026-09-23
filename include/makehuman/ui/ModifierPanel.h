@@ -24,6 +24,12 @@ class ModifierPanel : public QWidget {
     Q_OBJECT
 
 public:
+    /// Offers @p presets as one-click recipes above the sliders.
+    ///
+    /// Empty means no chooser at all rather than an empty one: a control with
+    /// nothing in it is a question the user cannot answer.
+    void setPresets(std::span<const foundation::SliderPreset> presets);
+
     explicit ModifierPanel(std::span<const foundation::TaskViewSpec> views,
                            QWidget* parent = nullptr);
 
@@ -50,6 +56,10 @@ public:
 
 signals:
     void valueChanged(const QString& id, float value);
+
+    /// A preset was picked. The NAME only: the panel is Apache-2.0 and the
+    /// recipe belongs to the application, which owns the modifiers.
+    void presetChosen(const QString& name);
 
     /// A drag finished, or a keyboard/wheel/page step settled. Undo uses this
     /// to close the merge group: without it two deliberate nudges of the same

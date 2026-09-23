@@ -7,6 +7,7 @@
 #include <QAccessible>
 #include <QAccessibleValueInterface>
 #include <QAccessibleWidget>
+#include <QComboBox>
 #include <QCoreApplication>
 #include <QHBoxLayout>
 #include <QHash>
@@ -238,6 +239,27 @@ ModifierPanel::ModifierPanel(std::span<const foundation::TaskViewSpec> views, QW
     auto* top = new QHBoxLayout;
     top->setContentsMargins(0, 0, 0, 0);
     top->addWidget(search, 1);
+
+    // One click for a look that is three sliders. Hidden until `setPresets`
+    // fills it, so a build with no recipes shows no empty control.
+    auto* presets = new QComboBox(this);
+    presets->setObjectName(QStringLiteral("modifiers.presets"));
+    presets->setAccessibleName(tr("Combination presets"));
+    presets->setVisible(false);
+    connect(presets, &QComboBox::activated, this, [this, presets](int index) {
+        // Index 0 is the "Preset…" label. `activated` rather than
+        // `currentIndexChanged`, so picking the SAME preset twice fires again
+        // -- after moving a slider by hand, re-picking it is how a user puts
+        // the look back, and a change-only signal would ignore them.
+        if (index <= 0) return;
+        emit presetChosen(presets->itemText(index));
+        // Back to the label: the combo is an action, and leaving it showing a
+        // name would claim the body still matches a preset the next slider
+        // drag invalidates.
+        const QSignalBlocker quiet(presets);
+        presets->setCurrentIndex(0);
+    });
+    top->addWidget(presets);
     top->addWidget(reset);
     column->addLayout(top);
 
@@ -415,6 +437,20 @@ void ModifierPanel::resetAll() {
     for (Row& r : rows_)
         r.slider->setValue(toTick(r.spec, r.spec.defaultValue));
     emit resetInProgress(false);
+}
+
+void ModifierPanel::setPresets(std::span<const foundation::SliderPreset> presets) {
+    auto* box = findChild<QComboBox*>(QStringLiteral("modifiers.presets"));
+    if (box == nullptr) return;
+    const QSignalBlocker quiet(box);
+    box->clear();
+    // The first entry is a LABEL, not a choice, so the combo reads as an
+    // action rather than as a setting that currently says "Six-pack".
+    box->addItem(tr("Preset…"));
+    for (const foundation::SliderPreset& p : presets) {
+        box->addItem(QString::fromStdString(p.name));
+    }
+    box->setVisible(box->count() > 1);
 }
 
 void ModifierPanel::filter(const QString& text) {

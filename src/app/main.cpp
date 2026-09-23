@@ -5998,6 +5998,7 @@ int main(int argc, char** argv) {
         }
     });
     panel = new mh::ui::ModifierPanel(views);
+    panel->setPresets(*combinations);
     for (const auto& [id, v] : presets)
         panel->setValue(id, v);
     if (!window.setPanel(kModelling, panel)) {
@@ -6046,6 +6047,26 @@ int main(int argc, char** argv) {
         });
     QObject::connect(window.viewport(), &mh::ui::ViewportWidget::backdropGestureFinished,
                      [&] { ++mergeGroup; });
+
+    // A preset is ONE undo entry, not three. `MultiValueChangeCommand` is what
+    // the symmetric-edit path already uses for exactly this shape: several
+    // values, one Ctrl+Z, and the panel moved to match so the sliders never
+    // disagree with the body.
+    QObject::connect(panel, &mh::ui::ModifierPanel::presetChosen, [&](const QString& name) {
+        const auto found = std::ranges::find_if(
+            *combinations, [&](const auto& c) { return QString::fromStdString(c.name) == name; });
+        if (found == combinations->end()) return;
+        std::vector<mh::ui::MultiValueChangeCommand::Change> changes;
+        changes.reserve(found->values.size());
+        for (const auto& [id, value] : found->values) {
+            changes.push_back({QString::fromStdString(id), human.modifierValue(id), value});
+        }
+        // mergeGroup is bumped after, so two presets in a row are two entries:
+        // picking Slim and then Heavyset is two decisions, not one drag.
+        window.undoStack()->push(new mh::ui::MultiValueChangeCommand(
+            QObject::tr("Preset: %1").arg(name), std::move(changes), applyModifiers, mergeGroup));
+        ++mergeGroup;
+    });
 
     // Reset touches every slider; a macro makes that one Ctrl+Z instead of 291.
     QObject::connect(panel, &mh::ui::ModifierPanel::resetInProgress, [&](bool active) {

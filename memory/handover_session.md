@@ -4,6 +4,64 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-23 19:30:00 — Session · **Two UX gaps closed, and a gate that moves when a dock does**
+
+### A user searches with their own word
+The owner did not know several sliders existed, and the cause was measurable:
+291 sliders behind 7 tabs, searched by LABEL only, so "chubby", "fat", "abs",
+"six pack" and "toned" all returned an empty panel against labels reading
+Weight, Stomach tone and Muscle. `SliderSpec::keywords` is matched beside the
+label and the id, filled from a 12-entry table keyed on the modifier name by
+substring so one entry covers a family.
+
+**Two gates, because either alone gates nothing.** The UI test drives the panel
+with SYNTHETIC specs — deleting the whole table leaves it green — so a second
+test asserts the SHIPPED sliders carry the words. That is the same lesson the
+centres-of-rotation work learned an hour earlier, and it was worth applying
+before being bitten again rather than after.
+
+`keywords` sits at the END of `SliderSpec`: inserting it mid-struct broke five
+positional aggregate initialisers in the UI tests.
+
+### "Six-pack" is three sliders, so it is now one name
+Five recipes in `data/modifiers/combination_presets.json`, applied by
+`--preset` and listed by `--list-presets`, plus a chooser in the Modelling
+panel that emits only the NAME (the panel is Apache-2.0 and never learns what a
+modifier is). The application turns a pick into ONE `MultiValueChangeCommand`,
+so a preset is one Ctrl+Z and the sliders move with the body.
+
+An explicit `--set` WINS over a preset, gated by reading the saved .mhm rather
+than a render: Muscle 0.400000 from the preset, Weight 0.850000 from the
+override. A preset naming a modifier that does not exist is REFUSED, not
+skipped — skipping means the click works, the body does not move, and nothing
+says why.
+
+RENDERED and looked at, because a preset carrying a name has to earn it:
+Six-pack is leaner with visible abdominal definition, Heavyset broader and
+softer. 60,384 pixels move; the gate asks a tenth of that.
+
+Three chooser decisions a test pins: `activated` not `currentIndexChanged` (so
+re-picking the same preset fires again, which is how a user restores the look
+after nudging a slider); index 0 is a label that does nothing and the combo
+RETURNS to it; and the chooser stays hidden until there are recipes.
+
+### The lesson: a widget can break a pixel gate two files away
+`app_backdrop_does_not_eat_the_model` went red and REPRODUCED three times, so
+it was not the known intermittent one. The preset combo widened the Modelling
+dock, the viewport went **1402 → 1192 px wide**, and the sample point slid off
+interior torso to a response of 2.4 against a bar of 2.0.
+
+The test's own comment had already recorded this happening once before (the
+Material dock) and said what to do: re-derive the point, never relax the
+threshold. Scanning a grid of candidate centres for a zero response took two
+minutes — (520,920) reads EXACTLY 0.0 while the companion check still reads
+27.3 on the empty viewport.
+
+Worth carrying forward: **adding any widget to a dock can move a windowed pixel
+gate**, and the fix is arithmetic on the new image, not a bigger tolerance.
+
+---
+
 ## 2026-09-23 17:40:00 — Session · **Two things were built and unreachable; locs were not shippable**
 
 Three surveys of `memory/todo.md` (35 unchecked boxes, 307 done) turned up two

@@ -2746,16 +2746,19 @@ if(MH_HAVE_RENDER)
                  ${CMAKE_SOURCE_DIR}/tools/png_region_response.py
                  --a ${CMAKE_CURRENT_BINARY_DIR}/backdrop_front.png
                  --b ${CMAKE_CURRENT_BINARY_DIR}/plain_front.png
-                 # WINDOW-LAYOUT DEPENDENT, and it moved once: adding the
-                 # Material dock tabbed the right-hand side, which changed the
-                 # viewport's size, and (1300,560) -- solidly on the torso
-                 # before -- landed on the shoulder EDGE, where a pixel of
-                 # camera difference reads as 4.8. Re-measured on the new
-                 # layout: (1152,640) is interior torso and reads 0.0, while
-                 # the companion check below still reads far above 20 on the
-                 # empty viewport. Re-derive both from the image if the docks
-                 # change again; do not relax the threshold.
-                 --cx 698 --cy 586 --radius 40 --max-response 2.0)
+                 # WINDOW-LAYOUT DEPENDENT, and it has now moved TWICE. First
+                 # the Material dock tabbed the right-hand side; then (2026-09-23)
+                 # the preset chooser widened the Modelling dock and the viewport
+                 # went 1402 -> 1192 px wide, which slid (698,586) off interior
+                 # torso to a response of 2.4 against a bar of 2.0.
+                 # Re-derived from the image rather than relaxed, as the note
+                 # here has said to do both times: at y 843 the torso spans
+                 # x 472..719, and (520,920) reads EXACTLY 0.0 while the
+                 # companion check below still reads 27.3 on the empty
+                 # viewport. If a dock changes again, re-derive again --
+                 # scanning a grid of candidate centres for a zero response is
+                 # a two-minute job and the threshold is the point of the test.
+                 --cx 520 --cy 920 --radius 40 --max-response 2.0)
         set_tests_properties(app_backdrop_does_not_eat_the_model PROPERTIES
             SKIP_RETURN_CODE 77
             FIXTURES_REQUIRED "app_backdrop_front;app_backdrop_plain_front")

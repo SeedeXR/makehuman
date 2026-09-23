@@ -16,6 +16,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <QComboBox>
 #include <QSlider>
 #include <QWidget>
 
@@ -107,4 +108,59 @@ TEST_CASE("keywords do not make the search match everything", "[sliders][search]
     // The label still works -- keywords are an addition, not a replacement.
     panel.filter(QStringLiteral("Nose"));
     CHECK(visible(panel) == 1);
+}
+
+// The preset chooser: the "one click" half of combination presets.
+//
+// `--preset` already applies a recipe from the command line, and that is not
+// what the complaint was about -- it was that finding "six-pack" meant knowing
+// Muscle, Weight and Stomach tone are the three sliders involved.
+TEST_CASE("the preset chooser offers the recipes and reports the pick", "[sliders][preset]") {
+    const auto views = shipped();
+    ui::ModifierPanel panel(views);
+
+    auto* box = panel.findChild<QComboBox*>(QStringLiteral("modifiers.presets"));
+    REQUIRE(box != nullptr);
+    // Nothing offered yet, so no empty control is shown: a chooser with no
+    // choices is a question the user cannot answer.
+    CHECK_FALSE(box->isVisibleTo(&panel));
+
+    foundation::SliderPreset six;
+    six.name   = "Six-pack";
+    six.values = {{"macrodetails-universal/Muscle", 0.85F},
+                  {"stomach/stomach-tone-decr|incr", 0.9F}};
+    foundation::SliderPreset slim;
+    slim.name   = "Slim";
+    slim.values = {{"macrodetails-universal/Weight", 0.22F}};
+    const std::vector<foundation::SliderPreset> presets{six, slim};
+    panel.setPresets(presets);
+
+    CHECK(box->isVisibleTo(&panel));
+    // Two recipes plus the "Preset…" label that heads the list.
+    REQUIRE(box->count() == 3);
+    CHECK(box->itemText(1) == QStringLiteral("Six-pack"));
+
+    QStringList picked;
+    QObject::connect(&panel, &ui::ModifierPanel::presetChosen, &panel,
+                     [&picked](const QString& name) { picked.append(name); });
+
+    // Index 0 is the label and must do NOTHING -- it is the resting state the
+    // combo returns to, so firing on it would re-apply a preset every time.
+    box->activated(0);
+    CHECK(picked.isEmpty());
+
+    box->activated(1);
+    REQUIRE(picked.size() == 1);
+    CHECK(picked.first() == QStringLiteral("Six-pack"));
+
+    // ...and the combo goes back to the label rather than sitting on a name,
+    // which would claim the body still matches a preset that the next slider
+    // drag invalidates.
+    CHECK(box->currentIndex() == 0);
+
+    // The SAME preset again must fire again: after moving a slider by hand,
+    // re-picking it is how a user puts the look back. `currentIndexChanged`
+    // would have swallowed this.
+    box->activated(1);
+    CHECK(picked.size() == 2);
 }

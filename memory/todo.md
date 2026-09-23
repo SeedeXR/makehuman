@@ -9035,11 +9035,21 @@ ovary/gonadal, thyroid).
       pinning a render. RENDERED and looked at: Six-pack is leaner with
       abdominal definition, Heavyset broader and softer, and the two are
       plainly different bodies.
-      **STILL OPEN: the presets are CLI-only.** The complaint this answers was
-      about discoverability in the UI ("one click"), and a chooser in the
-      Modelling panel is the other half -- `ModifierPanel` would take the
-      presets and emit the chosen name, the shape `AssetPanel::chosen` already
-      has.
+      **The UI half shipped in the same session.** `ModifierPanel::setPresets`
+      puts a chooser beside the search box, emitting `presetChosen(name)` --
+      the panel is Apache-2.0, so it learns the NAME and never what a modifier
+      is. The application turns that into ONE `MultiValueChangeCommand`, so a
+      preset is one Ctrl+Z rather than three, and the sliders move with the
+      body.
+      Three decisions in it that a test pins:
+      * `activated`, not `currentIndexChanged` -- picking the SAME preset twice
+        must fire twice, because re-picking is how a user restores the look
+        after nudging a slider by hand;
+      * index 0 is a "Preset..." LABEL and does nothing, and the combo RETURNS
+        to it, so the control reads as an action rather than claiming the body
+        still matches a preset the next drag invalidates;
+      * the chooser is hidden until there are recipes: a control with nothing
+        in it is a question the user cannot answer.
       *(the original entry follows)*
       **No combination presets.** "Six-pack" and "chiselled" are not single
       controls and cannot be — they are emergent from two or three sliders
