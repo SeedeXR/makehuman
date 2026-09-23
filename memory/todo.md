@@ -5902,6 +5902,31 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       groom asset exists? Everything else about it is done either way.
 - [ ] **Textured-Black hair styles -- afro, CORNROWS and BANTU KNOTS now ship;
       LOCS remain.**
+      **SECOND ATTEMPT 2026-09-23, also reverted -- but it got much closer and
+      the blocker is now NAMED.** The first attempt treated the head as a
+      SPHERE and dropped straight down, burying every rope in the neck. This
+      one asked the MESH how wide the body is at each height in the rope's own
+      heading (`body_profile`: body faces only, binned 0.25 dm by 24 sectors)
+      and hung the rope just outside that. RENDERED from the back, the ropes
+      genuinely followed the neck and spread over the shoulders -- a real
+      improvement, not a tuning difference.
+      **Two failure modes that TRADE OFF, which is why it stopped:**
+      1. Following the silhouette faithfully flings the SIDE ropes out along
+         the ARMS, because at shoulder height the widest thing in the body IS
+         the arm; the binning also showed as a staircase down each rope.
+      2. Limiting how fast a rope may drift outward (`LOC_SPREAD`) fixes both
+         and then leaves every rope bunched in a narrow column, because they
+         all start on the crown's small radius and never fan to shoulder width.
+      **THE MISSING PIECE, and it is small and concrete: the generator cannot
+      tell an ARM vertex from a TORSO one.** With that, the profile excludes
+      the arms and both failures go away at once. The data already exists --
+      `default_weights.mhw` gives per-vertex bone weights and the dominant bone
+      per vertex is what `tests/unit/test_pose_blend.cpp` already computes -- so
+      the work is exposing it, e.g. a flag that prints vertex -> dominant bone
+      (the shape `--spread-roots` already has). That is the next attempt's
+      first task, and it is C++ surface rather than another round of tuning.
+      Reverted cleanly both times: generator restored, `data/hair/locs.*`
+      deleted, `--check` back to 6 files matching a fresh derivation.
       **BANTU KNOTS shipped 2026-09-23**, in four render-and-look iterations,
       and the thing that made it work was not a parameter:
       1. 9 knots, R 0.20 / H 0.26 -- taller than wide, so they rendered as
