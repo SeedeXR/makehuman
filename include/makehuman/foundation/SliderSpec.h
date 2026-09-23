@@ -2,6 +2,7 @@
 #pragma once
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace mh::foundation {
@@ -36,6 +37,21 @@ struct SliderSpec {
     ///
     /// Space separated and lower case; the UI treats it as one haystack.
     std::string keywords;
+};
+
+/// A named recipe that sets several sliders at once.
+///
+/// "Six-pack" and "chiselled" are not single controls and cannot be: they are
+/// emergent from two or three sliders pulling together, and finding them means
+/// knowing that Muscle, Weight and Stomach tone are the three. That is the
+/// lookup this turns into one click.
+///
+/// The values are opaque `(modifier id, value)` pairs for the same reason
+/// `SliderSpec::id` is opaque: `mh_ui` is Apache-2.0 and must not learn what a
+/// modifier is.
+struct SliderPreset {
+    std::string name;
+    std::vector<std::pair<std::string, float>> values;
 };
 
 /// A named group of sliders inside a task view, e.g. "head shape".

@@ -10,6 +10,7 @@
 #include <fstream>
 #include <ranges>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace mh::core {
 namespace {
@@ -238,6 +239,64 @@ std::expected<StandardLayout, SliderLayoutError> loadStandardLayout(
                      [](const foundation::TaskViewSpec& a, const foundation::TaskViewSpec& b) {
                          return a.sortOrder < b.sortOrder;
                      });
+    return out;
+}
+
+std::expected<std::vector<foundation::SliderPreset>, SliderLayoutError> loadCombinationPresets(
+    const std::filesystem::path& dataDir, std::span<const Modifier> known) {
+    const std::filesystem::path file = dataDir / "combination_presets.json";
+    // Absent is not an error: a data directory without the file offers no
+    // presets, the same way a rig without a retarget table simply renames
+    // nothing.
+    std::error_code ec;
+    if (!std::filesystem::exists(file, ec)) return std::vector<foundation::SliderPreset>{};
+
+    // openForRead rather than exists()+ifstream, for the reason
+    // `loadSliderLayout` records above: a DIRECTORY satisfies both and then
+    // parses as an empty file.
+    auto opened = foundation::openForRead(file);
+    if (!opened) {
+        return std::unexpected(
+            SliderLayoutError{SliderLayoutErrorKind::Unreadable, file.string(), {}});
+    }
+    const json parsed = json::parse(*opened, nullptr, false);
+    if (parsed.is_discarded() || !parsed.is_array()) {
+        return std::unexpected(SliderLayoutError{SliderLayoutErrorKind::Malformed, file.string(),
+                                                 "expected an array"});
+    }
+
+    std::unordered_set<std::string_view> names;
+    names.reserve(known.size());
+    for (const Modifier& m : known)
+        names.insert(m.fullName);
+
+    std::vector<foundation::SliderPreset> out;
+    for (const json& entry : parsed) {
+        if (!entry.is_object()) continue;
+        foundation::SliderPreset preset;
+        preset.name        = entry.value("name", std::string{});
+        const auto setting = entry.find("set");
+        if (preset.name.empty() || setting == entry.end() || !setting->is_object()) {
+            return std::unexpected(SliderLayoutError{SliderLayoutErrorKind::Malformed,
+                                                     file.string(),
+                                                     "a preset needs a name and a set"});
+        }
+        for (const auto& [id, value] : setting->items()) {
+            if (!value.is_number()) {
+                return std::unexpected(SliderLayoutError{SliderLayoutErrorKind::Malformed,
+                                                         file.string(), id + " is not a number"});
+            }
+            // REFUSED, not skipped. A preset that quietly drops a modifier
+            // still applies and still looks like it worked, which is exactly
+            // how a recipe rots after someone renames a slider.
+            if (!names.contains(id)) {
+                return std::unexpected(SliderLayoutError{SliderLayoutErrorKind::Malformed,
+                                                         file.string(), "no such modifier: " + id});
+            }
+            preset.values.emplace_back(id, value.get<float>());
+        }
+        out.push_back(std::move(preset));
+    }
     return out;
 }
 

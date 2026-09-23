@@ -643,6 +643,48 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
     set_tests_properties(app_skinning_dqs_differs PROPERTIES
         FIXTURES_REQUIRED "app_lbs_obj;app_dqs_obj")
+    # Combination presets. "Six-pack" and "chiselled" are not single controls
+    # and cannot be -- they are emergent from Muscle, Weight and Stomach tone
+    # pulling together -- so finding one meant knowing all three names.
+    add_test(NAME app_list_presets COMMAND makehuman --list-presets)
+    set_tests_properties(app_list_presets PROPERTIES
+        PASS_REGULAR_EXPRESSION "Six-pack\tmacrodetails-universal/Muscle")
+    # An unknown name is refused rather than ignored: a preset that silently
+    # did nothing would look exactly like one that worked.
+    add_test(NAME app_preset_unknown_refused COMMAND makehuman --preset nope)
+    set_tests_properties(app_preset_unknown_refused PROPERTIES
+        PASS_REGULAR_EXPRESSION "unknown preset")
+    # It has to MOVE THE BODY. Asserting only that the run succeeded passes on
+    # a preset that sets nothing at all.
+    add_test(NAME app_preset_plain COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/preset_plain.png)
+    set_tests_properties(app_preset_plain PROPERTIES
+        SKIP_REGULAR_EXPRESSION "viewport error" FIXTURES_SETUP app_preset_plain)
+    add_test(NAME app_preset_sixpack COMMAND makehuman --preset Six-pack
+             --render ${CMAKE_CURRENT_BINARY_DIR}/preset_six.png)
+    set_tests_properties(app_preset_sixpack PROPERTIES
+        SKIP_REGULAR_EXPRESSION "viewport error" FIXTURES_SETUP app_preset_six)
+    # 60,384 pixels MEASURED; the bound is a tenth of that so it gates
+    # "the preset reached the body" without pinning a render.
+    add_test(NAME app_preset_changes_the_body COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/preset_plain.png
+             ${CMAKE_CURRENT_BINARY_DIR}/preset_six.png --min-differing 6000)
+    set_tests_properties(app_preset_changes_the_body PROPERTIES
+        FIXTURES_REQUIRED "app_preset_plain;app_preset_six")
+    # An explicit --set WINS over a preset, which is the documented order and
+    # the reason both may be given at once. Read out of the saved document, so
+    # the assertion is on the value the application actually kept.
+    add_test(NAME app_preset_then_set_write COMMAND makehuman
+             --preset Slim --set macrodetails-universal/Weight=0.85
+             --save ${CMAKE_CURRENT_BINARY_DIR}/preset_set.mhm)
+    set_tests_properties(app_preset_then_set_write PROPERTIES FIXTURES_SETUP app_preset_set)
+    add_test(NAME app_preset_set_wins COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/preset_set.mhm
+             # Muscle from the preset, Weight from the --set that overrode it.
+             "-DKEYS=modifier macrodetails-universal/Muscle 0.400000;modifier macrodetails-universal/Weight 0.850000"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_preset_set_wins PROPERTIES FIXTURES_REQUIRED app_preset_set)
+
     # Centres of rotation, the third method. It shipped as a library with tests
     # and NO caller for a milestone -- `skinPositionsCor` was reachable only
     # from its own unit test -- so these gates exist to keep it reachable.

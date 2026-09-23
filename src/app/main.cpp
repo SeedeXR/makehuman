@@ -3360,6 +3360,18 @@ int main(int argc, char** argv) {
     parser.addOption(eyesOpt);
     for (const QCommandLineOption& opt : proxyOpts)
         parser.addOption(opt);
+    const QCommandLineOption presetOpt(
+        QStringLiteral("preset"),
+        QStringLiteral("Apply a named combination preset before anything else: Six-pack, "
+                       "Chiselled, Athletic, Heavyset or Slim. A preset sets two or three "
+                       "sliders together, which is what makes the look -- --list-presets prints "
+                       "them with the values. An explicit --set WINS over a preset."),
+        QStringLiteral("name"));
+    parser.addOption(presetOpt);
+    const QCommandLineOption listPresetsOpt(
+        QStringLiteral("list-presets"),
+        QStringLiteral("Print the combination presets and the sliders each one sets, and exit."));
+    parser.addOption(listPresetsOpt);
     parser.addOption(setOpt);
     parser.addOption(renderOpt);
     parser.addOption(backgroundOpt);
@@ -3666,6 +3678,48 @@ int main(int argc, char** argv) {
     // while the sliders show their defaults is a UI that lies, and the first
     // nudge of such a slider snaps the model back.
     std::vector<std::pair<QString, float>> presets;
+
+    // Combination presets FIRST, so an explicit --set overrides one value of a
+    // preset without having to restate the other two. The order is the whole
+    // reason both can be given at once.
+    const auto combinations =
+        mh::core::loadCombinationPresets(dataDir() / "modifiers", human.modifiers());
+    if (!combinations) {
+        std::fprintf(stderr, "cannot read the combination presets: %s\n",
+                     combinations.error().message().c_str());
+        return 1;
+    }
+    if (parser.isSet(listPresetsOpt)) {
+        for (const mh::foundation::SliderPreset& preset : *combinations) {
+            for (const auto& [id, value] : preset.values) {
+                std::printf("%s\t%s\t%.3f\n", preset.name.c_str(), id.c_str(),
+                            static_cast<double>(value));
+            }
+        }
+        return 0;
+    }
+    if (parser.isSet(presetOpt)) {
+        const QString wanted = parser.value(presetOpt);
+        const auto found     = std::ranges::find_if(*combinations, [&](const auto& c) {
+            return QString::fromStdString(c.name).compare(wanted, Qt::CaseInsensitive) == 0;
+        });
+        if (found == combinations->end()) {
+            std::fprintf(stderr, "unknown preset \"%s\"; --list-presets shows them\n",
+                         wanted.toStdString().c_str());
+            return 1;
+        }
+        for (const auto& [id, value] : found->values) {
+            // The loader already refused an unknown modifier, so this cannot
+            // fail for that reason -- but it is checked rather than assumed.
+            if (!human.setModifierValue(id, value)) {
+                std::fprintf(stderr, "preset \"%s\" names no such modifier: %s\n",
+                             found->name.c_str(), id.c_str());
+                return 1;
+            }
+            presets.emplace_back(QString::fromStdString(id), value);
+        }
+    }
+
     for (const QString& assignment : parser.values(setOpt)) {
         const QStringList halves = assignment.split(QLatin1Char('='));
         bool ok                  = false;

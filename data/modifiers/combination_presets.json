@@ -1,0 +1,42 @@
+[
+  {
+    "name": "Six-pack",
+    "set": {
+      "macrodetails-universal/Muscle": 0.85,
+      "macrodetails-universal/Weight": 0.38,
+      "stomach/stomach-tone-decr|incr": 0.9
+    }
+  },
+  {
+    "name": "Chiselled",
+    "set": {
+      "macrodetails-universal/Muscle": 0.78,
+      "macrodetails-universal/Weight": 0.32,
+      "stomach/stomach-tone-decr|incr": 0.6
+    }
+  },
+  {
+    "name": "Athletic",
+    "set": {
+      "macrodetails-universal/Muscle": 0.7,
+      "macrodetails-universal/Weight": 0.45,
+      "stomach/stomach-tone-decr|incr": 0.35
+    }
+  },
+  {
+    "name": "Heavyset",
+    "set": {
+      "macrodetails-universal/Muscle": 0.4,
+      "macrodetails-universal/Weight": 0.85,
+      "stomach/stomach-tone-decr|incr": -0.4
+    }
+  },
+  {
+    "name": "Slim",
+    "set": {
+      "macrodetails-universal/Muscle": 0.4,
+      "macrodetails-universal/Weight": 0.22,
+      "stomach/stomach-tone-decr|incr": 0.2
+    }
+  }
+]

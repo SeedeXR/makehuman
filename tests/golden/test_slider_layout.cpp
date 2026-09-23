@@ -246,3 +246,39 @@ TEST_CASE("the shipped sliders carry the words a user searches for", "[slider][l
     REQUIRE(nose != keywords.end());
     CHECK(nose->second.empty());
 }
+
+// A preset naming a modifier that does not exist is REFUSED, not skipped.
+//
+// Skipping is the tempting choice and it is wrong: the click would work, the
+// body would not move, and nothing would say why -- which is precisely how a
+// recipe rots unnoticed after someone renames a slider.
+TEST_CASE("a preset naming an unknown modifier is refused", "[slider][layout][preset]") {
+    const auto standard =
+        mh::core::loadStandardLayout(std::filesystem::path(MH_DATA_DIR) / "modifiers");
+    REQUIRE(standard.has_value());
+
+    // The shipped file loads, and every preset names real modifiers.
+    const auto shipped = mh::core::loadCombinationPresets(
+        std::filesystem::path(MH_DATA_DIR) / "modifiers", standard->modifiers);
+    REQUIRE(shipped.has_value());
+    CHECK(shipped->size() == 5);
+    // Every preset sets MORE THAN ONE slider, which is the whole point of the
+    // feature: a one-slider preset is a slider.
+    for (const auto& preset : *shipped) {
+        INFO("preset " << preset.name);
+        CHECK(preset.values.size() >= 2);
+    }
+
+    // Now the refusal, against a modifier list that is missing them.
+    const std::vector<mh::core::Modifier> none;
+    const auto refused =
+        mh::core::loadCombinationPresets(std::filesystem::path(MH_DATA_DIR) / "modifiers", none);
+    REQUIRE_FALSE(refused.has_value());
+
+    // A data directory with no presets file is NOT an error -- it simply
+    // offers none, the way a rig without a retarget table renames nothing.
+    const auto absent = mh::core::loadCombinationPresets(
+        std::filesystem::path(MH_DATA_DIR) / "poses", standard->modifiers);
+    REQUIRE(absent.has_value());
+    CHECK(absent->empty());
+}

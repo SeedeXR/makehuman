@@ -68,4 +68,22 @@ struct StandardLayout {
 [[nodiscard]] std::expected<StandardLayout, SliderLayoutError> loadStandardLayout(
     const std::filesystem::path& dataDir);
 
+/// The combination presets from `combination_presets.json` in @p dataDir.
+///
+/// A preset names two or three sliders and the values that make a look --
+/// "Six-pack" is Muscle high AND Stomach tone high AND Weight low, and no one
+/// of those alone produces it. The recipes are DATA rather than code because
+/// they are taste, and taste is the part most likely to be wrong and want
+/// editing without a rebuild.
+///
+/// @param known every modifier that exists, so a preset naming one that does
+///        not can be refused. A preset that silently sets nothing is the
+///        painted no-op this project keeps finding: the click would work, the
+///        body would not move, and nothing would say why.
+/// @return the presets in file order, or an error. A MISSING file is not an
+///         error -- it yields an empty list, so a data directory without the
+///         file simply offers no presets.
+[[nodiscard]] std::expected<std::vector<foundation::SliderPreset>, SliderLayoutError>
+loadCombinationPresets(const std::filesystem::path& dataDir, std::span<const Modifier> known);
+
 }  // namespace mh::core

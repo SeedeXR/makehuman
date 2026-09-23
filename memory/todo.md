@@ -9017,7 +9017,31 @@ ovary/gonadal, thyroid).
 
 ### The real gaps, which are UX rather than data
 
-- [ ] **No combination presets.** "Six-pack" and "chiselled" are not single
+- [x] **Combination presets -- DONE 2026-09-23.** Five recipes in
+      `data/modifiers/combination_presets.json` -- Six-pack, Chiselled,
+      Athletic, Heavyset, Slim -- each setting Muscle, Weight and Stomach tone
+      together, which is the combination none of the three produces alone.
+      `--preset <name>` applies one and `--list-presets` prints them with their
+      values. An explicit `--set` WINS over a preset, so one value can be
+      changed without restating the other two; gated by reading the saved .mhm
+      (Muscle 0.400000 from the preset, Weight 0.850000 from the --set).
+      **Recipes are DATA because they are taste**, and taste is the part most
+      likely to want editing without a rebuild.
+      **A preset naming a modifier that does not exist is REFUSED, not
+      skipped**: skipping means the click works, the body does not move, and
+      nothing says why -- which is how a recipe rots after a slider is renamed.
+      MEASURED: Six-pack moves 60,384 pixels against the default, and the gate
+      asks for a tenth of that so it proves the preset reached the body without
+      pinning a render. RENDERED and looked at: Six-pack is leaner with
+      abdominal definition, Heavyset broader and softer, and the two are
+      plainly different bodies.
+      **STILL OPEN: the presets are CLI-only.** The complaint this answers was
+      about discoverability in the UI ("one click"), and a chooser in the
+      Modelling panel is the other half -- `ModifierPanel` would take the
+      presets and emit the chosen name, the shape `AssetPanel::chosen` already
+      has.
+      *(the original entry follows)*
+      **No combination presets.** "Six-pack" and "chiselled" are not single
       controls and cannot be — they are emergent from two or three sliders
       pulling together (`stomach-tone` + `Muscle` + `Weight`). A short list of
       named presets that set a combination, the way **Body shapes** already
