@@ -4,6 +4,82 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-23 17:40:00 — Session · **Two things were built and unreachable; locs were not shippable**
+
+Three surveys of `memory/todo.md` (35 unchecked boxes, 307 done) turned up two
+real gaps, both verified by hand before acting on them, and both the same
+shape: *shipped, tested, and reachable by nobody.*
+
+### Centres of rotation had no caller
+`skinPositionsCor` and `computeCentersOfRotation` were fully implemented with
+14 test cases, and `grep` found **every call site inside their own unit test**.
+`SkinningMethod` had two values. The whole point of the milestone ordering was
+"fix skinning before correctives", and the artefact reduction it was designed
+around never reached a single rendered pixel.
+
+Now `--skinning cor`. MEASURED: it differs from dqs by 6,025 pixels and from
+linear by 7,350, so it reaches the image; an unknown method is refused naming
+all three. Debug-build cost 1.31 s → 3.53 s, which is the precompute, so it is
+opt-in and the help says why.
+
+The centres are cached against an **FNV hash of the rest coordinates**, not a
+dirty flag. A dozen call sites morph the mesh and one that forgot to set a flag
+would skin the new body about the old body's centres — a wrong image, not a
+crash. Hashing 19,158 vertices costs microseconds against a precompute in
+hundreds of milliseconds.
+
+`poseMesh` REFUSES `CentersOfRotation` with empty centres rather than falling
+back to LBS. The control proves why that matters: with the flag forced off,
+`app_skinning_cor_differs_from_linear` goes red while the dqs comparison stays
+green — a silent fallback is invisible to half the gates, so both comparisons
+exist.
+
+### The bundle did not contain the licences it pointed at
+`MACOSX_BUNDLE_COPYRIGHT` says "See LICENSING.md", and LICENSING.md §3 asserted
+the macOS bundle "includes this notice". The `dmg` target copied exactly three
+trees — data, shaders, resources — and no licence file. So every DMG built so
+far violated the project's own §6 obligations, and a licence file made a claim
+about itself that was false.
+
+All four now attach to the TARGET (`MACOSX_PACKAGE_LOCATION "Resources"`), so
+every build is compliant rather than only the packaging step. Four gates read
+the built bundle, **each asking for text unique to its own file** — the first
+version used one shared key and three of four failed with the files present,
+because "Licence" appears only in LICENSING.md. The control that earned the
+per-file keys: copying LICENSE.ASSETS.md over LICENSE.md fails the gate, which
+a shared key would have passed.
+
+### Locs: attempted in five iterations, NOT shipped
+Same verdict and the same reason as 2026-09-11, now with the measurement that
+explains it. A loc has to lie on the BODY below the skull, and a head-sphere
+profile plus a vertical drop cannot do that:
+1. arc across the sphere toward "down and back" — wraps the rope around the
+   skull and buries it in the neck; nothing hangs.
+2. fall down the head's profile — rendered as stubs ending at the chin, because
+   `LOC_TIP_Y = 5.8` is the CHIN, not the shoulder. The mesh spans y −8.45 to
+   8.50 about the body's centre and the shoulder opens out at y 5.0–5.5;
+   I guessed the frame instead of measuring it.
+3. tip at 5.0 — reaches the neck and sinks into it.
+4. fall vertically from where each rope LEAVES the skull, instead of collapsing
+   to a shared radius — this fixed the bunching and is the one idea worth
+   keeping; ropes stagger naturally because they leave at different heights.
+5. 30 ropes, longer — denser made it worse: a solid slab down the neck and
+   upper back, passing through the body.
+
+Reverted: generator restored, `data/hair/locs.*` deleted, `--check` back to 6
+files matching a fresh derivation. **Shipping a bad "Locs" is worse than none.**
+The next attempt needs a path that follows the torso surface, which is the
+`SurfaceWalk` problem again but on a shape that is not a dome.
+
+### Also
+`build/` was gone on arrival — the tree had been cleaned between sessions, disk
+at 93%. Full reconfigure and rebuild first.
+
+Three todo boxes ticked that were already satisfied (MetaHuman guardrails,
+export traceability, and the dataset-licence audit reduced to conditional).
+
+---
+
 ## 2026-09-23 16:05:00 — Session · **Bantu knots ship, and the cap is why**
 
 The third hair style. Four render-and-look iterations, which is what the

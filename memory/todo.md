@@ -8848,10 +8848,10 @@ GPU here, or Colab) and it comes back to the owner first.
         the normalised triple it already is. A plain unordered map of slider
         values is not a complete specification of a body.
 - [ ] Parameter-space definition and sampling
-- [ ] **Licence audit of every candidate dataset before any use** — record in `LICENSING.md`
+- [~] **Licence audit of every candidate dataset before any use** — record in `LICENSING.md`
 - [ ] Generative model over the modifier vector
 - [ ] Image/scan → parameters fitting
-- [ ] Guardrails: no MetaHuman-derived data, ever (`project_context.md` §4.3)
+- [x] Guardrails: no MetaHuman-derived data, ever — ENFORCED, not merely intended: `project_context.md` §4.3, plus CI's "Forbidden dependencies absent" step (`.github/workflows/ci.yml`), plus the recorded refusal of MetaHuman DNA Calibration. A standing rule restated as a checkbox. (`project_context.md` §4.3)
 
 ## Versioning — ONE source of truth (2026-09-07)
 
@@ -8932,7 +8932,7 @@ GPU here, or Colab) and it comes back to the owner first.
       bump" — is real and accepted: owner directive 12.4 asks for both numbers
       in every export, and no byte-golden comparison depends on the header.
       *Original note follows.*
-- [ ] ~~**Exported assets cannot be traced to a build.**~~ `.mhm` carries the product
+- [x] ~~**Exported assets cannot be traced to a build.**~~ Superseded by the `[x]` entry above it (2026-09-09); the box was simply never ticked. `.mhm` carries the product
       version; FBX `Creator`, glTF `generator`, USD `doc` and the OBJ/MTL comment
       carry the product NAME only. Adding the version there is ~4 one-line
       changes and no test pins those strings today — but it makes every export
