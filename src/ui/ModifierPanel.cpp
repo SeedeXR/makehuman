@@ -331,7 +331,22 @@ ModifierPanel::ModifierPanel(std::span<const foundation::TaskViewSpec> views, QW
                 slider->setObjectName(QStringLiteral("slider:") + QString::fromStdString(spec.id));
                 slider->setRange(0, kSteps);
                 slider->setValue(toTick(spec, spec.defaultValue));
-                slider->setToolTip(QString::fromStdString(spec.id));
+                // What it DOES, then what it is CALLED. The tooltip used to be
+                // the modifier id alone, which answers a question only someone
+                // writing `--set` is asking -- a user hovering wants to know
+                // what the slider is for, and 35 of these ship an authored
+                // answer that nothing read until now. The id stays underneath
+                // because it IS the `--set` argument.
+                const QString id = QString::fromStdString(spec.id);
+                if (spec.description.empty()) {
+                    slider->setToolTip(id);
+                } else {
+                    const QString what = QString::fromStdString(spec.description);
+                    slider->setToolTip(QStringLiteral("%1<p><i>%2</i>").arg(what, id));
+                    // Screen readers do not read tooltips, so the same words
+                    // go where they will be announced.
+                    slider->setAccessibleDescription(what);
+                }
                 // Named by what it does and where it lives, so a screen reader
                 // announces "Age, head shape" rather than "horizontal slider".
                 // Section folded into the NAME rather than a separate

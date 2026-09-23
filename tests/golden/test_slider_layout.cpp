@@ -282,3 +282,51 @@ TEST_CASE("a preset naming an unknown modifier is refused", "[slider][layout][pr
     REQUIRE(absent.has_value());
     CHECK(absent->empty());
 }
+
+// The shipped descriptions reach the sliders.
+//
+// 291 entries across the three `*_modifiers_desc.json` files have shipped since
+// the beginning and NOTHING read them -- the hover text said the modifier id,
+// which answers a question only someone writing `--set` is asking. 256 of the
+// entries are empty strings, so the honest number is 35, and those 35 are the
+// ones whose names do not explain themselves.
+TEST_CASE("the shipped slider descriptions are read", "[slider][layout][description]") {
+    const auto standard =
+        mh::core::loadStandardLayout(std::filesystem::path(MH_DATA_DIR) / "modifiers");
+    REQUIRE(standard.has_value());
+
+    std::map<std::string, std::string> described;
+    size_t sliders = 0;
+    for (const auto& view : standard->views) {
+        for (const auto& section : view.sections) {
+            for (const auto& slider : section.sliders) {
+                ++sliders;
+                if (!slider.description.empty()) described[slider.id] = slider.description;
+            }
+        }
+    }
+
+    // MEASURED, and pinned so a data edit that empties them is noticed: the
+    // count may GROW as descriptions are authored, never silently fall to 0.
+    INFO(described.size() << " of " << sliders << " sliders carry a description");
+    CHECK(described.size() >= 30);
+
+    // A body shape, which is the case that motivated this: "diamond" tells a
+    // user nothing and the shipped text explains it.
+    const auto diamond = described.find("bodyshapes/bodyshapes-elvs-fem-diamond");
+    REQUIRE(diamond != described.end());
+    CHECK(diamond->second.find("hips") != std::string::npos);
+
+    // ...and a macro slider.
+    const auto gender = described.find("macrodetails/Gender");
+    REQUIRE(gender != described.end());
+    CHECK(gender->second.find("female") != std::string::npos);
+
+    // An EMPTY entry is not a description. 256 of the 291 are empty, and
+    // keeping them would put a blank tooltip on most of the panel, which reads
+    // as broken rather than as absent.
+    for (const auto& [id, text] : described) {
+        INFO(id);
+        CHECK_FALSE(text.empty());
+    }
+}

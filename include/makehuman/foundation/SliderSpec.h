@@ -36,7 +36,20 @@ struct SliderSpec {
     /// searches for the word they have, not the word the data uses.
     ///
     /// Space separated and lower case; the UI treats it as one haystack.
-    std::string keywords;
+    std::string keywords{};
+
+    /// What the slider DOES, shown on hover. Empty when the data gives none.
+    ///
+    /// The reference ships these and this port read none of them: 291 entries
+    /// across the three `*_modifiers_desc.json` files, of which 35 carry real
+    /// text -- the 22 body shapes, the macro sliders and the measurements.
+    /// Those are exactly the ones whose names do not explain themselves
+    /// ("diamond", "adrenal"), so a user had to move a slider to find out what
+    /// it was for.
+    ///
+    /// May contain simple HTML: the shipped text uses `<p>` for the target
+    /// author's attribution, and a Qt tooltip renders it.
+    std::string description{};
 };
 
 /// A named recipe that sets several sliders at once.

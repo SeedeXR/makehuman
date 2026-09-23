@@ -192,6 +192,33 @@ std::expected<std::vector<foundation::TaskViewSpec>, SliderLayoutError> loadSlid
     return views;
 }
 
+/// Every `<modifier> -> description` pair the shipped `*_desc.json` files give.
+///
+/// Silently tolerant on purpose. These files are INHERITED reference data that
+/// nothing validates, most of their values are empty strings, and a missing or
+/// malformed one must not stop the application starting over hover text. The
+/// coverage is asserted by a test instead, so "we read them" stays a fact
+/// rather than a hope.
+std::unordered_map<std::string, std::string> loadDescriptions(
+    const std::filesystem::path& dataDir) {
+    std::unordered_map<std::string, std::string> out;
+    for (const char* f : {"modeling_modifiers_desc.json", "bodyshapes_modifiers_desc.json",
+                          "measurement_modifiers_desc.json"}) {
+        auto opened = foundation::openForRead(dataDir / f);
+        if (!opened) continue;
+        const json parsed = json::parse(*opened, nullptr, false);
+        if (parsed.is_discarded() || !parsed.is_object()) continue;
+        for (const auto& [id, text] : parsed.items()) {
+            if (!text.is_string()) continue;
+            const std::string value = text.get<std::string>();
+            // An empty entry is not a description; keeping it would put an
+            // empty tooltip on 256 sliders, which reads as a broken one.
+            if (!value.empty()) out.emplace(id, value);
+        }
+    }
+    return out;
+}
+
 std::expected<StandardLayout, SliderLayoutError> loadStandardLayout(
     const std::filesystem::path& dataDir) {
     StandardLayout out;
@@ -217,6 +244,20 @@ std::expected<StandardLayout, SliderLayoutError> loadStandardLayout(
         auto v = loadSliderLayout(dataDir / f, out.modifiers);
         if (!v) return std::unexpected(v.error());
         out.views.insert(out.views.end(), v->begin(), v->end());
+    }
+
+    // The descriptions the reference ships and this port read none of, until
+    // now. `faceunits` has no `_desc` file -- it is ours and generated -- and a
+    // missing file is not an error here for the same reason it is not for the
+    // presets: the sliders simply carry no hover text.
+    const auto described = loadDescriptions(dataDir);
+    for (foundation::TaskViewSpec& view : out.views) {
+        for (foundation::SliderSection& section : view.sections) {
+            for (foundation::SliderSpec& slider : section.sliders) {
+                const auto at = described.find(slider.id);
+                if (at != described.end()) slider.description = at->second;
+            }
+        }
     }
 
     // gui3d.py:310-317: a view with no sortOrder takes the lowest non-negative

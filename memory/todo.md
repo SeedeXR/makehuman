@@ -8985,7 +8985,12 @@ GPU here, or Colab) and it comes back to the owner first.
 - [ ] `macdeployqt` + CMake install
 - [ ] Codesign, hardened runtime, notarize( can't notarize everyone will compile on their own or ahave to allow unknown app , I don't have cash to pay for apple developer membership), staple
 - [ ] DMG with background and layout
-- [ ] Bundle `LICENSING.md` + LGPL relinking notice + AGPL source offer
+- [x] Bundle `LICENSING.md` + LGPL relinking notice + AGPL source offer --
+      **DONE 2026-09-23**: all four licence files attach to the target with
+      `MACOSX_PACKAGE_LOCATION "Resources"`, so every build is compliant rather
+      than only the `dmg` step, and four ctests read the built bundle with a
+      key unique to each file. Until then the bundle pointed at a LICENSING.md
+      it did not contain, and that file asserted the opposite.
 - [ ] Universal binary (arm64 + x86_64)
 - [ ] Auto-update channel
 - [ ] Migration guide for existing `.mhm` users
@@ -9084,7 +9089,28 @@ ovary/gonadal, thyroid).
       finds nothing, because the shipped labels say Weight, Stomach tone and
       Muscle. Synonyms in the search index would cost little and answer exactly
       the question that was asked.
-- [ ] **No way to see what a slider does before moving it.** Every entry above
+- [x] **What a slider does, on hover -- DONE 2026-09-23.** The answer was
+      already in the repo and unread: the reference ships
+      `*_modifiers_desc.json`, 291 entries, and NOTHING loaded them. The
+      tooltip said the modifier ID, which answers a question only someone
+      writing `--set` is asking.
+      `SliderSpec::description` now carries the text, shown on hover with the
+      id underneath (it IS the `--set` argument) and mirrored into
+      `accessibleDescription`, because screen readers do not read tooltips.
+      **HONEST NUMBER: 35 of 291, because 256 of the shipped entries are EMPTY
+      strings.** Those 35 are the ones that needed it -- the 22 body shapes
+      ("diamond", "adrenal" explain nothing on their own), the macro sliders
+      and the measurements. An empty entry is dropped rather than shown: a
+      blank tooltip on most of the panel reads as broken, not as absent.
+      Gated both sides -- the shipped data reaches the specs
+      (`test_slider_layout.cpp`, `>= 30` so the count may grow but never
+      silently fall to 0) and the panel shows it (`test_slider_search.cpp`).
+      Proven red by dropping the assignment.
+      **Thumbnails, which is what the entry below asked for, are NOT done** and
+      are a content problem: 291 renders to author and keep in step with the
+      mesh. This answers the same question for a tenth of the work.
+      *(the original entry follows)*
+      **No way to see what a slider does before moving it.** Every entry above
       had to be found by reading `data/modifiers/*.json`. A thumbnail or a
       hover preview is the reference's own answer and we have not ported it.
 

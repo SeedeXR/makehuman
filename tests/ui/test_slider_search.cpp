@@ -164,3 +164,43 @@ TEST_CASE("the preset chooser offers the recipes and reports the pick", "[slider
     box->activated(1);
     CHECK(picked.size() == 2);
 }
+
+// A slider says what it DOES on hover, not just what it is called.
+TEST_CASE("a described slider shows the description, not the id", "[sliders][description]") {
+    foundation::SliderSpec shape;
+    shape.id          = "bodyshapes/bodyshapes-elvs-fem-diamond";
+    shape.label       = "Diamond";
+    shape.description = "Broader hips than shoulders, undefined waist.";
+
+    foundation::SliderSpec plain;
+    plain.id    = "nose/nose-scale-depth-decr|incr";
+    plain.label = "Nose depth";
+
+    foundation::SliderSection section;
+    section.name    = "Body";
+    section.sliders = {shape, plain};
+    foundation::TaskViewSpec view;
+    view.name     = "Main";
+    view.sections = {section};
+    const std::vector<foundation::TaskViewSpec> views{view};
+
+    ui::ModifierPanel panel(views);
+
+    const auto* described =
+        panel.findChild<QSlider*>(QStringLiteral("slider:bodyshapes/bodyshapes-elvs-fem-diamond"));
+    REQUIRE(described != nullptr);
+    // What it does comes first; the id stays because it IS the --set argument.
+    CHECK(described->toolTip().startsWith(QStringLiteral("Broader hips")));
+    CHECK(described->toolTip().contains(QStringLiteral("bodyshapes-elvs-fem-diamond")));
+    // Screen readers do not read tooltips, so the words go where they are
+    // announced as well.
+    CHECK(described->accessibleDescription() == QString::fromStdString(shape.description));
+
+    // A slider with no description keeps the old behaviour rather than showing
+    // an empty tooltip, which reads as broken instead of absent.
+    const auto* bare =
+        panel.findChild<QSlider*>(QStringLiteral("slider:nose/nose-scale-depth-decr|incr"));
+    REQUIRE(bare != nullptr);
+    CHECK(bare->toolTip() == QStringLiteral("nose/nose-scale-depth-decr|incr"));
+    CHECK(bare->accessibleDescription().isEmpty());
+}
