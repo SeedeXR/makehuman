@@ -5981,8 +5981,13 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       **DONE 2026-09-24 -- `--vertex-bones` ships, the blocker is GONE.** No
       new rig code: `compile(skeleton, 1)` keeps the strongest influence, so
       one influence IS the dominant bone. Prints "index bone" for all 19,158
-      base vertices; 140 of 163 bones dominate at least one, 5,090 vertices sit
-      on the arm chain.
+      base vertices; 140 of **179** bones dominate at least one, and **5,286**
+      vertices sit on the arm chain.
+      **CORRECTION**: first written as "140 of 163, 5,090 on the arm chain".
+      Both were wrong. 163 is `default.mhskel`; the app's default `--rig` is
+      **`mixamo_superset` (179 bones)**, set at `src/app/main.cpp:3221`, and
+      that is the rig `--vertex-bones` reads. 5,090 was a PREFIX count that
+      missed `wrist` -- see below.
       **The measurement that proves it, and that quantifies failure mode 1
       above** (shipped base mesh, default rig): the body's max |x| in the
       y 3.0..3.5 band is **4.052 dm including arms and 1.332 without** -- the
@@ -5999,8 +6004,35 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       SEPARATION rather than the format (control: a constant bone compiled
       clean and went red, while passing line-count, format, index-order and
       determinism).
-      **NEXT ATTEMPT: build the body profile from this with the arm chain
-      excluded. DO NOT TUNE PARAMETERS.**
+      **`--bone-parents` ships alongside it, and it is not a convenience.**
+      Arm membership by NAME PREFIX is wrong: `upperarm|lowerarm|shoulder|
+      clavicle|hand|finger|metacarpal|thumb` misses **`wrist.L`/`wrist.R`**,
+      whose 96 vertices sit **4.3-4.5 dm off the body axis** -- further out
+      than any part of the torso, because hands hang beside the hips. So the
+      first arm-excluded profile still had two wrists in it and read **4.685**
+      at hip height instead of 1.353. `--bone-parents` prints "bone parent" for
+      the whole rig, and arm membership becomes the CLOSURE below
+      `shoulder*`/`clavicle*`: **62 bones**, which contains the prefix list
+      exactly plus the two wrists, with no false positives. The gate now
+      computes that closure itself and asserts the hip band, which is the band
+      that would have caught it.
+      **PROFILE STATUS, measured 2026-09-24 -- read this before the next
+      attempt.** With the closure the profile is correct in KIND: the 4.685
+      outlier is gone and the torso maxes at 1.90 dm. It is still **too sparse
+      to use raw**. Binning torso vertices by 0.25 dm height x 16 azimuth
+      sectors leaves **45 vertices across all 16 sectors at y 5.00** -- under 3
+      per sector -- and that shows as two artefacts, both of which are the
+      sparsity and NOT a parameter:
+        1. sectors 90 and 270 read **0.00** for y 4.50..5.25, because at
+           armpit height every vertex on the side of the body is arm-weighted.
+           A rope there would collapse to the axis.
+        2. mirror sectors disagree -- 135 reads 1.51 where 225 reads 1.90 --
+           on a mesh that is symmetric.
+      **So the next attempt samples the torso FACES, not its vertices.** The
+      machinery already exists and is already used by cornrows:
+      `region_triangles` + `closest_on_triangle` in `tools/make_hair_styles.py`.
+      **DO NOT TUNE PARAMETERS, and do not smooth the vertex profile -- that
+      would be fitting around a sampling problem.**
       Reverted cleanly both times: generator restored, `data/hair/locs.*`
       deleted, `--check` back to 6 files matching a fresh derivation.
       **BANTU KNOTS shipped 2026-09-23**, in four render-and-look iterations,

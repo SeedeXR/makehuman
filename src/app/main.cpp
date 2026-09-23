@@ -3081,6 +3081,14 @@ int main(int argc, char** argv) {
                        "raycast at it, which is what the 2026-09-11 attempt got wrong. "
                        "Asking for more than the cap holds prints the whole cap."),
         QStringLiteral("n"));
+    const QCommandLineOption boneParentsOpt(
+        QStringLiteral("bone-parents"),
+        QStringLiteral("Print the rig's hierarchy as \"bone parent\", root bones as "
+                       "\"bone -\", and exit. The companion to --vertex-bones: whether a "
+                       "vertex belongs to an arm is a question about the SKELETON, not "
+                       "about how a bone is spelled. Measured the hard way -- a prefix "
+                       "list of upperarm/lowerarm/shoulder/hand/finger misses `wrist`, "
+                       "and 96 wrist vertices sit 4.4 dm off the body axis."));
     const QCommandLineOption vertexBonesOpt(
         QStringLiteral("vertex-bones"),
         QStringLiteral("Print the DOMINANT bone of every base-mesh vertex, as "
@@ -3445,6 +3453,7 @@ int main(int argc, char** argv) {
     parser.addOption(listPoseUnitsOpt);
     parser.addOption(listWorkspacesOpt);
     parser.addOption(printChoicesOpt);
+    parser.addOption(boneParentsOpt);
     parser.addOption(vertexBonesOpt);
     parser.addOption(spreadRootsOpt);
     parser.addOption(scalpPathOpt);
@@ -3953,6 +3962,34 @@ int main(int argc, char** argv) {
     // The BASE mesh in rest, deliberately: a proxy binds to the base mesh, so
     // generation time is the only time these roots mean anything. Roots for a
     // posed or morphed body would be the same vertices in different places.
+    // The rig's shape, so a caller can ask which bones are BELOW another one.
+    //
+    // --vertex-bones names the bone; this says where that bone sits. Together
+    // they answer "is this vertex on an arm" as a closure over the hierarchy
+    // rather than as a guess about names -- which was measured to be necessary,
+    // not tidy: `wrist` is on the arm chain and matches no prefix anyone would
+    // think to write, and its 96 vertices sit further off the body axis than
+    // any part of the torso.
+    if (parser.isSet(boneParentsOpt)) {
+        const auto skelPath = rigFile(".mhskel");
+        if (!std::filesystem::exists(skelPath)) {
+            std::fprintf(stderr, "unknown --rig %s; available: %s\n", rigNameRef().c_str(),
+                         availableRigs().c_str());
+            return 1;
+        }
+        const auto skel = mh::rig::loadSkeleton(skelPath);
+        if (!skel) {
+            std::fprintf(stderr, "cannot load the rig: %s\n", skel.error().message().c_str());
+            return 1;
+        }
+        for (const auto& bone : skel->bones) {
+            const bool root = bone.parent < 0;
+            std::printf("%s %s\n", bone.name.c_str(),
+                        root ? "-" : skel->bones[static_cast<size_t>(bone.parent)].name.c_str());
+        }
+        return 0;
+    }
+
     // Which bone owns a vertex -- the one question the surface alone cannot
     // answer.
     //

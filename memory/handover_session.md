@@ -4,6 +4,66 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-24 00:40:00 — Session · **A prefix list is not a rig, and two corrections**
+
+Network still down; seven commits queued.
+
+### Two corrections to the tick before this one
+1. **"140 of 163 bones" was wrong — it is 140 of 179.** 163 is
+   `default.mhskel`; the app's default `--rig` is **`mixamo_superset`**
+   (`src/app/main.cpp:3221`), which has 179 bones, and that is the rig
+   `--vertex-bones` reads. Both rigs ship.
+2. **"5,090 vertices on the arm chain" was wrong — it is 5,286.** 5,090 was a
+   prefix count, and the prefix list was missing a bone.
+
+### The prefix list was missing `wrist`, and it mattered
+Setting out to build the arm-excluded body profile, the very first run still
+had an outlier: **4.68 dm off the body axis at hip height**, where the torso
+is 1.35. The culprit was `wrist.L`/`wrist.R` — 96 vertices, no prefix anyone
+would think to write, and sitting further from the axis than any part of the
+torso because **hands hang beside the hips**.
+
+The chest-band gate stayed green throughout, because wrists are not in the
+chest band. A gate measuring one band cannot police a rule about the whole
+mesh.
+
+**So arm membership stopped being a spelling question.** `--bone-parents`
+prints "bone parent" for the whole rig, and the arm is the CLOSURE below
+`shoulder*`/`clavicle*`: **62 bones** — exactly the prefix list plus the two
+wrists, no false positives. The gate now computes that closure itself, and
+gained the **hip band**, which is the band that would have caught it.
+**Control:** dropping `wrist.L`/`wrist.R` back out reads 4.5493 against a bar
+of 2.5 and fails loudly. A second control breaking the closure walk itself
+gives 4 bones instead of 62.
+
+### The profile, measured — and why the rope was NOT built this tick
+With the closure the profile is correct in kind: the 4.68 outlier is gone and
+the torso maxes at 1.90 dm. **It is still too sparse to use raw.** Binning
+torso vertices at 0.25 dm x 16 sectors leaves **45 vertices across all 16
+sectors at y 5.00** — under three per sector — and that shows as two
+artefacts:
+
+1. sectors 90 and 270 read **0.00** for y 4.50..5.25: at armpit height every
+   vertex on the side of the body is arm-weighted, so a rope there would
+   collapse to the axis;
+2. mirror sectors disagree — 135 reads 1.51 where 225 reads 1.90 — on a mesh
+   that is symmetric.
+
+Both are the sampling, not a parameter. Building rope geometry on this would
+have repeated attempt 2's mistake in a new costume, so I stopped and wrote
+down the number instead. **The next attempt samples the torso FACES**, with
+`region_triangles` + `closest_on_triangle`, which cornrows already use.
+
+### Sweep
+**1490/1490**, clang-format clean. No new ctest: `--bone-parents` is gated
+inside the existing `app_vertex_bones`, which now drives both flags.
+
+### Still waiting on the owner — unchanged
+KTX2/ETC1S deletion · `.mhm` `clothes none` on re-save · **"hold to run"**,
+asked a fourth time.
+
+---
+
 ## 2026-09-24 00:05:00 — Session · **The locs blocker gets a name and a door**
 
 Network still down; six commits now queued. Loop survived it again.
@@ -47,8 +107,9 @@ y 3.0..6.0, exactly the band a loc crosses between skull and shoulder; above
 the shoulders arms change nothing (2.7%), which is the other half of the
 claim: this discriminates by **anatomy, not height**.
 
-19,158 lines, one per base vertex, 140 of 163 bones dominate at least one,
-5,090 vertices on the arm chain.
+19,158 lines, one per base vertex, 140 of 179 bones dominate at least one,
+5,286 vertices on the arm chain. (First written as "140 of 163, 5,090" --
+both wrong, corrected in the tick below.)
 
 Prints the bone NAME, not a classification: whether `upperarm01.L` counts as
 an arm is the generator's policy, and a rig we do not ship would need a

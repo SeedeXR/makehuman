@@ -32,11 +32,63 @@ if(NOT rc EQUAL 0)
 endif()
 string(REPLACE "\n" ";" lines "${out}")
 
-# The arm chain of the shipped rig, from the shoulder out. `shoulder01` is the
-# scapula and `upperarm01` the humerus -- the retarget fix of 2026-09-20 turns
-# on that distinction, so both are named rather than matched by a prefix that
-# might quietly pick up neither.
-set(arm_prefixes upperarm lowerarm shoulder clavicle hand finger metacarpal thumb)
+# The arm chain, as a CLOSURE over the rig rather than a list of prefixes.
+#
+# This was a prefix list -- upperarm/lowerarm/shoulder/clavicle/hand/finger/
+# metacarpal/thumb -- and it was wrong. MEASURED: it misses `wrist.L`/`wrist.R`,
+# whose 96 vertices sit 4.3-4.5 dm off the body axis, further out than any part
+# of the torso. The band this test measures does not contain them, so the gate
+# stayed green while the generator built a profile with two wrists in it.
+# Whether a vertex is on an arm is a question about the SKELETON, which is why
+# `--bone-parents` exists.
+execute_process(COMMAND "${APP}" --bone-parents
+                OUTPUT_VARIABLE parents_out RESULT_VARIABLE prc)
+if(NOT prc EQUAL 0)
+    message(FATAL_ERROR "--bone-parents failed: ${prc}")
+endif()
+string(REPLACE "\n" ";" parent_lines "${parents_out}")
+set(all_bones "")
+foreach(line IN LISTS parent_lines)
+    if(line STREQUAL "")
+        continue()
+    endif()
+    string(REPLACE " " ";" pp "${line}")
+    list(LENGTH pp pn)
+    if(NOT pn EQUAL 2)
+        message(FATAL_ERROR "expected '<bone> <parent>', got \"${line}\"")
+    endif()
+    list(GET pp 0 b)
+    list(GET pp 1 par)
+    set("parent_of_${b}" "${par}")
+    list(APPEND all_bones "${b}")
+endforeach()
+
+# The seeds are the two bones the shoulder girdle hangs from. `shoulder01` is
+# the scapula and `upperarm01` the humerus -- the retarget fix of 2026-09-20
+# turns on that distinction, and seeding at the scapula takes both.
+set(arm_bones "")
+foreach(b IN LISTS all_bones)
+    set(cur "${b}")
+    set(guard 0)
+    while(NOT cur STREQUAL "-" AND guard LESS 200)
+        if(cur MATCHES "^(shoulder|clavicle)")
+            list(APPEND arm_bones "${b}")
+            break()
+        endif()
+        if(NOT DEFINED "parent_of_${cur}")
+            break()
+        endif()
+        set(cur "${parent_of_${cur}}")
+        math(EXPR guard "${guard} + 1")
+    endwhile()
+endforeach()
+list(LENGTH arm_bones n_arm_bones)
+# MEASURED on the default rig (mixamo_superset, 179 bones): 62 bones hang below
+# the shoulder girdle. Zero would mean the seeds stopped matching and every
+# check below passed vacuously.
+if(n_arm_bones LESS 40)
+    message(FATAL_ERROR "only ${n_arm_bones} bones below the shoulder girdle; measured 62")
+endif()
 
 set(expect 0)
 set(arm_count 0)
@@ -44,6 +96,7 @@ set(all_max 0.0)
 set(noarm_max 0.0)
 set(high_all_max 0.0)
 set(high_noarm_max 0.0)
+set(hip_noarm_max 0.0)
 foreach(line IN LISTS lines)
     if(line STREQUAL "")
         continue()
@@ -65,12 +118,9 @@ foreach(line IN LISTS lines)
     endif()
 
     set(is_arm FALSE)
-    foreach(p IN LISTS arm_prefixes)
-        if(bone MATCHES "^${p}")
-            set(is_arm TRUE)
-            break()
-        endif()
-    endforeach()
+    if(bone IN_LIST arm_bones)
+        set(is_arm TRUE)
+    endif()
     if(is_arm)
         math(EXPR arm_count "${arm_count} + 1")
     endif()
@@ -98,6 +148,13 @@ foreach(line IN LISTS lines)
         if(NOT is_arm AND x GREATER high_noarm_max)
             set(high_noarm_max "${x}")
         endif()
+    elseif(y GREATER_EQUAL 2.0 AND y LESS 2.5)
+        # The WRIST band -- see the closure above. This is the assertion the
+        # prefix list failed: hands hang beside the hips, so a vertex missed by
+        # the arm rule shows up here and nowhere else.
+        if(NOT is_arm AND x GREATER hip_noarm_max)
+            set(hip_noarm_max "${x}")
+        endif()
     endif()
     math(EXPR expect "${expect} + 1")
 endforeach()
@@ -110,8 +167,8 @@ endif()
 # prefixes stopped matching the rig's names and every check below passed
 # vacuously.
 if(arm_count LESS 3000 OR arm_count GREATER 8000)
-    message(FATAL_ERROR "${arm_count} arm-dominated vertices; measured 5090, so the "
-                        "bone names or the rig have changed")
+    message(FATAL_ERROR "${arm_count} arm-dominated vertices; measured 5286 over the "
+                        "whole mesh, so the rig has changed")
 endif()
 
 # THE discriminating assertion. Measured 4.052 -> 1.332; the bar is a halving,
@@ -125,6 +182,16 @@ if(NOT noarm_max LESS 2.0)
     message(FATAL_ERROR "excluding arm vertices leaves the chest band ${noarm_max} wide "
                         "(measured 1.332) -- the dominant bone is not separating "
                         "arm from torso")
+endif()
+
+# The wrist band. MEASURED: with `wrist` wrongly counted as torso this reads
+# 4.685; with the closure it reads 1.353. The bar sits between them and nowhere
+# near either, so it fails loudly on a rule that lets any part of the hand or
+# forearm through, and passes with room on a correct one.
+if(NOT hip_noarm_max LESS 2.5)
+    message(FATAL_ERROR "at hip height the arm-excluded body is ${hip_noarm_max} wide "
+                        "(measured 1.353) -- part of the hand or forearm is being "
+                        "counted as torso")
 endif()
 
 # ...and the other half: above the shoulders the arms are not there to exclude,
