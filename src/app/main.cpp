@@ -39,6 +39,7 @@
 #include "makehuman/io/UsdWriter.h"
 #include "makehuman/render/OffscreenRenderer.h"
 #include "makehuman/rig/BvhPose.h"
+#include "makehuman/rig/CentersOfRotation.h"
 #include "makehuman/rig/CorrectiveRuntime.h"
 #include "makehuman/rig/EyeAim.h"
 #include "makehuman/rig/Facs.h"
@@ -1025,6 +1026,15 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
 /// unconditionally, and nothing reads it before then.
 bool gUseDualQuaternion = true;
 
+/// `--skinning cor`. A THIRD method, so the pair of booleans is read through
+/// `skinningMethod()` rather than compared in three places.
+///
+/// Optimised centres of rotation (Le & Hodgins 2016): DQS rotates a vertex
+/// about the JOINT, this rotates it about the vertex's own centre, which is
+/// what removes the bulge DQS leaves on the inside of a bend. It is opt-in
+/// because it carries a precompute the other two do not.
+bool gUseCentersOfRotation = false;
+
 /// Whether a loaded pose is APPLIED. The reference's `_posed`
 /// (`shared/animation.py:986-994`), driven by the toolbar's Pose toggle: being
 /// posed is this flag AND a pose being loaded, which is what `PoseRig::posed()`
@@ -1199,10 +1209,68 @@ std::optional<std::filesystem::path> bakeWrinkleBeside(
 /// The posing itself is `rig::poseMesh`; what is left here is the two settings
 /// the user owns and the reporting, which is the part that must not live in a
 /// library.
+/// Which skinning the run uses. `gUseDualQuaternion` stayed a bool for as long
+/// as there were two choices; a third makes it a selector, and one door decides
+/// so the flag, the menu and the pose call cannot disagree.
+mh::rig::SkinningMethod skinningMethod() {
+    if (gUseCentersOfRotation) return mh::rig::SkinningMethod::CentersOfRotation;
+    return gUseDualQuaternion ? mh::rig::SkinningMethod::DualQuaternion
+                              : mh::rig::SkinningMethod::Linear;
+}
+
+/// The centres of rotation for the body as it is NOW, computed at most once per
+/// shape.
+///
+/// Keyed on a hash of the rest coordinates rather than on a dirty flag set by
+/// every caller that morphs the mesh: there are a dozen such callers and one
+/// that forgot would skin the new body about the old body's centres, which is
+/// a wrong image rather than a crash. Hashing 19,158 vertices costs
+/// microseconds against a precompute measured in hundreds of milliseconds.
+std::span<const mh::foundation::Vec3> corCenters(const mh::core::Mesh& mesh, const PoseRig& rig) {
+    static std::vector<mh::foundation::Vec3> centers;
+    static uint64_t stamp = 0;
+
+    uint64_t h = 1469598103934665603ULL;  // FNV-1a
+    for (const mh::foundation::Vec3& v : mesh.coord()) {
+        for (const float c : {v.x, v.y, v.z}) {
+            uint32_t bits = 0;
+            std::memcpy(&bits, &c, sizeof(bits));
+            h = (h ^ bits) * 1099511628211ULL;
+        }
+    }
+    if (h == stamp && centers.size() == mesh.vertexCount()) return centers;
+
+    // `computeCentersOfRotation` wants triangles; the base mesh is quads, split
+    // the way everything else here splits them -- a fan from corner 0, which is
+    // what `bindToSurface` and `bodySurfaceArea` both do.
+    std::vector<uint32_t> tris;
+    const std::span<const uint32_t> fv = mesh.fvert();
+    const size_t stride                = mesh.vertsPerPrimitive();
+    if (stride >= 3) {
+        tris.reserve(fv.size() * 3);
+        for (size_t f = 0; f + stride <= fv.size(); f += stride) {
+            for (size_t k = 1; k + 1 < stride; ++k) {
+                tris.insert(tris.end(), {fv[f], fv[f + k], fv[f + k + 1]});
+            }
+        }
+    }
+    centers = mh::rig::computeCentersOfRotation(mesh.coord(), tris, rig.weights);
+    stamp   = h;
+    return centers;
+}
+
 bool poseInPlace(mh::core::Mesh& mesh, PoseRig& rig) {
+    const mh::rig::SkinningMethod method = skinningMethod();
+    // The centres depend on the REST shape and the weights, so they survive
+    // every pose the body does not change -- but not a morph. `corCenters`
+    // keys them on the mesh itself and recomputes only when it moves.
+    const std::span<const mh::foundation::Vec3> centers =
+        method == mh::rig::SkinningMethod::CentersOfRotation
+            ? corCenters(mesh, rig)
+            : std::span<const mh::foundation::Vec3>{};
     const mh::rig::PoseOptions options{
-        .method      = gUseDualQuaternion ? mh::rig::SkinningMethod::DualQuaternion
-                                          : mh::rig::SkinningMethod::Linear,
+        .method      = method,
+        .centers     = centers,
         .apply       = gApplyPose,
         .correctives = gCorrectives ? &gCorrectives->runtime : nullptr};
     const auto ok = mh::rig::poseMesh(mesh, rig, options);
@@ -1214,7 +1282,9 @@ bool poseInPlace(mh::core::Mesh& mesh, PoseRig& rig) {
             break;
         case mh::rig::PoseError::SkinningFailed:
             std::fprintf(stderr, "skinning failed (%s)\n",
-                         gUseDualQuaternion ? "dual quaternion" : "linear blend");
+                         gUseCentersOfRotation ? "centres of rotation"
+                         : gUseDualQuaternion  ? "dual quaternion"
+                                               : "linear blend");
             break;
         case mh::rig::PoseError::StoreFailed:
             std::fprintf(stderr, "cannot store the posed mesh: it has a different vertex count\n");
@@ -3318,9 +3388,11 @@ int main(int argc, char** argv) {
     // the reference did, which is the only thing it is now for.
     const QCommandLineOption skinningOpt(
         QStringLiteral("skinning"),
-        QStringLiteral("Skinning method: dqs (default) or linear. Dual quaternion skinning keeps "
-                       "a twisted limb's volume where linear blending collapses it; linear is "
-                       "what the reference did."),
+        QStringLiteral("Skinning method: dqs (default), linear or cor. Dual quaternion skinning "
+                       "keeps a twisted limb's volume where linear blending collapses it; linear "
+                       "is what the reference did; cor rotates each vertex about its own centre "
+                       "of rotation, which removes the bulge dqs leaves inside a bend, at the "
+                       "cost of a precompute whenever the body shape changes."),
         QStringLiteral("method"), QStringLiteral("dqs"));
     const QCommandLineOption customTargetsOpt(
         QStringLiteral("custom-targets"),
@@ -3376,12 +3448,14 @@ int main(int argc, char** argv) {
     // back to the litsphere would make `--shading pbrr` produce a plausible
     // image that is not what was asked for.
     const QString skinningName = parser.value(skinningOpt).toLower();
-    if (skinningName != QLatin1String("linear") && skinningName != QLatin1String("dqs")) {
-        std::fprintf(stderr, "unknown skinning method \"%s\" (linear or dqs)\n",
+    if (skinningName != QLatin1String("linear") && skinningName != QLatin1String("dqs") &&
+        skinningName != QLatin1String("cor")) {
+        std::fprintf(stderr, "unknown skinning method \"%s\" (linear, dqs or cor)\n",
                      skinningName.toStdString().c_str());
         return 1;
     }
-    gUseDualQuaternion = skinningName == QLatin1String("dqs");
+    gUseDualQuaternion    = skinningName == QLatin1String("dqs");
+    gUseCentersOfRotation = skinningName == QLatin1String("cor");
 
     // The stored skinning preference belongs to the WINDOW, and a headless run
     // builds no window, so `--skinning` alone decides what this run does. That

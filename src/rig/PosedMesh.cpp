@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "makehuman/rig/PosedMesh.h"
 
+#include "makehuman/rig/CentersOfRotation.h"
 #include "makehuman/rig/Skinning.h"
 
 namespace mh::rig {
@@ -58,9 +59,21 @@ std::expected<void, PoseError> poseMesh(core::Mesh& mesh, PoseRig& rig, PoseOpti
     }
 
     std::vector<foundation::Vec3> posed;
-    const bool skinned = options.method == SkinningMethod::DualQuaternion
-                             ? skinPositionsDqs(toSkin, rig.weights, skinning, posed)
-                             : skinPositions(toSkin, rig.weights, skinning, posed);
+    bool skinned = false;
+    switch (options.method) {
+        case SkinningMethod::DualQuaternion:
+            skinned = skinPositionsDqs(toSkin, rig.weights, skinning, posed);
+            break;
+        case SkinningMethod::CentersOfRotation:
+            // Refused rather than defaulted when the caller supplied none: a
+            // silent fall back to LBS would make "cor" a flag that does
+            // nothing on the paths that forgot to fill the cache, which is the
+            // exact shape of defect this repository keeps finding.
+            skinned = !options.centers.empty() &&
+                      skinPositionsCor(toSkin, rig.weights, skinning, options.centers, posed);
+            break;
+        case SkinningMethod::Linear: skinned = skinPositions(toSkin, rig.weights, skinning, posed);
+    }
     if (!skinned) return std::unexpected(PoseError::SkinningFailed);
 
     // changeCoords, not setCoords: posing must not redefine the morph base the

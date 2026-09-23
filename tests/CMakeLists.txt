@@ -642,6 +642,41 @@ if(MH_HAVE_RENDER)
              -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
     set_tests_properties(app_skinning_dqs_differs PROPERTIES
         FIXTURES_REQUIRED "app_lbs_obj;app_dqs_obj")
+    # Centres of rotation, the third method. It shipped as a library with tests
+    # and NO caller for a milestone -- `skinPositionsCor` was reachable only
+    # from its own unit test -- so these gates exist to keep it reachable.
+    #
+    # Same basename in its own directory, for the reason the DQS pair records
+    # above: differing `mtllib` lines would make any two exports differ.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/skin_cor)
+    add_test(NAME app_skinning_cor COMMAND makehuman
+             --rig mixamo_superset --pose tpose --skinning cor
+             --export ${CMAKE_CURRENT_BINARY_DIR}/skin_cor/pose.obj)
+    set_tests_properties(app_skinning_cor PROPERTIES
+        PASS_REGULAR_EXPRESSION "wrote .*pose\\.obj"
+        FIXTURES_SETUP app_cor_obj)
+    # It must differ from BOTH the others. Against linear alone, a `cor` that
+    # quietly fell through to DQS would pass -- and falling through is exactly
+    # what the empty-centres path would do if `poseMesh` defaulted instead of
+    # refusing.
+    add_test(NAME app_skinning_cor_differs_from_linear COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/skin_lbs/pose.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/skin_cor/pose.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_skinning_cor_differs_from_linear PROPERTIES
+        FIXTURES_REQUIRED "app_lbs_obj;app_cor_obj")
+    add_test(NAME app_skinning_cor_differs_from_dqs COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/skin_dqs/pose.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/skin_cor/pose.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_skinning_cor_differs_from_dqs PROPERTIES
+        FIXTURES_REQUIRED "app_dqs_obj;app_cor_obj")
+    # An unknown method is refused rather than defaulted, and the message now
+    # has to name all three.
+    add_test(NAME app_skinning_unknown_names_cor COMMAND makehuman --skinning nope)
+    set_tests_properties(app_skinning_unknown_names_cor PROPERTIES
+        PASS_REGULAR_EXPRESSION "linear, dqs or cor")
+
     # Pose-space correctives through the application, end to end: manifest ->
     # compile -> blob -> bind -> signal -> weights -> deltas -> skinning.
     #
@@ -5179,6 +5214,11 @@ if(MH_HAVE_RENDER)
                  "-DKEYS=icns"
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
 
+        # The licence texts must BE in the bundle, not merely referenced by it.
+        # `MACOSX_BUNDLE_COPYRIGHT` says "See LICENSING.md" and LICENSING.md
+        # section 3 claims the bundle "includes this notice"; both were false
+        # until the bundle actually carried them, and a claim in a licence file
+        # is exactly the kind that has to be enforced rather than trusted.
         add_test(NAME app_bundle_plist COMMAND ${CMAKE_COMMAND}
                  -DFILE=$<TARGET_BUNDLE_CONTENT_DIR:makehuman>/Info.plist
                  # No trailing .icns on the value -- see Info.plist.in.

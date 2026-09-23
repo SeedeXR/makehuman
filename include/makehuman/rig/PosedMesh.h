@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <span>
 #include <vector>
 
 namespace mh::rig {
@@ -50,10 +51,23 @@ struct PoseRig {
 /// be depended on by an AGPL module (LICENSING.md 4). The application owns the
 /// translation, as it already does for every other signal that crosses that
 /// line.
-enum class SkinningMethod : uint8_t { Linear, DualQuaternion };
+enum class SkinningMethod : uint8_t { Linear, DualQuaternion, CentersOfRotation };
 
 struct PoseOptions {
     SkinningMethod method{SkinningMethod::Linear};
+
+    /// One centre of rotation per vertex, for `SkinningMethod::CentersOfRotation`
+    /// and ignored by the other two.
+    ///
+    /// Passed IN rather than computed here, because the precompute is a
+    /// different KIND of work from posing: it depends on the rest shape and the
+    /// weights, not on the pose, so it survives every frame the body does not
+    /// change -- and it costs hundreds of milliseconds, which is not a price to
+    /// pay per pose. The caller owns that cache and knows when the shape moved.
+    ///
+    /// EMPTY with `CentersOfRotation` selected is a caller error and returns
+    /// `SkinningFailed` rather than quietly skinning about the origin.
+    std::span<const foundation::Vec3> centers{};
 
     /// False draws the character UNPOSED with the rig still loaded -- the
     /// reference's `_posed` (`shared/animation.py:986-991`), driven by the
