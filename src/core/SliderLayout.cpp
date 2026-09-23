@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <fstream>
 #include <ranges>
@@ -55,6 +56,49 @@ std::string guessSliderLabel(std::string_view modifierName, std::string_view gro
         label += capitalise(parts[i]);
     }
     return label;
+}
+
+/// Words a user is likely to search for, per modifier.
+///
+/// EVIDENCE, not taste: the project's owner did not know several of these
+/// sliders existed, and the searches recorded as having failed are "chubby",
+/// "fat", "abs", "six pack" and "toned" -- against shipped labels reading
+/// Weight, Stomach tone and Muscle. Every entry below exists because the word
+/// on the left finds nothing today.
+///
+/// Matched on the modifier's full name by SUBSTRING, so one entry covers a
+/// whole family (`breast/` catches six sliders). Deliberately short: a synonym
+/// list that tries to be a thesaurus makes the search match everything, which
+/// is the same as matching nothing.
+///
+/// A table in code rather than data, beside `guessSliderLabel`, which is the
+/// other place this file decides what a user reads. It becomes a data file the
+/// day someone wants to translate it -- a search that only works in English is
+/// a known limit, recorded here rather than discovered later.
+std::string searchKeywords(std::string_view modifier) {
+    struct Entry {
+        std::string_view match;
+        std::string_view words;
+    };
+
+    static constexpr std::array<Entry, 12> kTable{{
+        {"macrodetails-universal/Weight", "fat chubby heavy thin skinny slim overweight"},
+        {"macrodetails-universal/Muscle", "toned muscular buff ripped strong athletic"},
+        {"stomach/stomach-tone", "abs sixpack six-pack belly tummy gut core"},
+        {"stomach/stomach-pregnant", "pregnant belly bump"},
+        {"macrodetails/Age", "old young elderly child baby"},
+        {"macrodetails/Gender", "male female man woman masculine feminine"},
+        {"macrodetails/African", "ethnicity black"},
+        {"macrodetails/Asian", "ethnicity"},
+        {"macrodetails/Caucasian", "ethnicity white"},
+        {"breast/", "bust chest bra cleavage"},
+        {"pelvis/", "hips waist"},
+        {"buttocks/", "bum butt glutes rear"},
+    }};
+    for (const Entry& e : kTable) {
+        if (modifier.find(e.match) != std::string_view::npos) return std::string(e.words);
+    }
+    return {};
 }
 
 std::expected<std::vector<foundation::TaskViewSpec>, SliderLayoutError> loadSliderLayout(
@@ -125,8 +169,9 @@ std::expected<std::vector<foundation::TaskViewSpec>, SliderLayoutError> loadSlid
                 const Modifier& m = *found->second;
 
                 foundation::SliderSpec spec;
-                spec.id     = full;
-                spec.camera = d.value("cam", std::string{});
+                spec.id       = full;
+                spec.keywords = searchKeywords(full);
+                spec.camera   = d.value("cam", std::string{});
                 // An explicit "label": "" is kept, matching the reference,
                 // which tests the key's presence rather than its emptiness
                 // (`guimodifier.py:239`). Not in the shipped data; latent.

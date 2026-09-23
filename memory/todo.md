@@ -9023,7 +9023,27 @@ ovary/gonadal, thyroid).
       named presets that set a combination, the way **Body shapes** already
       does for silhouettes, would turn three lookups into one click. The
       machinery exists; only the recipes do not.
-- [ ] **Discoverability, and this is the evidence.** The project's own owner
+- [x] **Discoverability -- DONE 2026-09-23.** `SliderSpec::keywords` carries
+      words the search matches beside the label and the id, filled by
+      `searchKeywords()` in `src/core/SliderLayout.cpp` from a 12-entry table
+      matched on the modifier's full name by substring, so one entry covers a
+      family (`breast/` catches six sliders).
+      The entries exist because the words on the left found NOTHING: chubby,
+      fat, overweight -> Weight; toned, muscular, ripped -> Muscle; abs,
+      sixpack, tummy -> Stomach tone. Deliberately short -- a synonym list that
+      grows into a thesaurus matches every row, which is the same as matching
+      none, and a test asserts the nose slider carries no body words.
+      **TWO gates, because one of them gates nothing on its own.**
+      `tests/ui/test_slider_search.cpp` drives the panel with SYNTHETIC specs,
+      so deleting the whole table leaves it green; `test_slider_layout.cpp`
+      asserts the SHIPPED sliders carry the words. Proven red by removing the
+      keyword match: all six searches fail.
+      A table in code, beside `guessSliderLabel`, which is the other place that
+      file decides what a user reads. **KNOWN LIMIT, recorded rather than
+      discovered later: the synonyms are English only.** It becomes a data file
+      the day someone wants to translate it.
+      *(the original entry follows)*
+      **Discoverability, and this is the evidence.** The project's own owner
       did not know these sliders were there. 291 sliders behind 7 tabs and a
       free-text search is a lot of surface, and the search matches slider
       LABELS only — searching "chubby", "fat", "abs", "six pack" or "toned"

@@ -444,17 +444,17 @@ std::vector<mh::foundation::TaskViewSpec> toyLayout() {
     face.name = "Face";
     SliderSection head{"head shape", {}};
     head.sliders.push_back(
-        SliderSpec{"head/head-age-decr|incr", "Age", "frontView", -1.0F, 1.0F, 0.0F});
-    head.sliders.push_back(SliderSpec{"head/head-oval", "Oval", "", 0.0F, 1.0F, 0.0F});
+        SliderSpec{"head/head-age-decr|incr", "Age", "frontView", -1.0F, 1.0F, 0.0F, ""});
+    head.sliders.push_back(SliderSpec{"head/head-oval", "Oval", "", 0.0F, 1.0F, 0.0F, ""});
     SliderSection nose{"nose", {}};
     nose.sliders.push_back(
-        SliderSpec{"nose/nose-scale-depth-decr|incr", "Scale Depth", "", -1.0F, 1.0F, 0.25F});
+        SliderSpec{"nose/nose-scale-depth-decr|incr", "Scale Depth", "", -1.0F, 1.0F, 0.25F, ""});
     face.sections = {head, nose};
 
     TaskViewSpec gender;
     gender.name = "Gender";
     SliderSection macro{"macro", {}};
-    macro.sliders.push_back(SliderSpec{"macrodetails/Gender", "Gender", "", 0.0F, 1.0F, 0.5F});
+    macro.sliders.push_back(SliderSpec{"macrodetails/Gender", "Gender", "", 0.0F, 1.0F, 0.5F, ""});
     gender.sections = {macro};
 
     return {face, gender};
@@ -1478,7 +1478,7 @@ TEST_CASE("captions can shrink at 200% text instead of pinning the dock open", "
     mh::foundation::SliderSection section{"head shape", {}};
     // The longest real caption, plus a single word wrapping cannot help.
     for (const char* label : {"Scale depth of parietal side", "Invertedtriangular"}) {
-        section.sliders.push_back({std::string("head/") + label, label, "", -1.0F, 1.0F, 0.0F});
+        section.sliders.push_back({std::string("head/") + label, label, "", -1.0F, 1.0F, 0.0F, ""});
     }
     view.sections = {section};
     views.push_back(view);

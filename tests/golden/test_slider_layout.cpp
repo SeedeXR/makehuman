@@ -19,6 +19,8 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <string>
 #include <vector>
 
 using namespace mh;
@@ -199,4 +201,48 @@ TEST_CASE("loadStandardLayout puts the task views in the reference's tab order",
     CHECK_THAT(static_cast<double>(measure->sortOrder), WithinAbs(1.0, 1e-6));
 
     CHECK(standard->modifiers.size() == 343);
+}
+
+// The synonyms reach the SHIPPED sliders, not just a synthetic spec.
+//
+// `tests/ui/test_slider_search.cpp` drives the matching with specs it builds
+// itself, so it says nothing about whether any real slider carries a keyword.
+// Deleting the whole table would leave it green. This is the other half.
+TEST_CASE("the shipped sliders carry the words a user searches for", "[slider][layout][search]") {
+    const auto standard =
+        mh::core::loadStandardLayout(std::filesystem::path(MH_DATA_DIR) / "modifiers");
+    REQUIRE(standard.has_value());
+
+    // id -> keywords, across every view and section.
+    std::map<std::string, std::string> keywords;
+    for (const auto& view : standard->views) {
+        for (const auto& section : view.sections) {
+            for (const auto& slider : section.sliders)
+                keywords[slider.id] = slider.keywords;
+        }
+    }
+
+    // The three the owner actually searched for and did not find. The labels
+    // are Weight, Muscle and Stomach tone, so none of these words is reachable
+    // without the table.
+    struct Wanted {
+        std::string id;
+        std::string word;
+    };
+
+    for (const Wanted& w : std::vector<Wanted>{{"macrodetails-universal/Weight", "chubby"},
+                                               {"macrodetails-universal/Muscle", "toned"},
+                                               {"stomach/stomach-tone-decr|incr", "sixpack"}}) {
+        INFO(w.id << " should be findable by \"" << w.word << "\"");
+        const auto at = keywords.find(w.id);
+        REQUIRE(at != keywords.end());
+        CHECK(at->second.find(w.word) != std::string::npos);
+    }
+
+    // ...and the table is not applied to everything. A nose slider has no
+    // business carrying body synonyms, and a search that matches every row is
+    // the same as a search that matches none.
+    const auto nose = keywords.find("nose/nose-scale-depth-decr|incr");
+    REQUIRE(nose != keywords.end());
+    CHECK(nose->second.empty());
 }

@@ -17,6 +17,7 @@ struct SliderSpec {
     /// UI: it comes back unchanged when the value changes.
     std::string id;
     std::string label;
+
     /// A camera the reference moves to when this slider is touched
     /// (`frontView`, `leftView`, …). Empty when the file gives none.
     std::string camera;
@@ -24,6 +25,17 @@ struct SliderSpec {
     float minValue{0.0F};
     float maxValue{1.0F};
     float defaultValue{0.0F};
+
+    /// Extra words the search matches, beyond the label and the id.
+    ///
+    /// The project's OWN OWNER did not know some of these sliders existed, and
+    /// the reason is measurable: 291 sliders behind 7 tabs, searched by label
+    /// only, so "chubby", "fat", "abs", "six pack" and "toned" all find nothing
+    /// while the shipped labels say Weight, Stomach tone and Muscle. A user
+    /// searches for the word they have, not the word the data uses.
+    ///
+    /// Space separated and lower case; the UI treats it as one haystack.
+    std::string keywords;
 };
 
 /// A named group of sliders inside a task view, e.g. "head shape".

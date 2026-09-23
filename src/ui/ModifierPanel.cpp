@@ -424,10 +424,15 @@ void ModifierPanel::filter(const QString& text) {
     // every row once per section.
     QHash<QWidget*, int> showingPerSection;
     for (Row& r : rows_) {
+        // Keywords as well as the label and the id. A user searches for the
+        // word they have -- "abs", "chubby", "toned" -- and the shipped labels
+        // say Stomach tone, Weight and Muscle, so a label-only search answered
+        // none of the questions the owner actually asked of it.
         const bool show =
             needle.isEmpty() ||
             QString::fromStdString(r.spec.label).contains(needle, Qt::CaseInsensitive) ||
-            QString::fromStdString(r.spec.id).contains(needle, Qt::CaseInsensitive);
+            QString::fromStdString(r.spec.id).contains(needle, Qt::CaseInsensitive) ||
+            QString::fromStdString(r.spec.keywords).contains(needle, Qt::CaseInsensitive);
         r.container->setVisible(show);
         if (show) ++showingPerSection[r.container->parentWidget()];
     }
