@@ -306,11 +306,25 @@ def derive(verts, faces, app_path=""):
     wanted["bantu_knots.obj"] = bobj
     wanted["bantu_knots.mhclo"] = bmhclo
 
+    lpts, lfs, lroots, _, lshort, lcap, lncap = locs(verts, faces, app_path)
+    if lshort < 8:
+        raise RuntimeError(f"the shortest loc is {lshort} steps")
+    # Only the ROPE points go to the binder; the cap already carries its own
+    # bindings, one per base vertex it grew from.
+    lbinds = lcap + bind_points(app, lpts[lncap:])
+    if not lpts or len(lbinds) != len(lpts):
+        raise RuntimeError(f"{len(lbinds)} bindings for {len(lpts)} loc points")
+    lobj, lmhclo = write_bound_style("Locs", "locs", lpts, lfs, lbinds)
+    wanted["locs.obj"] = lobj
+    wanted["locs.mhclo"] = lmhclo
+
     grown = [math.dist((0, 0, 0), placed[b]) for b in used]
     summary = (f"afro: {len(used)} vertices, {len(keep)} faces\n"
                f"  offset 0 at the hairline .. {max(grown):.4f} dm at the crown, "
                f"mean {sum(grown) / len(grown):.4f}\n"
                f"cornrows: {len(pts)} vertices, {len(fs)} faces\n"
+               f"locs: {len(lpts)} vertices, {len(lfs)} faces, {len(lroots)} ropes, "
+               f"shortest {lshort} steps\n"
                f"bantu knots: {len(bpts)} vertices, {len(bfs)} faces, "
                f"{len(roots)} roots, closest pair "
                f"{min(math.dist(a, b) for i, a in enumerate(roots) for b in roots[i + 1:]):.4f} dm")
@@ -797,6 +811,265 @@ def bantu(verts, body_faces, app_path=""):
         allpts.extend(pts)
         allfaces.extend(fs)
     return allpts, allfaces, roots, app, cap_binds, len(cap_binds)
+
+
+# ---------------------------------------------------------------------------
+# Locs.
+#
+# THREE attempts were reverted before this one and not one of them failed on a
+# parameter. The log, because each answer is load-bearing here:
+#
+#  1. (2026-09-11) Treated the head as a SPHERE and dropped straight down, so
+#     every rope was buried in the neck.
+#  2. (2026-09-23) Asked the MESH how wide the body is and hung the rope just
+#     outside that. Better, and it failed two ways that traded off: following
+#     the silhouette flung the side ropes out along the ARMS, and limiting the
+#     drift left every rope bunched in a column.
+#  3. (2026-09-24) Fixed the flinging -- see `loc_path`, the shelf-versus-wall
+#     rule -- and RENDERED ropes hanging across the forehead, eyes and chin,
+#     because every rope fell vertically from its own root. Real hair at the
+#     hairline is combed BACK.
+#
+# So a loc is TWO segments, not one: it lies along the scalp from its root to
+# the rim -- that is the comb -- and only then hangs. The scalp leg is the
+# application's own geodesic (`--scalp-path`), the same Dijkstra cornrows use,
+# so the two cannot drift apart.
+#
+# Measured facts this rests on, all 2026-09-24:
+#  * The generator needs NO arm information. Excluding the arm chain leaves 82
+#    of 838 path points inside the skin (deepest 1.752 dm) because a rope
+#    beside the ear has nothing to land on and falls through the upper arm;
+#    the whole body leaves 10 of 766, deepest 0.444, at the same max radius.
+#  * The shelf rule is what stops the flinging. CONTROL, rule removed: max
+#    radius 2.763 dm. With it: 1.433.
+
+LOC_HALF = 0.06
+LOC_SIDES = 5
+LOC_STANDOFF = LOC_HALF + 0.02
+LOC_STEP = 0.15
+# Shoulder-length. The shoulder line is y 5.0..5.5 (`memory/todo.md`).
+LOC_FLOOR = 5.85
+LOC_WANTED = 42
+# The body's vertical axis in x,z: the centroid of torso vertices between y 2.0
+# and 6.0. NOT `CENTRE`, which is the CRANIUM centre and the frame the hairline
+# is measured in.
+BODY_AXIS = (0.0, 0.5481)
+LOC_SECTORS = 32
+# The lowest point of the hair-bearing scalp, MEASURED and already pinned in
+# `tests/check_roots.cmake` (the region's box is y 6.9890..8.4913). Above it the
+# rope is in contact with the head; below it it hangs free and can land on
+# something.
+LOC_SCALP_BOTTOM = 6.98
+# The rim the comb runs to: the region's rear, behind the cranium centre and
+# below the ear line. MEASURED: 41 of the 237 region vertices, y 6.989..7.367.
+LOC_REAR_ELEV = -25.0
+# A thin shell under the ropes, for the reason `BANTU_CAP` records: locs are
+# worn on a head OF HAIR, and 42 ropes 0.12 dm across cannot cover a scalp 1.5
+# dm wide. RENDERED without it, the crown showed as bare red scalp between the
+# ropes. Reuses `afro`'s shell at a fraction of its thickness, so the cap is
+# proven geometry rather than new.
+LOC_CAP = 0.09
+
+
+def scalp_region(app):
+    """The hair-bearing region as {index: position}, from the APPLICATION.
+
+    `--spread-roots 999` is clamped to the whole region, which is how cornrows
+    already asks for it -- the definition lives in `mh::core::hairBearingScalp`
+    and a second copy here would be free to drift.
+    """
+    out = subprocess.run([app, "--spread-roots", "999"], capture_output=True,
+                         text=True, check=True).stdout
+    reg = {}
+    for line in out.splitlines():
+        if line.strip():
+            f = line.split()
+            reg[int(f[0])] = tuple(float(t) for t in f[1:4])
+    return reg
+
+
+def comb_back(app, region, root_index, root_pos):
+    """The scalp leg: the geodesic from a root BACK to the rear rim.
+
+    The target keeps the root's lateral offset, so the ropes stay spread across
+    the head instead of converging on one nape vertex. Combing back rather than
+    letting each rope fall from its own root is the whole point: MEASURED by
+    rendering, attempt 3 dropped ropes from the hairline straight across the
+    face.
+    """
+    # The rim is the region's whole lower edge MINUS the part over the face,
+    # and each root leaves by the NEAREST piece of it. Sending every root to
+    # the rear rim instead was tried and RENDERED: the ropes funnelled into a
+    # column about as wide as the neck, which is attempt 2's "bunched in a
+    # narrow column" arriving by a different route. A loc rooted above the ear
+    # leaves the scalp above the ear.
+    # The elevation cut alone is what keeps the forehead out, and that is
+    # measured rather than hoped: the hairline sits at +12 degrees of elevation
+    # at the front, so NO region vertex below -25 is on the face side. An
+    # azimuth filter was written here as well and excluded exactly 0 of the 41
+    # rim vertices, so it was a knob that did nothing and is gone.
+    rim = [(i, p) for i, p in region.items() if spherical(p)[0] < LOC_REAR_ELEV]
+    if not rim:
+        raise RuntimeError("the scalp region has no rim behind the face")
+    target = min(rim, key=lambda q: math.dist(q[1], root_pos))[0]
+    if target == root_index:
+        return [root_pos]
+    out = subprocess.run([app, "--scalp-path", f"{root_index},{target}"],
+                         capture_output=True, text=True, check=True).stdout
+    return [tuple(float(t) for t in line.split()[1:4])
+            for line in out.splitlines() if line.strip()]
+
+
+def torso_profile(tris, floor, ceil_):
+    """How far the body reaches from its axis, per height and heading.
+
+    A real CROSS-SECTION: every triangle crossing the plane contributes a
+    segment, which is then sampled along. Binning vertices instead gave 45
+    across 16 sectors at y 5.00, under three each; the section gives 46 to 300
+    segments at the same heights.
+    """
+    ax, az = BODY_AXIS
+    rows = []
+    y = floor
+    while y <= ceil_:
+        sec = [0.0] * LOC_SECTORS
+        for a, b, c in tris:
+            hits = []
+            for p, q in ((a, b), (b, c), (c, a)):
+                if (p[1] - y) * (q[1] - y) < 0.0:
+                    t = (y - p[1]) / (q[1] - p[1])
+                    hits.append((p[0] + t * (q[0] - p[0]), p[2] + t * (q[2] - p[2])))
+            if len(hits) != 2:
+                continue
+            (x0, z0), (x1, z1) = hits
+            for j in range(9):
+                t = j / 8.0
+                dx = x0 + t * (x1 - x0) - ax
+                dz = z0 + t * (z1 - z0) - az
+                k = int((math.degrees(math.atan2(dx, dz)) % 360.0)
+                        / (360.0 / LOC_SECTORS))
+                sec[k] = max(sec[k], math.hypot(dx, dz))
+        rows.append((y, sec))
+        y += LOC_STEP
+    return rows
+
+
+def loc_hang(start, profile):
+    """The free leg: a plumb line from the rim, pushed out by what is under it.
+
+    No drift limit and no smoothing. `running` is simply the largest thing the
+    rope has to clear on the way down -- except that a surface can be a WALL or
+    a SHELF, and hair treats them differently. Over one step down the surface
+    moves out by `needed - running`; if that exceeds the step itself the
+    surface is flatter than 45 degrees, so the rope has LANDED on it and stops.
+    A gentler slope is a wall it slides down, staying against it.
+
+    MEASURED, and this is why the rule exists rather than a drift limit:
+    without it the ropes were pushed radially out across the top of the
+    shoulder to the deltoid's outer face at 2.763 dm. With it, 1.433.
+    """
+    ax, az = BODY_AXIS
+    dx, dz = start[0] - ax, start[2] - az
+    theta = math.atan2(dx, dz)
+    k = int((math.degrees(theta) % 360.0) / (360.0 / LOC_SECTORS))
+    running = math.hypot(dx, dz)
+    path = []
+    for y, sec in reversed(profile):
+        if y > start[1]:
+            continue
+        needed = sec[k] + LOC_STANDOFF if sec[k] else 0.0
+        if y >= LOC_SCALP_BOTTOM:
+            running = max(running, needed)
+        elif needed > running:
+            if needed - running > LOC_STEP:
+                break
+            running = needed
+        path.append((ax + running * math.sin(theta), y,
+                     az + running * math.cos(theta)))
+    return path
+
+
+def loc_tube(path, base):
+    """A five-sided tube swept along one path."""
+    ax, az = BODY_AXIS
+    pts, rings = [], []
+    for i, p in enumerate(path):
+        nxt = path[min(i + 1, len(path) - 1)]
+        prv = path[max(i - 1, 0)]
+        t = [nxt[j] - prv[j] for j in range(3)]
+        tl = math.sqrt(sum(c * c for c in t)) or 1.0
+        t = [c / tl for c in t]
+        out = [p[0] - ax, 0.0, p[2] - az]
+        ol = math.sqrt(sum(c * c for c in out)) or 1.0
+        out = [c / ol for c in out]
+        side = [t[1] * out[2] - t[2] * out[1], t[2] * out[0] - t[0] * out[2],
+                t[0] * out[1] - t[1] * out[0]]
+        sl = math.sqrt(sum(c * c for c in side)) or 1.0
+        side = [c / sl for c in side]
+        ring = []
+        for j in range(LOC_SIDES):
+            ang = 2.0 * math.pi * j / LOC_SIDES
+            ring.append(base + len(pts))
+            pts.append(tuple(p[m] + out[m] * (LOC_HALF * math.cos(ang))
+                             + side[m] * (LOC_HALF * math.sin(ang))
+                             for m in range(3)))
+        rings.append(ring)
+    faces = []
+    for i in range(len(rings) - 1):
+        for j in range(LOC_SIDES):
+            faces.append([rings[i][j], rings[i][(j + 1) % LOC_SIDES],
+                          rings[i + 1][(j + 1) % LOC_SIDES], rings[i + 1][j]])
+    return pts, faces
+
+
+def locs(verts, body_faces, app_path=""):
+    """Ropes combed back over the scalp, then hanging down the back."""
+    app = app_binary(app_path)
+    region = scalp_region(app)
+    out = subprocess.run([app, "--spread-roots", str(LOC_WANTED)],
+                         capture_output=True, text=True, check=True).stdout
+    roots = [(int(l.split()[0]), tuple(float(t) for t in l.split()[1:4]))
+             for l in out.splitlines() if l.strip()]
+    if len(roots) != LOC_WANTED:
+        raise RuntimeError(f"{len(roots)} of {LOC_WANTED} roots")
+
+    # The WHOLE body, arms included, and that is measured rather than careless:
+    # see the header. The shelf rule, not an exclusion, is what keeps the ropes
+    # off the arms.
+    tris = [tuple(verts[v] for v in (f[0], f[k], f[k + 1]))
+            for f in body_faces for k in range(1, len(f) - 1)]
+    profile = torso_profile(tris, LOC_FLOOR, 8.6)
+
+    # The cap first, so the ropes sit ON it. Each of its vertices binds to the
+    # base vertex it grew from with a world offset -- the same one-line-per-
+    # vertex form `--bind-points` emits, which is why the two share one .mhclo.
+    used, keep, placed = afro(verts, body_faces, thickness=LOC_CAP)
+    cap = {b: i for i, b in enumerate(used)}
+    allpts = [tuple(verts[b][i] + placed[b][i] for i in range(3)) for b in used]
+    allfaces = [[cap[v] for v in f] for f in keep]
+    cap_binds = [f"{b} {b} {b} 1.00000 0.00000 0.00000 "
+                 f"{placed[b][0]:.5f} {placed[b][1]:.5f} {placed[b][2]:.5f}"
+                 for b in used]
+    shortest = 10 ** 9
+    for index, pos in roots:
+        scalp = comb_back(app, region, index, pos)
+        # The scalp leg lies ON the head, so it is lifted clear of the skin by
+        # the rope's own half width -- a path centred on the surface buries half
+        # the tube, which is the mistake `ridge` records.
+        lifted = []
+        for q in scalp:
+            d = [q[i] - CENTRE[i] for i in range(3)]
+            ln = math.sqrt(sum(t * t for t in d)) or 1.0
+            lifted.append(tuple(q[i] + d[i] / ln * (LOC_CAP + LOC_STANDOFF)
+                                for i in range(3)))
+        path = lifted + loc_hang(lifted[-1], profile)
+        shortest = min(shortest, len(path))
+        if len(path) < 3:
+            continue
+        pts, fs = loc_tube(path, len(allpts))
+        allpts.extend(pts)
+        allfaces.extend(fs)
+    return allpts, allfaces, roots, app, shortest, cap_binds, len(cap_binds)
 
 
 def cornrows(verts, body_faces, app_path=""):

@@ -4,6 +4,73 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-24 02:10:00 — Session · **LOCS SHIP.** Fourth attempt, and the idea was that a loc has two segments
+
+`data/hair/locs.{obj,mhclo}` — 4,095 vertices, 3,818 faces, 42 ropes.
+Rendered from back, left and front and looked at. **The fourth hair style, and
+the last of the four the Textured-Black set needed.**
+
+### What made it work
+**A loc is TWO segments, not one.** It lies along the scalp from its root to
+the rim — the COMB — and only then hangs. Three attempts modelled it as one
+hanging segment and all three failed in the hair, not in the hang.
+
+The scalp leg is the application's own geodesic (`--scalp-path`), the same
+Dijkstra cornrows use, so the two cannot drift. That kills the blocker that
+reverted attempt 3 outright: **with the comb, 0 vertices sit over the face;
+without it, 240.**
+
+Each root leaves by the **nearest** rim vertex. Combing everything to the rear
+rim was tried and rendered: the ropes funnelled into a column about as wide as
+the neck — attempt 2's "bunched in a narrow column" arriving by another route.
+
+A thin cap under the ropes (`LOC_CAP`, reusing `afro`), for the same reason
+and by the same means as `BANTU_CAP`: 42 ropes 0.12 dm across cannot cover a
+scalp 1.5 dm wide, and rendered without it the crown showed bare red scalp.
+
+### Scope reduction, stated plainly
+**These are NECK-length locs, not shoulder-length.** The reason is measured.
+At y 5.65–5.80 the body's cross-section in the back-side sectors jumps by up
+to **0.924 dm in one 0.15 dm step** — the shoulder. The shelf rule then stops
+the rope, so **32 of 42** ended early, spread y 4.60–5.95, sd 0.539: a torn
+curtain. Cut above the shoulder, all 42 reach the floor, **sd 0.000**.
+
+**The unsolved thing is that a rope landing on a shoulder should slide off it
+and keep falling.** That is real machinery, and it is what any longer style
+needs. It is not a parameter. (Checked: the jumps are identical with and
+without the arm chain, so this shelf is the torso, not the arm.)
+
+### A knob that did nothing
+I wrote `LOC_FRONT_AZIM` to keep rim exits off the forehead, then measured it:
+it excluded **0 of 41** rim vertices, because the hairline sits at +12° of
+elevation at the front so nothing below −25° is on the face side. Deleted —
+and the asset came out **byte-identical**, which is the proof it did nothing.
+
+### Gated, one case per reverted failure
+`tests/regression/test_locs_shape.cpp`, four cases — not "locs look like
+locs", but one per picture somebody already rejected:
+
+| assertion | control |
+|---|---|
+| nothing over the face | comb removed → **240** vertices, red |
+| nothing out along the arm | 1.433 dm with the shelf rule, **2.763** without |
+| cut level | 210 vertices at the cut line |
+| every binding inside its triangle | `fitProxy` does no clamping |
+
+Asset count re-baselined **37 → 38**, after watching it fail at `38 == 37`.
+
+**One correction:** the first cut of the face test bounded furthest-forward z,
+with a bar taken from the rope PATH while the asset carries the TUBE's
+vertices — so it failed on a good asset. Re-derived from the measurement: the
+real property is that nothing sits within 0.5 dm of the midline in front, and
+all 35 front vertices are at |x| 0.68–0.73, the temple.
+
+### Sweep
+**1494/1494**, clang-format clean. Predicted +4 and got +4 (four new Catch2
+cases). `make_hair_styles.py --check` green on 8 files.
+
+---
+
 ## 2026-09-24 01:25:00 — Session · **Locs attempt 3: reverted, and it overturned two of my own conclusions**
 
 Network still down; seven commits queued, this is the eighth.

@@ -51,18 +51,19 @@ TEST_CASE("the shipped assets index by uuid", "[core][assetindex][golden]") {
     const auto idx = AssetIndex::build(paths);
     if (idx.size() == 0) SKIP("asset data not present");
 
-    // Counted from disk: 14 proxies (base.mhclo, a7_converter.proxy, the two
+    // Counted from disk: 15 proxies (base.mhclo, a7_converter.proxy, the two
     // eye meshes and the generated teeth, tongue, hair, AFRO, CORNROWS,
-    // BANTU KNOTS, skirt, tights, eyelashes and genitals) plus 23 materials -- the 3 originals
-    // (xray, default skin, brown eye), the 8 generated skin tones
-    // (tools/make_skins.py), the 5 generated eye colours (tools/make_eyes.py)
-    // and the 7 generated helper-cage materials (tools/make_helper_proxies.py).
+    // BANTU KNOTS, LOCS, skirt, tights, eyelashes and genitals) plus 23 materials -- the 3
+    // originals (xray, default skin, brown eye), the 8 generated skin tones (tools/make_skins.py),
+    // the 5 generated eye colours (tools/make_eyes.py) and the 7 generated helper-cage materials
+    // (tools/make_helper_proxies.py).
     //
     // 35 -> 36 on 2026-09-16: cornrows is the second hair style, and it is
     // indexed like any other proxy because a .mhm records a UUID rather than a
     // filename. Re-baselined, not relaxed -- the count still has to be exact.
     // 36 -> 37 on 2026-09-23: bantu knots, the third.
-    CHECK(idx.size() == 37);
+    // 37 -> 38 on 2026-09-24: LOCS, the fourth, after three reverted attempts.
+    CHECK(idx.size() == 38);
     CHECK(idx.duplicateUuids().empty());
 
     // The eye proxy's UUID, as it appears in data/eyes/high-poly/high-poly.mhclo.

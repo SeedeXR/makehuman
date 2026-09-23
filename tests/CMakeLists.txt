@@ -97,7 +97,8 @@ add_executable(mh_tests
     regression/test_animation_upaxis.cpp
     regression/test_animation_no_tear.cpp
     regression/test_afro_shape.cpp
-    regression/test_cornrows_shape.cpp)
+    regression/test_cornrows_shape.cpp
+    regression/test_locs_shape.cpp)
 
 # mh::rig alone. It PUBLIC-links mh::io (PoseUnits.h takes a BvhFile) and, since
 # PosedMesh.h took a `core::Mesh&`, mh::core as well -- so the tests get both

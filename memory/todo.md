@@ -6081,6 +6081,52 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       restored from backup and `cmp`-identical, `--check` green on 6 files.
       **DO NOT re-derive (a) or (b), and do not reach for a parameter for 1 or
       2.**
+      **ATTEMPT 4, 2026-09-24 -- SHIPPED. `data/hair/locs.{obj,mhclo}`, 4,095
+      vertices, 3,818 faces, 42 ropes. Rendered from back, left and front and
+      looked at.**
+      **The idea that made it work: a loc is TWO segments, not one.** It lies
+      along the scalp from its root to the rim -- that is the COMB -- and only
+      then hangs. The scalp leg is the application's own geodesic
+      (`--scalp-path`), the same Dijkstra cornrows use, so the two cannot
+      drift. That kills blocker 1 outright: with the comb, **0** vertices sit
+      over the face; without it, **240**.
+      Each root leaves by the NEAREST rim vertex, not by the rear rim. Combing
+      everything to the rear was tried and RENDERED: the ropes funnelled into a
+      column about as wide as the neck, which is attempt 2's "bunched in a
+      narrow column" arriving by a different route.
+      **A thin cap under the ropes, `LOC_CAP = 0.09`, reusing `afro`.** Same
+      fix and same reason as `BANTU_CAP`: 42 ropes 0.12 dm across cannot cover
+      a scalp 1.5 dm wide, and rendered without it the crown showed bare red
+      scalp between the ropes.
+      **SCOPE REDUCTION, stated plainly: these are NECK-length locs, not
+      shoulder-length.** `LOC_FLOOR = 5.85`, and the reason is measured, not
+      aesthetic. At y 5.65..5.80 the body's cross-section in the back-side
+      sectors (azimuth 112..135 and 213..236) jumps by up to **0.924 dm in one
+      0.15 dm step** -- the shoulder. The shelf rule then stops the rope, so
+      **32 of 42** ropes ended early and the ends spread y 4.60..5.95, sd
+      0.539: a torn curtain. Cut above the shoulder, all 42 reach the floor,
+      **sd 0.000**. **The unsolved thing is that a rope landing on a shoulder
+      should SLIDE OFF it, downhill, and then keep falling.** That is real
+      machinery and it is what a shoulder-length or longer style needs. It is
+      NOT a parameter.
+      Checked: the jumps are identical with and without the arm chain, so the
+      shoulder shelf is the TORSO, not the arm.
+      **`LOC_FRONT_AZIM` was written and then DELETED**: it excluded exactly 0
+      of the 41 rim vertices, because the hairline sits at +12 degrees of
+      elevation at the front so nothing below -25 is on the face side. Deleting
+      it left the asset byte-identical, which is the proof.
+      **GATED** by `tests/regression/test_locs_shape.cpp`, four cases, one per
+      reverted failure rather than one per shape: nothing over the face
+      (control: comb removed -> 240 vertices, red); nothing out along the arm
+      (1.433 with the shelf rule, 2.763 without); cut level (210 vertices at
+      the cut line); and every binding inside its triangle, because `fitProxy`
+      does no clamping. Asset count re-baselined 37 -> 38, exactly, after
+      watching it fail at 38 == 37.
+      One correction made in passing: the first cut of the face test bounded
+      furthest-forward z, using a bar taken from the rope PATH while the asset
+      carries the TUBE's vertices. Re-derived from the measurement -- the real
+      property is that nothing sits within 0.5 dm of the midline in front, and
+      all 35 front vertices are at |x| 0.68..0.73, the temple.
       Reverted cleanly both times: generator restored, `data/hair/locs.*`
       deleted, `--check` back to 6 files matching a fresh derivation.
       **BANTU KNOTS shipped 2026-09-23**, in four render-and-look iterations,
