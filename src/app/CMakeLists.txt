@@ -37,6 +37,20 @@ target_sources(makehuman PRIVATE "${CMAKE_SOURCE_DIR}/resources/branding/AppIcon
 set_source_files_properties("${CMAKE_SOURCE_DIR}/resources/branding/AppIcon.icns"
     PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
 
+# The licence texts go in the bundle for the same reason the icon does: naming
+# them is not shipping them. LICENSING.md section 6 requires all four inside the
+# bundle, and MACOSX_BUNDLE_COPYRIGHT above already tells the user to "See
+# LICENSING.md" -- in a bundle that, until this, did not contain it. Section 3
+# of that file also ASSERTED the bundle "includes this notice", which was false.
+#
+# Attached to the TARGET rather than copied by the `dmg` step, so every build
+# produces a compliant bundle and the gate can read one without packaging.
+foreach(_licence LICENSE.md LICENSE.CODE.md LICENSE.ASSETS.md LICENSING.md)
+    target_sources(makehuman PRIVATE "${CMAKE_SOURCE_DIR}/${_licence}")
+    set_source_files_properties("${CMAKE_SOURCE_DIR}/${_licence}"
+        PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+endforeach()
+
 add_dependencies(makehuman mh_shaders)
 
 # --- Packaging -----------------------------------------------------------

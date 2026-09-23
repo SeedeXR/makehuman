@@ -5219,6 +5219,27 @@ if(MH_HAVE_RENDER)
         # section 3 claims the bundle "includes this notice"; both were false
         # until the bundle actually carried them, and a claim in a licence file
         # is exactly the kind that has to be enforced rather than trusted.
+        # Each gate asks for text that is only in ITS file, so a build that
+        # copied one licence four times, or the wrong one, still fails. A
+        # shared key does not do that -- measured: "Licence" appears in
+        # LICENSING.md and in none of the other three.
+        add_test(NAME app_bundle_licence_overview COMMAND ${CMAKE_COMMAND}
+                 -DFILE=$<TARGET_BUNDLE_CONTENT_DIR:makehuman>/Resources/LICENSE.md
+                 "-DKEYS=LICENSE"
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+        add_test(NAME app_bundle_licence_code COMMAND ${CMAKE_COMMAND}
+                 -DFILE=$<TARGET_BUNDLE_CONTENT_DIR:makehuman>/Resources/LICENSE.CODE.md
+                 "-DKEYS=GNU Affero General Public License"
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+        add_test(NAME app_bundle_licence_assets COMMAND ${CMAKE_COMMAND}
+                 -DFILE=$<TARGET_BUNDLE_CONTENT_DIR:makehuman>/Resources/LICENSE.ASSETS.md
+                 "-DKEYS=Creative Commons CC0 1.0 Universal"
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+        add_test(NAME app_bundle_licence_inventory COMMAND ${CMAKE_COMMAND}
+                 -DFILE=$<TARGET_BUNDLE_CONTENT_DIR:makehuman>/Resources/LICENSING.md
+                 "-DKEYS=authoritative inventory"
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+
         add_test(NAME app_bundle_plist COMMAND ${CMAKE_COMMAND}
                  -DFILE=$<TARGET_BUNDLE_CONTENT_DIR:makehuman>/Info.plist
                  # No trailing .icns on the value -- see Info.plist.in.

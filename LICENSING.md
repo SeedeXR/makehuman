@@ -490,7 +490,7 @@ nothing in the build depends on it.
 ## 6. Obligations we must meet when distributing
 
 - [ ] Ship the complete corresponding source, or a written offer (AGPL-3.0 §6).
-- [ ] Ship `LICENSE.md`, `LICENSE.CODE.md`, `LICENSE.ASSETS.md`, and this file inside the bundle.
+- [x] Ship `LICENSE.md`, `LICENSE.CODE.md`, `LICENSE.ASSETS.md`, and this file inside the bundle. **Done 2026-09-23**: attached to the `makehuman` target with `MACOSX_PACKAGE_LOCATION "Resources"` (`src/app/CMakeLists.txt`), so every build produces a compliant bundle rather than only the `dmg` step. Four ctests read the built bundle, each asking for text unique to its own file so a build that copied the wrong licence still fails.
 - [ ] State prominently that the software is AGPL-3.0 and where source is obtained.
 - [ ] Ship the LGPL relinking notice for Qt; link Qt dynamically.
 - [ ] Preserve all copyright notices and attributions.
