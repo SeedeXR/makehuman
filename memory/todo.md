@@ -9016,7 +9016,26 @@ GPU here, or Colab) and it comes back to the owner first.
       it did not contain, and that file asserted the opposite.
 - [ ] Universal binary (arm64 + x86_64)
 - [ ] Auto-update channel
-- [ ] Migration guide for existing `.mhm` users
+- [x] Migration guide for existing `.mhm` users -- **DONE 2026-09-23**,
+      `docs/migration.md`. Every claim in it was MEASURED against this build,
+      not taken from the format docs: a reference-written `.mhm` loads with
+      12 of its 12 `modifier` lines applied, the version compare is major.minor,
+      and proxies resolve by UUID only (the reference itself refuses filenames).
+      **It found a real hazard while being written**, which is why it was worth
+      writing by running things: a `.mhm` naming an asset this port does not
+      ship warns clearly at load and then, ON RE-SAVE, the line becomes
+      `clothes none` -- the reference to the missing outfit is GONE from the new
+      file. An UNRECOGNISED key is safer: `proxy Proxy741 1111...` survived a
+      full round trip untouched. The guide says: read the warnings, keep the
+      original, install the asset before saving over it.
+- [ ] **OPEN QUESTION, raised not decided: should an unresolvable slot line be
+      PRESERVED on save rather than replaced with the default?** Measured
+      above. Preserving it keeps the user's record of what the character wore
+      and lets a later install restore it; it also makes the file name
+      something the character is NOT wearing, which is the "lying control"
+      shape this project keeps removing. The warning at load is clear either
+      way. I did not change save semantics on my own judgement -- it is a
+      data-retention decision, and both answers are defensible.
 
 ---
 

@@ -4,9 +4,11 @@ A native C++23 port of [MakeHuman](http://www.makehumancommunity.org), the
 parametric 3D human generator. Targets macOS (arm64 first), with a Qt6 UI and a
 Metal-backed renderer replacing the original Python/PyQt5/legacy-OpenGL stack.
 
-**Status: core complete, UI not started.** The port loads MakeHuman's data,
-builds a parameterised character with byte-level fidelity to the original, fits
-proxies, and exports to OBJ, glTF/GLB and FBX.
+**Status: the application runs.** It loads MakeHuman's data, builds a
+parameterised character with byte-level fidelity to the original, fits proxies,
+poses and skins it, draws it through a Metal-backed renderer, and imports and
+exports the usual interchange formats. Coming from MakeHuman 1.x? Start with
+[`docs/migration.md`](docs/migration.md).
 
 ## What works today
 
@@ -19,8 +21,10 @@ proxies, and exports to OBJ, glTF/GLB and FBX.
 | Proxies (`.mhclo`), materials (`.mhmat`), asset index | ✅ parity-tested |
 | **Export** OBJ · glTF 2.0 / GLB · FBX 7500 binary · Collada · STL · 3MF | ✅ |
 | **Import** FBX · glTF · OBJ · Collada · STL | ✅ new capability |
-| Skeleton, skinning, pose | ⬜ not started |
-| Renderer, UI | ⬜ not started |
+| Skeleton, skinning, pose | ✅ two rigs (163 and 179 bones); linear, dual-quaternion and centres-of-rotation skinning; `.bvh` poses, pose units and FACS |
+| Animation retargeting | ✅ MakeHuman 1.x and Mixamo bone names, on import and export, with rest-pose compensation |
+| Renderer | ✅ Metal via Qt RHI — litsphere and PBR shading, offscreen `--render` |
+| UI | ✅ dockable panels, undo, workspaces, 20 languages — of the reference's 51 task views, none remain to do -- 32 built, 16 declined as Python-runtime or dev-only, 3 blocked on content or an engine capability (`tools/audit_taskviews.py`) |
 
 Every ported subsystem is checked against the original Python implementation,
 which is retained in `legacy/python/` purely as a test oracle and is **not part
