@@ -3081,6 +3081,14 @@ int main(int argc, char** argv) {
                        "raycast at it, which is what the 2026-09-11 attempt got wrong. "
                        "Asking for more than the cap holds prints the whole cap."),
         QStringLiteral("n"));
+    const QCommandLineOption vertexBonesOpt(
+        QStringLiteral("vertex-bones"),
+        QStringLiteral("Print the DOMINANT bone of every base-mesh vertex, as "
+                       "\"index bone\", and exit. A generator working on the body "
+                       "surface cannot otherwise tell an arm vertex from a torso one -- "
+                       "they are millimetres apart at the armpit and metres apart in "
+                       "anatomy -- and that, not any parameter, is what stopped the locs "
+                       "style twice. The rig chooses: --rig selects which."));
     const QCommandLineOption scalpPathOpt(
         QStringLiteral("scalp-path"),
         QStringLiteral("Print the chain of scalp vertices between two of them, as "
@@ -3437,6 +3445,7 @@ int main(int argc, char** argv) {
     parser.addOption(listPoseUnitsOpt);
     parser.addOption(listWorkspacesOpt);
     parser.addOption(printChoicesOpt);
+    parser.addOption(vertexBonesOpt);
     parser.addOption(spreadRootsOpt);
     parser.addOption(scalpPathOpt);
     parser.addOption(bindPointsOpt);
@@ -3944,6 +3953,51 @@ int main(int argc, char** argv) {
     // The BASE mesh in rest, deliberately: a proxy binds to the base mesh, so
     // generation time is the only time these roots mean anything. Roots for a
     // posed or morphed body would be the same vertices in different places.
+    // Which bone owns a vertex -- the one question the surface alone cannot
+    // answer.
+    //
+    // `compile(skeleton, 1)` IS the dominant-bone query: it keeps the strongest
+    // influence and renormalises, so one influence is the strongest one. Nothing
+    // new computes anything here, and deriving it a second way would be a second
+    // answer to drift from the one skinning actually uses.
+    //
+    // The bone NAME, not a classification: whether `upperarm01.L` counts as an
+    // arm is the generator's policy, and a rig this does not ship would need a
+    // different rule. Printing the name keeps that decision where it belongs.
+    if (parser.isSet(vertexBonesOpt)) {
+        auto base = mh::core::loadObj(dataDir() / "3dobjs" / "base.obj");
+        if (!base) {
+            std::fprintf(stderr, "cannot read the base mesh: %s\n", base.error().message().c_str());
+            return 1;
+        }
+        const auto skelPath = rigFile(".mhskel");
+        if (!std::filesystem::exists(skelPath)) {
+            std::fprintf(stderr, "unknown --rig %s; available: %s\n", rigNameRef().c_str(),
+                         availableRigs().c_str());
+            return 1;
+        }
+        auto skel = mh::rig::loadSkeleton(skelPath);
+        if (!skel) {
+            std::fprintf(stderr, "cannot load the rig: %s\n", skel.error().message().c_str());
+            return 1;
+        }
+        if (!skel->updateJoints(base->coord()) || !skel->buildRestMatrices()) {
+            std::fprintf(stderr, "cannot build the rest pose\n");
+            return 1;
+        }
+        auto weights = mh::rig::loadWeights(rigFile("_weights.mhw"), base->vertexCount());
+        if (!weights) {
+            std::fprintf(stderr, "cannot load weights: %s\n", weights.error().message().c_str());
+            return 1;
+        }
+        const auto dominant = weights->compile(*skel, 1);
+        for (size_t v = 0; v < dominant.vertexCount(); ++v) {
+            const uint32_t b = dominant.boneIndex[v];
+            std::printf("%zu %s\n", v, b < skel->bones.size() ? skel->bones[b].name.c_str() : "?");
+        }
+        return 0;
+    }
+
     if (parser.isSet(spreadRootsOpt)) {
         bool ok          = false;
         const int wanted = parser.value(spreadRootsOpt).toInt(&ok);

@@ -3060,6 +3060,23 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_facs_order_survives PROPERTIES
         FIXTURES_REQUIRED "app_facs_ab_obj;app_facs_ba_obj")
 
+    # Which bone owns a vertex.
+    #
+    # The locs style was attempted twice and reverted twice, and the blocker was
+    # never a parameter: a generator working on the body surface cannot tell an
+    # arm vertex from a torso one, so a rope following the silhouette runs out
+    # along the arm. The weights have known that all along -- this is the door
+    # onto them, the same gap `--spread-roots` filled for `spreadOverSurface`.
+    #
+    # `compile(skel, 1)` is the whole computation, and it is gated separately in
+    # test_weights_parity.cpp against an argmax taken the other way round. This
+    # gates the CALL SITE, and asserts the separation rather than the format --
+    # see the script for the measurements.
+    add_test(NAME app_vertex_bones COMMAND ${CMAKE_COMMAND}
+             -DAPP=$<TARGET_FILE:makehuman>
+             -DBASE=${MH_DATA_DIR}/3dobjs/base.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_vertex_bones.cmake)
+
     # Scalp roots, walked rather than raycast.
     #
     # `mh::core::SurfaceWalk` shipped in the chunk before this one and nothing

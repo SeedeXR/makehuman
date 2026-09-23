@@ -746,12 +746,22 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       its sibling `spreadOverSurface` is live); `macroValueName`,
       `ethnicDiffuseColor`, `actionUnits`, `formatExtension`,
       `eulerOrderNames`, `iconDir`.
-      **A SHAPE WORTH KNOWING**: `writeObj`, `writeGlb`, `writeFbx`, `writeUsda`
-      have ZERO production callers between them and **112 test call sites** --
-      the app calls only the `*Scene` forms. They are 5-6 line wrappers so
-      almost no code is dead, but the export regression suite enters four
-      1000+ line writers through a door the app never opens. Same shape as
-      `importMesh`, lower stakes.
+      **THE EXPORT SIDE LOOKED LIKE `importMesh` AND IS NOT -- CLOSED, do not
+      re-derive.** `writeObj`, `writeGlb`, `writeFbx`, `writeUsda` do have zero
+      production callers and 114 test call sites, and the app calls only the
+      `*Scene` forms. But BOTH halves of the `importMesh` hazard are absent.
+      (1) Each is a genuine 5-6 line delegate -- `ObjWriter.cpp:391`,
+      `GltfWriter.cpp:1257`, `FbxWriter.cpp:1292`, `UsdWriter.cpp:558` each
+      build a one-entry span and `return write*Scene(...)`. There is no second
+      implementation and nothing to drift.
+      (2) The app's own door is directly covered: **53 direct `*Scene` call
+      sites** in the tests -- 13 obj, 18 glb, 5 fbx, 17 usda -- and the
+      multi-entry case, which the wrapper structurally CANNOT reach, is
+      exercised in all four formats, including the shared-skeleton and
+      refuse-two-skeletons cases (`test_fbx_writer.cpp:934,1054`;
+      `test_gltf_writer.cpp`; `test_usd_writer.cpp`; `test_obj_scene.cpp`).
+      So the wrappers are a convenience for 114 single-mesh assertions, not a
+      bypass. **No change made, none needed.**
       `weightSimilarity` is NOT orphaned -- over-exposed in its header but
       called internally by `computeCentersOfRotation`.
 - [ ] **DECISION NEEDED: delete the 430 lines of `Ktx2Writer` + `Etc1s`?**
@@ -5964,10 +5974,33 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       tell an ARM vertex from a TORSO one.** With that, the profile excludes
       the arms and both failures go away at once. The data already exists --
       `default_weights.mhw` gives per-vertex bone weights and the dominant bone
-      per vertex is what `tests/unit/test_pose_blend.cpp` already computes -- so
-      the work is exposing it, e.g. a flag that prints vertex -> dominant bone
-      (the shape `--spread-roots` already has). That is the next attempt's
-      first task, and it is C++ surface rather than another round of tuning.
+      per vertex is what skinning already computes -- so the work is exposing
+      it, e.g. a flag that prints vertex -> dominant bone (the shape
+      `--spread-roots` already has). That is the next attempt's first task, and
+      it is C++ surface rather than another round of tuning.
+      **DONE 2026-09-24 -- `--vertex-bones` ships, the blocker is GONE.** No
+      new rig code: `compile(skeleton, 1)` keeps the strongest influence, so
+      one influence IS the dominant bone. Prints "index bone" for all 19,158
+      base vertices; 140 of 163 bones dominate at least one, 5,090 vertices sit
+      on the arm chain.
+      **The measurement that proves it, and that quantifies failure mode 1
+      above** (shipped base mesh, default rig): the body's max |x| in the
+      y 3.0..3.5 band is **4.052 dm including arms and 1.332 without** -- the
+      silhouette overstated the torso by 67% at chest height, which is exactly
+      why a rope dropped from the skull ran out along the arm. 4.0..4.5 is
+      3.139 -> 1.557, 5.0..5.5 is 2.419 -> 1.657, and 6.0..6.5 is 1.132 ->
+      1.102 (2.7%): the corruption is confined to y 3.0..6.0, the band a loc
+      crosses between skull and shoulder, and above the shoulders arms change
+      nothing. So this separates by ANATOMY, not by height.
+      Gated twice, both controls run: `test_weights_parity.cpp` checks
+      `compile(skel, 1)` against an argmax taken off `perBone` the other way
+      round (control: `greater` -> `less` at `VertexWeights.cpp:76` compiled
+      clean and went red), and `check_vertex_bones.cmake` asserts the
+      SEPARATION rather than the format (control: a constant bone compiled
+      clean and went red, while passing line-count, format, index-order and
+      determinism).
+      **NEXT ATTEMPT: build the body profile from this with the arm chain
+      excluded. DO NOT TUNE PARAMETERS.**
       Reverted cleanly both times: generator restored, `data/hair/locs.*`
       deleted, `--check` back to 6 files matching a fresh derivation.
       **BANTU KNOTS shipped 2026-09-23**, in four render-and-look iterations,

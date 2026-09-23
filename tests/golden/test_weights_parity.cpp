@@ -192,6 +192,66 @@ TEST_CASE("truncated influences are re-normalised", "[weights][parity]") {
     CHECK(bad == 0);
 }
 
+TEST_CASE("compiling to one influence yields the DOMINANT bone", "[weights][parity]") {
+    // What `--vertex-bones` rests on, and the one question the body surface
+    // cannot answer: an armpit vertex and a chest vertex are millimetres apart
+    // and belong to different limbs. `compile(skel, 1)` keeps the strongest
+    // influence, so one influence IS the dominant bone -- but only if
+    // "strongest" really is what survives truncation, which is what this pins.
+    //
+    // Checked against an argmax computed the OTHER way round, straight off
+    // `perBone` (bone -> its vertex list) rather than the per-vertex form
+    // compile() builds. A truncation that kept the first, the last or the
+    // highest-indexed influence would still produce one bone per vertex, still
+    // be deterministic, and still be wrong.
+    const rig::VertexWeights vw = loaded();
+    const rig::Skeleton skel    = loadedRig();
+    const auto compiled         = vw.compile(skel, 1);
+    REQUIRE(compiled.vertexCount() == kVerts);
+
+    std::vector<float> bestW(kVerts, -1.0F);
+    std::vector<std::string> bestB(kVerts);
+    for (const auto& [bone, bw] : vw.perBone) {
+        REQUIRE(bw.verts.size() == bw.weights.size());
+        for (size_t i = 0; i < bw.verts.size(); ++i) {
+            const uint32_t v = bw.verts[i];
+            REQUIRE(v < kVerts);
+            if (bw.weights[i] > bestW[v]) {
+                bestW[v] = bw.weights[i];
+                bestB[v] = bone;
+            }
+        }
+    }
+
+    size_t mismatched = 0;
+    size_t tied       = 0;
+    for (size_t v = 0; v < kVerts; ++v) {
+        const uint32_t bi = compiled.boneIndex[v];
+        REQUIRE(bi < skel.bones.size());
+        if (skel.bones[bi].name == bestB[v]) continue;
+        // A genuine tie has no single dominant bone, and compile() breaks it by
+        // descending bone index to match Python. Counted, not silently allowed:
+        // if ties ever explain most of the mesh, this test has stopped testing
+        // anything.
+        const auto it = vw.perBone.find(skel.bones[bi].name);
+        if (it != vw.perBone.end()) {
+            const auto f = std::find(it->second.verts.begin(), it->second.verts.end(),
+                                     static_cast<uint32_t>(v));
+            if (f != it->second.verts.end()) {
+                const size_t k = static_cast<size_t>(f - it->second.verts.begin());
+                if (std::abs(it->second.weights[k] - bestW[v]) <= 1e-6F) {
+                    ++tied;
+                    continue;
+                }
+            }
+        }
+        ++mismatched;
+    }
+    CHECK(mismatched == 0);
+    // MEASURED on the shipped rig: ties are a rounding curiosity, not the rule.
+    CHECK(tied < kVerts / 100);
+}
+
 TEST_CASE("a vertex index past the mesh is refused", "[weights]") {
     // The real file indexes a 19,158-vertex body; loading it against a smaller
     // mesh must be an error, not an out-of-bounds write.

@@ -4,6 +4,86 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-24 00:05:00 — Session · **The locs blocker gets a name and a door**
+
+Network still down; six commits now queued. Loop survived it again.
+
+### The export side looked like `importMesh` and is not — closed
+`writeObj`/`writeGlb`/`writeFbx`/`writeUsda` do have zero production callers
+and 114 test call sites, which is the shape that made `importMesh` dangerous.
+**It is a false alarm, measured both ways.** Each is a genuine 5-6 line
+delegate (`ObjWriter.cpp:391`, `GltfWriter.cpp:1257`, `FbxWriter.cpp:1292`,
+`UsdWriter.cpp:558`) — no second implementation to drift. And the app's own
+door is covered directly: **53 `*Scene` call sites** in the tests (13 obj, 18
+glb, 5 fbx, 17 usda), with the multi-entry case the wrapper structurally
+cannot reach exercised in all four formats, including shared-skeleton and
+refuse-two-skeletons. No change made, none needed. Recorded in `todo.md` so
+the next tick does not re-derive it.
+
+### `--vertex-bones`: the locs blocker, named and unblocked
+Two locs attempts were reverted, and the loop note already named the blocker:
+the generator cannot tell an ARM vertex from a TORSO one. **The weights have
+known all along** — this is the door onto them, the same gap `--spread-roots`
+filled for `spreadOverSurface`.
+
+No new rig code. `compile(skeleton, 1)` keeps the strongest influence, so one
+influence **is** the dominant bone. Climbing the ladder found the computation
+already shipped; only the surface was missing.
+
+**The measurement that proves the unblock** (shipped base mesh, default rig):
+
+| y band | max abs x, all | excluding arm chain | shrink |
+|---|---|---|---|
+| 3.0..3.5 | 4.052 | 1.332 | 67.1% |
+| 4.0..4.5 | 3.139 | 1.557 | 50.4% |
+| 5.0..5.5 | 2.419 | 1.657 | 31.5% |
+| 6.0..6.5 | 1.132 | 1.102 | 2.7% |
+
+That 4.052 **is** the bug. A generator following the silhouette saw the body
+as three times wider than it is at chest height, so a rope dropped from the
+skull ran out along the arm — and two attempts were spent tuning parameters
+against a number that was simply wrong. The corruption is confined to
+y 3.0..6.0, exactly the band a loc crosses between skull and shoulder; above
+the shoulders arms change nothing (2.7%), which is the other half of the
+claim: this discriminates by **anatomy, not height**.
+
+19,158 lines, one per base vertex, 140 of 163 bones dominate at least one,
+5,090 vertices on the arm chain.
+
+Prints the bone NAME, not a classification: whether `upperarm01.L` counts as
+an arm is the generator's policy, and a rig we do not ship would need a
+different rule.
+
+### Two gates, and both controls run
+- **Computation** — `test_weights_parity.cpp`: `compile(skel, 1)` checked
+  against an argmax taken the OTHER way round, off `perBone` rather than the
+  per-vertex form compile() builds. Truncation that kept the first, the last
+  or the highest-indexed influence would still give one bone per vertex and
+  still be deterministic. **Control:** flipping `std::ranges::greater` to
+  `less` at `VertexWeights.cpp:76` compiled clean (0 errors) and turned it
+  red.
+- **Call site** — `check_vertex_bones.cmake`: asserts the SEPARATION, not the
+  format. **Control:** printing a constant bone compiled clean and turned it
+  red — and that mutation passes a line-count check, a format check, an
+  index-order check and determinism.
+
+### Sweep
+**1490/1490**, clang-format clean. Predicted +2 and got +2: `mh_tests`
+registers one ctest per Catch2 case, plus the one new CLI test.
+
+### Still waiting on the owner — unchanged, raised again
+1. Delete the 430 dead KTX2/ETC1S lines?
+2. `.mhm` re-save turning an unresolvable slot into `clothes none`.
+3. The **"hold to run"** button — not in this repo by any spelling, and no
+   `utsubo` under `~/Documents/SoftwareProjects/`. Asked three times now.
+
+### Next session starts here
+Retry the network first and push the queued commits. For locs: the blocker is
+gone, so the next attempt builds the body profile from `--vertex-bones`
+output with the arm chain excluded. **Do not tune parameters.**
+
+---
+
 ## 2026-09-23 23:10:00 — Session · **Packaging, a migration guide, and a README that lied**
 
 Network went down mid-tick (`gh`: "error connecting to api.github.com"), so two
