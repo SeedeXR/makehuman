@@ -764,7 +764,10 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       bypass. **No change made, none needed.**
       `weightSimilarity` is NOT orphaned -- over-exposed in its header but
       called internally by `computeCentersOfRotation`.
-- [ ] **DECISION NEEDED: delete the 430 lines of `Ktx2Writer` + `Etc1s`?**
+- [x] **DECIDED AND DONE 2026-09-24 -- the answer was a SPLIT; see the end of
+      this entry. The writer is deleted; `Etc1s` STAYS as a control.**
+      The question as originally posed, kept because the reasoning under it
+      is what the decision rests on:
       MEASURED, not suspected: nothing in `src/` ever assigns
       `KtxImage::globalData`, and `src/io/Ktx2Writer.cpp:74` returns `nullopt`
       when it is empty -- so on any production path the function cannot write a
@@ -5963,6 +5966,21 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       (`src/core/Proxy.cpp:435-438`), so the hard part is ASSET AUTHORING, and
       that is exactly where the last attempt failed. Budget for
       render-and-look iterations, not for code.
+      **DELIVERY STATUS 2026-09-24: FOUR styles ship** -- afro, cornrows, bantu
+      knots and locs -- **plus the cage**, each rendered and looked at before
+      shipping and each gated. The budget warning above was right: locs alone
+      took FOUR attempts, three of them reverted, and none failed on code.
+      **Left OPEN deliberately, not closed.** Whether "a full hair cage feature
+      with different hair styles" is satisfied is the OWNER's judgement, not
+      mine to record on their behalf. What is measurable is stated here so the
+      entry does not read as unstarted.
+      **Known limitations, stated rather than buried**: braid/loc ends are cut
+      square rather than tapered; ONE matcap per slot, so every style is the
+      same colour; and no style has UVs, so none can carry a strand texture --
+      `data/hair/materials/hair.mhmat` says so itself ("real hair needs an
+      alpha-cut strand texture, which the cage geometry cannot stand in for").
+      Locs are NECK-length; a longer hanging style needs the
+      slide-off-the-shoulder machinery, which is unbuilt and speculative.
       Measured context for the cage itself, kept because it is still true:
 - [x] **(superseded) is the hair cage good enough to ship as a wearable?**
       **CLOSED 2026-09-20 as superseded, which the title already said.** The
@@ -5979,8 +5997,9 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       for fitting a groom to, and it passes in front of the face by
       construction. Keep it as a placeholder, or hide the slot until a real
       groom asset exists? Everything else about it is done either way.
-- [ ] **Textured-Black hair styles -- afro, CORNROWS and BANTU KNOTS now ship;
-      LOCS remain.**
+- [x] **Textured-Black hair styles -- COMPLETE 2026-09-24. All four ship:
+      afro, cornrows, bantu knots and LOCS.** The locs history below is kept
+      because three reverted attempts are what the fourth was built on.
       **SECOND ATTEMPT 2026-09-23, also reverted -- but it got much closer and
       the blocker is now NAMED.** The first attempt treated the head as a
       SPHERE and dropped straight down, burying every rope in the neck. This
