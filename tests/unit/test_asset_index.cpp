@@ -63,7 +63,12 @@ TEST_CASE("the shipped assets index by uuid", "[core][assetindex][golden]") {
     // filename. Re-baselined, not relaxed -- the count still has to be exact.
     // 36 -> 37 on 2026-09-23: bantu knots, the third.
     // 37 -> 38 on 2026-09-24: LOCS, the fourth, after three reverted attempts.
-    CHECK(idx.size() == 38);
+    // 38 -> 40 on 2026-09-24: EYEBROWS, and it moves the count by TWO because
+    // this index holds proxies AND materials -- one .mhclo and one .mhmat. A
+    // one-step bump here would have been the wrong number for the right
+    // reason, so it was checked against both halves of the sum above rather
+    // than read off the failure message.
+    CHECK(idx.size() == 40);
     CHECK(idx.duplicateUuids().empty());
 
     // The eye proxy's UUID, as it appears in data/eyes/high-poly/high-poly.mhclo.

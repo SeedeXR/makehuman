@@ -92,7 +92,14 @@ BUCKETS = {
     # data/3dobjs/base.mhclo (basemesh alpha_7, the OLD topology's map) and
     # a7_converter.proxy (the alpha_7 to hm08 converter), neither of them
     # wearable. Both are blocked on CONTENT.
-    "EyebrowsTaskView": "blocked", "ProxyTaskView": "blocked",
+    "ProxyTaskView": "blocked",
+
+    # EyebrowsTaskView LEFT `blocked` on 2026-09-24. Its reason -- no eyebrow
+    # helper cage in the base mesh -- was TRUE and had stopped mattering: the
+    # binder written for the hair styles binds to the BODY, so
+    # `tools/make_eyebrows.py` puts a brow on the face the way the locs sit on
+    # the scalp, and `base.obj` was not touched.
+    "EyebrowsTaskView": "covered",
 
     # SceneLibraryTaskView LEFT `blocked` on 2026-09-24. It sat there because a
     # scene is lights plus environment (shared/scene.py:190-192) and the rig was
@@ -368,6 +375,7 @@ EVIDENCE = {
     # go. This appears only where an edited row is applied to the character.
     "MaterialEditorTaskView": '&mh::ui::MaterialPanel::edited',
     "SceneLibraryTaskView": '"Scene lighting"',
+    "EyebrowsTaskView": '"eyebrows", "Eyebrows"',
 }
 
 SRC = REPO / "src"
@@ -402,8 +410,6 @@ ABSENT = {
     # `{"eyebrows", "Eyebrows", "none"}`. Fixing EVIDENCE alone would have left
     # the trap armed in the direction that is harder to notice: a view that
     # shipped and is still reported missing.
-    "EyebrowsTaskView": ('"eyebrows", "Eyebrows"',
-                         "blocked on content: no helper cage in the base mesh"),
     "ProxyTaskView": ('"proxy", "Proxy"',
                       "blocked on content: no wearable alternate body topology"),
 }

@@ -120,7 +120,12 @@ TEST_CASE("every shipped material parses", "[core][material][golden]") {
     // updated. Corrected when genitals made it 7.
     // The count is pinned rather than left open because "every material parses"
     // passes trivially when the loop finds none.
-    CHECK(ok == 23);
+    //
+    // 23 -> 24 on 2026-09-24: eyebrows, the first slot material NOT written by
+    // make_helper_proxies -- there is no eyebrow helper cage, so
+    // tools/make_eyebrows.py writes it beside the geometry it belongs to.
+    // Re-baselined, not relaxed.
+    CHECK(ok == 24);
 }
 
 TEST_CASE("booleans accept the reference's spellings", "[core][material]") {

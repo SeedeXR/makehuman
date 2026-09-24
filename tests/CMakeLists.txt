@@ -523,7 +523,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 15 \\[.*Scene lighting.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 16 \\[.*Scene lighting.*Eyebrows.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # The rig had no picker either: two ship, --rig has always chosen between
@@ -5646,8 +5646,8 @@ if(MH_HAVE_RENDER)
     #
     # MEASURED 2026-09-24 across every option that rejects a value: `--rig`,
     # `--skin-material` and `--eye-colour` all printed "available: ...", while
-    # all seven proxy slots -- hair, clothes, eyes, teeth, tongue, genitals,
-    # eyelashes -- printed only "wearing none". That cost little when a slot
+    # the proxy slots -- hair, clothes, eyes, teeth, tongue, genitals,
+    # eyelashes, and now eyebrows -- printed only "wearing none". That cost little when a slot
     # held one asset; `data/hair` now holds FOUR, and a typo left the user with
     # no way to find them short of listing the directory.
     #
@@ -5766,7 +5766,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 15 \\[.*Scene lighting.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 16 \\[.*Scene lighting.*Eyebrows.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # Refused rather than silently defaulted to brown, which would make a typo
@@ -5811,6 +5811,75 @@ if(MH_HAVE_RENDER)
         # and fail here.
         PASS_REGULAR_EXPRESSION "scene: 4 meshes \\(1 blended\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
+
+    # ---- Eyebrows ---------------------------------------------------------
+    #
+    # The slot that had no helper cage. `base.obj` carries cages for genital,
+    # hair, both eyes, both eyelash strips, both teeth rows, skirt, tights and
+    # tongue and no eyebrow, which is why EyebrowsTaskView sat in `blocked`.
+    # `tools/make_eyebrows.py` binds the geometry to the FACE instead, the way
+    # the locs bind to the scalp, so the base mesh is untouched -- and these
+    # cases are what says the slot really reaches a render rather than merely
+    # loading.
+
+    add_test(NAME app_eyebrows_write COMMAND makehuman
+             --eyebrows eyebrows
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_eyebrows.png)
+    set_tests_properties(app_eyebrows_write PROPERTIES
+        # "wearing Eyebrows (264 verts)" is the proxy loading; the comparison
+        # below is what says it DREW. Both, because the first render attempt
+        # loaded the proxy fine and produced a byte-identical image.
+        PASS_REGULAR_EXPRESSION "wearing Eyebrows \\(264 verts\\)"
+        FAIL_REGULAR_EXPRESSION "texture missing;cannot render"
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_SETUP app_eyebrows_png)
+
+    add_test(NAME app_eyebrows_bare_write COMMAND makehuman
+             --eyebrows none
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_eyebrows_none.png)
+    set_tests_properties(app_eyebrows_bare_write PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_SETUP app_eyebrows_none_png)
+
+    # THE ONE THAT MATTERS, and the reason it exists is worth keeping: an
+    # anatomically correct brow -- about 2 mm proud -- rendered BYTE-IDENTICAL
+    # to no brow at all. Not faint: identical, at 1024 and at the 1160x1492
+    # viewport, and with a screaming-green matcap. The geometry was correct
+    # throughout; it was simply below what the renderer resolves.
+    #
+    # MEASURED at the shipped 0.090/0.080: 199 pixels in x 493..530, y 177..186
+    # -- the brow band of the face. The bar of 100 sits well under that and far
+    # above the nine pixels two identical renders differ by from MSAA alone.
+    add_test(NAME app_eyebrows_are_visible COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/app_eyebrows_none.png
+             ${CMAKE_CURRENT_BINARY_DIR}/app_eyebrows.png --min-differing 100)
+    set_tests_properties(app_eyebrows_are_visible PROPERTIES
+        FIXTURES_REQUIRED "app_eyebrows_png;app_eyebrows_none_png")
+
+    # ...and the other half: the slot must be OFF by default, or every existing
+    # render silently grew eyebrows.
+    #
+    # Compared against a render passing NO --eyebrows at all, not against
+    # `app_render.png`: that one is written with --transparent, so the pair
+    # would differ over the whole background and the case would be measuring
+    # the alpha channel rather than the default.
+    add_test(NAME app_eyebrows_default_write COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_eyebrows_default.png)
+    set_tests_properties(app_eyebrows_default_write PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_SETUP app_eyebrows_default_png)
+    add_test(NAME app_eyebrows_off_by_default COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/app_eyebrows_default.png
+             ${CMAKE_CURRENT_BINARY_DIR}/app_eyebrows_none.png --max-differing 0)
+    set_tests_properties(app_eyebrows_off_by_default PROPERTIES
+        FIXTURES_REQUIRED "app_eyebrows_default_png;app_eyebrows_none_png")
+
+    # A typo names the alternatives, like every other chooser.
+    add_test(NAME app_eyebrows_unknown_lists_choices COMMAND makehuman
+             --eyebrows no_such_brow
+             --save ${CMAKE_CURRENT_BINARY_DIR}/app_eyebrows_unknown.mhm)
+    set_tests_properties(app_eyebrows_unknown_lists_choices PROPERTIES
+        PASS_REGULAR_EXPRESSION "available: none, eyebrows")
 
     add_test(NAME app_render_pbr COMMAND makehuman
              --render ${CMAKE_CURRENT_BINARY_DIR}/app_render_pbr.png --shading pbr)

@@ -51,9 +51,9 @@ dev-gated, so a default release build shows **40**.
 | Bucket | N | Meaning |
 |---|---|---|
 | done | 7 | the dynamic modifier views — shipped |
-| covered | 26 | the capability reaches the user, just not as a TAB |
+| covered | 27 | the capability reaches the user, just not as a TAB |
 | todo | 0 | to port, nothing blocking |
-| blocked | 2 | needs content first |
+| blocked | 1 | needs content first |
 | declined | 16 | Python-runtime or dev-only tooling |
 
 ## The buckets were wrong about FOURTEEN views, in both directions
@@ -108,7 +108,7 @@ The views `guimodifier.loadModifierTaskViews` builds from the `*_sliders.json`
 files — Face, Torso, Arms and Legs, Gender, Macro modelling, Body shapes,
 Measure. One view per top-level key, `apps/gui/guimodifier.py:226-232`.
 
-### covered (26)
+### covered (27)
 Not a gap: this port is dockable, so what the reference makes a tab arrives as
 a menu action or as a group in the Assets panel.
 
@@ -246,8 +246,24 @@ undo entry. Design that interaction first; the loading half already works.
 (measured under `data/`), so expressions arrive as `--facs` action units
 instead; the chooser needs content before it needs code.
 
-### blocked (2)
-`EyebrowsTaskView` has no helper cage in the base mesh. `ProxyTaskView` would
+### blocked (1)
+~~`EyebrowsTaskView` has no helper cage in the base mesh.~~ **It left `blocked`
+on 2026-09-24 and is now `covered`.** The reason was TRUE and had stopped
+mattering. There is still no eyebrow cage -- `base.obj` carries them for
+genital, hair, both eyes, both eyelash strips, both teeth rows, skirt, tights
+and tongue -- but a cage is not what a proxy needs any more. MEASURED, the
+styles authored here bind 475 BODY vertices and zero helper ones, where the
+upstream-shaped `hair.mhclo` binds 428 helper and zero body; the two sets are
+disjoint. So `tools/make_eyebrows.py` puts a brow on the face the way the locs
+sit on the scalp, and **`base.obj` was not touched** -- it cannot be, at 19,158
+vertices it is the parity oracle.
+
+Two things about it are honest rather than flattering. The brow ships at 9 mm
+proud, about four times anatomical, because at a real 2 mm the render came out
+BYTE-IDENTICAL to no brow at all -- it is tuned to what the viewport resolves,
+not to a face. And the outer tail reads angular where a real brow tapers.
+
+`ProxyTaskView` would
 choose between alternate BODY topologies, and the only proxymesh-shaped assets
 shipped are `data/3dobjs/base.mhclo` (`basemesh alpha_7`, 434 verts — the OLD
 topology's map) and `a7_converter.proxy` (the alpha_7 → hm08 converter, 7102
