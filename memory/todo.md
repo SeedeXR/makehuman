@@ -3373,11 +3373,40 @@ failure in a later stage cannot strand an earlier one:
       Moving it out of `blocked` requires the evidence literal `"Scene
       lighting"` to appear in `src/`, and the auditor checks that BOTH ways,
       so the bucket cannot be edited without the capability.
-- [ ] **Stage 3 — give covered capabilities real tabs.** This REVERSES a
-      recorded design decision ("this port is dockable, so what the reference
-      makes a tab arrives as a menu action or a group in the Assets panel",
-      `taskviews.md:111-112`). Do it only after Stages 1 and 2, and say
-      plainly in the commit that it is a reversal, not a port.
+- [~] **Stage 3 — give covered capabilities real tabs. IN PROGRESS.**
+      **Scoped 2026-09-24 after looking at the running UI rather than at the
+      task-view list.** A screenshot shows the Assets dock as **15 heading +
+      combo pairs stacked in one `QVBoxLayout`**, running off the bottom of the
+      dock; `AssetPanel.cpp` is 127 lines and has no tab widget at all. That
+      list is what wants tabs.
+      **THE CATEGORIES ARE DERIVED FROM THE REFERENCE, NOT CHOSEN.** Every
+      reference chooser registers under a category via `app.getCategory(...)`,
+      so the grouping is an external oracle rather than my taste:
+      * **Geometries** (7) — Eyes, Teeth, Genitals, Tongue, Hair, Clothes,
+        Eyelashes. Every `3_libraries_*` proxy chooser says `'Geometries'`.
+      * **Pose/Animate** (4) — Pose, Animation, Expression, Skeleton
+        (`2_posing_expression.py:269`, `3_libraries_{animation,skeleton}`).
+      * **Materials** (2) — Skin material, Eye colour
+        (`3_libraries_material_chooser.py:352`).
+      * **Rendering** (2) — Scene lighting (the reference's scene plugin says
+        `'Rendering'`) and Litsphere, which has NO reference category because
+        the reference has no such chooser: it shades with a matcap
+        unconditionally. Recorded as OUR call, unlike the other fourteen.
+      Sums to 15, which is the whole set -- so the mapping is total and nothing
+      lands in a fallback by accident.
+      **Shape:** `foundation::AssetGroup` gains a `category` field AT THE END,
+      declared `{}`; `main.cpp` sets it where each group is built; `AssetPanel`
+      tabs on it. An empty category must still render, so a group nobody
+      classified cannot vanish from the UI -- that is the failure this design
+      has to make impossible, and the gate for it.
+      **WHAT THIS DELIBERATELY DOES NOT DO, and the owner may overrule me.**
+      The literal reading -- every `covered` view becomes a top-level tab like
+      the reference's -- would turn Save, Export, Render and Settings into
+      tabs. That is a regression, not a port: they are menu actions because
+      they are ACTIONS, and the reference only made them tabs because it had no
+      menu bar worth the name. So this stage reorganises the Assets panel and
+      leaves the menu alone. **It is therefore a PARTIAL reversal of
+      `taskviews.md:111-112`, and the commit says so.**
 - [ ] **Stage 4 — author the blocked content.** An eyebrows helper cage and a
       wearable alternate body topology, which unblock `EyebrowsTaskView` and
       `ProxyTaskView`. Asset authoring, and the hair styles are the warning:
