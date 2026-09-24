@@ -3407,11 +3407,38 @@ failure in a later stage cannot strand an earlier one:
       menu bar worth the name. So this stage reorganises the Assets panel and
       leaves the menu alone. **It is therefore a PARTIAL reversal of
       `taskviews.md:111-112`, and the commit says so.**
-- [ ] **Stage 4 — author the blocked content.** An eyebrows helper cage and a
-      wearable alternate body topology, which unblock `EyebrowsTaskView` and
-      `ProxyTaskView`. Asset authoring, and the hair styles are the warning:
-      **budget for render-and-look iterations, not for code.** Last, because
-      it is the only stage whose cost is not predictable from the code.
+- [~] **Stage 4 — author the blocked content. THE TWO BLOCKERS ARE NOT THE
+      SAME SIZE, measured 2026-09-24 before starting.**
+      **`EyebrowsTaskView` is NOT blocked on a helper cage any more.** The
+      claim is `blocked on content: no helper cage in the base mesh`, and the
+      cage really is absent -- `base.obj` has `helper-{genital,hair,l-eye,
+      l-eyelashes-1,l-eyelashes-2,lower-teeth,r-eye,r-eyelashes-1,
+      r-eyelashes-2,skirt,tights,tongue,upper-teeth}` and no eyebrow among
+      them. But a cage is no longer REQUIRED, because the binder written for
+      the hair styles binds to the BODY. MEASURED over the shipped proxies:
+      | proxy | body verts | helper verts |
+      |---|---|---|
+      | `hair` (upstream-style) | 0 | **428** |
+      | `afro` | **475** | 0 |
+      | `locs` | **475** | 0 |
+      | `cornrows` | **156** | 0 |
+      The body and helper vertex sets are disjoint (13,380 and 4,778, overlap
+      0), so this is a clean split and not a coincidence of indices. The three
+      styles authored here reference body geometry ONLY, via
+      `tools/make_hair_styles.py --bind-points`. An eyebrow can be bound to the
+      brow the same way the locs are bound to the scalp.
+      **The base mesh must NOT be edited to add a cage** -- 19,158 verts is the
+      parity oracle every golden fixture is captured against.
+      **`ProxyTaskView` is a genuinely different problem and stays blocked.**
+      It chooses between alternate BODY topologies, and the only
+      proxymesh-shaped assets shipped are `data/3dobjs/base.mhclo` (the old
+      alpha_7 map) and `a7_converter.proxy`, neither wearable. No binder helps:
+      that needs a whole alternate body mesh authored, which is a different
+      order of work from a brow strip.
+      **So this stage splits.** Eyebrows first, as the reachable half.
+      **Budget for render-and-look iterations, not for code** -- the hair took
+      five before one shipped, and `src/core/Proxy.cpp:435-438` already has all
+      the machinery either half would need.
 
 ## M8 — Application shell (`mh-app`, `mh-ui`)
 
