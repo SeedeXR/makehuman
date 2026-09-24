@@ -36,7 +36,7 @@ string(REPLACE "\n" ";" lines "${out}")
 #
 # This was a prefix list -- upperarm/lowerarm/shoulder/clavicle/hand/finger/
 # metacarpal/thumb -- and it was wrong. MEASURED: it misses `wrist.L`/`wrist.R`,
-# whose 96 vertices sit 4.3-4.5 dm off the body axis, further out than any part
+# whose 196 vertices sit 4.28-4.73 dm off the body axis, further out than any
 # of the torso. The band this test measures does not contain them, so the gate
 # stayed green while the generator built a profile with two wrists in it.
 # Whether a vertex is on an arm is a question about the SKELETON, which is why

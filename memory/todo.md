@@ -6106,7 +6106,16 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       **`--bone-parents` ships alongside it, and it is not a convenience.**
       Arm membership by NAME PREFIX is wrong: `upperarm|lowerarm|shoulder|
       clavicle|hand|finger|metacarpal|thumb` misses **`wrist.L`/`wrist.R`**,
-      whose 96 vertices sit **4.3-4.5 dm off the body axis** -- further out
+      whose **196** vertices sit **4.28-4.73 dm off the body axis** -- further out
+      **(CORRECTED 2026-09-24: this said "96 ... 4.3-4.5 dm" in FOUR places,
+      including the user-facing `--bone-parents` help text.** The 96 came from
+      an early probe filtered to `2.0 <= y < 2.5 and abs(x) > 2.0` -- a SUBSET
+      I then quoted as the population. The real figures, measured over every
+      wrist-dominated vertex: **196**, at **4.278..4.727 dm**. Found by
+      re-reading my own `--help` output and checking the number in it.
+      **A FILTERED PROBE'S COUNT IS NOT THE POPULATION'S COUNT** -- when a
+      number escapes into a comment, a test or a help string, re-measure it
+      unfiltered first.)
       than any part of the torso, because hands hang beside the hips. So the
       first arm-excluded profile still had two wrists in it and read **4.685**
       at hip height instead of 1.353. `--bone-parents` prints "bone parent" for

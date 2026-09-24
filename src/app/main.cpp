@@ -3165,7 +3165,7 @@ int main(int argc, char** argv) {
                        "vertex belongs to an arm is a question about the SKELETON, not "
                        "about how a bone is spelled. Measured the hard way -- a prefix "
                        "list of upperarm/lowerarm/shoulder/hand/finger misses `wrist`, "
-                       "and 96 wrist vertices sit 4.4 dm off the body axis."));
+                       "and its 196 wrist vertices sit 4.28-4.73 dm off the body axis."));
     const QCommandLineOption vertexBonesOpt(
         QStringLiteral("vertex-bones"),
         QStringLiteral("Print the DOMINANT bone of every base-mesh vertex, as "
@@ -4045,7 +4045,7 @@ int main(int argc, char** argv) {
     // they answer "is this vertex on an arm" as a closure over the hierarchy
     // rather than as a guess about names -- which was measured to be necessary,
     // not tidy: `wrist` is on the arm chain and matches no prefix anyone would
-    // think to write, and its 96 vertices sit further off the body axis than
+    // think to write, and its 196 vertices sit further off the body axis than
     // any part of the torso.
     if (parser.isSet(boneParentsOpt)) {
         const auto skelPath = rigFile(".mhskel");
