@@ -24,10 +24,15 @@
 //
 // Usage: mh_png_compare <a.png> <b.png>
 //            (--max-differing N | --min-differing N | --min-psnr DB | --max-psnr DB)
+//
+// On any difference it also prints the bounding box of the differing pixels.
+// See the comment on the compare loop for why a count on its own has twice
+// left a failure unexplained.
 
 #include <QImage>
 #include <QString>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -148,7 +153,22 @@ int main(int argc, char** argv) {
     a = a.convertToFormat(QImage::Format_RGB888);
     b = b.convertToFormat(QImage::Format_RGB888);
 
+    // The BOX the differences fall in, not just how many there are.
+    //
+    // A count alone cannot tell the three failures apart, and each wants a
+    // different investigation: MSAA noise is a handful of pixels scattered
+    // right across the frame, a feature that did not draw is one compact
+    // region, and a frame that composited late is a band. The intermittent
+    // `app_backdrop_transparent_shows_nothing` failure of 2026-09-21 --
+    // 278,285 of 2,363,772 -- was never reproduced, and the reason it stayed
+    // unexplained is that the only thing recorded about it was the count. A
+    // region would have said in one line whether that was the model's
+    // silhouette (11.55% of a frame, measured) or something else entirely.
     long differing = 0;
+    int minX       = a.width();
+    int minY       = a.height();
+    int maxX       = -1;
+    int maxY       = -1;
     for (int y = 0; y < a.height(); ++y) {
         const uchar* ra = a.constScanLine(y);
         const uchar* rb = b.constScanLine(y);
@@ -158,6 +178,10 @@ int main(int argc, char** argv) {
                 std::abs(ra[i + 1] - rb[i + 1]) > kChannelTolerance ||
                 std::abs(ra[i + 2] - rb[i + 2]) > kChannelTolerance) {
                 ++differing;
+                minX = std::min(minX, x);
+                minY = std::min(minY, y);
+                maxX = std::max(maxX, x);
+                maxY = std::max(maxY, y);
             }
         }
     }
@@ -174,6 +198,12 @@ int main(int argc, char** argv) {
 
     std::printf("%ld of %ld pixels differ (%s %ld)\n", differing, total,
                 mode.toLocal8Bit().constData(), want);
+    if (differing > 0) {
+        // Printed next to the image's own size, because "662x663 in 1024x1024"
+        // reads as a region and "1024x1024 in 1024x1024" reads as everything.
+        std::printf("  differing region x %d..%d y %d..%d (%dx%d in %dx%d)\n", minX, maxX, minY,
+                    maxY, maxX - minX + 1, maxY - minY + 1, a.width(), a.height());
+    }
     if (mode == QLatin1String("--max-differing")) return differing <= want ? 0 : 1;
     if (mode == QLatin1String("--min-differing")) return differing >= want ? 0 : 1;
     std::fprintf(stderr, "unknown mode %s\n", mode.toLocal8Bit().constData());

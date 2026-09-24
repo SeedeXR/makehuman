@@ -228,6 +228,37 @@ if(MH_HAVE_RENDER)
     # No fixture, no GPU, no screenshot.
     add_test(NAME png_compare_psnr_matches_arithmetic COMMAND mh_png_compare --selftest)
 
+    # The differing REGION, pinned against content that never moves.
+    #
+    # A differing COUNT has now twice left a pixel failure unexplained, so the
+    # tool also prints the box the differences fall in. This gates that box on
+    # two shipped textures rather than on a render: the brown and blue eye
+    # materials are both 1024x1024 and differ only in the iris. MEASURED at the
+    # tool's own tolerance (`> 2` in a channel): 78,726 pixels inside
+    # x 178..839, y 185..847 -- a 662x663 region in a 1024x1024 image.
+    #
+    # The exact box is what makes this discriminating, because the two ways to
+    # get a bounding box wrong both land outside it. A box that is never
+    # narrowed reports the whole 1024x1024; one that is never widened collapses
+    # onto the first differing pixel. Neither matches.
+    add_test(NAME png_compare_reports_the_differing_region COMMAND mh_png_compare
+             ${MH_DATA_DIR}/eyes/materials/brown_eye.png
+             ${MH_DATA_DIR}/eyes/materials/blue_eye.png
+             --min-differing 1)
+    set_tests_properties(png_compare_reports_the_differing_region PROPERTIES
+        PASS_REGULAR_EXPRESSION
+        "differing region x 178\\.\\.839 y 185\\.\\.847 \\(662x663 in 1024x1024\\)")
+
+    # ...and that it stays SILENT when nothing differs. Without this, printing
+    # the box unconditionally would report a 1024x1024 sentinel region for two
+    # identical images and nobody would notice.
+    add_test(NAME png_compare_reports_no_region_when_equal COMMAND mh_png_compare
+             ${MH_DATA_DIR}/eyes/materials/brown_eye.png
+             ${MH_DATA_DIR}/eyes/materials/brown_eye.png
+             --max-differing 0)
+    set_tests_properties(png_compare_reports_no_region_when_equal PROPERTIES
+        FAIL_REGULAR_EXPRESSION "differing region")
+
     # ETC1S round-trip, for the QUALITY gate below. It asserts nothing itself:
     # "how far did the image move" is exactly what `mh_png_compare --min-psnr`
     # answers, so this only produces the second image and the existing, already
