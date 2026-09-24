@@ -391,10 +391,33 @@ if(MH_HAVE_RENDER)
              --screenshot ${CMAKE_CURRENT_BINARY_DIR}/shot_plain.png
              --screenshot-viewport)
     set_tests_properties(app_screenshot_plain PROPERTIES FIXTURES_SETUP app_shot_plain)
-    add_test(NAME app_screenshot_layout_independent COMMAND ${CMAKE_COMMAND}
-             -DA=${CMAKE_CURRENT_BINARY_DIR}/shot_plain.png
-             -DB=${CMAKE_CURRENT_BINARY_DIR}/shot_stored_layout.png
-             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_identical.cmake)
+    # Compared as PIXELS, not as bytes, and that is a CORRECTION rather than a
+    # relaxation.
+    #
+    # These are two SEPARATE app runs, each doing its own GPU render, and this
+    # repository already measured what that means: `mh_png_compare.cpp`'s
+    # header records that two runs of the same scene on the same GPU are NOT
+    # bit-identical -- nine pixels, by up to 37 in a channel, because MSAA
+    # resolve order is not promised to be stable. A byte compare over that was
+    # relying on luck, and it held until the Assets panel gained tabs and moved
+    # the viewport 1192x1686 -> 1160x1492 (2026-09-24). CI's release job went
+    # red while debug AND release both passed locally, which is the shape of a
+    # PNG byte compare, not of a real image difference -- the same trap
+    # `memory/` already records from a generated PNG that was green locally and
+    # red in CI with identical pixels.
+    #
+    # The bar keeps the gate's teeth. The bug it exists for -- a capture
+    # adopting the stored layout -- measured 2,414 differing pixels because the
+    # viewport itself changed size, so 100 sits an order of magnitude above the
+    # MSAA floor and an order below the defect.
+    #
+    # The other six `files_identical` callers are left alone: they compare
+    # EXPORTS, which are deterministic byte streams, and byte identity is the
+    # claim there.
+    add_test(NAME app_screenshot_layout_independent COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/shot_plain.png
+             ${CMAKE_CURRENT_BINARY_DIR}/shot_stored_layout.png
+             --max-differing 100)
     set_tests_properties(app_screenshot_layout_independent PROPERTIES
         FIXTURES_REQUIRED "app_shot_plain;app_stored_layout"
         DEPENDS "app_screenshot_ignores_stored_layout;app_screenshot_plain")
