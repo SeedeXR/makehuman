@@ -664,7 +664,7 @@ Network still down; seven commits queued.
 ### The prefix list was missing `wrist`, and it mattered
 Setting out to build the arm-excluded body profile, the very first run still
 had an outlier: **4.68 dm off the body axis at hip height**, where the torso
-is 1.35. The culprit was `wrist.L`/`wrist.R` — 96 vertices, no prefix anyone
+is 1.35. The culprit was `wrist.L`/`wrist.R` — 196 vertices, no prefix anyone
 would think to write, and sitting further from the axis than any part of the
 torso because **hands hang beside the hips**.
 
