@@ -830,6 +830,33 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       substantially unfinished one, not a subtle timing wobble. A first attempt
       at 30 iterations was SIGKILLed (exit 137) before finishing; eight is what
       completed.
+      **2026-09-24, later: the failure's own pixel count contradicts "the
+      settings file was absent".** `mh_png_compare` prints `<differing> of
+      <total>` where `total` is `a.width() * a.height()`
+      (`tests/mh_png_compare.cpp:165`), so the failing frame was
+      **2,363,772 px = 1402x1686** -- and this file records 1402x1686 as the
+      geometry *after* a stored layout is adopted, against **1402x1648 =
+      2,310,496** with the file absent (see the FIXED item below, and `:4028`).
+      Of the four factorisations of 2,363,772 with both sides in 900..2600,
+      1402x1686 is the only plausible portrait viewport, and it is the one
+      already observed here.
+      So a stored layout WAS in effect for that capture. That does not make it
+      the stored-layout bug -- that bug moved **2,414** pixels, two orders of
+      magnitude below 278,285 -- but it removes the reason this was filed as a
+      separate mystery, and it means the failure was measured in a
+      configuration the `57118325` fix has since eliminated: a capture no
+      longer restores a layout at all.
+      **Honest status: the single measurement behind this item was taken in a
+      non-hermetic configuration that no longer exists.** The eight clean
+      iterations above were run POST-fix, so they were never a test of the same
+      thing; reproducing the original would mean reverting the fix. Before
+      spending more repeats, settle whether this item is about a real defect or
+      about a frame that was never reproducible to begin with.
+      Also measured while checking this: the model's silhouette is **232,134 of
+      2,009,712 px (11.55%)** in today's `plain_front.png`, and the failure was
+      11.77% of its frame -- close enough that "one frame is missing the model"
+      remains a live reading of 278,285, and far too close to call on
+      percentages alone.
 - [x] **Windowed pixel tests are not hermetic -- FIXED 2026-09-24.**
       **Root cause: `--screenshot` refused to SAVE the layout but still
       RESTORED one.** `main.cpp` skipped `saveWorkspace()` on a capture run --
@@ -867,9 +894,12 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       `find src include tests benchmarks \( -name '*.cpp' -o -name '*.h' \)
       -print0 | xargs -0 "$(xcrun -f clang-format)" --style=file --dry-run
       --Werror`. Run THAT, not `clang-format -i` on the files you remember.
-      **This does NOT explain the INTERMITTENT failure above** -- that one was
-      measured with the settings file ABSENT throughout, so the compositor-
-      timing suspicion stands untouched and that item stays open.
+      **Whether this explains the INTERMITTENT failure above is now open
+      again.** That failure was recorded as "settings file absent throughout",
+      which is why it was filed separately -- but its frame was 1402x1686, the
+      geometry that only appears once a stored layout is adopted, so the
+      recorded premise and the recorded pixel count disagree. See the note
+      dated 2026-09-24 in that item.
       The superseded original diagnosis: `app_backdrop_reopen_restores
       _the_framing` and `app_backdrop_transparent_shows_nothing` compare
       screenshots with `--max-differing 0`, and the app persists window
