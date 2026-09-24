@@ -780,8 +780,16 @@ registers one ctest per Catch2 case, plus the one new CLI test.
 ### Still waiting on the owner — unchanged, raised again
 1. Delete the 430 dead KTX2/ETC1S lines?
 2. `.mhm` re-save turning an unresolvable slot into `clothes none`.
-3. The **"hold to run"** button — not in this repo by any spelling, and no
-   `utsubo` under `~/Documents/SoftwareProjects/`. Asked three times now.
+3. ~~The **"hold to run"** button~~ — **WITHDRAWN BY THE OWNER 2026-09-24:
+   "was a blunder in our chatting thread."** It was never about this project,
+   which is why twenty-three greps found nothing and no `utsubo` existed under
+   `~/Documents/SoftwareProjects/`. **Do not raise it again, and do not go
+   looking for it in another repo.**
+   Worth keeping as a lesson: searching harder cannot distinguish "I have not
+   found it yet" from "it is not here". Once a repo-wide search for every
+   plausible spelling comes back empty TWICE, the question stops being a
+   search problem and becomes one only the owner can answer — so ask once,
+   plainly, and then stop re-asking every tick.
 
 ### Next session starts here
 Retry the network first and push the queued commits. For locs: the blocker is
