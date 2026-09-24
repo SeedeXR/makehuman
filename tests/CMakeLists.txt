@@ -414,6 +414,27 @@ if(MH_HAVE_RENDER)
     # The other six `files_identical` callers are left alone: they compare
     # EXPORTS, which are deterministic byte streams, and byte identity is the
     # claim there.
+    # The capture's size is OURS, and this is what says so.
+    #
+    # `--screenshot` resizes the window to a fixed 960x720 before showing it,
+    # because a capture that inherits the screen is not reproducible. MEASURED
+    # on CI 2026-09-24/25: two launches of the same binary in the same
+    # environment produced windows 3 px apart in height -- `sizes differ:
+    # 340x599 vs 340x602` -- and every test comparing two launches failed.
+    # `app_backdrop_reopened` overrides no HOME, so it was never a settings
+    # difference; the window simply took what the display gave it.
+    #
+    # Asserted on the WINDOW grab rather than the viewport, because that is the
+    # number the resize sets directly. It is expressed in DEVICE pixels, so a
+    # 2x machine reads 1920x1440 and a 1x machine 960x720 -- the regex accepts
+    # either and nothing else, which is exactly the claim: the size is a
+    # function of our constant and the display's scale, and of nothing else.
+    add_test(NAME app_screenshot_size_is_fixed COMMAND makehuman
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/shot_fixed_size.png)
+    set_tests_properties(app_screenshot_size_is_fixed PROPERTIES
+        PASS_REGULAR_EXPRESSION "wrote .*shot_fixed_size\\.png \\((1920x1440|960x720)\\)"
+        SKIP_REGULAR_EXPRESSION "viewport error")
+
     add_test(NAME app_screenshot_layout_independent COMMAND mh_png_compare
              ${CMAKE_CURRENT_BINARY_DIR}/shot_plain.png
              ${CMAKE_CURRENT_BINARY_DIR}/shot_stored_layout.png
@@ -2870,23 +2891,25 @@ if(MH_HAVE_RENDER)
                  # has said to do all three times. This centre is no longer the
                  # first zero found: it is the one with the MOST ROOM, chosen by
                  # scanning for the candidate whose radius-40 disc keeps the
-                 # largest margin to the silhouette. (610,470) reads EXACTLY
-                 # 0.000 with >= 40 px to spare. All 288 candidates lying
+                 # largest margin to the silhouette. (275,615) reads EXACTLY
+                 # 0.000 with >= 40 px to spare, and all 720 candidates lying
                  # wholly on the model read 0.000, so the bar of 2.0 is nowhere
-                 # near any of them.
+                 # near any of them. The companion below reads 114.6.
                  #
-                 # It has moved four times in two days, which is the point:
-                 # every one of those moves was a panel changing the WINDOW's
-                 # size. Since `installInDock` now breaks that chain, this
-                 # coordinate should finally stop drifting -- a panel gaining a
-                 # row can no longer move the viewport.
+                 # THIS SHOULD BE THE LAST TIME IT MOVES. It drifted five times
+                 # in two days because the viewport size was whatever the screen
+                 # and the docks between them decided. `--screenshot` now sets
+                 # the window to a fixed 960x720 before showing it, so the
+                 # capture geometry is ours: 552x1332 here at 2x, and the same
+                 # logical size on any machine. A coordinate can only move now
+                 # if someone changes that constant.
                  #
                  # The companion check below still reads 27.3 on the same pair,
                  # which is what keeps this from passing on two identical
                  # images. If a dock changes again, re-derive again -- the scan
                  # is a two-minute job and the threshold is the point of the
                  # test.
-                 --cx 610 --cy 470 --radius 40 --max-response 2.0)
+                 --cx 275 --cy 615 --radius 40 --max-response 2.0)
         set_tests_properties(app_backdrop_does_not_eat_the_model PROPERTIES
             SKIP_RETURN_CODE 77
             FIXTURES_REQUIRED "app_backdrop_front;app_backdrop_plain_front")

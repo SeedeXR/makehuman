@@ -1628,6 +1628,10 @@ std::string& sceneNameRef() {
     return name;
 }
 
+/// The window size every `--screenshot` run uses. See the resize at the call
+/// site for why a capture must not inherit the screen.
+const QSize kScreenshotWindowSize{960, 720};
+
 std::vector<mh::foundation::AssetGroup> buildAssetGroups(
     const std::string& currentPose, const std::string& currentSkin, const std::string& currentEyes,
     const std::string& currentMaterial, const std::string& currentRig,
@@ -6857,7 +6861,34 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
+    // A CAPTURE MUST BE REPRODUCIBLE, so it gets a size WE choose rather than
+    // whatever the screen happens to grant.
+    //
+    // This is the same idea as skipping `restoreWorkspace` above, finished. A
+    // capture already refuses to inherit a stored layout; it should equally
+    // refuse to inherit the screen. MEASURED on CI 2026-09-24/25: two launches
+    // of the SAME binary in the SAME environment produced windows 3 px apart in
+    // height -- `sizes differ: 340x599 vs 340x602` -- and every screenshot test
+    // comparing two launches failed. `app_backdrop_reopened` overrides no
+    // `HOME`, so that was not a settings difference; the window simply takes
+    // what the display gives it, and a headless runner does not give the same
+    // thing twice.
+    //
+    // 960x720 and not larger: it has to FIT. A size the screen cannot honour is
+    // clamped, and the clamp is the very nondeterminism this removes -- so the
+    // number is chosen to sit well inside the 1024x768 a headless macOS runner
+    // offers, which is what CI's own ~1000x700 window implies it had.
+    if (parser.isSet(shotOpt)) {
+        window.resize(kScreenshotWindowSize);
+    }
     window.show();
+    if (parser.isSet(shotOpt)) {
+        // Again after show(): a window manager may have had opinions during
+        // mapping, and the second resize is what makes the result OURS. If the
+        // screen still refuses, the size is reported below and the gate fails
+        // loudly rather than drifting.
+        window.resize(kScreenshotWindowSize);
+    }
 
     // Headless production render. Deliberately BEFORE the window path: it needs
     // a GPU but no surface, so it works where --screenshot cannot -- and it
