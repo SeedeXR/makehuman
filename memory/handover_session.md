@@ -4,6 +4,61 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-24 06:35:00 — Session · **The network was never down. `timeout` does not exist on this machine.**
+
+**Fourteen commits sat queued for many ticks because my connectivity probe
+could not run, and I read its failure as "the network is down".**
+
+### What happened
+The check was:
+
+```
+timeout 25 git ls-remote origin -h refs/heads/master >/dev/null 2>&1 && echo up || echo down
+```
+
+macOS ships no `timeout`, and there is no `gtimeout` here either. So the
+command never ran: the shell said "command not found", `&&` failed, and the
+`||` branch printed **down**. Every tick. The network was up the entire time.
+
+Run without the wrapper, `git ls-remote` answered instantly. CI run
+`35898021676` on `d5c8b9c8` was green on **all ten jobs, TSan included**.
+Pushed `d5c8b9c8..904d35a5` — fourteen commits — and CI run `35949079461` is
+now queued on the new head. `ahead: 0`.
+
+### How it surfaced
+By accident. I used `timeout` inside a `for` loop where its stderr was *not*
+being swallowed, and twelve lines of `command not found: timeout` appeared at
+once. In the connectivity check the same failure had been invisible for ticks,
+because `>/dev/null 2>&1` hid it and the `||` gave it a plausible meaning.
+
+### The rule, written where it will be read
+**A probe whose FAILURE branch is the interesting answer must distinguish "the
+thing is false" from "the probe did not run".** Use
+`git ls-remote origin -h refs/heads/master >/dev/null 2>&1; echo $?` and read
+the code — **no `timeout` wrapper**; git has its own network timeouts.
+
+This is the same family as the `grep -iE "locs|error"` trap from earlier in
+this session: a command failing for a reason other than the one assumed.
+**Having written that lesson down did not stop me repeating its shape**, which
+is the part worth remembering — the earlier note was about grep specifically,
+not about the pattern.
+
+### Unrelated finding, parked
+`--hair zzbogus` prints `unknown --hair "zzbogus"; wearing none` and does **not**
+list the four styles that ship, where `--rig` does name its alternatives
+(`availableRigs()`). Small, and in the shipped-but-undiscoverable family.
+Worth doing; not done this tick.
+
+### Also
+A bare `--flag` run with no terminating action **launches the GUI and hangs**.
+One did, for 300s, before being killed. The owner's
+`~/.config/MakeHuman/MakeHumanCpp.ini` does not exist and was not created.
+
+### Sweep
+No code changed this tick — memory only. Last full sweep stands at 1494/1494.
+
+---
+
 ## 2026-09-24 05:50:00 — Session · **The `.mhm` decision: neither horn — and a hypothesis of mine was wrong**
 
 Network still down; fourteen commits queued. Same method as the KTX2 call:

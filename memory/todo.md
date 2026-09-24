@@ -6211,6 +6211,30 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       message contains neither -- it says "the shortest **loc** is".
       **Check the exit code, or grep for nothing at all.**
 
+- [x] **`timeout` DOES NOT EXIST ON THIS MACHINE, and my connectivity check
+      silently depended on it for MANY ticks. 2026-09-24.**
+      The check was
+      `timeout 25 git ls-remote origin -h refs/heads/master >/dev/null 2>&1 && echo up || echo down`.
+      macOS ships no `timeout` and no `gtimeout` here, so the command was never
+      run at all: the shell reported "command not found", the `&&` failed, and
+      the `||` branch printed **down**. **The network was UP the whole time.**
+      Cost: fourteen commits queued across many ticks, and "network DOWN"
+      reported to the owner every one of them. When it was finally run without
+      the wrapper, `git ls-remote` answered immediately and CI run
+      `35898021676` on `d5c8b9c8` was green on all ten jobs including TSan.
+      Pushed `d5c8b9c8..904d35a5`; new CI run `35949079461`.
+      **It was found by accident** -- `timeout` failed LOUDLY inside a `for`
+      loop where its output was not being swallowed, which is the only reason
+      the pattern became visible.
+      **THE RULE: a probe whose FAILURE branch is the interesting answer must
+      distinguish "the thing is false" from "the probe did not run".** Here,
+      use `git ls-remote origin -h refs/heads/master >/dev/null 2>&1; echo $?`
+      and read the code -- **no `timeout` wrapper**. `git` has its own network
+      timeouts.
+      This is the same family as the `grep -iE "locs|error"` trap three days'
+      work earlier: a command failing for a reason other than the one assumed.
+      Having written that lesson down did not stop me repeating its shape.
+
 - [x] **ASSET-TREE INTEGRITY SWEEP, 2026-09-24. Three of four dimensions came
       back CLEAN -- recorded so nobody re-derives them -- and the fourth
       corrected a claim I had put in a test.**
