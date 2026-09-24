@@ -3077,6 +3077,44 @@ if(MH_HAVE_RENDER)
              -DBASE=${MH_DATA_DIR}/3dobjs/base.obj
              -P ${CMAKE_CURRENT_SOURCE_DIR}/check_vertex_bones.cmake)
 
+    # Dropping a record the file named and this build cannot resolve.
+    #
+    # A `.mhm` naming an asset that is not installed loads with a warning and
+    # then, on RE-SAVE, the slot is rewritten from live state and the UUID is
+    # gone for good. MEASURED 2026-09-24 on `clothes` and `hair`.
+    #
+    # Preserving the old line instead was considered and rejected on the
+    # measurement, not on taste: the format has one line per slot and no field
+    # for "wanted, but not installed", so keeping it would make the file assert
+    # the character wears something it does not -- and for a slot defaulting to
+    # WORN, like teeth, override the default actually in use. Nothing visual is
+    # at stake either way: a file with an unresolvable teeth UUID loads as
+    # default Teeth, saves as default Teeth and reloads identically, so the
+    # round trip is already character-idempotent. The ONLY loss is the record.
+    #
+    # So the defect was that the loss was SILENT at save time. The app warned on
+    # LOAD, which does not help a user who loads now and saves an hour later.
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/ghost_asset.mhm
+         "version v1.2.0\nname Ghost\n"
+         "clothes SomeJacket 11111111-2222-3333-4444-555555555555\n")
+    add_test(NAME app_mhm_says_when_a_record_is_dropped COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/ghost_asset.mhm
+             --save ${CMAKE_CURRENT_BINARY_DIR}/ghost_asset_out.mhm)
+    set_tests_properties(app_mhm_says_when_a_record_is_dropped PROPERTIES
+        PASS_REGULAR_EXPRESSION
+        "clothes: the saved file will no longer record UUID 11111111-2222-3333-4444-555555555555"
+        FIXTURES_SETUP app_mhm_dropped_record)
+    # ...and it must NOT nag on a file whose records all resolve, or the warning
+    # becomes noise a user learns to ignore. The output of the run above IS such
+    # a file -- the unresolvable line is gone from it -- so this is the same
+    # check from the other side rather than a second fixture.
+    add_test(NAME app_mhm_is_quiet_when_nothing_is_dropped COMMAND makehuman
+             --load ${CMAKE_CURRENT_BINARY_DIR}/ghost_asset_out.mhm
+             --save ${CMAKE_CURRENT_BINARY_DIR}/ghost_asset_twice.mhm)
+    set_tests_properties(app_mhm_is_quiet_when_nothing_is_dropped PROPERTIES
+        FAIL_REGULAR_EXPRESSION "no longer record UUID"
+        FIXTURES_REQUIRED app_mhm_dropped_record)
+
     # Scalp roots, walked rather than raycast.
     #
     # `mh::core::SurfaceWalk` shipped in the chunk before this one and nothing

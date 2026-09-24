@@ -4,6 +4,61 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-24 05:50:00 — Session · **The `.mhm` decision: neither horn — and a hypothesis of mine was wrong**
+
+Network still down; fourteen commits queued. Same method as the KTX2 call:
+find the fact, don't re-weigh the trade-off.
+
+### A hypothesis of mine was wrong, and the measurement said so
+I expected an unresolvable **teeth** line to become `teeth none`, so the
+character would differ between the first and second load — a much bigger bug
+than record-loss. **It does not.** It becomes `teeth Teeth <real-uuid>`, the
+default that *is* worn, and the character is identical on both loads.
+
+**The round trip is already character-idempotent for every slot.** Nothing
+visual was ever at stake, and I nearly built an argument on the opposite.
+
+### That killed preservation, which was the option I had been leaning toward
+`.mhm` has **one line per slot** and no field for "wanted, but not installed".
+Keeping the old line would make the file assert the character wears something
+it does not — and for a slot defaulting to WORN, override the default actually
+in use. That is the "lying record" shape this project keeps removing.
+
+### So the defect was not the drop. It was that the drop was silent.
+The app warns on **load**. That does not help a user who loads now and saves an
+hour later — by then the UUID is gone for good, with no signal at the moment it
+happened.
+
+Shipped: `droppingUnresolvedRecord` plus a warning naming the slot and the
+lost UUID, fired **only** where the old record cannot be honoured. Deliberately
+*not* when the uuid merely differs — changing clothes is a replacement made on
+purpose, and warning there would turn the message into noise.
+
+| case | behaviour |
+|---|---|
+| unresolvable record dropped | warns, naming slot + UUID |
+| clean file | silent |
+| re-save of an already-cleaned file | silent |
+
+Gated both ways: `app_mhm_says_when_a_record_is_dropped` and
+`app_mhm_is_quiet_when_nothing_is_dropped` (`FAIL_REGULAR_EXPRESSION` — that
+second gate is what stops the warning becoming noise). Control: disabling the
+warning turns the first red.
+
+For the record the **reference** drops it too, and more thoroughly —
+`proxychooser.py:530-556` warns and returns without selecting, and
+`saveHandler` writes only selected proxies, so it emits no line at all where we
+emit the `none` sentinel.
+
+### Also
+A memory-edit anchor did not exist and the assertion caught it before writing.
+That habit has now paid twice in two days.
+
+### Sweep
+**1494/1494**, +2 exactly as predicted. clang-format clean.
+
+---
+
 ## 2026-09-24 05:05:00 — Session · **The KTX2 decision, taken at last — and it split**
 
 Network still down; thirteen commits queued.

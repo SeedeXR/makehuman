@@ -2054,8 +2054,53 @@ void recordLine(mh::core::MhmFile& doc, std::string_view key, const std::string&
 /// Replaces rather than appends: a document loaded with one selection and saved
 /// with another would otherwise carry both lines, and the loader takes the
 /// first.
+/// True when @p doc's existing line for @p slot names a proxy this build cannot
+/// resolve -- i.e. the record is about to be dropped rather than replaced.
+///
+/// Deliberately NOT "the uuid differs": changing clothes is a replacement the
+/// user made on purpose and needs no warning. This fires only where the old
+/// record could not be honoured and is about to become unrecoverable.
+bool droppingUnresolvedRecord(const mh::core::MhmFile& doc, const std::string& slot,
+                              std::string& lostUuid) {
+    for (const std::string& line : doc.unhandled) {
+        std::istringstream in(line);
+        std::string key;
+        if (!(in >> key) || key != slot) continue;
+        std::vector<std::string> rest;
+        for (std::string tok; in >> tok;)
+            rest.push_back(tok);
+        if (rest.size() < 2) return false;  // `none`, or the old by-filename form
+        const std::array<std::filesystem::path, 1> search{dataDir() / slot};
+        if (mh::core::AssetIndex::build(search).findByUuid(rest.back()) != nullptr) return false;
+        lostUuid = rest.back();
+        return true;
+    }
+    return false;
+}
+
 void recordProxy(mh::core::MhmFile& doc, const std::string& slot, const std::string& name,
                  const std::string& uuid) {
+    // Say so when a record is being DROPPED rather than replaced.
+    //
+    // The alternative -- preserving the unresolvable line -- was considered and
+    // MEASURED on 2026-09-24, and it is worse. The `.mhm` format has one line
+    // per slot and no field for "wanted, but not installed", so keeping the old
+    // line would make the file assert the character wears something it does
+    // not; for a slot that defaults to WORN, like teeth, it would also override
+    // the default actually in use. And nothing visual is at stake: the round
+    // trip is already character-idempotent -- a file with an unresolvable teeth
+    // UUID loads as default Teeth, saves as default Teeth, and reloads
+    // identically. The ONLY thing lost is the user's record of what they had.
+    //
+    // So the defect is not the drop, it is that the drop was SILENT. The app
+    // warns on load, but a user who loads now and saves an hour later sees
+    // nothing, and the UUID is then unrecoverable. This is that warning.
+    if (std::string lost; droppingUnresolvedRecord(doc, slot, lost)) {
+        std::fprintf(stderr,
+                     "%s: the saved file will no longer record UUID %s -- it is not installed, "
+                     "so it cannot be kept without claiming the character wears it\n",
+                     slot.c_str(), lost.c_str());
+    }
     // Empty name writes an explicit `<slot> none` SENTINEL, not an absent line.
     //
     // Absence used to be the record, which silently conflated "the user took

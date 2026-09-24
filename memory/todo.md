@@ -9383,14 +9383,33 @@ GPU here, or Colab) and it comes back to the owner first.
       file. An UNRECOGNISED key is safer: `proxy Proxy741 1111...` survived a
       full round trip untouched. The guide says: read the warnings, keep the
       original, install the asset before saving over it.
-- [ ] **OPEN QUESTION, raised not decided: should an unresolvable slot line be
-      PRESERVED on save rather than replaced with the default?** Measured
-      above. Preserving it keeps the user's record of what the character wore
-      and lets a later install restore it; it also makes the file name
-      something the character is NOT wearing, which is the "lying control"
-      shape this project keeps removing. The warning at load is clear either
-      way. I did not change save semantics on my own judgement -- it is a
-      data-retention decision, and both answers are defensible.
+- [x] **DECIDED 2026-09-24: do NOT preserve -- WARN AT SAVE instead.** Settled
+      by measuring rather than weighing the two horns again.
+      **The fact that killed preservation**: `.mhm` has ONE line per slot and no
+      field for "wanted, but not installed", so keeping the old line makes the
+      file assert the character wears something it does NOT -- and for a slot
+      that defaults to WORN it would also override the default actually in use.
+      **A hypothesis of mine was wrong and the measurement says so**: I expected
+      an unresolvable TEETH line to become `teeth none`, giving a character that
+      CHANGED between the first and second load. It does not. It becomes
+      `teeth Teeth <real-uuid>`, and the character is identical on both loads.
+      **The round trip is already character-idempotent for every slot.**
+      **So nothing visual was ever at stake. The only loss is the user's RECORD,
+      and the real defect was that the loss was SILENT at save time** -- the app
+      warned on LOAD, which does not help someone who loads now and saves an
+      hour later, by which time the UUID is unrecoverable.
+      **Shipped**: `droppingUnresolvedRecord` + a warning naming the slot and the
+      UUID, fired ONLY where the old record cannot be honoured -- deliberately
+      not when the uuid merely differs, because changing clothes is a
+      replacement made on purpose and a warning there would become noise.
+      Gated by `app_mhm_says_when_a_record_is_dropped` and its counterpart
+      `app_mhm_is_quiet_when_nothing_is_dropped` (`FAIL_REGULAR_EXPRESSION`,
+      which is what stops the warning becoming noise). **Control**: disabling
+      the warning turns the first red.
+      For the record, the REFERENCE drops it too and more thoroughly:
+      `proxychooser.py:530-556` warns and returns without selecting, and
+      `saveHandler` writes only SELECTED proxies -- so it emits no line at all
+      where we emit the `none` sentinel.
 
 ---
 
