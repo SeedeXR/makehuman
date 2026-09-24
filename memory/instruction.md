@@ -260,6 +260,48 @@ Presets live in `CMakePresets.json`. Options:
 | `MH_ENABLE_ASAN` | OFF | AddressSanitizer + UBSan |
 | `MH_USE_ASSIMP` | ON | assimp-backed import |
 | `MH_DATA_DIR` | `${CMAKE_SOURCE_DIR}/data` | asset root for dev builds |
+| `MH_WITH_KTX2` | **OFF** | fetch+build libktx for KTX2/BasisLZ. **Off by default, so your local build links no libktx and a whole class of packaging bug is invisible to you and visible in exactly one CI job.** A tree exists at `build/ktx2`. |
+
+### Environment traps that have each cost real time
+
+**`timeout` does not exist on this machine** — no `timeout`, no `gtimeout`. A
+probe written as
+`timeout 25 git ls-remote ... >/dev/null 2>&1 && echo up || echo down`
+never runs the command: the shell reports "command not found", `&&` fails and
+`||` prints the failure branch. That read as "the network is down" for many
+ticks while it was up, and fourteen commits sat unpushed. Use
+`git ls-remote origin -h refs/heads/master >/dev/null 2>&1; echo $?` and read
+the code. **Generally: a probe whose FAILURE branch is the interesting answer
+must distinguish "the thing is false" from "the probe did not run."**
+
+**Run a gate's own command, not your memory of which files you touched.**
+CI's format job failed on a file that had been APPENDED to, while
+`clang-format -i` had been run only on the file being thought about. A local
+`ctest` sweep cannot catch it, because **formatting is not a test**. One line
+reproduces CI exactly:
+
+```bash
+find src include tests benchmarks \( -name '*.cpp' -o -name '*.h' \) -print0 \
+  | xargs -0 "$(xcrun -f clang-format)" --style=file --dry-run --Werror
+```
+
+clang-format REFLOWS, so rebuild and re-sweep after fixing. The same warning
+applies to every non-test CI job: licence inventory, the inventories job, the
+dmg job. **A green local sweep does not cover them.**
+
+**Never run the app without a terminating action.** `--save`, `--export`,
+`--screenshot`, `--inspect` and `--list-*` all exit; a bare `--flag` run
+**launches the GUI and hangs** (one did, for 300 s). Recover with
+`pkill -9 -f "makehuman.app/Contents/MacOS/makehuman"`. If a test needs
+settings, **redirect `HOME`** — `QSettings(IniFormat, UserScope)` resolves to
+`$HOME/.config/MakeHuman/MakeHumanCpp.ini`, and the `--skinning` preference
+tests and the stored-layout gate both do this so nothing touches the
+developer's own preferences.
+
+**Pushing cancels an in-flight CI run** (concurrency group). TSan takes ~72
+minutes, so pushing every ~25 minutes means TSan never completes. If nothing
+has failed, hold the commit. If a job has ALREADY failed the run is doomed
+anyway — fix and push, which supersedes it.
 
 ## 10. CI expectations
 

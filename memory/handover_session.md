@@ -4,6 +4,45 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-24 09:35:00 — Session · **Moved this session's hard-won traps out of my head and into `instruction.md`**
+
+### Why
+Today's environment lessons were living in my own loop prompt — which is
+ephemeral — and in todo entries buried inside a 9,800-line file. A new session
+reads `session_start.md`, `agent_profile.md`, `project_context.md`,
+`handover_session.md` and `todo.md`. None of them would have surfaced "`timeout`
+does not exist here" before it cost another fourteen commits.
+
+`instruction.md` is the documented home for build/CI workflow, and it already
+has a "CI gates" section with exactly this flavour of hard-won note. It had
+**zero** mentions of `timeout`, `MH_WITH_KTX2` or the GUI-hang trap.
+
+### What went in
+- **`MH_WITH_KTX2` added to the build options table**, with its consequence
+  stated: off by default, so a local build links no libktx and a whole class
+  of packaging bug is invisible locally and visible in exactly one CI job.
+- **A new "Environment traps that have each cost real time" subsection**:
+  the `timeout` probe failure and the general rule behind it; run a gate's own
+  command rather than your memory of which files you touched, with CI's
+  clang-format line quoted verbatim; never run the app without a terminating
+  action, and redirect `HOME` for settings; pushing cancels an in-flight run,
+  TSan takes ~72 min, hold unless a job has already failed.
+
+Each is written with the cost attached, because a rule without its scar gets
+optimised away by the next reader.
+
+### CI
+`99e3de2e`: clang-format is **green** — the fix held. Only asan and tsan still
+running, nothing failed. Holding this commit per the owner's standing
+instruction.
+
+### Sweep
+None needed: memory only, pure insertion (0 removals), and nothing in
+`tests/`, `src/`, CMake or CI reads `memory/instruction.md` outside comments —
+checked, not assumed.
+
+---
+
 ## 2026-09-24 08:50:00 — Session · **A capture run would not save your layout, but happily adopted it**
 
 ### The asymmetry
