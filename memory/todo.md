@@ -816,7 +816,37 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       depend on the compositor having finished, so a partially composited frame
       is the obvious suspect and nothing has confirmed it. Recorded, not
       explained.
-- [ ] **Windowed pixel tests are not hermetic.** `app_backdrop_reopen_restores
+- [x] **Windowed pixel tests are not hermetic -- FIXED 2026-09-24.**
+      **Root cause: `--screenshot` refused to SAVE the layout but still
+      RESTORED one.** `main.cpp` skipped `saveWorkspace()` on a capture run --
+      with a comment saying a screenshot must not overwrite the user's dock
+      arrangement -- while `restoreWorkspace()` three lines above ran
+      UNCONDITIONALLY. So a capture would not write the layout yet happily
+      adopted it, and the image depended on whatever the last interactive
+      session left behind. The fix is the missing half of an idea already
+      there: `if (!parser.isSet(shotOpt)) window.restoreWorkspace();`
+      **MEASURED PAYOFF**: with `HOME` pointed at a directory holding a stored
+      layout, **all 20 backdrop tests now pass**, where the 2026-09-20
+      measurement had two of them failing on 2,414 of 2,363,772 pixels.
+      **The gate needed a REAL Qt blob to be worth anything.** A hand-written
+      or garbage `workspace/geometry` cannot discriminate: `restoreGeometry`
+      rejects a malformed blob and falls back to the defaults, so the test
+      would pass with or without the fix. So `ui_geometry_fixture` (a
+      `[geomfixture]`-tagged case, run alone as a FIXTURES_SETUP the way
+      `ui_icons_hidpi` runs `[icons]`) constructs a `MainWindow` offscreen,
+      resizes it to a NON-default 1000x700 and writes `saveGeometry()` into a
+      settings file under a redirected `HOME`. `app_screenshot_layout_
+      independent` then compares that capture against one taken with no stored
+      layout, byte-for-byte.
+      **Control**: restoring the unconditional `restoreWorkspace()` compiles
+      clean and the comparison fails with "differ, and were expected to be
+      byte-identical".
+      `HOME` redirection follows the existing `--skinning` preference tests, so
+      nothing reads or writes the developer's own preferences.
+      **This does NOT explain the INTERMITTENT failure above** -- that one was
+      measured with the settings file ABSENT throughout, so the compositor-
+      timing suspicion stands untouched and that item stays open.
+      The superseded original diagnosis: `app_backdrop_reopen_restores
       _the_framing` and `app_backdrop_transparent_shows_nothing` compare
       screenshots with `--max-differing 0`, and the app persists window
       geometry to `~/.config/MakeHuman/MakeHumanCpp.ini`. MEASURED 2026-09-20:

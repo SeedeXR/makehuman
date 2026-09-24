@@ -4,6 +4,55 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-24 08:50:00 — Session · **A capture run would not save your layout, but happily adopted it**
+
+### The asymmetry
+`--screenshot` skipped `saveWorkspace()`, with a comment saying a capture must
+not overwrite the dock arrangement the user made. Three lines above it,
+`restoreWorkspace()` ran **unconditionally**. So a capture refused to *write*
+the layout and then *read* it anyway — and the image depended on whatever the
+last interactive session left in `~/.config/MakeHuman/MakeHumanCpp.ini`.
+
+The fix is the missing half of an idea that was already there:
+`if (!parser.isSet(shotOpt)) window.restoreWorkspace();`
+
+**Measured payoff:** with `HOME` pointed at a directory holding a stored
+layout, **all 20 backdrop tests pass**. The 2026-09-20 measurement had two of
+them failing on 2,414 of 2,363,772 pixels against `--max-differing 0`. CI only
+ever escaped this by having no settings file — luck, not hermeticity.
+
+### The gate needed a real Qt blob, or it would have been worthless
+A hand-written or garbage `workspace/geometry` cannot discriminate:
+`restoreGeometry` rejects a malformed blob and falls back to the defaults, so
+the test passes with or without the fix. I nearly wrote that test.
+
+So `ui_geometry_fixture` — a `[geomfixture]`-tagged case run alone as a
+FIXTURES_SETUP, the way `ui_icons_hidpi` runs `[icons]` — builds a `MainWindow`
+offscreen, resizes it to a **non-default** 1000x700, and writes a genuine
+`saveGeometry()` into a settings file under a redirected `HOME`.
+`app_screenshot_layout_independent` then compares that capture against one
+taken with no stored layout, byte for byte.
+
+**Control:** restoring the unconditional `restoreWorkspace()` compiles clean
+(0 errors, checked) and the comparison fails with *"differ, and were expected
+to be byte-identical"*.
+
+`HOME` redirection follows the existing `--skinning` preference tests, so
+nothing touches the developer's own preferences.
+
+### What this does NOT fix
+The **intermittent** `app_backdrop_transparent_shows_nothing` failure is a
+separate item and stays open. It was measured with the settings file **absent
+throughout**, so the compositor-timing suspicion is untouched by this. Saying
+so explicitly because the two look like the same bug and are not.
+
+### Sweep
+**1501/1501**, +4 exactly as predicted (four new ctests). clang-format clean.
+CI on `c6825abd` was green everywhere except asan/tsan still running, nothing
+failed — so this commit was made while that finished.
+
+---
+
 ## 2026-09-24 08:05:00 — Session · **CI fully green; everything pushed; and memory was understating the work**
 
 ### CI

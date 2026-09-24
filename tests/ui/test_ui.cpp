@@ -32,6 +32,7 @@
 #include <QLabel>
 #include <QLayout>
 #include <QMouseEvent>
+#include <QDir>
 #include <QSettings>
 #include <QSlider>
 #include <QStyle>
@@ -1194,4 +1195,34 @@ TEST_CASE("a relabelled preset still applies", "[ui][naming]") {
     mh::ui::MainWindow w(MH_SHADER_DIR, shippedTasks());
     (void)w.setWorkspaceNames(workspaceNameTable(), mh::foundation::NamingProfile::Modern);
     CHECK(w.applyWorkspacePreset(QStringLiteral("Materials")));
+}
+
+// ---------------------------------------------------------------------------
+// A geometry fixture for the screenshot hermeticity gate.
+//
+// `app_screenshot_ignores_stored_layout` needs a settings file holding a REAL
+// `QMainWindow::saveGeometry()` blob. A hand-written or garbage value cannot
+// gate anything: `restoreGeometry` rejects it and falls back to the defaults,
+// so the test would pass whether or not the capture path reads the file. Only
+// a blob Qt itself produced discriminates.
+//
+// Tagged so ctest can run this case alone as a FIXTURES_SETUP producer, the
+// same way `ui_icons_hidpi` runs `[icons]`.
+TEST_CASE("write a stored-layout fixture for the screenshot gate", "[geomfixture]") {
+    const QString dir = qEnvironmentVariable("MH_GEOM_FIXTURE_DIR");
+    if (dir.isEmpty()) SKIP("MH_GEOM_FIXTURE_DIR not set");
+
+    mh::ui::MainWindow window(MH_SHADER_DIR, mh::ui::TaskRegistry{});
+    // Deliberately NOT the default 1280x800: the whole point is a layout that
+    // differs from the one a capture run would otherwise use, so that reading
+    // it would change the image.
+    window.resize(1000, 700);
+    const QByteArray geom = window.saveGeometry();
+    REQUIRE_FALSE(geom.isEmpty());
+
+    REQUIRE(QDir().mkpath(dir + "/.config/MakeHuman"));
+    QSettings s(dir + "/.config/MakeHuman/MakeHumanCpp.ini", QSettings::IniFormat);
+    s.setValue(QStringLiteral("workspace/geometry"), geom);
+    s.sync();
+    REQUIRE(s.status() == QSettings::NoError);
 }

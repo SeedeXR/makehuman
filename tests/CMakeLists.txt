@@ -316,6 +316,50 @@ if(MH_HAVE_RENDER)
     # can see it.
     add_test(NAME ui_icons_hidpi COMMAND mh_ui_tests "[icons]")
 
+    # A CAPTURE RUN MUST IGNORE THE STORED WINDOW LAYOUT.
+    #
+    # `--screenshot` already refuses to SAVE the layout, so a capture cannot
+    # clobber the arrangement a user made. It was restoring one, though, which
+    # is the other half of the same idea and was missing: the image then
+    # depended on whatever the last interactive session left in
+    # `~/.config/MakeHuman/MakeHumanCpp.ini`.
+    #
+    # MEASURED 2026-09-20: after one interactive run the viewport had grown
+    # 1402x1648 -> 1402x1686 and two pixel gates failed on 2,414 of 2,363,772
+    # pixels against `--max-differing 0`. CI escaped it only by having no
+    # settings file -- luck, not hermeticity.
+    #
+    # The fixture is produced by Qt itself. A hand-written geometry value
+    # cannot gate this: `restoreGeometry` rejects a malformed blob and falls
+    # back to the defaults, so the test would pass either way. Only a real
+    # `saveGeometry()` blob, for a size that is NOT the default, can tell the
+    # two behaviours apart.
+    add_test(NAME ui_geometry_fixture COMMAND mh_ui_tests "[geomfixture]")
+    set_tests_properties(ui_geometry_fixture PROPERTIES
+        ENVIRONMENT "MH_GEOM_FIXTURE_DIR=${CMAKE_CURRENT_BINARY_DIR}/stored_layout"
+        FIXTURES_SETUP app_stored_layout)
+    # HOME is redirected so this never reads or writes the developer's own
+    # preferences -- the same reason the `--skinning` preference tests do it.
+    add_test(NAME app_screenshot_ignores_stored_layout COMMAND makehuman
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/shot_stored_layout.png
+             --screenshot-viewport)
+    set_tests_properties(app_screenshot_ignores_stored_layout PROPERTIES
+        ENVIRONMENT "HOME=${CMAKE_CURRENT_BINARY_DIR}/stored_layout"
+        FIXTURES_REQUIRED app_stored_layout)
+    # ...and the image must match the one taken with NO stored layout at all.
+    # That comparison is the assertion; the run above only produces the file.
+    add_test(NAME app_screenshot_plain COMMAND makehuman
+             --screenshot ${CMAKE_CURRENT_BINARY_DIR}/shot_plain.png
+             --screenshot-viewport)
+    set_tests_properties(app_screenshot_plain PROPERTIES FIXTURES_SETUP app_shot_plain)
+    add_test(NAME app_screenshot_layout_independent COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/shot_plain.png
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/shot_stored_layout.png
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_identical.cmake)
+    set_tests_properties(app_screenshot_layout_independent PROPERTIES
+        FIXTURES_REQUIRED "app_shot_plain;app_stored_layout"
+        DEPENDS "app_screenshot_ignores_stored_layout;app_screenshot_plain")
+
     # The application binary itself. Nothing else covers main.cpp's wiring: a
     # scripted edit once deleted the entire Materials-dock setup -- including
     # setLitsphere -- and every one of the 328 tests still passed. Only running

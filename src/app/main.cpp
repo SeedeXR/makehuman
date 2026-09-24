@@ -6701,7 +6701,18 @@ int main(int argc, char** argv) {
                     shown.join(QStringLiteral(", ")).toStdString().c_str());
     }
 
-    window.restoreWorkspace();
+    // A SCREENSHOT run does not restore the stored layout, for the same reason
+    // it does not save one (see `saveWorkspace` below and the `--screenshot`
+    // option's own comment). The two were ASYMMETRIC: a capture refused to
+    // overwrite the user's dock arrangement but happily adopted it, so the
+    // image depended on whatever the last interactive session left behind.
+    //
+    // MEASURED 2026-09-20: after running the GUI once, the viewport had grown
+    // 1402x1648 -> 1402x1686 and both `app_backdrop_reopen_restores_the_framing`
+    // and `app_backdrop_transparent_shows_nothing` failed on 2,414 of 2,363,772
+    // pixels against `--max-differing 0`. CI escaped it only by having no
+    // settings file at all, which is luck, not hermeticity.
+    if (!parser.isSet(shotOpt)) window.restoreWorkspace();
     // After restoreWorkspace, so an explicit preset wins over the saved layout.
     if (parser.isSet(workspaceOpt)) {
         const QString name = parser.value(workspaceOpt);
