@@ -3330,6 +3330,53 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       (it round-trips to the VISIBLE height, 166.589 cm against 169.455 — the
       helper cage again).
 
+## OWNER PLAN, 2026-09-24: "do all of them step wise"
+
+Asked to "start porting the 17 remaining task views". **There are none.**
+`tools/audit_taskviews.py` re-derives the buckets and fails CI on drift:
+**7 done · 25 covered · 0 to port · 3 blocked · 16 declined** (= 51). The 17
+was a PROSE heading in `taskviews.md` that had drifted from that file's own
+audited table (it says so at `taskviews.md:131-133`), and `todo.md` copied the
+prose. Corrected in `96ca2fa6`.
+
+Verified in the SHIPPED BINARY rather than in the auditor, because "a literal
+appears in `src/`" is a weaker claim than "the capability reaches the user":
+the app reports **14 asset groups** (Litsphere, Pose, Animation, Expression,
+Eyes, Teeth, Genitals, Tongue, Hair, Clothes, Eyelashes, Skin material, Eye
+colour, Skeleton) and `--print-choices` round-trips 12 of them out of a saved
+`.mhm`. That is 11 of the 25 "covered" views confirmed as live Assets-panel
+groups; the other 14 are menu actions and CLI flags.
+
+Offered four directions and the owner said **"do all of them step wise"**.
+Ordered smallest-and-most-unblocked first, each its own chunk, so that a
+failure in a later stage cannot strand an earlier one:
+
+- [x] **Stage 0 — the stale markers found on the way in.** The export item
+      said "`.obj` only so far" while its own children said glTF, FBX,
+      Collada, STL and 3MF were done; measured and corrected above.
+- [ ] **Stage 1 — finish the partial UI items.** Nested and tabbed docking;
+      workspace presets and a versioned schema; the accessibility remainder.
+      Smallest, already scoped, nothing blocking. **Check each against the
+      running app first** — Stage 0 is the second stale `[~]` this session, so
+      assume these three overstate what is missing until measured.
+- [ ] **Stage 2 — a lighting model, then `SceneLibraryTaskView`.** The only
+      one of the three blocked views whose blocker is ENGINE capability rather
+      than content (`audit_taskviews.py:394`). A scene is lights plus
+      environment; the task view follows from it and is the cheap half.
+      Moving it out of `blocked` requires the evidence literal `"Scene
+      lighting"` to appear in `src/`, and the auditor checks that BOTH ways,
+      so the bucket cannot be edited without the capability.
+- [ ] **Stage 3 — give covered capabilities real tabs.** This REVERSES a
+      recorded design decision ("this port is dockable, so what the reference
+      makes a tab arrives as a menu action or a group in the Assets panel",
+      `taskviews.md:111-112`). Do it only after Stages 1 and 2, and say
+      plainly in the commit that it is a reversal, not a port.
+- [ ] **Stage 4 — author the blocked content.** An eyebrows helper cage and a
+      wearable alternate body topology, which unblock `EyebrowsTaskView` and
+      `ProxyTaskView`. Asset authoring, and the hair styles are the warning:
+      **budget for render-and-look iterations, not for code.** Last, because
+      it is the only stage whose cost is not predictable from the code.
+
 ## M8 — Application shell (`mh-app`, `mh-ui`)
 
 - [x] **What a character was WEARING was not saved.** Measured: saved wearing
@@ -7450,7 +7497,17 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       Still a no-op for `delete_verts` specifically: all four shipped
       `.mhclo`/`.proxy` files declare zero, so that half stays covered by
       synthetic proxies only.
-- [~] **Export includes worn proxies — `.obj` only so far.**
+- [x] **Export includes worn proxies — DONE in every scene format, and the
+      "`.obj` only so far" on this line was stale.** Its own children already
+      read `[x] Multi-mesh glTF` and `[x] Multi-mesh FBX / Collada / STL / 3MF`,
+      which is the parent-says-less-than-its-children pattern the stale-marker
+      scan looks for.
+      MEASURED 2026-09-24 on `--eyes high-poly --hair afro --clothes skirt`:
+      the GLB carries **5 named meshes** (body, clothes, eyes, hair, teeth),
+      184 nodes and 1 skin, read out of its own JSON chunk; the `.dae` has
+      **5 `<geometry>` elements**; and all five names appear in the `.fbx`.
+      So the remaining gap is not "other formats", it is only that STL and 3MF
+      have no notion of separate objects to begin with.
       `io::writeObjScene` writes several meshes into one OBJ, each its own named
       `g` group, with file-global indices offset per entry; `writeObj` is now a
       wrapper over it, byte-identical for one entry. The app builds its asset
