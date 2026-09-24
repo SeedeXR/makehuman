@@ -294,6 +294,7 @@ set_target_properties(mh_export_fixture PROPERTIES CXX_STANDARD 23 CXX_STANDARD_
 # renderer is. They run offscreen -- no window is created.
 if(MH_HAVE_RENDER)
     add_executable(mh_render_tests render/test_offscreen_render.cpp
+                                   render/test_scene_file.cpp
                                    render/test_proxy_render.cpp
                                    unit/test_picking.cpp
                                    render/test_backdrop_uv.cpp)
@@ -303,6 +304,13 @@ if(MH_HAVE_RENDER)
         MH_DATA_DIR="${MH_DATA_DIR}"
         MH_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders"
         MH_SHADER_SRC_DIR="${CMAKE_SOURCE_DIR}/resources/shaders/rhi")
+    # Same reason as mh_tests above: Catch2's floating-point matchers promote
+    # float to double inside their own headers, and -Wdouble-promotion is an
+    # error here. SYSTEM silences third-party code without weakening a warning
+    # on ours.
+    if(_catch2_inc)
+        target_include_directories(mh_render_tests SYSTEM PRIVATE ${_catch2_inc})
+    endif()
     set_target_properties(mh_render_tests PROPERTIES
         CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
     add_dependencies(mh_render_tests mh_shaders)

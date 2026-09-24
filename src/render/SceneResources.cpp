@@ -133,6 +133,8 @@ std::string RenderError::message() const {
         case RenderErrorKind::TextureMissing: k = "texture missing"; break;
         case RenderErrorKind::EmptyMesh: k = "mesh has no geometry"; break;
         case RenderErrorKind::Failed: k = "render failed"; break;
+        case RenderErrorKind::FileMissing: k = "no such file"; break;
+        case RenderErrorKind::Malformed: k = "malformed"; break;
     }
     std::string m = k;
     if (!detail.empty()) m += " (" + detail + ")";

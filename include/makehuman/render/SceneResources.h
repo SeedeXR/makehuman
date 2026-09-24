@@ -158,6 +158,10 @@ enum class RenderErrorKind {
     TextureMissing,
     EmptyMesh,
     Failed,
+    // Appended, not inserted: these two are for `loadLighting` and the enum is
+    // matched on by value in tests.
+    FileMissing,
+    Malformed,
 };
 
 struct RenderError {
