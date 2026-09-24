@@ -31,6 +31,7 @@
 #include <QMessageBox>
 #include <QPointer>
 #include <QSaveFile>
+#include <QScrollArea>
 #include <QSettings>
 
 #include <QTabWidget>
@@ -903,7 +904,37 @@ void installInDock(QDockWidget* dock, QWidget* widget) {
     // setWidget does not delete the old one, and the placeholder would keep
     // living as an invisible child for the life of the window.
     delete dock->widget();
-    dock->setWidget(widget);
+
+    // EVERY panel goes into a scroll area, and the reason is a measurement
+    // rather than a preference.
+    //
+    // A QDockWidget takes its size hint from its widget, and a QMainWindow
+    // sizes itself to satisfy its docks. So a panel that grows makes the whole
+    // WINDOW grow: MEASURED 2026-09-24, adding the sixteenth chooser row to the
+    // Assets panel moved the viewport from 1192x1686 to 1192x1902 -- 216 px for
+    // one combo box. On a screen too small to pay for that the window is
+    // clamped instead, and the clamp lands a few pixels differently between
+    // launches; CI showed `sizes differ: 324x599 vs 324x602` and every
+    // screenshot comparison spanning two app runs failed, including the
+    // "intermittent" backdrop failure that was open for days and was never
+    // intermittent at all.
+    //
+    // `ModifierPanel` and `MaterialPanel` already do this internally
+    // (ModifierPanel.cpp:403, MaterialPanel.cpp:77); `AssetPanel` did not, which
+    // is why it was the one dictating the window. Doing it HERE instead of in
+    // each panel means a panel added tomorrow cannot reintroduce the fault.
+    //
+    // No double scrollbars: a panel that already scrolls has a small minimum
+    // size hint, so the outer area never needs to scroll. The outer one exists
+    // to break the CHAIN from content size to window size, not to scroll.
+    auto* scroll = new QScrollArea(dock);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    // Sideways is never right for a panel: a column of controls has nothing to
+    // reveal horizontally and should narrow instead.
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setWidget(widget);
+    dock->setWidget(scroll);
 }
 
 }  // namespace

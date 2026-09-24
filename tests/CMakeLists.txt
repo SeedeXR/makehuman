@@ -2870,17 +2870,23 @@ if(MH_HAVE_RENDER)
                  # has said to do all three times. This centre is no longer the
                  # first zero found: it is the one with the MOST ROOM, chosen by
                  # scanning for the candidate whose radius-40 disc keeps the
-                 # largest margin to the silhouette. (600,610) reads EXACTLY
-                 # 0.000 with >= 70 px to spare. All 720 candidates lying
+                 # largest margin to the silhouette. (610,470) reads EXACTLY
+                 # 0.000 with >= 40 px to spare. All 288 candidates lying
                  # wholly on the model read 0.000, so the bar of 2.0 is nowhere
                  # near any of them.
+                 #
+                 # It has moved four times in two days, which is the point:
+                 # every one of those moves was a panel changing the WINDOW's
+                 # size. Since `installInDock` now breaks that chain, this
+                 # coordinate should finally stop drifting -- a panel gaining a
+                 # row can no longer move the viewport.
                  #
                  # The companion check below still reads 27.3 on the same pair,
                  # which is what keeps this from passing on two identical
                  # images. If a dock changes again, re-derive again -- the scan
                  # is a two-minute job and the threshold is the point of the
                  # test.
-                 --cx 600 --cy 610 --radius 40 --max-response 2.0)
+                 --cx 610 --cy 470 --radius 40 --max-response 2.0)
         set_tests_properties(app_backdrop_does_not_eat_the_model PROPERTIES
             SKIP_RETURN_CODE 77
             FIXTURES_REQUIRED "app_backdrop_front;app_backdrop_plain_front")

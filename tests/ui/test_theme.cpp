@@ -624,6 +624,47 @@ std::vector<mh::foundation::AssetGroup> toyAssets() {
 
 }  // namespace
 
+TEST_CASE("a panel's content does not drive the window's size", "[assets][layout]") {
+    // The fault this pins cost a day. A QDockWidget takes its size hint from
+    // its widget and a QMainWindow sizes itself to satisfy its docks, so a
+    // panel that grows makes the WINDOW grow. MEASURED before the fix: adding
+    // the sixteenth chooser row to the Assets panel moved the viewport from
+    // 1192x1686 to 1192x1902 -- 216 px for one combo box.
+    //
+    // That is invisible on a large screen and fatal on a small one, where the
+    // window is clamped instead and the clamp lands differently between
+    // launches. CI reported `sizes differ: 324x599 vs 324x602`, and every
+    // screenshot comparison spanning two app runs failed -- including the
+    // "intermittent" backdrop failure that was open for days and was never
+    // intermittent.
+    //
+    // So the assertion is the PROPERTY, not a number: a window holding forty
+    // chooser rows must want no more room than one holding two. Sizes are read
+    // before `show()` so this needs no display.
+    using mh::foundation::AssetGroup;
+    const auto panelOf = [](int count) {
+        std::vector<AssetGroup> groups;
+        for (int i = 0; i < count; ++i) {
+            groups.push_back(
+                AssetGroup{"Group" + std::to_string(i), {{"none", "None"}, {"a", "A"}}, 0});
+        }
+        return groups;
+    };
+
+    mh::ui::MainWindow small(MH_SHADER_DIR, shippedTasks());
+    REQUIRE(small.setPanel(QStringLiteral("Materials"), new mh::ui::AssetPanel(panelOf(2))));
+    const QSize smallHint = small.minimumSizeHint();
+
+    mh::ui::MainWindow large(MH_SHADER_DIR, shippedTasks());
+    REQUIRE(large.setPanel(QStringLiteral("Materials"), new mh::ui::AssetPanel(panelOf(40))));
+    const QSize largeHint = large.minimumSizeHint();
+
+    INFO("2 groups -> " << smallHint.width() << "x" << smallHint.height() << ", 40 groups -> "
+                        << largeHint.width() << "x" << largeHint.height());
+    CHECK(largeHint.height() == smallHint.height());
+    CHECK(largeHint.width() == smallHint.width());
+}
+
 TEST_CASE("the asset panel builds a picker per group with the right selection", "[assets]") {
     const auto groups = toyAssets();
     mh::ui::AssetPanel panel(groups);
