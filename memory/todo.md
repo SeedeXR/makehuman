@@ -774,8 +774,34 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       and compiled for nothing. AGAINST: it is a hand-written ETC1S encoder and
       KTX2 container, and it is the fallback if libktx is ever dropped as a
       dependency.
-      **Raised, not taken** -- it removes a capability the project once chose
-      to write, and that is the owner's call, not a tidy-up.
+      **DECIDED 2026-09-24, after eight ticks of raising it with no answer and
+      with the standing instruction that remaining decisions are delegated.
+      SPLIT, not all-or-nothing -- and the split is the point.**
+      **DELETED: `Ktx2Writer.{h,cpp}` and `test_ktx2_writer.cpp`, 438 lines.**
+      The keep-argument was "the fallback if libktx is dropped", and checking it
+      showed it is FALSE. The writer wraps an ALREADY-BasisLZ-supercompressed
+      payload -- its own header says "it does not encode anything" -- and
+      `globalData` (the shared endpoint/selector codebooks and Huffman tables)
+      is REQUIRED. `etc1sEncode` emits raw ETC1S blocks and no codebooks, so the
+      two halves cannot be joined without writing a BasisLZ encoder, which is
+      the bulk of basisu. It was never a fallback; it was two disconnected ends
+      of a pipeline whose middle was never built. `tests/golden/test_gltf_writer.cpp`
+      already said so in a comment nobody had connected to the question.
+      **KEPT: `Etc1s.{h,cpp}` and its three quality tests.** Also no production
+      caller -- but NOT dead weight. It is the only encode in this repo that
+      does not quantise to shared codebooks, and
+      `app_ktx2_holds_the_quality_bar` reads its **40.20 dB** to explain why
+      libktx's **38.83 dB** on the same image is the expected cost of codebooks
+      rather than a regression. Deleting it would leave that live gate's number
+      unaccountable. **A note at the declaration now says this**, so the next
+      orphan sweep does not remove it.
+      **Salvaged on the way out**: `Ktx2Transfer` lived in `Ktx2Writer.h` and is
+      the one piece of it the LIVE path used -- moved into `Ktx2Encode.h`. Only
+      a grep after deleting found that; the include was the sole dependency.
+      The Ericsson-SLA gate (`tests/ktx_excludes_ericsson_sla.cmake`) polices
+      **libktx**, not our code, and is untouched.
+      Recoverable from git if a dependency-free container is ever wanted.
+      **1492/1492, -3 exactly as predicted.**
 - [ ] **`app_backdrop_transparent_shows_nothing` is INTERMITTENT, and not for
       the settings reason below.** 2026-09-21: it failed twice in a row
       (278,285 of 2,363,772 pixels against a bar of 100) and then passed four

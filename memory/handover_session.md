@@ -4,6 +4,58 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-24 05:05:00 — Session · **The KTX2 decision, taken at last — and it split**
+
+Network still down; thirteen commits queued.
+
+### Why I decided instead of asking a ninth time
+I had raised "delete the 430 dead KTX2/ETC1S lines?" eight times with no
+answer, against a standing instruction that remaining decisions are delegated.
+More importantly, **checking the keep-argument showed it was false**, which
+turned a genuine trade-off into a clear call.
+
+### The keep-argument was "the fallback if libktx is dropped". It could not be.
+`Ktx2Writer` wraps an **already-BasisLZ-supercompressed** payload — its own
+header says "it does not encode anything" — and its `globalData` (shared
+endpoint/selector codebooks, Huffman tables) is *required*. `etc1sEncode` emits
+raw ETC1S blocks and no codebooks. **The two halves cannot be joined without
+writing a BasisLZ encoder, which is the bulk of basisu.** It was never a
+fallback; it was two disconnected ends of a pipeline whose middle was never
+built.
+
+`tests/golden/test_gltf_writer.cpp` had said exactly this in a comment for
+some time. Nobody had connected it to the question, including me.
+
+### But the decision SPLIT, and that is the part worth keeping
+Reading the neighbouring test comments changed the answer:
+
+**Deleted — `Ktx2Writer.{h,cpp}` + `test_ktx2_writer.cpp`, 438 lines.** Dead,
+uncompletable, no secondary role.
+
+**Kept — `Etc1s.{h,cpp}` + its three quality tests.** Also no production
+caller, but *not* dead weight: it is the only encode in this repo that does
+**not** quantise to shared codebooks, and `app_ktx2_holds_the_quality_bar`
+reads its **40.20 dB** to explain why libktx's **38.83 dB** on the same image
+is the expected cost of codebooks rather than a regression. Delete it and that
+live gate's number becomes a figure nobody can account for. **A note at the
+declaration now records this**, so the next orphan sweep does not remove it.
+
+Had I acted on the framing I had been carrying for eight ticks — "delete the
+430 lines" — I would have taken the control out with the dead code.
+
+### Salvaged on the way out
+`Ktx2Transfer` lived in `Ktx2Writer.h` and is the one piece of it the **live**
+path used; `Ktx2Encode.h` included the dead header solely for that enum. Only
+a grep *after* deleting found it. Moved into `Ktx2Encode.h`, and the one-level
+rationale moved with it.
+
+The Ericsson-SLA gate polices **libktx**, not our code — untouched.
+
+### Sweep
+**1492/1492**, −3 exactly as predicted (three Catch2 cases). clang-format clean.
+
+---
+
 ## 2026-09-24 04:20:00 — Session · **An asset-tree sweep: three dimensions clean, one claim of mine wrong**
 
 Network still down; twelve commits queued. A quiet tick by design — the

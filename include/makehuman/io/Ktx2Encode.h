@@ -2,11 +2,19 @@
 //
 // ETC1S + BasisLZ encoding, via libktx.
 //
-// This is the half `Ktx2Writer.h` deliberately does not do. That file wraps an
-// already-encoded payload and says so; producing the payload needs a BasisLZ
-// encoder -- the codebooks, the Huffman tables, the range coder -- and this
-// one is libktx's, not ours. libktx emits a COMPLETE KTX2 file, so on this
-// path it supersedes our container writer rather than feeding it.
+// libktx emits a COMPLETE KTX2 file: the ETC1S blocks, the BasisLZ
+// supercompression -- codebooks, Huffman tables, range coder -- and the
+// container around them.
+//
+// There was once a hand-written container writer here too, `Ktx2Writer.h`. It
+// wrapped an ALREADY-supercompressed payload, and nothing in this repo has
+// ever produced one: `etc1sEncode` emits raw ETC1S blocks with no BasisLZ
+// codebooks, so the writer's required `globalData` was never assigned on any
+// path and it returned `nullopt` every time. The two halves could not be
+// joined without writing a BasisLZ encoder, which is the bulk of basisu. It
+// was deleted on 2026-09-24 rather than kept as a "fallback if libktx is
+// dropped", because it could not have been one -- see `memory/todo.md`. Git
+// has it if a dependency-free container is ever wanted again.
 
 #pragma once
 
@@ -15,9 +23,18 @@
 #include <span>
 #include <vector>
 
-#include "makehuman/io/Ktx2Writer.h"  // Ktx2Transfer
-
 namespace mh::io {
+
+/// The transfer function the image declares. The values ARE the Khronos Data
+/// Format enum values, so nothing has to map them.
+///
+/// `KHR_texture_basisu` asks for sRGB on colour and linear on non-colour data
+/// (a normal map). Measured, the correct one is also the cheaper one: the same
+/// normal map encodes to 21,014 bytes linear against 26,204 sRGB.
+///
+/// Lived in `Ktx2Writer.h` until that file was deleted on 2026-09-24; it is
+/// the one piece of it the live path actually used.
+enum class Ktx2Transfer : uint8_t { Linear = 1, Srgb = 2 };
 
 /// Whether this build can encode KTX2 at all.
 ///

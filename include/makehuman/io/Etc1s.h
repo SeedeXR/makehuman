@@ -7,6 +7,23 @@
 // differential mode 100% of the time, flip 0%, colour delta zero 100%, and
 // both intensity-table indices equal 100%. So a block is exactly what
 // `Etc1sBlock` holds: one base colour, one table index, sixteen selectors.
+//
+// WHY THIS STAYS, although nothing in `src/` calls it.
+//
+// It has no production caller and cannot get one: it emits raw ETC1S blocks
+// with no BasisLZ codebooks, so it cannot feed a KTX2 container, and libktx
+// does that whole job on the live path. The hand-written container writer that
+// waited for it was deleted on 2026-09-24 for exactly that reason.
+//
+// This is kept because it is not dead weight, it is a CONTROL. It is the only
+// encode of a given image in this repo that does NOT quantise to shared
+// codebooks, and `app_ktx2_holds_the_quality_bar` reads its 40.20 dB to
+// explain why libktx's 38.83 dB on the same image is the expected cost of
+// codebooks rather than a regression. Delete this and that gate's number
+// becomes a figure nobody can account for.
+//
+// `app_etc1s_holds_the_quality_bar` and `app_etc1s_quality_is_pinned_from_above`
+// are what keep the baseline honest, from below and above.
 
 #pragma once
 

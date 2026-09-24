@@ -2252,7 +2252,9 @@ TEST_CASE("the Draco file is smaller than the plain one", "[io][gltf][draco]") {
 //
 // Guarded on MH_HAVE_KTX2 because there is genuinely no dependency-free KTX2
 // path: `etc1sEncode` emits raw ETC1S blocks with no BasisLZ codebooks, and
-// `ktx2Write` refuses without them. Nothing in src/ produces the global data.
+// nothing in src/ has ever produced the supercompression global data a
+// container needs. The hand-written `ktx2Write` that waited for it was deleted
+// on 2026-09-24 for exactly that reason.
 //
 // The decoder here is SYNTHETIC. `mh_io` has none by design and this binary
 // links no image library; the hook exists precisely so the caller supplies

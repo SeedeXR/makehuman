@@ -54,11 +54,15 @@ std::optional<std::vector<uint8_t>> ktx2EncodeEtc1s(std::span<const uint8_t> rgb
 
     ktxTextureCreateInfo info{};
     info.vkFormat = transfer == Ktx2Transfer::Srgb ? kVkFormatR8G8B8A8Srgb : kVkFormatR8G8B8A8Unorm;
-    info.baseWidth       = width;
-    info.baseHeight      = height;
-    info.baseDepth       = 1;
-    info.numDimensions   = 2;
-    info.numLevels       = 1;  // see Ktx2Writer.h on why one level, not a pyramid
+    info.baseWidth     = width;
+    info.baseHeight    = height;
+    info.baseDepth     = 1;
+    info.numDimensions = 2;
+    // ONE level, deliberately: the reference encoder's default output is one
+    // level, `KHR_texture_basisu` does not require a mip pyramid, and a
+    // multi-level KTX2 stores its levels in REVERSE order (smallest first) --
+    // a trap worth not walking into for a pyramid nothing currently encodes.
+    info.numLevels       = 1;
     info.numLayers       = 1;
     info.numFaces        = 1;
     info.isArray         = KTX_FALSE;

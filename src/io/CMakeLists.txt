@@ -13,7 +13,6 @@ add_library(mh_io STATIC
     BvhWriter.cpp
     UsdWriter.cpp
     GltfWriter.cpp
-    Ktx2Writer.cpp
     Ktx2Encode.cpp
     Etc1s.cpp
     FbxWriter.cpp
