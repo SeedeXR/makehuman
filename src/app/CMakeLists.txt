@@ -71,8 +71,36 @@ add_dependencies(makehuman mh_shaders)
 # produces a copy for a machine that has none. Said out loud because an
 # install rule that looked self-contained and was not is the packaging bug
 # `audit_runtime_paths.py` exists about.
+# libktx is FetchContent-BUILT, so it lives in the build tree and nowhere a
+# freshly installed binary can see it. `install(TARGETS)` also drops the build
+# RPATH, so the installed bundle asked dyld for `@rpath/libktx.4.dylib` with no
+# LC_RPATH at all and aborted on startup.
+#
+# NOT hypothetical, and not caught here: `MH_WITH_KTX2` defaults OFF, so every
+# local build and every other CI job linked no libktx and `app_installed_runs`
+# passed. Only the one job that turns it on failed, with
+# "Library not loaded: @rpath/libktx.4.dylib ... Reason: no LC_RPATH's found".
+# That job exists precisely because this repository has shipped a gate that
+# only ran on one machine before.
+#
+# The dylib is copied INTO the bundle rather than pointed at in the build tree:
+# an install that works only while the build directory survives is the
+# "works on this machine and nowhere else" failure `audit_runtime_paths.py`
+# exists about, and the test above says so in as many words.
+if(MH_WITH_KTX2)
+    if(APPLE)
+        set_target_properties(makehuman PROPERTIES
+            INSTALL_RPATH "@executable_path/../Frameworks")
+    else()
+        set_target_properties(makehuman PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
+    endif()
+endif()
+
 if(APPLE)
     install(TARGETS makehuman BUNDLE DESTINATION ".")
+    if(MH_WITH_KTX2)
+        install(TARGETS ktx LIBRARY DESTINATION "makehuman.app/Contents/Frameworks")
+    endif()
     # Trailing slashes: copy the CONTENTS of each directory, not the directory
     # into itself (`.../data/data`).
     install(DIRECTORY "${MH_DATA_DIR}/"
@@ -83,6 +111,9 @@ if(APPLE)
             DESTINATION "makehuman.app/Contents/Resources/resources")
 else()
     install(TARGETS makehuman RUNTIME DESTINATION "bin")
+    if(MH_WITH_KTX2)
+        install(TARGETS ktx LIBRARY DESTINATION "lib")
+    endif()
     install(DIRECTORY "${MH_DATA_DIR}/" DESTINATION "share/makehuman/data")
     install(DIRECTORY "${CMAKE_BINARY_DIR}/shaders/" DESTINATION "share/makehuman/shaders")
     install(DIRECTORY "${CMAKE_SOURCE_DIR}/resources/" DESTINATION "share/makehuman/resources")

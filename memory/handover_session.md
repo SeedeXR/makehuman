@@ -4,6 +4,64 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-24 07:20:00 — Session · **CI caught an install bug I shipped, in the one config that could see it**
+
+With the network finally working, CI ran — and a job failed.
+
+### `app_installed_runs` aborted in the libktx job
+```
+dyld: Library not loaded: @rpath/libktx.4.dylib
+  Referenced from: .../installed/makehuman.app/Contents/MacOS/makehuman
+  Reason: no LC_RPATH's found
+```
+
+libktx is **FetchContent-built**, so it lives in the build tree, and
+`install(TARGETS)` drops the build RPATH. The installed bundle asked dyld for a
+dylib with no LC_RPATH at all. That is my install work (`1ba0d39f`).
+
+**No local run could have caught it: `MH_WITH_KTX2` defaults OFF.** Every local
+build and every other CI job links no libktx, so the test passed everywhere.
+Exactly one job turns it on — and that job exists because this repo has shipped
+a gate that ran on one machine before. It earned its keep today.
+
+### The fix, and the fix I did not take
+Under `MH_WITH_KTX2`: set `INSTALL_RPATH`
+(`@executable_path/../Frameworks` on APPLE, `$ORIGIN/../lib` otherwise) and
+**install the dylib into the bundle**. Pointing the RPATH at the build tree
+would also have gone green, and would have been precisely the
+works-on-this-machine failure `audit_runtime_paths.py` exists about — the
+neighbouring test comment says so in as many words.
+
+**Verified in a real `-DMH_WITH_KTX2=ON` build rather than by reasoning:**
+`app_installed_runs` passes, `otool -l` shows the LC_RPATH,
+`Contents/Frameworks/` holds `libktx.4.4.2.dylib` and its symlink, and
+`otool -L` names **0** absolute build-tree paths. Full suite in that config:
+**1503/1503**.
+
+**A prediction of mine was wrong**: I said 1491 (CI's 1489 + my 2 new tests)
+and got 1503. Test counts differ between this machine and CI's runner for that
+config because tests are conditional on locally available tools. Do not predict
+a count for a config never run locally.
+
+### Also shipped: proxy slots now name their alternatives
+`--rig`, `--skin-material` and `--eye-colour` printed "available: ..."; all
+**seven** proxy slots printed only "wearing none". Cheap when a slot held one
+asset — `data/hair` now holds four. `availableChoices()` formats the picker's
+own choices, so a style that ships without reaching the picker fails the gate.
+
+**The first control I ran for it did nothing at all.** clang-format had
+reflowed the line, the mutation's anchor did not match, and the tests passed
+trivially. Only `assert count == 1` caught it — without that I would have
+reported a control that never ran.
+
+Checked and dropped as a non-finding: `--litsphere zzbogus` reports
+`unknown --skin`, but `--skin` is a declared alias of the same option.
+
+### Sweep
+Debug **1496/1496**; libktx config **1503/1503**. clang-format clean.
+
+---
+
 ## 2026-09-24 06:35:00 — Session · **The network was never down. `timeout` does not exist on this machine.**
 
 **Fourteen commits sat queued for many ticks because my connectivity probe

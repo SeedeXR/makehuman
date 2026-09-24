@@ -5545,6 +5545,33 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_rig_unknown PROPERTIES
         PASS_REGULAR_EXPRESSION "unknown --rig")
 
+    # ...and the same for a PROXY slot, which until now was the one family that
+    # did NOT say what is available.
+    #
+    # MEASURED 2026-09-24 across every option that rejects a value: `--rig`,
+    # `--skin-material` and `--eye-colour` all printed "available: ...", while
+    # all seven proxy slots -- hair, clothes, eyes, teeth, tongue, genitals,
+    # eyelashes -- printed only "wearing none". That cost little when a slot
+    # held one asset; `data/hair` now holds FOUR, and a typo left the user with
+    # no way to find them short of listing the directory.
+    #
+    # `locs` specifically, because it is the newest and the one a stale message
+    # would omit: the list is built from the picker's own choices, so a style
+    # that ships without reaching the picker fails here.
+    add_test(NAME app_proxy_unknown_lists_choices COMMAND makehuman
+             --hair no_such_style
+             --save ${CMAKE_CURRENT_BINARY_DIR}/app_proxy_unknown.mhm)
+    set_tests_properties(app_proxy_unknown_lists_choices PROPERTIES
+        PASS_REGULAR_EXPRESSION "unknown --hair .*available:.*locs")
+    # ...and a value that IS known stays silent, or the message is noise rather
+    # than a signal -- the same reason `app_mhm_is_quiet_when_nothing_is_dropped`
+    # exists.
+    add_test(NAME app_proxy_known_is_quiet COMMAND makehuman
+             --hair locs
+             --save ${CMAKE_CURRENT_BINARY_DIR}/app_proxy_known.mhm)
+    set_tests_properties(app_proxy_known_is_quiet PROPERTIES
+        FAIL_REGULAR_EXPRESSION "unknown --hair")
+
     # The headless production render. Unlike app_screenshot this needs a GPU but
     # NO window, so it is the path that works on a machine with no display.
     # PASS_REGULAR_EXPRESSION gives it teeth: a render that silently produced an

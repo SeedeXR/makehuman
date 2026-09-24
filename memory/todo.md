@@ -6235,6 +6235,52 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       work earlier: a command failing for a reason other than the one assumed.
       Having written that lesson down did not stop me repeating its shape.
 
+- [x] **THE INSTALL RULES SHIPPED BROKEN FOR THE libktx CONFIG, and CI caught
+      it the moment it could finally run. Fixed 2026-09-24.**
+      `app_installed_runs` aborted in the `libktx / KTX2` job with
+      `dyld: Library not loaded: @rpath/libktx.4.dylib ... Reason: no LC_RPATH's
+      found`. libktx is **FetchContent-BUILT**, so it lives in the build tree,
+      and `install(TARGETS)` drops the build RPATH -- the installed bundle asked
+      dyld for a dylib with no LC_RPATH at all.
+      **Why no local run could have caught it: `MH_WITH_KTX2` defaults OFF.**
+      Every local build and every other CI job links no libktx, so
+      `app_installed_runs` passed everywhere. ONE job turns it on, and that job
+      exists precisely because this repo has shipped a gate that ran on one
+      machine before. It earned its keep.
+      **Fix**: under `MH_WITH_KTX2`, set `INSTALL_RPATH` (
+      `@executable_path/../Frameworks` on APPLE, `$ORIGIN/../lib` otherwise) and
+      **install the dylib INTO the bundle**. Pointing the RPATH at the build
+      tree would have "worked" and been the exact
+      works-on-this-machine failure `audit_runtime_paths.py` exists about.
+      **VERIFIED in a real `-DMH_WITH_KTX2=ON` build, not by reasoning**:
+      `app_installed_runs` passes, `otool -l` shows the LC_RPATH,
+      `Contents/Frameworks/` holds `libktx.4.4.2.dylib` + its `libktx.4.dylib`
+      symlink, and `otool -L` names **0** absolute build-tree paths.
+      Full suite in that config: **1503/1503**.
+      **A prediction of mine was wrong here**: I expected 1491 (CI's 1489 + my
+      2 new tests) and got 1503. Test counts differ between this machine and
+      CI's runner for this config because tests are conditional on locally
+      available tools -- so **do not predict a count for a config you have not
+      run locally before.**
+
+- [x] **Proxy slots now name their alternatives on an unknown value.**
+      MEASURED across every option that rejects a value: `--rig`,
+      `--skin-material` and `--eye-colour` printed "available: ...", while all
+      SEVEN proxy slots printed only "wearing none". Cheap when a slot held one
+      asset; `data/hair` now holds four. `availableChoices()` formats the
+      picker's own choices, so a style that ships without reaching the picker
+      fails the gate. Gated by `app_proxy_unknown_lists_choices` (asserts
+      `locs` appears) and `app_proxy_known_is_quiet`
+      (`FAIL_REGULAR_EXPRESSION`, so the message cannot become noise).
+      **Control**: restoring the old message turns the first red, the second
+      stays green. **The first attempt at that control silently did NOTHING** --
+      clang-format had reflowed the line so the anchor did not match, and only
+      the `assert count == 1` caught it. Without the assert I would have
+      reported a control that never ran.
+      NOT a finding, checked and dropped: `--litsphere zzbogus` reports
+      `unknown --skin`, but `--skin` is a declared ALIAS of the same option
+      (`main.cpp:3325`) and `--help` documents both.
+
 - [x] **ASSET-TREE INTEGRITY SWEEP, 2026-09-24. Three of four dimensions came
       back CLEAN -- recorded so nobody re-derives them -- and the fourth
       corrected a claim I had put in a test.**

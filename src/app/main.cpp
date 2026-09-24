@@ -765,6 +765,29 @@ std::filesystem::path findPoseByStem(const std::string& spelling) {
 /// and a second literal "none" would be a coupling nothing checks.
 constexpr const char* kNoProxy = "none";
 
+/// The spellings a proxy slot accepts, for an unknown-value message.
+///
+/// An `AssetChoice::id` is the .mhclo PATH, but the option matches on the
+/// STEM, so the path is what the picker stores and the stem is what a user
+/// types. `kNoProxy` is already its own spelling and passes through.
+///
+/// This exists because the proxy slots were the ONLY ones that did not name
+/// their alternatives: MEASURED 2026-09-24, `--rig`, `--skin-material` and
+/// `--eye-colour` all print "available: ...", while all seven of hair,
+/// clothes, eyes, teeth, tongue, genitals and eyelashes printed only
+/// "wearing none". That mattered little when each slot had one asset; the
+/// Textured-Black set brought `data/hair` to four, and a typo left the user
+/// with no way to discover them short of listing the directory.
+std::string availableChoices(const std::vector<mh::foundation::AssetChoice>& choices) {
+    std::string out;
+    for (const auto& c : choices) {
+        if (!out.empty()) out += ", ";
+        out +=
+            c.id == kNoProxy ? std::string{kNoProxy} : std::filesystem::path(c.id).stem().string();
+    }
+    return out;
+}
+
 /// The `.bvh` a pose choice names, or none when the choice has no file behind
 /// it -- "rest", either spelling of the A-pose, or a chooser's empty entry.
 ///
@@ -1734,7 +1757,8 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(
     if (eyes.selected == 0 && currentEyes != kNoProxy) {
         // Say so rather than silently rendering no eyes for a typo, the same
         // way an unknown --skin is reported.
-        std::fprintf(stderr, "unknown --eyes \"%s\"; wearing none\n", currentEyes.c_str());
+        std::fprintf(stderr, "unknown --eyes \"%s\"; wearing none. available: %s\n",
+                     currentEyes.c_str(), availableChoices(eyes.choices).c_str());
     }
     groups.push_back(std::move(eyes));
 
@@ -1762,8 +1786,8 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(
         // so `--teeth teth` SILENTLY ships a body with no teeth in it -- the
         // one case where the user gets no cue at all.
         if (group.selected == 0 && current != currentProxies.end() && current->second != kNoProxy) {
-            std::fprintf(stderr, "unknown --%s \"%s\"; wearing none\n", slot.key,
-                         current->second.c_str());
+            std::fprintf(stderr, "unknown --%s \"%s\"; wearing none. available: %s\n", slot.key,
+                         current->second.c_str(), availableChoices(group.choices).c_str());
         }
         groups.push_back(std::move(group));
     }
