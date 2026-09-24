@@ -857,6 +857,16 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       byte-identical".
       `HOME` redirection follows the existing `--skinning` preference tests, so
       nothing reads or writes the developer's own preferences.
+      **I BROKE CI's clang-format job shipping this, and the reason is worth
+      keeping.** I ran `clang-format -i` on `src/app/main.cpp` -- the file I
+      was thinking about -- and never on `tests/ui/test_ui.cpp`, which I had
+      APPENDED a new case to with a heredoc. The local sweep was green because
+      formatting is not a test; only CI's own `--dry-run --Werror` pass sees
+      it. **A file you appended to is a file you edited.** CI's exact command
+      is one line and reproduces it instantly:
+      `find src include tests benchmarks \( -name '*.cpp' -o -name '*.h' \)
+      -print0 | xargs -0 "$(xcrun -f clang-format)" --style=file --dry-run
+      --Werror`. Run THAT, not `clang-format -i` on the files you remember.
       **This does NOT explain the INTERMITTENT failure above** -- that one was
       measured with the settings file ABSENT throughout, so the compositor-
       timing suspicion stands untouched and that item stays open.

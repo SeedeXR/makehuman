@@ -26,13 +26,13 @@
 #include <QAccessible>
 #include <QAction>
 #include <QApplication>
+#include <QDir>
 #include <QDockWidget>
 #include <QFontMetrics>
 #include <QGuiApplication>
 #include <QLabel>
 #include <QLayout>
 #include <QMouseEvent>
-#include <QDir>
 #include <QSettings>
 #include <QSlider>
 #include <QStyle>
