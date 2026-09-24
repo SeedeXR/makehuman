@@ -6184,6 +6184,34 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       an edit "had no effect". The filter was `grep -iE "locs|error"` and the
       message contains neither -- it says "the shortest **loc** is".
       **Check the exit code, or grep for nothing at all.**
+
+- [x] **ASSET-TREE INTEGRITY SWEEP, 2026-09-24. Three of four dimensions came
+      back CLEAN -- recorded so nobody re-derives them -- and the fourth
+      corrected a claim I had put in a test.**
+      Ran over every shipped mesh and proxy, the same comparison that caught the
+      locs duplicates.
+      **CLEAN, all 15 `.obj`**: zero faces with a repeated index, zero duplicate
+      faces, zero zero-area faces, zero unreferenced vertices. Also zero
+      coincident vertex positions, now that locs is fixed.
+      **CLEAN, material references**: all 13 `material` lines in `.mhclo` files
+      resolve. The 15 `.mhmat` files that no `.mhclo` names are not orphans --
+      they are the 9 skins, 5 eye colours and `xray`, selected at runtime, which
+      matches the `skin materials: 9` the asset index reports.
+      **THE CORRECTION -- out-of-range barycentric weights in `.mhclo` are
+      LEGITIMATE, and I had written the opposite into a test.**
+      `tests/regression/test_locs_shape.cpp` said a weight outside 0..1
+      "silently places a vertex nobody authored". MEASURED: `data/3dobjs/
+      base.mhclo` has **238 negative weights reaching -0.1960** and 38 above 1.0
+      (to 1.2608); `data/eyes/high-poly/high-poly.mhclo` has **102 reaching
+      -0.0396**. Both arrived with the repo bootstrap (`f05180a3`) and neither
+      is generated here, so this is upstream MakeHuman's deliberate
+      EXTRAPOLATION -- a proxy vertex sitting slightly outside its triangle --
+      and `fitProxy`'s lack of clamping is what makes it work, not a bug.
+      **Anything that validates `.mhclo` in general must NOT reject them.**
+      The locs assertion itself stands, but for a narrower reason now stated in
+      the file: `--bind-points` is closest-point-on-triangle and cannot emit
+      anything outside 0..1, so a failure there means the binder broke or the
+      file was hand-edited.
       Reverted cleanly both times: generator restored, `data/hair/locs.*`
       deleted, `--check` back to 6 files matching a fresh derivation.
       **BANTU KNOTS shipped 2026-09-23**, in four render-and-look iterations,

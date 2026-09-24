@@ -4,6 +4,52 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-24 04:20:00 — Session · **An asset-tree sweep: three dimensions clean, one claim of mine wrong**
+
+Network still down; twelve commits queued. A quiet tick by design — the
+comparison method that caught the locs duplicates, pointed at everything else.
+
+### Clean, and recorded so nobody re-derives it
+Across all 15 shipped `.obj`: **zero** faces with a repeated index, **zero**
+duplicate faces, **zero** zero-area faces, **zero** unreferenced vertices — and
+now zero coincident vertex positions too.
+
+All 13 `material` lines in `.mhclo` files resolve. The 15 `.mhmat` files no
+`.mhclo` names are not orphans: they are the 9 skins, 5 eye colours and `xray`,
+selected at runtime, which matches the `skin materials: 9` the asset index
+already reports.
+
+### The correction — and it was in a test I wrote yesterday
+`test_locs_shape.cpp` asserted that a barycentric weight outside 0..1
+"silently places a vertex nobody authored". **That is wrong as a general claim
+about `.mhclo`, and I had written it into the repo as if it were a fact.**
+
+| file | negative weights | most negative | above 1.0 |
+|---|---|---|---|
+| `data/3dobjs/base.mhclo` | 238 | **−0.1960** | 38 (to 1.2608) |
+| `data/eyes/high-poly/high-poly.mhclo` | 102 | −0.0396 | 0 |
+
+Both arrived with the repo bootstrap (`f05180a3`); neither is generated here.
+−0.196 is not float noise. This is upstream MakeHuman's deliberate
+**extrapolation** — a proxy vertex sitting slightly outside its triangle — and
+`fitProxy`'s lack of clamping is what makes it work rather than a latent bug.
+**Anything that validates `.mhclo` in general must not reject them.**
+
+The locs assertion still stands, but for a narrower reason now written in the
+file: `--bind-points` is closest-point-on-triangle and cannot emit anything
+outside 0..1, so a failure there means the binder broke or someone hand-edited
+the file.
+
+I only caught this because I ran the check across every proxy instead of only
+the one I had just written. Had I not, a later contributor reading that comment
+could have "fixed" `base.mhclo`.
+
+### Sweep
+**1495/1495**, clang-format clean. Comment-only change to one test; no
+behaviour touched.
+
+---
+
 ## 2026-09-24 03:40:00 — Session · **Zero, not 13% — and my own grep hid a failing generator for three rounds**
 
 Network still down; eleven commits queued.

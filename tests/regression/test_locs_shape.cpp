@@ -199,9 +199,24 @@ TEST_CASE("the locs do not lie on top of each other", "[asset][hair][locs]") {
 }
 
 TEST_CASE("every loc binding is inside its triangle", "[asset][hair][locs]") {
-    // `fitProxy` does no clamping, so a weight outside 0..1 places a vertex
-    // nobody authored and nothing reports it. Bound geometry is the only thing
-    // in this repo that can produce one, and locs bind 42 ropes plus a cap.
+    // What this pins is that the BINDER did its job, and that is a narrower
+    // claim than it first looks.
+    //
+    // `fitProxy` does no clamping (src/core/Proxy.cpp:423-441), and an earlier
+    // version of this comment said a weight outside 0..1 therefore "places a
+    // vertex nobody authored". That is WRONG as a general statement about
+    // `.mhclo`, and checking before repeating it is the only reason it is not
+    // still here. MEASURED across every shipped proxy: `data/3dobjs/base.mhclo`
+    // has 238 negative weights reaching -0.1960 and 38 above 1.0 (to 1.2608),
+    // and `data/eyes/high-poly/high-poly.mhclo` has 102 reaching -0.0396. Both
+    // came in with the repo bootstrap and neither is generated here, so
+    // out-of-range weights are upstream MakeHuman's deliberate EXTRAPOLATION,
+    // not corruption -- a proxy vertex sitting a little outside its triangle.
+    // Anything that validates `.mhclo` in general must not reject them.
+    //
+    // For geometry bound by `--bind-points` the bar IS 0..1, because that
+    // binder is closest-point-on-triangle and cannot produce anything else. So
+    // a failure here means the binder broke or the file was hand-edited.
     const auto proxy = loadProxy(std::filesystem::path(MH_DATA_DIR) / "hair" / "locs.mhclo");
     REQUIRE(proxy.has_value());
     REQUIRE(proxy->weights.size() == proxy->refVerts.size());
