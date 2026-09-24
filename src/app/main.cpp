@@ -952,7 +952,15 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
         const auto bodyPose = want ? mh::rig::loadBodyPoseFrame(file, *skel, *want, names)
                                    : mh::rig::loadBodyPose(file, *skel, names);
         if (!bodyPose) {
-            std::fprintf(stderr, "cannot load pose: %s\n", bodyPose.error().message().c_str());
+            // A typo gets pointed at the list; a real load failure does not.
+            // `--animation` and `--preset` already say "--list-X prints them"
+            // and `--pose` did not, although `--list-poses` exists -- MEASURED
+            // 2026-09-24 across every option that rejects a value. The kind
+            // check is what keeps this honest: a malformed or unreadable BVH is
+            // not something listing the poses would help with.
+            const bool missing = bodyPose.error().kind == mh::rig::PoseUnitsErrorKind::NotFound;
+            std::fprintf(stderr, "cannot load pose: %s%s\n", bodyPose.error().message().c_str(),
+                         missing ? "; --list-poses shows them" : "");
             return false;
         }
         // A BVH drives a bone only when it holds a joint of identically the

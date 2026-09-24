@@ -485,7 +485,12 @@ std::expected<io::BvhFile, PoseUnitsError> readBvhFor(const std::filesystem::pat
         case io::BvhErrorKind::Malformed:
         case io::BvhErrorKind::FrameDataMismatch: break;
     }
-    return std::unexpected(PoseUnitsError{kind, path.string(), bvh.error().message()});
+    // The BVH error's DETAIL, not its message(). `message()` is already
+    // "<file>: <kind>", and `PoseUnitsError::message()` builds the same shape
+    // around whatever it is given -- so passing the formatted message produced
+    // "zzbogus: file not found (zzbogus: file not found)" in the user's face.
+    // Observed by reading the output of `--pose zzbogus`, not by inspection.
+    return std::unexpected(PoseUnitsError{kind, path.string(), bvh.error().detail});
 }
 
 /// One frame of an ALREADY-READ BVH.

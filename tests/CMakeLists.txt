@@ -5566,6 +5566,29 @@ if(MH_HAVE_RENDER)
     # ...and a value that IS known stays silent, or the message is noise rather
     # than a signal -- the same reason `app_mhm_is_quiet_when_nothing_is_dropped`
     # exists.
+    # A mistyped pose is pointed at the list, and the message does not stutter.
+    #
+    # Two defects, both found by READING the output of `--pose zzbogus` rather
+    # than by inspecting code:
+    #  1. `--animation` and `--preset` say "--list-X prints them"; `--pose` did
+    #     not, although `--list-poses` exists. MEASURED across every option
+    #     that rejects a value.
+    #  2. The message was "zzbogus: file not found (zzbogus: file not found)".
+    #     `PoseUnits.cpp` put the BVH error's already-formatted `message()`
+    #     into `detail`, and `PoseUnitsError::message()` wrapped the same shape
+    #     around it again. FAIL_REGULAR_EXPRESSION pins the stutter, because a
+    #     PASS on the new text alone would still pass with the old text present.
+    #
+    # The pointer is tied to the NotFound kind, so a malformed or unreadable
+    # BVH -- which listing the poses would not help with -- keeps the bare
+    # message.
+    add_test(NAME app_pose_typo_points_at_the_list COMMAND makehuman
+             --pose no_such_pose
+             --save ${CMAKE_CURRENT_BINARY_DIR}/app_pose_typo.mhm)
+    set_tests_properties(app_pose_typo_points_at_the_list PROPERTIES
+        PASS_REGULAR_EXPRESSION "cannot load pose:.*--list-poses shows them"
+        FAIL_REGULAR_EXPRESSION "file not found \\(")
+
     add_test(NAME app_proxy_known_is_quiet COMMAND makehuman
              --hair locs
              --save ${CMAKE_CURRENT_BINARY_DIR}/app_proxy_known.mhm)

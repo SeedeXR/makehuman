@@ -6280,6 +6280,30 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       NOT a finding, checked and dropped: `--litsphere zzbogus` reports
       `unknown --skin`, but `--skin` is a declared ALIAS of the same option
       (`main.cpp:3325`) and `--help` documents both.
+      **SWEEP COMPLETED 2026-09-24 over EVERY value-taking flag, not just the
+      proxy slots. Two more defects, both found by READING the output.**
+      1. **`--pose` did not point at its list**, although `--list-poses` exists
+         and both `--animation` and `--preset` say "--list-X prints them". Now
+         it does -- but ONLY for `PoseUnitsErrorKind::NotFound`, so a malformed
+         or unreadable BVH, which listing the poses would not help with, keeps
+         the bare message.
+      2. **The message STUTTERED**: `zzbogus: file not found (zzbogus: file not
+         found)`. `PoseUnits.cpp:488` put the BVH error's already-formatted
+         `message()` into `detail`, and `PoseUnitsError::message()` wraps the
+         same `<file>: <kind> (<detail>)` shape around whatever it is given.
+         Passing `bvh.error().detail` fixes it.
+      Gated by `app_pose_typo_points_at_the_list`: PASS on the pointer, **and
+      `FAIL_REGULAR_EXPRESSION "file not found \\("` on the stutter** -- a PASS
+      on the new text alone would still pass with the old text present.
+      **CHECKED AND DROPPED, not defects**: `--view zzbogus` refuses properly
+      ("expected front, back, left, right, top or bottom", exit 1) -- my first
+      probe used `--save`, which does not render, so the flag was never
+      validated. `--workspace zzbogus` likewise validates at `main.cpp:6706`
+      and returns 1, but that is on the GUI path, after a headless `--save` has
+      already exited. A flag irrelevant to the chosen action being ignored is
+      not a bug.
+      `--expression` was left alone deliberately: there is no
+      `--list-expressions` to point at.
 
 - [x] **ASSET-TREE INTEGRITY SWEEP, 2026-09-24. Three of four dimensions came
       back CLEAN -- recorded so nobody re-derives them -- and the fourth
