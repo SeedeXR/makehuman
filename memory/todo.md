@@ -732,7 +732,13 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       with its own copy of the trust-boundary flag order; now a wrapper over
       `importScene`), and `skinPositionsCor` (now called from
       `src/rig/PosedMesh.cpp` under `--skinning cor`).
-      **CONFIRMED DEAD, decision pending below**: `ktx2Write`
+      **RESOLVED 2026-09-24 -- this paragraph said "decision pending" long
+      after it was not.** The writer was DELETED in `e4f6b7da` and
+      `include/makehuman/io/Ktx2Writer.h` no longer exists; `io/Etc1s.h` was
+      deliberately KEPT as a control, because its 40.20 dB is what explains
+      libktx's 38.83 dB, so an orphan sweep must not take it. Read the rest of
+      this entry as history, not as an open question.
+      **WAS CONFIRMED DEAD**: `ktx2Write`
       (`io/Ktx2Writer.h:64`, 92 lines) and the whole of `io/Etc1s.h`
       (`etc1sEncode`, `etc1sEncodeBlock`, `etc1sDecodeBlock`, `etc1Expand5`).
       **430 lines exactly.** `Etc1s.h` is included by ONE file in the repo --
