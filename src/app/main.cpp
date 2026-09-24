@@ -1640,7 +1640,11 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(
     // true this needs directive 12.1's treatment -- a canonical id with display
     // names beside it, the way `data/naming/workspace.names` already does for
     // workspace presets.
-    skins.name      = "Litsphere";
+    skins.name = "Litsphere";
+    // OUR call, not the reference's: upstream has no matcap chooser at all,
+    // it shades with one unconditionally. Filed with Scene lighting because
+    // both pick how the viewport is lit rather than what the body is made of.
+    skins.category  = "Rendering";
     int defaultSkin = -1;
     for (const fs::path& p : filesWithExtension(dataDir() / "litspheres", ".png")) {
         if (p.stem().string().find("eye") != std::string::npos) continue;  // not a body skin
@@ -1672,6 +1676,8 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(
     // does not.
     mh::foundation::AssetGroup scenes;
     scenes.name = "Scene lighting";
+    // The reference's scene plugin registers under Rendering.
+    scenes.category = "Rendering";
     scenes.choices.push_back({mh::render::kBuiltinSceneName, "Studio (built-in)"});
     scenes.selected = 0;
     for (const std::string& name : mh::render::availableScenes(dataDir() / "scenes")) {
@@ -1689,7 +1695,8 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(
     const auto chooserLabel = [](const std::filesystem::path& f) { return assetLabel(f); };
 
     mh::foundation::AssetGroup poses;
-    poses.name = "Pose";
+    poses.name     = "Pose";
+    poses.category = "Pose/Animate";  // 3_libraries_pose.py
     // The rest mesh IS the A-pose, so it is a choice with no file behind it.
     poses.choices.push_back({"rest", "A-pose (rest)"});
     poses.selected = 0;
@@ -1734,7 +1741,8 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(
     // "None" is first and is NOT the rest pose: rest belongs to the Pose
     // chooser, and duplicating it here would be a second control for one state.
     mh::foundation::AssetGroup animations;
-    animations.name = "Animation";
+    animations.name     = "Animation";
+    animations.category = "Pose/Animate";  // 3_libraries_animation.py:182
     animations.choices.push_back({kNoProxy, "None"});
     animations.selected = 0;
     for (const fs::path& p : filesWithExtension(dataDir() / "animations", ".bvh")) {
@@ -1756,7 +1764,8 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(
     // FACS Action Units through this application's own `--facs`, so the
     // mapping used to write them is the mapping used to read them.
     mh::foundation::AssetGroup expressions;
-    expressions.name = "Expression";
+    expressions.name     = "Expression";
+    expressions.category = "Pose/Animate";  // 2_posing_expression.py:269
     // "None" is the face at rest, and unlike Pose's "rest" it has no file:
     // an expression is an overlay, and no overlay IS the neutral face.
     expressions.choices.push_back({kNoProxy, "None"});
@@ -1786,7 +1795,8 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(
     // Eyes: the first proxy chooser. Only the two shipped eye proxies exist in
     // data/, so this is a real chooser over a small set rather than a stub.
     mh::foundation::AssetGroup eyes;
-    eyes.name = "Eyes";
+    eyes.name     = "Eyes";
+    eyes.category = "Geometries";  // 3_libraries_eye_chooser.py:82
     eyes.choices.push_back({kNoProxy, "None"});
     eyes.selected = 0;
     for (const fs::path& p : filesWithExtension(dataDir() / "eyes", ".mhclo")) {
@@ -1811,6 +1821,8 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(
     for (const ProxySlot& slot : kProxySlots) {
         mh::foundation::AssetGroup group;
         group.name = slot.group;
+        // Every 3_libraries_* proxy chooser upstream says Geometries.
+        group.category = "Geometries";
         group.choices.push_back({kNoProxy, "None"});
         group.selected     = 0;
         group.toggle       = slot.toggle;
@@ -1843,7 +1855,8 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(
     // `--litsphere` (answering to `--skin`) and the group is "Litsphere", so
     // nothing in the panel is called Skin except the materials.
     mh::foundation::AssetGroup materials;
-    materials.name = "Skin material";
+    materials.name     = "Skin material";
+    materials.category = "Materials";  // 3_libraries_material_chooser.py:352
     for (const std::string& stem : availableSkinMaterials()) {
         materials.choices.push_back({stem, prettyName(fs::path(stem), "")});
         if (stem == currentMaterial) {
@@ -1864,6 +1877,9 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(
     // the material worn on it. Both have to survive a save, so both are saved.
     mh::foundation::AssetGroup eyeColours;
     eyeColours.name = "Eye colour";
+    // Our split of the reference's single material chooser, so it keeps that
+    // chooser's category.
+    eyeColours.category = "Materials";
     for (const std::string& stem : availableEyeColours()) {
         eyeColours.choices.push_back({stem, prettyName(fs::path(stem), "")});
         if (stem == currentEyeColour) {
@@ -1874,7 +1890,8 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(
     groups.push_back(std::move(eyeColours));
 
     mh::foundation::AssetGroup skeletons;
-    skeletons.name = "Skeleton";
+    skeletons.name     = "Skeleton";
+    skeletons.category = "Pose/Animate";  // skeletonlibrary.py
     for (const std::string& stem : rigStems()) {
         skeletons.choices.push_back({stem, prettyName(fs::path(stem), "")});
         if (stem == currentRig) {

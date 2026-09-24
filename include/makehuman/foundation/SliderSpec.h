@@ -121,6 +121,24 @@ struct AssetGroup {
     /// special-cases a body part is a widget that has to be edited every time
     /// the data changes.
     bool toggle{false};
+
+    /// Which tab of the Assets panel this group sits in.
+    ///
+    /// Appended, and empty by default, because an unclassified group MUST
+    /// still reach the user: `AssetPanel` puts one with no category in a
+    /// trailing tab rather than dropping it. A chooser that silently vanishes
+    /// because nobody wrote a string is the exact failure this field could
+    /// otherwise introduce.
+    ///
+    /// The values are the REFERENCE's own categories -- every upstream chooser
+    /// registers under one via `app.getCategory(...)` -- so the grouping is
+    /// derived rather than invented. `Litsphere` is the one exception and is
+    /// ours: upstream has no matcap chooser at all.
+    ///
+    /// Set by the APPLICATION, for the same reason `toggle` is: a generic
+    /// widget that knows which body parts are geometry is a widget that has to
+    /// be edited every time the data changes.
+    std::string category{};
 };
 
 }  // namespace mh::foundation
