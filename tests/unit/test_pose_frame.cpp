@@ -14,13 +14,25 @@
 // keeps `loadBodyPose`'s refusal intact, because the caller who names a frame
 // has said they know the file is an animation.
 //
-// **The shipped walks still cannot be used, and not for that reason.** Measured
-// here: `walk1.bvh` and `zombieWalk1.bvh` name 75 joints and **0** of them are
-// a bone of either shipped rig -- they are the OLD MakeHuman skeleton
-// (`Spine1`, `UpArm_L`, `Clavicle_L`) against this port's `clavicle.L`. Every
-// bone therefore stays at identity and every frame is the same. The multi-frame
-// file that DOES drive the rig is `face-poseunits.bvh`, 60 frames and 163 of
-// 163 joints matched, which is what the tests below use.
+// **Under this port's OWN bone names the shipped walks drive nothing**, and not
+// for that reason. Measured here: `walk1.bvh` and `zombieWalk1.bvh` name 75
+// joints and **0** of them are a bone of either shipped rig -- they are the OLD
+// MakeHuman skeleton (`Spine1`, `UpArm_L`, `Clavicle_L`) against this port's
+// `clavicle.L`. Every bone therefore stays at identity and every frame is the
+// same. The multi-frame file that DOES drive the rig under native names is
+// `face-poseunits.bvh`, 60 frames and 163 of 163 joints matched, which is what
+// the tests below use.
+//
+// **That is no longer the whole story, and this header used to imply it was.**
+// `--rig-names` now renames bones in BOTH directions, so the same walks read as
+// `makehuman1` drive **59 of 179** bones and the content is reachable --
+// `--list-animations` reports the naming and the count per file. Everything
+// asserted below is about the NATIVE-names path and is still exactly true;
+// what changed is that "0" is no longer the only answer available. The
+// retargeted path has its own gates and does not belong here: `test_retarget_
+// map.cpp`, `test_retarget_import.cpp`, `test_retarget_export.cpp`,
+// `test_makehuman1_retarget.cpp`, and the app-level pins in `CMakeLists.txt`
+// (`read as makehuman1 (59 of 179 bones driven)`).
 
 #include "makehuman/foundation/DataDir.h"
 #include "makehuman/rig/PoseUnits.h"
@@ -174,9 +186,17 @@ TEST_CASE("the shipped walks name no bone of either rig, so every frame is ident
           "[rig][poseframe]") {
     const Skeleton skel = defaultRig();
 
-    // This is the measured reason `data/animations/` is unreachable, pinned so
-    // that it stops being folklore and so that RETARGETING the content makes
-    // this test fail -- which is the moment someone should come back here.
+    // What this pins is the NATIVE-names path, and the distinction matters
+    // because the comment here used to say something stronger and is now
+    // wrong: it said this was "the measured reason `data/animations/` is
+    // unreachable", and that RETARGETING the content would make this test
+    // fail. Retargeting shipped, this test did not fail, and both facts are
+    // correct -- `--rig-names` renames on the way IN rather than rewriting the
+    // files, so under native names the intersection is still empty. Reachable
+    // now means `--rig-names makehuman1`, which drives 59 of 179.
+    // So this is not a stale assertion waiting to be deleted. It is the
+    // control for the retargeted path: it is what "no mapping applied" looks
+    // like, and it must keep failing to move anything.
     //
     // walk1.bvh names 75 joints: Root, Spine1, UpArm_L, Clavicle_L ... the old
     // MakeHuman skeleton. This port's rigs use clavicle.L, upperarm01.L. The
@@ -192,8 +212,10 @@ TEST_CASE("the shipped walks name no bone of either rig, so every frame is ident
         INFO("bone " << i);
         CHECK(same((*first)[i], identity));
     }
-    // And so the first and last frames of a walk cycle are the same pose, which
-    // is what "blocked on content" looks like from the inside.
+    // And so the first and last frames of a walk cycle are the same pose --
+    // what an unmapped animation looks like from the inside. Under
+    // `--rig-names makehuman1` these same two frames differ; that direction is
+    // asserted in `test_retarget_import.cpp`, not here.
     for (size_t i = 0; i < first->size(); ++i) {
         CHECK(same((*first)[i], (*later)[i]));
     }

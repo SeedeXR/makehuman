@@ -5951,8 +5951,26 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       re-derived by `tools/audit_taskviews.py` in CI. **51, not 50**: an AST
       audit found six views a regex could not see, five of them real tabs
       (Load, Skin/Material, Pose, Skeleton, Expressions).
-      7 done · 2 covered by the File menu · 17 to port · 9 blocked on engine
-      capability · 16 declined as Python-runtime or dev-only tooling.
+      **These buckets were STALE and are corrected 2026-09-24.** They read
+      "7 done · 2 covered by the File menu · 17 to port · 9 blocked on engine
+      capability · 16 declined", and I quoted the 17 to the owner as the
+      largest remaining piece of work before checking it. The authority is
+      `tools/audit_taskviews.py`, which re-derives the buckets and fails CI on
+      drift; `memory/taskviews.md` has carried the corrected figures since
+      2026-09-12, when fourteen views were found misclassified in BOTH
+      directions. Run of 2026-09-24:
+      **7 done · 25 covered · 0 to port · 3 blocked · 16 declined** (= 51).
+      **NOTHING IS WAITING TO BE PORTED.** The three blocked, with what each
+      is blocked ON, from `audit_taskviews.py:391-394`:
+      `EyebrowsTaskView` -- no helper cage for eyebrows in the base mesh
+      (CONTENT); `ProxyTaskView` -- no wearable alternate body topology
+      (CONTENT); `SceneLibraryTaskView` -- needs a lighting model (the one
+      that is engine work).
+      **The lesson is the one this file keeps teaching: a number copied out of
+      a gated file stops being gated.** `taskviews.md` is checked by CI every
+      run and this summary of it was not, so it rotted in place while the thing
+      it summarised stayed correct. Read the audited file, or run the auditor
+      -- it takes under a second.
 - [x] **Multi-mesh rendering** — `SceneResources` holds a `Drawable` per mesh
       (vertex/index buffers, litsphere texture, own `QRhiShaderResourceBindings`);
       pipeline, sampler, white diffuse stand-in and camera UBO stay shared.
