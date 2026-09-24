@@ -91,10 +91,24 @@ BUCKETS = {
     # topologies -- measured, the only proxymesh-shaped assets shipped are
     # data/3dobjs/base.mhclo (basemesh alpha_7, the OLD topology's map) and
     # a7_converter.proxy (the alpha_7 to hm08 converter), neither of them
-    # wearable. Both are blocked on CONTENT. A scene is lights plus environment
-    # (shared/scene.py:190-192), so SceneLibraryTaskView needs a lighting model.
+    # wearable. Both are blocked on CONTENT.
     "EyebrowsTaskView": "blocked", "ProxyTaskView": "blocked",
-    "SceneLibraryTaskView": "blocked",
+
+    # SceneLibraryTaskView LEFT `blocked` on 2026-09-24. It sat there because a
+    # scene is lights plus environment (shared/scene.py:190-192) and the rig was
+    # eight GLSL consts in pbr.frag -- a lighting model existed, but nothing
+    # could choose between rigs. It is now `render::Lighting` behind a uniform
+    # block, `--scene`, `--list-scenes` and a "Scene lighting" group.
+    #
+    # `covered`, not `done`: it arrives as a chooser group rather than as a tab,
+    # like every other chooser in this port.
+    #
+    # This entry is also the best demonstration of why the check runs BOTH ways.
+    # The literal appeared in src/ before this line was edited, and the auditor
+    # refused -- "claimed absent but \"Scene lighting\" IS in src/" -- so the
+    # bucket could not have been moved early, and cannot now be moved back
+    # without deleting the capability.
+    "SceneLibraryTaskView": "covered",
 
     # AnimationLibrary SHIPPED 2026-09-16: an Animation combo beside Pose, the
     # two clearing each other because they fill one .bvh slot, plus
@@ -353,6 +367,7 @@ EVIDENCE = {
     # first arrived as a one-row sliver, and before that an edit had nowhere to
     # go. This appears only where an edited row is applied to the character.
     "MaterialEditorTaskView": '&mh::ui::MaterialPanel::edited',
+    "SceneLibraryTaskView": '"Scene lighting"',
 }
 
 SRC = REPO / "src"
@@ -391,7 +406,6 @@ ABSENT = {
                          "blocked on content: no helper cage in the base mesh"),
     "ProxyTaskView": ('"proxy", "Proxy"',
                       "blocked on content: no wearable alternate body topology"),
-    "SceneLibraryTaskView": ('"Scene lighting"', "blocked on a lighting model"),
 }
 
 

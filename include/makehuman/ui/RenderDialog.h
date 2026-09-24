@@ -28,6 +28,12 @@ struct RenderRequest {
     /// set from the toolbar, and a production render follows what is on screen
     /// exactly as it follows the shading model.
     bool wireframe{false};
+
+    /// The PBR rig, so a production render is lit the way the viewport is.
+    /// Defaults to the built-in studio setup, leaving every existing render
+    /// unchanged. Not in the dialog for the same reason `wireframe` is not: it
+    /// is chosen in the Scene lighting group, and the render follows it.
+    render::Lighting lighting{};
 };
 
 /// Asks for the four things `--render` accepts.

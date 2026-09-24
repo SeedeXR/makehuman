@@ -32,6 +32,7 @@ struct ViewportWidget::Impl {
     /// Held here rather than only in `scene`, which is destroyed and rebuilt
     /// whenever the device or render pass changes.
     render::ShadingModel shading{render::ShadingModel::Litsphere};
+    render::Lighting lighting{};
     bool wireframe{false};
     bool grid{false};
     /// The backdrop lives HERE as well as in `scene`, for the reason the
@@ -93,6 +94,14 @@ void ViewportWidget::setShadingModel(render::ShadingModel model) {
     // The scene may not exist yet: the widget is constructed long before it is
     // first shown, and initialize() applies the remembered value.
     if (d_->scene) d_->scene->setShadingModel(model);
+    update();
+}
+
+void ViewportWidget::setLighting(const render::Lighting& lighting) {
+    d_->lighting = lighting;
+    // Same reason as above: the scene may not exist yet, and initialize()
+    // applies the remembered value.
+    if (d_->scene) d_->scene->setLighting(lighting);
     update();
 }
 
@@ -184,6 +193,7 @@ void ViewportWidget::initialize(QRhiCommandBuffer* cb) {
     // render target, which the offscreen UI tests do not have. The widget-side
     // memory below it IS covered; this line is reviewed, not proven.
     d_->scene->setShadingModel(d_->shading);
+    d_->scene->setLighting(d_->lighting);
     d_->scene->setWireframe(d_->wireframe);
     d_->scene->setGrid(d_->grid);
     // ...and the backdrop, for the same reason: a resize rebuilds the scene.

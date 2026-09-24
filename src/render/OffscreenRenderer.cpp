@@ -110,6 +110,7 @@ std::expected<QImage, RenderError> OffscreenRenderer::render(std::span<const Mes
     auto scene = SceneResources::create(rhi, rp.get(), d_->shaderDir, samples);
     if (!scene) return std::unexpected(scene.error());
     (*scene)->setShadingModel(s.shading);
+    (*scene)->setLighting(s.lighting);
     (*scene)->setWireframe(s.wireframe);
     (*scene)->setGrid(s.grid);
 

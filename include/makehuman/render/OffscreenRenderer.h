@@ -57,6 +57,13 @@ struct RenderSettings {
     /// Draw the ground grid under the figure (the reference's Grid toggle,
     /// `core/mhmain.py:1736`).
     bool grid{false};
+
+    /// The PBR rig. Defaults to the built-in three-point studio setup, so every
+    /// existing render is unchanged.
+    ///
+    /// IGNORED by the litsphere path, and not by oversight: a matcap has its
+    /// lighting baked into the texture, so there is no rig to point at.
+    Lighting lighting{};
 };
 
 class OffscreenRenderer {

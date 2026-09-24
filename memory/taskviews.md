@@ -51,9 +51,9 @@ dev-gated, so a default release build shows **40**.
 | Bucket | N | Meaning |
 |---|---|---|
 | done | 7 | the dynamic modifier views — shipped |
-| covered | 25 | the capability reaches the user, just not as a TAB |
+| covered | 26 | the capability reaches the user, just not as a TAB |
 | todo | 0 | to port, nothing blocking |
-| blocked | 3 | needs content or an engine capability first |
+| blocked | 2 | needs content first |
 | declined | 16 | Python-runtime or dev-only tooling |
 
 ## The buckets were wrong about FOURTEEN views, in both directions
@@ -108,7 +108,7 @@ The views `guimodifier.loadModifierTaskViews` builds from the `*_sliders.json`
 files — Face, Torso, Arms and Legs, Gender, Macro modelling, Body shapes,
 Measure. One view per top-level key, `apps/gui/guimodifier.py:226-232`.
 
-### covered (25)
+### covered (26)
 Not a gap: this port is dockable, so what the reference makes a tab arrives as
 a menu action or as a group in the Assets panel.
 
@@ -246,14 +246,30 @@ undo entry. Design that interaction first; the loading half already works.
 (measured under `data/`), so expressions arrive as `--facs` action units
 instead; the chooser needs content before it needs code.
 
-### blocked (3)
+### blocked (2)
 `EyebrowsTaskView` has no helper cage in the base mesh. `ProxyTaskView` would
 choose between alternate BODY topologies, and the only proxymesh-shaped assets
 shipped are `data/3dobjs/base.mhclo` (`basemesh alpha_7`, 434 verts — the OLD
 topology's map) and `a7_converter.proxy` (the alpha_7 → hm08 converter, 7102
 verts); neither is wearable. Both are blocked on CONTENT, not on the engine.
-`SceneLibraryTaskView` is blocked on a lighting model: a scene is lights plus
-environment (`shared/scene.py:190-192`).
+
+~~`SceneLibraryTaskView` is blocked on a lighting model.~~ **It left `blocked`
+on 2026-09-24 and is now `covered`.** The diagnosis was half right: a scene is
+lights plus environment (`shared/scene.py:190-192`), and this port DID have a
+lighting model — a three-point rig with a hemisphere ambient — but as eight
+GLSL `const`s in `pbr.frag`, so nothing could choose between rigs. What was
+missing was not the model, it was the model being data.
+
+It is now `render::Lighting` behind a `std140` uniform block, `--scene`,
+`--list-scenes` and a **Scene lighting** chooser group. The rig moved without
+moving the picture: a PBR render taken before the change and after differs in
+**0 of 1,048,576 pixels**, and `--scene studio` is byte-identical to no flag
+at all. `--scene coldlights` moves **86,089** — the model's entire covered
+area.
+
+The three scenes it offers were **Python pickles** until the same day
+(`tools/convert_mhscene.py`), which is why the loader refuses a `0x80` first
+byte outright rather than handing it to a JSON parser.
 
 ~~All eight choosers are blocked on the same thing: **the viewport draws exactly
 one mesh.**~~ **CORRECTED 2026-09-05 (session 135).** Multi-mesh rendering is

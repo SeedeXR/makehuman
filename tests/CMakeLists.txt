@@ -523,7 +523,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 14 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 15 \\[.*Scene lighting.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # The rig had no picker either: two ship, --rig has always chosen between
@@ -5753,7 +5753,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 14 \\[.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 15 \\[.*Scene lighting.*\\] \\(skin materials: 9, rigs: 2\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # Refused rather than silently defaulted to brown, which would make a typo
@@ -5806,6 +5806,69 @@ if(MH_HAVE_RENDER)
         SKIP_REGULAR_EXPRESSION "cannot render"
         FAIL_REGULAR_EXPRESSION "nothing to draw;cannot write"
         FIXTURES_SETUP app_pbr_default_png)
+
+    # ---- Scene lighting -------------------------------------------------
+    #
+    # What makes SceneLibraryTaskView `covered` rather than `blocked`, so these
+    # are the evidence behind a bucket the auditor checks both ways.
+
+    # The chooser's own list, printed from the SAME group the chooser is built
+    # from. `studio` leads because it is the default.
+    add_test(NAME app_list_scenes COMMAND makehuman --list-scenes)
+    set_tests_properties(app_list_scenes PROPERTIES
+        PASS_REGULAR_EXPRESSION "studio\tStudio \\(built-in\\)"
+        FAIL_REGULAR_EXPRESSION "mhscene")
+
+    # THE discriminating pair. A scene has to actually relight the model, and
+    # the built-in has to be exactly what no flag gives -- one without the other
+    # is a control that does nothing or a default that silently moved.
+    #
+    # MEASURED: coldlights moves 86,089 pixels, which is the model's whole
+    # covered area, so the bar of 1000 is far below it and far above the MSAA
+    # noise two identical renders show (nine pixels).
+    add_test(NAME app_scene_relights COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_scene_cold.png
+             --shading pbr --scene coldlights)
+    set_tests_properties(app_scene_relights PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_SETUP app_scene_cold_png)
+    add_test(NAME app_scene_changes_the_frame COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/app_render_pbr.png
+             ${CMAKE_CURRENT_BINARY_DIR}/app_scene_cold.png --min-differing 1000)
+    set_tests_properties(app_scene_changes_the_frame PROPERTIES
+        FIXTURES_REQUIRED "app_pbr_default_png;app_scene_cold_png")
+
+    add_test(NAME app_scene_studio_write COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_scene_studio.png
+             --shading pbr --scene studio)
+    set_tests_properties(app_scene_studio_write PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_SETUP app_scene_studio_png)
+    # Byte-identical, not merely close: `studio` IS render::Lighting's defaults,
+    # so asking for it explicitly must be the same code path as not asking.
+    add_test(NAME app_scene_studio_is_the_default COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/app_render_pbr.png
+             ${CMAKE_CURRENT_BINARY_DIR}/app_scene_studio.png --max-differing 0)
+    set_tests_properties(app_scene_studio_is_the_default PROPERTIES
+        FIXTURES_REQUIRED "app_pbr_default_png;app_scene_studio_png")
+
+    # A matcap carries its lighting in the texture, so a scene cannot change it.
+    # The app must SAY that rather than accept the flag and render the same
+    # frame, which is indistinguishable from the feature being broken.
+    add_test(NAME app_scene_says_litsphere_ignores_it COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_scene_litsphere.png
+             --shading litsphere --scene coldlights)
+    set_tests_properties(app_scene_says_litsphere_ignores_it PROPERTIES
+        PASS_REGULAR_EXPRESSION "no effect under --shading litsphere"
+        SKIP_REGULAR_EXPRESSION "cannot render")
+
+    # A typo is refused and the alternatives are named, like every other
+    # chooser. `available:` is what makes the message actionable.
+    add_test(NAME app_scene_unknown_is_refused COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/never-scene.png --scene zzbogus)
+    set_tests_properties(app_scene_unknown_is_refused PROPERTIES
+        PASS_REGULAR_EXPRESSION "cannot load --scene zzbogus.*available: studio"
+        FAIL_REGULAR_EXPRESSION "rendered")
 
     # An unrecognised model must be REFUSED. Defaulting to the litsphere would
     # make a typo produce a plausible image that is not what was asked for, and

@@ -105,6 +105,17 @@ public:
     void setShadingModel(render::ShadingModel model);
     [[nodiscard]] render::ShadingModel shadingModel() const;
 
+    /// Replaces the PBR lighting rig.
+    ///
+    /// Remembered on the widget, because the scene is rebuilt on resize and a
+    /// fresh `SceneResources` starts from the built-in rig -- the same reason
+    /// `setShadingModel` has to remember its value.
+    ///
+    /// Does nothing visible under `ShadingModel::Litsphere`: a matcap carries
+    /// its lighting in the texture. Callers that offer the user a scene chooser
+    /// have to say so rather than let a selection appear to do nothing.
+    void setLighting(const render::Lighting& lighting);
+
     /// Draws edges instead of filled faces. Remembered until the scene exists,
     /// like the shading model.
     void setWireframe(bool on);

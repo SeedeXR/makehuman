@@ -19,6 +19,7 @@ render::RenderSettings renderSettingsFor(const RenderRequest& request,
     s.transparentBackground = request.transparent;
     s.shading               = request.shading;
     s.wireframe             = request.wireframe;
+    s.lighting              = request.lighting;
     // `grid` is deliberately NOT set; see the header.
     return s;
 }

@@ -38,6 +38,7 @@
 #include "makehuman/io/SceneIO.h"
 #include "makehuman/io/UsdWriter.h"
 #include "makehuman/render/OffscreenRenderer.h"
+#include "makehuman/render/SceneFile.h"
 #include "makehuman/rig/BvhPose.h"
 #include "makehuman/rig/CentersOfRotation.h"
 #include "makehuman/rig/CorrectiveRuntime.h"
@@ -1613,6 +1614,13 @@ std::expected<mh::core::Material, std::string> editedSkinMaterial();
 /// therefore ignored the bundle -- caught by running the DMG's app with the
 /// source `data/` renamed away, which failed on litspheres, poses and eyes
 /// while everything routed through dataDir() kept working.
+/// The lighting scene `--scene` chose, by stem. `studio` is the built-in rig
+/// and has no file behind it.
+std::string& sceneNameRef() {
+    static std::string name{mh::render::kBuiltinSceneName};
+    return name;
+}
+
 std::vector<mh::foundation::AssetGroup> buildAssetGroups(
     const std::string& currentPose, const std::string& currentSkin, const std::string& currentEyes,
     const std::string& currentMaterial, const std::string& currentRig,
@@ -1649,6 +1657,31 @@ std::vector<mh::foundation::AssetGroup> buildAssetGroups(
         skins.selected = defaultSkin >= 0 ? defaultSkin : 0;
     }
     groups.push_back(std::move(skins));
+
+    // "Scene lighting": the PBR rig, as a chooser.
+    //
+    // Its first entry has no file, like the A-pose below: `studio` IS
+    // `render::Lighting`'s defaults, the three-point rig that used to be
+    // constants in `pbr.frag`. It leads the list because it is the default, and
+    // a chooser whose head is not the default reads as though the default were
+    // missing.
+    //
+    // Only `.json` is listed. The `.mhscene` files beside them are Python
+    // pickles that this port refuses to load (`render::loadLighting`), and a
+    // chooser that offers an entry it will then refuse is worse than one that
+    // does not.
+    mh::foundation::AssetGroup scenes;
+    scenes.name = "Scene lighting";
+    scenes.choices.push_back({mh::render::kBuiltinSceneName, "Studio (built-in)"});
+    scenes.selected = 0;
+    for (const std::string& name : mh::render::availableScenes(dataDir() / "scenes")) {
+        if (name == mh::render::kBuiltinSceneName) continue;  // already seeded
+        scenes.choices.push_back({name, prettyName(std::filesystem::path(name), "")});
+        if (name == sceneNameRef()) {
+            scenes.selected = static_cast<int>(scenes.choices.size()) - 1;
+        }
+    }
+    groups.push_back(std::move(scenes));
 
     // A sidecar's `name` wins; without one, `prettyName` -- so an asset with no
     // .meta is title-cased like every sibling chooser instead of showing a raw
@@ -3284,6 +3317,17 @@ int main(int argc, char** argv) {
         QStringLiteral("litsphere (the reference matcap, default) or pbr (metallic-roughness). "
                        "Applies to the viewport and to --render."),
         QStringLiteral("model"), QStringLiteral("litsphere"));
+    const QCommandLineOption sceneOpt(
+        QStringLiteral("scene"),
+        QStringLiteral("The lighting rig: studio (the built-in three-point setup, default) or a "
+                       "scene from data/scenes. --list-scenes names them. Only --shading pbr has "
+                       "a rig to change; a litsphere matcap carries its lighting in the texture, "
+                       "so a scene does nothing there and says so."),
+        QStringLiteral("name"), QStringLiteral("studio"));
+    const QCommandLineOption listScenesOpt(
+        QStringLiteral("list-scenes"),
+        QStringLiteral("Print the lighting scenes the Scene lighting chooser offers, one per "
+                       "line, and exit."));
     // The 179-bone superset is the default rig (owner decision, 2026-09-05:
     // "use the 179-bone set, it's more rich"). It is MakeHuman's own 163-bone
     // rig plus the 16 bones Mixamo names and it lacks, so every bone of the
@@ -3521,6 +3565,8 @@ int main(int argc, char** argv) {
         QStringLiteral("x,y,z"));
     parser.addOption(lookAtOpt);
     parser.addOption(shadingOpt);
+    parser.addOption(sceneOpt);
+    parser.addOption(listScenesOpt);
     parser.addOption(rigOpt);
     parser.addOption(poseOpt);
     parser.addOption(animationOpt);
@@ -3593,6 +3639,36 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "unknown --shading %s; expected litsphere or pbr\n",
                      shadingName.toStdString().c_str());
         return 1;
+    }
+
+    sceneNameRef() = parser.value(sceneOpt).toStdString();
+    mh::render::Lighting lighting{};
+    if (sceneNameRef() != mh::render::kBuiltinSceneName) {
+        const auto loaded =
+            mh::render::loadLighting(dataDir() / "scenes" / (sceneNameRef() + ".json"));
+        if (!loaded) {
+            // Name the alternatives, the way every other chooser does on a
+            // typo -- a bare "unknown scene" leaves the user guessing at stems
+            // they have never seen.
+            std::string available;
+            for (const std::string& name : mh::render::availableScenes(dataDir() / "scenes")) {
+                available += (available.empty() ? "" : ", ") + name;
+            }
+            std::fprintf(stderr, "cannot load --scene %s: %s\n  available: %s\n",
+                         sceneNameRef().c_str(), loaded.error().message().c_str(),
+                         available.c_str());
+            return 1;
+        }
+        lighting = *loaded;
+        // A scene changes the PBR rig and nothing else. Saying so is the
+        // difference between "this control does nothing" and "this control does
+        // nothing HERE, and here is why".
+        if (shading != mh::render::ShadingModel::Pbr) {
+            std::fprintf(stderr,
+                         "--scene %s has no effect under --shading litsphere: a matcap carries "
+                         "its lighting in the texture\n",
+                         sceneNameRef().c_str());
+        }
     }
 
     // Before anything else, because it is about the file it is given rather
@@ -3967,6 +4043,35 @@ int main(int argc, char** argv) {
         }
         for (const auto& [group, id] : documentChoices(*loaded)) {
             std::printf("%s\t%s\n", group.toStdString().c_str(), id.toStdString().c_str());
+        }
+        return 0;
+    }
+
+    if (parser.isSet(listScenesOpt)) {
+        // From the SAME group the chooser is built from, for the reason
+        // --list-poses gives: a second enumeration here could drift from the
+        // real one and would then be a gate that passes while the chooser is
+        // wrong.
+        const auto groups =
+            buildAssetGroups(poseFromArgsOrDocument(parser, poseOpt, document), kDefaultSkin,
+                             kDefaultEyes, skinMaterialRef(), rigNameRef(), eyeColourRef(), {});
+        size_t listed = 0;
+        for (const auto& group : groups) {
+            if (group.name != "Scene lighting") continue;
+            for (const auto& choice : group.choices) {
+                std::printf("%s\t%s\n", choice.id.c_str(), choice.label.c_str());
+                ++listed;
+            }
+        }
+        // The built-in is always there, so "the group exists" is a branch that
+        // cannot fire. What CAN go wrong is data/scenes being unreadable, which
+        // would otherwise print the single `studio` line and exit 0 -- success,
+        // for a missing asset directory.
+        if (listed <= 1) {
+            std::fprintf(stderr,
+                         "only the built-in rig is available; %s is missing or unreadable\n",
+                         (dataDir() / "scenes").string().c_str());
+            return 1;
         }
         return 0;
     }
@@ -6026,6 +6131,7 @@ int main(int argc, char** argv) {
     // shading model, which is what stops the on-screen image and a production
     // render disagreeing.
     window.viewport()->setShadingModel(shading);
+    window.viewport()->setLighting(lighting);
     shell = &window;
 
     // Skinning. The stored preference is the default and `--skinning` wins for
@@ -6662,7 +6768,8 @@ int main(int argc, char** argv) {
     renderViewer->setWindowFlag(Qt::Window);
     QObject::connect(&window, &mh::ui::MainWindow::renderRequested, [&, renderViewer] {
         mh::ui::RenderRequest req;
-        req.shading = shading;  // whatever the viewport is currently showing
+        req.shading  = shading;   // whatever the viewport is currently showing
+        req.lighting = lighting;  // ...and lit by the scene it is showing it under
         mh::ui::RenderDialog dlg(req, &window);
         if (dlg.exec() != QDialog::Accepted) return;
 
@@ -6740,7 +6847,8 @@ int main(int argc, char** argv) {
             .height      = 1024,
             .transparent = parser.isSet(transparentOpt) || parser.isSet(backgroundOpt),
             .shading     = shading,
-            .wireframe   = parser.isSet(wireframeOpt)};
+            .wireframe   = parser.isSet(wireframeOpt),
+            .lighting    = lighting};
         if (const std::string err = renderTo(parser.value(renderOpt).toStdString(), req);
             !err.empty()) {
             std::fprintf(stderr, "cannot render: %s\n", err.c_str());
