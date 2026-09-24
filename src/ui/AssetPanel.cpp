@@ -93,6 +93,27 @@ AssetPanel::AssetPanel(std::span<const foundation::AssetGroup> groups, QWidget* 
         auto* scroll = new QScrollArea(tabs);
         scroll->setWidgetResizable(true);
         scroll->setFrameShape(QFrame::NoFrame);
+        // A PANEL MUST NOT DICTATE THE WINDOW'S SIZE, and this pair is what
+        // stops it.
+        //
+        // MEASURED on CI, which has a far smaller screen than this machine:
+        // after these tabs landed the viewport was squeezed to 324 px wide and
+        // its HEIGHT stopped being stable between runs -- 599, 600, 602 --
+        // which failed every screenshot comparison that spans two app launches
+        // (`sizes differ: 324x599 vs 324x602`). A scroll area reports the size
+        // its CONTENT wants, so seven combo rows plus a tab bar pushed the dock
+        // wider and taller than the screen could pay for, and a horizontal
+        // scrollbar then appeared or did not depending on rounding, moving the
+        // height by a pixel or three.
+        //
+        // So: never scroll sideways -- a chooser column has nothing to reveal
+        // horizontally, it should simply narrow -- and let the area shrink
+        // below its content, which is the whole point of putting it in a scroll
+        // area. The content keeps its own size; only the window's obligation to
+        // it is removed.
+        scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        scroll->setSizeAdjustPolicy(QAbstractScrollArea::AdjustIgnored);
+        scroll->setMinimumSize(0, 0);
         scroll->setWidget(page);
         tabs->addTab(scroll, category);
         pages.emplace(category, inner);
