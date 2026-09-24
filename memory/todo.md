@@ -857,6 +857,25 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       11.77% of its frame -- close enough that "one frame is missing the model"
       remains a live reading of 278,285, and far too close to call on
       percentages alone.
+      **2026-09-24, resolved as far as it can be without a recurrence
+      (`ffe09ecc`).** Two things settled it into a waiting state rather than an
+      open investigation.
+      First, `mh_png_compare` returns early with `sizes differ:` and never
+      reaches the `N of M` line (`tests/mh_png_compare.cpp:143-148`). The
+      failure DID print `278,285 of 2,363,772`, so **both frames were 1402x1686
+      -- the SAME geometry**. Whatever it was, it was not the two captures
+      adopting different layouts; it was a CONTENT difference on equally sized
+      frames, and the stored layout only explains the frame size.
+      Second, the reason three sessions could not say more is that a count is
+      all the tool recorded. It now also prints the differing pixels' bounding
+      box, gated both ways on shipped textures. **A recurrence will now say in
+      one line whether those pixels are the model's compact silhouette, a band
+      across the frame, or noise scattered through it** -- three answers that
+      want three different investigations.
+      **So: do not spend another tick trying to reproduce this.** Post-fix
+      repeats cannot speak to a pre-fix measurement, and the diagnostic that
+      was missing is now in place. The item waits for a recurrence to describe
+      itself.
 - [x] **Windowed pixel tests are not hermetic -- FIXED 2026-09-24.**
       **Root cause: `--screenshot` refused to SAVE the layout but still
       RESTORED one.** `main.cpp` skipped `saveWorkspace()` on a capture run --
