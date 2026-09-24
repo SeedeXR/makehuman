@@ -8025,6 +8025,17 @@ GPU here, or Colab) and it comes back to the owner first.
       owner's and is recorded in full in `plan_owner_directives.md` §12. The
       answer to "blocked on you" was: *"you aren't blocked on content, you're
       blocked on having decided the contracts."*
+      **STATUS 2026-09-24: items 2, 3 and 4 are COMPLETE; item 1 is complete
+      as scoped.** The single remaining unchecked child -- "the registry's
+      other domains" -- is a DELIBERATE YAGNI DEFERRAL in its own words:
+      *"nothing is being renamed there yet, so a registry for them now would be
+      machinery with no name to change -- do it when there is one."* So this
+      line is not blocked and is not in progress; it is waiting for a trigger
+      that has not happened.
+      Items 2 and 3 were still marked `[~]` on 2026-09-24 with every child
+      done, and were corrected by rerunning the scan for markers that lag their
+      bodies. **That scan has now found SIX stale entries; run it, do not trust
+      the checkboxes.**
       The owner's order of work, which replaces the old M9 ordering:
       - [ ] **1. Freeze contracts.** Half done 2026-09-09.
             - [x] **Base topology hash** — `core::topologyHash`, FNV-1a written
@@ -8099,7 +8110,13 @@ GPU here, or Colab) and it comes back to the owner first.
                   eyes, poses, litspheres) and material slots. Nothing is being
                   renamed there yet, so a registry for them now would be
                   machinery with no name to change — do it when there is one.
-      - [~] **2. Fix skinning.** Optimised centres of rotation, or dual
+      - [x] **2. Fix skinning -- DONE.** Marked 2026-09-24: both children are
+            complete (DQS is the default; optimised centres of rotation are
+            built, parallelised 6.05x, determinism gated bit-exactly, and
+            reachable via `--skinning cor`). The scope below asked for
+            "optimised centres of rotation, OR dual quaternion at minimum" --
+            BOTH shipped, so the floor and the ceiling are met.
+            Optimised centres of rotation, or dual
             quaternion at minimum. Kills a large share of the artifacts
             correctives would otherwise patch, at zero art cost.
             - [x] **DQS is the default** (2026-09-09). The owner's stated floor,
@@ -8221,7 +8238,16 @@ GPU here, or Colab) and it comes back to the owner first.
                   read as noise.
                   So decimation is NOT needed for this: 337 ms is a plausible
                   shape-change cost where 2 s was not.
-      - [~] **3. PSD runtime + synthetic oracle.** Swing-twist decomposition
+      - [x] **3. PSD runtime + synthetic oracle -- DONE.** Marked 2026-09-24:
+            all five children are complete and the stated deliverable is gated.
+            "Verified AT and BETWEEN example poses" is not a claim left hanging
+            -- `test_rbf.cpp` has *"the interpolant reproduces every example
+            pose exactly"* (AT) and *"between example poses it tracks the
+            function it was sampled from"* (BETWEEN), plus the radius, sampling
+            density, conditioning and centre-order cases. `CorrectiveRuntime`
+            is covered by `test_corrective_runtime.cpp` and
+            `test_posed_correctives.cpp`.
+            The original scope: swing-twist decomposition
             (NOT Euler) → one RBF evaluator → a weight vector. Analytic
             corrective function as ground truth, verified AT and BETWEEN
             example poses. Correctives apply PRE-SKIN in rest space. No art
