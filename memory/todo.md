@@ -3354,11 +3354,18 @@ failure in a later stage cannot strand an earlier one:
 - [x] **Stage 0 — the stale markers found on the way in.** The export item
       said "`.obj` only so far" while its own children said glTF, FBX,
       Collada, STL and 3MF were done; measured and corrected above.
-- [ ] **Stage 1 — finish the partial UI items.** Nested and tabbed docking;
-      workspace presets and a versioned schema; the accessibility remainder.
-      Smallest, already scoped, nothing blocking. **Check each against the
-      running app first** — Stage 0 is the second stale `[~]` this session, so
-      assume these three overstate what is missing until measured.
+- [x] **Stage 1 — finish the partial UI items. ALL THREE WERE ALREADY DONE
+      AND GATED; the work was correcting the record.** Nested/tabbed docking,
+      five workspace presets and the versioned schema, and the readout
+      double-announcement all ship with tests. The only true remainder is a
+      manual VoiceOver pass on hardware. **That is five stale claims in one
+      session** (export formats, KTX2 "decision pending", the task-view
+      buckets, and these), so the pattern is not incidental: prose beside a
+      gated fact rots while the fact stays correct.
+      The plan told this stage to "check each against the running app first,
+      assume these three overstate what is missing until measured". That was
+      right, and writing it down before starting is what stopped the stage
+      becoming three rewrites of working code.
 - [ ] **Stage 2 — a lighting model, then `SceneLibraryTaskView`.** The only
       one of the three blocked views whose blocker is ENGINE capability rather
       than content (`audit_taskviews.py:394`). A scene is lights plus
@@ -3763,8 +3770,15 @@ failure in a later stage cannot strand an earlier one:
       key on all 34** once the `-`/`_` substitution is applied. Cost: 0.21 s,
       3.2 MB (text; the GLB is 2.3 MB).
 
-- [~] `QMainWindow` + `QDockWidget` — two docks, left/right areas, object names
-      set so `saveState` actually restores. Nested and tabbed docking not yet.
+- [x] `QMainWindow` + `QDockWidget` — two docks, left/right areas, object names
+      set so `saveState` actually restores. **"Nested and tabbed docking not
+      yet" was STALE — both ship.** `MainWindow.cpp:246` calls
+      `setDockNestingEnabled(true)` and `:929-930` sets
+      `AllowNestedDocks | AllowTabbedDocks | GroupedDragging`;
+      `tabifyDockWidget` is live at `MainWindow.cpp:227`, `:1116` and
+      `PanelTitleBar.cpp:143`. Gated at `test_theme.cpp:944-945`
+      (`isDockNestingEnabled()`, `AllowTabbedDocks`) and by the tabbed cases in
+      `test_ui.cpp:633-671`.
 - [x] **Task-view registry + modelling sliders** — `core::loadSliderLayout` ports
       `modifiers/*_sliders.json`, the reference's own tab definition: **7 task
       views, 50 sections, 291 sliders**, full parity on order, labels, ranges,
@@ -3867,7 +3881,15 @@ failure in a later stage cannot strand an earlier one:
       exist yet. Everything else in the §6.3 sketch is there.
 - [~] Workspaces: save / restore / reset done (QSettings **IniFormat** — the macOS
       native backend ignores `setPath`, so a test could not redirect it away from the
-      developer's real preferences). 4 shipped presets and a versioned schema not yet.
+      developer's real preferences).
+      **"4 shipped presets and a versioned schema not yet" was STALE — both
+      ship, and there are FIVE presets, not four.** `--list-workspaces` prints
+      Modelling, Rigging, Materials, Export and Tabbed. The schema lives in
+      `src/ui/Workspace.cpp`: `kKeyVersion = "schemaVersion"`, written from
+      `kWorkspaceSchemaVersion` (`MainWindow.cpp:1154`), and `:33` REFUSES a
+      version of 0 or one above the current. Gated by `app_list_workspaces`
+      and its two siblings, and by five assertions at `test_theme.cpp:814-833`
+      covering round-trip, too-high, zero, missing and wrong-type.
 - [x] **Assets in place and loaded**: 57 Lucide icons (ISC, normalised to the 1.5 px
       stroke `design.md` §4 specifies) and 42dot Sans variable (OFL-1.1,
       structurally validated). See `resources/README.md`.
@@ -7780,7 +7802,20 @@ failure in a later stage cannot strand an earlier one:
       `QAccessibilityHints` (one property, contrast) and `QPlatformTheme` all
       lack it, and `QSettings` cannot read another app's preference domain.
       Read once at construction, deliberately.
-      Still open: VoiceOver on a real device.
+      **Still open: VoiceOver on a real device — and that is now the ONLY thing
+      open here**, which is why this item is ticked. It is a manual pass on
+      hardware, not code, so it cannot be closed from this seat.
+      The one code-level gap that was open, the readout announced twice, is
+      FIXED and GATED: `ReadoutAccessible` (`src/ui/ModifierPanel.cpp:182`)
+      reports `state().invisible`, which Qt's Cocoa bridge treats as "ignore
+      me" (`qcocoaaccessibility.mm`, `shouldBeIgnored()`), so the label stays
+      on screen and leaves the tree VoiceOver reads. `test_ui.cpp:334` asserts
+      it BOTH ways — the readout invisible, the caption in the same row NOT —
+      which is what distinguishes a deliberate override from a widget that is
+      merely off screen. The sweep asserts `controls.size() > 8`, so the "14
+      controls covered" above is a point-in-time count, not a bar.
+      A stale "KNOWN GAP" comment in `test_theme.cpp` still described that as
+      unsolved and was corrected in the same commit as this line.
 - [x] **`reduceMotion()`'s true branch is now exercised** (2026-09-05, owner:
       "give it a go"). `MH_REDUCE_MOTION` overrides the AppKit read
       (`1`/`t`/`y` on, anything else off; unset asks macOS).

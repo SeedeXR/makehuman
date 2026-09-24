@@ -1202,10 +1202,18 @@ TEST_CASE("a slider announces what it changes and where it lives", "[a11y]") {
     // "Oval" alone is ambiguous across sections, so the name carries both.
     CHECK(slider->accessibleName() == QStringLiteral("Oval, head shape"));
 
-    // KNOWN GAP: the readout label beside the slider repeats the same number,
-    // and VoiceOver announces it a second time. An empty accessibleName does
-    // NOT suppress it -- Qt falls back to QLabel::text() -- so silencing it
-    // needs a custom QAccessibleInterface. Recorded rather than papered over.
+    // This used to record a KNOWN GAP -- the readout label beside the slider
+    // repeating the same number, announced a second time -- and said silencing
+    // it "needs a custom QAccessibleInterface". That interface was written:
+    // `ReadoutAccessible` in `src/ui/ModifierPanel.cpp` reports
+    // `state().invisible`, which Qt's Cocoa bridge treats as "ignore me"
+    // (`qcocoaaccessibility.mm`, `shouldBeIgnored()`), so the label stays on
+    // screen and leaves the tree VoiceOver reads.
+    //
+    // It is gated in `test_ui.cpp`, "the slider readout is not announced
+    // twice", which also checks the CAPTION in the same row is NOT hidden --
+    // the half that proves the flag is a deliberate override rather than a
+    // widget being off screen.
 }
 
 TEST_CASE("every control is reachable by keyboard", "[a11y]") {
