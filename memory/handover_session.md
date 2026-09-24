@@ -4,6 +4,56 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-24 08:05:00 — Session · **CI fully green; everything pushed; and memory was understating the work**
+
+### CI
+Run `35952157382` on `11894d3b` completed **success — all 11 jobs, TSan
+included**. The libktx install fix held. The hold on `f27255d0` is released and
+everything is pushed: head is now `d224027c`, `ahead: 0`.
+
+Holding that commit was the right call: pushing would have cancelled the
+in-flight run for the third time, and TSan needs ~72 minutes uninterrupted.
+
+### Memory was lying in BOTH directions
+Reconciling the real `memory/todo.md` against reality — rather than against my
+own loop summary — found entries whose heading said "open" while the body
+underneath recorded the work as finished:
+
+- **"DECISION NEEDED: delete the 430 lines of Ktx2Writer"** — decided and
+  executed hours earlier.
+- **"afro, CORNROWS and BANTU KNOTS now ship; LOCS remain"** — locs ship.
+- **"Optimised centres of rotation"** — built, tested, parallelised 6.05x with
+  determinism gated bit-exactly, and given a caller this session by
+  `--skinning cor`. The checkbox had never moved.
+
+After finding the first two by accident I stopped and **scanned every open item
+for a body claiming completion**, which is how the third surfaced. That scan
+also cleared the PSD umbrella item: its completion markers come from finished
+CHILDREN while real children remain open, so leaving it open is correct.
+
+The owner request "build a FULL hair feature with several styles" is left
+**open on purpose** with a delivery status added. Whether it is satisfied is
+the owner's judgement, not mine to record for them — but the entry should not
+read as unstarted either. Its limitations are stated rather than buried: ends
+cut square, one matcap per slot, and no UVs on any style, which
+`hair.mhmat` already says of itself.
+
+Counts: top-level open 28 → 26; at any indent, 31.
+
+### One thing I got away with
+I wrote "nothing in tests, src, CMake or CI reads `memory/todo.md`" into a
+commit message, and the command I had just run printed **12** matches. Checking
+afterwards, all 12 are code comments citing the file and **0** are non-comment
+lines — so the claim holds. But I asserted it before reading the number, which
+is luck rather than method, and in the same session that lesson has already
+cost real time twice.
+
+### Sweep
+None needed: memory-only. Last sweeps stand at debug 1497/1497 and libktx
+1504/1504.
+
+---
+
 ## 2026-09-24 07:20:00 — Session · **CI caught an install bug I shipped, in the one config that could see it**
 
 With the network finally working, CI ran — and a job failed.

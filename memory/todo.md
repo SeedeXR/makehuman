@@ -8116,7 +8116,15 @@ GPU here, or Colab) and it comes back to the owner first.
                     `tests/mh_export_fixture.cpp` exports rest geometry with a
                     live rig and never calls CPU skinning. Evidence the
                     exporters still work; not evidence about DQS.
-            - [ ] **Optimised centres of rotation** (Le & Hodgins 2016) is the
+            - [x] **Optimised centres of rotation** (Le & Hodgins 2016) --
+                  **DONE. Built, parallelised, gated and REACHABLE.** Marked
+                  complete 2026-09-24 after a sweep for todo entries whose body
+                  already recorded the work; the checkbox had never been moved.
+                  `--skinning cor` (wired 2026-09-24) is what finally gave it a
+                  caller: before that `skinPositionsCor` was built and tested
+                  with no production path, one of the unreachable-API finds.
+                  The original scoping note, kept because its measurements are
+                  what killed the cache idea:
                   rung above, and it is a chunk of its own: the naive
                   precompute is 19,158 vertices × 36,972 triangles of
                   similarity evaluation, which needs its own budget and its
