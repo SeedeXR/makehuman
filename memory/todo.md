@@ -811,7 +811,26 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       **libktx**, not our code, and is untouched.
       Recoverable from git if a dependency-free container is ever wanted.
       **1492/1492, -3 exactly as predicted.**
-- [ ] **`app_backdrop_transparent_shows_nothing` is INTERMITTENT, and not for
+- [x] **`app_backdrop_transparent_shows_nothing` — SOLVED 2026-09-25
+      (`ab405c7f`). IT WAS NEVER INTERMITTENT.** The window took whatever size
+      the screen granted, and a headless runner does not grant the same thing
+      twice: CI showed `sizes differ: 340x599 vs 340x602` between two launches
+      of the SAME binary in the SAME environment. A test that compares two
+      captures then fails on a coin toss, which is exactly what "intermittent"
+      looked like from outside.
+      `--screenshot` now fixes the window at 960x720 before and after `show()`,
+      so a capture inherits neither a stored layout (`57118325`) nor the
+      screen. **CI: `app_backdrop_transparent_shows_nothing` Passed, alongside
+      `app_screenshot_layout_independent` and the new
+      `app_screenshot_size_is_fixed`.**
+      What it cost, and why: FOUR fixes. The first three were each correct
+      about something genuinely wrong — a byte compare of two GPU renders
+      (`0c47e8b1`), a panel that dictated the window size (`31b204c4`), tabs
+      that perturbed both (reverted, `41cbbd9f`) — and none was the cause.
+      **What found it was reverting and measuring, then eliminating candidates
+      one at a time**, not reasoning harder about the symptom.
+      The superseded analysis follows.
+- [ ] ~~**`app_backdrop_transparent_shows_nothing` is INTERMITTENT, and not for
       the settings reason below.** 2026-09-21: it failed twice in a row
       (278,285 of 2,363,772 pixels against a bar of 100) and then passed four
       times -- twice at the parent commit and twice with the working-tree
@@ -3330,7 +3349,7 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       (it round-trips to the VISIBLE height, 166.589 cm against 169.455 — the
       helper cage again).
 
-## CI's WINDOW HEIGHT IS NOT DETERMINISTIC (2026-09-25, OPEN, needs an owner decision)
+## CI's WINDOW HEIGHT IS NOT DETERMINISTIC — FIXED 2026-09-25 (`ab405c7f`)
 
 **Three screenshot tests fail on CI and cannot be fixed by anything done so
 far.** They compare two app launches and report `sizes differ: 340x599 vs
@@ -3354,7 +3373,11 @@ binary.
 binary in the same environment get windows of different height. The app takes
 whatever the screen grants, so a screenshot is not reproducible across runs.
 
-**THE PROPOSAL, for the owner rather than for me to take unilaterally.**
+**RESOLVED.** The owner authorised the fix and it works: `--screenshot` sets
+the window to 960x720 before and after `show()`, and CI's debug and release
+jobs both went green with `app_screenshot_size_is_fixed`,
+`app_screenshot_layout_independent` and `app_backdrop_transparent_shows_nothing`
+all passing. `sizes differ` is gone. The proposal as written:
 `--screenshot` should use a FIXED window size instead of whatever the screen
 allows. It already diverges from a normal run deliberately -- it skips
 `restoreWorkspace` so a capture cannot inherit a stored layout (`57118325`) --
