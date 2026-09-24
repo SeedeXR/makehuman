@@ -3330,6 +3330,43 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       (it round-trips to the VISIBLE height, 166.589 cm against 169.455 — the
       helper cage again).
 
+## CI's WINDOW HEIGHT IS NOT DETERMINISTIC (2026-09-25, OPEN, needs an owner decision)
+
+**Three screenshot tests fail on CI and cannot be fixed by anything done so
+far.** They compare two app launches and report `sizes differ: 340x599 vs
+340x602` -- a THREE PIXEL height difference between two runs of the same
+binary.
+
+**What has been ruled out, by measurement rather than reasoning:**
+* **Not the Assets panel.** `installInDock` now puts every dock panel in a
+  scroll area, and it worked: the width went **324 -> 340**. The panel no
+  longer drives the window. The height wobble survived unchanged.
+* **Not the settings file.** `app_backdrop_reopened` sets no `HOME` override,
+  so both of its launches share an identical environment and still differ.
+* **Not the byte-vs-pixel comparison.** That was a real and separate bug, fixed
+  in `0c47e8b1`; these now fail on SIZE, which no tolerance can paper over.
+* **Not present before 2026-09-24.** Run `36029052705` on `96f58cf2` was fully
+  green, so something in this day's work exposed it -- but the two candidates
+  (the tabs, reverted in `41cbbd9f`; the panel sizing, fixed in `31b204c4`) are
+  both addressed and it persists.
+
+**What that leaves:** on CI's headless macOS runner, two launches of the same
+binary in the same environment get windows of different height. The app takes
+whatever the screen grants, so a screenshot is not reproducible across runs.
+
+**THE PROPOSAL, for the owner rather than for me to take unilaterally.**
+`--screenshot` should use a FIXED window size instead of whatever the screen
+allows. It already diverges from a normal run deliberately -- it skips
+`restoreWorkspace` so a capture cannot inherit a stored layout (`57118325`) --
+and "a capture is reproducible" is the same idea finished. Every one of these
+tests then compares two windows of a size WE chose.
+**It is not done yet because three fixes have already failed tonight and a
+fourth speculative change to shared behaviour, at 01:00, is how a bad night
+becomes a bad week.** The evidence above is what the decision should rest on.
+
+**Do NOT relax these assertions.** Two captures of the same scene must be the
+same size; that claim is correct and the failures are real.
+
 ## OWNER PLAN, 2026-09-24: "do all of them step wise"
 
 Asked to "start porting the 17 remaining task views". **There are none.**
