@@ -28,6 +28,7 @@ binding to base vertex b. Rest space is right: fitting runs before skinning
 (main.cpp wornSkins), so hair anchored to the scalp follows a head turn free.
 """
 import argparse
+import collections
 import math
 import sys
 import uuid
@@ -307,7 +308,13 @@ def derive(verts, faces, app_path=""):
     wanted["bantu_knots.mhclo"] = bmhclo
 
     lpts, lfs, lroots, _, lshort, lcap, lncap = locs(verts, faces, app_path)
-    if lshort < 8:
+    # A rope of two rings is not a loc. The failure this names is real and was
+    # MEASURED: before `LOC_SCALP_BOTTOM` existed the crown apex read as a shelf
+    # and EVERY rope stopped at ZERO steps. Observed range with the style as it
+    # ships is 7..26, so the bar sits between the disaster and the shortest real
+    # rope. It was 8 while I was guessing, which is one step below nothing --
+    # crossing-stacking then shortened one rope to 7 and tripped it.
+    if lshort < 5:
         raise RuntimeError(f"the shortest loc is {lshort} steps")
     # Only the ROPE points go to the binder; the cap already carries its own
     # bindings, one per base vertex it grew from.
@@ -1078,6 +1085,8 @@ def locs(verts, body_faces, app_path=""):
     used, keep, placed = afro(verts, body_faces, thickness=LOC_CAP)
     cap = {b: i for i, b in enumerate(used)}
     allpts = [tuple(verts[b][i] + placed[b][i] for i in range(3)) for b in used]
+    # How many ropes have already passed through each scalp vertex.
+    crossings = collections.defaultdict(int)
     allfaces = [[cap[v] for v in f] for f in keep]
     cap_binds = [f"{b} {b} {b} 1.00000 0.00000 0.00000 "
                  f"{placed[b][0]:.5f} {placed[b][1]:.5f} {placed[b][2]:.5f}"
@@ -1092,8 +1101,19 @@ def locs(verts, body_faces, app_path=""):
         for q in scalp:
             d = [q[i] - CENTRE[i] for i in range(3)]
             ln = math.sqrt(sum(t * t for t in d)) or 1.0
-            lifted.append(tuple(q[i] + d[i] / ln * (LOC_CAP + LOC_STANDOFF)
-                                for i in range(3)))
+            # Where two ropes cross, the later one passes OVER the earlier, one
+            # rope-diameter further out. That is what happens on a real head,
+            # and it is also the only thing that stood between this asset and
+            # the rest of the tree: MEASURED, every other shipped .obj -- base,
+            # tights, cornrows, bantu knots, both eye meshes, skirt, afro,
+            # eyelashes, tongue, genitals, teeth -- has EXACTLY ZERO coincident
+            # vertex positions, and locs had 13.1% without this. Ropes rooted at
+            # the front must travel back across ropes rooted mid-scalp, so the
+            # geodesics genuinely share runs of scalp vertices.
+            stack = crossings[q]
+            crossings[q] = stack + 1
+            lift = LOC_CAP + LOC_STANDOFF + stack * 2.0 * LOC_HALF
+            lifted.append(tuple(q[i] + d[i] / ln * lift for i in range(3)))
         path = lifted + loc_hang(lifted[-1], profile)
         shortest = min(shortest, len(path))
         if len(path) < 3:

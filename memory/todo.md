@@ -6156,6 +6156,34 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       only `--eyes`.
       **`no UVs` is uniform across all four hair styles**, so it is a known
       limitation of the set rather than anything specific to locs.
+      **AND THEN TO ZERO, same day.** A sweep of EVERY shipped `.obj` settled
+      it: base, tights, cornrows, bantu knots, both eye meshes, skirt, afro,
+      eyelashes, tongue, genitals and teeth are all at **EXACTLY ZERO**
+      coincident vertex positions. Locs at 13.1% was the only asset in the tree
+      with any, which makes "13.1% is acceptable" the outlier judgement, not the
+      measurement.
+      The remaining crossings are real: ropes rooted at the front must travel
+      back ACROSS ropes rooted mid-scalp, and MEASURED, 94 scalp vertices are
+      used by more than one rope, up to **five**. So they are handled the way a
+      real head handles them -- **where two ropes cross, the later passes OVER
+      the earlier, one rope-diameter further out**. Duplicates **494 -> 0**, and
+      the render improved: the ropes read as separate and fuller rather than as
+      flat ribbons. Gate tightened to `coincident == 0`; **control** (stacking
+      removed) gives 494 of 3,760 and goes red.
+      Asset is now **3,720 vertices, 3,448 faces, 41 ropes**.
+      **A gate of my own moved, and it is worth saying why.** `lshort < 8`
+      refused the stacked version at 7 steps. 8 was a guess made before stacking
+      existed, one step below the shortest rope I had then seen; the failure the
+      gate actually names produced **ZERO** steps, for every rope. Re-set to 5,
+      which sits between the disaster and the observed range of 7..26. Not
+      relaxed to go green -- re-derived from what it is for.
+      **A PROCESS FAILURE WORTH REMEMBERING: my own grep hid this for three
+      rounds.** `make_hair_styles.py` was FAILING (`cannot derive the hair
+      styles without the application: the shortest loc is 7 steps`) and writing
+      nothing, so I measured the stale asset on disk and concluded, twice, that
+      an edit "had no effect". The filter was `grep -iE "locs|error"` and the
+      message contains neither -- it says "the shortest **loc** is".
+      **Check the exit code, or grep for nothing at all.**
       Reverted cleanly both times: generator restored, `data/hair/locs.*`
       deleted, `--check` back to 6 files matching a fresh derivation.
       **BANTU KNOTS shipped 2026-09-23**, in four render-and-look iterations,

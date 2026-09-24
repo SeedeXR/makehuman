@@ -4,6 +4,59 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-24 03:40:00 — Session · **Zero, not 13% — and my own grep hid a failing generator for three rounds**
+
+Network still down; eleven commits queued.
+
+### The sweep that settled it
+Last tick I got locs' coincident vertices from 52.5% to 13.1% and judged that
+acceptable. So I ran the same check across **every shipped `.obj`**:
+
+> base, tights, cornrows, bantu knots, both eye meshes, skirt, afro, eyelashes,
+> tongue, genitals, teeth — **all exactly 0**. Locs was the only asset in the
+> tree with any.
+
+That makes "13.1% is fine" my judgement, not a measurement. The bar is zero.
+
+### Ropes that cross now pass over each other
+The remaining crossings are real: ropes rooted at the front must travel back
+across ropes rooted mid-scalp, and **94 scalp vertices are used by more than
+one rope, up to five**. So they are handled the way a real head handles them —
+where two ropes cross, the later passes **over** the earlier, one rope-diameter
+further out.
+
+**494 → 0**, and the render improved rather than degraded: the ropes read as
+separate and fuller instead of flat ribbons. Asset is now 3,720 vertices, 41
+ropes. Gate tightened to `coincident == 0`; control (stacking removed) gives
+494 of 3,760 and goes red.
+
+### A gate of mine moved — why
+`lshort < 8` refused the stacked version at 7 steps. **8 was a guess** made
+before stacking existed, one step under the shortest rope I had then seen. The
+failure that gate actually names produced **zero** steps, for every rope. Re-set
+to 5, between the disaster and the observed 7..26. Re-derived from what it is
+for, not relaxed to go green.
+
+### The process failure, which is the part worth keeping
+**For three rounds I concluded my edit "had no effect" while the generator was
+failing outright.** It printed `cannot derive the hair styles without the
+application: the shortest loc is 7 steps`, wrote nothing, and exited 2 — so I
+kept measuring the stale asset on disk, and even confirmed it `cmp`-identical
+and believed that.
+
+My filter was `grep -iE "locs|error"`. The message contains neither: it says
+"the shortest **loc** is". I had a lesson in memory about `grep -c` swallowing
+things and still walked into the same family of trap.
+
+**Check the exit code, or do not filter the output.** Three wasted rounds, and
+two confident wrong statements about my own code, from one grep pattern.
+
+### Sweep
+**1495/1495**, clang-format clean, no test count change. `--check` green on 8
+files; assets byte-identical after the control was reverted.
+
+---
+
 ## 2026-09-24 02:55:00 — Session · **The export found what the render could not: half the locs were drawn twice**
 
 Network still down; ten commits queued.

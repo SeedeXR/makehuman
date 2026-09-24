@@ -144,7 +144,8 @@ TEST_CASE("the locs are cut level", "[asset][hair][locs]") {
     // rope lengths differ: if every rope reaches the floor, its whole bottom
     // ring sits there, so the number of vertices at the lowest height is a
     // multiple of the ropes. MEASURED on the shipped asset: 41 ropes x 5 sides
-    // = 205. A ragged style has a handful.
+    // = 205, though one rope is stacked clear of a crossing and ends a step
+    // short. A ragged style has a handful.
     const auto pts = loadLocs();
     float lowest   = pts.front().y;
     for (const auto& p : pts)
@@ -173,9 +174,13 @@ TEST_CASE("the locs do not lie on top of each other", "[asset][hair][locs]") {
     // authored vertex count unchanged, and locs went 4,095 -> 2,110.
     //
     // Assigning each rope its own exit -- there are 41, and that is now what
-    // sets the rope count -- brings it to 494 of 3,760 (13.1%), the remainder
-    // being paths that genuinely cross over the crown. The bar sits between
-    // 13.1% and 52.5% and near neither.
+    // sets the rope count -- brought it to 494 of 3,760 (13.1%). That was still
+    // the ONLY asset in the tree with any: a sweep of every shipped .obj found
+    // base, tights, cornrows, bantu knots, both eye meshes, skirt, afro,
+    // eyelashes, tongue, genitals and teeth all at EXACTLY ZERO. So the bar is
+    // zero here too, and the remaining crossings are handled the way a real
+    // head handles them -- where two ropes cross, the later passes OVER the
+    // earlier, one rope-diameter further out.
     //
     // This is not only waste: overlapping tubes are why the ropes rendered as
     // flat ribbons rather than as separate locs.
@@ -190,7 +195,7 @@ TEST_CASE("the locs do not lie on top of each other", "[asset][hair][locs]") {
         if (key(order[i]) == key(order[i - 1])) ++coincident;
     }
     INFO("coincident vertices: " << coincident << " of " << pts.size());
-    CHECK(coincident * 4 < pts.size());
+    CHECK(coincident == 0);
 }
 
 TEST_CASE("every loc binding is inside its triangle", "[asset][hair][locs]") {
