@@ -816,6 +816,20 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       depend on the compositor having finished, so a partially composited frame
       is the obvious suspect and nothing has confirmed it. Recorded, not
       explained.
+      **2026-09-24: attempted to reproduce it, and could NOT.** Eight
+      consecutive `ctest --repeat until-fail:8` iterations all passed, run
+      AFTER the stored-layout fix (`57118325`) and with the settings file
+      absent throughout. **That is evidence, not proof of absence** -- the
+      original pattern was two failures then four passes, so a rare flake can
+      easily survive eight runs.
+      What it does rule out: it is not deterministic on this machine, and it is
+      not the stored-layout bug, which is now fixed and separately gated.
+      Worth knowing for the next attempt: the failure was **278,285 of
+      2,363,772 pixels (11.8%)**, which is a large fraction of the image rather
+      than a few edge pixels -- so "a partially composited frame" has to mean a
+      substantially unfinished one, not a subtle timing wobble. A first attempt
+      at 30 iterations was SIGKILLed (exit 137) before finishing; eight is what
+      completed.
 - [x] **Windowed pixel tests are not hermetic -- FIXED 2026-09-24.**
       **Root cause: `--screenshot` refused to SAVE the layout but still
       RESTORED one.** `main.cpp` skipped `saveWorkspace()` on a capture run --
