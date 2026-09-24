@@ -2860,24 +2860,27 @@ if(MH_HAVE_RENDER)
                  # (2026-09-24) the Assets panel gained category TABS, the dock's
                  # size hint changed with it and the viewport went
                  # 1192x1686 -> 1160x1492, which put (520,920) off the model
-                 # entirely at a response of 11.5.
+                 # entirely at a response of 11.5; then the tabs were REVERTED
+                 # and the Eyebrows group arrived, and the viewport went to
+                 # 1192x1902 -- one extra chooser row moving it by 216 px,
+                 # which is the clearest possible statement that this panel
+                 # drives the window's size.
                  #
                  # Re-derived from the image rather than relaxed, as this note
                  # has said to do all three times. This centre is no longer the
                  # first zero found: it is the one with the MOST ROOM, chosen by
                  # scanning for the candidate whose radius-40 disc keeps the
-                 # largest margin to the silhouette. (580,490) reads EXACTLY
-                 # 0.000 with >= 50 px to spare, where the previous pick sat
-                 # close enough to an edge to be moved by a dock resize. Every
-                 # one of the 70 candidates lying wholly on the model read
-                 # 0.000, so the bar of 2.0 is nowhere near any of them.
+                 # largest margin to the silhouette. (600,610) reads EXACTLY
+                 # 0.000 with >= 70 px to spare. All 720 candidates lying
+                 # wholly on the model read 0.000, so the bar of 2.0 is nowhere
+                 # near any of them.
                  #
                  # The companion check below still reads 27.3 on the same pair,
                  # which is what keeps this from passing on two identical
                  # images. If a dock changes again, re-derive again -- the scan
                  # is a two-minute job and the threshold is the point of the
                  # test.
-                 --cx 580 --cy 490 --radius 40 --max-response 2.0)
+                 --cx 600 --cy 610 --radius 40 --max-response 2.0)
         set_tests_properties(app_backdrop_does_not_eat_the_model PROPERTIES
             SKIP_RETURN_CODE 77
             FIXTURES_REQUIRED "app_backdrop_front;app_backdrop_plain_front")
