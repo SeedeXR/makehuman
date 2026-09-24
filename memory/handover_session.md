@@ -4,6 +4,92 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-24 21:26:02 — Session · **The owner's four-stage plan, end to end: "do all of them step wise"**
+
+### What was asked, and why the first answer was wrong
+The owner said *"start porting the 17 remaining task views"*. **There were
+none.** `tools/audit_taskviews.py` re-derives the buckets and fails CI on
+drift, and it read `7 done · 25 covered · 0 to port · 3 blocked · 16 declined`.
+The **17** was a PROSE HEADING in `memory/taskviews.md` that had drifted from
+that same file's own audited table — `taskviews.md:131-133` says so outright —
+and `todo.md` had copied the prose. **I quoted the copy to the owner as the
+project's largest remaining work before checking it.**
+
+Verified in the SHIPPED BINARY rather than in the auditor, because "a literal
+appears in `src/`" is weaker than "the capability reaches the user": the app
+reports its asset groups and `--print-choices` round-trips them out of a saved
+`.mhm`. Eleven of the "covered" views are live Assets-panel groups; the rest
+are menu actions and CLI flags.
+
+Offered four directions; the owner said **"do all of them step wise"**.
+
+### The four stages
+- **Stage 0** — stale markers found on the way in. "Export includes worn
+  proxies — `.obj` only so far" was wrong: measured, the GLB carries 5 named
+  meshes, the `.dae` 5 `<geometry>`, and all five names appear in the `.fbx`.
+  STL and 3MF have no notion of separate objects, which is the only real gap.
+- **Stage 1** (`c529a2fb`) — **all three "partial" UI items were already done
+  and gated.** Nested/tabbed docking, five workspace presets and the versioned
+  schema, and the slider readout's double-announcement. The only remainder is
+  a MANUAL VoiceOver pass on hardware.
+- **Stage 2** (`4de47f64`, `48e58fb8`, `a73743e5`, `c7516fd9`) — the three
+  shipped `.mhscene` files were **Python pickles that nothing read**;
+  converted offline by `tools/convert_mhscene.py` under an unpickler that can
+  build exactly one class. The lighting rig moved from eight GLSL `const`s
+  into a uniform block, **proved neutral at 0 of 1,048,576 pixels**. Then
+  `--scene`, `--list-scenes` and a "Scene lighting" group.
+  **`SceneLibraryTaskView` left `blocked`.**
+- **Stage 3** (`96f58cf2`, `bd6815b3`) — the Assets panel became four tabs,
+  **in the reference's own order** (`core/mhmain.py:523-527`). It is a
+  **PARTIAL** reversal of `taskviews.md:111-112`: Save/Export/Render/Settings
+  stay menu actions because they are ACTIONS. **The owner may overrule this.**
+- **Stage 4** (`9d4c3249`, `bd449867`) — eyebrows ship.
+  **`ProxyTaskView` stays blocked on content** and was not forced.
+
+**Task views went `0 to port / 3 blocked` → `0 to port / 1 blocked`.**
+Final: `7 done · 27 covered · 0 to port · 1 blocked · 16 declined`.
+
+### The findings worth carrying forward
+**Four `blocked` claims were answered by machinery built after the claim was
+written** — export formats, SceneLibrary, eyebrows, and the KTX2 "decision
+pending" ledger line. **Check whether a blocker is still true before accepting
+it.**
+
+**Anatomically correct was invisible.** A 2 mm eyebrow — the real dimension —
+rendered BYTE-IDENTICAL to no eyebrow, at 1024, at the 1160x1492 viewport, and
+with a screaming-green matcap. An export proved the mesh right the whole time.
+It ships at ~9 mm, tuned to what the renderer resolves rather than to a face,
+and the entry says so rather than pretending otherwise.
+
+**A two-variable sweep read as a cliff.** Varying `stand` and `half` together
+gave 0 px then 199 and a tidy false explanation; varying `stand` alone gave a
+gradual 24/105/144/167. **Vary one parameter at a time.**
+
+**The auditor refused two premature ledger edits**, once for SceneLibrary and
+once for Eyebrows — "claimed absent but the literal IS in `src/`". That is what
+a both-ways gate is for, and it worked against me in exactly the way it should.
+
+### What I got wrong, three times the same way
+**I predicted a clean sweep three times. Every time the ctest COUNT was right
+and an ASSERTION broke.** Tabbing the dock moved the viewport
+`1192x1686 → 1160x1492` and broke a pinned pixel coordinate; the new asset
+group broke two `asset groups: N` assertions; the new asset files broke the
+material count and the asset-index count.
+
+The last one is the sharpest, because I had explicitly planned to prevent it:
+I grepped `tests/golden/test_asset_index.cpp` and **the file is in
+`tests/unit/`**. A grep on a path that does not exist returns nothing, and
+**nothing looks exactly like "nothing to find"**. Check the path resolves
+before believing an absence.
+
+### State
+Head `bd449867`, pushed, tree clean. Local sweep **1516/1516**, clang-format 0
+tree-wide, auditor green. Two questions are with the owner: whether Stage 3's
+partial reversal is what they wanted, and whether the eyebrows are good enough
+to keep.
+
+---
+
 ## 2026-09-24 09:35:00 — Session · **Moved this session's hard-won traps out of my head and into `instruction.md`**
 
 ### Why
