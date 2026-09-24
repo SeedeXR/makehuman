@@ -3366,14 +3366,14 @@ failure in a later stage cannot strand an earlier one:
       assume these three overstate what is missing until measured". That was
       right, and writing it down before starting is what stopped the stage
       becoming three rewrites of working code.
-- [ ] **Stage 2 — a lighting model, then `SceneLibraryTaskView`.** The only
+- [x] **Stage 2 — DONE (`4de47f64`, `48e58fb8`, `a73743e5`, `c7516fd9`): a lighting model, then `SceneLibraryTaskView`.** The only
       one of the three blocked views whose blocker is ENGINE capability rather
       than content (`audit_taskviews.py:394`). A scene is lights plus
       environment; the task view follows from it and is the cheap half.
       Moving it out of `blocked` requires the evidence literal `"Scene
       lighting"` to appear in `src/`, and the auditor checks that BOTH ways,
       so the bucket cannot be edited without the capability.
-- [~] **Stage 3 — give covered capabilities real tabs. IN PROGRESS.**
+- [x] **Stage 3 — DONE (`96f58cf2`, `bd6815b3`): covered capabilities got tabs, PARTIALLY.**
       **Scoped 2026-09-24 after looking at the running UI rather than at the
       task-view list.** A screenshot shows the Assets dock as **15 heading +
       combo pairs stacked in one `QVBoxLayout`**, running off the bottom of the
@@ -3407,7 +3407,7 @@ failure in a later stage cannot strand an earlier one:
       menu bar worth the name. So this stage reorganises the Assets panel and
       leaves the menu alone. **It is therefore a PARTIAL reversal of
       `taskviews.md:111-112`, and the commit says so.**
-- [~] **Stage 4 — author the blocked content. THE TWO BLOCKERS ARE NOT THE
+- [x] **Stage 4 — DONE (`9d4c3249`, `bd449867`) for eyebrows; ProxyTaskView STAYS BLOCKED. THE TWO BLOCKERS ARE NOT THE
       SAME SIZE, measured 2026-09-24 before starting.**
       **`EyebrowsTaskView` is NOT blocked on a helper cage any more.** The
       claim is `blocked on content: no helper cage in the base mesh`, and the
@@ -10035,7 +10035,22 @@ Tracked in full in `project_context.md` §8. Each becomes a regression test.
 - [ ] FBX 10× unit error at every scale but decimetre
 - [ ] FBX forged Creator string and fixed fake FileId
 - [ ] Collada morph controller `NameError`
-- [ ] `.mhscene` is a Python pickle → replace with JSON (RCE vector)
+- [x] `.mhscene` is a Python pickle → replace with JSON (RCE vector).
+      **DONE 2026-09-24** (`4de47f64`, `a73743e5`). The three shipped
+      `.mhscene` files really were pickles -- protocol 2, `cmaterial\nColor`
+      globals -- and nothing in `src/`, `tests/` or `tools/` read them, so they
+      were dead data in a dangerous format. `tools/convert_mhscene.py`
+      converted them ONCE, offline, under an unpickler whose `find_class`
+      permits exactly `material.Color` and raises on anything else.
+      **The port never unpickles.** `render::loadLighting` recognises a pickle
+      by its `0x80` PROTO byte and reports it AS one, naming the converter,
+      rather than handing it to the JSON parser. The regression test this
+      ledger asks for is `tests/render/test_scene_file.cpp`, "a pickled scene
+      is refused as a pickle, not as bad JSON", and the shipped `.mhscene`
+      files are its control -- real files of the dangerous format. Mutation
+      run: without the check it reports `malformed (... illegal number)`.
+      The pickles stay on disk as the converter's input; the safety is the
+      refusal, not their absence.
 - [ ] `AnimationTrack.sparsify` assigns to a read-only property
 - [ ] `.mhp` pose loader always logs an error
 - [ ] Bare `except: pass` swallowing export failures
