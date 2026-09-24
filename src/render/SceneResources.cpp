@@ -38,7 +38,8 @@ namespace {
 /// which texture is at which slot.
 void bindAll(QRhiShaderResourceBindings* srb, QRhiBuffer* ubuf, QRhiTexture* lit,
              QRhiTexture* diffuse, QRhiTexture* normalMap, QRhiTexture* aoMap,
-             QRhiTexture* wrinkleMap, QRhiSampler* sampler, QRhiBuffer* meshBuf) {
+             QRhiTexture* wrinkleMap, QRhiSampler* sampler, QRhiBuffer* meshBuf,
+             QRhiBuffer* lightBuf) {
     srb->setBindings({
         QRhiShaderResourceBinding::uniformBuffer(
             0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
@@ -60,6 +61,11 @@ void bindAll(QRhiShaderResourceBindings* srb, QRhiBuffer* ubuf, QRhiTexture* lit
         // the weight in `material.w` rather than on whether this is real.
         QRhiShaderResourceBinding::sampledTexture(6, QRhiShaderResourceBinding::FragmentStage,
                                                   wrinkleMap, sampler),
+        // Declared by pbr.frag only. Binding 6 above is already in the same
+        // position -- present in every SRB, read by one shader -- so both
+        // pipelines still compile against one layout.
+        QRhiShaderResourceBinding::uniformBuffer(7, QRhiShaderResourceBinding::FragmentStage,
+                                                 lightBuf),
     });
 }
 
@@ -88,6 +94,11 @@ QImage bottomUp(QImage img) {
 
 /// Three mat4 plus a vec4, matching the `Buf` block in litsphere.vert.
 constexpr quint32 kUboSize = 64 * 3 + 16;
+/// `LightBuf`: three vec4 directions, three vec4 radiances, sky, ground.
+/// std140 pads a vec3 to 16 bytes, which is why the arrays are vec4 in the
+/// shader rather than vec3 -- an array of vec3 has a 16-byte stride anyway, so
+/// declaring vec4 costs nothing and removes the trap.
+constexpr quint32 kLightUboSize = 8 * 16;
 /// Three vec4, matching the `MeshBuf` block: `material`, `pbr`, `base`. Both
 /// shaders declare all three, so one size serves both pipelines and the SRB
 /// layout that the two share stays identical.
@@ -177,6 +188,12 @@ struct SceneResources::Impl {
     // Shared: one camera for the frame, one sampler, one white diffuse
     // stand-in, one pipeline. Only the bindings and geometry vary per mesh.
     std::unique_ptr<QRhiBuffer> ubuf;
+    /// The PBR rig, at binding 7. Separate from `ubuf` because that block is
+    /// per-FRAME camera state rewritten every `updateCamera`, while this one
+    /// changes only when a scene is chosen; and because the litsphere shaders
+    /// do not declare it, exactly as they already do not declare binding 6.
+    std::unique_ptr<QRhiBuffer> lightBuf;
+    Lighting lighting{};
     std::unique_ptr<QRhiTexture> diffuseTex;
     /// Bound only so the pipeline has a layout to compile against; never read,
     /// because each drawable brings its own.
@@ -351,6 +368,12 @@ std::expected<std::unique_ptr<SceneResources>, RenderError> SceneResources::crea
         return std::unexpected(RenderError{RenderErrorKind::Failed, "uniform buffer"});
     }
 
+    r->d_->lightBuf.reset(
+        rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, kLightUboSize));
+    if (!r->d_->lightBuf->create()) {
+        return std::unexpected(RenderError{RenderErrorKind::Failed, "light uniform buffer"});
+    }
+
     // Sized at upload time; created here so the bindings can reference them.
     r->d_->diffuseTex.reset(rhi->newTexture(QRhiTexture::RGBA8, QSize(1, 1)));
     if (!r->d_->diffuseTex->create()) {
@@ -380,7 +403,8 @@ std::expected<std::unique_ptr<SceneResources>, RenderError> SceneResources::crea
     }
     bindAll(r->d_->layoutSrb.get(), r->d_->ubuf.get(), r->d_->diffuseTex.get(),
             r->d_->diffuseTex.get(), r->d_->diffuseTex.get(), r->d_->diffuseTex.get(),
-            r->d_->diffuseTex.get(), r->d_->sampler.get(), r->d_->layoutMeshBuf.get());
+            r->d_->diffuseTex.get(), r->d_->sampler.get(), r->d_->layoutMeshBuf.get(),
+            r->d_->lightBuf.get());
     if (!r->d_->layoutSrb->create()) {
         return std::unexpected(RenderError{RenderErrorKind::Failed, "shader resource bindings"});
     }
@@ -728,7 +752,7 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
                 dr.normalTex ? dr.normalTex.get() : d_->diffuseTex.get(),
                 dr.aoTex ? dr.aoTex.get() : d_->diffuseTex.get(),
                 dr.wrinkleTex ? dr.wrinkleTex.get() : d_->diffuseTex.get(), d_->sampler.get(),
-                dr.meshBuf.get());
+                dr.meshBuf.get(), d_->lightBuf.get());
         if (!dr.srb->create()) {
             return std::unexpected(
                 RenderError{RenderErrorKind::Failed, "shader resource bindings"});
@@ -824,6 +848,37 @@ void SceneResources::updateCamera(QRhiResourceUpdateBatch* batch, const Camera& 
     batch->updateDynamicBuffer(d_->ubuf.get(), 128, 64, normalMat.constData());
     const float params[4] = {0.0F, 1.0F, 0.0F, 0.0F};  // AdditiveShading, normalmapIntensity
     batch->updateDynamicBuffer(d_->ubuf.get(), 192, 16, params);
+
+    // The rig rides along with the camera update rather than having an upload
+    // of its own. It changes far less often than this runs, but a QRhi dynamic
+    // buffer has to be written through a resource-update batch, and this is the
+    // one batch every frame already has. Writing 128 bytes a frame is cheaper
+    // than the bookkeeping to skip it.
+    //
+    // Radiance is colour TIMES intensity: the shader has no intensity, by
+    // design. See `LightBuf` in pbr.frag.
+    std::array<float, 32> lights{};
+    for (size_t i = 0; i < d_->lighting.lights.size(); ++i) {
+        const Light& light = d_->lighting.lights[i];
+        for (size_t c = 0; c < 3; ++c) {
+            // std140: an array of vec4 has a 16-byte stride, so `direction`
+            // occupies bytes 0..47 and `radiance` STARTS AT 48 -- float 12, not
+            // float 16. Getting that wrong wrote the radiances into the wrong
+            // slots and moved 81,446 pixels of the model; the before/after
+            // render comparison is what caught it.
+            lights[i * 4 + c]      = light.direction[c];
+            lights[12 + i * 4 + c] = light.colour[c] * light.intensity;
+        }
+    }
+    for (size_t c = 0; c < 3; ++c) {
+        lights[24 + c] = d_->lighting.sky[c];
+        lights[28 + c] = d_->lighting.ground[c];
+    }
+    batch->updateDynamicBuffer(d_->lightBuf.get(), 0, kLightUboSize, lights.data());
+}
+
+void SceneResources::setLighting(const Lighting& lighting) {
+    d_->lighting = lighting;
 }
 
 void SceneResources::setShadingModel(ShadingModel model) {

@@ -75,21 +75,36 @@ layout(binding = 6) uniform sampler2D wrinkleTexture;
 
 const float kPi = 3.14159265359;
 
-/// Three-point studio rig, in view space: key over the viewer's left shoulder,
-/// a dimmer cool fill opposite it to keep the shadow side readable, and a rim
-/// behind the subject to separate the silhouette from the background.
-/// Intensities are in arbitrary linear units chosen so mid-grey skin lands near
-/// mid-grey on screen after the tonemap.
-const vec3 kKeyDir = vec3(-0.400, 0.520, 0.756);
-const vec3 kKeyColor = vec3(1.000, 0.976, 0.945) * 3.20;
-const vec3 kFillDir = vec3(0.640, 0.128, 0.758);
-const vec3 kFillColor = vec3(0.855, 0.898, 1.000) * 0.90;
-const vec3 kRimDir = vec3(0.180, 0.400, -0.898);
-const vec3 kRimColor = vec3(1.000, 0.960, 0.900) * 1.40;
-
-/// Analytic ambient hemisphere; see the header for why this is not an IBL.
-const vec3 kSkyColor = vec3(0.290, 0.330, 0.400);
-const vec3 kGroundColor = vec3(0.180, 0.160, 0.150);
+/// The lighting rig, supplied by the application rather than compiled in.
+///
+/// It was three `const vec3` pairs here until a scene library needed to choose
+/// between rigs; `render::Lighting` holds the same numbers and its defaults ARE
+/// the old constants, so the default frame did not move. Still a three-point
+/// studio rig in view space: key over the viewer's left shoulder, a dimmer cool
+/// fill opposite it to keep the shadow side readable, and a rim behind the
+/// subject to separate the silhouette from the background.
+///
+/// **`radiance` is colour ALREADY MULTIPLIED by intensity**, which is why this
+/// block has no intensity of its own. Authoring wants the two apart -- a scene
+/// says "white at 3.2" -- but the shader only ever uses the product, and
+/// folding it on the CPU keeps this arithmetic byte-for-byte what it was when
+/// the numbers were constants.
+///
+/// A slot with zero radiance contributes nothing: `shadeLight` scales by it.
+/// That is how a scene with one or two lights fills a fixed array of three
+/// without a count or a branch.
+layout(std140, binding = 7) uniform LightBuf {
+    /// xyz = direction TOWARD the light, view space, not required to be unit;
+    /// w unused.
+    vec4 direction[3];
+    /// rgb = colour * intensity, in the same arbitrary linear units as before,
+    /// chosen so mid-grey skin lands near mid-grey after the tonemap; a unused.
+    vec4 radiance[3];
+    /// Analytic ambient hemisphere; see the header for why this is not an IBL.
+    vec4 sky;
+    vec4 ground;
+}
+lbuf;
 
 /// Trowbridge-Reitz (GGX) normal distribution.
 float distributionGgx(float noh, float alpha) {
@@ -199,14 +214,15 @@ void main() {
     const vec3 diffuseColor = albedo * (1.0 - metallic);
 
     vec3 color = vec3(0.0);
-    color += shadeLight(n, v, normalize(kKeyDir), kKeyColor, diffuseColor, f0, alpha);
-    color += shadeLight(n, v, normalize(kFillDir), kFillColor, diffuseColor, f0, alpha);
-    color += shadeLight(n, v, normalize(kRimDir), kRimColor, diffuseColor, f0, alpha);
+    for (int i = 0; i < 3; ++i) {
+        color += shadeLight(n, v, normalize(lbuf.direction[i].xyz), lbuf.radiance[i].rgb,
+                            diffuseColor, f0, alpha);
+    }
 
     // Hemisphere ambient. The specular half is scaled by (1 - roughness) as a
     // stand-in for a prefiltered environment: a mirror should pick up most of
     // the surroundings, a chalk surface almost none.
-    const vec3 hemisphere = mix(kGroundColor, kSkyColor, 0.5 + 0.5 * n.y);
+    const vec3 hemisphere = mix(lbuf.ground.rgb, lbuf.sky.rgb, 0.5 + 0.5 * n.y);
     color += diffuseColor * hemisphere;
     color += f0 * hemisphere * (1.0 - roughness);
 

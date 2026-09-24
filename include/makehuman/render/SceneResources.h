@@ -85,6 +85,56 @@ struct Camera {
 ///
 /// Both are always built, because the viewport toggles between them at runtime
 /// and a QRhi pipeline's state is baked at create() -- there is no way to swap
+/// One directional light of the PBR rig.
+///
+/// `direction` points TOWARD the light and is in VIEW space, which is the whole
+/// reason this is a modelling viewport and not a scene renderer: the camera is
+/// fixed and the MODEL rotates, so lights pinned to the eye behave like a studio
+/// rig bolted to the camera. Turning the character walks it through the
+/// lighting instead of dragging the lighting with it. `pbr.frag`'s header has
+/// the argument in full.
+///
+/// `colour` and `intensity` are kept APART here and multiplied before upload,
+/// because authoring wants them apart -- a scene says "white at 3.2" -- while
+/// the shader only ever uses the product.
+struct Light {
+    std::array<float, 3> direction{};
+    std::array<float, 3> colour{1.0F, 1.0F, 1.0F};
+    /// Arbitrary linear units. Zero means the slot contributes nothing, which
+    /// is how a one- or two-light scene fills a fixed array of three.
+    float intensity{0.0F};
+};
+
+/// The rig the PBR path shades with.
+///
+/// **The defaults ARE the constants that used to live in `pbr.frag`**, to four
+/// and three decimals exactly as they were written there, so turning the rig
+/// into data did not move the default frame. A test renders with these and
+/// compares against a render taken before the change.
+///
+/// Three lights, no more: the shader's array is fixed at three and a count
+/// would buy nothing, since an unused slot at intensity 0 already costs one
+/// multiply by zero.
+struct Lighting {
+    std::array<Light, 3> lights{
+        // Key, over the viewer's left shoulder.
+        Light{{-0.400F, 0.520F, 0.756F}, {1.000F, 0.976F, 0.945F}, 3.20F},
+        // Fill: dimmer and cool, opposite the key, so the shadow side stays
+        // readable rather than going to ambient alone.
+        Light{{0.640F, 0.128F, 0.758F}, {0.855F, 0.898F, 1.000F}, 0.90F},
+        // Rim, behind the subject, separating the silhouette from the
+        // background.
+        Light{{0.180F, 0.400F, -0.898F}, {1.000F, 0.960F, 0.900F}, 1.40F},
+    };
+    /// The analytic ambient hemisphere: sky above, bounced ground below,
+    /// interpolated by the normal's Y. It is not an IBL and `pbr.frag` says at
+    /// length why it cannot be one -- every usable HDRI is CC-BY or
+    /// non-commercial. It exists so surfaces facing away from all three lights
+    /// are shaded rather than black.
+    std::array<float, 3> sky{0.290F, 0.330F, 0.400F};
+    std::array<float, 3> ground{0.180F, 0.160F, 0.150F};
+};
+
 /// a shader stage on a live pipeline.
 ///
 /// `Litsphere` stays the default and stays byte-for-byte what it was: it is the
@@ -266,6 +316,17 @@ public:
     /// Picks which shader the next `draw` uses. Free: both pipelines already
     /// exist, so this only chooses between them and needs no re-upload.
     void setShadingModel(ShadingModel model);
+
+    /// Replaces the PBR rig. Takes effect on the next `updateCamera`, which is
+    /// where the block is written, so a caller that changes lighting between
+    /// frames does not need its own upload.
+    ///
+    /// Has NO effect on the litsphere path, and that is not an oversight: a
+    /// matcap has its lighting baked into the texture, so there is no rig to
+    /// point at. Switching to `ShadingModel::Litsphere` therefore ignores a
+    /// scene entirely, and the UI has to say so rather than appear to change
+    /// nothing.
+    void setLighting(const Lighting& lighting);
 
     /// Draws edges instead of filled faces, for every drawable including the
     /// blended ones: wireframe is a diagnostic view of the whole scene, not a
