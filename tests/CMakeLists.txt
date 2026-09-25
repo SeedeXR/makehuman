@@ -2887,29 +2887,35 @@ if(MH_HAVE_RENDER)
                  # which is the clearest possible statement that this panel
                  # drives the window's size.
                  #
-                 # Re-derived from the image rather than relaxed, as this note
-                 # has said to do all three times. This centre is no longer the
-                 # first zero found: it is the one with the MOST ROOM, chosen by
-                 # scanning for the candidate whose radius-40 disc keeps the
-                 # largest margin to the silhouette. (275,615) reads EXACTLY
-                 # 0.000 with >= 40 px to spare, and all 720 candidates lying
-                 # wholly on the model read 0.000, so the bar of 2.0 is nowhere
-                 # near any of them. The companion below reads 114.6.
+                 # A PREVIOUS VERSION OF THIS NOTE SAID "THIS SHOULD BE THE LAST
+                 # TIME IT MOVES", AND THAT WAS WRONG. `--screenshot` fixing the
+                 # WINDOW at 960x720 pins the window, not the viewport: the
+                 # viewport is whatever is left after the docks inside that
+                 # window take their width. Restoring the tabs (2026-09-25) took
+                 # 552x1332 -> 520x1332 -- 32 px of dock, no window change at all
+                 # -- and moved this coordinate a sixth time. The right claim is
+                 # the narrower one: the capture no longer depends on the SCREEN,
+                 # so CI and this machine agree and the value is stable across
+                 # runs. It still depends on the docks, so a panel change still
+                 # means a re-derivation.
                  #
-                 # THIS SHOULD BE THE LAST TIME IT MOVES. It drifted five times
-                 # in two days because the viewport size was whatever the screen
-                 # and the docks between them decided. `--screenshot` now sets
-                 # the window to a fixed 960x720 before showing it, so the
-                 # capture geometry is ours: 552x1332 here at 2x, and the same
-                 # logical size on any machine. A coordinate can only move now
-                 # if someone changes that constant.
+                 # Re-derived from the image rather than relaxed, every time this
+                 # note has said to. This centre is not the first zero found: it
+                 # is the one with the MOST ROOM, chosen by scanning every
+                 # radius-40 box lying wholly inside the silhouette and keeping
+                 # the one furthest from an edge. (260,430) reads EXACTLY 0.000
+                 # with >= 70 px to spare, and the LOUDEST of all 758 such
+                 # candidates reads 0.183 -- so the bar of 2.0 has an order of
+                 # magnitude in hand against the worst case, not just this pick.
+                 # The mask behind that scan is not guesswork either: thresholding
+                 # the flat (26,26,28) clear colour reproduces the app's own
+                 # "covered 141999" line exactly.
                  #
-                 # The companion check below still reads 27.3 on the same pair,
-                 # which is what keeps this from passing on two identical
-                 # images. If a dock changes again, re-derive again -- the scan
-                 # is a two-minute job and the threshold is the point of the
-                 # test.
-                 --cx 275 --cy 615 --radius 40 --max-response 2.0)
+                 # The companion check below reads 130.0 on the same pair, which
+                 # is what keeps this from passing on two identical images. If a
+                 # dock changes again, re-derive again -- the scan is a
+                 # two-minute job and the threshold is the point of the test.
+                 --cx 260 --cy 430 --radius 40 --max-response 2.0)
         set_tests_properties(app_backdrop_does_not_eat_the_model PROPERTIES
             SKIP_RETURN_CODE 77
             FIXTURES_REQUIRED "app_backdrop_front;app_backdrop_plain_front")
@@ -2917,7 +2923,12 @@ if(MH_HAVE_RENDER)
                  ${CMAKE_SOURCE_DIR}/tools/png_region_response.py
                  --a ${CMAKE_CURRENT_BINARY_DIR}/backdrop_front.png
                  --b ${CMAKE_CURRENT_BINARY_DIR}/plain_front.png
-                 --cx 346 --cy 246 --radius 40 --min-response 20.0)
+                 # Off the silhouette entirely, where the backdrop is all there
+                 # is to see: [230,180,60] against the (26,26,28) clear colour.
+                 # Re-derived with its sibling above when the tabs returned;
+                 # 130.0 against a bar of 20.0, with >= 110 px of background in
+                 # every direction so a dock nudge cannot slide it onto the body.
+                 --cx 410 --cy 130 --radius 40 --min-response 20.0)
         set_tests_properties(app_backdrop_reaches_the_pixels PROPERTIES
             SKIP_RETURN_CODE 77
             FIXTURES_REQUIRED "app_backdrop_front;app_backdrop_plain_front")

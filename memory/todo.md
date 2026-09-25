@@ -3467,6 +3467,29 @@ failure in a later stage cannot strand an earlier one:
       menu bar worth the name. So this stage reorganises the Assets panel and
       leaves the menu alone. **It is therefore a PARTIAL reversal of
       `taskviews.md:111-112`, and the commit says so.**
+      **REVERTED 2026-09-25 (`41cbbd9f`), THEN RESTORED THE SAME DAY.** The
+      tabs were reverted as a DIAGNOSTIC, not as a rejection: three speculative
+      fixes for a CI failure had already missed, and reverting was what produced
+      the measurement that found the real fault. It exonerated them -- with the
+      tabs gone the viewport went to 1192x1902, because the sixteenth chooser
+      row (Eyebrows) moved it 216 px on its own. The Assets panel had ALWAYS
+      dictated the window's size; the tabs merely perturbed an existing fault.
+      Fixed generically in `MainWindow::installInDock` (`src/ui/MainWindow.cpp:930`),
+      which now wraps EVERY panel in a `QScrollArea`, so no panel added later can
+      reintroduce it, with a property gate in `test_theme.cpp` pinning that the
+      window's `minimumSizeHint()` is identical for a 2-group and a 40-group
+      panel.
+      Restored intact: `AssetPanel.cpp` is `41cbbd9f^`'s version verbatim and the
+      three `[assets][tabs]` cases are back. Eyebrows needed no new wiring -- it
+      arrives through the `kProxySlots` loop (`main.cpp:1835`) that stamps every
+      slot `Geometries` -- so all 16 groups are still categorised and there is
+      still no Uncategorised tab. Verified by looking at the render, not only the
+      suite: four tabs, eight Geometries choosers, no overflow.
+      **Cost: the viewport went 552x1332 -> 520x1332** (32 px of dock, the window
+      unchanged at 960x720), which moved the two backdrop probes a sixth time.
+      Re-derived by scanning, never relaxed: (275,615)->(260,430) and
+      (346,246)->(410,130). See `tests/CMakeLists.txt` for why the earlier claim
+      that they could no longer move was wrong.
 - [x] **Stage 4 — DONE (`9d4c3249`, `bd449867`) for eyebrows; ProxyTaskView STAYS BLOCKED. THE TWO BLOCKERS ARE NOT THE
       SAME SIZE, measured 2026-09-24 before starting.**
       **`EyebrowsTaskView` is NOT blocked on a helper cage any more.** The

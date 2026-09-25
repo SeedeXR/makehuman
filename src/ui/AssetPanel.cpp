@@ -7,7 +7,12 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QLabel>
+#include <QScrollArea>
+#include <QTabWidget>
 #include <QVBoxLayout>
+
+#include <map>
+#include <vector>
 
 namespace mh::ui {
 
@@ -30,18 +35,104 @@ QString pickerName(const QString& group) {
     return QStringLiteral("assets:") + group;
 }
 
+/// The tab order, taken from the reference rather than chosen.
+///
+/// `core/mhmain.py:523-527` creates its categories in exactly this sequence --
+/// Modelling, Geometries, Materials, Pose/Animate, Rendering. Modelling is the
+/// slider dock in this port, not an asset chooser, so the Assets panel carries
+/// the remaining four in the reference's own order. Geometries leading is both
+/// what upstream does and what the panel is most used for.
+///
+/// A category not listed here still gets a tab, appended after these. The
+/// panel must never be the reason a chooser is unreachable.
+const QStringList& categoryOrder() {
+    static const QStringList order{QStringLiteral("Geometries"), QStringLiteral("Materials"),
+                                   QStringLiteral("Pose/Animate"), QStringLiteral("Rendering")};
+    return order;
+}
+
+/// The tab an unclassified group lands in.
+///
+/// Not "Other" as a silent dumping ground: a group reaching here means the
+/// application forgot to categorise it, and the name is meant to be noticed in
+/// a screenshot.
+QString fallbackCategory() {
+    return QStringLiteral("Uncategorised");
+}
+
 }  // namespace
 
 AssetPanel::AssetPanel(std::span<const foundation::AssetGroup> groups, QWidget* parent)
     : QWidget(parent) {
     setObjectName(QStringLiteral("panel.assets"));
 
-    auto* column = new QVBoxLayout(this);
-    column->setContentsMargins(8, 8, 8, 8);
-    column->setSpacing(6);
+    auto* outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, 0);
+
+    auto* tabs = new QTabWidget(this);
+    tabs->setObjectName(QStringLiteral("assets.tabs"));
+    // Top, like every other tab bar in this application; Qt's default on macOS
+    // is bottom and the mismatch reads as a different application.
+    tabs->setTabPosition(QTabWidget::North);
+    outer->addWidget(tabs);
+
+    // One page per category, created on demand but ORDERED by the list above
+    // rather than by first appearance -- otherwise the tab order would depend
+    // on the order the application happens to build its groups in.
+    std::map<QString, QVBoxLayout*> pages;
+    const auto pageFor = [&](const QString& category) -> QVBoxLayout* {
+        auto it = pages.find(category);
+        if (it != pages.end()) return it->second;
+        auto* page = new QWidget(tabs);
+        page->setObjectName(QStringLiteral("assets.page:") + category);
+        auto* inner = new QVBoxLayout(page);
+        inner->setContentsMargins(8, 8, 8, 8);
+        inner->setSpacing(6);
+        // Scrolled, because a category is free to grow: Geometries already
+        // holds seven groups and the dock is resizable down to a narrow strip.
+        auto* scroll = new QScrollArea(tabs);
+        scroll->setWidgetResizable(true);
+        scroll->setFrameShape(QFrame::NoFrame);
+        // A PANEL MUST NOT DICTATE THE WINDOW'S SIZE, and this pair is what
+        // stops it.
+        //
+        // MEASURED on CI, which has a far smaller screen than this machine:
+        // after these tabs landed the viewport was squeezed to 324 px wide and
+        // its HEIGHT stopped being stable between runs -- 599, 600, 602 --
+        // which failed every screenshot comparison that spans two app launches
+        // (`sizes differ: 324x599 vs 324x602`). A scroll area reports the size
+        // its CONTENT wants, so seven combo rows plus a tab bar pushed the dock
+        // wider and taller than the screen could pay for, and a horizontal
+        // scrollbar then appeared or did not depending on rounding, moving the
+        // height by a pixel or three.
+        //
+        // So: never scroll sideways -- a chooser column has nothing to reveal
+        // horizontally, it should simply narrow -- and let the area shrink
+        // below its content, which is the whole point of putting it in a scroll
+        // area. The content keeps its own size; only the window's obligation to
+        // it is removed.
+        scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        scroll->setSizeAdjustPolicy(QAbstractScrollArea::AdjustIgnored);
+        scroll->setMinimumSize(0, 0);
+        scroll->setWidget(page);
+        tabs->addTab(scroll, category);
+        pages.emplace(category, inner);
+        return inner;
+    };
+    for (const QString& category : categoryOrder()) {
+        const bool used = std::ranges::any_of(groups, [&](const foundation::AssetGroup& g) {
+            return QString::fromStdString(g.category) == category;
+        });
+        // An EMPTY tab is worse than no tab: it reads as a broken panel. So a
+        // category nothing uses is simply not created.
+        if (used) pageFor(category);
+    }
 
     for (const foundation::AssetGroup& group : groups) {
         const QString name = QString::fromStdString(group.name);
+        QString category   = QString::fromStdString(group.category);
+        if (category.isEmpty()) category = fallbackCategory();
+        QVBoxLayout* column = pageFor(category);
 
         auto* heading = new QLabel(name, this);
         heading->setObjectName(QStringLiteral("assets.group"));
@@ -89,7 +180,9 @@ AssetPanel::AssetPanel(std::span<const foundation::AssetGroup> groups, QWidget* 
         });
         syncToggle(name);
     }
-    column->addStretch(1);
+    for (auto& [category, layout] : pages) {
+        layout->addStretch(1);
+    }
 }
 
 void AssetPanel::setChoice(const QString& group, const QString& id) {

@@ -4,6 +4,88 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-09-25 03:40:00 — Session · **Stage 3's tabs come back, and the coordinate note that was wrong**
+
+### What the owner asked
+`"proceed"`, against a standing delegation that remaining decisions are mine to
+make and record. Three things had been left open. One resolved itself and one
+stays with the owner:
+
+- **Squashing tonight's CI commits: DECIDED, NO.** All five (`0c47e8b1`,
+  `31b204c4`, `41cbbd9f`, `ab405c7f`, `cb3fd175`) are on `origin/master`.
+  Squashing them means rewriting pushed history on master, which is a hard rule
+  here. The question was only ever live before the push; it is not now.
+- **The eyebrows at ~4x anatomical thickness: STILL THE OWNER'S.** It is a taste
+  call between "visible but wrong" and "correct but invisible" -- at a true 2 mm
+  the render was BYTE-IDENTICAL to no brow -- and neither option is right on the
+  evidence. Not deciding this one.
+- **Stage 3's tabs: RESTORED**, because that is work the owner already authorised
+  as part of the four-stage plan, and the only reason they were gone was a
+  diagnostic.
+
+### Why restoring was safe, and how that was checked rather than assumed
+The tabs were reverted in `41cbbd9f` to gather evidence, not because they were
+wrong. The revert is what proved it: with the tabs gone the viewport went to
+1192x1902, because the sixteenth chooser row moved it 216 px by itself. **The
+Assets panel had always dictated the window's size**; the tabs perturbed an
+existing fault. That fault is now fixed generically -- `installInDock`
+(`src/ui/MainWindow.cpp:930`) wraps every panel in a `QScrollArea`, with a
+property gate gating the BEHAVIOUR (2-group and 40-group panels must give the
+window an identical `minimumSizeHint()`) rather than a number.
+
+`src/ui/AssetPanel.cpp` is `41cbbd9f^`'s version verbatim; the three
+`[assets][tabs]` cases were spliced back into `test_theme.cpp`.
+
+**The one real hazard was checked first.** This design loses a chooser if a
+group's category string is forgotten, and the Eyebrows group arrived AFTER the
+tabs were written. It needed no new wiring: `kProxySlots` (`main.cpp:1835`)
+stamps every slot `Geometries`. All 16 groups categorised, no Uncategorised tab.
+
+### What it cost, and the claim that was wrong
+The tab bar widened the Assets dock by 32 px: **viewport 552x1332 -> 520x1332**,
+the window unchanged at 960x720. That moved both backdrop probes a SIXTH time.
+
+**A comment in `tests/CMakeLists.txt` said "THIS SHOULD BE THE LAST TIME IT
+MOVES". That was wrong, and it is now corrected in place.** Fixing the WINDOW at
+960x720 pins the window, not the viewport -- the viewport is whatever the docks
+inside it leave over. The defensible claim is narrower: the capture no longer
+depends on the SCREEN, so CI and this machine agree and the value is stable
+across runs. It still depends on the docks.
+
+Re-derived by scanning, never relaxed:
+- `app_backdrop_does_not_eat_the_model` (275,615) -> **(260,430)**, response
+  0.000, >= 70 px of margin. The LOUDEST of all 758 boxes lying wholly inside
+  the silhouette reads **0.183** against a bar of 2.0 -- an order of magnitude in
+  hand against the worst case, not just against this pick.
+- `app_backdrop_reaches_the_pixels` (346,246) -> **(410,130)**, response
+  **130.0** against a bar of 20.0, with >= 110 px of background all round.
+
+**The mask behind that scan was validated, not eyeballed.** First attempt used
+the alpha channel, which is fully opaque in these captures, and produced
+"model pixels 100.0%" -- a scan over a mask that says everything is the model is
+worth nothing. Thresholding the flat (26,26,28) clear colour instead reproduces
+the app's own `covered 141999` line EXACTLY, and the silhouette was rendered to
+a PNG and looked at.
+
+### Gates
+- Debug **1517/1517**, release **1517/1517**.
+- `app_backdrop_does_not_eat_the_model` and `app_backdrop_reaches_the_pixels`
+  confirmed **Passed, not Skipped** -- they carry `SKIP_RETURN_CODE 77` and a
+  gate that skips is no gate.
+- `[tabs]` run directly under `QT_QPA_PLATFORM=offscreen`: 10 cases, 63
+  assertions, all pass.
+- clang-format 0 tree-wide, via CI's own command on its own line.
+- Screenshotted and LOOKED AT: four tabs, eight Geometries choosers, no
+  overflow, no Uncategorised tab.
+
+### Also corrected
+The memory `ci-tsan-job-takes-70-minutes` said ~72 min. Run `36067944239`'s TSan
+job took **97** (22:32:19Z -> ~00:09Z). Updated to the measured 72-97 range,
+with the note that an in-progress job's log blob 404s `BlobNotFound` until the
+job ENDS -- that is not a failure signal, and I nearly read it as one.
+
+---
+
 ## 2026-09-24 21:26:02 — Session · **The owner's four-stage plan, end to end: "do all of them step wise"**
 
 ### What was asked, and why the first answer was wrong
