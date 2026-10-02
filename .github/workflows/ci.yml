@@ -209,6 +209,24 @@ jobs:
       # What proves it is that the deployed binary no longer names an absolute
       # Homebrew path: measured on this machine, the build-tree binary has 6
       # such references and the deployed one has 0.
+      # The window's appearance travels IN the image or it does not exist.
+      # Both files are committed rather than produced here, because Finder is
+      # the only thing that can write a .DS_Store and this runner has none --
+      # so the check is that the copy happened, which is the part that can
+      # actually regress.
+      - name: The disk image must carry its Finder layout
+        run: |
+          hdiutil attach build/macos-arm64-release/MakeHuman.dmg \
+            -mountpoint /tmp/mhdmg -nobrowse -quiet
+          missing=0
+          for f in .DS_Store .background/dmg-background.png Applications; do
+            if [ ! -e "/tmp/mhdmg/$f" ]; then
+              echo "::error::the image is missing $f"; missing=1
+            fi
+          done
+          hdiutil detach /tmp/mhdmg -quiet
+          exit $missing
+
       - name: The deployed app must not point at the build machine
         run: |
           app=build/macos-arm64-release/dmg/MakeHuman.app

@@ -9886,7 +9886,8 @@ GPU here, or Colab) and it comes back to the owner first.
       back to the generic icon with no error anywhere. Both facts are pinned by
       `app_bundle_icon` and `app_bundle_plist`.
 - [x] **`macdeployqt` + a `dmg` target.** `cmake --build … --target dmg`
-      produces `MakeHuman.dmg` (41 MB) with the usual drag-to-Applications
+      produces `MakeHuman.dmg` (119 MB as of 2026-10-02; it was 41 MB before the
+      hair, skin, scene and eyebrow assets) with the usual drag-to-Applications
       layout. Verified by mounting it and running the packaged binary: it
       exports correctly and carries `AppIcon.icns`.
       **Two honest caveats, not yet fixed:**
@@ -9978,7 +9979,45 @@ GPU here, or Colab) and it comes back to the owner first.
       build-tree binary fails, as it must.
       `hdiutil create` prints a deprecation warning suggesting
       `diskutil image create`; noted, not chased.
-- [ ] DMG with background and layout
+- [x] **DMG with background and layout -- DONE 2026-10-02.** A 640x400 window,
+      the app at x=160 and Applications at x=480, 112pt icons, and a background
+      drawn from `design.md`'s OWN tokens rather than an invented palette:
+      `--bg-base` #212124, the #ffa02f -> #e96226 accent ramp for the arrow,
+      `--text-primary` #ececee, set in 42dot Sans.
+      **BOTH HALVES ARE COMMITTED FILES, and that is the design decision.**
+      Finder is the only thing that can WRITE a `.DS_Store`, and a CI runner
+      has none -- so a `dmg` target that scripted Finder would build a styled
+      image here and an unstyled one in CI, from one command, with nothing
+      checking the difference. `tools/make_dmg_layout.sh` captures the layout
+      once and `tools/make_dmg_background.py` draws the picture; the target
+      only copies them, so every machine produces the same image. CI gates that
+      the copy happened by mounting the result.
+      **They live in `packaging/`, NOT `resources/`, and that was a bug first.**
+      The `dmg` target copies `resources/` wholesale into
+      `Contents/Resources/resources`, so the first version shipped the DMG's
+      own background inside the application -- and the `.DS_Store` carried
+      `com.apple.FinderInfo` from the volume it was read off, which made
+      `codesign` refuse the bundle outright: "resource fork, Finder
+      information, or similar detritus not allowed". The build FAILED on it,
+      which is the gate from the signing work above doing its job on the very
+      next change.
+      Hardened rather than patched: the target now runs `xattr -cr` before
+      signing. This tree has three sources of stray metadata --
+      `resources/branding/makehuman-logo.png` still carries
+      `com.apple.quarantine` and `kMDItemWhereFroms` from its download,
+      Finder-touched files pick up `com.apple.FinderInfo`, and macOS 15 stamps
+      `com.apple.provenance` on everything -- so removing the class beats
+      chasing each file.
+      **Known limitation, stated rather than discovered later**: the background
+      is a 1x PNG and is soft on a Retina display. Finder wants the image's
+      pixel size to match the window in POINTS unless handed a
+      multi-resolution TIFF, which needs `tiffutil` and a second asset to keep
+      in step. The icons and their labels, which is what anyone reads, are
+      drawn by Finder and stay sharp.
+      **Sizes, both of which were stale in memory**: `data/` is **152 MB /
+      1925 files** (CLAUDE.md still says 136 MB / 1787) and the image is
+      **119 MB** (this file said 41 MB, from before the hair, skin, scene and
+      eyebrow assets landed).
 - [x] Bundle `LICENSING.md` + LGPL relinking notice + AGPL source offer --
       **DONE 2026-09-23**: all four licence files attach to the target with
       `MACOSX_PACKAGE_LOCATION "Resources"`, so every build is compliant rather
