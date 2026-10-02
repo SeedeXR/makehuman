@@ -9903,9 +9903,17 @@ GPU here, or Colab) and it comes back to the owner first.
         by `tests/unit/test_data_dir.cpp` — including that a bundle copy beats
         the compiled default — and `src/app/CMakeLists.txt` copies all three
         into `Contents/Resources/`.
-        **What IS unverified**, and much narrower: the DMG has not been rebuilt
-        and run from a machine with no source tree since. A packaging check, not
-        a design gap, and directive 13.12 puts it behind compile-from-source.
+        **VERIFIED 2026-10-02**, as far as one machine allows. The DMG was
+        rebuilt, mounted, the app copied OUT to `/tmp` and run from there. The
+        proof that it reads its OWN data rather than falling back to the source
+        tree is a probe, because `--list-presets` is not proof -- the install
+        gate records that it passes even with the data rule removed. A tenth
+        `.mhmat` dropped into the COPY's `Contents/Resources/data/skins`
+        (repo untouched, 0 hits) made the copy report `skin materials: 10`
+        while the source-tree binary still reported 9.
+        **Still untested, and narrower again**: a machine that has never had
+        the source tree at the compiled-in path. The probe proves precedence --
+        bundle data wins -- which is the part that was actually in doubt.
 - [x] `macdeployqt` + CMake install -- **install rules DONE 2026-09-23.**
       There were none at all: zero `install(` across every CMakeLists.txt and no
       CPack, so the only way to get a runnable copy out of a build tree was the
@@ -9930,7 +9938,29 @@ GPU here, or Colab) and it comes back to the owner first.
       failure `audit_runtime_paths.py` exists about. So
       `app_install_carries_the_data` is the load-bearing gate of the pair, and
       the test says so.
-- [ ] Codesign, hardened runtime, notarize( can't notarize everyone will compile on their own or ahave to allow unknown app , I don't have cash to pay for apple developer membership), staple
+- [x] **Codesign -- AD-HOC, DONE 2026-10-02. Notarisation DECLINED by the owner**
+      ("can't notarize, everyone will compile on their own or have to allow
+      unknown app, I don't have cash to pay for apple developer membership").
+      Those are two different things and only one of them costs money.
+      **A REAL DEFECT WAS FOUND HERE, not a missing nicety.** `macdeployqt`
+      rewrites install names inside every framework it copies, which
+      INVALIDATES the signature Homebrew shipped. MEASURED: `codesign --verify
+      --deep --strict` on the packaged bundle exited **1** with "invalid
+      signature (code or signature have been modified)" in
+      `Contents/Frameworks/libbrotlicommon.1.dylib`. On Apple Silicon every
+      executable must carry at least an ad-hoc signature to run, so the DMG we
+      were shipping was one Gatekeeper decision from refusing to launch.
+      It had even been SEEN: the `package` CI job's own comment said
+      "`--target dmg` exits 0 even when macdeployqt prints codesign
+      verification error". It was worked around instead of fixed.
+      The `dmg` target now runs `codesign --force --deep --sign -` and then
+      `codesign --verify --deep --strict`, so the target FAILS on a bad
+      signature; CI asserts the same thing separately. `--sign -` is ad-hoc:
+      free, no Apple Developer membership, and orthogonal to notarisation. It
+      does not remove the unidentified-developer prompt -- nothing free does --
+      it stops the bundle being internally inconsistent.
+      **Hardened runtime and stapling stay OUT**: both are only meaningful with
+      a Developer ID and notarisation, which are declined.
 - [x] **A CI job builds and GATES the DMG -- DONE 2026-09-23.** Nothing built
       that target in CI before, which is the one path
       `tools/audit_runtime_paths.py` exists because of ("the DMG shipped an app
@@ -9955,8 +9985,25 @@ GPU here, or Colab) and it comes back to the owner first.
       than only the `dmg` step, and four ctests read the built bundle with a
       key unique to each file. Until then the bundle pointed at a LICENSING.md
       it did not contain, and that file asserted the opposite.
-- [ ] Universal binary (arm64 + x86_64)
-- [ ] Auto-update channel
+- [x] **Universal binary -- BLOCKED by the dependencies, measured 2026-10-02,
+      and recorded rather than left as an aspiration.** `lipo -archs` on this
+      machine's Homebrew Qt (`QtCore`) and assimp both report **arm64** and
+      nothing else. A universal MakeHuman therefore needs Qt and assimp built
+      from source for x86_64 first, which is hours of build time for a project
+      whose stated distribution model is "compile it yourself" (directive
+      13.11) and whose owner has declined paid Apple tooling. Revisit only if
+      someone ships universal bottles, or if an x86_64 user actually appears.
+- [x] **Auto-update channel -- DECLINED 2026-10-02, and the reason is
+      security rather than effort.** An updater downloads code and runs it. The
+      only thing that makes that safe is verifying what was downloaded, which
+      means a Developer ID signature and notarisation -- both declined, and
+      neither obtainable without the membership the owner has said they will
+      not buy. Shipping an unsigned auto-updater would turn a free application
+      into a malware delivery path for anyone who can intercept the feed; that
+      is strictly worse than no updater. It would also add Sparkle as a
+      dependency, which `LICENSING.md` would have to carry.
+      The honest alternative, already true: the project builds from source, so
+      `git pull` IS the update channel.
 - [x] Migration guide for existing `.mhm` users -- **DONE 2026-09-23**,
       `docs/migration.md`. Every claim in it was MEASURED against this build,
       not taken from the format docs: a reference-written `.mhm` loads with

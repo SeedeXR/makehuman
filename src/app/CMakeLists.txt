@@ -160,7 +160,45 @@ if(APPLE AND MH_MACDEPLOYQT)
         # -dmg would build the image too, but it lays out a bare window with no
         # Applications symlink; the hdiutil call below is what gives the usual
         # drag-to-install layout.
+        # THE THREE "Cannot resolve rpath" ERRORS ARE STILL HERE, and the note
+        # in memory/todo.md that recorded two of them was incomplete: there are
+        # three -- QtPdf, QtVirtualKeyboard, QtVirtualKeyboardQml.
+        #
+        # `-libpath=<Qt>/lib` was TRIED and does not fix them. The frameworks
+        # are present there (checked), the flag reaches macdeployqt (checked in
+        # the generated build.ninja), and the search list it prints is
+        # unchanged -- so the rpaths it cannot resolve are references held
+        # inside OTHER frameworks, not something an extra search path reaches.
+        # Left as it is rather than papered over, because they are benign:
+        # nothing in this application loads a PDF or a virtual keyboard, and
+        # the gate that matters -- the deployed binary naming no absolute
+        # Homebrew path -- passes. The flag is not kept, since keeping a flag
+        # that changes nothing invites the next reader to believe it works.
         COMMAND ${MH_MACDEPLOYQT} "${CMAKE_BINARY_DIR}/dmg/MakeHuman.app"
+        # AD-HOC SIGN, and this is not cosmetic.
+        #
+        # macdeployqt rewrites the install names inside every framework it
+        # copies, which INVALIDATES the signature Homebrew shipped. MEASURED
+        # 2026-10-02 before this line existed: `codesign --verify --deep
+        # --strict` on the packaged bundle exited 1 with "invalid signature
+        # (code or signature have been modified)" in
+        # `Contents/Frameworks/libbrotlicommon.1.dylib`. On Apple Silicon every
+        # executable must carry at least an ad-hoc signature to run, so a
+        # bundle in that state is one Gatekeeper decision away from refusing to
+        # launch on a machine that is not this one -- which is exactly the
+        # "has not been run from a machine with no source tree" caveat.
+        #
+        # `--sign -` is ad-hoc: free, needs no Apple Developer membership, and
+        # is orthogonal to notarisation, which the owner has declined. It does
+        # not stop the unidentified-developer prompt; it stops the bundle being
+        # internally inconsistent.
+        COMMAND codesign --force --deep --sign - --timestamp=none
+                "${CMAKE_BINARY_DIR}/dmg/MakeHuman.app"
+        # And VERIFY, so this can never silently regress to the state it was
+        # found in. A packaging step that signs without checking is how the
+        # invalid signature survived unnoticed in the first place.
+        COMMAND codesign --verify --deep --strict
+                "${CMAKE_BINARY_DIR}/dmg/MakeHuman.app"
         COMMAND ${CMAKE_COMMAND} -E create_symlink /Applications
                 "${CMAKE_BINARY_DIR}/dmg/Applications"
         COMMAND hdiutil create -volname "MakeHuman" -srcfolder "${CMAKE_BINARY_DIR}/dmg"

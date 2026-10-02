@@ -184,9 +184,28 @@ jobs:
       - name: Build the disk image
         run: cmake --build --preset macos-arm64-release --target dmg
 
-      # THE ACTUAL GATE. `--target dmg` exits 0 even when macdeployqt prints
-      # "codesign verification error" over a Homebrew dylib -- MEASURED
-      # locally -- so "the build succeeded" proves nothing about the artefact.
+      # Said separately as well as inside the target, because a packaging step
+      # that signs without checking is exactly how the invalid signature
+      # survived unnoticed. Ad-hoc, so it needs no Apple Developer membership
+      # and makes no claim about notarisation, which the owner has declined.
+      - name: The packaged bundle must carry a valid signature
+        run: |
+          codesign --verify --deep --strict \
+            build/macos-arm64-release/dmg/MakeHuman.app
+
+      # THE SIGNATURE IS NOW PART OF THE BUILD, and this comment used to say
+      # the opposite: that `--target dmg` exits 0 even when macdeployqt prints
+      # "codesign verification error" over a Homebrew dylib. It did, and the
+      # artefact really was broken -- MEASURED 2026-10-02, `codesign --verify
+      # --deep --strict` on the packaged bundle exited 1 with "invalid
+      # signature (code or signature have been modified)" in
+      # libbrotlicommon.1.dylib. macdeployqt rewrites install names and
+      # invalidates the signatures Homebrew shipped. The target now re-signs
+      # ad-hoc and VERIFIES, so that failure cannot reach a release again.
+      #
+      # The check below remains, because it answers a different question:
+      # signing says the bundle is internally consistent, not that it stopped
+      # pointing at the build machine.
       # What proves it is that the deployed binary no longer names an absolute
       # Homebrew path: measured on this machine, the build-tree binary has 6
       # such references and the deployed one has 0.
