@@ -10046,7 +10046,25 @@ GPU here, or Colab) and it comes back to the owner first.
       build-tree binary fails, as it must.
       `hdiutil create` prints a deprecation warning suggesting
       `diskutil image create`; noted, not chased.
-- [x] **DMG with background and layout -- DONE 2026-10-02.** A 640x400 window,
+- [~] **DMG with background and layout -- BUILT, then DISABLED pending a
+      measurement 2026-10-02. This entry said DONE and that was premature.**
+      The assets, both generators and the Finder capture all work and are
+      committed; what is reverted is the two lines of the `dmg` target that
+      copy them into the image, because with them CI failed at `hdiutil create`
+      with "Resource busy" -- a failure this machine cannot reproduce, where
+      the same target succeeds every time.
+      Two explanations fit the one data point: a `.DS_Store` sitting in the
+      folder `hdiutil` scans, or a runner flake, since `hdiutil create
+      -srcfolder` creates and ATTACHES a temporary image internally and that is
+      what returns EBUSY. Rather than guess -- which is how four fixes went
+      into one backdrop failure -- the copy is reverted to ISOLATE it: CI green
+      means the layout caused it and the answer is the two-stage
+      attach/convert flow every DMG tool uses; CI still red means it was
+      environmental and the revert cost one commit to learn.
+      **Note for whoever picks this up: the DMG job failed TWICE on this
+      feature** -- first on `.gitignore` eating the background PNG, then on
+      this. Neither reproduced locally. Treat CI as the only oracle here.
+      The original description follows. A 640x400 window,
       the app at x=160 and Applications at x=480, 112pt icons, and a background
       drawn from `design.md`'s OWN tokens rather than an invented palette:
       `--bg-base` #212124, the #ffa02f -> #e96226 accent ramp for the arrow,

@@ -214,12 +214,12 @@ jobs:
       # the only thing that can write a .DS_Store and this runner has none --
       # so the check is that the copy happened, which is the part that can
       # actually regress.
-      - name: The disk image must carry its Finder layout
+      - name: The disk image must carry its contents
         run: |
           hdiutil attach build/macos-arm64-release/MakeHuman.dmg \
             -mountpoint /tmp/mhdmg -nobrowse -quiet
           missing=0
-          for f in .DS_Store .background/dmg-background.png Applications; do
+          for f in Applications MakeHuman.app; do
             if [ ! -e "/tmp/mhdmg/$f" ]; then
               echo "::error::the image is missing $f"; missing=1
             fi
