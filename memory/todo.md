@@ -9745,6 +9745,16 @@ GPU here, or Colab) and it comes back to the owner first.
       The material sets `transparent True` and the texture. That flag is
       load-bearing and the EYE material already records why: "without the flag
       the renderer discards that alpha and paints an opaque disc over the iris".
+      **AND THE MATERIAL IS GENERATED, which I learned the hard way.** I
+      hand-edited `data/hair/materials/hair.mhmat`; it is written by
+      `tools/make_helper_proxies.py` from a literal in the hair SLOT. Every
+      local suite passed -- they read the file on disk -- and CI's
+      `inventories` job failed with `stale generated assets:
+      hair/materials/hair.mhmat`. Worse than a red build: the next person to run
+      the generator would have silently reverted the strand texture with no
+      error anywhere. Fixed in the generator; `--check` now prints "committed
+      assets match the generator". Before editing anything under `data/`,
+      `grep -rn "<filename>" tools/`.
       **MEASURED: 4,274 differing pixels** between the textured and untextured
       material on the locs, and rendered and looked at -- the ropes read as
       separate strands instead of one shell.
