@@ -196,6 +196,19 @@ struct MaterialDesc {
     /// cut-out cornea over `opacity 1.0` renders solid. `.mhmat` carries the
     /// flag (`transparent True`) and it must survive into the description.
     bool transparent{false};
+    /// Subsurface scattering, as `.mhmat` states it: a flag and per-channel
+    /// scales. Here rather than only on `core::Material` because the RENDERER
+    /// needs them and `render` may not depend on `core`.
+    ///
+    /// Only red and green, because that is all the reference uses. Its own
+    /// renderer blurs the lightmap at those two radii and composes the
+    /// unblurred one into blue (`plugins/4_rendering_opengl/mh2opengl.py:69-74`),
+    /// so `sssBScale` is parsed, written back, and never read by anything that
+    /// draws. Carrying a third scale here would imply a capability neither
+    /// renderer has.
+    bool sssEnabled{false};
+    float sssRScale{0.0F};
+    float sssGScale{0.0F};
     std::filesystem::path diffuseTexture;
     std::filesystem::path normalTexture;
 };

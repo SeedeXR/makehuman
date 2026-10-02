@@ -261,6 +261,13 @@ struct MeshInstance {
     /// agree. The defaults describe skin: a dielectric, fairly matte.
     float metallic{0.0F};
     float roughness{0.6F};
+    /// Subsurface scattering, red and green scales, straight from the
+    /// material's `sssRScale`/`sssGScale`. Zero means the material asked for
+    /// none, which is also the default, so nothing scatters unless a `.mhmat`
+    /// says so. Blue has no scale because the reference renderer has none --
+    /// see `wrapDiffuse` in `pbr.frag`.
+    float sssR{0.0F};
+    float sssG{0.0F};
 
     /// The material's base colour, multiplied into the sampled albedo.
     ///

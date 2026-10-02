@@ -6085,6 +6085,73 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_shading_unknown PROPERTIES
         PASS_REGULAR_EXPRESSION "unknown --shading")
 
+    # The two files the `dmg` target copies must be TRACKED, not just present.
+    # `.gitignore`'s blanket `*.png` swallowed the background once already and
+    # the dmg job failed on a fresh checkout while this machine built it fine.
+    find_program(MH_GIT git)
+    if(MH_GIT)
+        add_test(NAME packaging_assets_are_tracked COMMAND ${CMAKE_COMMAND}
+                 -DGIT=${MH_GIT} -DROOT=${CMAKE_SOURCE_DIR}
+                 "-DFILES=packaging/dmg-background.png;packaging/dmg-DS_Store"
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/check_tracked.cmake)
+    endif()
+
+    # SUBSURFACE SCATTERING. `data/skins/default.mhmat` has carried
+    # `sssEnabled true`, `sssRScale 4.0` and `sssGScale 2.0` since the port
+    # began -- the parser read them, the writer wrote them back, and the
+    # renderer dropped them on the floor, which is the fifth such field after
+    # the four `ViewportMaps` already records.
+    add_test(NAME app_sss_on COMMAND makehuman --shading pbr
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_sss_on.png)
+    set_tests_properties(app_sss_on PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render" FIXTURES_SETUP app_sss_on_png)
+    add_test(NAME app_sss_off COMMAND makehuman --shading pbr
+             --set-material sssEnabled=False
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_sss_off.png)
+    set_tests_properties(app_sss_off PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render" FIXTURES_SETUP app_sss_off_png)
+    # MEASURED at 63,799 of 1,048,576 pixels over a 476x725 region -- a
+    # body-wide change, because it is a change to the diffuse term. 5,000 is an
+    # order of magnitude under that and far above any dithering floor.
+    add_test(NAME app_sss_reaches_the_skin COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/app_sss_off.png
+             ${CMAKE_CURRENT_BINARY_DIR}/app_sss_on.png --min-differing 5000)
+    set_tests_properties(app_sss_reaches_the_skin PROPERTIES
+        FIXTURES_REQUIRED "app_sss_on_png;app_sss_off_png")
+
+    # THE FLAG IS THE GATE, not the scales. A material carrying radii with
+    # `sssEnabled False` must light exactly as one carrying none, or a skin
+    # someone switched off would still scatter.
+    add_test(NAME app_sss_scales_without_the_flag_do_nothing COMMAND makehuman --shading pbr
+             --set-material sssEnabled=False --set-material sssRScale=9.0
+             --set-material sssGScale=9.0
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_sss_scales_only.png)
+    set_tests_properties(app_sss_scales_without_the_flag_do_nothing PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render" FIXTURES_SETUP app_sss_scales_png)
+    add_test(NAME app_sss_needs_the_flag COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/app_sss_off.png
+             ${CMAKE_CURRENT_BINARY_DIR}/app_sss_scales_only.png --max-differing 0)
+    set_tests_properties(app_sss_needs_the_flag PROPERTIES
+        FIXTURES_REQUIRED "app_sss_off_png;app_sss_scales_png")
+
+    # And it reaches ONLY the pbr path. The litsphere shader declares the same
+    # `pbr` vec4 and never reads it, which is what keeps one buffer size and one
+    # SRB layout for both; MEASURED byte-identical, so no shipped golden render
+    # moved when scattering was connected.
+    add_test(NAME app_sss_lit_on COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_sss_lit_on.png)
+    set_tests_properties(app_sss_lit_on PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render" FIXTURES_SETUP app_sss_lit_on_png)
+    add_test(NAME app_sss_lit_off COMMAND makehuman --set-material sssEnabled=False
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_sss_lit_off.png)
+    set_tests_properties(app_sss_lit_off PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render" FIXTURES_SETUP app_sss_lit_off_png)
+    add_test(NAME app_sss_leaves_the_litsphere_alone COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/app_sss_lit_on.png
+             ${CMAKE_CURRENT_BINARY_DIR}/app_sss_lit_off.png --max-differing 0)
+    set_tests_properties(app_sss_leaves_the_litsphere_alone PROPERTIES
+        FIXTURES_REQUIRED "app_sss_lit_on_png;app_sss_lit_off_png")
+
     # --skin-material picked the material the EXPORTERS wrote and nothing else:
     # buildScene() read skins/default.mhmat by NAME, so all eight shipped tones
     # rendered as the same untextured body. Two renders that differ only in the

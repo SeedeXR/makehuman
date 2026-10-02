@@ -169,6 +169,8 @@ struct Drawable {
     /// Read only by the PBR shader; see MeshInstance.
     float metallic{0.0F};
     float roughness{0.6F};
+    float sssR{0.0F};
+    float sssG{0.0F};
     foundation::Vec3 baseColour{1.0F, 1.0F, 1.0F};
     float opacity{1.0F};
     std::unique_ptr<QRhiShaderResourceBindings> srb;
@@ -742,6 +744,8 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
         dr.wrinkleWeight      = dr.wrinkleTex ? instance.wrinkleWeight : 0.0F;
         dr.metallic           = instance.metallic;
         dr.roughness          = instance.roughness;
+        dr.sssR               = instance.sssR;
+        dr.sssG               = instance.sssG;
         dr.baseColour         = instance.baseColour;
         dr.opacity            = instance.opacity;
         dr.meshBuf.reset(
@@ -787,24 +791,30 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
         // x = intensity, y = 1 when a normal map is bound, z = 1 for an AO map,
         // w = the wrinkle weight. Written per mesh because whether a map exists
         // is a material property, not a frame one.
-        const float material[12] = {p.drawable.normalMapIntensity,
-                                    p.drawable.normalTex ? 1.0F : 0.0F,
-                                    p.drawable.aoTex ? 1.0F : 0.0F,
-                                    // w is the wrinkle weight, and it is the
-                                    // whole gate: zero means both "no map" and
-                                    // "not fired", which are the same frame.
-                                    p.drawable.wrinkleWeight,
-                                    // The second vec4 is `pbr`: metallic, then
-                                    // roughness. The litsphere shader declares
-                                    // it and never reads it, which keeps one
-                                    // buffer size and one SRB layout for both.
-                                    p.drawable.metallic, p.drawable.roughness, 0.0F, 0.0F,
-                                    // The third vec4 is `base`: the material's
-                                    // diffuse colour, glTF's baseColorFactor, and
-                                    // in w its opacity, that factor's alpha. Also
-                                    // declared-and-ignored by the litsphere.
-                                    p.drawable.baseColour.x, p.drawable.baseColour.y,
-                                    p.drawable.baseColour.z, p.drawable.opacity};
+        const float material[12] = {
+            p.drawable.normalMapIntensity, p.drawable.normalTex ? 1.0F : 0.0F,
+            p.drawable.aoTex ? 1.0F : 0.0F,
+            // w is the wrinkle weight, and it is the
+            // whole gate: zero means both "no map" and
+            // "not fired", which are the same frame.
+            p.drawable.wrinkleWeight,
+            // The second vec4 is `pbr`: metallic, then
+            // roughness. The litsphere shader declares
+            // it and never reads it, which keeps one
+            // buffer size and one SRB layout for both.
+            // z and w were "unused" and are now the
+            // SSS red and green scales. They fit the
+            // existing vec4, so this adds no uniform
+            // and leaves kMeshUboSize and the SRB
+            // layout alone -- the std140 trap this file
+            // already records for the light block.
+            p.drawable.metallic, p.drawable.roughness, p.drawable.sssR, p.drawable.sssG,
+            // The third vec4 is `base`: the material's
+            // diffuse colour, glTF's baseColorFactor, and
+            // in w its opacity, that factor's alpha. Also
+            // declared-and-ignored by the litsphere.
+            p.drawable.baseColour.x, p.drawable.baseColour.y, p.drawable.baseColour.z,
+            p.drawable.opacity};
         batch->updateDynamicBuffer(p.drawable.meshBuf.get(), 0, kMeshUboSize, material);
         built.push_back(std::move(p.drawable));
     }

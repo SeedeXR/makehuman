@@ -504,3 +504,53 @@ TEST_CASE("an edit replaces the description rather than appending", "[core][mate
     REQUIRE(setMaterialProperty(m, "description=edited", "."));
     CHECK(m.description == "edited");
 }
+
+TEST_CASE("subsurface scattering survives the trip to MaterialDesc", "[material][sss]") {
+    // THE RENDERER READS `desc()`, NOT `Material`, because `render` is
+    // Apache-2.0 and may not depend on AGPL `core`. So every property the
+    // screen honours has to cross that boundary, and SSS did not: the parser
+    // read `sssEnabled`/`sssRScale`/`sssGScale`, the writer wrote them back,
+    // and `desc()` dropped them -- which is why a skin the reference scatters
+    // rendered flat here.
+    TempMat mat(
+        "name Skin\n"
+        "diffuseTexture skin.png\n"
+        "normalmapTexture skin_n.png\n"
+        "sssEnabled true\n"
+        "sssRScale 4.0\n"
+        "sssGScale 2.0\n"
+        "sssBScale 1.0\n");
+    const auto m = loadMaterial(mat.path());
+    REQUIRE(m);
+    CHECK(m->sssEnabled);
+    CHECK_THAT(m->sssRScale, WithinAbs(4.0, 1e-6));
+    CHECK_THAT(m->sssGScale, WithinAbs(2.0, 1e-6));
+
+    const auto d = m->desc();
+    CHECK(d.sssEnabled);
+    CHECK_THAT(d.sssRScale, WithinAbs(4.0, 1e-6));
+    CHECK_THAT(d.sssGScale, WithinAbs(2.0, 1e-6));
+
+    // AND THE FIELDS AFTER IT ARE STILL THEMSELVES. `desc()` was a POSITIONAL
+    // aggregate initialiser, so inserting three members ahead of the texture
+    // paths shifted both silently -- a `std::filesystem::path` landing in a
+    // `bool` only fails to compile by luck, and the next field added would not
+    // be so lucky. It uses designated initialisers now, and this is the check
+    // that would have caught it.
+    CHECK(d.diffuseTexture.filename() == "skin.png");
+    CHECK(d.normalTexture.filename() == "skin_n.png");
+}
+
+TEST_CASE("sssBScale is carried in the file and nowhere else", "[material][sss]") {
+    // Deliberate, not an omission. The reference blurs the lightmap at the RED
+    // and GREEN radii and composes the UNBLURRED one into blue
+    // (`plugins/4_rendering_opengl/mh2opengl.py:69-74`), so its own renderer
+    // never reads `sssBScale`. `MaterialDesc` therefore carries two scales, and
+    // a third would imply a capability neither renderer has. The value still
+    // round-trips through `Material`, because losing a field a file declares is
+    // a different bug.
+    TempMat mat("name Skin\nsssEnabled true\nsssBScale 1.5\n");
+    const auto m = loadMaterial(mat.path());
+    REQUIRE(m);
+    CHECK_THAT(m->sssBScale, WithinAbs(1.5, 1e-6));
+}

@@ -2304,6 +2304,8 @@ struct ViewportMaps {
     /// disagree about the material they are both describing.
     float metallic{0.0F};
     float roughness{0.6F};
+    float sssR{0.0F};
+    float sssG{0.0F};
     /// `MaterialDesc::diffuse`, which the glTF writer emits as
     /// `baseColorFactor`. Read only by the PBR shading model.
     mh::foundation::Vec3 baseColour{1.0F, 1.0F, 1.0F};
@@ -2360,6 +2362,18 @@ ViewportMaps viewportMapsOf(const mh::core::Material& material) {
     const auto mr   = mh::foundation::metallicRoughnessOf(material.desc());
     maps.metallic   = mr.metallic;
     maps.roughness  = mr.roughness;
+    // A FIFTH field that was parsed, written back and never drawn. The comment
+    // below used to close this audit at four; `sssEnabled`, `sssRScale` and
+    // `sssGScale` were read by `Material.cpp:205-212`, round-tripped by the
+    // writer at `:499`, and dropped on the way to the screen.
+    //
+    // Gated on `sssEnabled` rather than on the scales being non-zero, because
+    // the flag is what the format means by "this material scatters"; a skin
+    // with the flag off and stale scales must not light differently.
+    if (material.desc().sssEnabled) {
+        maps.sssR = material.desc().sssRScale;
+        maps.sssG = material.desc().sssGScale;
+    }
     // That is every field of `MaterialDesc` the viewport can honour, and the
     // audit is deliberately closed here: four properties in a row turned out to
     // be built for export and never connected to the screen (metallic/roughness,
@@ -5719,6 +5733,8 @@ int main(int argc, char** argv) {
         body.aoMap              = bodyMaps.ao;
         body.transparent        = bodyMaps.transparent;
         body.metallic           = bodyMaps.metallic;
+        body.sssR               = bodyMaps.sssR;
+        body.sssG               = bodyMaps.sssG;
         body.baseColour         = bodyMaps.baseColour;
         body.opacity            = bodyMaps.opacity;
         body.roughness          = bodyMaps.roughness;
@@ -5770,6 +5786,8 @@ int main(int argc, char** argv) {
             inst.aoMap              = wornMaps.ao;
             inst.transparent        = wornMaps.transparent;
             inst.metallic           = wornMaps.metallic;
+            inst.sssR               = wornMaps.sssR;
+            inst.sssG               = wornMaps.sssG;
             inst.baseColour         = wornMaps.baseColour;
             inst.opacity            = wornMaps.opacity;
             inst.roughness          = wornMaps.roughness;

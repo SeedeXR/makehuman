@@ -537,15 +537,22 @@ std::expected<void, MaterialError> saveMaterial(const std::filesystem::path& pat
 }
 
 foundation::MaterialDesc Material::desc() const {
-    return foundation::MaterialDesc{name,
-                                    ambient,
-                                    diffuse,
-                                    specular,
-                                    shininess,
-                                    opacity,
-                                    transparent,
-                                    texture(TextureChannel::Diffuse).path,
-                                    texture(TextureChannel::NormalMap).path};
+    // Designated initialisers, not positional. This was positional and adding
+    // the three SSS fields ahead of the texture paths would have shifted both
+    // of them silently -- a diffuse map landing in `sssEnabled` compiles only
+    // by luck, and the next field added would not be so lucky.
+    return foundation::MaterialDesc{.name           = name,
+                                    .ambient        = ambient,
+                                    .diffuse        = diffuse,
+                                    .specular       = specular,
+                                    .shininess      = shininess,
+                                    .opacity        = opacity,
+                                    .transparent    = transparent,
+                                    .sssEnabled     = sssEnabled,
+                                    .sssRScale      = sssRScale,
+                                    .sssGScale      = sssGScale,
+                                    .diffuseTexture = texture(TextureChannel::Diffuse).path,
+                                    .normalTexture  = texture(TextureChannel::NormalMap).path};
 }
 
 std::expected<void, std::string> setMaterialProperty(Material& material, std::string_view spec,

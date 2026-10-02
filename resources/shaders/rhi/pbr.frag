@@ -60,7 +60,9 @@ layout(std140, binding = 4) uniform MeshBuf {
     // x = normalmapIntensity, y = 1 when a normal map is bound, z = 1 when an
     // AO map is bound, w = the wrinkle map's blend weight (0 = none or unfired).
     vec4 material;
-    // x = metallic, y = roughness, zw unused.
+    // x = metallic, y = roughness, z = the SSS red scale, w = the green one.
+    // Both are zero when the material does not ask for scattering, which is
+    // the whole gate -- see `shadeLight`.
     vec4 pbr;
     // rgb = the material's diffuse colour, glTF's baseColorFactor;
     // w = its opacity, the alpha of that same factor.
@@ -127,10 +129,44 @@ vec3 fresnelSchlick(vec3 f0, float u) {
     return f0 + (1.0 - f0) * f;
 }
 
+/// Per-channel wrapped diffuse: skin's subsurface scattering, approximated.
+///
+/// THE RATIO IS THE REFERENCE'S, THE METHOD IS OURS, and the difference is
+/// deliberate. `data/skins/default.mhmat` carries `sssRScale 4.0`,
+/// `sssGScale 2.0`, `sssBScale 1.0`, and `plugins/4_rendering_opengl/
+/// mh2opengl.py:69-74` uses them by projecting scene lighting into UV space,
+/// blurring that lightmap at the red and green radii, composing
+/// `[lmapR, lmapG, lmap]` and rendering SHADELESS. That is texture-space
+/// diffusion for a fixed-function GL renderer, and porting it literally would
+/// mean building a UV-space lightmap rasteriser to feed a shadeless path --
+/// reproducing a 2010-era pipeline inside a metallic-roughness one.
+///
+/// So the RATIO is ported and the mechanism is not: light wraps further around
+/// the terminator in red than in green, and not at all in blue. That is the
+/// same statement the blur radii make -- red travels furthest through flesh --
+/// expressed where this renderer can honour it.
+///
+/// Note that blue is not an omission. The reference blurs only R and G and
+/// composes the RAW lightmap into blue, so `sssBScale` is parsed, written back
+/// and never read by its own renderer. Matched here rather than improved on.
+vec3 wrapDiffuse(float nol, vec2 sss) {
+    // The reference's radii are in TEXELS of a lightmap and cannot convert
+    // exactly to a wrap factor. 1/8 maps its shipped 4.0 and 2.0 onto 0.5 and
+    // 0.25, which is the usual range for this approximation; the ratio between
+    // channels, which is the part that carries meaning, is preserved exactly.
+    const vec2 w = clamp(sss * 0.125, vec2(0.0), vec2(1.0));
+    const vec2 rg = clamp((vec2(nol) + w) / (1.0 + w), vec2(0.0), vec2(1.0));
+    return vec3(rg.x, rg.y, clamp(nol, 0.0, 1.0));
+}
+
 /// One directional light's contribution.
-vec3 shadeLight(vec3 n, vec3 v, vec3 l, vec3 radiance, vec3 diffuseColor, vec3 f0, float alpha) {
+vec3 shadeLight(vec3 n, vec3 v, vec3 l, vec3 radiance, vec3 diffuseColor, vec3 f0, float alpha,
+                vec2 sss) {
     const float nol = dot(n, l);
-    if (nol <= 0.0) return vec3(0.0);
+    // With scattering the surface stays lit slightly PAST the terminator, so an
+    // early return at nol <= 0 would clip exactly the band this exists to draw.
+    const bool scatters = sss.x > 0.0 || sss.y > 0.0;
+    if (nol <= 0.0 && !scatters) return vec3(0.0);
 
     const vec3 h = normalize(v + l);
     const float nov = abs(dot(n, v)) + 1e-5;
@@ -138,12 +174,16 @@ vec3 shadeLight(vec3 n, vec3 v, vec3 l, vec3 radiance, vec3 diffuseColor, vec3 f
     const float voh = clamp(dot(v, h), 0.0, 1.0);
 
     const vec3 f = fresnelSchlick(f0, voh);
-    const vec3 specular = distributionGgx(noh, alpha) * visibilitySmith(nov, nol, alpha) * f;
+    // Specular keeps the hard terminator -- a highlight does not scatter -- so
+    // it is still gated on the unwrapped nol.
+    const float specNol = clamp(nol, 0.0, 1.0);
+    const vec3 specular =
+        distributionGgx(noh, alpha) * visibilitySmith(nov, specNol, alpha) * f * specNol;
     // Energy split: what Fresnel reflects cannot also diffuse. Metals have no
     // diffuse lobe at all, which `diffuseColor` already encodes by being black.
     const vec3 diffuse = (vec3(1.0) - f) * diffuseColor / kPi;
 
-    return (diffuse + specular) * radiance * nol;
+    return diffuse * wrapDiffuse(nol, sss) * radiance + specular * radiance;
 }
 
 /// Narkowicz's ACES filmic curve. A tonemap is not optional here: three lights
@@ -216,7 +256,7 @@ void main() {
     vec3 color = vec3(0.0);
     for (int i = 0; i < 3; ++i) {
         color += shadeLight(n, v, normalize(lbuf.direction[i].xyz), lbuf.radiance[i].rgb,
-                            diffuseColor, f0, alpha);
+                            diffuseColor, f0, alpha, mbuf.pbr.zw);
     }
 
     // Hemisphere ambient. The specular half is scaled by (1 - roughness) as a

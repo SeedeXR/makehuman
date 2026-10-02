@@ -9724,7 +9724,57 @@ GPU here, or Colab) and it comes back to the owner first.
               importers and our own CPU LBS agreeing on a DECIMATED body to a
               tenth of a millimetre. 16/16 exports agree.
 - [ ] Groom / hair card and strand support
-- [ ] Physically-based skin: SSS, multi-layer, tension maps
+- [~] **Physically-based skin. SSS DONE 2026-10-02; multi-layer and tension
+      maps remain.**
+      **SSS was a PORT GAP, not a new feature.** `core::Material` has carried
+      `sssEnabled`, `sssRScale`, `sssGScale` and `sssBScale` since the format
+      was ported, `src/core/Material.cpp:205-212` parsed them, the writer at
+      `:499` wrote them back, and `Material::desc()` dropped them -- so the
+      renderer never saw them. `data/skins/default.mhmat` has carried
+      `sssEnabled true`, `sssRScale 4.0`, `sssGScale 2.0` the whole time,
+      inherited from the reference. That is the FIFTH field the `ViewportMaps`
+      comment's "audit is deliberately closed here" missed, after
+      metallic/roughness, `transparent`, `diffuse` and `opacity`.
+      **THE RATIO IS PORTED, THE MECHANISM IS NOT, deliberately.** The
+      reference (`plugins/4_rendering_opengl/mh2opengl.py:69-74`) projects
+      scene lighting into UV space, blurs that lightmap at the red and green
+      radii, composes `[lmapR, lmapG, lmap]` and renders SHADELESS -- texture
+      space diffusion for a fixed-function GL renderer, gated on a
+      `lightmapSSS` render setting. Porting it literally means building a
+      UV-space lightmap rasteriser to feed a shadeless path, i.e. reproducing a
+      2010-era pipeline inside a metallic-roughness one. So `pbr.frag` wraps
+      the diffuse term per channel instead: light reaches further past the
+      terminator in red than green and not at all in blue, which is the same
+      statement the blur radii make. Commented as OURS with the citation; not a
+      parity claim.
+      **`sssBScale` IS PARSED AND NEVER READ -- BY THE REFERENCE TOO.** It
+      blurs only R and G and composes the raw lightmap into blue, so no
+      renderer on either side reads a blue scale. `foundation::MaterialDesc`
+      therefore carries two, not three; carrying a third would imply a
+      capability neither has. The value still round-trips through
+      `core::Material`, because losing a field a file declares is a different
+      bug, and a test pins that.
+      **Fitted into the existing uniform**: `pbr.zw` were "unused", so this
+      added no uniform, left `kMeshUboSize` at 48 and did not touch the SRB
+      layout -- no std140 arithmetic, which is where this file has been bitten
+      before.
+      **Two hazards found while wiring it.** `Material::desc()` was a
+      POSITIONAL aggregate initialiser, so three fields inserted ahead of the
+      texture paths shifted both silently; it uses designated initialisers now
+      and a test checks the texture paths specifically. And `render` is
+      Apache-2.0 and may not depend on AGPL `core`, so the fields had to cross
+      on `MaterialDesc` rather than be read from `Material` directly.
+      **MEASURED: 63,799 of 1,048,576 pixels over a 476x725 region** with the
+      flag on versus off, under `--shading pbr`. **Byte-identical under the
+      default litsphere shading**, which declares the same `pbr` vec4 and never
+      reads it -- so no shipped golden render moved. Rendered and looked at:
+      the chalky flat falloff becomes a warm bleed past the terminator on the
+      cheek and neck.
+      Six render gates plus two unit tests, and `app_sss_reaches_the_skin` was
+      watched to go RED with the plumbing cut.
+      **STILL OPEN**: multi-layer (epidermis/dermis separation) and tension
+      maps (wrinkle intensity driven by pose stretch). Neither has reference
+      data to port -- both would be ours from scratch.
 - [ ] Eye, teeth, tongue rigging refinement — **skeleton and constraint work,
       NOT correctives** (directive 12.3: expressing them as correctives is "a
       trap"). Stays in the rig layer.
@@ -9864,6 +9914,23 @@ GPU here, or Colab) and it comes back to the owner first.
       byte-golden comparison. **Owner's call**, not done.
 
 ## M11 — Packaging and release
+
+- [x] **`.gitignore` ate a packaging asset, and the file itself had already
+      warned about it three times. Fixed 2026-10-02.** `packaging/
+      dmg-background.png` was committed by `git add -A` alongside its
+      `.DS_Store` and NEVER STAGED, because line 25 is a blanket `*.png`. Local
+      builds kept working -- the file is on disk -- so it failed only on a
+      fresh checkout: the `dmg` CI job died on "No such file or directory"
+      while the same target had just succeeded here.
+      `.gitignore` already carried `!data/**`, `!resources/**` and `!tests/**`
+      for exactly this, each added after the same silent drop (`smirk.mhpose`,
+      `mixamo_superset.mhskel`, nearly the app icon). `!packaging/**` is the
+      fourth. The assets cannot simply live under `resources/`: the `dmg`
+      target copies that tree into `Contents/Resources`, which would ship the
+      installer's own artwork inside the application.
+      Gated by `packaging_assets_are_tracked`, which asserts files are TRACKED
+      rather than merely present, and runs locally so the next instance fails
+      before a push instead of after one. Controlled both ways.
 
 - [x] **`MakeHuman.app` bundle, `Info.plist`, Resources, and the app icon**
       (2026-09-05, owner supplied the logo).
