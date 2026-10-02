@@ -9758,8 +9758,9 @@ GPU here, or Colab) and it comes back to the owner first.
       places strands by combing rather than by the three hand-written sweeps.
       Both are geometry generation; what landed here is the texturing pipeline
       that either would need.
-- [~] **Physically-based skin. SSS DONE 2026-10-02; multi-layer and tension
-      maps remain.**
+- [x] **Physically-based skin -- COMPLETE 2026-10-02. SSS, multi-layer and
+      tension maps all landed; this title said two of them "remain" after they
+      were done, which is the stale-marker failure this file keeps recording.**
       **SSS was a PORT GAP, not a new feature.** `core::Material` has carried
       `sssEnabled`, `sssRScale`, `sssGScale` and `sssBScale` since the format
       was ported, `src/core/Material.cpp:205-212` parsed them, the writer at
@@ -9866,8 +9867,8 @@ GPU here, or Colab) and it comes back to the owner first.
       Six app gates plus six unit cases (93 assertions) on meshes whose answer
       is known by construction -- the reference has no tension, no correctives
       and no stretch measure, so there is nothing to capture a fixture from.
-- [~] **Eye, teeth, tongue rigging. THE LIDS NOW FOLLOW THE GAZE (2026-10-02);
-      the rest was already done and this entry was stale.** Skeleton and
+- [x] **Eye, teeth, tongue rigging -- COMPLETE 2026-10-02. The lids follow the
+      gaze; the rest was already done and this entry was stale.** Skeleton and
       constraint work, NOT correctives (directive 12.3).
       **What was ALREADY correct, measured through the app before touching
       anything** -- a jaw drop (`--facs AU26=1.0`) moves the lower teeth 24.69 mm
