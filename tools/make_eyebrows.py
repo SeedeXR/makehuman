@@ -51,6 +51,17 @@ BROW_X1 = 0.50
 ARCH_AT = 0.62
 ARCH = 0.055
 
+# The brow neighbourhood of the base mesh, as ONE box used twice: to pick the
+# triangles the arc is PROJECTED onto, and -- through `--bind-region` -- the
+# triangles it is BOUND to. Those two were allowed to differ once and the
+# binding went to the scalp while the projection went to the brow, which is
+# how every record ended up carrying a 37.8 mm offset to the hairline.
+REGION_X = 0.80
+REGION_Y0, REGION_Y1 = 7.25, 7.95
+REGION_Z0, REGION_Z1 = 0.80, 4.00
+BIND_REGION = (f"{-REGION_X},{REGION_X},{REGION_Y0},{REGION_Y1},"
+               f"{REGION_Z0},{REGION_Z1}")
+
 
 def brow_path(tris, samples=22):
     """The arc, projected onto the face, as `ridge` wants it: (point, normal, d)."""
@@ -93,7 +104,9 @@ def build(stand, half, sides, samples):
     region = [
         v
         for v in used
-        if abs(verts[v][0]) < 0.80 and 7.25 < verts[v][1] < 7.95 and verts[v][2] > 0.80
+        if abs(verts[v][0]) < REGION_X
+        and REGION_Y0 < verts[v][1] < REGION_Y1
+        and REGION_Z0 < verts[v][2] < REGION_Z1
     ]
     tris = H.region_triangles(verts, region, faces)
     if not tris:
@@ -152,25 +165,31 @@ def write_eyebrows(points, faces, bindings):
 
 
 def main() -> int:
-    # MEASURED, not chosen, and the first numbers here were anatomically right
-    # and invisible. A real brow stands about 2 mm proud; at 0.022/0.030 the
-    # render was BYTE-IDENTICAL to no brows at all -- not faint, identical --
-    # and stayed so at 0.045 and 0.060, in the 1024 render and in the
-    # 1160x1492 viewport alike, and with a screaming-green matcap. The mesh
-    # was correct throughout: an export puts it at y 15.652..15.778,
-    # z 1.299..1.400, just above the eyes at y 15.384..15.682, with all 264
-    # vertices outside the skin.
+    # 2.2 mm proud, which is what a real brow is, and it took finding a BUG to
+    # get there. This comment used to say the opposite -- that anatomical
+    # numbers were invisible and 9 mm was the honest floor -- and the
+    # measurement behind that was real but the diagnosis was wrong.
     #
-    # Sweeping the two parameters together read as a cliff (0 px, then 199);
-    # sweeping `stand` alone at half=0.075 shows the truth, a gradual
-    # 24 / 105 / 144 / 167 px from 0.065 to 0.080. The floor is coverage, not
-    # a switch.
+    # THE BUG: `bind_points` sent every point to `--bind-points`, which bound
+    # to the SCALP and nothing else (`main.cpp`, `loadScalp`). The brow arc sits
+    # at y 7.47..7.53; the scalp triangles it chose sit at y 7.87..8.11, so all
+    # 264 vertices hung off just 16 scalp vertices with a mean offset of 50.3 mm
+    # (max 61.4). `fitProxy` SCALES an offset per axis but never rotates it
+    # (`Proxy.cpp:434-438`), so that 50 mm vector did not follow the brow ridge:
+    # on the default character -- 16.594 dm tall against the base mesh's 16.946
+    # -- the brow landed inside the skin. Hence the "floor": 0.055 showed 0
+    # pixels and 0.065 showed 34, not because a thin brow cannot be seen but
+    # because it had to be inflated until it escaped the head it was sunk into.
+    # Moving the arc UP the face changed nothing, which is what ruled out the
+    # eye-socket hollow and pointed at the anchor.
     #
-    # 0.090/0.080 is the configuration that was RENDERED AND LOOKED AT -- dark,
-    # arched, correctly placed -- with the floor at 0.065 well below it. It is
-    # still thinner than `ridge`'s own default of 0.13 for braids, so it is not
-    # out of scale with the geometry this project already ships.
-    stand, half, sides, samples = 0.090, 0.080, 6, 22
+    # With `--bind-region` the same points bind to 68 vertices at y 7.394..7.765
+    # -- the brow itself -- and the mean offset is 1.0 mm, which is the standoff
+    # and nothing else. At 0.022 the render now differs from a bare face by 211
+    # pixels, MORE than the 9 mm version's 199, so this is both correct and more
+    # visible than what it replaces. Rendered and looked at: dark, arched,
+    # lying along the ridge instead of standing off it.
+    stand, half, sides, samples = 0.022, 0.080, 6, 22
     for arg in sys.argv[1:]:
         key, _, value = arg.partition("=")
         if key == "--stand":
@@ -184,7 +203,7 @@ def main() -> int:
 
     pts, quads, _tris = build(stand, half, sides, samples)
     app = H.app_binary()
-    binds = H.bind_points(app, pts)
+    binds = H.bind_points(app, pts, region=BIND_REGION)
     if len(binds) != len(pts):
         raise SystemExit(f"binder returned {len(binds)} rows for {len(pts)} points")
 

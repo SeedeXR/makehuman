@@ -4,6 +4,83 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-10-02 15:10:00 — Session · **"Correct and visible" was a bug report, and the brow was never bound to the brow**
+
+### What the owner decided
+Four things, in their words: *"I want correct and visible"* for the eyebrows;
+*"let's start with the 4 hair styles is fine"*; then **M11**, then **M9**, then
+**M10**. So hair is SETTLED at four styles — stop treating it as an open
+question — and the milestone order is the owner's, replacing anything else.
+
+### The eyebrows: not a compromise, a defect
+"Correct and visible" sounds like splitting the difference between 9 mm
+(visible, 4x anatomical) and 2 mm (correct, byte-identical to no brow). It is
+not. Both halves were achievable at once, and the reason they looked exclusive
+was a bug.
+
+**`--bind-points` bound every authored point to the SCALP, hardcoded**
+(`loadScalp()`), because it was written for hair. On the shipped asset all 264
+brow vertices hung off **16** scalp vertices at y 7.872..8.109 while the brow
+arc sits at y 7.47..7.53 — **mean offset 50.3 mm, max 61.4**.
+
+`fitProxy` scales an offset per axis but never ROTATES it
+(`src/core/Proxy.cpp:434-438`, matching `proxy.py:210-217`), so a 50 mm vector
+anchored to the hairline cannot follow the brow ridge. On the default
+character — 16.594 dm tall against the base mesh's 16.946 — the brow landed
+INSIDE the skin.
+
+**That is the entire explanation for the "floor" recorded as a coverage limit.**
+0.055 -> 0 px, 0.065 -> 34 px, and the conclusion drawn in `make_eyebrows.py`
+was that an anatomical brow is too thin to see. It was not; it was sunk in the
+head and had to be inflated until it climbed out.
+
+### How it was found, and what it cost
+Three hypotheses died in order, each by measurement rather than argument:
+1. **"It is a colour problem."** Dead on reading the asset: the material is
+   already dark (diffuse 0.18/0.12/0.09, matcap mean [35,27,23]).
+2. **"It is buried by the eye-socket hollow."** Dead by moving the arc UP the
+   face — 0 px at 7.47, 7.52, 7.57 and 7.62 alike. A local concavity would have
+   shown a gradient.
+3. **"It is sub-pixel coverage."** Dead because a 16x50 mm patch is ~300 px at
+   that scale, and the result was EXACTLY 0, not few.
+What settled it was reading the `.mhclo` records and seeing 40-60 mm offsets
+where a standoff should be.
+
+A measurement error of my own on the way: I first reported the shipped offsets
+as 37.8 mm. That reading was taken while a sweep variant was still in `data/`;
+the shipped value is 50.3 mm. Restore before measuring, and say which file was
+measured.
+
+### The fix
+`--bind-region "x0,x1,y0,y1,z0,z1"` — a box in base-mesh coordinates naming the
+surface to bind to. Absent, the scalp is still used, so every hair style is
+untouched. `make_eyebrows.py` derives that box from the SAME constants it uses
+to pick projection triangles, so projection and binding cannot diverge again.
+
+It also had to exclude helper geometry. A first version bound 24 of 68
+reference vertices outside the body cap, one of them 18947, because a box round
+the brow catches the eye helper cage — `base.obj` has 139 face groups of which
+138 are helpers. `--bind-region` now filters by `staticFaceMask`, the same test
+the renderer uses. Caught by `app_bind_region_restricts` failing, not by review.
+
+**Result: 64 reference vertices at y 7.394..7.655, mean offset 1.5 mm, max 2.4.
+`stand` 0.090 -> 0.022 (2.2 mm). Render differs from a bare face by 239 px
+against the old 199.** Correct and more visible than what it replaced.
+
+### Gates
+Five new, all controlled: `app_bind_region_restricts`,
+`app_bind_region_wants_six_numbers`, `app_bind_region_empty_box_is_refused`,
+`app_bind_region_inverted_bound_is_refused`, and `eyebrows_bound_to_the_face`.
+The last reads the SHIPPED `.mhclo` rather than re-running the generator,
+because `data/` is what the application loads; it fails if any offset component
+exceeds 5 mm and was watched to go RED on the old asset (-0.51305 dm).
+Both configs **1522/1522**, 0 skipped, clang-format 0 tree-wide.
+
+### Next
+M11 packaging, then M9, then M10, on the owner's instruction.
+
+---
+
 ## 2026-09-25 03:40:00 — Session · **Stage 3's tabs come back, and the coordinate note that was wrong**
 
 ### What the owner asked

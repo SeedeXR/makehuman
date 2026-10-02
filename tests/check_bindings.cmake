@@ -9,7 +9,14 @@
 # produces for any point beyond a triangle's edge -- extrapolates the vertex to
 # a position nobody authored. That is invisible in a vertex count and obvious
 # in a render.
-execute_process(COMMAND "${APP}" --bind-points "${POINTS}"
+set(extra)
+if(DEFINED REGION)
+    # Same records, bound inside a box instead of to the whole scalp. The
+    # format claims below are identical either way; what changes is WHICH
+    # surface the offset is measured from.
+    set(extra --bind-region "${REGION}")
+endif()
+execute_process(COMMAND "${APP}" --bind-points "${POINTS}" ${extra}
                 OUTPUT_VARIABLE out RESULT_VARIABLE rc)
 if(NOT rc EQUAL 0)
     message(FATAL_ERROR "--bind-points failed: ${rc}")
@@ -31,7 +38,17 @@ foreach(line IN LISTS lines)
         # The body cap runs 226..12157; every helper-cage vertex above the
         # cranium is >= 14566, so this separates the scalp from the long-hair
         # envelope memory/todo.md says never to grow hair from.
-        if(NOT v GREATER_EQUAL 226 OR v GREATER 12157)
+        #
+        # The 226 floor is a claim about the SCALP, so it only applies to the
+        # default binding. With an explicit --bind-region the surface is
+        # deliberately somewhere else -- the brow box legitimately reaches
+        # vertices from 170 -- and the claim that survives is the one that
+        # matters either way: never a helper cage.
+        if(DEFINED REGION)
+            if(v GREATER 12157)
+                message(FATAL_ERROR "\"${line}\" references ${v}, a helper-cage vertex")
+            endif()
+        elseif(NOT v GREATER_EQUAL 226 OR v GREATER 12157)
             message(FATAL_ERROR "\"${line}\" references ${v}, not a body scalp vertex")
         endif()
     endforeach()

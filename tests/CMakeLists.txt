@@ -3410,6 +3410,46 @@ if(MH_HAVE_RENDER)
              -DPOINTS=${CMAKE_CURRENT_BINARY_DIR}/points.txt -DEXPECT=3
              -DAPP=$<TARGET_FILE:makehuman>
              -P ${CMAKE_CURRENT_SOURCE_DIR}/check_bindings.cmake)
+    # --bind-region, and why it exists. Binding went to the scalp and ONLY the
+    # scalp, which is right for hair and silently wrong for a brow: the
+    # eyebrows bound to scalp vertices 0.5 dm above the arc and carried a 50 mm
+    # offset that `fitProxy` scales but never rotates, so the brow did not
+    # follow the face and had to be 4x anatomical thickness to escape the skin.
+    # These three gate the option's refusals; `eyebrows_bound_to_the_face`
+    # below gates the OUTCOME on the shipped asset.
+    add_test(NAME app_bind_region_restricts COMMAND ${CMAKE_COMMAND}
+             -DPOINTS=${CMAKE_CURRENT_BINARY_DIR}/points.txt -DEXPECT=3
+             -DAPP=$<TARGET_FILE:makehuman>
+             -DREGION=-1.0,1.0,7.0,9.0,0.0,4.0
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_bindings.cmake)
+    add_test(NAME app_bind_region_wants_six_numbers COMMAND makehuman
+             --bind-points ${CMAKE_CURRENT_BINARY_DIR}/points.txt --bind-region 1,2,3)
+    set_tests_properties(app_bind_region_wants_six_numbers PROPERTIES
+        PASS_REGULAR_EXPRESSION "wants six numbers")
+    # A box that selects nothing must SAY so. Silence here would print no
+    # records at all and the generator would write a .mhclo with no bindings,
+    # which loads as a proxy that renders nothing -- the exact failure mode
+    # this whole change was chasing.
+    add_test(NAME app_bind_region_empty_box_is_refused COMMAND makehuman
+             --bind-points ${CMAKE_CURRENT_BINARY_DIR}/points.txt
+             --bind-region 99.0,99.1,99.0,99.1,99.0,99.1)
+    set_tests_properties(app_bind_region_empty_box_is_refused PROPERTIES
+        PASS_REGULAR_EXPRESSION "selected no vertices")
+    add_test(NAME app_bind_region_inverted_bound_is_refused COMMAND makehuman
+             --bind-points ${CMAKE_CURRENT_BINARY_DIR}/points.txt
+             --bind-region 1.0,-1.0,7.0,9.0,0.0,4.0)
+    set_tests_properties(app_bind_region_inverted_bound_is_refused PROPERTIES
+        PASS_REGULAR_EXPRESSION "inverted bound")
+
+    # THE REGRESSION GATE for the eyebrow binding, on the shipped asset rather
+    # than on a fresh generator run, because `data/` is what the application
+    # loads. 0.050 dm is 5 mm: twice the real maximum of 2.4 mm and an order of
+    # magnitude below the 61.4 mm the scalp binding produced.
+    add_test(NAME eyebrows_bound_to_the_face COMMAND ${CMAKE_COMMAND}
+             -DMHCLO=${CMAKE_SOURCE_DIR}/data/eyebrows/eyebrows.mhclo
+             -DEXPECT=264 -DBAR=0.050
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_eyebrow_binding.cmake)
+
     add_test(NAME app_bind_points_missing_file COMMAND makehuman --bind-points /nope/nope.txt)
     set_tests_properties(app_bind_points_missing_file PROPERTIES
         PASS_REGULAR_EXPRESSION "cannot read the points")

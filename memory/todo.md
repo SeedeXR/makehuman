@@ -3556,6 +3556,44 @@ failure in a later stage cannot strand an earlier one:
       **Budget for render-and-look iterations, not for code** -- the hair took
       five before one shipped, and `src/core/Proxy.cpp:435-438` already has all
       the machinery either half would need.
+      **THE BROW WAS NOT BOUND TO THE BROW. Fixed 2026-10-02 on the owner's
+      "I want correct and visible".** This entry said an eyebrow "can be bound
+      to the brow the same way the locs are bound to the scalp", and that is
+      exactly what did not happen: `--bind-points` bound to `loadScalp()`'s
+      scalp and nothing else, hardcoded, because it was written for hair.
+      MEASURED on the shipped asset: all 264 brow vertices hung off just **16**
+      scalp vertices at y 7.872..8.109 while the brow arc sits at y 7.47..7.53,
+      with a mean offset of **50.3 mm** and a max of 61.4.
+      `fitProxy` scales an offset per axis but never ROTATES it
+      (`src/core/Proxy.cpp:434-438`, matching `proxy.py:210-217`), so a 50 mm
+      vector anchored to the hairline cannot follow the brow ridge. On the
+      default character -- 16.594 dm tall against the base mesh's 16.946 -- the
+      brow landed INSIDE the skin.
+      **That is the whole explanation for the "floor" this project recorded as
+      a coverage limit.** 0.055 showed 0 differing pixels and 0.065 showed 34,
+      and the conclusion drawn was that an anatomical brow is too thin to see.
+      It was not: it was sunk in the head and had to be inflated to 9 mm --
+      about 4x anatomical -- to climb out. Moving the arc UP the face changed
+      nothing (0 px at every height tried), which is what ruled out the
+      eye-socket hollow and pointed at the anchor instead.
+      **FIXED by `--bind-region`**, a box in base-mesh coordinates that says
+      which surface to bind to; without it the scalp is still used, so hair is
+      untouched. `make_eyebrows.py` now derives that box from the SAME
+      constants it uses to pick the projection triangles, so the two cannot
+      drift apart again.
+      The box also had to exclude helper geometry: a first version bound 24 of
+      68 reference vertices outside the body cap, one of them 18947, because a
+      box round the brow catches the eye helper cage. `--bind-region` now
+      filters by `staticFaceMask`, the same test the renderer uses.
+      **RESULT: 64 reference vertices at y 7.394..7.655 -- the brow itself --
+      mean offset 1.5 mm, max 2.4.** `stand` is now **0.022 (2.2 mm,
+      anatomical)** and the render differs from a bare face by **239 pixels**,
+      against **199** for the old 9 mm version. Correct AND more visible than
+      what it replaced, which is what the owner asked for. Rendered and looked
+      at: dark, arched, lying along the ridge instead of standing off it.
+      Gated by `eyebrows_bound_to_the_face`, which reads the SHIPPED `.mhclo`
+      and fails if any offset component exceeds 5 mm -- controlled against the
+      old asset, where it fails on -0.51305 dm.
 
 ## M8 — Application shell (`mh-app`, `mh-ui`)
 

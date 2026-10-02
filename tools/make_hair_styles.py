@@ -426,7 +426,7 @@ def app_binary(override: str = "") -> str:
                "Contents" / "MacOS" / "makehuman")
 
 
-def bind_points(app: str, points) -> list[str]:
+def bind_points(app: str, points, region: str | None = None) -> list[str]:
     """Hand the authored points to the application's barycentric binder.
 
     The scratch file goes to a TEMPORARY directory, not to `build/`. It used to
@@ -440,8 +440,15 @@ def bind_points(app: str, points) -> list[str]:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d) / "points.txt"
         tmp.write_text("".join(f"{x:.6f} {y:.6f} {z:.6f}\n" for x, y, z in points))
-        out = subprocess.run([app, "--bind-points", str(tmp)],
-                             capture_output=True, text=True, check=True).stdout
+        cmd = [app, "--bind-points", str(tmp)]
+        # Hair belongs on the scalp and passes nothing; anything that does NOT
+        # live on the scalp must say where it does. See `--bind-region`: the
+        # offset a binding stores is the distance to the chosen surface, and
+        # `fitProxy` scales that offset without rotating it, so binding a brow
+        # to the hairline anchors it 38 mm away and it stops following the face.
+        if region:
+            cmd += ["--bind-region", region]
+        out = subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
     return [line for line in out.splitlines() if line.strip()]
 
 

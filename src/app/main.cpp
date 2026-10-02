@@ -3250,6 +3250,29 @@ int main(int argc, char** argv) {
                        "the base mesh does not have: the scalp is only ten vertices across, so "
                        "cornrows cannot be cut from base vertices alone."),
         QStringLiteral("file"));
+    // WHICH SURFACE to bind to, and this exists because binding everything to
+    // the scalp was silently wrong for anything that is not hair.
+    //
+    // MEASURED 2026-10-02: the eyebrows bound to scalp triangles at y 8.01
+    // while the brow arc itself sits at y 7.47 -- 0.5 dm away -- so every
+    // record carried a mean offset of 0.378 dm (37.8 mm). `fitProxy` SCALES an
+    // offset per axis but never rotates it with the surface
+    // (`Proxy.cpp:434-438`, matching `proxy.py:210-217`), so a 38 mm vector
+    // anchored to the hairline does not follow the brow ridge when the
+    // character morphs. On the default character -- which is 16.594 dm tall
+    // against the base mesh's 16.946 -- the brow landed INSIDE the skin, and
+    // the only way to see it was to inflate it to 9 mm proud, about 4x
+    // anatomical. The geometry was never the problem; the anchor was.
+    //
+    // A box in base-mesh coordinates, because that is exactly how a generator
+    // already picks its own region, so the two cannot drift apart.
+    const QCommandLineOption bindRegionOpt(
+        QStringLiteral("bind-region"),
+        QStringLiteral("Restrict --bind-points to base-mesh triangles inside this box, as "
+                       "\"x0,x1,y0,y1,z0,z1\" in base coordinates. Without it the scalp is "
+                       "used, which is right for hair and wrong for a brow or a lash: the "
+                       "offset must be the standoff, not the distance to the hairline."),
+        QStringLiteral("x0,x1,y0,y1,z0,z1"));
     const QCommandLineOption poseFrameOpt(
         QStringLiteral("pose-frame"),
         QStringLiteral("Which frame of a multi-frame --pose .bvh to stand in, zero-based. "
@@ -3609,6 +3632,7 @@ int main(int argc, char** argv) {
     parser.addOption(spreadRootsOpt);
     parser.addOption(scalpPathOpt);
     parser.addOption(bindPointsOpt);
+    parser.addOption(bindRegionOpt);
     parser.addOption(poseFrameOpt);
     parser.addOption(rigNamesOpt);
     parser.addOption(expressionOpt);
@@ -4328,6 +4352,64 @@ int main(int argc, char** argv) {
         if (!loaded) return 1;
         const auto& base  = loaded->mesh;
         const auto& scalp = loaded->scalp;
+
+        // The region to bind against: the scalp unless a box says otherwise.
+        std::vector<uint32_t> boxed;
+        std::span<const uint32_t> region = scalp;
+        if (parser.isSet(bindRegionOpt)) {
+            const QStringList nums = parser.value(bindRegionOpt).split(QLatin1Char(','));
+            std::array<float, 6> b{};
+            bool okAll = nums.size() == 6;
+            for (int i = 0; okAll && i < 6; ++i) {
+                bool ok                   = false;
+                b[static_cast<size_t>(i)] = nums[i].trimmed().toFloat(&ok);
+                okAll                     = ok;
+            }
+            if (!okAll) {
+                std::fprintf(stderr, "--bind-region wants six numbers \"x0,x1,y0,y1,z0,z1\"\n");
+                return 1;
+            }
+            if (b[0] > b[1] || b[2] > b[3] || b[4] > b[5]) {
+                std::fprintf(stderr, "--bind-region has an inverted bound; each pair is lo,hi\n");
+                return 1;
+            }
+            // BODY faces only. `base.obj` carries 139 face groups of which 138
+            // are `helper-*` cages and `joint-*` markers, and a box drawn round
+            // the brow catches the eye helper cage: a first version of this
+            // bound 24 of 68 reference vertices outside the body cap, one of
+            // them 18947. Binding to a fitting cage anchors the asset to
+            // geometry that is never drawn and does not deform like skin, which
+            // is a quieter version of the very bug this option exists to fix.
+            // `staticFaceMask` is the same test the renderer uses.
+            const auto mask     = base.staticFaceMask();
+            const auto fv       = base.fvert();
+            const size_t stride = base.vertsPerPrimitive();
+            std::vector<uint8_t> onBody(base.vertexCount(), 0U);
+            for (size_t f = 0; f < mask.size() && (f + 1) * stride <= fv.size(); ++f) {
+                if (mask[f] == 0U) continue;
+                for (size_t k = 0; k < stride; ++k) {
+                    const uint32_t v = fv[f * stride + k];
+                    if (v < onBody.size()) onBody[v] = 1U;
+                }
+            }
+
+            const auto coords = base.coord();
+            for (uint32_t v = 0; v < coords.size(); ++v) {
+                if (onBody[v] == 0U) continue;
+                const auto& p = coords[v];
+                if (p.x >= b[0] && p.x <= b[1] && p.y >= b[2] && p.y <= b[3] && p.z >= b[4] &&
+                    p.z <= b[5]) {
+                    boxed.push_back(v);
+                }
+            }
+            if (boxed.empty()) {
+                // Silence here would bind nothing and print nothing, and the
+                // generator would write a .mhclo with no records at all.
+                std::fprintf(stderr, "--bind-region selected no vertices; the box is wrong\n");
+                return 1;
+            }
+            region = boxed;
+        }
         QTextStream in(&file);
         while (!in.atEnd()) {
             const QString line = in.readLine().trimmed();
@@ -4344,9 +4426,9 @@ int main(int argc, char** argv) {
                              line.toStdString().c_str());
                 return 1;
             }
-            const auto b = mh::core::bindToSurface(base, scalp, mh::foundation::Vec3{x, y, z});
+            const auto b = mh::core::bindToSurface(base, region, mh::foundation::Vec3{x, y, z});
             if (!b) {
-                std::fprintf(stderr, "no scalp triangle to bind (%s) to\n",
+                std::fprintf(stderr, "no triangle in the bind region to bind (%s) to\n",
                              line.toStdString().c_str());
                 return 1;
             }
