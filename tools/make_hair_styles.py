@@ -159,12 +159,25 @@ def write_style(name, stem, used, keep, placed, verts):
     index = {b: i for i, b in enumerate(used)}
     obj = [BANNER,
            f"# {name}: {len(used)} vertices, {len(keep)} faces.", "g " + stem]
+    pos = []
     for b in used:
         x, y, z = verts[b]
         d = placed[b]
-        obj.append("v {:.6f} {:.6f} {:.6f}".format(x + d[0], y + d[1], z + d[2]))
+        pos.append((x + d[0], y + d[1], z + d[2]))
+        obj.append("v {:.6f} {:.6f} {:.6f}".format(*pos[-1]))
+    # A planar projection over the cap's own extent, for the same reason the
+    # swept styles get UVs: without a `vt` the strand texture has nowhere to
+    # map. The afro is a skullcap, so x/z is the natural plane -- it is viewed
+    # from outside the head, and a cylindrical unwrap would seam down the
+    # middle of the face.
+    xs = [q[0] for q in pos] or [0.0]
+    zs = [q[2] for q in pos] or [0.0]
+    sx = (max(xs) - min(xs)) or 1.0
+    sz = (max(zs) - min(zs)) or 1.0
+    for q in pos:
+        obj.append(f"vt {(q[0] - min(xs)) / sx:.6f} {(q[2] - min(zs)) / sz:.6f}")
     for f in keep:
-        obj.append("f " + " ".join(str(index[v] + 1) for v in f))
+        obj.append("f " + " ".join(f"{index[v] + 1}/{index[v] + 1}" for v in f))
 
     mhclo = [
         BANNER,
@@ -188,7 +201,7 @@ def write_style(name, stem, used, keep, placed, verts):
     return "\n".join(obj) + "\n", "\n".join(mhclo) + "\n"
 
 
-def write_bound_style(name, stem, points, faces, bindings):
+def write_bound_style(name, stem, points, faces, bindings, uvs=None):
     """A style whose geometry is AUTHORED, not cut from the base mesh.
 
     The .obj carries the authored positions and the .mhclo carries one binding
@@ -198,8 +211,28 @@ def write_bound_style(name, stem, points, faces, bindings):
            f"# {name}: {len(points)} vertices, {len(faces)} faces.", "g " + stem]
     for x, y, z in points:
         obj.append(f"v {x:.6f} {y:.6f} {z:.6f}")
-    for f in faces:
-        obj.append("f " + " ".join(str(i + 1) for i in f))
+    # UVs, WITHOUT WHICH A STRAND TEXTURE HAS NOWHERE TO GO. The four generated
+    # styles shipped with no `vt` at all, so `materials/hair.mhmat`'s own note
+    # -- "needs an alpha-cut strand texture, which the cage geometry cannot
+    # stand in for" -- described a thing that could not be wired up even if the
+    # texture existed. MEASURED on the export: body 14,517 distinct UVs, eyes
+    # 808, teeth 136, hair ZERO.
+    #
+    # One `vt` per vertex, in vertex order, so a face corner is `v/vt` with the
+    # same index twice. That is what the sweeps produce -- u around the tube, v
+    # along it -- and it keeps the .obj readable beside the .mhclo, whose
+    # bindings are also one per vertex in the same order.
+    if uvs and len(uvs) == len(points):
+        for u, v in uvs:
+            obj.append(f"vt {u:.6f} {v:.6f}")
+        for f in faces:
+            obj.append("f " + " ".join(f"{i + 1}/{i + 1}" for i in f))
+    else:
+        if uvs:
+            print(f"{stem}: {len(uvs)} uvs for {len(points)} vertices -- writing none",
+                  file=sys.stderr)
+        for f in faces:
+            obj.append("f " + " ".join(str(i + 1) for i in f))
     mhclo = [
         BANNER,
         "#",
@@ -283,7 +316,7 @@ def derive(verts, faces, app_path=""):
     obj, mhclo = write_style("Afro", "afro", used, keep, placed, verts)
     wanted = {"afro.obj": obj, "afro.mhclo": mhclo}
 
-    pts, fs, rows, app = cornrows(verts, faces, app_path)
+    pts, fs, rows, app, cuvs = cornrows(verts, faces, app_path)
     # `len(binds) == len(pts)` alone is satisfied by 0 == 0. If every row failed
     # to trace, that wrote an EMPTY cornrows.obj into `data/hair`, which
     # `loadObj` rejects -- and a rejected proxy renders as a bald head rather
@@ -293,21 +326,21 @@ def derive(verts, faces, app_path=""):
     binds = bind_points(app, pts)
     if not pts or len(binds) != len(pts):
         raise RuntimeError(f"{len(binds)} bindings for {len(pts)} cornrow points")
-    cobj, cmhclo = write_bound_style("Cornrows", "cornrows", pts, fs, binds)
+    cobj, cmhclo = write_bound_style("Cornrows", "cornrows", pts, fs, binds, cuvs)
     wanted["cornrows.obj"] = cobj
     wanted["cornrows.mhclo"] = cmhclo
 
-    bpts, bfs, roots, _, cap_binds, ncap = bantu(verts, faces, app_path)
+    bpts, bfs, roots, _, cap_binds, ncap, buvs = bantu(verts, faces, app_path)
     # Only the KNOT points go to the binder; the cap already carries its own
     # bindings, one per base vertex it grew from.
     bbinds = cap_binds + bind_points(app, bpts[ncap:])
     if len(bbinds) != len(bpts):
         raise RuntimeError(f"{len(bbinds)} bindings for {len(bpts)} bantu points")
-    bobj, bmhclo = write_bound_style("Bantu knots", "bantu_knots", bpts, bfs, bbinds)
+    bobj, bmhclo = write_bound_style("Bantu knots", "bantu_knots", bpts, bfs, bbinds, buvs)
     wanted["bantu_knots.obj"] = bobj
     wanted["bantu_knots.mhclo"] = bmhclo
 
-    lpts, lfs, lroots, _, lshort, lcap, lncap = locs(verts, faces, app_path)
+    lpts, lfs, lroots, _, lshort, lcap, lncap, luvs = locs(verts, faces, app_path)
     # A rope of two rings is not a loc. The failure this names is real and was
     # MEASURED: before `LOC_SCALP_BOTTOM` existed the crown apex read as a shelf
     # and EVERY rope stopped at ZERO steps. Observed range with the style as it
@@ -321,7 +354,7 @@ def derive(verts, faces, app_path=""):
     lbinds = lcap + bind_points(app, lpts[lncap:])
     if not lpts or len(lbinds) != len(lpts):
         raise RuntimeError(f"{len(lbinds)} bindings for {len(lpts)} loc points")
-    lobj, lmhclo = write_bound_style("Locs", "locs", lpts, lfs, lbinds)
+    lobj, lmhclo = write_bound_style("Locs", "locs", lpts, lfs, lbinds, luvs)
     wanted["locs.obj"] = lobj
     wanted["locs.mhclo"] = lmhclo
 
@@ -661,7 +694,7 @@ def ridge(path, stand=0.13, half=0.06, sides=6):
     """
     pts = [p for p, _n, _d in path]
     normals = [n for _p, n, _d in path]
-    out, rings = [], []
+    out, rings, uvs = [], [], []
     for i, p in enumerate(pts):
         nxt = pts[min(i + 1, len(pts) - 1)]
         prv = pts[max(i - 1, 0)]
@@ -681,6 +714,14 @@ def ridge(path, stand=0.13, half=0.06, sides=6):
                  + side[j] * (half * math.sin(a)) for j in range(3)]
             ring.append(len(out))
             out.append(tuple(r))
+            # UV, and the whole point of it: a strand texture has to run ALONG
+            # the braid, not across it. u goes around the tube and v along the
+            # path, so the alpha streaks in `make_hair_alpha.py` line up with
+            # the direction hair actually grows. Without this the four
+            # generated styles carried no `vt` at all and the material's own
+            # note -- "needs an alpha-cut strand texture, which the cage
+            # geometry cannot stand in for" -- had nowhere to map it.
+            uvs.append((k / float(sides), i / float(max(1, len(pts) - 1))))
         rings.append(ring)
     faces = []
     for i in range(len(rings) - 1):
@@ -688,7 +729,7 @@ def ridge(path, stand=0.13, half=0.06, sides=6):
             a, b = rings[i][k], rings[i][(k + 1) % sides]
             c, d = rings[i + 1][(k + 1) % sides], rings[i + 1][k]
             faces.append([a, b, c, d])
-    return out, faces
+    return out, faces, uvs
 
 
 CORNROW_ROWS = 6
@@ -742,7 +783,7 @@ def knot_mesh(root, axis, base):
     facets are only eight around and a large twist reads as a shear.
     """
     u, v = _frame(axis)
-    pts, faces = [], []
+    pts, faces, uvs = [], [], []
     for ring in range(BANTU_RINGS):
         t = ring / BANTU_RINGS
         radius = BANTU_RADIUS * math.sqrt(max(0.0, 1.0 - t * t))
@@ -753,7 +794,11 @@ def knot_mesh(root, axis, base):
             pts.append(tuple(root[i] + u[i] * radius * math.cos(a)
                              + v[i] * radius * math.sin(a) + axis[i] * rise
                              for i in range(3)))
+            # Around the knot in u, up it in v, so the strand streaks wrap the
+            # bun the way the hair is actually wound. The tip below takes v = 1.
+            uvs.append((seg / float(BANTU_SEGMENTS), t))
     pts.append(tuple(root[i] + axis[i] * BANTU_HEIGHT for i in range(3)))
+    uvs.append((0.5, 1.0))
 
     for ring in range(BANTU_RINGS - 1):
         for seg in range(BANTU_SEGMENTS):
@@ -766,7 +811,7 @@ def knot_mesh(root, axis, base):
     last = base + (BANTU_RINGS - 1) * BANTU_SEGMENTS
     for seg in range(BANTU_SEGMENTS):
         faces.append([last + seg, last + (seg + 1) % BANTU_SEGMENTS, tip])
-    return pts, faces
+    return pts, faces, uvs
 
 
 def bantu(verts, body_faces, app_path=""):
@@ -808,6 +853,16 @@ def bantu(verts, body_faces, app_path=""):
     cap = {b: i for i, b in enumerate(used)}
     allpts = [tuple(verts[b][i] + placed[b][i] for i in range(3)) for b in used]
     allfaces = [[cap[v] for v in f] for f in keep]
+    # The CAP's own UVs. It is cut from the base mesh, whose scalp already has
+    # a parameterisation, but these vertices are re-indexed here and the base
+    # UVs do not survive that. A planar projection over the cap's extent is
+    # enough for a strand texture: the cap is a skullcap under the style, and
+    # what has to line up is the braids and knots on top of it.
+    _cx = [q[0] for q in allpts] or [0.0]
+    _cz = [q[2] for q in allpts] or [0.0]
+    _sx = (max(_cx) - min(_cx)) or 1.0
+    _sz = (max(_cz) - min(_cz)) or 1.0
+    alluvs = [((q[0] - min(_cx)) / _sx, (q[2] - min(_cz)) / _sz) for q in allpts]
     cap_binds = [f"{b} {b} {b} 1.00000 0.00000 0.00000 "
                  f"{placed[b][0]:.5f} {placed[b][1]:.5f} {placed[b][2]:.5f}"
                  for b in used]
@@ -821,10 +876,11 @@ def bantu(verts, body_faces, app_path=""):
         axis = [t / la for t in axis]
         # Lifted onto the cap, or the knot would sink into the hair it sits on.
         seat = [root[i] + axis[i] * BANTU_CAP for i in range(3)]
-        pts, fs = knot_mesh(seat, axis, len(allpts))
+        pts, fs, uv = knot_mesh(seat, axis, len(allpts))
         allpts.extend(pts)
         allfaces.extend(fs)
-    return allpts, allfaces, roots, app, cap_binds, len(cap_binds)
+        alluvs.extend(uv)
+    return allpts, allfaces, roots, app, cap_binds, len(cap_binds), alluvs
 
 
 # ---------------------------------------------------------------------------
@@ -1033,7 +1089,7 @@ def loc_hang(start, profile):
 def loc_tube(path, base):
     """A five-sided tube swept along one path."""
     ax, az = BODY_AXIS
-    pts, rings = [], []
+    pts, rings, uvs = [], [], []
     for i, p in enumerate(path):
         nxt = path[min(i + 1, len(path) - 1)]
         prv = path[max(i - 1, 0)]
@@ -1054,13 +1110,16 @@ def loc_tube(path, base):
             pts.append(tuple(p[m] + out[m] * (LOC_HALF * math.cos(ang))
                              + side[m] * (LOC_HALF * math.sin(ang))
                              for m in range(3)))
+            # v runs ALONG the loc so the strand streaks hang with it; u goes
+            # around. See `ridge` for the same convention.
+            uvs.append((j / float(LOC_SIDES), i / float(max(1, len(path) - 1))))
         rings.append(ring)
     faces = []
     for i in range(len(rings) - 1):
         for j in range(LOC_SIDES):
             faces.append([rings[i][j], rings[i][(j + 1) % LOC_SIDES],
                           rings[i + 1][(j + 1) % LOC_SIDES], rings[i + 1][j]])
-    return pts, faces
+    return pts, faces, uvs
 
 
 def locs(verts, body_faces, app_path=""):
@@ -1095,6 +1154,16 @@ def locs(verts, body_faces, app_path=""):
     # How many ropes have already passed through each scalp vertex.
     crossings = collections.defaultdict(int)
     allfaces = [[cap[v] for v in f] for f in keep]
+    # The CAP's own UVs. It is cut from the base mesh, whose scalp already has
+    # a parameterisation, but these vertices are re-indexed here and the base
+    # UVs do not survive that. A planar projection over the cap's extent is
+    # enough for a strand texture: the cap is a skullcap under the style, and
+    # what has to line up is the braids and knots on top of it.
+    _cx = [q[0] for q in allpts] or [0.0]
+    _cz = [q[2] for q in allpts] or [0.0]
+    _sx = (max(_cx) - min(_cx)) or 1.0
+    _sz = (max(_cz) - min(_cz)) or 1.0
+    alluvs = [((q[0] - min(_cx)) / _sx, (q[2] - min(_cz)) / _sz) for q in allpts]
     cap_binds = [f"{b} {b} {b} 1.00000 0.00000 0.00000 "
                  f"{placed[b][0]:.5f} {placed[b][1]:.5f} {placed[b][2]:.5f}"
                  for b in used]
@@ -1125,10 +1194,11 @@ def locs(verts, body_faces, app_path=""):
         shortest = min(shortest, len(path))
         if len(path) < 3:
             continue
-        pts, fs = loc_tube(path, len(allpts))
+        pts, fs, uv = loc_tube(path, len(allpts))
         allpts.extend(pts)
         allfaces.extend(fs)
-    return allpts, allfaces, roots, app, shortest, cap_binds, len(cap_binds)
+        alluvs.extend(uv)
+    return allpts, allfaces, roots, app, shortest, cap_binds, len(cap_binds), alluvs
 
 
 def cornrows(verts, body_faces, app_path=""):
@@ -1154,19 +1224,20 @@ def cornrows(verts, body_faces, app_path=""):
         raise RuntimeError("no triangle lies wholly inside the scalp region")
     half = crown_half_width(verts, region)
 
-    allpts, allfaces, traced = [], [], 0
+    allpts, allfaces, alluvs, traced = [], [], [], 0
     for i in range(CORNROW_ROWS):
         u = (2.0 * i + 1.0) / CORNROW_ROWS - 1.0
         path = trace_row(tris, CENTRE[0] + half * u)
         if len(path) < 3:
             print(f"cornrows: row {i} traced {len(path)} samples -- dropped", file=sys.stderr)
             continue
-        pts, fs = ridge(path)
+        pts, fs, uv = ridge(path)
         base = len(allpts)
         allpts.extend(pts)
         allfaces.extend([[k + base for k in f] for f in fs])
+        alluvs.extend(uv)
         traced += 1
-    return allpts, allfaces, traced, app
+    return allpts, allfaces, traced, app, alluvs
 
 
 if __name__ == "__main__":

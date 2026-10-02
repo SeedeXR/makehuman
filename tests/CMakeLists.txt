@@ -6197,6 +6197,20 @@ if(MH_HAVE_RENDER)
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/check_tracked.cmake)
     endif()
 
+    # HAIR CARDS AND STRANDS. The styles are swept tubes; an alpha-cut strand
+    # texture turns each tube into ribbons that run the way hair grows. Both
+    # halves had to exist: UVs on the geometry, and a texture with alpha.
+    add_test(NAME hair_styles_carry_uvs COMMAND ${CMAKE_COMMAND}
+             "-DOBJS=${CMAKE_SOURCE_DIR}/data/hair/afro.obj;${CMAKE_SOURCE_DIR}/data/hair/locs.obj;${CMAKE_SOURCE_DIR}/data/hair/cornrows.obj;${CMAKE_SOURCE_DIR}/data/hair/bantu_knots.obj"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_hair_uvs.cmake)
+    # The material must actually ASK for the texture and declare the alpha.
+    # The eye material records why the flag matters: "without the flag the
+    # renderer discards that alpha and paints an opaque disc over the iris".
+    add_test(NAME hair_material_cuts_alpha COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_SOURCE_DIR}/data/hair/materials/hair.mhmat
+             "-DKEYS=transparent True;diffuseTexture ../hair_strands.png"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+
     # SUBSURFACE SCATTERING. `data/skins/default.mhmat` has carried
     # `sssEnabled true`, `sssRScale 4.0` and `sssGScale 2.0` since the port
     # began -- the parser read them, the writer wrote them back, and the

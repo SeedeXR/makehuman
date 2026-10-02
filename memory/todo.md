@@ -9723,7 +9723,41 @@ GPU here, or Colab) and it comes back to the owner first.
               `posed_lod.glb`'s 1.6849 × 0.3008 × 1.6634. Two formats, two
               importers and our own CPU LBS agreeing on a DECIMATED body to a
               tenth of a millimetre. 16/16 exports agree.
-- [ ] Groom / hair card and strand support
+- [~] **Groom / hair card and strand support. STRANDS DONE 2026-10-02;
+      true hair CARDS and a groom solver remain.**
+      **The material had been asking for this since it was written.**
+      `data/hair/materials/hair.mhmat` said "needs an alpha-cut strand texture,
+      which the cage geometry cannot stand in for" -- and it could not have one,
+      because the four generated styles carried **NO UVs AT ALL**. MEASURED on
+      an export: body 14,517 distinct UVs, eyes 808, teeth 136, hair **ZERO**.
+      A texture would have sampled one texel over the whole head.
+      **Both halves now exist.** The three sweeps -- `ridge`, `loc_tube`,
+      `knot_mesh` -- emit UVs with **u around the tube and v along it**, so a
+      pattern that varies in u cuts the tube lengthwise into ribbons running the
+      way hair grows; varying it the other way would band the hair into rungs.
+      The afro and the bantu/locs CAPS are cut from base vertices and get a
+      planar x/z projection, which is right for a skullcap viewed from outside
+      (a cylindrical unwrap would seam down the middle of the face).
+      `tools/make_hair_alpha.py` writes `data/hair/hair_strands.png`: eight
+      strands around, thinning toward v = 1, which is the far end of every
+      sweep. No Pillow -- a hand-rolled PNG writer, because CI has no wheels for
+      the jobs that would regenerate it.
+      The material sets `transparent True` and the texture. That flag is
+      load-bearing and the EYE material already records why: "without the flag
+      the renderer discards that alpha and paints an opaque disc over the iris".
+      **MEASURED: 4,274 differing pixels** between the textured and untextured
+      material on the locs, and rendered and looked at -- the ropes read as
+      separate strands instead of one shell.
+      **THE OWNER'S CALL, like the eyebrows**: `DUTY` in
+      `tools/make_hair_alpha.py` is how much of each strand's width is solid.
+      At 0.62 the skullcap reads as thinning; at 0.80, which ships, it is
+      denser but the cap still shows scalp between strands. One constant, one
+      regenerate.
+      **STILL OPEN, and they are different work**: true hair CARDS -- flat
+      camera-facing quads rather than swept tubes -- and a groom solver that
+      places strands by combing rather than by the three hand-written sweeps.
+      Both are geometry generation; what landed here is the texturing pipeline
+      that either would need.
 - [~] **Physically-based skin. SSS DONE 2026-10-02; multi-layer and tension
       maps remain.**
       **SSS was a PORT GAP, not a new feature.** `core::Material` has carried
