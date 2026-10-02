@@ -1151,6 +1151,54 @@ if(MH_HAVE_RENDER)
         SKIP_REGULAR_EXPRESSION "cannot render"
         FAIL_REGULAR_EXPRESSION "cannot aim;nothing to draw"
         FIXTURES_SETUP app_look_at)
+    # THE EYELIDS FOLLOW THE GAZE. Without this the character rotates its
+    # eyeballs behind a fixed aperture -- the doll stare. MEASURED before it
+    # existed: aiming 25 degrees down moved the eye geometry 5.53 mm and every
+    # body vertex within 0.6 dm of the eye by 0.006 mm.
+    #
+    # The target is in the SKELETON's space, where `eye.L` sits at y 7.284, NOT
+    # the floor-aligned space an export is in. y 5.0 is genuinely below the eye;
+    # a value read off an exported mesh would be ~8.4 dm too high and would
+    # clamp to the upward limit instead. That mistake was made while writing
+    # this, and both "below" and "above" came back at +25 degrees.
+    add_test(NAME app_lid_follow COMMAND makehuman
+             --look-at 0,5.0,8.0
+             --render ${CMAKE_CURRENT_BINARY_DIR}/lookat/lids_on.png)
+    set_tests_properties(app_lid_follow PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        # A plain look-at must NOT claim it replaced a pose. The blend writes
+        # every bone, so the eye entries come back identity to float precision
+        # and not bit-exactly; an exact compare announced a replacement that
+        # never happened.
+        FAIL_REGULAR_EXPRESSION "look-at replaced an eye rotation"
+        FIXTURES_SETUP app_lids_on)
+    add_test(NAME app_lid_follow_off COMMAND makehuman
+             --look-at 0,5.0,8.0 --no-lid-follow
+             --render ${CMAKE_CURRENT_BINARY_DIR}/lookat/lids_off.png)
+    set_tests_properties(app_lid_follow_off PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render"
+        FIXTURES_SETUP app_lids_off)
+    # MEASURED on the export: 264 vertices move, the upper lid by -1.48 mm and
+    # the lower by +0.09 mm on a downward gaze. 200 pixels is far under that and
+    # far over any dithering floor.
+    add_test(NAME app_lid_follow_moves_the_lids COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/lookat/lids_off.png
+             ${CMAKE_CURRENT_BINARY_DIR}/lookat/lids_on.png --min-differing 200)
+    set_tests_properties(app_lid_follow_moves_the_lids PROPERTIES
+        FIXTURES_REQUIRED "app_lids_on;app_lids_off")
+
+    # And the flag does nothing on its own. A constraint that fires without the
+    # thing it constrains would move the lids of a character looking nowhere.
+    add_test(NAME app_no_lid_follow_alone COMMAND makehuman --no-lid-follow
+             --render ${CMAKE_CURRENT_BINARY_DIR}/lookat/nolid_alone.png)
+    set_tests_properties(app_no_lid_follow_alone PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render" FIXTURES_SETUP app_nolid_alone)
+    add_test(NAME app_no_lid_follow_alone_changes_nothing COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/lookat/ahead.png
+             ${CMAKE_CURRENT_BINARY_DIR}/lookat/nolid_alone.png --max-differing 0)
+    set_tests_properties(app_no_lid_follow_alone_changes_nothing PROPERTIES
+        FIXTURES_REQUIRED "app_look_at_off;app_nolid_alone")
+
     add_test(NAME app_look_at_baseline COMMAND makehuman
              --render ${CMAKE_CURRENT_BINARY_DIR}/lookat/ahead.png)
     set_tests_properties(app_look_at_baseline PROPERTIES

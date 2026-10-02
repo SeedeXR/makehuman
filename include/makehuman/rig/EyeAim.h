@@ -24,12 +24,14 @@
 #pragma once
 
 #include "makehuman/foundation/Types.h"
+#include "makehuman/rig/PoseUnits.h"
 #include "makehuman/rig/Skeleton.h"
 
 #include <cstdint>
 #include <expected>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace mh::rig {
 
@@ -97,11 +99,64 @@ struct EyeAimError {
     [[nodiscard]] std::string message() const;
 };
 
+/// Where each eye ends up pointing, after clamping, without posing anything.
+///
+/// Separated from `aimEyes` because a second consumer needs the SAME numbers:
+/// the eyelids. A lid that does not follow the gaze leaves a character rotating
+/// its eyeballs behind a fixed lid aperture -- MEASURED on the shipped rig,
+/// `--look-at` 25.5 degrees down moves the eye geometry 5.53 mm and every body
+/// vertex within 0.6 dm of the eye by 0.006 mm, which is the doll stare.
+///
+/// Angles are in the eye bone's own rest frame, in DEGREES, signed: elevation
+/// positive is up, heading positive is the bone's +X side. Both are already
+/// clamped to @p limits, so a consumer sees where the eye really points rather
+/// than where it was asked to.
+struct EyeAimAngles {
+    double leftElevationDegrees{};
+    double rightElevationDegrees{};
+    double leftHeadingDegrees{};
+    double rightHeadingDegrees{};
+    /// The limits bit, so a caller that only wants angles still learns it.
+    bool clamped{false};
+};
+
+/// The clamped aim angles for both eyes. Pure: nothing is written.
+[[nodiscard]] std::expected<EyeAimAngles, EyeAimError> eyeAimAngles(const Skeleton& skeleton,
+                                                                    foundation::Vec3 target,
+                                                                    EyeAimLimits limits = {});
+
+/// The eyelid pose units that make the lids track @p angles, with their weights.
+///
+/// THE LIDS ARE DRIVEN BY AUTHORED UNITS, NOT BY A ROTATION INVENTED HERE.
+/// `LeftUpperLidOpen`, `LeftUpperLidClosed` and `LeftLowerLidUp` (and their
+/// right-hand twins) are shipped pose units, shaped by whoever authored the
+/// face; reconstructing those shapes from a guess about the `orbicularis03/04`
+/// bones' local axes would be a second, worse version of data that already
+/// exists. This is a CONSTRAINT that consumes a signal and feeds the existing
+/// blend -- the shape of directive 12.3, applied to the rig layer it exempts.
+///
+/// The gains are anatomy, not taste: the upper lid tracks roughly two thirds of
+/// the eye's vertical rotation and the lower lid about a fifth, which is why a
+/// downward glance narrows the aperture from above while the lower lid barely
+/// moves. Returns an empty span's worth of units when the gaze is level, so a
+/// horizontal look-at adds nothing to the blend.
+[[nodiscard]] std::vector<WeightedUnit> lidFollowUnits(const EyeAimAngles& angles,
+                                                       EyeAimLimits limits = {});
+
 /// Writes the rotations for `eye.L` and `eye.R` into @p localPose so both eyes
 /// look at @p target.
 ///
-/// @param target in MODEL space, the same space as `Bone::head` -- decimetres,
-///        Y-up, the model facing +Z.
+/// @param target in the SKELETON's space, the same space as `Bone::head` --
+///        decimetres, Y-up, the model facing +Z.
+///
+///        THAT IS NOT THE SPACE AN EXPORT IS IN, and the distinction costs
+///        real time. The skeleton is built from `base.obj`, which is centred on
+///        the origin, so `eye.L` sits at y 7.284; an exported or rendered
+///        character is floor-aligned and its eyes are at y 15.53. Aiming at a
+///        point read off the exported mesh is therefore about 8.4 dm too high
+///        and silently clamps to the upward limit -- measured while writing the
+///        lid follow, where y 14.0 and y 18.0 were both chosen as "below" and
+///        "above" the eye and BOTH came back at +25 degrees, clamped.
 /// @param localPose one matrix per bone in the bone's OWN rest frame, the same
 ///        convention `evaluatePoseSignal` and `poseMesh` take. Only the two eye
 ///        entries are written; everything else is left exactly as it was, so

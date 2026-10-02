@@ -371,3 +371,90 @@ TEST_CASE("aiming refuses what it cannot do", "[rig][eyeaim]") {
         CHECK(r.error().kind == rig::EyeAimErrorKind::BadLimits);
     }
 }
+
+TEST_CASE("the lids follow the gaze down and retract looking up", "[eyeaim][lids]") {
+    // The CONSTRAINT half of the eye rig. Driven by authored pose units rather
+    // than a rotation invented here: `LeftUpperLidClosed` and friends are
+    // shipped shapes, and reconstructing them from a guess about the
+    // orbicularis bones' local axes would be a worse copy of existing data.
+    using namespace mh::rig;  // the file already has `using namespace mh`
+
+    EyeAimAngles down;
+    down.leftElevationDegrees = down.rightElevationDegrees = -25.0;
+    const auto d                                           = lidFollowUnits(down);
+    // Both eyes, upper lid closing and lower lid rising: four units.
+    REQUIRE(d.size() == 4);
+    const auto has = [](const std::vector<WeightedUnit>& v, std::string_view n) {
+        return std::ranges::any_of(v, [&](const WeightedUnit& u) { return u.name == n; });
+    };
+    CHECK(has(d, "LeftUpperLidClosed"));
+    CHECK(has(d, "RightUpperLidClosed"));
+    CHECK(has(d, "LeftLowerLidUp"));
+    CHECK(has(d, "RightLowerLidUp"));
+    CHECK_FALSE(has(d, "LeftUpperLidOpen"));
+
+    EyeAimAngles up;
+    up.leftElevationDegrees = up.rightElevationDegrees = 25.0;
+    const auto u                                       = lidFollowUnits(up);
+    // Looking up retracts the upper lid and leaves the lower one alone.
+    REQUIRE(u.size() == 2);
+    CHECK(has(u, "LeftUpperLidOpen"));
+    CHECK(has(u, "RightUpperLidOpen"));
+    CHECK_FALSE(has(u, "LeftLowerLidUp"));
+}
+
+TEST_CASE("a level gaze moves no lid at all", "[eyeaim][lids]") {
+    // An empty blend is the point: looking straight ahead must not quietly
+    // narrow the eyes, and a unit at weight 0 would still be written into every
+    // .mhpose that records the pose.
+    rig::EyeAimAngles level;
+    CHECK(rig::lidFollowUnits(level).empty());
+}
+
+TEST_CASE("lid weights scale with the gaze and never leave 0..1", "[eyeaim][lids]") {
+    // Normalised against the LIMIT, not against a fixed angle, so a rig with a
+    // wider vertical range does not drive the lids past the authored shapes.
+    using namespace mh::rig;  // the file already has `using namespace mh`
+    EyeAimAngles half;
+    half.leftElevationDegrees = half.rightElevationDegrees = -12.5;
+    const auto h                                           = lidFollowUnits(half);
+    EyeAimAngles full;
+    full.leftElevationDegrees = full.rightElevationDegrees = -25.0;
+    const auto f                                           = lidFollowUnits(full);
+    REQUIRE(h.size() == f.size());
+    for (size_t i = 0; i < h.size(); ++i) {
+        CHECK(h[i].weight < f[i].weight);
+        CHECK(h[i].weight >= 0.0F);
+        CHECK(f[i].weight <= 1.0F);
+    }
+
+    // Past the limit the weight saturates rather than extrapolating into a face
+    // nobody authored -- the same rule --pose-unit enforces on the CLI.
+    EyeAimAngles past;
+    past.leftElevationDegrees = past.rightElevationDegrees = -90.0;
+    for (const auto& u : lidFollowUnits(past))
+        CHECK(u.weight <= 1.0F);
+}
+
+TEST_CASE("eyeAimAngles agrees with the aim it is factored out of", "[eyeaim][lids]") {
+    // The lids must not track an angle the eye never reached. Both read the
+    // same clamped numbers, and this is what keeps that true.
+    const rig::Skeleton skel = shippedRig();
+    auto pose                = restPose(skel);
+    // Well inside the limits, so nothing clamps and the two must still agree.
+    const foundation::Vec3 target{0.5F, 7.4F, 10.0F};
+    const auto aim = rig::aimEyes(skel, target, pose);
+    REQUIRE(aim);
+    const auto ang = rig::eyeAimAngles(skel, target);
+    REQUIRE(ang);
+    CHECK(ang->clamped == aim->clamped);
+    CHECK_FALSE(ang->clamped);
+
+    // And a target far above the eye clamps BOTH, which is the failure that
+    // made the lid follow look broken while it was correct: y 14 and y 18 are
+    // both above `eye.L` at y 7.284, so both came back at the +25 limit.
+    const auto high = rig::eyeAimAngles(skel, foundation::Vec3{0.0F, 18.0F, 8.0F});
+    REQUIRE(high);
+    CHECK(high->clamped);
+    CHECK_THAT(high->leftElevationDegrees, WithinAbs(25.0, 1e-6));
+}

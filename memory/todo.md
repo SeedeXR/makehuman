@@ -9775,9 +9775,50 @@ GPU here, or Colab) and it comes back to the owner first.
       **STILL OPEN**: multi-layer (epidermis/dermis separation) and tension
       maps (wrinkle intensity driven by pose stretch). Neither has reference
       data to port -- both would be ours from scratch.
-- [ ] Eye, teeth, tongue rigging refinement — **skeleton and constraint work,
-      NOT correctives** (directive 12.3: expressing them as correctives is "a
-      trap"). Stays in the rig layer.
+- [~] **Eye, teeth, tongue rigging. THE LIDS NOW FOLLOW THE GAZE (2026-10-02);
+      the rest was already done and this entry was stale.** Skeleton and
+      constraint work, NOT correctives (directive 12.3).
+      **What was ALREADY correct, measured through the app before touching
+      anything** -- a jaw drop (`--facs AU26=1.0`) moves the lower teeth 24.69 mm
+      and the upper teeth **exactly 0.000 mm**, 68 verts each, and the tongue
+      22.81 mm on its 12-bone chain hanging off `jaw`. Eyes move 0.00 mm on a
+      jaw drop and 4.16 mm on a gaze unit, with teeth and tongue at 0.000.
+      `aimEyes` and `--look-at` already existed, with convergence, clamping and
+      29 ctest entries.
+      **I nearly reported a defect that was not there.** Splitting the teeth by
+      MEDIAN Y said the upper teeth moved up to 24.23 mm. They do not: upper and
+      lower teeth interleave in y -- incisor tips against molar crowns -- so the
+      median misclassifies. Splitting by actual displacement gives a clean
+      68/68. Classify by the thing you are measuring, not by a proxy for it.
+      **THE REAL GAP: the eyelids ignored the eyes.** MEASURED: aiming 25
+      degrees down moved the eye geometry 5.53 mm and every body vertex within
+      0.6 dm of the eye by 0.006 mm -- eyeballs rotating behind a fixed
+      aperture, the doll stare.
+      Fixed with a CONSTRAINT driven by AUTHORED pose units --
+      `LeftUpperLidOpen/Closed`, `LeftLowerLidUp` and their twins -- rather than
+      a rotation invented from the `orbicularis03/04` bones' local axes, which
+      would be a worse copy of data that already ships. Gains are anatomy: the
+      upper lid tracks ~2/3 of the eye's vertical rotation, the lower ~1/5.
+      `eyeAimAngles` was factored out of `aimEyes` so the lids cannot track an
+      angle the eye never reached. On by default; `--no-lid-follow` opts out.
+      RESULT: 264 verts move, upper lid -1.48 mm on a downward gaze and
+      +1.20 mm on an upward one, lower lid +0.09 mm, eyeballs unchanged
+      (0.04 mm).
+      **TWO TRAPS FOUND, both now documented in the header.**
+      (1) `--look-at` takes a target in the SKELETON's space, where `eye.L` sits
+      at **y 7.284** -- NOT the floor-aligned space an export is in, where the
+      eyes are at y 15.53. The header said "MODEL space". I aimed at y 14.0 and
+      y 18.0 as "below" and "above" the eye; BOTH are above it and both clamped
+      to +25 degrees, which made a correct mapping look inverted for three
+      measurements.
+      (2) `aimEyes` decided "the pose already rotated this eye" with an EXACT
+      float compare. A blend writes every bone, so an untouched bone comes back
+      identity to ~1e-7 and not bit-exactly -- adding the lid follow made a
+      plain `--look-at` announce a replacement that never happened. Now a 1e-5
+      tolerance, which still catches a hundredth of a degree.
+      Five app gates plus four unit cases (39 assertions).
+      **STILL OPEN**: nothing identified. The three subsystems do what a rig
+      should; name a specific behaviour before reopening this.
 - [x] **Wrinkle/detail normal blending — DONE, and this entry was STALE.**
       It said "blocked behind PSD steps 1-4, deliberately"; step 4 is complete
       and this landed with it. Corrected 2026-09-14 against live state.

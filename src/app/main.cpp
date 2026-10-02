@@ -683,6 +683,10 @@ std::expected<mh::rig::Expression, std::string> requestedExpression() {
 /// `loadPoseRig` call site -- start-up, the Pose picker, the Skeleton picker --
 /// has to apply it, and none of them has an opinion about it.
 std::optional<mh::foundation::Vec3> gLookAt;
+/// Whether the eyelids track the gaze. On by default: a lid that ignores the
+/// eye behind it is the doll stare, and someone aiming the eyes almost never
+/// wants it. Off is for an author who has posed the lids themselves.
+bool gLidFollow = true;
 
 /// Files of one extension in @p dir, sorted.
 ///
@@ -998,6 +1002,37 @@ bool loadPoseRig(const mh::core::Mesh& mesh, const std::string& pose, PoseRig& o
 
     if (!facsRef().empty()) {
         if (!applyFacs(facsRef(), *skel, modelPose)) return false;
+    }
+
+    // THE LIDS FOLLOW THE GAZE, and this is where that has to happen: the lid
+    // units are authored pose units, so they belong in the MODEL-space blend
+    // alongside every other expression, not bolted on after the conversion.
+    //
+    // MEASURED before it existed: `--look-at` 25.5 degrees down moved the eye
+    // geometry 5.53 mm and every body vertex within 0.6 dm of the eye by
+    // 0.006 mm. The eyeballs rotated behind a fixed aperture.
+    //
+    // A CONSTRAINT, not a corrective, which is what directive 12.3 exempts the
+    // rig layer to do. It consumes the same clamped angles the aim uses --
+    // `eyeAimAngles`, the function `aimEyes` itself calls -- so the lids cannot
+    // track an angle the eye did not reach.
+    if (gLookAt.has_value() && gLidFollow) {
+        const auto angles = mh::rig::eyeAimAngles(*skel, *gLookAt);
+        if (!angles) {
+            std::fprintf(stderr, "cannot aim the eyes: %s\n", angles.error().message().c_str());
+            return false;
+        }
+        mh::rig::Expression lids;
+        lids.name  = "lid follow";
+        lids.units = mh::rig::lidFollowUnits(*angles);
+        // Empty on a level gaze, and applying an empty blend would still cost a
+        // pass over every bone.
+        if (!lids.units.empty()) {
+            if (modelPose.empty()) {
+                modelPose.assign(skel->boneCount(), mh::foundation::Mat4::identity());
+            }
+            if (!applyExpressionUnits(lids, *skel, modelPose)) return false;
+        }
     }
 
     if (!modelPose.empty()) {
@@ -3622,6 +3657,12 @@ int main(int argc, char** argv) {
                        "beside it and reused until the manifest changes."),
         QStringLiteral("manifest"));
     parser.addOption(correctivesOpt);
+    const QCommandLineOption noLidFollowOpt(
+        QStringLiteral("no-lid-follow"),
+        QStringLiteral("Keep the eyelids still while --look-at aims the eyes. By default the "
+                       "lids track the gaze, because an eye that rotates behind a fixed "
+                       "aperture is the doll stare; pass this when the lids are posed by "
+                       "hand and the constraint would fight them."));
     const QCommandLineOption lookAtOpt(
         QStringLiteral("look-at"),
         QStringLiteral("Aim the eyes at a point in model space, as X,Y,Z in decimetres "
@@ -3629,6 +3670,7 @@ int main(int argc, char** argv) {
                        "so a near target converges them. Clamped to the human range."),
         QStringLiteral("x,y,z"));
     parser.addOption(lookAtOpt);
+    parser.addOption(noLidFollowOpt);
     parser.addOption(shadingOpt);
     parser.addOption(sceneOpt);
     parser.addOption(listScenesOpt);
@@ -4872,6 +4914,7 @@ int main(int argc, char** argv) {
     // Parsed BEFORE the rig is loaded, because `loadPoseRig` is what applies it.
     // It was five lines below this call first time out, and the app rendered a
     // character staring straight ahead while reporting nothing at all.
+    gLidFollow = !parser.isSet(noLidFollowOpt);
     if (parser.isSet(lookAtOpt)) {
         const QStringList parts = parser.value(lookAtOpt).split(QLatin1Char(','));
         bool ok                 = parts.size() == 3;

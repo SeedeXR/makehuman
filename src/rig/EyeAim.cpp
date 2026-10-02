@@ -70,6 +70,50 @@ std::string EyeAimError::message() const {
     return s;
 }
 
+namespace {
+
+/// A limit that is a usable angle. Shared, because `aimEyes` and
+/// `eyeAimAngles` must refuse exactly the same inputs.
+constexpr bool usableLimit(double d) {
+    return d >= 0.0 && d <= 90.0;
+}
+
+/// One eye's clamped angles, in RADIANS, in that bone's own rest frame.
+///
+/// Factored out so `aimEyes` and `eyeAimAngles` cannot drift: the lids are
+/// driven from these numbers and an eye that clamps while the lid does not
+/// would be worse than no lid follow at all.
+struct OneEye {
+    double elevation{};
+    double heading{};
+    bool clamped{false};
+};
+
+std::expected<OneEye, EyeAimError> oneEyeAngles(const Bone& bone, foundation::Vec3 target,
+                                                double hLimit, double vLimit) {
+    const double tx       = static_cast<double>(target.x) - static_cast<double>(bone.head.x);
+    const double ty       = static_cast<double>(target.y) - static_cast<double>(bone.head.y);
+    const double tz       = static_cast<double>(target.z) - static_cast<double>(bone.head.z);
+    const double distance = std::sqrt(tx * tx + ty * ty + tz * tz);
+    if (distance == 0.0) {
+        return std::unexpected(EyeAimError{EyeAimErrorKind::TargetAtEye, bone.name});
+    }
+    const foundation::Vec3 world{static_cast<float>(tx / distance),
+                                 static_cast<float>(ty / distance),
+                                 static_cast<float>(tz / distance)};
+    const foundation::Vec3 local = rotateByTranspose(bone.matRestGlobal, world);
+
+    const double elevation = std::asin(std::clamp(static_cast<double>(local.z), -1.0, 1.0));
+    const double heading   = std::atan2(static_cast<double>(local.x), static_cast<double>(local.y));
+    OneEye out;
+    out.elevation = std::clamp(elevation, -vLimit, vLimit);
+    out.heading   = std::clamp(heading, -hLimit, hLimit);
+    out.clamped   = out.elevation != elevation || out.heading != heading;
+    return out;
+}
+
+}  // namespace
+
 std::expected<EyeAimReport, EyeAimError> aimEyes(const Skeleton& skeleton, foundation::Vec3 target,
                                                  std::span<foundation::Mat4> localPose,
                                                  EyeAimLimits limits) {
@@ -85,7 +129,6 @@ std::expected<EyeAimReport, EyeAimError> aimEyes(const Skeleton& skeleton, found
     // With the human defaults the aimed y never drops below
     // cos(35) * cos(25) = 0.742, so the case is unreachable through them and
     // perfectly reachable through the parameter.
-    const auto usableLimit = [](double d) { return d >= 0.0 && d <= 90.0; };
     if (!usableLimit(limits.horizontalDegrees) || !usableLimit(limits.verticalDegrees)) {
         return std::unexpected(EyeAimError{EyeAimErrorKind::BadLimits, {}});
     }
@@ -106,10 +149,23 @@ std::expected<EyeAimReport, EyeAimError> aimEyes(const Skeleton& skeleton, found
     // whatever was there, and a caller that combined it with a FACS gaze unit
     // deserves to hear so. See `EyeAimReport::replacedExistingPose`.
     const auto rotated = [](const foundation::Mat4& m) {
-        const foundation::Mat4 id = foundation::Mat4::identity();
+        // A TOLERANCE, not an exact compare, and the difference is a real
+        // warning rather than a style point. A blend writes every bone, so a
+        // bone no unit touches comes back identity to float precision and not
+        // bit-exactly -- quaternion multiply and renormalise leave a few ulp.
+        // MEASURED: adding the eyelid follow, which rotates two orbicularis
+        // bones and nothing else, made a plain `--look-at` announce that it had
+        // "replaced an eye rotation already in the pose". It had not; the eye
+        // entries were identity to within 1e-7.
+        //
+        // 1e-5 sits two orders above that noise and well below anything a
+        // caller could mean: a rotation of a hundredth of a degree already puts
+        // 1.7e-4 in an off-diagonal term.
+        constexpr float kIdentityTolerance = 1e-5F;
+        const foundation::Mat4 id          = foundation::Mat4::identity();
         for (size_t r = 0; r < 3; ++r) {
             for (size_t c = 0; c < 3; ++c) {
-                if (m.m[r][c] != id.m[r][c]) return true;
+                if (std::abs(m.m[r][c] - id.m[r][c]) > kIdentityTolerance) return true;
             }
         }
         return false;
@@ -119,22 +175,6 @@ std::expected<EyeAimReport, EyeAimError> aimEyes(const Skeleton& skeleton, found
     for (const bool isLeft : {true, false}) {
         const size_t at  = isLeft ? *left : *right;
         const Bone& bone = skeleton.bones[at];
-        const foundation::Vec3 toTarget{target.x - bone.head.x, target.y - bone.head.y,
-                                        target.z - bone.head.z};
-        const double tx       = static_cast<double>(toTarget.x);
-        const double ty       = static_cast<double>(toTarget.y);
-        const double tz       = static_cast<double>(toTarget.z);
-        const double distance = std::sqrt(tx * tx + ty * ty + tz * tz);
-        if (distance == 0.0) {
-            return std::unexpected(EyeAimError{EyeAimErrorKind::TargetAtEye, bone.name});
-        }
-
-        // Into the bone's own rest frame, where the eye looks along +Y.
-        const foundation::Vec3 world{static_cast<float>(tx / distance),
-                                     static_cast<float>(ty / distance),
-                                     static_cast<float>(tz / distance)};
-        const foundation::Vec3 local = rotateByTranspose(bone.matRestGlobal, world);
-
         // Split into the two angles a limit is expressed in, then clamp each and
         // rebuild. Clamping the ANGLES rather than the resulting rotation is
         // what makes a horizontal and a vertical limit independent -- clamping
@@ -144,13 +184,13 @@ std::expected<EyeAimReport, EyeAimError> aimEyes(const Skeleton& skeleton, found
         // In the eye bone's frame, +Y is forward and +Z is up -- measured on the
         // shipped rig: eye.L's Z column is (-0.0051, 0.9996, -0.0288), which is
         // world up. So elevation is asin(local.z) and the horizontal turn is
-        // atan2 in the remaining plane.
-        const double elevation = std::asin(std::clamp(static_cast<double>(local.z), -1.0, 1.0));
-        const double heading =
-            std::atan2(static_cast<double>(local.x), static_cast<double>(local.y));
-        const double clampedElevation = std::clamp(elevation, -vLimit, vLimit);
-        const double clampedHeading   = std::clamp(heading, -hLimit, hLimit);
-        if (clampedElevation != elevation || clampedHeading != heading) report.clamped = true;
+        // atan2 in the remaining plane. `oneEyeAngles` holds that, and the lid
+        // follow reads the same function so the two cannot disagree.
+        const auto angles = oneEyeAngles(bone, target, hLimit, vLimit);
+        if (!angles) return std::unexpected(angles.error());
+        const double clampedElevation = angles->elevation;
+        const double clampedHeading   = angles->heading;
+        if (angles->clamped) report.clamped = true;
 
         const foundation::Vec3 aimed{
             static_cast<float>(std::sin(clampedHeading) * std::cos(clampedElevation)),
@@ -168,6 +208,68 @@ std::expected<EyeAimReport, EyeAimError> aimEyes(const Skeleton& skeleton, found
         }
     }
     return report;
+}
+
+std::expected<EyeAimAngles, EyeAimError> eyeAimAngles(const Skeleton& skeleton,
+                                                      foundation::Vec3 target,
+                                                      EyeAimLimits limits) {
+    if (!usableLimit(limits.horizontalDegrees) || !usableLimit(limits.verticalDegrees)) {
+        return std::unexpected(EyeAimError{EyeAimErrorKind::BadLimits, {}});
+    }
+    const auto left  = indexOf(skeleton, "eye.L");
+    const auto right = indexOf(skeleton, "eye.R");
+    if (!left || !right) {
+        return std::unexpected(EyeAimError{EyeAimErrorKind::NoEyeBones, {}});
+    }
+    const double hLimit = limits.horizontalDegrees * std::numbers::pi / 180.0;
+    const double vLimit = limits.verticalDegrees * std::numbers::pi / 180.0;
+    const auto l        = oneEyeAngles(skeleton.bones[*left], target, hLimit, vLimit);
+    if (!l) return std::unexpected(l.error());
+    const auto r = oneEyeAngles(skeleton.bones[*right], target, hLimit, vLimit);
+    if (!r) return std::unexpected(r.error());
+
+    constexpr double kDeg = 180.0 / std::numbers::pi;
+    return EyeAimAngles{.leftElevationDegrees  = l->elevation * kDeg,
+                        .rightElevationDegrees = r->elevation * kDeg,
+                        .leftHeadingDegrees    = l->heading * kDeg,
+                        .rightHeadingDegrees   = r->heading * kDeg,
+                        .clamped               = l->clamped || r->clamped};
+}
+
+std::vector<WeightedUnit> lidFollowUnits(const EyeAimAngles& angles, EyeAimLimits limits) {
+    // Anatomy, not taste. The upper lid tracks about two thirds of the eye's
+    // vertical rotation -- it is dragged by the globe it rests on -- and the
+    // lower lid about a fifth, which is why a downward glance closes the
+    // aperture from above while the lower lid barely moves.
+    constexpr double kUpperGain = 0.67;
+    constexpr double kLowerGain = 0.20;
+
+    std::vector<WeightedUnit> units;
+    if (!(limits.verticalDegrees > 0.0)) return units;
+
+    const auto add = [&](const char* name, double weight) {
+        // Below a thousandth the blend cannot show it and the unit is noise in
+        // every exported .mhpose that records the pose.
+        if (weight > 1e-3) {
+            units.push_back(WeightedUnit{name, static_cast<float>(std::min(weight, 1.0))});
+        }
+    };
+
+    for (const bool isLeft : {true, false}) {
+        const double elev = isLeft ? angles.leftElevationDegrees : angles.rightElevationDegrees;
+        // Normalised against the LIMIT, so a rig with a wider vertical range
+        // does not drive the lids past the shapes that were authored.
+        const double t = std::clamp(std::abs(elev) / limits.verticalDegrees, 0.0, 1.0);
+        if (elev < 0.0) {
+            // Looking down: the upper lid comes with it and the lower rises.
+            add(isLeft ? "LeftUpperLidClosed" : "RightUpperLidClosed", t * kUpperGain);
+            add(isLeft ? "LeftLowerLidUp" : "RightLowerLidUp", t * kLowerGain);
+        } else if (elev > 0.0) {
+            // Looking up: the lid retracts and the lower one stays where it is.
+            add(isLeft ? "LeftUpperLidOpen" : "RightUpperLidOpen", t * kUpperGain);
+        }
+    }
+    return units;
 }
 
 }  // namespace mh::rig
