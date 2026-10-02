@@ -811,6 +811,40 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       **libktx**, not our code, and is untouched.
       Recoverable from git if a dependency-free container is ever wanted.
       **1492/1492, -3 exactly as predicted.**
+- [x] **FOUR PIXEL GATES HAD NEVER RUN IN CI, and the wheels were only half
+      the reason. Fixed 2026-10-02.** MEASURED from run `36078070634`'s debug
+      job log, not assumed: exactly four tests report `***Skipped` there --
+      `app_genitals_hidden_by_default_in_pixels`,
+      `app_genitals_tone_follows_ethnicity`,
+      `app_backdrop_does_not_eat_the_model` and
+      `app_backdrop_reaches_the_pixels`. Locally the suite skips NOTHING
+      (1517 run, 0 skipped), so these are precisely the checks that looked at
+      what was DRAWN and were verified on one laptop only.
+      **Reason 1, the known one:** Pillow and NumPy were installed for the
+      `inventories` job and not for the macOS `build + test` jobs. Those jobs
+      now build a `.venv-mh` with both, BEFORE Configure -- which needs no
+      CMake change, because `tests/CMakeLists.txt:1518` already preferred that
+      path when it exists. Checked that nothing else keys off `.venv-mh`:
+      one live branch, every other mention is a developer comment.
+      **Reason 2, which installing the wheels would have EXPOSED rather than
+      fixed:** the two backdrop probes were pinned in DEVICE pixels. A viewport
+      grab is sized in device pixels, so this machine writes 520x1332 and a 1x
+      runner writes 260x666 -- and `--cx 260 --cy 430 --radius 40` is not
+      merely wrong at 1x, it is out of bounds. Proved on a half-size pair:
+      `box (260,430)r40 outside 260x666`, exit 2. **Supplying the wheels alone
+      would have turned four silent skips into two hard errors.**
+      `tools/png_region_response.py` gained `--fx/--fy/--fradius`, fractions of
+      the image, resolved per image so they follow its own size. At 520x1332
+      they resolve to the same (260,430) r40 and read the same 0.000; at
+      260x666 they resolve to (130,215) r20 and read the same 0.000. The
+      companion reads 130.0 at both. The genitals probes keep pixel
+      coordinates deliberately -- `--render` is a fixed 1024x1024 everywhere,
+      so they were already portable and only ever lacked the wheels.
+      Also added: a size-mismatch refusal. Fractions resolve per image, so two
+      images of different sizes would be compared at two different PLACES and
+      the number would be meaningless rather than obviously wrong -- a hazard
+      the change itself introduces, so the guard is part of it, not scope creep.
+      All four argument guards were controlled and seen to fire.
 - [x] **`app_backdrop_transparent_shows_nothing` — SOLVED 2026-09-25
       (`ab405c7f`). IT WAS NEVER INTERMITTENT.** The window took whatever size
       the screen granted, and a headless runner does not grant the same thing
@@ -830,7 +864,7 @@ of hidden in a writer, and is what actually removed the last AGPL call from io.
       **What found it was reverting and measuring, then eliminating candidates
       one at a time**, not reasoning harder about the symptom.
       The superseded analysis follows.
-- [ ] ~~**`app_backdrop_transparent_shows_nothing` is INTERMITTENT, and not for
+- [x] ~~**`app_backdrop_transparent_shows_nothing` is INTERMITTENT, and not for
       the settings reason below.** 2026-09-21: it failed twice in a row
       (278,285 of 2,363,772 pixels against a bar of 100) and then passed four
       times -- twice at the parent commit and twice with the working-tree

@@ -52,6 +52,28 @@ jobs:
       - name: Install dependencies
         run: brew install ninja assimp qt draco
 
+      # FOUR pixel gates skipped in CI for want of two wheels, and said so in
+      # their own comments: app_genitals_hidden_by_default_in_pixels,
+      # app_genitals_tone_follows_ethnicity, app_backdrop_does_not_eat_the_model
+      # and app_backdrop_reaches_the_pixels. They are the checks that look at
+      # what was actually DRAWN rather than at what was printed, and they ran
+      # only on the developer machine -- a gate that skips everywhere is no
+      # gate, and these skipped everywhere that is not one laptop.
+      #
+      # `.venv-mh` by name, because tests/CMakeLists.txt ALREADY prefers it
+      # over `python3` when it exists (the MH_PIL_PYTHON branch). Creating one
+      # here needs no CMake change and keeps CI and local on the same path.
+      # A venv also sidesteps PEP 668, which makes `pip install` into the
+      # system interpreter a hard error on this runner.
+      #
+      # Before Configure, because that EXISTS() check runs at configure time.
+      - name: Pillow and NumPy, so the pixel gates run instead of skipping
+        run: |
+          python3 -m venv .venv-mh
+          .venv-mh/bin/python -m pip install --quiet --upgrade pip
+          .venv-mh/bin/python -m pip install --quiet pillow numpy
+          .venv-mh/bin/python -c "import PIL, numpy; print(PIL.__version__, numpy.__version__)"
+
       - name: Configure
         run: >-
           cmake --preset ${{ matrix.preset }}

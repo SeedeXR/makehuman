@@ -1546,9 +1546,10 @@ if(MH_HAVE_RENDER)
              --b ${CMAKE_CURRENT_BINARY_DIR}/genitals/cauc.png
              --cx 512 --cy 508 --radius 6 --min-response 5)
     set_tests_properties(app_genitals_hidden_by_default_in_pixels PROPERTIES
-        # Skips in CI for the reason the ethnicity check below gives: the
-        # Pillow/NumPy wheels are installed for `inventories`, not for the
-        # jobs that run ctest. Said out loud rather than left looking green.
+        # NO LONGER SKIPS IN CI. The macOS build+test jobs now build a
+        # `.venv-mh` with Pillow and NumPy, so this runs there too. 77 is kept
+        # for the case that still earns it: a runner with no GPU, where the
+        # render never wrote the PNG this reads.
         SKIP_RETURN_CODE 77
         FIXTURES_REQUIRED "app_genitals_render_dflt;app_genitals_render_cauc")
     add_test(NAME app_genitals_tone_follows_ethnicity COMMAND ${MH_PIL_PYTHON}
@@ -1558,9 +1559,9 @@ if(MH_HAVE_RENDER)
              --cx 512 --cy 508 --radius 6 --min-response 40)
     set_tests_properties(app_genitals_tone_follows_ethnicity PROPERTIES
         # 77 = Pillow/NumPy absent, or the render was skipped. Those wheels are
-        # installed for the `inventories` CI job, not for the macOS build+test
-        # jobs that run ctest, so this SKIPS in CI and runs locally. Said out
-        # loud rather than left to look green everywhere.
+        # installed in the macOS build+test jobs as well now, so this RUNS in
+        # CI rather than skipping. 77 remains for a runner that produced no
+        # render at all.
         SKIP_RETURN_CODE 77
         FIXTURES_REQUIRED "app_genitals_render_cauc;app_genitals_render_afr")
     # Named `..._are_teeth_only` until genitals shipped, at which point the NAME
@@ -2864,10 +2865,13 @@ if(MH_HAVE_RENDER)
     # checks then SKIPPED on the developer machine -- the one place they can run
     # -- which is the exact mistake the genitals check above already records.
     #
-    # They skip in the macOS CI jobs, which do not install those wheels. Said
-    # out loud because a gate that skips everywhere is no gate. What runs
-    # everywhere is `app_backdrop_hidden_from_another_side` and the unit tests
-    # on `facingSide` and `coverSource`.
+    # They SKIPPED in the macOS CI jobs for two reasons, and both are now
+    # fixed: those jobs installed no wheels, and these probes were pinned in
+    # DEVICE pixels, which are a different size on a 1x runner -- the old
+    # `--cx 260 --cy 430 --radius 40` is out of bounds in a 260x666 viewport,
+    # so supplying the wheels alone would have turned a silent skip into an
+    # exit-2 error. The probes are fractions now and the jobs build a
+    # `.venv-mh`, so these run everywhere the render does.
     if(Python3_Interpreter_FOUND)
         add_test(NAME app_backdrop_does_not_eat_the_model COMMAND ${MH_PIL_PYTHON}
                  ${CMAKE_SOURCE_DIR}/tools/png_region_response.py
@@ -2915,7 +2919,18 @@ if(MH_HAVE_RENDER)
                  # is what keeps this from passing on two identical images. If a
                  # dock changes again, re-derive again -- the scan is a
                  # two-minute job and the threshold is the point of the test.
-                 --cx 260 --cy 430 --radius 40 --max-response 2.0)
+                 #
+                 # EXPRESSED AS FRACTIONS, not pixels, and that is what finally
+                 # lets this run in CI. A viewport grab is sized in DEVICE
+                 # pixels: this machine writes 520x1332 and a 1x runner writes
+                 # 260x666, so `--cx 260 --cy 430 --radius 40` is not merely
+                 # wrong there, it is OUT OF BOUNDS -- `box (260,430)r40 outside
+                 # 260x666`, exit 2. The wheels were only the first of two
+                 # reasons this gate skipped; this was the second.
+                 # 0.5 x 0.322823 is (260,430) of 520x1332 exactly, and at
+                 # 260x666 it resolves to (130,215) r20 and reads the SAME
+                 # 0.000. Verified at both scales before being committed.
+                 --fx 0.5 --fy 0.322823 --fradius 0.0769231 --max-response 2.0)
         set_tests_properties(app_backdrop_does_not_eat_the_model PROPERTIES
             SKIP_RETURN_CODE 77
             FIXTURES_REQUIRED "app_backdrop_front;app_backdrop_plain_front")
@@ -2928,7 +2943,11 @@ if(MH_HAVE_RENDER)
                  # Re-derived with its sibling above when the tabs returned;
                  # 130.0 against a bar of 20.0, with >= 110 px of background in
                  # every direction so a dock nudge cannot slide it onto the body.
-                 --cx 410 --cy 130 --radius 40 --min-response 20.0)
+                 # Fractions for the same reason as its sibling: (410,130) of
+                 # 520x1332, which resolves to (205,65) r20 at 1x and reads the
+                 # same 130.0.
+                 --fx 0.788462 --fy 0.0975976 --fradius 0.0769231
+                 --min-response 20.0)
         set_tests_properties(app_backdrop_reaches_the_pixels PROPERTIES
             SKIP_RETURN_CODE 77
             FIXTURES_REQUIRED "app_backdrop_front;app_backdrop_plain_front")
