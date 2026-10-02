@@ -333,7 +333,15 @@ Packed packEntry(std::vector<uint8_t>& bin, const GltfSceneEntry& entry,
     }
 
     if (options.draco && dracoAvailable()) {
-        const foundation::RenderView compressible{pos, uv, rm.vnorm, tang, rm.index};
+        // Designated: see RenderMesh.h. Draco compresses geometry for export
+        // and tension is a per-pose shading signal, so it is deliberately not
+        // carried here.
+        const foundation::RenderView compressible{.coord   = pos,
+                                                  .texco   = uv,
+                                                  .vnorm   = rm.vnorm,
+                                                  .vtang   = tang,
+                                                  .index   = rm.index,
+                                                  .tension = {}};
         const DracoSkin skin{
             jointIdx, entry.skin != nullptr ? entry.skin->weights : std::span<const float>{}};
         if (auto enc = dracoEncode(compressible, skin)) {

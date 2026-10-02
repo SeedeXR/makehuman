@@ -214,12 +214,18 @@ jobs:
       # the only thing that can write a .DS_Store and this runner has none --
       # so the check is that the copy happened, which is the part that can
       # actually regress.
-      - name: The disk image must carry its contents
+      #
+      # This gate was narrowed once, when the layout was reverted to find out
+      # why `hdiutil create` returned "Resource busy" here and never locally.
+      # It did: a .DS_Store in the folder -srcfolder scans. The image is built
+      # in two stages now -- read-write, mount, copy the layout, convert -- so
+      # the files are back and so is the assertion.
+      - name: The disk image must carry its Finder layout
         run: |
           hdiutil attach build/macos-arm64-release/MakeHuman.dmg \
             -mountpoint /tmp/mhdmg -nobrowse -quiet
           missing=0
-          for f in Applications MakeHuman.app; do
+          for f in .DS_Store .background/dmg-background.png Applications MakeHuman.app; do
             if [ ! -e "/tmp/mhdmg/$f" ]; then
               echo "::error::the image is missing $f"; missing=1
             fi

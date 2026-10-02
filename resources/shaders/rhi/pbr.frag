@@ -43,6 +43,7 @@ layout(location = 1) in vec3 vNormal;
 layout(location = 2) in vec3 vTangent;
 layout(location = 3) in float vHanded;
 layout(location = 4) in vec3 vViewPos;
+layout(location = 5) in float vTension;
 
 layout(location = 0) out vec4 fragColor;
 
@@ -177,8 +178,46 @@ vec3 shadeLight(vec3 n, vec3 v, vec3 l, vec3 radiance, vec3 diffuseColor, vec3 f
     // Specular keeps the hard terminator -- a highlight does not scatter -- so
     // it is still gated on the unwrapped nol.
     const float specNol = clamp(nol, 0.0, 1.0);
-    const vec3 specular =
-        distributionGgx(noh, alpha) * visibilitySmith(nov, specNol, alpha) * f * specNol;
+    const float vis = visibilitySmith(nov, specNol, alpha);
+    vec3 specular = distributionGgx(noh, alpha) * vis * f * specNol;
+
+    // SKIN GETS A SECOND SPECULAR LOBE, and `scatters` is what says it is skin.
+    //
+    // Skin is not one surface. There is a thin film of oil and sweat over the
+    // epidermis, which is smooth and gives a tight highlight, and the epidermal
+    // surface under it, which is rough and gives a broad sheen. One GGX lobe has
+    // to choose between them: tight enough for the nose tip leaves the cheek
+    // plastic, broad enough for the cheek loses the highlight entirely. Two
+    // lobes is the standard answer and the cheapest thing that stops skin
+    // reading as vinyl.
+    //
+    // NO NEW MATERIAL PROPERTY, deliberately. `.mhmat` has no dual-lobe knob and
+    // inventing one would be a parameter nothing in `data/` sets and nobody
+    // authored. The split is physical rather than artistic -- the oil layer is
+    // always smoother than the skin under it -- so it is derived from the
+    // roughness the material already carries, and it is gated on the same flag
+    // that already means "this is skin".
+    if (scatters) {
+        // WHICH LOBE THE MATERIAL'S GLOSS DESCRIBES, measured rather than
+        // assumed. `data/skins/default.mhmat` carries `shininess 0.96`, which
+        // converts to a roughness of about 0.045 -- the clamp floor, a mirror.
+        // Skin is not a mirror, but the FILM ON IT nearly is, so that number is
+        // a fair description of the oil layer and a poor one of the epidermis.
+        //
+        // So the material's own roughness drives the SHARP lobe, and the broad
+        // lobe is floored at a roughness skin actually has. Without that floor
+        // both lobes collapse onto the same near-mirror distribution and the
+        // second one changes nothing -- measured: zero differing pixels even at
+        // full weight, which is how this was found.
+        const float skinAlpha = max(alpha, 0.25);  // roughness >= 0.5
+        const vec3 broad = distributionGgx(noh, skinAlpha) *
+                           visibilitySmith(nov, specNol, skinAlpha) * f * specNol;
+        // `specular` is already the sharp lobe: it was built from `alpha`.
+        // Weighted toward the broad one, because the film is thin and carries a
+        // small share of the reflected energy. A mix rather than a sum, so
+        // two-lobe skin reflects no more light than one-lobe skin did.
+        specular = mix(broad, specular, 0.25);
+    }
     // Energy split: what Fresnel reflects cannot also diffuse. Metals have no
     // diffuse lobe at all, which `diffuseColor` already encodes by being black.
     const vec3 diffuse = (vec3(1.0) - f) * diffuseColor / kPi;
@@ -223,7 +262,24 @@ void main() {
         // `mix`. See litsphere.frag for why, and for what pins it.
         if (mbuf.material.w > 0.0) {
             const vec3 crease = 2.0 * texture(wrinkleTexture, vTexCoord).rgb - 1.0;
-            tangentSpace = vec3(tangentSpace.xy + mbuf.material.w * crease.xy, tangentSpace.z);
+            // TENSION DRIVES THE WRINKLE, per vertex, on top of the per-mesh
+            // weight the pose already set.
+            //
+            // `mbuf.material.w` says how far the EXPRESSION has fired; it is one
+            // number for the whole mesh, so a smile creases the forehead as hard
+            // as the cheek. `vTension` says what the surface actually did at
+            // this vertex -- `core::surfaceStretch`, mean incident edge ratio
+            // against rest, 1.0 unchanged. Skin wrinkles where it is COMPRESSED
+            // and smooths where it is pulled, so the two multiply.
+            //
+            // Clamped to [0,2] rather than left open: a degenerate pose can put
+            // a large ratio in there, and a wrinkle amplified fifty-fold is a
+            // normal pointing into the surface. At rest the factor is exactly
+            // 1.0, which is what keeps an unposed character identical to what
+            // it rendered before tension existed.
+            const float compression = clamp(2.0 - vTension, 0.0, 2.0);
+            tangentSpace =
+                vec3(tangentSpace.xy + mbuf.material.w * compression * crease.xy, tangentSpace.z);
         }
         const vec3 t = normalize(vTangent - n * dot(n, vTangent));  // Gram-Schmidt
         const vec3 b = cross(n, t) * vHanded;

@@ -108,7 +108,10 @@ constexpr quint32 kMeshUboSize = 48;
 /// The tangent is always present rather than switching layouts per mesh: 4
 /// floats a vertex is ~1.3 MB on the subdivided mesh, against a second pipeline
 /// and the state to pick between them.
-constexpr quint32 kStride = 12 * sizeof(float);
+// Thirteen floats: position, normal, uv, tangent, and the per-vertex stretch a
+// tension map reads. One more float per vertex over the whole body is 75 KB at
+// the subdivided count, against a second vertex buffer and a second binding.
+constexpr quint32 kStride = 13 * sizeof(float);
 
 std::expected<QShader, RenderError> loadShader(const std::filesystem::path& p) {
     QFile f(QString::fromStdString(p.string()));
@@ -420,6 +423,11 @@ std::expected<std::unique_ptr<SceneResources>, RenderError> SceneResources::crea
         {0, 1, QRhiVertexInputAttribute::Float3, 3 * sizeof(float)},
         {0, 2, QRhiVertexInputAttribute::Float2, 6 * sizeof(float)},
         {0, 3, QRhiVertexInputAttribute::Float4, 8 * sizeof(float)},
+        // Location 4 is the tension. Declared for every pipeline sharing this
+        // layout, including the litsphere's, which never reads it -- an
+        // attribute a shader ignores costs the binding and nothing else, and
+        // one layout for both is what keeps the stride in a single place.
+        {0, 4, QRhiVertexInputAttribute::Float, 12 * sizeof(float)},
     });
 
     // Both models share this layout and this SRB layout deliberately: the PBR
@@ -673,9 +681,10 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
         // buffer is one binding instead of three.
         std::vector<float> verts;
         verts.reserve(mesh.vertexCount() * 8);
-        const bool hasN  = mesh.vnorm.size() == mesh.vertexCount();
-        const bool hasT  = mesh.texco.size() == mesh.vertexCount();
-        const bool hasTg = mesh.vtang.size() == mesh.vertexCount();
+        const bool hasN       = mesh.vnorm.size() == mesh.vertexCount();
+        const bool hasT       = mesh.texco.size() == mesh.vertexCount();
+        const bool hasTg      = mesh.vtang.size() == mesh.vertexCount();
+        const bool hasStretch = mesh.tension.size() == mesh.vertexCount();
         for (size_t i = 0; i < mesh.vertexCount(); ++i) {
             verts.push_back(mesh.coord[i].x);
             verts.push_back(mesh.coord[i].y);
@@ -692,6 +701,10 @@ std::expected<void, RenderError> SceneResources::upload(QRhiResourceUpdateBatch*
             verts.push_back(hasTg ? mesh.vtang[i].y : 0.0F);
             verts.push_back(hasTg ? mesh.vtang[i].z : 0.0F);
             verts.push_back(hasTg ? mesh.vtang[i].w : 1.0F);
+            // 1.0, not 0.0, when nothing computed a stretch. Zero reads as
+            // total compression and would crease an unposed character from head
+            // to foot.
+            verts.push_back(hasStretch ? mesh.tension[i] : 1.0F);
         }
 
         Drawable dr;

@@ -12,6 +12,7 @@ add_library(mh_core STATIC
     Decimator.cpp
     Scalp.cpp
     SurfaceBind.cpp
+    SurfaceStretch.cpp
     SurfaceWalk.cpp
     TopologyHash.cpp
     Blendshape.cpp

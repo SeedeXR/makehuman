@@ -9772,9 +9772,66 @@ GPU here, or Colab) and it comes back to the owner first.
       cheek and neck.
       Six render gates plus two unit tests, and `app_sss_reaches_the_skin` was
       watched to go RED with the plumbing cut.
-      **STILL OPEN**: multi-layer (epidermis/dermis separation) and tension
-      maps (wrinkle intensity driven by pose stretch). Neither has reference
-      data to port -- both would be ours from scratch.
+      **MULTI-LAYER DONE 2026-10-02.** Skin is not one surface: a thin oil film
+      over a rough epidermis. One GGX lobe must choose between them -- tight
+      enough for a nose tip leaves the cheek plastic, broad enough for the cheek
+      loses the highlight -- so skin gets two, gated on the same `sssEnabled`
+      flag that already means "this is skin".
+      **NO NEW MATERIAL PROPERTY.** `.mhmat` has no dual-lobe knob and inventing
+      one would be a parameter nothing in `data/` sets. Instead a MEASUREMENT
+      decided which lobe the material describes: `data/skins/default.mhmat`
+      carries `shininess 0.96`, which converts to roughness **0.045 -- the clamp
+      floor, a mirror**. Skin is not a mirror but the film on it nearly is, so
+      that number drives the SHARP lobe and the broad one is floored at
+      roughness 0.5.
+      **The first version was wrong and the control caught it.** It derived the
+      oil lobe from the material roughness as `alpha * 0.33` with a floor of
+      0.002 -- and since the material's alpha is already 0.002, the floor
+      collapsed both lobes onto the same distribution. MEASURED: **zero**
+      differing pixels even at full weight. Forcing the branch to emit pure red
+      proved it was executing (86,052 px), which is what separated "not running"
+      from "running and identical". With the lobes actually distinct: **4,744
+      differing pixels**.
+      Gated by `app_skin_gloss_changes_the_highlight`, which lowers `shininess`
+      and is also the only thing proving the material's gloss reaches the lobe.
+      **TENSION MAPS DONE 2026-10-02. Physically-based skin is COMPLETE.**
+      `mbuf.material.w` says how far the EXPRESSION fired and is one number for
+      the whole mesh, so a pose creased the forehead exactly as hard as the
+      cheek. `core::surfaceStretch` says what the surface did at each VERTEX --
+      mean incident edge ratio against rest, 1.0 unchanged -- and skin creases
+      where it is compressed, so the two multiply.
+      **Measured across the POSE and nothing else.** The reference is taken
+      after the morphs and before the skinning, in `poseInPlace`: a character
+      made taller has every edge longer than `base.obj`'s and is not under
+      tension; one with its jaw open is. Comparing against the base mesh would
+      read every morph as a permanent full-body stretch.
+      A LENGTH ratio, not an area one, and only face PERIMETERS -- the two
+      disagree under shear, and a crease is a shear; a quad's diagonals change
+      under a fold that leaves the skin unstretched.
+      **13th vertex attribute**, `kStride` 12 -> 13 floats, declared for every
+      pipeline sharing the layout including the litsphere's, which ignores it.
+      **THREE TRAPS, all found by measuring rather than reading.**
+      (1) `surfaceStretch` is indexed by CORE vertices (19,158) and the render
+      mesh is UNWELDED (21,833) because a UV seam splits one core vertex into
+      several. The core-indexed buffer was handed straight over, the sizes
+      disagreed, and the tension was dropped IN SILENCE -- zero differing pixels
+      with the feature apparently wired end to end. Gathered through
+      `RenderMesh::vmap()` now.
+      (2) Adding the span ahead of `index` in `foundation::RenderView` broke
+      every positional aggregate initialiser in `io/` and `tests/` -- they
+      compiled only because the element types differ, which is luck. It is LAST
+      now, with a default member initialiser so the dozen call sites that
+      predate it keep working.
+      (3) `-Wmissing-field-initializers` is an error here, so a new member
+      without a default initialiser fails eleven unrelated files.
+      **RESULT: 4,444 differing pixels over a 668x281 region, concentrated at
+      the shoulders and armpits where a T-pose compresses** -- which is where a
+      tension map should act. Byte-identical at rest, because an unposed
+      character has no tension and `clamp(2.0 - 1.0)` is the 1.0 the wrinkle
+      already had. `--no-tension` opts out.
+      Six app gates plus six unit cases (93 assertions) on meshes whose answer
+      is known by construction -- the reference has no tension, no correctives
+      and no stretch measure, so there is nothing to capture a fixture from.
 - [~] **Eye, teeth, tongue rigging. THE LIDS NOW FOLLOW THE GAZE (2026-10-02);
       the rest was already done and this entry was stale.** Skeleton and
       constraint work, NOT correctives (directive 12.3).
@@ -10087,25 +10144,28 @@ GPU here, or Colab) and it comes back to the owner first.
       build-tree binary fails, as it must.
       `hdiutil create` prints a deprecation warning suggesting
       `diskutil image create`; noted, not chased.
-- [~] **DMG with background and layout -- BUILT, then DISABLED pending a
-      measurement 2026-10-02. This entry said DONE and that was premature.**
-      The assets, both generators and the Finder capture all work and are
-      committed; what is reverted is the two lines of the `dmg` target that
-      copy them into the image, because with them CI failed at `hdiutil create`
-      with "Resource busy" -- a failure this machine cannot reproduce, where
-      the same target succeeds every time.
-      Two explanations fit the one data point: a `.DS_Store` sitting in the
-      folder `hdiutil` scans, or a runner flake, since `hdiutil create
-      -srcfolder` creates and ATTACHES a temporary image internally and that is
-      what returns EBUSY. Rather than guess -- which is how four fixes went
-      into one backdrop failure -- the copy is reverted to ISOLATE it: CI green
-      means the layout caused it and the answer is the two-stage
-      attach/convert flow every DMG tool uses; CI still red means it was
-      environmental and the revert cost one commit to learn.
-      **Note for whoever picks this up: the DMG job failed TWICE on this
-      feature** -- first on `.gitignore` eating the background PNG, then on
-      this. Neither reproduced locally. Treat CI as the only oracle here.
-      The original description follows. A 640x400 window,
+- [x] **DMG with background and layout -- DONE 2026-10-02, after the revert
+      answered the question.** The controlled revert worked: CI's `dmg` job was
+      RED on `1ae1f6b6` with the layout copied into the staging folder and
+      GREEN on `7d93a66a` with those two lines removed and nothing else
+      changed. So it was the layout, not a runner flake.
+      **The cause is `hdiutil create -srcfolder` scanning a folder that holds a
+      `.DS_Store`.** That command creates and ATTACHES a temporary image to
+      copy the tree into, and on a runner -- different Spotlight and
+      diskarbitration state than here -- that attach returns EBUSY. It never
+      failed locally, which is why only CI could answer it.
+      **Fixed by building the image in TWO STAGES**, which is what every DMG
+      tool does: `tools/make_dmg_image.sh` creates a read-write image from a
+      staging folder holding only the app and the Applications symlink, attaches
+      it, copies the background and the `.DS_Store` in through the mount, then
+      converts to the compressed read-only image that ships. The size is
+      computed as `du` plus 32 MB of slack rather than left to `-srcfolder`,
+      which fits the image to its input and would leave stage 2 nowhere to
+      write.
+      Verified locally: 112 MB image, valid signature, and a mount shows
+      `.DS_Store`, `.background/dmg-background.png`, `Applications` and
+      `MakeHuman.app`. The CI gate asserts all four again.
+      The original description follows, and it is accurate. A 640x400 window,
       the app at x=160 and Applications at x=480, 112pt icons, and a background
       drawn from `design.md`'s OWN tokens rather than an invented palette:
       `--bg-base` #212124, the #ffa02f -> #e96226 accent ramp for the arrow,

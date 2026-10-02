@@ -24,12 +24,16 @@ layout(location = 1) in vec3 normal;
 layout(location = 2) in vec2 texcoord;
 /// xyz = tangent, w = handedness (+1 / -1) from Lengyel's method.
 layout(location = 3) in vec4 tangent;
+/// Per-vertex surface stretch, 1.0 at rest. Written by `core::surfaceStretch`
+/// and interleaved as the thirteenth float; see `SceneResources.cpp`.
+layout(location = 4) in float tension;
 
 layout(location = 0) out vec2 vTexCoord;
 layout(location = 1) out vec3 vNormal;   // view space
 layout(location = 2) out vec3 vTangent;  // view space
 layout(location = 3) out float vHanded;
 layout(location = 4) out vec3 vViewPos;  // view space position
+layout(location = 5) out float vTension;
 
 layout(std140, binding = 0) uniform Buf {
     mat4 mvp;
@@ -54,4 +58,5 @@ void main() {
     vNormal  = mat3(ubuf.normalMatrix) * normal;
     vTangent = mat3(ubuf.normalMatrix) * tangent.xyz;
     vHanded  = tangent.w;
+    vTension = tension;
 }

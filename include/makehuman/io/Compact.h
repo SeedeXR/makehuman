@@ -46,7 +46,15 @@ struct CompactedMesh {
     [[nodiscard]] size_t dropped() const noexcept { return remap.size() - coord.size(); }
 
     [[nodiscard]] foundation::RenderView view() const {
-        return foundation::RenderView{coord, texco, vnorm, vtang, index};
+        // Designated: see the note in RenderMesh.h. A compacted view carries
+        // no tension -- compaction is for export, and an exporter has no use
+        // for a per-vertex stretch that is a property of one pose.
+        return foundation::RenderView{.coord   = coord,
+                                      .texco   = texco,
+                                      .vnorm   = vnorm,
+                                      .vtang   = vtang,
+                                      .index   = index,
+                                      .tension = {}};
     }
 };
 

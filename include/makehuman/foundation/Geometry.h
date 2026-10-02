@@ -71,6 +71,24 @@ struct RenderView {
     std::span<const Vec3> vnorm;
     std::span<const Vec4> vtang;
     std::span<const uint32_t> index;  ///< triangle list
+    /// Per-vertex surface stretch, 1.0 = rest. Empty when nothing computed it,
+    /// which is the common case: only a POSED character has tension, and the
+    /// interleaver then writes 1.0 so the shader sees "unchanged" rather than
+    /// zero. See `core::surfaceStretch`.
+    ///
+    /// LAST on purpose. Every other member is positional in half a dozen
+    /// aggregate initialisers across io/ and tests/, and putting a new span in
+    /// front of `index` made each of them try to read an index buffer as a
+    /// stretch buffer. Those failed to compile only because the element types
+    /// differ -- luck, not safety, and the same hazard that bit
+    /// `Material::desc()` the same day. A field appended here breaks nothing.
+    ///
+    /// A DEFAULT MEMBER INITIALISER, so the dozen aggregate initialisers that
+    /// predate this field keep compiling. Without it `-Wmissing-field-
+    /// initializers` -- an error here -- fires at every one of them, and
+    /// "add `, {}` in eleven places" is churn that teaches the next person
+    /// nothing.
+    std::span<const float> tension{};
 
     [[nodiscard]] size_t vertexCount() const noexcept { return coord.size(); }
 

@@ -28,6 +28,7 @@ add_executable(mh_tests
     unit/test_render_mesh.cpp
     unit/test_subdivider.cpp
     unit/test_decimator.cpp
+    unit/test_surface_stretch.cpp
     unit/test_topology_hash.cpp
     unit/test_provenance.cpp
     unit/test_naming.cpp
@@ -1054,6 +1055,58 @@ if(MH_HAVE_RENDER)
     # were differing by the deltoid BULGE that `app_correctives_move_the_mesh`
     # already covers. One variable per experiment, or the experiment measures
     # the other one.
+    # THE TENSION MAP. `mbuf.material.w` says how far the EXPRESSION fired and
+    # is one number for the whole mesh, so a pose creases the forehead exactly
+    # as hard as the cheek. `core::surfaceStretch` says what the surface did at
+    # each vertex, and skin creases where it is COMPRESSED.
+    #
+    # MEASURED at 4,444 differing pixels over a 668x281 region, concentrated at
+    # the shoulders and armpits where a T-pose compresses. 500 is an eighth of
+    # that and far above any dithering floor.
+    #
+    # THE BUG THIS GATE WOULD HAVE CAUGHT, and did not until it was written:
+    # `surfaceStretch` is indexed by CORE vertices (19,158) and the render mesh
+    # is UNWELDED (21,833), because a UV seam splits one core vertex into
+    # several. Handing the core-indexed buffer straight to the renderer made the
+    # sizes disagree and the tension was dropped in silence -- zero differing
+    # pixels with the feature apparently wired end to end. It is gathered
+    # through `RenderMesh::vmap()` now.
+    add_test(NAME app_tension_render COMMAND makehuman --shading pbr
+             --rig mixamo_superset --pose tpose
+             --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/correctives.json
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_tension_on.png)
+    set_tests_properties(app_tension_render PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render" FIXTURES_SETUP app_tension_on_png)
+    add_test(NAME app_tension_render_off COMMAND makehuman --shading pbr
+             --rig mixamo_superset --pose tpose --no-tension
+             --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/correctives.json
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_tension_off.png)
+    set_tests_properties(app_tension_render_off PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render" FIXTURES_SETUP app_tension_off_png)
+    add_test(NAME app_tension_drives_the_wrinkle COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/app_tension_off.png
+             ${CMAKE_CURRENT_BINARY_DIR}/app_tension_on.png --min-differing 500)
+    set_tests_properties(app_tension_drives_the_wrinkle PROPERTIES
+        FIXTURES_REQUIRED "app_tension_on_png;app_tension_off_png")
+
+    # AND IT IS INERT AT REST. An unposed character has no tension, so the flag
+    # must change nothing -- the interleaver writes 1.0 where no stretch was
+    # computed, and `clamp(2.0 - 1.0)` is exactly the 1.0 the wrinkle had
+    # before. A character standing still must render byte-for-byte as it did.
+    add_test(NAME app_tension_rest COMMAND makehuman --shading pbr
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_tension_rest.png)
+    set_tests_properties(app_tension_rest PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render" FIXTURES_SETUP app_tension_rest_png)
+    add_test(NAME app_tension_rest_off COMMAND makehuman --shading pbr --no-tension
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_tension_rest_off.png)
+    set_tests_properties(app_tension_rest_off PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render" FIXTURES_SETUP app_tension_rest_off_png)
+    add_test(NAME app_tension_is_inert_at_rest COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/app_tension_rest.png
+             ${CMAKE_CURRENT_BINARY_DIR}/app_tension_rest_off.png --max-differing 0)
+    set_tests_properties(app_tension_is_inert_at_rest PROPERTIES
+        FIXTURES_REQUIRED "app_tension_rest_png;app_tension_rest_off_png")
+
     add_test(NAME app_wrinkle_render_off COMMAND makehuman
              --rig mixamo_superset --pose tpose
              --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/nowrinkle.json
@@ -6166,6 +6219,33 @@ if(MH_HAVE_RENDER)
              ${CMAKE_CURRENT_BINARY_DIR}/app_sss_on.png --min-differing 5000)
     set_tests_properties(app_sss_reaches_the_skin PROPERTIES
         FIXTURES_REQUIRED "app_sss_on_png;app_sss_off_png")
+
+    # MULTI-LAYER SKIN. The same `sssEnabled` flag now also gives skin a second
+    # specular lobe, because skin is not one surface: a thin oil film over a
+    # rough epidermis. One GGX lobe has to choose between them and gets both
+    # wrong.
+    #
+    # WHAT THIS GATE EXISTS FOR, and it caught the bug it was written after.
+    # `data/skins/default.mhmat` carries `shininess 0.96`, which converts to
+    # roughness 0.045 -- the clamp floor, a mirror. A first version derived the
+    # oil lobe from THAT, so both lobes were the same near-mirror distribution
+    # and the second one changed nothing: zero differing pixels even at full
+    # weight. The material's gloss describes the FILM; the epidermis under it is
+    # floored at roughness 0.5. Measured at 4,744 differing pixels once the two
+    # lobes actually differ, so 1,000 is a fifth of that and far above noise.
+    #
+    # Driven by lowering `shininess`, which is also the only thing that proves
+    # the material's gloss reaches the sharp lobe at all.
+    add_test(NAME app_skin_gloss_reaches_the_lobe COMMAND makehuman --shading pbr
+             --set-material shininess=0.2
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_skin_dull.png)
+    set_tests_properties(app_skin_gloss_reaches_the_lobe PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render" FIXTURES_SETUP app_skin_dull_png)
+    add_test(NAME app_skin_gloss_changes_the_highlight COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/app_sss_on.png
+             ${CMAKE_CURRENT_BINARY_DIR}/app_skin_dull.png --min-differing 1000)
+    set_tests_properties(app_skin_gloss_changes_the_highlight PROPERTIES
+        FIXTURES_REQUIRED "app_sss_on_png;app_skin_dull_png")
 
     # THE FLAG IS THE GATE, not the scales. A material carrying radii with
     # `sssEnabled False` must light exactly as one carrying none, or a skin

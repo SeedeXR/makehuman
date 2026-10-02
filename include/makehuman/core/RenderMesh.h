@@ -60,7 +60,17 @@ public:
 
     /// A plain-data view for the format layer (see Mesh::view()).
     [[nodiscard]] foundation::RenderView view() const noexcept {
-        return foundation::RenderView{coord_, texco_, vnorm_, vtang_, index_};
+        // Designated, not positional. `tension` was added ahead of `index`
+        // and the positional form silently tried to read the index buffer as a
+        // stretch buffer -- it failed to compile only because the types differ,
+        // which is luck rather than safety. The same hazard bit
+        // `Material::desc()` the same day.
+        return foundation::RenderView{.coord   = coord_,
+                                      .texco   = texco_,
+                                      .vnorm   = vnorm_,
+                                      .vtang   = vtang_,
+                                      .index   = index_,
+                                      .tension = {}};
     }
 
     /// Per face group: {first index, index count} into index(). Faces are

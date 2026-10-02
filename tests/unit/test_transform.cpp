@@ -31,7 +31,7 @@ struct Fixture {
     explicit Fixture(float y) : coord{{0, y, 0}, {1, y, 0}, {0, y, 1}} {}
 
     [[nodiscard]] foundation::RenderView view() const {
-        return foundation::RenderView{coord, {}, {}, {}, index};
+        return foundation::RenderView{coord, {}, {}, {}, index, {}};
     }
 };
 
@@ -105,7 +105,7 @@ TEST_CASE("an empty scene is left alone rather than lifted to infinity", "[io][t
 
     const Fixture noVerts(0.0F);
     std::vector<foundation::Vec3> none;
-    const std::vector<Entry> scene{{foundation::RenderView{none, {}, {}, {}, noVerts.index}}};
+    const std::vector<Entry> scene{{foundation::RenderView{none, {}, {}, {}, noVerts.index, {}}}};
     CHECK(io::sceneTransform(2.0F, true, scene).groundOffset == 0.0F);
 }
 

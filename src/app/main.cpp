@@ -21,6 +21,7 @@
 #include "makehuman/core/SliderLayout.h"
 #include "makehuman/core/Subdivider.h"
 #include "makehuman/core/SurfaceBind.h"
+#include "makehuman/core/SurfaceStretch.h"
 #include "makehuman/core/SurfaceWalk.h"
 #include "makehuman/core/Symmetry.h"
 #include "makehuman/core/Target.h"
@@ -1326,6 +1327,23 @@ std::span<const mh::foundation::Vec3> corCenters(const mh::core::Mesh& mesh, con
     return centers;
 }
 
+/// The body's per-vertex surface stretch, for the tension map.
+///
+/// File scope because the span handed to the renderer has to outlive the call
+/// that builds the scene, and because it is rebuilt exactly when the pose is.
+/// Empty whenever nothing is posed, which the interleaver reads as "no tension"
+/// and fills with 1.0.
+std::vector<float> gTension;
+/// Whether the tension map is computed at all. On by default: skin creases
+/// where it is compressed, and a wrinkle that ignores that is the same crease
+/// everywhere the expression fired. Off is for comparing against the
+/// pose-weight-only behaviour, and for anyone who wants the old look.
+bool gTensionMap = true;
+/// The same stretch, gathered into RENDER vertex order through the unweld
+/// table. Separate from `gTension` because the core-indexed buffer is what
+/// `surfaceStretch` produces and what a second consumer would want.
+std::vector<float> gTensionGathered;
+
 bool poseInPlace(mh::core::Mesh& mesh, PoseRig& rig) {
     const mh::rig::SkinningMethod method = skinningMethod();
     // The centres depend on the REST shape and the weights, so they survive
@@ -1340,8 +1358,21 @@ bool poseInPlace(mh::core::Mesh& mesh, PoseRig& rig) {
         .centers     = centers,
         .apply       = gApplyPose,
         .correctives = gCorrectives ? &gCorrectives->runtime : nullptr};
+    // TENSION IS MEASURED ACROSS THE POSE AND NOTHING ELSE, so the reference
+    // is taken here -- after the morphs, before the skinning. A character made
+    // taller has every edge longer than the base mesh's and is not under
+    // tension; a character with its jaw open is. Comparing against `base.obj`
+    // would read the morph as a permanent stretch over the whole body.
+    std::vector<mh::foundation::Vec3> rest(mesh.coord().begin(), mesh.coord().end());
+
     const auto ok = mh::rig::poseMesh(mesh, rig, options);
-    if (ok) return true;
+    if (ok) {
+        // `apply` false means the rig was evaluated but the mesh left at rest,
+        // and an unposed mesh has no tension to report.
+        gTension = (gApplyPose && gTensionMap) ? mh::core::surfaceStretch(mesh, rest)
+                                               : std::vector<float>{};
+        return true;
+    }
 
     switch (ok.error()) {
         case mh::rig::PoseError::RefitFailed:
@@ -3657,6 +3688,11 @@ int main(int argc, char** argv) {
                        "beside it and reused until the manifest changes."),
         QStringLiteral("manifest"));
     parser.addOption(correctivesOpt);
+    const QCommandLineOption noTensionOpt(
+        QStringLiteral("no-tension"),
+        QStringLiteral("Do not compute the tension map. Wrinkles then fade in uniformly "
+                       "wherever the expression fired, instead of creasing where the skin "
+                       "is actually compressed."));
     const QCommandLineOption noLidFollowOpt(
         QStringLiteral("no-lid-follow"),
         QStringLiteral("Keep the eyelids still while --look-at aims the eyes. By default the "
@@ -3671,6 +3707,7 @@ int main(int argc, char** argv) {
         QStringLiteral("x,y,z"));
     parser.addOption(lookAtOpt);
     parser.addOption(noLidFollowOpt);
+    parser.addOption(noTensionOpt);
     parser.addOption(shadingOpt);
     parser.addOption(sceneOpt);
     parser.addOption(listScenesOpt);
@@ -4914,7 +4951,8 @@ int main(int argc, char** argv) {
     // Parsed BEFORE the rig is loaded, because `loadPoseRig` is what applies it.
     // It was five lines below this call first time out, and the app rendered a
     // character staring straight ahead while reporting nothing at all.
-    gLidFollow = !parser.isSet(noLidFollowOpt);
+    gLidFollow  = !parser.isSet(noLidFollowOpt);
+    gTensionMap = !parser.isSet(noTensionOpt);
     if (parser.isSet(lookAtOpt)) {
         const QStringList parts = parser.value(lookAtOpt).split(QLatin1Char(','));
         bool ok                 = parts.size() == 3;
@@ -5768,7 +5806,28 @@ int main(int argc, char** argv) {
         // untextured body while the .mhm and the .glb said otherwise.
         const ViewportMaps bodyMaps = skinViewportMaps();
         mh::render::MeshInstance body;
-        body.mesh               = rm.view();
+        body.mesh = rm.view();
+        // The tension buffer is indexed by the POSED mesh's vertices, and
+        // `rm` may be a different vertex count -- subdivision, or a compacted
+        // export view. Attached only when the counts agree, so a mismatch
+        // renders untensioned rather than reading the wrong vertex.
+        // GATHERED THROUGH THE UNWELD TABLE, not handed over directly.
+        // `surfaceStretch` is indexed by CORE vertices -- 19,158 on the base
+        // mesh -- while the render mesh is unwelded, so a UV seam splits one
+        // core vertex into several and the body carries 21,833. Passing the
+        // core-indexed buffer straight through made the sizes disagree and the
+        // tension was silently dropped: measured, zero differing pixels with
+        // the feature apparently wired end to end.
+        if (!gTension.empty()) {
+            const auto vmap = rm.vmap();
+            gTensionGathered.assign(vmap.size(), 1.0F);
+            for (size_t i = 0; i < vmap.size(); ++i) {
+                if (vmap[i] < gTension.size()) gTensionGathered[i] = gTension[vmap[i]];
+            }
+            if (gTensionGathered.size() == body.mesh.vertexCount()) {
+                body.mesh.tension = gTensionGathered;
+            }
+        }
         body.litsphere          = skin;
         body.diffuse            = bodyMaps.diffuse;
         body.normalMap          = bodyMaps.normal;
