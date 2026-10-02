@@ -9867,6 +9867,30 @@ GPU here, or Colab) and it comes back to the owner first.
       Six app gates plus six unit cases (93 assertions) on meshes whose answer
       is known by construction -- the reference has no tension, no correctives
       and no stretch measure, so there is nothing to capture a fixture from.
+      **TENSION-DRIVEN SHADING ADDED 2026-10-02, the second consumer directive
+      12.3 names** ("future masks: muscle flex, tension-driven shading").
+      **The first version only reached the WRINKLE BLEND**, so a posed character
+      with no corrective manifest got nothing from tension at all -- MEASURED:
+      zero differing pixels between `--no-tension` and the default on a T-posed
+      body with no wrinkle map. That is the common case, not the rare one, and
+      it meant the whole per-vertex pipeline was dead weight unless someone
+      loaded correctives.
+      The albedo now shifts with stretch. The physics is blood rather than
+      taste: compressed skin folds and pools, so it darkens and warms; stretched
+      skin thins over what is under it and pales. The gain is smaller on red
+      than on green and blue, so BOTH directions move the hue toward red,
+      because red is the channel that moves least.
+      Gated on `mbuf.pbr.z > 0.0`, the same signal that means "this material is
+      skin" -- a shirt that reddened where it creased would be wrong in a way
+      nobody would attribute to a tension map.
+      **MEASURED: 1,439 differing pixels over a 372x66 band at the shoulders
+      and armpits**, where a T-pose compresses, with a max channel delta of 11.
+      Deliberately small: a tension tint that announces itself is a bruise.
+      **Byte-identical at rest**, because `clamp(vTension) - 1.0` is exactly 0
+      there and the multiply is by `vec3(1.0)`.
+      `app_tension_shades_without_a_wrinkle_map` runs WITHOUT a corrective
+      manifest on purpose, and was watched to fail -- alone, while the wrinkle
+      and rest-inert gates stayed green -- with the branch disabled.
 - [x] **Eye, teeth, tongue rigging -- COMPLETE 2026-10-02. The lids follow the
       gaze; the rest was already done and this entry was stale.** Skeleton and
       constraint work, NOT correctives (directive 12.3).

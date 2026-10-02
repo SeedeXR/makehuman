@@ -294,7 +294,39 @@ void main() {
     // sRGB -> linear (see header), then the material's base colour. The factor
     // is already linear -- a .mhmat's diffuseColor is a multiplier, not a
     // pixel -- so it must NOT go through the same decode.
-    const vec3 albedo = pow(texel.rgb, vec3(2.2)) * mbuf.base.rgb;
+    vec3 albedo = pow(texel.rgb, vec3(2.2)) * mbuf.base.rgb;
+
+    // TENSION-DRIVEN SHADING, the second consumer directive 12.3 names
+    // alongside the wrinkle blend ("future masks: muscle flex, tension-driven
+    // shading").
+    //
+    // Until this, `vTension` reached the fragment stage and only ever scaled a
+    // WRINKLE MAP, so a posed character with no corrective manifest got nothing
+    // from it -- MEASURED: zero differing pixels between `--no-tension` and the
+    // default on a T-posed body with no wrinkles bound. That is the common
+    // case, not the rare one.
+    //
+    // The physics is blood, not art. Compressed skin folds and pools, so it
+    // goes darker and warmer; stretched skin thins over what is under it and
+    // pales. Hence a gain on red that is smaller than on green and blue: both
+    // directions shift the hue toward red, because red is the channel that
+    // moves least.
+    //
+    // Gated on `sss.x > 0.0` -- the same flag that means "this material is
+    // skin" -- because cloth and hair do not do this, and a shirt that reddened
+    // where it creased would be wrong in a way nobody would attribute to a
+    // tension map.
+    if (mbuf.pbr.z > 0.0) {
+        // Clamped before use: a degenerate pose can put a large ratio in the
+        // buffer, and an unclamped one would drive the albedo negative or to
+        // several times its value.
+        const float t = clamp(vTension, 0.6, 1.4) - 1.0;
+        // At rest `t` is exactly 0 and this is a multiply by vec3(1.0), which
+        // is what keeps an unposed character byte-identical to what it rendered
+        // before tension-driven shading existed.
+        const vec3 gain = vec3(0.10, 0.18, 0.22);
+        albedo *= clamp(vec3(1.0) + t * gain, vec3(0.0), vec3(2.0));
+    }
 
     const float metallic = clamp(mbuf.pbr.x, 0.0, 1.0);
     // The floor is not cosmetic: at roughness 0 the GGX denominator collapses to

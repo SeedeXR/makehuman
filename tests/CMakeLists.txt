@@ -1089,6 +1089,34 @@ if(MH_HAVE_RENDER)
     set_tests_properties(app_tension_drives_the_wrinkle PROPERTIES
         FIXTURES_REQUIRED "app_tension_on_png;app_tension_off_png")
 
+    # TENSION-DRIVEN SHADING, and the gate is deliberately run WITHOUT a
+    # corrective manifest. Until this existed `vTension` only ever scaled a
+    # wrinkle map, so a posed character with no wrinkles bound got nothing from
+    # it -- MEASURED at zero differing pixels, and that is the common case
+    # rather than the rare one. Directive 12.3 lists "tension-driven shading"
+    # as a consumer of the pose alongside the wrinkle blend; this is it.
+    #
+    # Compressed skin folds and pools blood, so it darkens and warms; stretched
+    # skin thins and pales. MEASURED at 1,439 differing pixels over a 372x66
+    # band at the shoulders and armpits, where a T-pose compresses. 300 is a
+    # fifth of that. The effect is deliberately small -- max channel delta 11 --
+    # because a tension tint that announces itself is a bruise.
+    add_test(NAME app_tension_shading COMMAND makehuman --shading pbr
+             --rig mixamo_superset --pose tpose
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_tension_shade_on.png)
+    set_tests_properties(app_tension_shading PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render" FIXTURES_SETUP app_tension_shade_on_png)
+    add_test(NAME app_tension_shading_off COMMAND makehuman --shading pbr
+             --rig mixamo_superset --pose tpose --no-tension
+             --render ${CMAKE_CURRENT_BINARY_DIR}/app_tension_shade_off.png)
+    set_tests_properties(app_tension_shading_off PROPERTIES
+        SKIP_REGULAR_EXPRESSION "cannot render" FIXTURES_SETUP app_tension_shade_off_png)
+    add_test(NAME app_tension_shades_without_a_wrinkle_map COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/app_tension_shade_off.png
+             ${CMAKE_CURRENT_BINARY_DIR}/app_tension_shade_on.png --min-differing 300)
+    set_tests_properties(app_tension_shades_without_a_wrinkle_map PROPERTIES
+        FIXTURES_REQUIRED "app_tension_shade_on_png;app_tension_shade_off_png")
+
     # AND IT IS INERT AT REST. An unposed character has no tension, so the flag
     # must change nothing -- the interleaver writes 1.0 where no stretch was
     # computed, and `clamp(2.0 - 1.0)` is exactly the 1.0 the wrinkle had
