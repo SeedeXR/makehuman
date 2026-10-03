@@ -464,6 +464,14 @@ if(MH_HAVE_RENDER)
              -DMH_SESSION=${CMAKE_CURRENT_SOURCE_DIR}/golden/mcp/session.jsonl
              -P ${CMAKE_CURRENT_SOURCE_DIR}/mcp_session.cmake)
 
+    # Which side is the LEFT side -- the one thing about the four views that can
+    # be wrong while every image still looks right. See tests/mcp_views.cmake.
+    add_test(NAME app_mcp_left_is_the_models_left COMMAND ${CMAKE_COMMAND}
+             -DMH_APP=$<TARGET_FILE:makehuman>
+             -DMH_COMPARE=$<TARGET_FILE:mh_png_compare>
+             -DMH_DIR=${CMAKE_CURRENT_BINARY_DIR}
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/mcp_views.cmake)
+
     add_test(NAME app_smoke COMMAND makehuman
              --load ${CMAKE_CURRENT_SOURCE_DIR}/golden/mhm/reference_save.mhm
              --set macrodetails/Gender=1.0

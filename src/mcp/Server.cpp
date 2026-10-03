@@ -161,12 +161,31 @@ Json Server::handle(const Json& request) {
         ++stats_.toolCalls;
         const auto started = std::chrono::steady_clock::now();
         try {
-            Json content  = it->call(arguments);
+            Json answer   = it->call(arguments);
             const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                                 std::chrono::steady_clock::now() - started)
                                 .count();
             logLine("info", "tool_ok", Json{{"tool", wanted}, {"ms", ms}});
-            return reply(Json{{"content", std::move(content)}, {"isError", false}});
+
+            // `content` IS AN ARRAY, always. The specification types it as a
+            // list of content blocks, and a strict client rejects an object
+            // there -- which would be every answer this server gives, on
+            // exactly the clients we most need to keep working.
+            //
+            // A tool that already builds blocks (an image, say) returns an
+            // array and it is passed through. Anything else returns plain data,
+            // which is wrapped as text AND repeated under `structuredContent`:
+            // the text is what a model reads, the structured copy is what a
+            // client parses without re-parsing a string.
+            Json result;
+            if (answer.is_array()) {
+                result["content"] = std::move(answer);
+            } else {
+                result["content"] = Json::array({Json{{"type", "text"}, {"text", answer.dump()}}});
+                result["structuredContent"] = std::move(answer);
+            }
+            result["isError"] = false;
+            return reply(std::move(result));
         } catch (const ToolError& e) {
             // A failure the CALLER can act on. Reported as a successful
             // protocol exchange carrying isError, which is what the

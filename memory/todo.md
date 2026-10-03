@@ -10543,8 +10543,46 @@ survival across client updates.
 - [ ] **The iterate-until-satisfied loop**: `render` exists and returns a
       path; what is missing is a compare tool, so the model can score its own
       output rather than asking the creator every round.
-- [ ] **A multi-view render tool** — the four reference angles in one call, so
-      a comparison is against the same poses the creator supplied.
+- [x] **`content` is an ARRAY, and `render` returns the IMAGE** (2026-10-03).
+      `tools/call` was answering with an object under `content`, which the
+      specification types as a list of content blocks. Every answer this server
+      gave would have been rejected by a strict client — on exactly the clients
+      the owner asked it to survive. A tool returning plain data is now wrapped
+      as a text block and repeated under `structuredContent`; a tool returning
+      an ARRAY supplies blocks directly, which is how `render` hands back a PNG
+      rather than a path to one. A path only works on a client that can also
+      read files, and "take pictures and compare" is the request.
+      Inline up to 1024 px, path-only above: a 2048 PNG is hundreds of
+      thousands of tokens of base64 and says no more than the 512 did. Default
+      512; measured 20,312 base64 characters at 256 px.
+
+- [x] **The four reference angles** (2026-10-03). `RenderRequest::yawDegrees`
+      plumbed through `renderSettingsFor` into `Camera::yawDegrees`; `render`
+      takes `view` = front | back | left | right. This collects on the note
+      `renderTo` has carried since the backdrop work — "insurance for the
+      render camera that does not exist yet" — and the backdrop choice now
+      follows a real camera instead of an assumed front.
+      **THE MAPPING WAS MEASURED, AND THE FIRST READING WAS WRONG.** Reading
+      the nose direction off a 256 px contact sheet gave the OPPOSITE of what a
+      crop of the same two heads showed. What settled it needs no coordinate
+      bookkeeping: widening `armslegs/l-upperarm-scale-horiz-decr|incr` moved
+      863 pixels in the screen-RIGHT half of a front render and none in the
+      left, so the model's left faces the viewer's right. From there yaw 270 is
+      LEFT and yaw 90 is RIGHT.
+      Gated by `app_mcp_left_is_the_models_left` (`tests/mcp_views.cmake`),
+      which asserts the MEASUREMENT rather than the angles, because a flipped
+      left and right is silently plausible: both images are correct renders
+      from correct angles and only the label is wrong. Controlled — pointed at
+      the r- modifier it fails with the region at x 94..156 instead of 226..289.
+
+- [ ] **A compare tool**, so the model can score its own render against a
+      reference instead of asking the creator every round. `mh_png_compare`
+      has the metric (differing count, PSNR, bounding box) but is a test
+      executable under `tests/`; reusing it means lifting the comparison into
+      an Apache-2.0 module rather than writing a second one.
+- [ ] **`--render` does not expose `view`.** The yaw is plumbed and the MCP
+      tool uses it; the CLI flag was left alone deliberately, as nothing has
+      asked for it.
 
 
 ## Body-shape controls — they all exist; the gap is DISCOVERY (asked 2026-09-10)

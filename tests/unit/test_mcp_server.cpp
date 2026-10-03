@@ -94,8 +94,35 @@ TEST_CASE("a tool call returns its content", "[mcp]") {
     const Json r =
         s.handle(request("tools/call", Json{{"name", "echo"}, {"arguments", Json{{"hello", 1}}}}));
     CHECK(r["result"]["isError"] == false);
-    CHECK(r["result"]["content"]["hello"] == 1);
+    // `content` is an ARRAY of blocks, which the specification requires and a
+    // strict client enforces. The data the tool returned is repeated verbatim
+    // under `structuredContent` so a client need not re-parse the text.
+    REQUIRE(r["result"]["content"].is_array());
+    CHECK(r["result"]["content"][0]["type"] == "text");
+    CHECK(r["result"]["structuredContent"]["hello"] == 1);
     CHECK(s.stats().toolCalls == 1);
+}
+
+TEST_CASE("a tool returning an array supplies content blocks directly", "[mcp]") {
+    // THE REASON THE ARRAY CASE EXISTS. An image is a content block, not a
+    // description of one -- a tool that could only return data would have to
+    // hand back a file path and hope the client can read files, which the
+    // model driving an "adjust, look, adjust" loop cannot rely on.
+    Server s = bare();
+    s.add(Tool{.name        = "picture",
+               .description = "Returns an image block.",
+               .inputSchema = Json{{"type", "object"}},
+               .call        = [](const Json&) {
+                   return Json::array(
+                       {Json{{"type", "image"}, {"data", "iVBOR"}, {"mimeType", "image/png"}}});
+               }});
+    initialise(s);
+    const Json r = s.handle(request("tools/call", Json{{"name", "picture"}}));
+    CHECK(r["result"]["content"][0]["type"] == "image");
+    CHECK(r["result"]["content"][0]["mimeType"] == "image/png");
+    // Passed through untouched: no text wrapper, no structured copy of a
+    // base64 blob nobody would read.
+    CHECK_FALSE(r["result"].contains("structuredContent"));
 }
 
 TEST_CASE("a ToolError is a result, not a transport fault", "[mcp]") {

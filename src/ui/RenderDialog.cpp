@@ -20,6 +20,7 @@ render::RenderSettings renderSettingsFor(const RenderRequest& request,
     s.shading               = request.shading;
     s.wireframe             = request.wireframe;
     s.lighting              = request.lighting;
+    s.camera.yawDegrees     = request.yawDegrees;
     // `grid` is deliberately NOT set; see the header.
     return s;
 }

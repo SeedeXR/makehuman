@@ -70,6 +70,12 @@ struct Tool {
     /// calling, which turns a class of failure into a question the model can
     /// answer itself.
     Json inputSchema;
+    /// Returns the tool's answer.
+    ///
+    /// Plain data -- an object or a number -- is wrapped as a text content
+    /// block and repeated under `structuredContent`. Return a JSON ARRAY to
+    /// supply MCP content blocks directly, which is how a tool returns an
+    /// image rather than a description of one.
     std::function<Json(const Json& arguments)> call;
 };
 

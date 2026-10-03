@@ -81,6 +81,7 @@
 
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QFile>
 #include <QFileDialog>
 #include <QFont>
 #include <QHash>
@@ -7298,6 +7299,37 @@ int main(int argc, char** argv) {
     // Tools close over that state rather than shelling out to this same binary.
     // A subprocess per call would pay the 1,280-target load every time and turn
     // an iterative "adjust, look, adjust" loop into something too slow to use.
+    // The four angles a creator supplies reference photographs from.
+    //
+    // THE YAW VALUES WERE MEASURED, NOT DERIVED, and the first reading was
+    // wrong. Reading the nose direction off a 256 px contact sheet gave the
+    // opposite of what a crop of the same two heads showed; a sign convention
+    // read off a matrix is how `--look-at` reported a correct mapping as
+    // inverted across three measurements.
+    //
+    // What settled it needs no bookkeeping at all: widening
+    // `armslegs/l-upperarm-scale-horiz-decr|incr` changed 804 pixels in the
+    // screen-RIGHT half of a front render and 0 in the left, so the model's
+    // LEFT faces the viewer's RIGHT -- which is what "facing you, their left
+    // hand is on your right" says. From there the sides follow: at yaw 270 the
+    // nose points screen-left, so the model's left faces the camera, so that
+    // is the LEFT view.
+    //
+    // `app_mcp_left_is_the_models_left` pins that measurement, not the angles,
+    // because a flipped left and right would be silently plausible in every
+    // other respect.
+    struct McpView {
+        std::string_view name;
+        float yawDegrees;
+    };
+
+    static constexpr std::array<McpView, 4> kMcpViews{
+        {{"front", 0.0F}, {"right", 90.0F}, {"back", 180.0F}, {"left", 270.0F}}};
+
+    // Above this, `render` returns a path instead of the image. A 2048 PNG is
+    // hundreds of thousands of tokens of base64 and says no more than the 512.
+    constexpr int kMcpInlineLimit = 1024;
+
     if (parser.isSet(mcpOpt)) {
         mh::mcp::Server server("makehuman", std::string(mh::foundation::kVersion));
 
@@ -7393,28 +7425,51 @@ int main(int argc, char** argv) {
             }});
 
         server.add(mh::mcp::Tool{
-            .name        = "render",
-            .description = "Render the current character to a PNG and return its path. This "
-                           "is how you SEE what you built: render, look at the image, adjust "
-                           "a slider, render again.",
+            .name = "render",
+            .description =
+                "Render the current character and RETURN THE IMAGE. This is how you SEE "
+                "what you built: render, look, adjust a slider, render again. `view` is "
+                "one of front, back, left, right (default front) -- use the same angle as "
+                "the reference photograph you are matching. `size` is pixels per side, "
+                "64..4096, default 512; the image is returned inline up to 1024 and by "
+                "path only above that, because a large PNG costs more to read than it "
+                "tells you. `path` is optional and defaults to a temporary file.",
             .inputSchema =
                 mh::mcp::Json{
                     {"type", "object"},
-                    {"properties", mh::mcp::Json{{"path", mh::mcp::Json{{"type", "string"}}},
-                                                 {"size", mh::mcp::Json{{"type", "integer"}}}}},
-                    {"required", mh::mcp::Json::array({"path"})}},
+                    {"properties",
+                     mh::mcp::Json{
+                         {"view", mh::mcp::Json{{"type", "string"},
+                                                {"enum", mh::mcp::Json::array(
+                                                             {"front", "back", "left", "right"})}}},
+                         {"size", mh::mcp::Json{{"type", "integer"}}},
+                         {"path", mh::mcp::Json{{"type", "string"}}}}}},
             .call = [&](const mh::mcp::Json& args) {
-                if (!args.contains("path")) throw mh::mcp::ToolError("render needs a path");
-                const auto path = args.at("path").get<std::string>();
-                const int size  = args.value("size", 1024);
+                const auto view = args.value("view", std::string{"front"});
+                const auto* yaw = std::ranges::find_if(
+                    kMcpViews, [&](const McpView& v) { return v.name == view; });
+                if (yaw == std::ranges::end(kMcpViews)) {
+                    throw mh::mcp::ToolError("view must be front, back, left or right, not \"" +
+                                             view + "\"");
+                }
+                const int size = args.value("size", 512);
                 if (size < 64 || size > 4096) {
                     throw mh::mcp::ToolError("size must be 64..4096, got " + std::to_string(size));
                 }
+
+                const std::string path =
+                    args.contains("path")
+                        ? args.at("path").get<std::string>()
+                        : (std::filesystem::temp_directory_path() /
+                           ("makehuman-mcp-" + view + "-" + std::to_string(size) + ".png"))
+                              .string();
+
                 const mh::ui::RenderRequest req{.width       = size,
                                                 .height      = size,
                                                 .transparent = false,
                                                 .shading     = shading,
                                                 .wireframe   = false,
+                                                .yawDegrees  = yaw->yawDegrees,
                                                 .lighting    = lighting};
                 if (const std::string err = renderTo(path, req); !err.empty()) {
                     // A render failure is the CALLER's problem to route around
@@ -7422,7 +7477,34 @@ int main(int argc, char** argv) {
                     // error with the reason, not an internal fault.
                     throw mh::mcp::ToolError("cannot render: " + err);
                 }
-                return mh::mcp::Json{{"path", path}, {"width", size}, {"height", size}};
+
+                // The metadata block comes FIRST so a client that renders only
+                // text still says which view and which file this was.
+                mh::mcp::Json note{{"view", view},
+                                   {"yawDegrees", yaw->yawDegrees},
+                                   {"path", path},
+                                   {"width", size},
+                                   {"height", size}};
+                mh::mcp::Json blocks =
+                    mh::mcp::Json::array({mh::mcp::Json{{"type", "text"}, {"text", note.dump()}}});
+
+                // THE IMAGE ITSELF, not a path to it. A path only works on a
+                // client that can also read files; an image block works
+                // everywhere, and "take pictures and compare" is the whole
+                // request. Above 1024 it is left on disk: a 2048 PNG is several
+                // hundred thousand tokens of base64 and tells a model no more
+                // than the 512 did.
+                if (size <= kMcpInlineLimit) {
+                    QFile file(QString::fromStdString(path));
+                    if (!file.open(QIODevice::ReadOnly)) {
+                        throw mh::mcp::ToolError("rendered but cannot read back: " + path);
+                    }
+                    blocks.push_back(
+                        mh::mcp::Json{{"type", "image"},
+                                      {"data", file.readAll().toBase64().toStdString()},
+                                      {"mimeType", "image/png"}});
+                }
+                return blocks;
             }});
 
         return server.run(std::cin, *mcpOut);

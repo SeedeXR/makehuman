@@ -29,6 +29,20 @@ struct RenderRequest {
     /// exactly as it follows the shading model.
     bool wireframe{false};
 
+    /// Turn the MODEL about the vertical axis, in degrees.
+    ///
+    /// Not in the dialog, for the same reason `wireframe` and `lighting` are
+    /// not: it is the view's business, and a production render follows it.
+    ///
+    /// This is the camera `renderTo`'s backdrop note called "insurance for the
+    /// render camera that does not exist yet". It exists now, because an agent
+    /// comparing a character against reference photographs needs the SAME four
+    /// angles the photographs were taken from, and one fixed front view cannot
+    /// tell a correct back from a wrong one.
+    ///
+    /// Default 0 leaves every existing render facing front, unchanged.
+    float yawDegrees{0.0F};
+
     /// The PBR rig, so a production render is lit the way the viewport is.
     /// Defaults to the built-in studio setup, leaving every existing render
     /// unchanged. Not in the dialog for the same reason `wireframe` is not: it
