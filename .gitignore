@@ -61,6 +61,11 @@ __pycache__/
 # tree into Contents/Resources, which would ship the installer's own artwork
 # inside the application.
 !packaging/**
+
+# `scripts/install.sh` drops the built disk image here. A build must never
+# leave anything to commit, and a 119 MB image is the last thing that should
+# reach a diff.
+/output/
 # And for tests/: every fixture there is repo content -- parity data captured
 # from the Python oracle, and small hand-written files a refusal test needs.
 # `*.mhpose` above silently dropped `tests/golden/mhpose/smirk.mhpose` on its
