@@ -338,8 +338,18 @@ if(MH_HAVE_RENDER)
                                ui/test_frame_scrubber.cpp
                                ui/test_slider_search.cpp
                                ui/test_silhouette.cpp)
+    # MoGe's tests only exist when MoGe does. The two that need no model still
+    # live in that file, because the premise they assert -- that the corner
+    # rule fails on clutter -- is the reason MoGe is there at all, and it
+    # belongs next to the test that relies on it.
+    if(MH_WITH_MOGE)
+        target_sources(mh_ui_tests PRIVATE ui/test_moge.cpp)
+    endif()
     target_link_libraries(mh_ui_tests
         PRIVATE mh::ui mh::core Catch2::Catch2 mh::warnings mh::sanitize)
+    if(MH_WITH_MOGE)
+        target_link_libraries(mh_ui_tests PRIVATE mh::moge)
+    endif()
     target_compile_definitions(mh_ui_tests PRIVATE
         MH_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders"
         MH_RESOURCE_DIR="${CMAKE_SOURCE_DIR}/resources"

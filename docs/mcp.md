@@ -149,7 +149,32 @@ and a model that believes that stops asking.
 
 ## Depth maps
 
-Not supported. Estimating depth from a photograph needs a learned model, and
-this project ships no learned models and no external datasets. Accepting a
-depth map you supply yourself is reachable, but no objective has been decided
-for one, so nothing here pretends to use it.
+**Not wired into any of the tools above**, and the reason is worth reading
+before asking for it.
+
+There is an optional MoGe module (`MH_WITH_MOGE`, **off by default**) that runs
+Microsoft's MoGe through ONNX Runtime. It loads, it runs, and it is tested. It
+is not used by the MCP server, because what it gives and what the fit needs are
+not yet the same thing:
+
+- Its `mask` output marks where the model's **geometry prediction is valid** —
+  **not** where the subject is. That distinction was nearly got wrong here: on
+  a render against a flat black background the mask traces the body exactly,
+  which looks like segmentation and is not. It was excluding the void. Measured
+  against a known subject on a cluttered scene, MoGe's mask scores IoU 0.154
+  and the corner-colour rule it was supposed to replace scores 0.159 — no
+  better.
+- Its **metric depth** is the genuinely useful part, because it is the one
+  thing `fit_to_references` says it cannot know. But the exported graph is
+  `forward()` only: recovering focal length and shift, and reprojecting, has to
+  be written in C++ and validated against the Python reference first. A subtle
+  error there yields confidently wrong depth, which is worse than none.
+
+If you want to experiment: `tools/fetch_moge.sh` downloads the model (134 MB,
+SHA256-pinned, cached outside the repository and never committed), then
+configure with `-DMH_WITH_MOGE=ON`. Nothing in the MCP tools changes.
+
+Supplying your own depth map is still the cleanest route, and still unbuilt —
+no objective has been decided for one. Note that the two **side views** already
+carry the chest and belly depth profile a depth map would add, so its marginal
+value on top of four orthogonal references is smaller than it looks.

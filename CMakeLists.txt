@@ -124,6 +124,16 @@ add_subdirectory(src/io)
 add_subdirectory(src/rig)
 # The MCP server: JSON-RPC over stdio, no Qt, so it builds in every
 # configuration including the headless ones.
+# MoGe needs ONNX Runtime, which nobody should pay for unless they asked. OFF
+# by default, exactly like MH_WITH_KTX2, and the one place the runtime is
+# linked. See LICENSING.md 5.2c for why the model itself is not shipped.
+#
+# Declared here, BUILT further down inside the Qt block: mh_moge takes and
+# returns a QImage, so it needs Qt6::Gui, and a target_link_libraries naming a
+# target that does not exist yet fails at generate time rather than at
+# find_package -- which is exactly how the first attempt died.
+option(MH_WITH_MOGE "Build MoGe photograph segmentation (requires ONNX Runtime)" OFF)
+
 add_subdirectory(src/mcp)
 
 # Qt is optional: the geometry, rig and io layers build and test without it, so
@@ -140,6 +150,10 @@ if(MH_BUILD_RENDER)
     if(Qt6_FOUND AND TARGET Qt6::GuiPrivate)
         message(STATUS "Qt ${Qt6_VERSION}: renderer, UI and app enabled")
         add_subdirectory(src/render)
+        if(MH_WITH_MOGE)
+            find_package(onnxruntime REQUIRED CONFIG)
+            add_subdirectory(src/moge)
+        endif()
         add_subdirectory(src/ui)
         add_subdirectory(src/app)
         add_subdirectory(tools)

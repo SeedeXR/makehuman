@@ -10622,13 +10622,28 @@ survival across client updates.
         a smeared blob, the background included, mask 100% "valid". The mask
         behaviour gives it away even before the picture does.
 
-- [ ] **Use MoGe's `mask` as the silhouette for PHOTOGRAPHS — do this first.**
-      The unexpected result, and much cheaper than metric depth: `mask` is a
-      direct output needing **no focal/shift recovery at all**, and it solves
-      the limitation `Silhouette.h` documents — separating subject from
-      background by distance from the top-left pixel "does not hold for a snap
-      taken in a kitchen". MoGe's mask does. Keep the corner heuristic for our
-      own renders, where it is exact and free.
+- [x] **`mh::moge` built, and the claim it was built for REFUTED**
+      (2026-10-04). `MH_WITH_MOGE` (OFF by default, like `MH_WITH_KTX2`),
+      `include/makehuman/moge/Session.h`, `src/moge/`, the only target that
+      links ONNX Runtime. `ui::silhouetteFromMask` splits the DECIDING from the
+      MEASURING, so the measuring stays testable with a hand-drawn mask and no
+      model anywhere near it. `tools/fetch_moge.sh` pins the sha256 and refuses
+      a file that does not match, controlled both ways.
+      **I claimed MoGe's `mask` separates subject from background. It does
+      not, and I measured it only after writing it down.** `mask` marks where
+      the GEOMETRY prediction is valid. On our own render against a flat black
+      clear colour it traces the body — because a void has no geometry, not
+      because it found a person. Against a ground-truth subject on a cluttered
+      scene: MoGe mask IoU **0.154**, best relative-depth threshold **0.177**,
+      the corner rule it was meant to rescue **0.159**. No better.
+      The fixture was a collage of rectangles, not a photograph, so MoGe is not
+      proven to fail on real photographs either — the claim was simply never
+      evidenced. `test_moge.cpp` pins the refutation with a NEGATIVE assertion
+      that fails if the belief ever becomes true.
+      Also caught here: the model-backed test SKIPPED silently at first,
+      because `QStandardPaths::CacheLocation` appends the Qt application name
+      and the test binary looked somewhere `fetch_moge.sh` never writes.
+      `GenericCacheLocation` + a fixed folder. A skip that reads as a pass.
 - [ ] **Metric depth — the expensive half.** `infer()`'s post-processing is
       NOT in the graph: `recover_focal_shift()` then `points[...,2] += shift`,
       then `scale` multiplies to metric. That solve has to be written in C++

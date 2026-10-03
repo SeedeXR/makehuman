@@ -81,6 +81,20 @@ struct SilhouetteMatch {
     int64_t onlyB{0};
 };
 
+/// Builds a Silhouette from a mask someone else produced.
+///
+/// **The separation and the measurement are deliberately separate functions.**
+/// `silhouetteOf` both decides what the subject is and measures it; for our own
+/// renders that is right, because the corner rule is exact and free. For a
+/// photograph the deciding is the hard part and belongs to something that can
+/// actually see — `mh::moge` — while the measuring is unchanged. Splitting them
+/// keeps every line below testable with a mask drawn by hand, no model and no
+/// ONNX runtime anywhere near the test.
+///
+/// @param mask any format; a pixel counts as subject when its grey value
+///        exceeds 128, which is where a scaled binary mask's edge sits.
+[[nodiscard]] Silhouette silhouetteFromMask(const QImage& mask);
+
 /// Compares two outlines, scale- and position-independently.
 ///
 /// Returns a zeroed match when either silhouette is empty; the caller decides

@@ -66,6 +66,37 @@ Silhouette silhouetteOf(const QImage& image, int tolerance) {
     return out;
 }
 
+Silhouette silhouetteFromMask(const QImage& mask) {
+    Silhouette out;
+    if (mask.isNull() || mask.width() < 1 || mask.height() < 1) return out;
+
+    const QImage grey = mask.convertToFormat(QImage::Format_Grayscale8);
+    out.mask          = QImage(grey.width(), grey.height(), QImage::Format_Grayscale8);
+    out.mask.fill(0);
+
+    int minX = grey.width();
+    int minY = grey.height();
+    int maxX = -1;
+    int maxY = -1;
+    for (int y = 0; y < grey.height(); ++y) {
+        const uchar* row = grey.constScanLine(y);
+        uchar* dst       = out.mask.scanLine(y);
+        for (int x = 0; x < grey.width(); ++x) {
+            if (row[x] <= 128) continue;
+            dst[x] = 255;
+            ++out.area;
+            minX = std::min(minX, x);
+            minY = std::min(minY, y);
+            maxX = std::max(maxX, x);
+            maxY = std::max(maxY, y);
+        }
+    }
+    out.coverage = static_cast<double>(out.area) /
+                   (static_cast<double>(grey.width()) * static_cast<double>(grey.height()));
+    if (maxX >= 0) out.bounds = QRect(QPoint(minX, minY), QPoint(maxX, maxY));
+    return out;
+}
+
 SilhouetteMatch compareSilhouettes(const Silhouette& a, const Silhouette& b) {
     SilhouetteMatch m;
     if (a.area == 0 || b.area == 0 || a.bounds.isEmpty() || b.bounds.isEmpty()) return m;

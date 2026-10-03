@@ -219,6 +219,7 @@ because dropping the notice is the single way to actually breach BSD.
 | Catch2 | v3.7.1 (pinned) | BSL-1.0 | `BSL-1.0` | Tests |
 | **AppKit** (macOS system framework) | ships with macOS | Apple SDK licence | — | One call: `accessibilityDisplayShouldReduceMotion` in `src/ui/Motion.mm`. There is no Qt API for the reduce-motion setting and `QSettings` cannot read another application's preference domain (measured: `com.apple.dock` reports 0 keys through QSettings while `defaults read` lists dozens). A system framework on the target OS, dynamically linked, imposing no obligation on this project's licensing — recorded because the rule is to record every dependency, not only the redistributable ones. |
 | nlohmann/json (`nlohmann_json`) | v3.11.3 (pinned, SHA256-verified) | MIT | `MIT` | `.mhskel` parsing in `mh_rig`. **`ordered_json` specifically**: the reference loads with `OrderedDict` and its bone ordering pass iterates in file order (`skeleton.py:112-121`), so a parser that sorts or hashes keys silently produces a different bone order. |
+| **ONNX Runtime** | 1.30.0_1 (Homebrew bottle, installed 2026-10-04) | MIT | `MIT` | **Inference for MoGe** (§5.2c), and the only use of it. Linked into `mh_moge` and **nowhere else** — that isolation is why `mh_moge` is a module rather than two files in `mh_ui`: a 21 MB inference runtime has no business inside the widget library, and `ui::silhouetteFromMask` stays testable with no model and no ONNX at all. **OPTIONAL on the same terms as draco, assimp and libktx**: guarded by `MH_WITH_MOGE`, which defaults **OFF**, so a default build — including every CI job — never looks for it and never links it. Dynamically linked (`libonnxruntime.1.30.0.dylib`); the Homebrew formula pulls `re2` (BSD-3-Clause) with it. The MODEL is not a dependency and is not shipped: see §5.2c. |
 | Lucide | 1.37.0 (bundled) | ISC | `ISC` | Icons — see §5.4 |
 | 42dot Sans | bundled, OFL text included | SIL OFL 1.1 | `OFL-1.1` | Typeface — see §5.4 |
 
@@ -473,6 +474,19 @@ focal length and shift, and reprojection** — cannot be exported and has to be
 written again in C++. That is a robust numerical solve, and getting it subtly
 wrong yields plausible-looking, confidently wrong depth. It must be validated
 against the Python reference before anything depends on it.
+
+**A correction, recorded because it was nearly built on.** This section first
+claimed MoGe's `mask` output would replace `ui::silhouetteOf`'s corner rule for
+photographs. **It does not.** `mask` marks where the model's GEOMETRY
+prediction is valid, not where the subject is; on our own render against a flat
+black clear colour it traces the body only because a void has no geometry to
+predict. Measured against a ground-truth subject on a cluttered scene: MoGe's
+mask scores IoU **0.154**, the best relative-depth threshold **0.177**, and the
+corner rule it was meant to rescue **0.159** — no better. The fixture was a
+collage of rectangles rather than a photograph, so this does not prove MoGe
+fails on real photographs; it proves the claim was never evidenced. Pinned by
+`test_moge.cpp`, including a deliberately NEGATIVE assertion, so the belief
+cannot return without someone being told.
 
 **How the model is obtained.** NOT committed. 141 MB against a `data/` tree of
 152 MB would roughly double the distribution for a feature most characters
