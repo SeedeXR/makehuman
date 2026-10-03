@@ -383,6 +383,53 @@ scan dataset (MIT **code**, CC-BY-**NC** data — the split is the point), and
 H3WB / Human3.6M (MIT repository, but the images stay under the Human3.6M
 licence; a permissive wrapper does not launder the payload).
 
+### 5.2b Monocular depth models — audited 2026-10-03, ALL REFUSED
+
+The owner asked for "a light weight, high performance and resource efficient
+model that can run on mac, linux and windows" to estimate depth from a
+reference photograph. Every serious candidate was checked at the primary
+source. **Not one of them can be used here**, and the reason is never size,
+speed or portability — it is always the licence.
+
+**The runtime is not the problem.** ONNX Runtime is MIT, C++, and runs on
+macOS, Linux and Windows with CoreML on Apple Silicon and DirectML on Windows.
+If a usable model ever appears, the runtime is already cleared in principle.
+
+| Model | Weights licence | Training data | Verdict |
+|---|---|---|---|
+| **Depth Anything V2-Small** | Apache-2.0 | Teacher trained on 595K synthetic images: BlendedMVS, Hypersim, IRS, TartanAir and **Virtual KITTI 2**. Every student, Small included, is distilled from that teacher. | **Refused.** Virtual KITTI 2 is **CC-BY-NC-SA-3.0, non-commercial only**, © Naver. Issue #320 asks the maintainers whether Small's data is cleared for commercial use; it is **open and unanswered**. |
+| Depth Anything V2 Base / Large / Giant | **CC-BY-NC-4.0** | same | **Refused** by §5.2 outright. |
+| Depth Anything 3 Base (Nov 2025, ByteDance) | Apache-2.0 | "trained exclusively on public academic datasets", none named | **Refused.** Unnamed data cannot be audited — §5.2, "Anything with an unidentifiable licence". |
+| Depth Anything 3 Large / Giant | **CC-BY-NC-4.0** | same | **Refused.** |
+| **MiDaS** v2.1 / 3.1 small | MIT | 12 sets, >3.7M images, including **KITTI**, **ApolloScape** and **"Movies"** — frames from commercial 3D films | **Refused.** Worse lineage than Depth Anything, not better. |
+| Microsoft **MoGe / MoGe-2** | MIT code | "publicly available for academic use": A2D2, **Argoverse2**, ARKitScenes, BlendedMVS, … | **Refused.** Same pattern. |
+| Apple **Depth Pro** | Apple ML research licence | — | **Refused.** Not a commercial grant. |
+| Meta **DepthLM** (ICLR 2026) | **CC-BY-NC** | — | **Refused.** |
+| **NVIDIA NvDepthAnythingV2** | NVIDIA Open Model License — *"this model is ready for commercial use"* | **The cleanest found:** ~6.02M images, all NVIDIA internal real and synthetic plus Cresterio synthetic. **No academic non-commercial sets at all.** | **Refused — on the licence, not the data.** The NVIDIA Open Model License is **not OSI-conformant**: it imposes field-of-use restrictions (the "Trustworthy AI" terms), terminates automatically if guardrails are bypassed, requires the *user* to indemnify NVIDIA, and NVIDIA may update it unilaterally. §5.2 refuses "anything non-commercial **or field-of-use restricted**". |
+
+**The pattern, which is the finding.** The models with permissive weights have
+unclear or non-commercial data; the one model with genuinely clean, owned data
+has a licence that is not open source. Nothing threads both needles. This is
+the same trap as SOMA-X in §5.2a, and in the same words: a permissive front
+door that re-imports a restriction behind it.
+
+**A model card's licence field is not evidence.** `DA3-LARGE` on Hugging Face
+was tagged **Apache-2.0** while the actual licence is **CC-BY-NC-4.0** — a
+maintainer confirmed it in discussion #2. Anyone who had trusted the metadata
+would have shipped a non-commercial model believing it was permissive. Read the
+repository's own `LICENSE`, and the maintainers' own words, not the tag.
+
+**What we do instead.** Nothing is shipped. `--mcp` takes four reference views
+— front, back, left and right — and the two side views already carry the chest
+and belly depth profile that a depth map would supply; the marginal value of
+depth on top of them is small. If depth is wanted later, the clean routes are
+(a) accept a depth map the creator supplies, which their own phone may already
+embed in a portrait photograph, carrying no licence exposure at all, or
+(b) train on depth rendered from our own parametric humans, where the depth
+buffer is ground truth and the lineage is ours — real work, and subject to the
+usual sim-to-real gap on actual photographs.
+
+
 ### 5.3 The Autodesk FBX SDK — why it is not used
 
 The SDK **is** free of charge, and version 2020.3.9 is installed on the

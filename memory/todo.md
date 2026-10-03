@@ -10581,11 +10581,37 @@ survival across client updates.
       In the same pass: a repeated LABEL now replaces, as a repeated view
       already did. Two "face" entries are a correction, not a second face.
 
-- [ ] **Depth maps are not reachable yet, and nothing pretends otherwise.**
-      Estimating depth from a photograph needs a learned model, which the owner
-      deferred on 2026-10-03 ("no external data, generative model and scans, we
-      will leave them for now"). What IS available: accepting a depth map the
-      creator supplies. Not built — no objective decided for it yet.
+- [x] **Depth models: searched at the owner's instruction, ALL REFUSED**
+      (2026-10-03). Recorded as `LICENSING.md` §5.2b with the per-model table,
+      and gated — `tools/audit_datasets.py` now refuses depth checkpoints by
+      filename, controlled both ways (a planted `depth_anything_v2_small.onnx`
+      fails it; the probe was removed).
+      **The blocker is never size, speed or portability.** ONNX Runtime is MIT
+      and runs on all three platforms; if a usable model appeared the runtime
+      is already fine. The finding is that **the models with permissive weights
+      have non-commercial or unnamed training data, and the one model with
+      genuinely clean owned data — NVIDIA's NvDepthAnythingV2, 6.02M images all
+      internal or vendor — ships under a licence that is not OSI-conformant and
+      is field-of-use restricted**, which §5.2 refuses by name. Nothing threads
+      both needles.
+      Depth Anything V2-Small's Apache-2.0 weights are distilled from a teacher
+      trained partly on **Virtual KITTI 2, CC-BY-NC-SA-3.0**; the maintainers'
+      own issue #320 asking whether Small is commercially cleared is open and
+      unanswered. Same trap as SOMA-X in §5.2a.
+      **A model card's licence tag is not evidence**: `DA3-LARGE` was tagged
+      Apache-2.0 on Hugging Face while a maintainer confirmed the real licence
+      is CC-BY-NC-4.0.
+
+- [ ] **Depth, if it is still wanted — two clean routes, neither started.**
+      (a) Accept a depth map the CREATOR supplies; a recent phone already
+      embeds one in a portrait photograph, so there is no licence exposure at
+      all. Small work; no objective decided yet.
+      (b) Train on depth rendered from our own parametric humans, where the
+      depth buffer is ground truth and the lineage is ours. Real work, and
+      subject to the sim-to-real gap on actual photographs.
+      Worth weighing first: the two SIDE views already carry the chest and
+      belly depth profile a depth map would add, so its marginal value on top
+      of four orthogonal references is small.
 - [x] **`content` is an ARRAY, and `render` returns the IMAGE** (2026-10-03).
       `tools/call` was answering with an object under `content`, which the
       specification types as a list of content blocks. Every answer this server

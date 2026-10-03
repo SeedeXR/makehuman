@@ -48,13 +48,23 @@ FORBIDDEN_FILES = [
     ("Quaternius asset packs",
      re.compile(r"(?i)^quaternius.*\.(zip|fbx|glb|gltf|obj)$"),
      "LICENSING.md 5.2a: QAL v1.0 forbids redistributing the assets standalone"),
+    # Depth-estimation WEIGHTS, audited 2026-10-03 and all refused. The file
+    # extensions are the giveaway: a checkpoint is what actually ships, and a
+    # paper or a comment naming one of these models is not a breach.
+    ("monocular depth model weights",
+     re.compile(r"(?i)^(depth[_-]?anything.*|midas.*|dpt[_-].*|zoedepth.*|moge.*"
+                r"|depth[_-]?pro.*|nvdepth.*)\.(onnx|pt|pth|safetensors|bin|mlmodel|mlpackage)$"),
+     "LICENSING.md 5.2b: every audited depth model is refused -- the permissive "
+     "ones have non-commercial or unidentifiable training data, and NVIDIA's, "
+     "whose data IS clean, ships under a field-of-use-restricted licence"),
 ]
 
 # Code that would LOAD one of the above. Deliberately narrow: a path being
 # opened, not the word appearing.
 FORBIDDEN_LOADS = re.compile(
     r"(?i)(open|load|read|fopen|ifstream|path)\s*\(?\s*[\"'][^\"']*"
-    r"(smpl[_-][a-z]*\.(pkl|npz)|mano_(left|right)\.pkl|h36m|human3\.6m)")
+    r"(smpl[_-][a-z]*\.(pkl|npz)|mano_(left|right)\.pkl|h36m|human3\.6m"
+    r"|(depth[_-]?anything|midas|zoedepth|moge|nvdepth)[^\"']*\.(onnx|pt|pth|safetensors))")
 
 # Where the gate does NOT look for prose matches: these explain the refusals.
 # NOT an exemption for payload -- a forbidden FILE in any of these is still a
@@ -102,7 +112,7 @@ def main() -> int:
         print("forbidden dataset material is present:", file=sys.stderr)
         for f in findings:
             print(f"  {f}", file=sys.stderr)
-        print("\nSee LICENSING.md 5.2 and 5.2a. Audit a dataset BEFORE adding it.",
+        print("\nSee LICENSING.md 5.2, 5.2a and 5.2b. Audit a dataset or a model BEFORE adding it.",
               file=sys.stderr)
         return 1
 
