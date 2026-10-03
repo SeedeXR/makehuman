@@ -7386,8 +7386,10 @@ int main(int argc, char** argv) {
         server.add(mh::mcp::Tool{
             .name        = "health",
             .description = "Whether the server is live, which version it is, and what it has "
-                           "served so far. Takes no arguments. Call this first if a session "
-                           "looks wrong -- it answers before initialize and never fails.",
+                           "served so far. Takes no arguments, and does not fail. Call it when "
+                           "a session looks wrong; to probe a server that may not have "
+                           "negotiated yet, use the protocol's own `ping`, which is answered "
+                           "before initialize.",
             .inputSchema =
                 mh::mcp::Json{{"type", "object"}, {"properties", mh::mcp::Json::object()}},
             .call = [&server](const mh::mcp::Json&) {
@@ -7433,10 +7435,10 @@ int main(int argc, char** argv) {
 
         server.add(mh::mcp::Tool{
             .name        = "set_slider",
-            .description = "Set ONE named parameter. Prefer this over set_parameters when "
-                           "adjusting a character: it names what changed, which is what an "
-                           "iterative loop needs. Returns the value actually stored, which "
-                           "may be clamped.",
+            .description = "Set ONE named parameter and re-apply it to the mesh, so the next "
+                           "render shows it. Names from list_parameters. Returns the value "
+                           "actually stored, which may be clamped, and the range it was "
+                           "clamped into.",
             .inputSchema =
                 mh::mcp::Json{
                     {"type", "object"},
