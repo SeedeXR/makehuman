@@ -19,6 +19,7 @@ add_library(mh_ui STATIC
     About.cpp
     Backdrop.cpp
     FrameStats.cpp
+    Silhouette.cpp
     ImageViewer.cpp
     MouseBindings.cpp
     RenderDialog.cpp

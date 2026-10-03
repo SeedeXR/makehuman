@@ -336,7 +336,8 @@ if(MH_HAVE_RENDER)
                                ui/test_about.cpp
                                ui/test_material_panel.cpp
                                ui/test_frame_scrubber.cpp
-                               ui/test_slider_search.cpp)
+                               ui/test_slider_search.cpp
+                               ui/test_silhouette.cpp)
     target_link_libraries(mh_ui_tests
         PRIVATE mh::ui mh::core Catch2::Catch2 mh::warnings mh::sanitize)
     target_compile_definitions(mh_ui_tests PRIVATE
@@ -471,6 +472,13 @@ if(MH_HAVE_RENDER)
              -DMH_COMPARE=$<TARGET_FILE:mh_png_compare>
              -DMH_DIR=${CMAKE_CURRENT_BINARY_DIR}
              -P ${CMAKE_CURRENT_SOURCE_DIR}/mcp_views.cmake)
+
+    # The outline score must still discriminate on REAL renders, not only on the
+    # drawn shapes test_silhouette.cpp uses. See tests/mcp_compare.cmake.
+    add_test(NAME app_mcp_compare_discriminates COMMAND ${CMAKE_COMMAND}
+             -DMH_APP=$<TARGET_FILE:makehuman>
+             -DMH_DIR=${CMAKE_CURRENT_BINARY_DIR}
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/mcp_compare.cmake)
 
     add_test(NAME app_smoke COMMAND makehuman
              --load ${CMAKE_CURRENT_SOURCE_DIR}/golden/mhm/reference_save.mhm

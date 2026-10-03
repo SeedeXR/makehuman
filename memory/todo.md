@@ -10575,11 +10575,35 @@ survival across client updates.
       from correct angles and only the label is wrong. Controlled — pointed at
       the r- modifier it fails with the region at x 94..156 instead of 226..289.
 
-- [ ] **A compare tool**, so the model can score its own render against a
-      reference instead of asking the creator every round. `mh_png_compare`
-      has the metric (differing count, PSNR, bounding box) but is a test
-      executable under `tests/`; reusing it means lifting the comparison into
-      an Apache-2.0 module rather than writing a second one.
+- [x] **`compare_to_reference`, scored on OUTLINES** (2026-10-03).
+      `mh::ui::silhouetteOf` / `compareSilhouettes`
+      (`include/makehuman/ui/Silhouette.h`), beside `describeFrame` because it
+      shares that file's background-is-pixel-(0,0) rule.
+      **Not a pixel difference, and that was the design decision.** Against a
+      reference PHOTOGRAPH, PSNR answers the wrong question: different
+      lighting, skin, background and framing put a perfect fit and a hopeless
+      one at about the same score. The outline is the part a parametric body
+      can be fitted to. The IoU is scale- and position-invariant, so a
+      photograph at any distance works; `widthRatio`, `heightRatio`,
+      `renderOnly` and `referenceOnly` carry what that discards, which is what
+      tells an agent WHICH WAY to adjust.
+      **The ceiling is 0.998, not 1.0**, measured: a character against its own
+      render scores 0.9979 with 45 pixels in the render's favour and 0 in the
+      reference's — an antialiased edge masks differently through alpha than
+      through colour. The tool description says so, because a model told 1.0 is
+      perfect would adjust forever.
+      `referenceCoverage` is reported rather than hidden: a photograph whose
+      background does not match its own corner comes back almost entirely
+      "subject", and the resulting IoU looks like any other number.
+      Gated twice — `ui` ([silhouette], 8 cases on drawn shapes) and
+      `app_mcp_compare_discriminates`, which proves the score still separates
+      on REAL renders: 0.9979 same, 0.9465 after one macro slider, 0.2406 for a
+      side view against a front reference. Controlled: forcing `iou = 1.0`
+      fails it with "the metric is saturated".
+      One real bug found by its own test: an opaque subject against a
+      TRANSPARENT clear has the same RGB as the background, so the colour
+      distance called the whole frame empty. Alpha is the mask when the clear
+      is transparent.
 - [ ] **`--render` does not expose `view`.** The yaw is plumbed and the MCP
       tool uses it; the CLI flag was left alone deliberately, as nothing has
       asked for it.

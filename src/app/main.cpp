@@ -74,6 +74,7 @@
 #include "makehuman/ui/MaterialPanel.h"
 #include "makehuman/ui/ModifierPanel.h"
 #include "makehuman/ui/RenderDialog.h"
+#include "makehuman/ui/Silhouette.h"
 #include "makehuman/ui/TaskRegistry.h"
 #include "makehuman/ui/Theme.h"
 #include "makehuman/ui/UndoCommands.h"
@@ -7330,6 +7331,10 @@ int main(int argc, char** argv) {
     // hundreds of thousands of tokens of base64 and says no more than the 512.
     constexpr int kMcpInlineLimit = 1024;
 
+    // The height every comparison render uses. Fixed so two scores are
+    // comparable; the width follows the reference's aspect ratio.
+    constexpr int kMcpCompareHeight = 512;
+
     if (parser.isSet(mcpOpt)) {
         mh::mcp::Server server("makehuman", std::string(mh::foundation::kVersion));
 
@@ -7505,6 +7510,101 @@ int main(int argc, char** argv) {
                                       {"mimeType", "image/png"}});
                 }
                 return blocks;
+            }});
+
+        server.add(mh::mcp::Tool{
+            .name = "compare_to_reference",
+            .description =
+                "Score the current character against a reference photograph, from one "
+                "view. Renders that view, extracts both outlines and returns `iou`, the "
+                "agreement of SHAPE. The score ignores scale and position, so a photograph "
+                "taken at any distance works; `widthRatio`, `heightRatio` and the two "
+                "aspect ratios carry the proportions separately, and `renderOnly` / "
+                "`referenceOnly` say WHICH WAY you are off. "
+                "DO NOT CHASE 1.0: the same character against its own render measures "
+                "0.998, because an antialiased edge masks slightly differently through "
+                "alpha than through colour. Around 0.998 is as good as this gets. "
+                "CHECK `referenceCoverage` BEFORE TRUSTING THE SCORE: near 1.0 means the "
+                "background could not be separated and the number is meaningless -- ask "
+                "for a photograph against a plain backdrop.",
+            .inputSchema =
+                mh::mcp::Json{
+                    {"type", "object"},
+                    {"properties",
+                     mh::mcp::Json{
+                         {"reference", mh::mcp::Json{{"type", "string"}}},
+                         {"view", mh::mcp::Json{{"type", "string"},
+                                                {"enum", mh::mcp::Json::array(
+                                                             {"front", "back", "left", "right"})}}},
+                         {"tolerance", mh::mcp::Json{{"type", "integer"}}}}},
+                    {"required", mh::mcp::Json::array({"reference"})}},
+            .call = [&](const mh::mcp::Json& args) {
+                if (!args.contains("reference")) {
+                    throw mh::mcp::ToolError("compare_to_reference needs a reference image path");
+                }
+                const auto refPath  = args.at("reference").get<std::string>();
+                const auto view     = args.value("view", std::string{"front"});
+                const int tolerance = args.value("tolerance", 30);
+                const auto* chosen  = std::ranges::find_if(
+                    kMcpViews, [&](const McpView& v) { return v.name == view; });
+                if (chosen == std::ranges::end(kMcpViews)) {
+                    throw mh::mcp::ToolError("view must be front, back, left or right, not \"" +
+                                             view + "\"");
+                }
+
+                QImage reference;
+                if (!reference.load(QString::fromStdString(refPath))) {
+                    throw mh::mcp::ToolError("cannot read reference image: " + refPath);
+                }
+
+                // Rendered at the REFERENCE's aspect ratio, not square. The
+                // outline score is scale-invariant but not stretch-invariant,
+                // so squashing a portrait photograph into a square frame would
+                // score a correct body as wrong.
+                const int height = kMcpCompareHeight;
+                const int width  = std::clamp(
+                    static_cast<int>(std::lround(static_cast<double>(height) * reference.width() /
+                                                  reference.height())),
+                    64, 4096);
+                const mh::ui::RenderRequest req{.width       = width,
+                                                .height      = height,
+                                                .transparent = true,
+                                                .shading     = shading,
+                                                .wireframe   = false,
+                                                .yawDegrees  = chosen->yawDegrees,
+                                                .lighting    = lighting};
+                const auto rendered = renderImage(req);
+                if (!rendered) throw mh::mcp::ToolError("cannot render: " + rendered.error());
+
+                const mh::ui::Silhouette mine   = mh::ui::silhouetteOf(*rendered, tolerance);
+                const mh::ui::Silhouette theirs = mh::ui::silhouetteOf(reference, tolerance);
+                if (mine.area == 0) {
+                    throw mh::mcp::ToolError("the render has no visible subject to compare");
+                }
+                if (theirs.area == 0) {
+                    throw mh::mcp::ToolError(
+                        "no subject found in " + refPath +
+                        ": its top-left corner is taken to be the background colour, so a "
+                        "photograph cropped tight to the body has nothing to separate");
+                }
+                const mh::ui::SilhouetteMatch m = mh::ui::compareSilhouettes(mine, theirs);
+
+                return mh::mcp::Json{{"view", view},
+                                     {"iou", m.iou},
+                                     {"widthRatio", m.widthRatio},
+                                     {"heightRatio", m.heightRatio},
+                                     {"renderAspect", m.aspectA},
+                                     {"referenceAspect", m.aspectB},
+                                     // WHICH WAY to adjust, not just how far off.
+                                     // "the render covers 4,000 pixels the
+                                     // photograph does not" is actionable;
+                                     // a single score is not.
+                                     {"renderOnly", m.onlyA},
+                                     {"referenceOnly", m.onlyB},
+                                     {"overlap", m.intersection},
+                                     {"renderCoverage", mine.coverage},
+                                     {"referenceCoverage", theirs.coverage},
+                                     {"reference", refPath}};
             }});
 
         return server.run(std::cin, *mcpOut);
