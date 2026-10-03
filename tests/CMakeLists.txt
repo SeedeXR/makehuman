@@ -480,6 +480,15 @@ if(MH_HAVE_RENDER)
              -DMH_DIR=${CMAKE_CURRENT_BINARY_DIR}
              -P ${CMAKE_CURRENT_SOURCE_DIR}/mcp_compare.cmake)
 
+    # Rebuild a known character from its own renders and check the recovered
+    # PARAMETERS, not just the score. See tests/mcp_fit.cmake for why that
+    # distinction is the whole test.
+    add_test(NAME app_mcp_fit_recovers_a_character COMMAND ${CMAKE_COMMAND}
+             -DMH_APP=$<TARGET_FILE:makehuman>
+             -DMH_DIR=${CMAKE_CURRENT_BINARY_DIR}
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/mcp_fit.cmake)
+    set_tests_properties(app_mcp_fit_recovers_a_character PROPERTIES TIMEOUT 300)
+
     add_test(NAME app_smoke COMMAND makehuman
              --load ${CMAKE_CURRENT_SOURCE_DIR}/golden/mhm/reference_save.mhm
              --set macrodetails/Gender=1.0

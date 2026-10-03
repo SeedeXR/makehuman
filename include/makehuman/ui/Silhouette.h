@@ -50,13 +50,22 @@ struct Silhouette {
 
 /// How closely two outlines agree.
 struct SilhouetteMatch {
-    /// Intersection over union, after each outline is scaled to a common box.
+    /// Intersection over union, after both outlines are scaled to a common
+    /// HEIGHT and centred.
     ///
-    /// 1.0 is identical, 0.0 is no overlap at all. SCALE-INVARIANT on purpose:
+    /// 1.0 is identical, 0.0 is no overlap at all. Scale-invariant on purpose:
     /// a reference photograph is taken at an unknown distance, so a shape that
-    /// is right but framed differently must not score as a miss. What that
-    /// discards is absolute size -- which is why the ratios below are reported
-    /// separately rather than folded in.
+    /// is right but framed differently must not score as a miss.
+    ///
+    /// **Height only, never the aspect ratio.** Scaling both boxes onto a
+    /// shared rectangle is the obvious implementation and it is wrong: it
+    /// normalises width away too, so a tall narrow body and a short wide one of
+    /// the same shape score 1.0, and a fit driven by that score could never
+    /// find a waist. Width at a common height is real information about the
+    /// body and is kept.
+    ///
+    /// What it still cannot see is ABSOLUTE size. A photograph does not carry
+    /// one, so a stature has to be stated rather than fitted.
     double iou{0.0};
     /// Proportions BEFORE alignment: b's box over a's. Both 1.0 means the two
     /// were framed alike. These carry the information `iou` deliberately threw

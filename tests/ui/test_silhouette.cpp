@@ -131,3 +131,21 @@ TEST_CASE("a transparent background is background whatever its colour", "[silhou
     CHECK(s.area == 400);
     CHECK(s.bounds == QRect(40, 40, 20, 20));
 }
+
+TEST_CASE("the same shape at a different ASPECT scores lower", "[silhouette]") {
+    // THE PROPERTY THE FIRST IMPLEMENTATION DID NOT HAVE. Scaling both boxes
+    // onto a shared rectangle normalises the aspect ratio away, so these two
+    // scored a flat 1.0 -- and a fit driven by that score could never find a
+    // waist, because widening the character would not move the number.
+    //
+    // Same height, twice the width. A body cannot be that much wider and still
+    // be the same body, however far away the camera was.
+    const Silhouette narrow = silhouetteOf(withEllipse(QRect(80, 30, 40, 140)));
+    const Silhouette wide   = silhouetteOf(withEllipse(QRect(50, 30, 80, 140)));
+    const auto m            = compareSilhouettes(narrow, wide);
+    CHECK(m.iou < 0.55);
+    // ...while the SAME shape at half the size still scores high, so the
+    // sensitivity did not come at the cost of distance-invariance.
+    const Silhouette small = silhouetteOf(withEllipse(QRect(20, 10, 20, 70)));
+    CHECK(compareSilhouettes(narrow, small).iou > 0.95);
+}

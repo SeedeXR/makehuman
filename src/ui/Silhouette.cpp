@@ -75,24 +75,42 @@ SilhouetteMatch compareSilhouettes(const Silhouette& a, const Silhouette& b) {
     m.aspectA     = static_cast<double>(a.bounds.width()) / a.bounds.height();
     m.aspectB     = static_cast<double>(b.bounds.width()) / b.bounds.height();
 
-    // Both outlines cropped to their own box and scaled to a common one, which
-    // is what makes the score independent of where the subject sits in frame
-    // and how far away the camera was. `a`'s box is the common one; using a
-    // fixed size instead would resample BOTH and blur the sharper of the two.
-    const QSize common = a.bounds.size();
-    const QImage maskA = a.mask.copy(a.bounds);
-    const QImage maskB =
-        b.mask.copy(b.bounds).scaled(common, Qt::IgnoreAspectRatio, Qt::FastTransformation);
+    // Both outlines cropped to their own box and scaled to a COMMON HEIGHT,
+    // uniformly. Height is the one dimension a photograph's unknown distance
+    // makes meaningless, so it is normalised away; width at that height is
+    // real information about the body and is kept.
+    //
+    // SCALING BOTH BOXES TO A COMMON BOX WOULD BE WRONG, and it is the obvious
+    // thing to write. `IgnoreAspectRatio` onto a shared rectangle normalises
+    // the aspect ratio too, so a tall narrow body and a short wide one of the
+    // same shape score 1.0 -- and a fit driven by that score could never find a
+    // waist, because widening the character would not move the number.
+    const double scale = static_cast<double>(a.bounds.height()) / b.bounds.height();
+    const int scaledW  = std::max(1, static_cast<int>(std::lround(b.bounds.width() * scale)));
+    const int common   = a.bounds.height();
 
-    for (int y = 0; y < common.height(); ++y) {
+    const QImage maskA = a.mask.copy(a.bounds);
+    const QImage maskB = b.mask.copy(b.bounds).scaled(scaledW, common, Qt::IgnoreAspectRatio,
+                                                      Qt::FastTransformation);
+
+    // Centred horizontally and aligned at the top, because the two are already
+    // the same height. Aligning an edge instead would score a correct body as
+    // wrong whenever one render sat a few pixels off centre.
+    const int canvasW = std::max(a.bounds.width(), scaledW);
+    const int offsetA = (canvasW - a.bounds.width()) / 2;
+    const int offsetB = (canvasW - scaledW) / 2;
+
+    for (int y = 0; y < common; ++y) {
         const auto* rowA = maskA.constScanLine(y);
         const auto* rowB = maskB.constScanLine(y);
-        for (int x = 0; x < common.width(); ++x) {
+        for (int x = 0; x < canvasW; ++x) {
+            const int xa = x - offsetA;
+            const int xb = x - offsetB;
             // Scaling a binary mask produces intermediate values along every
             // edge. 128 puts the boundary where it was, rather than growing the
             // subject (>0) or eroding it (==255) by a pixel all the way round.
-            const bool inA = rowA[x] > 128;
-            const bool inB = rowB[x] > 128;
+            const bool inA = xa >= 0 && xa < a.bounds.width() && rowA[xa] > 128;
+            const bool inB = xb >= 0 && xb < scaledW && rowB[xb] > 128;
             if (inA && inB) {
                 ++m.intersection;
             } else if (inA) {

@@ -10534,15 +10534,48 @@ survival across client updates.
       stdout, one commit earlier. Second time; hence the structural guard
       rather than a third audit.
 
-- [ ] **Reference-image intake**: front, back, left, right, plus closeups of
-      key areas, with depth maps. Not started. Open question to settle first:
-      the fit is a search over the parameter space
-      (`mh::core::ParameterSpace`, 2026-10-03) against a silhouette and
-      landmark objective — decide the objective before writing the solver, or
-      it will be tuned to whatever it first produces.
-- [ ] **The iterate-until-satisfied loop**: `render` exists and returns a
-      path; what is missing is a compare tool, so the model can score its own
-      output rather than asking the creator every round.
+- [x] **Reference-image intake and the fit** (2026-10-03). `add_reference`
+      (a view, or a label for a closeup), `list_references` (and which views
+      are still missing), `fit_to_references`.
+      **The division of labour is deliberate and stated in the tool text.** The
+      fit moves the EIGHT parameters that change a body's outline; an outline
+      cannot see a nose, so facial detail is for the closeups and the model's
+      own eyes. It also cannot know absolute stature, because a photograph does
+      not carry one.
+      Which eight was measured, not chosen by plausibility. Height is IN: the
+      worry that a scale-invariant score would be blind to it was wrong —
+      measured at iou 0.476, because height changes PROPORTION, not merely
+      size. The ethnic triple is OUT: coupled, and what it changes is the face.
+      **Coordinate descent, and deliberately nothing cleverer**: the objective
+      is a render away from every evaluation, so a gradient method would spend
+      the same renders estimating what this spends directly, and a creator can
+      follow this one.
+      Measured by rebuilding a known character from its own renders, four
+      views, deterministic across runs: 2 passes → 0.87 and mean parameter
+      error 0.13; 4 passes → 0.92 and 0.10; 6 passes → 0.95 and 0.08. About 160
+      renders and 2.3 s per pass. It does NOT reach the 0.998 a character
+      scores against itself, and the tool says so — a strong starting point,
+      not the answer.
+
+- [x] **The probe window must not narrow until the second pass** (2026-10-03).
+      THE FINDING OF THE SESSION, and a score-only gate would have shipped the
+      bug as an improvement. Narrowing from pass 1 locks in whatever the
+      opening pass guessed: it scored HIGHER than the version before it (0.878
+      vs 0.868) while the recovered parameters moved FURTHER from the truth
+      (mean error 0.246 vs 0.200).
+      Two full-range passes, then halve each pass. With that, score and
+      parameter error improve together as passes rise — which is the property
+      that says the objective is tracking the character rather than some other
+      body that happens to share an outline.
+      Gated by `app_mcp_fit_recovers_a_character`, which asserts the recovered
+      VALUES (at least four of six within 0.2), not the score. Controlled: the
+      degenerate search gets three of six and the gate names which drifted.
+
+- [ ] **Depth maps are not reachable yet, and nothing pretends otherwise.**
+      Estimating depth from a photograph needs a learned model, which the owner
+      deferred on 2026-10-03 ("no external data, generative model and scans, we
+      will leave them for now"). What IS available: accepting a depth map the
+      creator supplies. Not built — no objective decided for it yet.
 - [x] **`content` is an ARRAY, and `render` returns the IMAGE** (2026-10-03).
       `tools/call` was answering with an object under `content`, which the
       specification types as a list of content blocks. Every answer this server

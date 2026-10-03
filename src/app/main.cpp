@@ -7335,6 +7335,39 @@ int main(int argc, char** argv) {
     // comparable; the width follows the reference's aspect ratio.
     constexpr int kMcpCompareHeight = 512;
 
+    // Fitting renders smaller. An outline does not need 512 px and the search
+    // pays for every probe: at 256 a pass over the default parameters against
+    // four views is a few seconds rather than half a minute.
+    constexpr int kMcpFitHeight = 256;
+
+    // The parameters a silhouette can actually constrain, and no more.
+    //
+    // MEASURED, not chosen by plausibility: each of these moves the outline of
+    // an A-posed body. Height is included because it was measured at iou 0.476
+    // -- it changes PROPORTION, not merely size, so the scale-invariant score
+    // sees it clearly. The ethnic triple is excluded: it is coupled, and what
+    // it changes is the face, which an outline cannot see. So are the face
+    // groups, for the same reason -- that is what the closeups and the model's
+    // own eyes are for.
+    static constexpr std::array<std::string_view, 8> kMcpFitParameters{
+        "macrodetails/Gender",
+        "macrodetails/Age",
+        "macrodetails-universal/Muscle",
+        "macrodetails-universal/Weight",
+        "macrodetails-height/Height",
+        "macrodetails-proportions/BodyProportions",
+        "breast/BreastSize",
+        "hip/hip-scale-horiz-decr|incr"};
+
+    struct McpReference {
+        std::string view;   ///< one of kMcpViews, or empty for a closeup
+        std::string label;  ///< what a closeup shows
+        std::string path;
+        mh::ui::Silhouette outline;
+    };
+
+    std::vector<McpReference> references;
+
     if (parser.isSet(mcpOpt)) {
         mh::mcp::Server server("makehuman", std::string(mh::foundation::kVersion));
 
@@ -7605,6 +7638,238 @@ int main(int argc, char** argv) {
                                      {"renderCoverage", mine.coverage},
                                      {"referenceCoverage", theirs.coverage},
                                      {"reference", refPath}};
+            }});
+
+        // Scores the character against every reference that names a VIEW.
+        // Closeups are deliberately not scored: an outline cannot see a
+        // cheekbone, and a number that pretended to would be worse than none.
+        const auto scoreViews = [&](int height) -> std::pair<double, int> {
+            double total = 0.0;
+            int scored   = 0;
+            for (const McpReference& ref : references) {
+                if (ref.view.empty()) continue;
+                const auto* chosen = std::ranges::find_if(
+                    kMcpViews, [&](const McpView& v) { return v.name == ref.view; });
+                if (chosen == std::ranges::end(kMcpViews)) continue;
+                const int width =
+                    std::clamp(static_cast<int>(std::lround(static_cast<double>(height) *
+                                                            ref.outline.mask.width() /
+                                                            ref.outline.mask.height())),
+                               64, 4096);
+                const mh::ui::RenderRequest req{.width       = width,
+                                                .height      = height,
+                                                .transparent = true,
+                                                .shading     = shading,
+                                                .wireframe   = false,
+                                                .yawDegrees  = chosen->yawDegrees,
+                                                .lighting    = lighting};
+                const auto img = renderImage(req);
+                if (!img) continue;
+                total += mh::ui::compareSilhouettes(mh::ui::silhouetteOf(*img), ref.outline).iou;
+                ++scored;
+            }
+            return {scored > 0 ? total / scored : 0.0, scored};
+        };
+
+        server.add(mh::mcp::Tool{
+            .name        = "add_reference",
+            .description = "Register a reference image of the character to build. Give `view` = "
+                           "front, back, left or right for a full-body shot -- those are what the "
+                           "fit uses -- or `label` for a closeup of a key area, which is kept for "
+                           "you to LOOK at and set by hand, because an outline cannot see a "
+                           "cheekbone. Returns `coverage`: the fraction of the image taken to be "
+                           "the subject. ANYTHING ABOVE 0.9 MEANS THE BACKGROUND COULD NOT BE "
+                           "SEPARATED and the image is unusable for fitting -- ask for a shot "
+                           "against a plain backdrop that reaches the top-left corner.",
+            .inputSchema =
+                mh::mcp::Json{
+                    {"type", "object"},
+                    {"properties",
+                     mh::mcp::Json{
+                         {"path", mh::mcp::Json{{"type", "string"}}},
+                         {"view", mh::mcp::Json{{"type", "string"},
+                                                {"enum", mh::mcp::Json::array(
+                                                             {"front", "back", "left", "right"})}}},
+                         {"label", mh::mcp::Json{{"type", "string"}}}}},
+                    {"required", mh::mcp::Json::array({"path"})}},
+            .call = [&](const mh::mcp::Json& args) {
+                if (!args.contains("path")) throw mh::mcp::ToolError("add_reference needs a path");
+                const auto path  = args.at("path").get<std::string>();
+                const auto view  = args.value("view", std::string{});
+                const auto label = args.value("label", std::string{});
+                if (view.empty() && label.empty()) {
+                    throw mh::mcp::ToolError(
+                        "give a view (front, back, left, right) for a full-body shot, or a "
+                        "label for a closeup");
+                }
+                if (!view.empty() && std::ranges::find_if(kMcpViews, [&](const McpView& v) {
+                                         return v.name == view;
+                                     }) == std::ranges::end(kMcpViews)) {
+                    throw mh::mcp::ToolError("view must be front, back, left or right, not \"" +
+                                             view + "\"");
+                }
+
+                QImage image;
+                if (!image.load(QString::fromStdString(path))) {
+                    throw mh::mcp::ToolError("cannot read image: " + path);
+                }
+                McpReference ref{.view    = view,
+                                 .label   = label,
+                                 .path    = path,
+                                 .outline = mh::ui::silhouetteOf(image)};
+                if (ref.outline.area == 0) {
+                    throw mh::mcp::ToolError(
+                        "no subject found in " + path +
+                        ": the top-left corner is taken to be the background, so an image "
+                        "cropped tight to the body has nothing to separate");
+                }
+                const double coverage = ref.outline.coverage;
+
+                // Replacing rather than appending for a named view: a creator
+                // who sends a better front shot means INSTEAD OF, and two
+                // fronts would quietly weight that angle double in the fit.
+                if (!view.empty()) {
+                    std::erase_if(references,
+                                  [&](const McpReference& r) { return r.view == view; });
+                }
+                references.push_back(std::move(ref));
+
+                return mh::mcp::Json{{"view", view},
+                                     {"label", label},
+                                     {"path", path},
+                                     {"coverage", coverage},
+                                     {"usable", coverage < 0.9 && coverage > 0.005},
+                                     {"references", references.size()}};
+            }});
+
+        server.add(mh::mcp::Tool{
+            .name        = "list_references",
+            .description = "Every reference registered so far, which views are covered and "
+                           "which are still missing. Takes no arguments.",
+            .inputSchema =
+                mh::mcp::Json{{"type", "object"}, {"properties", mh::mcp::Json::object()}},
+            .call = [&](const mh::mcp::Json&) {
+                mh::mcp::Json rows    = mh::mcp::Json::array();
+                mh::mcp::Json missing = mh::mcp::Json::array();
+                for (const McpReference& r : references) {
+                    rows.push_back(mh::mcp::Json{{"view", r.view},
+                                                 {"label", r.label},
+                                                 {"path", r.path},
+                                                 {"coverage", r.outline.coverage}});
+                }
+                for (const McpView& v : kMcpViews) {
+                    if (std::ranges::none_of(
+                            references, [&](const McpReference& r) { return r.view == v.name; })) {
+                        missing.push_back(std::string(v.name));
+                    }
+                }
+                return mh::mcp::Json{{"references", std::move(rows)},
+                                     {"missingViews", std::move(missing)}};
+            }});
+
+        server.add(mh::mcp::Tool{
+            .name = "fit_to_references",
+            .description =
+                "Search the body parameters for the character that best matches the "
+                "registered full-body references, and APPLY it. Scored by outline "
+                "agreement averaged over every view you supplied, so more views means a "
+                "better-constrained fit -- a front shot alone cannot tell a deep chest "
+                "from a flat one. "
+                "WHAT IT CANNOT DO: faces. An outline does not see a nose, so this moves "
+                "only the eight parameters that change the body's silhouette; set facial "
+                "detail yourself from the closeups. It also cannot know absolute "
+                "stature, because a photograph does not carry one -- state the height if "
+                "it matters. "
+                "MORE PASSES GENUINELY HELP, measured by rebuilding a known character "
+                "from its own renders: 2 passes reached 0.87 with a mean parameter error "
+                "of 0.13, 4 passes 0.92 and 0.10, 6 passes 0.95 and 0.08, at about 160 "
+                "renders and two seconds per pass. It does not reach the 0.998 a "
+                "character scores against itself -- the search is a coordinate descent "
+                "and the parameters trade against each other -- so treat the result as a "
+                "strong starting point to adjust by eye, not as the answer. "
+                "Returns the score before and after and every parameter it moved, so you "
+                "can judge the fit and undo it.",
+            .inputSchema =
+                mh::mcp::Json{
+                    {"type", "object"},
+                    {"properties", mh::mcp::Json{{"passes", mh::mcp::Json{{"type", "integer"}}},
+                                                 {"probes", mh::mcp::Json{{"type", "integer"}}}}}},
+            .call = [&](const mh::mcp::Json& args) {
+                const int passes = args.value("passes", 4);
+                const int probes = args.value("probes", 5);
+                if (passes < 1 || passes > 8) {
+                    throw mh::mcp::ToolError("passes must be 1..8, got " + std::to_string(passes));
+                }
+                if (probes < 3 || probes > 11) {
+                    throw mh::mcp::ToolError("probes must be 3..11, got " + std::to_string(probes));
+                }
+
+                const auto [before, viewCount] = scoreViews(kMcpFitHeight);
+                if (viewCount == 0) {
+                    throw mh::mcp::ToolError(
+                        "no full-body references to fit against; call add_reference with a "
+                        "view of front, back, left or right first");
+                }
+
+                // COORDINATE DESCENT, and deliberately nothing cleverer. The
+                // objective is a render away from every evaluation, so a method
+                // needing gradients would have to estimate them with the same
+                // renders this spends directly; and a search a creator cannot
+                // follow is worse than one they can, because they are the ones
+                // who decide when it is right.
+                int renders = 0;
+                for (int pass = 0; pass < passes; ++pass) {
+                    for (const std::string_view name : kMcpFitParameters) {
+                        const std::string key(name);
+                        const mh::core::Modifier* m = human.findModifier(key);
+                        if (m == nullptr) continue;  // a renamed modifier must not abort a fit
+
+                        // The window NARROWS each pass, centred on where the
+                        // parameter now sits: the whole range first, then half,
+                        // then a quarter. Two separate faults were measured
+                        // without it. A five-point grid cannot represent 0.30
+                        // at all, so a recovered character sat on the nearest
+                        // quarter and stopped; and a parameter optimised early
+                        // was never revisited once the ones it trades against
+                        // had moved -- Weight settled on 0.50 while a sweep of
+                        // the finished character showed its true optimum, and
+                        // the target's own value, at 0.75.
+                        const float lo = m->minValue();
+                        const float hi = m->maxValue();
+                        const float span =
+                            (hi - lo) / std::pow(2.0F, static_cast<float>(std::max(0, pass - 1)));
+                        const float here = human.modifierValue(key);
+                        const float from = std::max(lo, here - span * 0.5F);
+                        const float to   = std::min(hi, here + span * 0.5F);
+
+                        float bestValue  = here;
+                        double bestScore = -1.0;
+                        for (int i = 0; i < probes; ++i) {
+                            const float t = static_cast<float>(i) / static_cast<float>(probes - 1);
+                            const float v = from + t * (to - from);
+                            if (!human.setModifierValue(key, v)) continue;
+                            rebuild();
+                            const auto [score, n] = scoreViews(kMcpFitHeight);
+                            renders += n;
+                            if (score > bestScore) {
+                                bestScore = score;
+                                bestValue = v;
+                            }
+                        }
+                        human.setModifierValue(key, bestValue);
+                        rebuild();
+                    }
+                }
+
+                const auto [after, _] = scoreViews(kMcpFitHeight);
+                mh::mcp::Json moved   = mh::mcp::Json::object();
+                for (const std::string_view name : kMcpFitParameters) {
+                    const std::string key(name);
+                    if (human.findModifier(key) != nullptr) moved[key] = human.modifierValue(key);
+                }
+                return mh::mcp::Json{{"scoreBefore", before}, {"scoreAfter", after},
+                                     {"views", viewCount},    {"renders", renders},
+                                     {"passes", passes},      {"parameters", std::move(moved)}};
             }});
 
         return server.run(std::cin, *mcpOut);

@@ -4,6 +4,104 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-10-03 23:30:00 — Session · **The score went up while the answer got worse**
+
+Continues the entry below. The MCP server grew the rest of the loop the owner
+asked for: see the character, score it against photographs, fit it.
+
+### What shipped
+`render` returns THE IMAGE, not a path to one, and takes a view — front, back,
+left, right. `compare_to_reference` scores the character against a photograph.
+`add_reference` / `list_references` / `fit_to_references` take the four
+reference angles plus closeups and search the body parameters.
+
+`tools/call` was also answering with an OBJECT under `content`, which the
+specification types as an array of content blocks. Every answer would have been
+rejected by a strict client — on exactly the clients the owner asked it to
+survive.
+
+### Three decisions, each measured rather than reasoned
+**The score is an OUTLINE match, not a pixel difference.** Against a photograph
+PSNR answers the wrong question: different lighting, skin, background and
+framing put a perfect fit and a hopeless one at about the same number. The
+outline is the part a parametric body can be fitted to.
+
+**Scale out, aspect IN.** The first implementation scaled both outlines onto a
+shared box with `IgnoreAspectRatio`, which is the obvious thing to write and
+normalises width away — a tall narrow body and a short wide one of the same
+shape score 1.0, and a fit driven by that could never find a waist. Now both
+are scaled to a common HEIGHT, uniformly, and centred. Controlled: the old
+behaviour fails the new test.
+
+**The left/right mapping was measured twice, and the first reading was wrong.**
+Reading the nose direction off a 256 px contact sheet gave the OPPOSITE of what
+a crop of the same two heads showed. What settled it needs no coordinate
+bookkeeping at all: widening `armslegs/l-upperarm-scale-horiz-decr|incr` moved
+863 pixels in the screen-RIGHT half of a front render and none in the left.
+
+### THE FINDING: a score-only gate would have shipped the bug as an improvement
+The fit's probe window narrows each pass. I first narrowed it from pass 1. That
+version scored **higher** than the one before it — 0.878 against 0.868 — while
+the recovered parameters moved **further from the truth**, mean error 0.246
+against 0.200. Narrowing from the first pass locks in whatever the opening pass
+guessed.
+
+I only saw it because the test rebuilds a character from its OWN renders, so
+the true parameter values are known and can be compared against. A gate
+watching `scoreAfter` would have called it progress and the search would have
+shipped degenerate.
+
+Two full-range passes, then halve each pass. With that, score and parameter
+error improve together as passes rise: 2 → 0.87 / 0.13, 4 → 0.92 / 0.10,
+6 → 0.95 / 0.08. That they move together is the property worth having —
+it says the objective is tracking the character rather than some other body
+that happens to share an outline.
+
+### What was measured, not assumed
+- The fit reaches 0.95, never the 0.998 a character scores against itself. The
+  tool description says so, so a model does not chase an unreachable number.
+- The identical-character ceiling is 0.998 because an antialiased edge masks
+  differently through alpha than through colour: 45 pixels in the render's
+  favour, 0 in the reference's.
+- Height is NOT invisible to a scale-invariant score — measured at 0.476. It
+  changes proportion, not merely size. My worry that it would be was wrong.
+- `BodyProportions` is the one stubborn parameter (0.69 against a target of
+  0.30). A sweep showed the objective genuinely prefers high values there, so
+  the search is working and the objective is biased. Left as is, and the gate
+  allows one parameter to stay stubborn.
+- Fitting costs ~160 renders and 2.3 s per pass; recovery is deterministic
+  across runs.
+- CMake compares floating-point numbers properly in `if(GREATER)` — probed
+  before relying on it. `math(EXPR)` is still integer-only, so the test's
+  windows are written out rather than computed.
+
+### Gates added
+`app_mcp_session` (stdout carries only protocol), `app_mcp_left_is_the_models_left`,
+`app_mcp_compare_discriminates`, `app_mcp_fit_recovers_a_character`, and
+`ui` [silhouette] (9 cases on drawn shapes). **Every one controlled**, including
+one control that had to be redone because it did not compile — and a mutation
+that does not compile is not a control.
+
+One real bug found by its own test: an opaque subject against a TRANSPARENT
+clear has the same RGB as its background, so the colour distance called the
+whole frame empty. Alpha is the mask when the clear is transparent.
+
+### State
+Four commits local, **UNPUSHED, deliberately**: CI run 37139478371 on
+`fe0b102d` is 10/11 green with TSan still running, and pushing cancels an
+in-flight run. Owner's standing instruction is "push once tsan finishes".
+
+### What is honestly not done
+**Depth maps.** Estimating depth from a photograph needs a learned model, which
+the owner deferred ("we will leave them for now"). Accepting a creator-supplied
+depth map is reachable; no objective has been decided for it, so it is not
+built. Nothing in the tooling pretends otherwise.
+
+Closeups are stored and listed but not scored — an outline cannot see a
+cheekbone, and a number that pretended to would be worse than none.
+
+---
+
 ## 2026-10-03 19:45:00 — Session · **Five tools worked perfectly on a stream no client could read**
 
 ### What the owner asked for
