@@ -30,6 +30,7 @@ add_executable(mh_tests
     unit/test_decimator.cpp
     unit/test_surface_stretch.cpp
     unit/test_parameter_space.cpp
+    unit/test_mcp_server.cpp
     unit/test_topology_hash.cpp
     unit/test_provenance.cpp
     unit/test_naming.cpp
@@ -109,7 +110,7 @@ add_executable(mh_tests
 # AGPL -> Apache is the legal direction and AGPL -> AGPL is unconstrained, so
 # inheriting both is correct rather than merely convenient.
 target_link_libraries(mh_tests
-    PRIVATE mh::rig mh_json Catch2::Catch2WithMain mh::warnings mh::sanitize)
+    PRIVATE mh::rig mh::mcp mh_json Catch2::Catch2WithMain mh::warnings mh::sanitize)
 
 # MH_HAVE_DRACO reaches here through mh_io's PUBLIC definition; the DECODER is
 # what the test needs on top of that, and it lives in the same library.
@@ -455,6 +456,14 @@ if(MH_HAVE_RENDER)
     # default character wears eyes, so this exports two groups -- but it still
     # does not cover the window path; `makehuman --screenshot` does, and needs a
     # real Metal device.
+    # The MCP server, driven end to end over a pipe. See tests/mcp_session.cmake
+    # for why the assertion is on the shape of the stream rather than on an
+    # answer: every tool worked while stdout was corrupted.
+    add_test(NAME app_mcp_session COMMAND ${CMAKE_COMMAND}
+             -DMH_APP=$<TARGET_FILE:makehuman>
+             -DMH_SESSION=${CMAKE_CURRENT_SOURCE_DIR}/golden/mcp/session.jsonl
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/mcp_session.cmake)
+
     add_test(NAME app_smoke COMMAND makehuman
              --load ${CMAKE_CURRENT_SOURCE_DIR}/golden/mhm/reference_save.mhm
              --set macrodetails/Gender=1.0

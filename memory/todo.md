@@ -10473,6 +10473,80 @@ GPU here, or Colab) and it comes back to the owner first.
 
 ---
 
+## M12 — the MCP agent interface (owner asked 2026-10-03)
+
+The owner's instruction: an MCP server that builds an avatar from a
+description, renders it, compares, and iterates until the creator is
+satisfied; later, builds a character from reference images (front, back,
+left, right, plus closeups of key areas) using depth maps. Robust, fast,
+grounded, logged per action, with real error handling, a liveness check, and
+survival across client updates.
+
+- [x] **Protocol core** — `include/makehuman/mcp/Server.h`,
+      `src/mcp/Server.cpp`, `mh::mcp`. JSON-RPC 2.0 over line-delimited stdio.
+      13 unit tests, no mesh, no GPU, no subprocess.
+      **C++ and not a Python shim**, because `CLAUDE.md:12` says the end state
+      ships no Python and this is shipped runtime, not an authoring tool. No
+      new dependency: `nlohmann/json` was already pinned and cleared
+      (`LICENSING.md` 5.1).
+      **Surviving a client update** is why `initialize` NEGOTIATES: it echoes
+      the client's protocol version when we implement it (`2025-06-18`,
+      `2025-03-26`, `2024-11-05`) and answers with ours when we do not, rather
+      than refusing. Nothing depends on a particular client's quirks.
+      `ping` is answered BEFORE the initialised check, because a liveness
+      probe that only works on a negotiated session cannot distinguish "down"
+      from "not yet initialised", which is the one thing a probe is for.
+      A `ToolError` comes back as a successful exchange carrying `isError`;
+      any other exception is an InternalError. The distinction is the point —
+      a model that is told the SERVER is broken stops asking.
+
+- [x] **`--mcp` entry point and the first five tools** (`src/app/main.cpp`):
+      `health`, `list_parameters`, `get_parameters`, `set_slider`, `render`.
+      Wired where the character, the target library and `renderTo` are already
+      in scope, so a tool call does not pay the 1,280-target load; a subprocess
+      per call would make an iterative "adjust, look, adjust" loop too slow to
+      use. Measured: `render` 48 ms at 256 px, `set_slider` under a
+      millisecond.
+      Every tool that CHANGES the character re-applies the modifier stack
+      before returning, or a later `render` would hand back the previous body
+      and look like the edit was ignored. Verified by pixels, not by file
+      existence: Gender 0.5→1.0 plus Muscle →1.0 moved **14,155 of 147,456**
+      pixels, and the render was looked at.
+
+- [x] **STDOUT IS THE PROTOCOL CHANNEL, enforced at the file descriptor.**
+      THE REAL BUG, and it was live. Loading a character prints progress with
+      `std::printf` — "applied 8 targets", "rig mixamo_superset (179 bones)",
+      "clamped 3725 of 19158 vertices", "asset groups: 16" — and all of it
+      landed on stdout, so a client hit a parse error before the first
+      response. Every tool worked. The structured stderr log showed a clean
+      session. The renders were correct. Only reading the raw bytes of stdout
+      found it.
+      Moving those four calls to stderr would fix today and break the day
+      someone adds a fifth, and two ctests assert that text arrives on stdout.
+      So `--mcp` points fd 1 at stderr and hands the server a duplicate of the
+      real stdout — the same pipe the client reads. That catches `std::printf`,
+      `std::cout`, and anything a future dependency writes.
+      Gated by `app_mcp_session` (`tests/mcp_session.cmake`), which asserts the
+      SHAPE OF THE STREAM: every line begins with `{`. Controlled — with the
+      `dup2` removed the gate fails with `non-protocol output on stdout:
+      applied 8 targets (0 missing);`, and the control compiled.
+      This is the same failure as `--print-parameters` writing progress to
+      stdout, one commit earlier. Second time; hence the structural guard
+      rather than a third audit.
+
+- [ ] **Reference-image intake**: front, back, left, right, plus closeups of
+      key areas, with depth maps. Not started. Open question to settle first:
+      the fit is a search over the parameter space
+      (`mh::core::ParameterSpace`, 2026-10-03) against a silhouette and
+      landmark objective — decide the objective before writing the solver, or
+      it will be tuned to whatever it first produces.
+- [ ] **The iterate-until-satisfied loop**: `render` exists and returns a
+      path; what is missing is a compare tool, so the model can score its own
+      output rather than asking the creator every round.
+- [ ] **A multi-view render tool** — the four reference angles in one call, so
+      a comparison is against the same poses the creator supplied.
+
+
 ## Body-shape controls — they all exist; the gap is DISCOVERY (asked 2026-09-10)
 
 The owner asked how to make breasts, buttocks, a chubby build, an athletic one

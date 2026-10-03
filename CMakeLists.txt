@@ -122,6 +122,9 @@ add_subdirectory(src/foundation)
 add_subdirectory(src/core)
 add_subdirectory(src/io)
 add_subdirectory(src/rig)
+# The MCP server: JSON-RPC over stdio, no Qt, so it builds in every
+# configuration including the headless ones.
+add_subdirectory(src/mcp)
 
 # Qt is optional: the geometry, rig and io layers build and test without it, so
 # the charconv-fallback job can stay small. The main CI matrix DOES install Qt --

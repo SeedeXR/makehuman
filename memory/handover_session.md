@@ -4,6 +4,103 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-10-03 19:45:00 — Session · **Five tools worked perfectly on a stream no client could read**
+
+### What the owner asked for
+*"work on the mcp that is able to use a detailed harness and tooling to build
+an avatar from desicriptions, visualize, take pictures compare until the
+creator is satisified"*, plus reference-image intake later, and: robust, fast,
+grounded, logged per action, proper error handling, a liveness check, and
+survival across client updates.
+
+Also, in the same instruction and now SETTLED: correlated sliders yes; external
+data, a learned generative model, and scan fitting are **deferred** — *"we will
+leave them for now"*. Do not re-open them.
+
+### What shipped
+`mh::mcp` (`include/makehuman/mcp/Server.h`, `src/mcp/Server.cpp`): JSON-RPC
+2.0 over line-delimited stdio, 13 unit tests that need no mesh, no GPU and no
+subprocess. Then `--mcp` in `src/app/main.cpp` with `health`,
+`list_parameters`, `get_parameters`, `set_slider` and `render`.
+
+C++ rather than a Python shim because `CLAUDE.md:12` says the end state ships
+no Python and this is shipped runtime. No new dependency — `nlohmann/json` was
+already pinned and cleared at `LICENSING.md:221`.
+
+Three decisions worth keeping:
+- **`ping` is answered before the initialised check.** A liveness probe that
+  only works on a negotiated session cannot tell "down" from "not yet
+  initialised", which is the one thing a probe exists to answer.
+- **`initialize` negotiates rather than asserts.** It echoes the client's
+  protocol version when we implement it and answers with ours when we do not.
+  That is what "survive a client update" actually requires; refusing an
+  unknown version would break on the next release for no reason.
+- **A `ToolError` is a result, not a transport fault.** It comes back as a
+  successful exchange carrying `isError`, so the model reads the text and
+  tries something else. A JSON-RPC error says the SERVER is broken, and a
+  model that believes that stops asking.
+
+### The bug, which is the whole lesson
+**Every tool worked. The session was corrupt.**
+
+Loading a character prints progress with `std::printf` — "applied 8 targets",
+"rig mixamo_superset (179 bones)", "clamped 3725 of 19158 vertices", "asset
+groups: 16" — and every one of those lines went to **stdout**, which is the
+protocol channel. A client would hit a parse error before the first response.
+
+What made it invisible: the structured stderr log showed a clean session, every
+tool returned the right answer, the renders came out correct, and the exit code
+was 0. I only found it because a `json.loads` over the raw stdout threw on line
+1. Had I checked "did the tool answer correctly" — the obvious test — it would
+have passed the entire time.
+
+**The fix is at the file descriptor, not the call site.** `--mcp` points fd 1
+at stderr and hands the server a duplicate of the real stdout (the same pipe
+the client reads). Moving those four `printf`s would fix today and break on the
+fifth, and two ctests assert that exact text arrives on stdout. The redirect
+catches `std::printf`, `std::cout`, and anything a dependency adds later.
+
+**This is the second time in two commits.** `--print-parameters` was unusable
+as `--set-parameters` input because `--random` wrote progress to stdout. Same
+failure, same channel. That is why this one got a structural guard instead of a
+third audit.
+
+### The gate
+`app_mcp_session` (`tests/mcp_session.cmake`, fixture
+`tests/golden/mcp/session.jsonl`) drives a real session through a pipe and
+asserts the **shape of the stream**: every line begins with `{`. It also pins
+six responses for seven input lines — the notification must not be answered and
+the deliberately malformed line must produce a ParseError without ending the
+session.
+
+**Controlled.** With the `dup2` removed the gate fails with
+`non-protocol output on stdout: applied 8 targets (0 missing);` and the control
+build compiled (exit 0, zero errors) — so it was a real control, not a
+mutation that never ran. Restored from backup, `cmp` clean, both configs
+rebuilt.
+
+### Verified, not assumed
+- Both configs **1596/1596**. Re-run after clang-format touched `main.cpp`.
+- clang-format gate: exit 0, run as its own line.
+- `set_slider` reaches the image: Gender 0.5→1.0 and Muscle →1.0 moved
+  **14,155 of 147,456** pixels at 384 px. I looked at the render; it is a
+  muscular male figure, not garbage.
+- `render` 48 ms at 256 px; `set_slider` under a millisecond.
+- Unknown protocol version `2099-01-01` answered with `2025-06-18`, session
+  continued.
+
+### What is next
+Reference-image intake (front/back/left/right plus closeups, with depth maps),
+a compare tool so the model can score its own render, and a multi-view render
+so comparison uses the creator's own angles. The fit is a search over
+`mh::core::ParameterSpace`; **settle the objective before writing the solver**,
+or it gets tuned to whatever it first produces.
+
+Still with the owner: `DUTY` in `tools/make_hair_alpha.py` (ships at 0.80) and
+eyebrow thickness.
+
+---
+
 ## 2026-10-02 15:10:00 — Session · **"Correct and visible" was a bug report, and the brow was never bound to the brow**
 
 ### What the owner decided

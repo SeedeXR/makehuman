@@ -14,6 +14,16 @@
 #include "makehuman/core/Mhm.h"
 #include "makehuman/core/ObjReader.h"
 #include "makehuman/core/ParameterSpace.h"
+#include "makehuman/mcp/Server.h"
+
+// For --mcp: stdio IS the transport, down to the file descriptor.
+#include <cerrno>
+#include <cstring>
+#include <fstream>
+#include <iostream>
+#include <memory>
+
+#include <unistd.h>
 #include "makehuman/core/Proxy.h"
 #include "makehuman/core/Random.h"
 #include "makehuman/core/RenderMesh.h"
@@ -3427,6 +3437,13 @@ int main(int argc, char** argv) {
         QStringLiteral("Iris colour worn on the eye proxy: brown, amber, hazel, green, blue or "
                        "grey. Independent of --eyes, which picks the geometry."),
         QStringLiteral("name"), QStringLiteral("brown"));
+    const QCommandLineOption mcpOpt(
+        QStringLiteral("mcp"),
+        QStringLiteral("Run as a Model Context Protocol server: JSON-RPC 2.0 over stdio, so "
+                       "an LLM client can build and inspect a character directly. Logs are "
+                       "structured JSON on stderr; stdout carries the protocol and nothing "
+                       "else."));
+    parser.addOption(mcpOpt);
     const QCommandLineOption correlatedOpt(
         QStringLiteral("correlated"),
         QStringLiteral("With --random, couple the macro sliders instead of drawing each on "
@@ -3779,6 +3796,37 @@ int main(int argc, char** argv) {
     parser.addOption(shotOpt);
     parser.addOption(shotViewportOpt);
     parser.process(app);
+
+    // STDOUT NOW BELONGS TO THE PROTOCOL, and nothing else may write to it.
+    //
+    // This is a GUARD, not a tidy-up. Loading a character prints progress with
+    // `std::printf` -- "applied 8 targets", "asset groups: 16", and more -- and
+    // every one of those lines landed in the middle of the JSON-RPC stream, so
+    // a client saw a parse error before the first response. Moving those calls
+    // to stderr one by one would fix today and break the day someone adds a
+    // sixth; two ctests also assert on that text arriving on stdout.
+    //
+    // So the file descriptor is redirected instead: fd 1 is pointed at stderr,
+    // which catches `std::printf`, `std::cout` and anything a future dependency
+    // writes, and the protocol is given a duplicate of the REAL stdout. The
+    // duplicate is the same pipe the client is reading, so nothing about the
+    // transport changes.
+    //
+    // It has to happen here, before the first line is printed, which is why it
+    // sits immediately after parsing rather than beside the rest of --mcp.
+    std::unique_ptr<std::ofstream> mcpOut;
+    if (parser.isSet(mcpOpt)) {
+        const int realOut = ::dup(STDOUT_FILENO);
+        if (realOut < 0 || ::dup2(STDERR_FILENO, STDOUT_FILENO) < 0) {
+            std::fprintf(stderr, "--mcp: cannot take over stdout: %s\n", std::strerror(errno));
+            return 1;
+        }
+        mcpOut = std::make_unique<std::ofstream>("/dev/fd/" + std::to_string(realOut));
+        if (!mcpOut->is_open()) {
+            std::fprintf(stderr, "--mcp: cannot reopen stdout\n");
+            return 1;
+        }
+    }
 
     // An unrecognised model is refused rather than defaulted: silently falling
     // back to the litsphere would make `--shading pbrr` produce a plausible
@@ -7240,6 +7288,144 @@ int main(int argc, char** argv) {
             return 1;
         }
         return 0;
+    }
+
+    // THE MCP SERVER. Placed here because everything a tool needs is already in
+    // scope -- the character, the target library, the mesh and `renderTo` --
+    // and because it must come before the window path: a server driven over
+    // stdio has no business opening a window.
+    //
+    // Tools close over that state rather than shelling out to this same binary.
+    // A subprocess per call would pay the 1,280-target load every time and turn
+    // an iterative "adjust, look, adjust" loop into something too slow to use.
+    if (parser.isSet(mcpOpt)) {
+        mh::mcp::Server server("makehuman", std::string(mh::foundation::kVersion));
+
+        // Re-applies the modifier stack to the mesh. Every tool that CHANGES
+        // the character calls this; a render that skipped it would return the
+        // previous body and look like the edit was ignored.
+        const auto rebuild = [&]() {
+            uint32_t missing = 0;
+            human.applyStack(*mesh, targets, &missing);
+        };
+
+        server.add(mh::mcp::Tool{
+            .name        = "health",
+            .description = "Whether the server is live, which version it is, and what it has "
+                           "served so far. Takes no arguments. Call this first if a session "
+                           "looks wrong -- it answers before initialize and never fails.",
+            .inputSchema =
+                mh::mcp::Json{{"type", "object"}, {"properties", mh::mcp::Json::object()}},
+            .call = [&server](const mh::mcp::Json&) {
+                return mh::mcp::Json{{"status", "ok"},
+                                     {"version", std::string(mh::foundation::kVersion)},
+                                     {"tools", server.tools().size()},
+                                     {"requests", server.stats().requests},
+                                     {"toolCalls", server.stats().toolCalls},
+                                     {"toolErrors", server.stats().toolErrors}};
+            }});
+
+        server.add(mh::mcp::Tool{
+            .name        = "list_parameters",
+            .description = "Every character parameter, in vector order: name, min, max, "
+                           "default, and whether it is one of the three coupled ethnic "
+                           "components. Use this to find the name of a slider before setting "
+                           "it.",
+            .inputSchema =
+                mh::mcp::Json{{"type", "object"}, {"properties", mh::mcp::Json::object()}},
+            .call = [&human](const mh::mcp::Json&) {
+                const auto space   = mh::core::ParameterSpace::of(human);
+                mh::mcp::Json rows = mh::mcp::Json::array();
+                for (const mh::core::Parameter& prm : space.parameters()) {
+                    rows.push_back(mh::mcp::Json{{"name", prm.name},
+                                                 {"min", prm.minValue},
+                                                 {"max", prm.maxValue},
+                                                 {"default", prm.defaultValue},
+                                                 {"coupled", prm.ethnic}});
+                }
+                return mh::mcp::Json{{"parameters", std::move(rows)}};
+            }});
+
+        server.add(mh::mcp::Tool{
+            .name        = "get_parameters",
+            .description = "The current character as one number per parameter, in the order "
+                           "list_parameters gives. Save this to reproduce a character exactly.",
+            .inputSchema =
+                mh::mcp::Json{{"type", "object"}, {"properties", mh::mcp::Json::object()}},
+            .call = [&human](const mh::mcp::Json&) {
+                const auto space = mh::core::ParameterSpace::of(human);
+                return mh::mcp::Json{{"values", space.toVector(human)}};
+            }});
+
+        server.add(mh::mcp::Tool{
+            .name        = "set_slider",
+            .description = "Set ONE named parameter. Prefer this over set_parameters when "
+                           "adjusting a character: it names what changed, which is what an "
+                           "iterative loop needs. Returns the value actually stored, which "
+                           "may be clamped.",
+            .inputSchema =
+                mh::mcp::Json{
+                    {"type", "object"},
+                    {"properties", mh::mcp::Json{{"name", mh::mcp::Json{{"type", "string"}}},
+                                                 {"value", mh::mcp::Json{{"type", "number"}}}}},
+                    {"required", mh::mcp::Json::array({"name", "value"})}},
+            .call = [&human, &rebuild](const mh::mcp::Json& args) {
+                if (!args.contains("name") || !args.contains("value")) {
+                    throw mh::mcp::ToolError("set_slider needs both name and value");
+                }
+                const auto name             = args.at("name").get<std::string>();
+                const auto want             = args.at("value").get<float>();
+                const mh::core::Modifier* m = human.findModifier(name);
+                if (m == nullptr) {
+                    // Naming the range is not enough -- the model needs to know
+                    // the name was wrong, not the number.
+                    throw mh::mcp::ToolError("no parameter called \"" + name +
+                                             "\"; call list_parameters for the names");
+                }
+                if (!human.setModifierValue(name, want)) {
+                    throw mh::mcp::ToolError("could not set \"" + name + "\"");
+                }
+                rebuild();
+                return mh::mcp::Json{{"name", name},
+                                     {"value", human.modifierValue(name)},
+                                     {"min", m->minValue()},
+                                     {"max", m->maxValue()}};
+            }});
+
+        server.add(mh::mcp::Tool{
+            .name        = "render",
+            .description = "Render the current character to a PNG and return its path. This "
+                           "is how you SEE what you built: render, look at the image, adjust "
+                           "a slider, render again.",
+            .inputSchema =
+                mh::mcp::Json{
+                    {"type", "object"},
+                    {"properties", mh::mcp::Json{{"path", mh::mcp::Json{{"type", "string"}}},
+                                                 {"size", mh::mcp::Json{{"type", "integer"}}}}},
+                    {"required", mh::mcp::Json::array({"path"})}},
+            .call = [&](const mh::mcp::Json& args) {
+                if (!args.contains("path")) throw mh::mcp::ToolError("render needs a path");
+                const auto path = args.at("path").get<std::string>();
+                const int size  = args.value("size", 1024);
+                if (size < 64 || size > 4096) {
+                    throw mh::mcp::ToolError("size must be 64..4096, got " + std::to_string(size));
+                }
+                const mh::ui::RenderRequest req{.width       = size,
+                                                .height      = size,
+                                                .transparent = false,
+                                                .shading     = shading,
+                                                .wireframe   = false,
+                                                .lighting    = lighting};
+                if (const std::string err = renderTo(path, req); !err.empty()) {
+                    // A render failure is the CALLER's problem to route around
+                    // -- a headless machine with no GPU, say -- so it is a tool
+                    // error with the reason, not an internal fault.
+                    throw mh::mcp::ToolError("cannot render: " + err);
+                }
+                return mh::mcp::Json{{"path", path}, {"width", size}, {"height", size}};
+            }});
+
+        return server.run(std::cin, *mcpOut);
     }
 
     if (parser.isSet(shotOpt)) {
