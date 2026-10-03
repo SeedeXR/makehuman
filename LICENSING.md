@@ -402,7 +402,7 @@ If a usable model ever appears, the runtime is already cleared in principle.
 | Depth Anything 3 Base (Nov 2025, ByteDance) | Apache-2.0 | "trained exclusively on public academic datasets", none named | **Refused.** Unnamed data cannot be audited — §5.2, "Anything with an unidentifiable licence". |
 | Depth Anything 3 Large / Giant | **CC-BY-NC-4.0** | same | **Refused.** |
 | **MiDaS** v2.1 / 3.1 small | MIT | 12 sets, >3.7M images, including **KITTI**, **ApolloScape** and **"Movies"** — frames from commercial 3D films | **Refused.** Worse lineage than Depth Anything, not better. |
-| Microsoft **MoGe / MoGe-2** | MIT code | "publicly available for academic use": A2D2, **Argoverse2**, ARKitScenes, BlendedMVS, … | **Refused.** Same pattern. |
+| Microsoft **MoGe / MoGe-2** | MIT (code, and the weight repos' tag) | "publicly available for academic use": A2D2, **Argoverse 2**, ARKitScenes, BlendedMVS, … | **CHOSEN BY THE OWNER, 2026-10-03 — see 5.2c.** The data concern is real and is recorded there rather than waved away. |
 | Apple **Depth Pro** | Apple ML research licence | — | **Refused.** Not a commercial grant. |
 | Meta **DepthLM** (ICLR 2026) | **CC-BY-NC** | — | **Refused.** |
 | **NVIDIA NvDepthAnythingV2** | NVIDIA Open Model License — *"this model is ready for commercial use"* | **The cleanest found:** ~6.02M images, all NVIDIA internal real and synthetic plus Cresterio synthetic. **No academic non-commercial sets at all.** | **Refused — on the licence, not the data.** The NVIDIA Open Model License is **not OSI-conformant**: it imposes field-of-use restrictions (the "Trustworthy AI" terms), terminates automatically if guardrails are bypassed, requires the *user* to indemnify NVIDIA, and NVIDIA may update it unilaterally. §5.2 refuses "anything non-commercial **or field-of-use restricted**". |
@@ -419,7 +419,10 @@ maintainer confirmed it in discussion #2. Anyone who had trusted the metadata
 would have shipped a non-commercial model believing it was permissive. Read the
 repository's own `LICENSE`, and the maintainers' own words, not the tag.
 
-**What we do instead.** Nothing is shipped. `--mcp` takes four reference views
+**What we do instead.** See 5.2c — the owner chose MoGe. The paragraph below
+is kept because it is still the honest account of what depth is worth here.
+
+`--mcp` takes four reference views
 — front, back, left and right — and the two side views already carry the chest
 and belly depth profile that a depth map would supply; the marginal value of
 depth on top of them is small. If depth is wanted later, the clean routes are
@@ -429,6 +432,54 @@ embed in a portrait photograph, carrying no licence exposure at all, or
 buffer is ground truth and the lineage is ours — real work, and subject to the
 usual sim-to-real gap on actual photographs.
 
+
+### 5.2c Microsoft MoGe — the owner's choice, 2026-10-03
+
+§5.2b concluded that no depth model threads both needles. The owner read that
+and chose **Microsoft MoGe** anyway. This section records the decision and
+every fact behind it, so nobody later mistakes it for an oversight.
+
+**What is verified.**
+
+| Thing | Finding | Verified at |
+|---|---|---|
+| Code | **MIT**, except `moge/model/modules/dinov2`, which is Meta AI's under **Apache-2.0** | `github.com/microsoft/MoGe` README licence section |
+| Weights | tagged **`mit`** | `huggingface.co/Ruicheng/moge-2-vits-normal` |
+| The ONNX export | **no licence declared at all** on `Ruicheng/moge-2-vits-normal-onnx` | its file listing |
+| Size | `moge-2-vits-normal`: **35M parameters**; `model.onnx` is **141 MB** FP32 | the model card and the ONNX repo |
+| Output | point map, depth, **normals**, field of view, **metric scale** | README variant table |
+
+**The risk, stated plainly.** MoGe-2's training data is described by its own
+authors as "publicly available for **academic** use". The named sets include
+**Argoverse 2 — CC-BY-NC-SA-4.0, non-commercial only — at 1.1M frames.** That
+is a *larger* non-commercial component than the Virtual KITTI 2 problem that
+disqualified Depth Anything V2-Small in §5.2b. The MIT tag covers the weights
+file; it is not an attestation about the data behind it, and Microsoft has
+published none. The ONNX repo declares no licence whatsoever, which §5.2
+would ordinarily refuse outright as unauditable; it is the same author
+exporting their own MIT model, which is why it is treated as inherited rather
+than unknown, but that is an inference and is labelled as one.
+
+**Why it is nonetheless a defensible pick on the merits.** It is the only
+candidate that is simultaneously tiny (35M), ONNX-exportable, and **metric**.
+Metric scale matters here specifically: `fit_to_references` documents that it
+"cannot know absolute stature, because a photograph does not carry one". A
+metric depth map is exactly the thing that would carry one. Normals come free
+with the same forward pass.
+
+**The engineering catch, which is not a licence problem.** The exported ONNX
+graph is `forward()` only. MoGe's `.infer()` post-processing — **recovering
+focal length and shift, and reprojection** — cannot be exported and has to be
+written again in C++. That is a robust numerical solve, and getting it subtly
+wrong yields plausible-looking, confidently wrong depth. It must be validated
+against the Python reference before anything depends on it.
+
+**How the model is obtained.** NOT committed. 141 MB against a `data/` tree of
+152 MB would roughly double the distribution for a feature most characters
+never use. It is fetched on first use from a pinned URL with a pinned SHA256 —
+the same discipline §5.1 already applies to `nlohmann/json` — and cached
+outside the repository. A build or a test that cannot reach it SKIPS rather
+than fails.
 
 ### 5.3 The Autodesk FBX SDK — why it is not used
 

@@ -48,15 +48,22 @@ FORBIDDEN_FILES = [
     ("Quaternius asset packs",
      re.compile(r"(?i)^quaternius.*\.(zip|fbx|glb|gltf|obj)$"),
      "LICENSING.md 5.2a: QAL v1.0 forbids redistributing the assets standalone"),
-    # Depth-estimation WEIGHTS, audited 2026-10-03 and all refused. The file
-    # extensions are the giveaway: a checkpoint is what actually ships, and a
-    # paper or a comment naming one of these models is not a breach.
+    # Depth-estimation WEIGHTS, audited 2026-10-03. The file extensions are the
+    # giveaway: a checkpoint is what actually ships, and a paper or a comment
+    # naming one of these models is not a breach.
+    #
+    # **MoGe is deliberately ABSENT from this pattern.** The owner chose it on
+    # 2026-10-03 (LICENSING.md 5.2c) with the data concern recorded, so a gate
+    # that refused it would block the project's own decision -- the same
+    # failure as a gate that passes something refused, pointing the other way.
+    # The rest stay refused.
     ("monocular depth model weights",
-     re.compile(r"(?i)^(depth[_-]?anything.*|midas.*|dpt[_-].*|zoedepth.*|moge.*"
+     re.compile(r"(?i)^(depth[_-]?anything.*|midas.*|dpt[_-].*|zoedepth.*"
                 r"|depth[_-]?pro.*|nvdepth.*)\.(onnx|pt|pth|safetensors|bin|mlmodel|mlpackage)$"),
-     "LICENSING.md 5.2b: every audited depth model is refused -- the permissive "
-     "ones have non-commercial or unidentifiable training data, and NVIDIA's, "
-     "whose data IS clean, ships under a field-of-use-restricted licence"),
+     "LICENSING.md 5.2b: this depth model is refused -- the permissive ones "
+     "have non-commercial or unidentifiable training data, and NVIDIA's, whose "
+     "data IS clean, ships under a field-of-use-restricted licence. MoGe is the "
+     "one that was accepted (5.2c)"),
 ]
 
 # Code that would LOAD one of the above. Deliberately narrow: a path being
@@ -64,7 +71,7 @@ FORBIDDEN_FILES = [
 FORBIDDEN_LOADS = re.compile(
     r"(?i)(open|load|read|fopen|ifstream|path)\s*\(?\s*[\"'][^\"']*"
     r"(smpl[_-][a-z]*\.(pkl|npz)|mano_(left|right)\.pkl|h36m|human3\.6m"
-    r"|(depth[_-]?anything|midas|zoedepth|moge|nvdepth)[^\"']*\.(onnx|pt|pth|safetensors))")
+    r"|(depth[_-]?anything|midas|zoedepth|nvdepth)[^\"']*\.(onnx|pt|pth|safetensors))")
 
 # Where the gate does NOT look for prose matches: these explain the refusals.
 # NOT an exemption for payload -- a forbidden FILE in any of these is still a
