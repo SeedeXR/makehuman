@@ -87,9 +87,24 @@ clear has the same RGB as its background, so the colour distance called the
 whole frame empty. Alpha is the mask when the clear is transparent.
 
 ### State
-Four commits local, **UNPUSHED, deliberately**: CI run 37139478371 on
-`fe0b102d` is 10/11 green with TSan still running, and pushing cancels an
-in-flight run. Owner's standing instruction is "push once tsan finishes".
+`fe0b102d` went green **11/11 including TSan** (run 37139478371), which met the
+owner's "push once tsan finishes", and five commits were pushed:
+`6c985a99` views and inline images · `2cfd7091` the outline score ·
+`205fed73` intake and fit · `8524bc65` docs · `5104bb9c` closeups returned.
+Head is `5104bb9c`; CI run 37146230764 is running on it.
+
+**One commit, `33dc8259`, is local and UNPUSHED on purpose** — two wrong tool
+descriptions — because pushing cancels that in-flight run and nothing about it
+is urgent. Push it once run 37146230764 clears.
+
+### Two things that cost time and were not the code
+- **The build trees emptied themselves to a bare `Testing/` twice this
+  session**, once mid-ctest after 1030 passes. It reads as a wall of
+  `***Not Run` with "Failed to change working directory". The disk was at
+  **46%**, so the disk-pressure explanation recorded earlier is WRONG and the
+  cause is still unknown. On a wall of `Not Run`, `ls build/<preset>/` first.
+- A control that does not compile is not a control: one here died on
+  `-Wunused-variable` and had to be redone with `static_cast<void>`.
 
 ### What is honestly not done
 **Depth maps.** Estimating depth from a photograph needs a learned model, which
