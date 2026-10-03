@@ -24,6 +24,7 @@ exports the usual interchange formats. Coming from MakeHuman 1.x? Start with
 | Skeleton, skinning, pose | ✅ two rigs (163 and 179 bones); linear, dual-quaternion and centres-of-rotation skinning; `.bvh` poses, pose units and FACS |
 | Animation retargeting | ✅ MakeHuman 1.x and Mixamo bone names, on import and export, with rest-pose compensation |
 | Renderer | ✅ Metal via Qt RHI — litsphere and PBR shading, offscreen `--render` |
+| **MCP server** (`--mcp`) | ✅ build, photograph, score and fit a character from an LLM client — [docs/mcp.md](docs/mcp.md) |
 | UI | ✅ dockable panels, undo, workspaces, 20 languages — of the reference's 51 task views, none remain to do -- 32 built, 16 declined as Python-runtime or dev-only, 3 blocked on content or an engine capability (`tools/audit_taskviews.py`) |
 
 Every ported subsystem is checked against the original Python implementation,
