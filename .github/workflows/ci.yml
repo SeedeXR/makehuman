@@ -397,6 +397,17 @@ jobs:
           fi
           exit 0
 
+      # A refusal recorded in LICENSING.md is an intention until something
+      # checks it. 5.2 and 5.2a refuse several DATASETS by name -- the SMPL
+      # family, Human3.6M, Human-M3, the Texel scans, Quaternius -- and the
+      # step below covers the FBX SDK and nothing else.
+      #
+      # Looks for payload, not for words: a file that IS the dataset, or code
+      # that loads one. Grepping for "SMPL" would fire on LICENSING.md's own
+      # paragraph saying why SMPL is refused.
+      - name: Forbidden datasets absent
+        run: python3 tools/audit_datasets.py
+
       - name: Forbidden dependencies absent
         run: |
           # LICENSING.md section 5.2. The FBX SDK's licence is incompatible with

@@ -10054,7 +10054,39 @@ GPU here, or Colab) and it comes back to the owner first.
       are exact. That is the two-cycle above, intrinsic to normalising three
       floats, and `app_parameter_roundtrip` allows at most three differing
       values so a real regression cannot hide behind it.
-- [~] **Licence audit of every candidate dataset before any use** — record in `LICENSING.md`
+- [x] **Licence audit of every candidate dataset before any use -- the audit
+      was already written; 2026-10-03 made it ENFORCED.**
+      `LICENSING.md` 5.2a has carried the research since 2026-09-07: **SOMA-X**
+      usable but only on the SOMA/MHR/Anny/GarmentMeasurements backends, since
+      the SMPL ones re-import a research-only licence through an Apache-2.0
+      front door; **HSRD-100** usable under CC-BY-4.0 with attribution owed the
+      moment anything derived ships; **Quaternius REFUSED** -- not CC0 as its
+      own FAQ claims, a custom QAL v1.0 that forbids redistributing the assets
+      standalone, which is exactly what committing them would be; **Human-M3,
+      Texel and H3WB/Human3.6M forbidden**.
+      **Nothing checked any of it.** The CI step named "Forbidden dependencies
+      absent" covers the Autodesk FBX SDK and only that, so every dataset
+      refusal was an intention. `tools/audit_datasets.py` is the gate, run
+      locally as a ctest and in the licence job.
+      **It looks for PAYLOAD, not for words**, and that is the whole design.
+      The obvious version greps for "SMPL" and fires on `LICENSING.md`'s own
+      paragraph explaining why SMPL is refused -- so it would be red on the day
+      it was written, get a documentation exclusion bolted on, and then pass on
+      anything a later document happened to mention. This project has the
+      inverse on record: a library recorded as forbidden made the
+      forbidden-dependency gate PASS on it, exit 0 with the thing in the build.
+      So it matches files that ARE the dataset (`SMPL_NEUTRAL.pkl`,
+      `MANO_left.pkl`, a Human3.6M archive, a Quaternius pack) and code that
+      LOADS one, over git-tracked files only -- an untracked scratch file is
+      not something we ship.
+      **Controlled three ways**: an SMPL `.pkl` added to `data/` fails with the
+      filename and the reason; a line opening `models/smpl_neutral.npz` fails;
+      and the clean tree passes although `LICENSING.md` names every forbidden
+      dataset in prose.
+      **Still an intention, deliberately**: 5.2a's requirement that an SOMA-X
+      backend "must be pinned in code and asserted by a test" has nothing to
+      assert yet -- SOMA-X is not wired in. The gate above would catch the SMPL
+      model files a wrong backend needs, which is the payload half of it.
 - [ ] Generative model over the modifier vector
 - [ ] Image/scan → parameters fitting
 - [x] Guardrails: no MetaHuman-derived data, ever — ENFORCED, not merely intended: `project_context.md` §4.3, plus CI's "Forbidden dependencies absent" step (`.github/workflows/ci.yml`), plus the recorded refusal of MetaHuman DNA Calibration. A standing rule restated as a checkbox. (`project_context.md` §4.3)

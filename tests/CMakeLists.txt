@@ -6226,6 +6226,16 @@ if(MH_HAVE_RENDER)
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/check_tracked.cmake)
     endif()
 
+    # LICENSING.md's dataset refusals, ENFORCED. 5.2a names several datasets
+    # the project may not carry; nothing checked until this existed. Locally as
+    # well as in CI, so a forbidden file fails before a push rather than after.
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME datasets_are_licence_cleared
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/audit_datasets.py)
+        set_tests_properties(datasets_are_licence_cleared PROPERTIES
+            PASS_REGULAR_EXPRESSION "no forbidden dataset material")
+    endif()
+
     # M10's PARAMETER SPACE, from the application's side. The unit tests cover
     # the ordering, the coupling and the round trip; these cover that the space
     # the app builds is the shipped one and that it reports the FINISHED
