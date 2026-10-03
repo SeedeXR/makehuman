@@ -1,0 +1,4 @@
+# a vector that is too short on purpose
+0.1
+0.2
+0.3

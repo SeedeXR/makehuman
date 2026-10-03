@@ -29,6 +29,7 @@ add_executable(mh_tests
     unit/test_subdivider.cpp
     unit/test_decimator.cpp
     unit/test_surface_stretch.cpp
+    unit/test_parameter_space.cpp
     unit/test_topology_hash.cpp
     unit/test_provenance.cpp
     unit/test_naming.cpp
@@ -6224,6 +6225,57 @@ if(MH_HAVE_RENDER)
                  "-DFILES=packaging/dmg-background.png;packaging/dmg-DS_Store"
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/check_tracked.cmake)
     endif()
+
+    # M10's PARAMETER SPACE, from the application's side. The unit tests cover
+    # the ordering, the coupling and the round trip; these cover that the space
+    # the app builds is the shipped one and that it reports the FINISHED
+    # character rather than the default.
+    #
+    # 343 dimensions, which moves when data/modifiers gains or loses a slider --
+    # the same kind of pin as `asset groups: 16`, and for the same reason: a
+    # silent change in the modifier set changes what a saved parameter vector
+    # MEANS, and that must not pass unnoticed.
+    add_test(NAME app_list_parameters COMMAND makehuman --list-parameters)
+    set_tests_properties(app_list_parameters PROPERTIES
+        PASS_REGULAR_EXPRESSION "^0\t[^\t]+\t-?[0-9]")
+    add_test(NAME app_parameter_count COMMAND ${CMAKE_COMMAND}
+             -DCMD=$<TARGET_FILE:makehuman> -DARG=--list-parameters -DEXPECT=343
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_line_count.cmake)
+    # EXACTLY three coupled dimensions. Not two, not four: the ethnic triple is
+    # what MacroFactors renormalises, and a fourth would be drawn from the
+    # simplex with them.
+    add_test(NAME app_parameter_coupling COMMAND ${CMAKE_COMMAND}
+             -DCMD=$<TARGET_FILE:makehuman> -DARG=--list-parameters -DEXPECT=3
+             -DFILTER=coupled
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_line_count.cmake)
+    # The vector reports the finished character. --random changes 245 of the
+    # modifiers, so a vector identical to the default would mean the print ran
+    # before the character was built.
+    add_test(NAME app_print_parameters_follows_the_character COMMAND ${CMAKE_COMMAND}
+             -DCMD=$<TARGET_FILE:makehuman> -DA=--print-parameters
+             "-DB=--random;7;--print-parameters"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_output_differs.cmake)
+
+    # The vector is a FORMAT, not just a dump: what --print-parameters writes,
+    # --set-parameters must read back into the same character.
+    add_test(NAME app_parameter_roundtrip COMMAND ${CMAKE_COMMAND}
+             -DCMD=$<TARGET_FILE:makehuman> -DWORK=${CMAKE_CURRENT_BINARY_DIR}
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_parameter_roundtrip.cmake)
+    # The refusals. A vector of the wrong length applied as far as it goes
+    # leaves the tail at the defaults -- a character nobody described, and one
+    # that reads as a model bug rather than a file bug.
+    add_test(NAME app_set_parameters_wrong_length COMMAND makehuman
+             --set-parameters ${CMAKE_CURRENT_SOURCE_DIR}/parameters/too_short.txt)
+    set_tests_properties(app_set_parameters_wrong_length PROPERTIES
+        PASS_REGULAR_EXPRESSION "values for .* parameters")
+    add_test(NAME app_set_parameters_not_a_number COMMAND makehuman
+             --set-parameters ${CMAKE_CURRENT_SOURCE_DIR}/parameters/not_a_number.txt)
+    set_tests_properties(app_set_parameters_not_a_number PROPERTIES
+        PASS_REGULAR_EXPRESSION "is not a number")
+    add_test(NAME app_set_parameters_missing_file COMMAND makehuman
+             --set-parameters /nope/nope.txt)
+    set_tests_properties(app_set_parameters_missing_file PROPERTIES
+        PASS_REGULAR_EXPRESSION "cannot read the parameter file")
 
     # HAIR CARDS AND STRANDS. The styles are swept tubes; an alpha-cut strand
     # texture turns each tube into ribbons that run the way hair grows. Both

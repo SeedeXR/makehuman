@@ -13,6 +13,7 @@
 #include "makehuman/core/Mesh.h"
 #include "makehuman/core/Mhm.h"
 #include "makehuman/core/ObjReader.h"
+#include "makehuman/core/ParameterSpace.h"
 #include "makehuman/core/Proxy.h"
 #include "makehuman/core/Random.h"
 #include "makehuman/core/RenderMesh.h"
@@ -95,6 +96,7 @@
 #include <cstring>
 #include <expected>
 #include <filesystem>
+#include <fstream>
 #include <map>
 #include <memory>
 #include <optional>
@@ -3640,6 +3642,35 @@ int main(int argc, char** argv) {
         QStringLiteral("list-presets"),
         QStringLiteral("Print the combination presets and the sliders each one sets, and exit."));
     parser.addOption(listPresetsOpt);
+    // M10's parameter space, made inspectable. A generative model over the
+    // modifier vector needs the vector to be a stated thing rather than
+    // whatever order a map happened to iterate in, and a human reading these
+    // two outputs can see the order, the bounds and the coupling for
+    // themselves.
+    const QCommandLineOption listParametersOpt(
+        QStringLiteral("list-parameters"),
+        QStringLiteral("Print the character parameter space as "
+                       "\"<index>\\t<name>\\t<min>\\t<max>\\t<default>\\t<coupled>\", "
+                       "one row per dimension in vector order, and exit. `coupled` marks the "
+                       "three ethnic components, which are renormalised together and cannot be "
+                       "set independently."));
+    parser.addOption(listParametersOpt);
+    const QCommandLineOption setParametersOpt(
+        QStringLiteral("set-parameters"),
+        QStringLiteral("Apply a parameter vector from a file: one value per line, in the "
+                       "order --list-parameters gives, exactly as many lines as it prints. "
+                       "Blank lines and lines starting with # are ignored, so a vector can "
+                       "carry a note about where it came from. Runs after --load and before "
+                       "--set, so an explicit slider still wins."),
+        QStringLiteral("file"));
+    parser.addOption(setParametersOpt);
+    const QCommandLineOption printParametersOpt(
+        QStringLiteral("print-parameters"),
+        QStringLiteral("Print the current character as one parameter value per line, in the "
+                       "same order --list-parameters gives, and exit. Runs after --set, "
+                       "--random and a loaded document, so it reports the finished "
+                       "character."));
+    parser.addOption(printParametersOpt);
     parser.addOption(setOpt);
     parser.addOption(renderOpt);
     parser.addOption(backgroundOpt);
@@ -3984,8 +4015,59 @@ int main(int argc, char** argv) {
             return 1;
         }
         const auto changed = mh::core::randomize(human, mh::core::RandomOptions{}, seed);
-        std::printf("randomised %zu modifiers (seed %llu)\n", changed.size(),
-                    static_cast<unsigned long long>(seed));
+        // STDERR, because `--print-parameters` writes the vector to stdout and
+        // `--random 42 --print-parameters > v.txt` has to produce a file
+        // `--set-parameters` can read back. It did not: the first line of the
+        // capture was this message and the reader refused it as "not a number".
+        // Progress belongs on stderr, results on stdout; the pair is only a
+        // serialisation format if it survives a pipe.
+        std::fprintf(stderr, "randomised %zu modifiers (seed %llu)\n", changed.size(),
+                     static_cast<unsigned long long>(seed));
+    }
+
+    // A whole parameter vector, before --set, so a single slider given on the
+    // command line still overrides one element of it. This is the inverse of
+    // --print-parameters and the pair is what makes the space a serialisation
+    // format rather than a read-only description.
+    if (parser.isSet(setParametersOpt)) {
+        const std::filesystem::path file = parser.value(setParametersOpt).toStdString();
+        std::ifstream in(file);
+        if (!in) {
+            std::fprintf(stderr, "cannot read the parameter file \"%s\"\n", file.string().c_str());
+            return 1;
+        }
+        std::vector<float> values;
+        std::string line;
+        size_t lineNo = 0;
+        while (std::getline(in, line)) {
+            ++lineNo;
+            // A vector is worth annotating -- which model produced it, which
+            // seed -- and a format that refuses a comment gets copied into a
+            // spreadsheet instead.
+            const size_t first = line.find_first_not_of(" \t\r");
+            if (first == std::string::npos || line[first] == '#') continue;
+            try {
+                values.push_back(std::stof(line));
+            } catch (const std::exception&) {
+                std::fprintf(stderr, "%s:%zu: \"%s\" is not a number\n", file.string().c_str(),
+                             lineNo, line.c_str());
+                return 1;
+            }
+        }
+        const auto space = mh::core::ParameterSpace::of(human);
+        // The length check lives in `fromVector`, which refuses a mismatch
+        // outright rather than applying what it can -- a short vector would
+        // leave the tail at the defaults and produce a character nobody
+        // described. Saying the two numbers here is what makes that
+        // actionable.
+        if (values.size() != space.size()) {
+            std::fprintf(stderr, "%s: %zu values for %zu parameters\n", file.string().c_str(),
+                         values.size(), space.size());
+            return 1;
+        }
+        const uint32_t applied = space.fromVector(values, human);
+        // stderr: this precedes a --print-parameters dump on the same run.
+        std::fprintf(stderr, "applied %u of %zu parameters\n", applied, space.size());
     }
 
     // --set runs after --load deliberately, so an explicit value on the command
@@ -4005,6 +4087,17 @@ int main(int argc, char** argv) {
                      combinations.error().message().c_str());
         return 1;
     }
+    if (parser.isSet(listParametersOpt)) {
+        const auto space = mh::core::ParameterSpace::of(human);
+        for (size_t i = 0; i < space.size(); ++i) {
+            const mh::core::Parameter& p = space.parameters()[i];
+            std::printf("%zu\t%s\t%.3f\t%.3f\t%.3f\t%s\n", i, p.name.c_str(),
+                        static_cast<double>(p.minValue), static_cast<double>(p.maxValue),
+                        static_cast<double>(p.defaultValue), p.ethnic ? "coupled" : "-");
+        }
+        return 0;
+    }
+
     if (parser.isSet(listPresetsOpt)) {
         for (const mh::foundation::SliderPreset& preset : *combinations) {
             for (const auto& [id, value] : preset.values) {
@@ -4831,12 +4924,34 @@ int main(int argc, char** argv) {
         }
         const auto mirrored =
             mh::core::symmetrise(human, direction == QLatin1String("l2r") ? 'r' : 'l');
-        std::printf("mirrored %zu modifiers (%s)\n", mirrored.size(),
-                    direction.toStdString().c_str());
+        // stderr, for the reason `--random`'s message gives above.
+        std::fprintf(stderr, "mirrored %zu modifiers (%s)\n", mirrored.size(),
+                     direction.toStdString().c_str());
         // The sliders have to follow, exactly as --set's do: a panel showing
         // the pre-mirror value snaps the model back on the first nudge.
         for (const auto& [name, value] : mirrored)
             presets.emplace_back(QString::fromStdString(name), value);
+    }
+
+    // AFTER every step that can change the character -- a loaded document,
+    // --random, a combination preset, --set and --symmetry -- and before the
+    // mesh is built, because the vector describes the parameters rather than
+    // the geometry they produce. Put any earlier and it would report a
+    // character the user did not ask for.
+    if (parser.isSet(printParametersOpt)) {
+        const auto space = mh::core::ParameterSpace::of(human);
+        for (const float v : space.toVector(human)) {
+            // %.9g, not %.6f. Nine significant digits is FLT_DECIMAL_DIG: the
+            // shortest precision that reproduces any float exactly. At six
+            // decimals the text was a FIXED POINT -- save, load and save gave
+            // identical bytes -- which looked like a faithful format and was
+            // not: MEASURED, a character written and read back moved 2,380 of
+            // 14,580 vertices by up to 0.0141 mm. Imperceptible, and still the
+            // wrong answer to "reproduce exactly this character", which is the
+            // whole job of a parameter vector.
+            std::printf("%.9g\n", static_cast<double>(v));
+        }
+        return 0;
     }
 
     if (human.stackSize() > 0) {

@@ -13,6 +13,7 @@ add_library(mh_core STATIC
     Scalp.cpp
     SurfaceBind.cpp
     SurfaceStretch.cpp
+    ParameterSpace.cpp
     SurfaceWalk.cpp
     TopologyHash.cpp
     Blendshape.cpp

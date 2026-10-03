@@ -9988,7 +9988,72 @@ GPU here, or Colab) and it comes back to the owner first.
         ordered list where ethnicity is concerned, or ethnicity is sampled as
         the normalised triple it already is. A plain unordered map of slider
         values is not a complete specification of a body.
-- [ ] Parameter-space definition and sampling
+- [x] **Parameter-space definition and sampling -- DONE 2026-10-03.**
+      `core::ParameterSpace` (`include/makehuman/core/ParameterSpace.h`): an
+      ordered, bounded description of every modifier a `Human` carries, plus
+      `toVector`/`fromVector` and a sampler. The prerequisite for the two items
+      below -- a generative model needs a vector to be over, and an image fit
+      needs somewhere to put its answer.
+      **SORTED BY NAME, not load order.** The order IS the meaning of a vector:
+      element 7 is a particular slider only if everyone agrees which. Sorting on
+      `fullName` makes the mapping a property of the names, so adding a custom
+      modifier directory cannot silently renumber a saved vector. **343
+      dimensions** as shipped, pinned by `app_parameter_count` for the same
+      reason `asset groups: 16` is pinned -- a change to `data/modifiers`
+      changes what an old vector DECODES to.
+      **The coupling is handled, not left to callers.** `fromVector` goes
+      through `Human::setModifierValues`, which blocks the ethnic
+      renormalisation until all three are in and normalises once. A loop over
+      `setModifierValue` would make the result depend on this space's own sort
+      order -- the exact dependence the sort removes. Exactly three dimensions
+      are marked coupled, gated.
+      **MEASURED, and the first version of the test was WRONG.** I asserted a
+      vector round-trips to a bit-identical stack. It does not, and rather than
+      relax the assertion the behaviour was measured: **246 of 249 dimensions
+      read back BIT-EXACTLY**, and the three ethnic ones move by about an ulp
+      because three floats that sum to 1 in double do not sum to `1.0f`.
+      **It does not accumulate.** Feeding the read-back vector round six more
+      times, the maximum change stays pinned at **5.96e-08** -- one ulp -- and
+      the ethnic sum alternates **+3.7e-08 / -6.0e-08**. A two-cycle between
+      neighbouring float representations, so a vector survives indefinite
+      save/reload without wandering. Two separate tests now, so "names a body"
+      and "reads back exactly" cannot be confused for each other.
+      **Sampling draws the triple as a Dirichlet(1,1,1)**, via normalised
+      exponentials. Three uniforms over their sum is NOT uniform on a simplex --
+      it piles up near (1/3,1/3,1/3), so a sampled crowd would be short of
+      strongly-one-ethnicity faces. Gated statistically: over 400 draws at least
+      5 must have a component above 0.8, which the uniform-ratio method could
+      essentially never produce.
+      **Stated plainly in the header**: a uniform sample of the parameter space
+      is NOT a plausible human. Uniform draws put the gender slider at 0.5 as
+      often as at 0, and no population is uniform in anything. A distribution
+      over PEOPLE is the generative-model item below; `core::randomize` already
+      offers the reference's hand-tuned Gaussian for a believable face today.
+      CLI: `--list-parameters` prints the space, `--print-parameters` the
+      finished character's vector -- after a document, `--random`, a preset,
+      `--set` and `--symmetry`, so it cannot report a character nobody asked
+      for.
+      **`--set-parameters` LANDED TOO**, so the pair is a format rather than a
+      read-only description: one value per line, `#` comments allowed so a
+      vector can say where it came from, refused outright on a length mismatch.
+      **TWO DEFECTS FOUND BY ACTUALLY PIPING IT, not by reading it.**
+      (1) `--random` wrote its progress line to STDOUT, so
+      `--random 42 --print-parameters > v.txt` produced a file whose first line
+      was "randomised 245 modifiers" and `--set-parameters` refused it as "not
+      a number". A serialisation pair is only a format if it survives a pipe;
+      progress goes to stderr now, results to stdout.
+      (2) The text was `%.6f`, which is COARSER than float. It looked faithful
+      -- save, load and save gave byte-identical text, a fixed point -- and was
+      not: a character written and read back moved **2,380 of 14,580 vertices
+      by up to 0.0141 mm**. `%.9g` is `FLT_DECIMAL_DIG`, the shortest precision
+      that reproduces any float exactly, and takes it to **169 vertices and
+      0.0100 mm**.
+      **The residual is the coupled triple and nothing else**, confirmed by
+      index: a vector and its re-print differ at exactly 252, 254 and 255 --
+      `macrodetails/African`, `Asian`, `Caucasian`. The other 340 dimensions
+      are exact. That is the two-cycle above, intrinsic to normalising three
+      floats, and `app_parameter_roundtrip` allows at most three differing
+      values so a real regression cannot hide behind it.
 - [~] **Licence audit of every candidate dataset before any use** — record in `LICENSING.md`
 - [ ] Generative model over the modifier vector
 - [ ] Image/scan → parameters fitting

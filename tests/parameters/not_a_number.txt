@@ -1,0 +1,3 @@
+# the second value is not a number
+0.1
+banana
