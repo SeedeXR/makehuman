@@ -29,6 +29,27 @@ struct RandomOptions {
     bool height{false};
     bool face{true};
     bool body{true};
+
+    /// Couple the macro scalars instead of drawing each on its own.
+    ///
+    /// OFF BY DEFAULT, and that is a parity decision rather than a preference:
+    /// the independent draw above is the reference's
+    /// (`0_modeling_8_random.py:184-192`) and tests pin it. Turning this on
+    /// changes the character, so it must be asked for.
+    ///
+    /// **These couplings are DESIGN DECISIONS, not fitted statistics.** No
+    /// population data is used anywhere in this project, and none is claimed:
+    /// each one is here because of the character it PREVENTS, and the
+    /// reasoning is stated at the point it is applied. A correlation
+    /// coefficient measured over this generator's own output is a property of
+    /// the generator and is tested as such; it is not an assertion about
+    /// people.
+    ///
+    /// What it fixes: drawing muscle and weight independently produces a
+    /// character at maximum muscle and minimum weight about as often as any
+    /// other pair, and that is not a body. The reference's randomiser has the
+    /// same gap -- it is a per-slider Gaussian with no joint structure at all.
+    bool correlated{false};
 };
 
 /// One draw from the reference's distribution

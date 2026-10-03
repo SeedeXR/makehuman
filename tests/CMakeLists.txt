@@ -6226,6 +6226,13 @@ if(MH_HAVE_RENDER)
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/check_tracked.cmake)
     endif()
 
+    # --correlated changes the character and --random alone does not. Without
+    # this, the flag could be parsed, ignored, and look like it worked.
+    add_test(NAME app_correlated_changes_the_draw COMMAND ${CMAKE_COMMAND}
+             -DCMD=$<TARGET_FILE:makehuman> "-DA=--random;9;--print-parameters"
+             "-DB=--random;9;--correlated;--print-parameters"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_output_differs.cmake)
+
     # LICENSING.md's dataset refusals, ENFORCED. 5.2a names several datasets
     # the project may not carry; nothing checked until this existed. Locally as
     # well as in CI, so a forbidden file fails before a push rather than after.

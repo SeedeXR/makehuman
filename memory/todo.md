@@ -10087,7 +10087,43 @@ GPU here, or Colab) and it comes back to the owner first.
       backend "must be pinned in code and asserted by a test" has nothing to
       assert yet -- SOMA-X is not wired in. The gate above would catch the SMPL
       model files a wrong backend needs, which is the payload half of it.
-- [ ] Generative model over the modifier vector
+- [~] **Generative model over the modifier vector. CORRELATED MACRO SLIDERS
+      DONE 2026-10-03, on the owner's instruction to do the "correlated sliders
+      version, no external data"; a LEARNED model and scan fitting are
+      deliberately deferred.**
+      **Why no dataset.** The owner asked plainly why 246 GB was needed, and
+      the answer was that it is not. HSRD-100 is **246 GB for TEN people** in
+      100 poses, against a **343-dimensional** space -- ten examples cannot
+      populate it, and the poses teach nothing about SHAPE, which is what the
+      vector describes. Most of the size is colour textures the vector never
+      reads. I had pointed at it; that was reaching for the biggest
+      licence-clear dataset instead of asking what the job needs. Recorded
+      because the same reasoning applies to the next dataset someone suggests.
+      **What shipped instead.** `RandomOptions::correlated`, off by default so
+      the reference's independent draw -- which the parity tests pin -- is
+      unchanged. Two couplings, each stated as a DESIGN DECISION rather than a
+      fitted statistic, because no population data is used anywhere here and
+      none is claimed:
+      * **muscle and weight share a latent axis**, half-weighted. At full
+        weight every character would sit on a line through the square and the
+        pair would carry one degree of freedom instead of two -- one
+        implausible population traded for another.
+      * **age gates muscle, ONE WAY.** Below 0.25 the ceiling closes smoothly
+        to 0.3..0.6; above it nothing is touched, so an adult's draw is not
+        quietly compressed. A child at maximum muscle is a caricature and the
+        reference produces one as often as anything else.
+      **MEASURED over 300 characters: r(muscle, weight) = -0.012 without the
+      coupling and 0.732 with it.** That number is a property of THIS
+      generator, tested as such, and is not an assertion about people. The age
+      gate was exercised by 72 of 400 draws, and adults above the young ceiling
+      were counted too, so the clamp cannot be silently applying to everyone.
+      CLI `--correlated`. The GUI's randomise button is deliberately NOT
+      changed: there is no control for it in the panel, and a button that
+      behaves differently from the flag of the same name is worse than one that
+      does the documented thing.
+      **STILL OPEN**: a model LEARNED from data, which needs a table of body
+      measurements across thousands of people -- megabytes, not scans -- and
+      the same licence audit before use.
 - [ ] Image/scan → parameters fitting
 - [x] Guardrails: no MetaHuman-derived data, ever — ENFORCED, not merely intended: `project_context.md` §4.3, plus CI's "Forbidden dependencies absent" step (`.github/workflows/ci.yml`), plus the recorded refusal of MetaHuman DNA Calibration. A standing rule restated as a checkbox. (`project_context.md` §4.3)
 

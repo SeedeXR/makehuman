@@ -3427,6 +3427,13 @@ int main(int argc, char** argv) {
         QStringLiteral("Iris colour worn on the eye proxy: brown, amber, hazel, green, blue or "
                        "grey. Independent of --eyes, which picks the geometry."),
         QStringLiteral("name"), QStringLiteral("brown"));
+    const QCommandLineOption correlatedOpt(
+        QStringLiteral("correlated"),
+        QStringLiteral("With --random, couple the macro sliders instead of drawing each on "
+                       "its own: muscle and weight share an axis, and a young character is "
+                       "not heavily muscled. Off by default, because the independent draw is "
+                       "the reference's and changing it changes the character."));
+    parser.addOption(correlatedOpt);
     const QCommandLineOption randomOpt(
         QStringLiteral("random"),
         QStringLiteral("Randomise the character with this seed. Deterministic: the same seed "
@@ -4014,7 +4021,13 @@ int main(int argc, char** argv) {
                          parser.value(randomOpt).toStdString().c_str());
             return 1;
         }
-        const auto changed = mh::core::randomize(human, mh::core::RandomOptions{}, seed);
+        // The GUI's randomise button has an identical call and is deliberately
+        // NOT changed: there is no control for this in the panel yet, and a
+        // button that silently behaves differently from the flag of the same
+        // name is worse than one that does the documented thing.
+        mh::core::RandomOptions randomOptions;
+        randomOptions.correlated = parser.isSet(correlatedOpt);
+        const auto changed       = mh::core::randomize(human, randomOptions, seed);
         // STDERR, because `--print-parameters` writes the vector to stdout and
         // `--random 42 --print-parameters > v.txt` has to produce a file
         // `--set-parameters` can read back. It did not: the first line of the

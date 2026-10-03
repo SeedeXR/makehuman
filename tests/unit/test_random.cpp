@@ -17,6 +17,7 @@
 #include <cmath>
 #include <filesystem>
 #include <map>
+#include <numeric>
 #include <set>
 
 using namespace mh::core;
@@ -270,4 +271,93 @@ TEST_CASE("the option flags select what changes", "[random]") {
     RandomOptions withHeight;
     withHeight.height = true;
     CHECK(groupsTouched(withHeight).contains("macrodetails-height"));
+}
+
+TEST_CASE("coupling correlates muscle with weight, and off leaves it alone", "[random][corr]") {
+    // THE NUMBER HERE IS A PROPERTY OF THIS GENERATOR, not a claim about
+    // people. No population data is used anywhere in the project and none is
+    // asserted: the coupling exists because of the character it prevents -- a
+    // body at maximum muscle and minimum weight, which the independent draw
+    // produces as often as any other pair.
+    const TargetIndex index = TargetIndex::build(std::filesystem::path(MH_DATA_DIR) / "targets");
+
+    const auto correlation = [&](bool correlated) {
+        std::vector<double> xs;
+        std::vector<double> ys;
+        for (uint64_t seed = 0; seed < 300; ++seed) {
+            Human human(&index, shippedModifiers());
+            RandomOptions o;
+            o.correlated = correlated;
+            (void)randomize(human, o, seed);
+            xs.push_back(static_cast<double>(human.modifierValue("macrodetails-universal/Muscle")));
+            ys.push_back(static_cast<double>(human.modifierValue("macrodetails-universal/Weight")));
+        }
+        const double n  = static_cast<double>(xs.size());
+        const double mx = std::accumulate(xs.begin(), xs.end(), 0.0) / n;
+        const double my = std::accumulate(ys.begin(), ys.end(), 0.0) / n;
+        double sxy      = 0.0;
+        double sxx      = 0.0;
+        double syy      = 0.0;
+        for (size_t i = 0; i < xs.size(); ++i) {
+            sxy += (xs[i] - mx) * (ys[i] - my);
+            sxx += (xs[i] - mx) * (xs[i] - mx);
+            syy += (ys[i] - my) * (ys[i] - my);
+        }
+        return sxy / std::sqrt(sxx * syy);
+    };
+
+    const double off = correlation(false);
+    const double on  = correlation(true);
+    INFO("r without coupling " << off << ", with coupling " << on);
+    // Independent draws over 300 samples sit near zero; 0.2 is a generous
+    // ceiling for sampling noise and far below what the coupling produces.
+    CHECK(std::abs(off) < 0.2);
+    CHECK(on > 0.4);
+}
+
+TEST_CASE("coupling leaves the reference draw untouched", "[random][corr]") {
+    // The parity claim. `correlated` defaults to false and the independent
+    // path is the reference's; a character drawn with the flag off must be the
+    // one that was drawn before the flag existed, modifier for modifier.
+    const TargetIndex index = TargetIndex::build(std::filesystem::path(MH_DATA_DIR) / "targets");
+    Human a(&index, shippedModifiers());
+    Human b(&index, shippedModifiers());
+
+    RandomOptions plain;
+    RandomOptions explicitOff;
+    explicitOff.correlated = false;
+    const auto one         = randomize(a, plain, 777);
+    const auto two         = randomize(b, explicitOff, 777);
+    CHECK(one == two);
+    CHECK(a.stack() == b.stack());
+}
+
+TEST_CASE("a young character is not heavily muscled", "[random][corr]") {
+    // The one-way gate. A child at maximum muscle is a caricature, and the
+    // reference's randomiser produces one as often as anything else. Above the
+    // quarter mark nothing is touched, so an adult's draw is not quietly
+    // compressed -- which the second half of this checks.
+    const TargetIndex index   = TargetIndex::build(std::filesystem::path(MH_DATA_DIR) / "targets");
+    size_t young              = 0;
+    size_t adultsAboveCeiling = 0;
+    for (uint64_t seed = 0; seed < 400; ++seed) {
+        Human human(&index, shippedModifiers());
+        RandomOptions o;
+        o.correlated = true;
+        (void)randomize(human, o, seed);
+        const float age    = human.modifierValue("macrodetails/Age");
+        const float muscle = human.modifierValue("macrodetails-universal/Muscle");
+        if (age < 0.25F) {
+            ++young;
+            INFO("seed " << seed << " age " << age << " muscle " << muscle);
+            CHECK(muscle <= 0.6F + 1e-5F);
+        } else if (muscle > 0.6F) {
+            ++adultsAboveCeiling;
+        }
+    }
+    INFO("young characters seen: " << young);
+    CHECK(young > 0);  // or the gate was never exercised
+    // Adults DO exceed the young ceiling, so the clamp is not applied to
+    // everyone by accident.
+    CHECK(adultsAboveCeiling > 0);
 }

@@ -139,6 +139,52 @@ std::vector<std::pair<std::string, float>> randomize(Human& human, const RandomO
         }
     }
 
+    // COUPLING, after the independent draw and before the pregnancy guard, so
+    // the guard sees the character that will actually be built.
+    //
+    // Opt-in: with `correlated` false nothing below runs and the output is the
+    // reference's, which the parity tests pin.
+    if (options.correlated && options.macro) {
+        const auto get = [&values](const char* key, float fallback) {
+            const auto it = values.find(key);
+            return it == values.end() ? fallback : it->second;
+        };
+        const auto put = [&values](const char* key, float v) {
+            const auto it = values.find(key);
+            if (it != values.end()) it->second = std::clamp(v, 0.0F, 1.0F);
+        };
+
+        // ONE latent per character, drawn from the same stream so the result
+        // stays deterministic in the seed. Think of it as "how heavy-set is
+        // this person", which is the axis muscle and weight share.
+        const float build = randomValue(0.0F, 1.0F, 0.5F, 0.25F, state);
+
+        // Muscle and weight pulled toward that shared axis. HALF, not all:
+        // at 1.0 every character would sit on a line through the square and
+        // the pair would carry one degree of freedom instead of two, which
+        // trades one implausible population for another. At 0.5 the
+        // independent draw still decides half of each.
+        constexpr float kShare = 0.5F;
+        const float muscle     = get("macrodetails-universal/Muscle", 0.5F);
+        const float weight     = get("macrodetails-universal/Weight", 0.5F);
+        float newMuscle        = muscle + kShare * (build - muscle);
+        const float newWeight  = weight + kShare * (build - weight);
+
+        // AGE GATES MUSCLE, one way only. A child at maximum muscle is a
+        // caricature, and the reference's own randomiser produces one as often
+        // as anything else. Below the quarter mark the ceiling closes
+        // smoothly; above it nothing is changed, so an adult's draw is
+        // untouched rather than quietly compressed.
+        const float age = get("macrodetails/Age", 0.5F);
+        if (age < 0.25F) {
+            const float ceiling = 0.3F + 1.2F * age;  // 0.3 at age 0, 0.6 at 0.25
+            newMuscle           = std::min(newMuscle, ceiling);
+        }
+
+        put("macrodetails-universal/Muscle", newMuscle);
+        put("macrodetails-universal/Weight", newWeight);
+    }
+
     // See the header: the reference's guard is `Age < 0.75` where its own
     // comment says "too old", so it fires on nearly every character. This is
     // the stated intent, not the shipped condition.
