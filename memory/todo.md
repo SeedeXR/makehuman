@@ -10571,6 +10571,16 @@ survival across client updates.
       VALUES (at least four of six within 0.2), not the score. Controlled: the
       degenerate search gets three of six and the gate names which drifted.
 
+- [x] **A closeup is handed back as an IMAGE; a view is not** (2026-10-03).
+      Found reviewing the diff, not by a test: a closeup the model cannot SEE
+      is no better than one that was never sent, and nothing returned it. The
+      asymmetry is the point — a view is scored numerically by the fit and
+      never needs looking at, while a closeup exists precisely because the
+      outline cannot see a cheekbone. It also confirms the right file arrived,
+      which a path alone does not. Capped at 4 MB.
+      In the same pass: a repeated LABEL now replaces, as a repeated view
+      already did. Two "face" entries are a correction, not a second face.
+
 - [ ] **Depth maps are not reachable yet, and nothing pretends otherwise.**
       Estimating depth from a photograph needs a learned model, which the owner
       deferred on 2026-10-03 ("no external data, generative model and scans, we

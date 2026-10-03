@@ -7340,6 +7340,10 @@ int main(int argc, char** argv) {
     // four views is a few seconds rather than half a minute.
     constexpr int kMcpFitHeight = 256;
 
+    // A closeup above this is left on disk. 4 MB of PNG is already more base64
+    // than any amount of looking at it is worth.
+    constexpr qint64 kMcpMaxInlineBytes = 4 * 1024 * 1024;
+
     // The parameters a silhouette can actually constrain, and no more.
     //
     // MEASURED, not chosen by plausibility: each of these moves the outline of
@@ -7675,9 +7679,10 @@ int main(int argc, char** argv) {
             .name        = "add_reference",
             .description = "Register a reference image of the character to build. Give `view` = "
                            "front, back, left or right for a full-body shot -- those are what the "
-                           "fit uses -- or `label` for a closeup of a key area, which is kept for "
-                           "you to LOOK at and set by hand, because an outline cannot see a "
-                           "cheekbone. Returns `coverage`: the fraction of the image taken to be "
+                           "fit uses -- or `label` for a closeup of a key area, which is "
+                           "RETURNED TO YOU AS AN IMAGE so you can set the facial detail by "
+                           "hand, because an outline cannot see a cheekbone. "
+                           "Returns `coverage`: the fraction of the image taken to be "
                            "the subject. ANYTHING ABOVE 0.9 MEANS THE BACKGROUND COULD NOT BE "
                            "SEPARATED and the image is unusable for fitting -- ask for a shot "
                            "against a plain backdrop that reaches the top-left corner.",
@@ -7725,21 +7730,47 @@ int main(int argc, char** argv) {
                 }
                 const double coverage = ref.outline.coverage;
 
-                // Replacing rather than appending for a named view: a creator
-                // who sends a better front shot means INSTEAD OF, and two
-                // fronts would quietly weight that angle double in the fit.
-                if (!view.empty()) {
-                    std::erase_if(references,
-                                  [&](const McpReference& r) { return r.view == view; });
-                }
+                // Replacing rather than appending, for a view AND for a label.
+                // A creator who sends a better front shot means INSTEAD OF, and
+                // two fronts would quietly weight that angle double in the fit.
+                // The same holds for a closeup: two "face" entries are a
+                // correction, not a second face.
+                std::erase_if(references, [&](const McpReference& r) {
+                    return (!view.empty() && r.view == view) ||
+                           (!label.empty() && r.label == label);
+                });
                 references.push_back(std::move(ref));
 
-                return mh::mcp::Json{{"view", view},
-                                     {"label", label},
-                                     {"path", path},
-                                     {"coverage", coverage},
-                                     {"usable", coverage < 0.9 && coverage > 0.005},
-                                     {"references", references.size()}};
+                mh::mcp::Json note{{"view", view},
+                                   {"label", label},
+                                   {"path", path},
+                                   {"coverage", coverage},
+                                   {"usable", coverage < 0.9 && coverage > 0.005},
+                                   {"references", references.size()}};
+
+                // A CLOSEUP IS HANDED BACK AS AN IMAGE, a full-body view is
+                // not. The difference is what each is FOR: a view is scored
+                // numerically by the fit and never needs looking at, while a
+                // closeup exists precisely because the outline cannot see a
+                // cheekbone -- it is for the model's eyes, and a closeup it
+                // cannot see is no better than one that was never sent. It also
+                // confirms the right file arrived, which a path alone does not.
+                if (!label.empty()) {
+                    QFile file(QString::fromStdString(path));
+                    if (file.open(QIODevice::ReadOnly) && file.size() <= kMcpMaxInlineBytes) {
+                        return mh::mcp::Json::array(
+                            {mh::mcp::Json{{"type", "text"}, {"text", note.dump()}},
+                             mh::mcp::Json{{"type", "image"},
+                                           {"data", file.readAll().toBase64().toStdString()},
+                                           {"mimeType", "image/png"}}});
+                    }
+                    // Too large, or unreadable after loading once. Registered
+                    // either way -- the outline is already extracted -- so this
+                    // says so rather than failing.
+                    note["shown"]  = false;
+                    note["reason"] = "closeup not returned inline; read it from `path`";
+                }
+                return note;
             }});
 
         server.add(mh::mcp::Tool{
