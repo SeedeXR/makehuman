@@ -10602,7 +10602,41 @@ survival across client updates.
       Apache-2.0 on Hugging Face while a maintainer confirmed the real licence
       is CC-BY-NC-4.0.
 
-- [ ] **Depth, if it is still wanted — two clean routes, neither started.**
+- [x] **MoGe runs, and the preprocessing was settled by looking** (2026-10-03).
+      Owner chose MoGe (`LICENSING.md` §5.2c). De-risked before building
+      anything on top of it:
+      - `brew install onnxruntime` → **1.30.0**, with a CoreML provider and a
+        CMake config. Not yet a build dependency; not yet in `LICENSING.md`
+        §5.1 — **do that when it is actually wired.**
+      - `Ruicheng/moge-2-vits-normal-onnx/model.onnx`, **134 MB**, sha256
+        `24eacb5dc7a2c54c7bc98f7de085ffbed79ad006ea5b664c2c2cdc02ff3a52f0`.
+        Cached outside the repo; never commit it (§5.2c).
+      - **The real graph signature, probed rather than read**: in `image`
+        f32 [N,3,H,W] and `num_tokens` i64 scalar; out `points` [N,H,W,3],
+        `normal` [N,H,W,3], `mask` [N,H,W], **`scale` [N]** — the docs call
+        that last one `metric_scale`; the graph does not.
+      - **Preprocessing is RAW [0,1], NOT ImageNet-normalised.** The docs are
+        ambiguous and a wrong guess here yields confidently wrong depth, so
+        both were run and LOOKED AT: raw gives a cleanly segmented body with
+        sensible shading and a mask covering 8.3% of the frame; ImageNet gives
+        a smeared blob, the background included, mask 100% "valid". The mask
+        behaviour gives it away even before the picture does.
+
+- [ ] **Use MoGe's `mask` as the silhouette for PHOTOGRAPHS — do this first.**
+      The unexpected result, and much cheaper than metric depth: `mask` is a
+      direct output needing **no focal/shift recovery at all**, and it solves
+      the limitation `Silhouette.h` documents — separating subject from
+      background by distance from the top-left pixel "does not hold for a snap
+      taken in a kitchen". MoGe's mask does. Keep the corner heuristic for our
+      own renders, where it is exact and free.
+- [ ] **Metric depth — the expensive half.** `infer()`'s post-processing is
+      NOT in the graph: `recover_focal_shift()` then `points[...,2] += shift`,
+      then `scale` multiplies to metric. That solve has to be written in C++
+      and **validated against the Python reference before anything trusts it**.
+      Worth it only for absolute stature, which is the one thing
+      `fit_to_references` documents it cannot know.
+
+- [ ] **The two routes that need no model at all, still open.**
       (a) Accept a depth map the CREATOR supplies; a recent phone already
       embeds one in a portrait photograph, so there is no licence exposure at
       all. Small work; no objective decided yet.
