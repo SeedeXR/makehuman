@@ -10644,12 +10644,42 @@ survival across client updates.
       because `QStandardPaths::CacheLocation` appends the Qt application name
       and the test binary looked somewhere `fetch_moge.sh` never writes.
       `GenericCacheLocation` + a fixed folder. A skip that reads as a pass.
-- [ ] **Metric depth — the expensive half.** `infer()`'s post-processing is
-      NOT in the graph: `recover_focal_shift()` then `points[...,2] += shift`,
-      then `scale` multiplies to metric. That solve has to be written in C++
-      and **validated against the Python reference before anything trusts it**.
-      Worth it only for absolute stature, which is the one thing
-      `fit_to_references` documents it cannot know.
+- [x] **Metric depth: implemented, validated, and then MEASURED as not good
+      enough for the job it was wanted for** (2026-10-04).
+      `foundation::recoverFocalShift` — `mh_foundation`, NOT `mh_moge`, because
+      it is pure geometry needing no model, so CI tests it on every run with
+      `MH_WITH_MOGE` off. Solves `min |focal·xy/(z+shift) − uv|` exactly as
+      MoGe's `recover_focal_shift` does, `focal` in closed form at each step so
+      two unknowns become one, over MoGe's diagonal-normalised `uv`.
+      **One deliberate divergence**: a bracketed golden-section search instead
+      of Levenberg-Marquardt from 0. The objective has a pole where `z+shift`
+      crosses zero and an unbracketed solver can step across it; a bracket
+      holding `z+shift > 0` cannot.
+      **Validated against cameras we CHOSE, not against another
+      implementation** — `test_focal_shift.cpp` generates a point map from a
+      known pinhole camera and recovers focal to 1–3% and shift to 2–8%,
+      including a masked case that is wrong WITHOUT the mask (so the mask
+      assertion means something), and the fronto-parallel degeneracy written
+      down as a property rather than discovered as a bug.
+      **THEN THE MEASUREMENT THAT MATTERS.** On our own renders at a true 30°
+      vertical FOV the chain recovers **41.5°**. Cropping to narrow the true
+      FOV: true 30/21.3/15.3/10.7 → recovered 45.6/38.8/31.8/23.9. It TRACKS,
+      so the solve is reading the image — but it is biased high and worse the
+      narrower the lens, because a figure on a flat background gives no scene
+      cues and the model leans on a normal-lens prior.
+      **So this is NOT trustworthy as an absolute stature on our inputs**,
+      which was the only reason to want it. NOT wired into
+      `fit_to_references`, and `metric` means RECOVERED, not ACCURATE.
+      `app`/ctest pins the FALL, never the value, so it will not go red when
+      MoGe improves.
+
+- [ ] **Does MoGe do better on REAL photographs?** Unmeasured and unmeasurable
+      here — the bias above was measured on renders of a figure in a void,
+      which is the worst case for monocular FOV estimation. A real reference
+      photograph has floors, walls and perspective cues. If someone supplies
+      four real photographs of a person, re-run the crop series on those before
+      deciding metric depth is useless. That is the one experiment that would
+      change the verdict.
 
 - [ ] **The two routes that need no model at all, still open.**
       (a) Accept a depth map the CREATOR supplies; a recent phone already

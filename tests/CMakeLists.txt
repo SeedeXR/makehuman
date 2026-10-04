@@ -30,6 +30,7 @@ add_executable(mh_tests
     unit/test_decimator.cpp
     unit/test_surface_stretch.cpp
     unit/test_parameter_space.cpp
+    unit/test_focal_shift.cpp
     unit/test_mcp_server.cpp
     unit/test_topology_hash.cpp
     unit/test_provenance.cpp
@@ -353,6 +354,7 @@ if(MH_HAVE_RENDER)
     target_compile_definitions(mh_ui_tests PRIVATE
         MH_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders"
         MH_RESOURCE_DIR="${CMAKE_SOURCE_DIR}/resources"
+        MH_TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
         MH_DATA_DIR="${MH_DATA_DIR}")
     set_target_properties(mh_ui_tests PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON)
     if(_catch2_inc)

@@ -15,7 +15,7 @@ add_library(mh_moge STATIC
 )
 
 target_link_libraries(mh_moge
-    PUBLIC  Qt6::Gui
+    PUBLIC  Qt6::Gui mh::foundation
     PRIVATE onnxruntime::onnxruntime mh::warnings mh::sanitize)
 
 target_include_directories(mh_moge PUBLIC ${CMAKE_SOURCE_DIR}/include)

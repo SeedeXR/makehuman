@@ -23,6 +23,7 @@
 //
 // SKIPS, never fails, when the model is absent. A 134 MB download is not a
 // build dependency (LICENSING.md 5.2c).
+#include "makehuman/foundation/FocalShift.h"
 #include "makehuman/moge/Session.h"
 #include "makehuman/ui/Silhouette.h"
 
@@ -162,4 +163,65 @@ TEST_CASE("silhouetteFromMask measures a mask it did not produce", "[moge]") {
     CHECK(s.area == 30 * 40);
     CHECK(s.bounds == QRect(20, 10, 30, 40));
     CHECK(s.coverage == Catch::Approx(1200.0 / 8000.0));
+}
+
+TEST_CASE("metric depth is recovered, and reads the image", "[moge][model]") {
+    // THE TEST THAT SEPARATES OUR BUG FROM THE MODEL'S LIMIT.
+    //
+    // `test_focal_shift.cpp` already proves the solve recovers cameras we
+    // chose, with no model involved. What it cannot show is whether the whole
+    // chain -- model, mask, solve -- responds to the actual picture.
+    //
+    // Cropping towards the centre narrows the true field of view by a known
+    // factor. If the recovered field of view falls with it, the chain is
+    // reading the image. If it sat at some constant, the model would be
+    // returning a prior and every depth from it would be decoration.
+    //
+    // It does NOT assert accuracy, deliberately. Measured on this fixture,
+    // rendered at a true 30 degrees, the chain reports about 45 -- biased high
+    // because a figure on a flat background gives no scene cues. That bias is
+    // the model's and is recorded in Session.h; pinning it here would make this
+    // test fail the day MoGe improves, which is the wrong thing to be told.
+    if (!moge::modelAvailable()) {
+        SKIP("no MoGe model: run tools/fetch_moge.sh");
+    }
+    const QImage full(QStringLiteral(MH_TEST_DIR "/golden/moge/figure_front.png"));
+    REQUIRE_FALSE(full.isNull());
+
+    auto session = moge::Session::open(moge::defaultModelPath());
+    REQUIRE(session.has_value());
+
+    const auto fovOf = [&](double fraction) {
+        const int w = static_cast<int>(full.width() * fraction);
+        const int h = static_cast<int>(full.height() * fraction);
+        const QImage cropped =
+            full.copy((full.width() - w) / 2, (full.height() - h) / 2, w, h)
+                .scaled(512, 512, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+        auto p = session->run(cropped);
+        REQUIRE(p.has_value());
+        REQUIRE(p->metric);
+        CHECK(p->depthWidth > 0);
+        CHECK(p->depth.size() ==
+              static_cast<size_t>(p->depthWidth) * static_cast<size_t>(p->depthHeight));
+        return p->fovDegrees;
+    };
+
+    const float wide   = fovOf(1.0);
+    const float narrow = fovOf(0.5);
+    INFO("recovered fov: full " << wide << ", half-crop " << narrow);
+    CHECK(wide > narrow);
+    // A real response, not a rounding wobble. Halving the crop halves the true
+    // field of view, and the measured pair moved 45.6 -> 31.8.
+    CHECK(wide - narrow > 5.0F);
+}
+
+TEST_CASE("depth is left EMPTY when it could not be recovered", "[moge]") {
+    // The honesty that makes the flag worth having: a caller must never get a
+    // plausible array it would believe. No model needed -- an impossible input
+    // to the solve is enough.
+    const std::vector<float> nothing;
+    const auto r = mh::foundation::recoverFocalShift(nothing, 64, 64);
+    CHECK_FALSE(r.recovered);
+    CHECK(r.focal == 1.0F);
+    CHECK(r.shift == 0.0F);
 }

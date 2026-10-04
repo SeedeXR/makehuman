@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "makehuman/moge/Session.h"
 
+#include "makehuman/foundation/FocalShift.h"
+
 #include <onnxruntime_cxx_api.h>
 
 #include <QStandardPaths>
@@ -8,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <span>
 #include <vector>
 
 namespace mh::moge {
@@ -145,7 +148,46 @@ std::expected<Prediction, std::string> Session::run(const QImage& image, int tok
             }
         }
 
+        // THE AFFINE AMBIGUITY, RESOLVED. `points` is only correct up to an
+        // unknown focal and an unknown additive shift, so its z channel is not
+        // depth -- it is a shape. The recovery lives in mh::foundation rather
+        // than here precisely because it needs no model: it is tested against
+        // cameras we chose, in CI, with MH_WITH_MOGE off.
+        const auto pointsInfo = out[0].GetTensorTypeAndShapeInfo();
+        const auto pointsDims = pointsInfo.GetShape();
         Prediction p;
+        if (pointsDims.size() == 4 && pointsDims[3] == 3) {
+            const int ph = static_cast<int>(pointsDims[1]);
+            const int pw = static_cast<int>(pointsDims[2]);
+            const std::span<const float> pts{out[0].GetTensorData<float>(),
+                                             pointsInfo.GetElementCount()};
+
+            // The MASK is passed in, so the fit follows the geometry the model
+            // is confident about rather than whatever it guessed for the sky.
+            std::vector<uint8_t> solveMask(static_cast<size_t>(pw) * static_cast<size_t>(ph));
+            for (size_t i = 0; i < solveMask.size(); ++i) {
+                solveMask[i] = confidence[i] > kMaskThreshold ? 1 : 0;
+            }
+
+            const auto found = foundation::recoverFocalShift(pts, pw, ph, solveMask);
+            if (found.recovered) {
+                p.metric      = true;
+                p.focal       = found.focal;
+                p.shift       = found.shift;
+                p.fovDegrees  = foundation::verticalFovDegrees(found.focal, pw, ph);
+                p.depthWidth  = pw;
+                p.depthHeight = ph;
+                p.depth.assign(static_cast<size_t>(pw) * static_cast<size_t>(ph), 0.0F);
+                const float metricScale = out[3].GetTensorData<float>()[0];
+                for (size_t i = 0; i < p.depth.size(); ++i) {
+                    if (solveMask[i] == 0) continue;
+                    // z + shift is the true relative depth; the graph's own
+                    // scale output is what turns it into metres.
+                    p.depth[i] = (pts[i * 3 + 2] + found.shift) * metricScale;
+                }
+            }
+        }
+
         // Back to the CALLER's resolution, because the silhouette it feeds is
         // compared against images at that size. Nearest, not smooth: a smoothed
         // binary mask grows a grey fringe that the 128 threshold downstream
