@@ -477,6 +477,44 @@ if(MH_HAVE_RENDER)
              -DMH_SESSION=${CMAKE_CURRENT_SOURCE_DIR}/golden/mcp/session.jsonl
              -P ${CMAKE_CURRENT_SOURCE_DIR}/mcp_session.cmake)
 
+    # `--render --view` used to be REFUSED, on the reasoning that --render
+    # "draws its own fixed view". That stopped being true when RenderRequest
+    # gained yawDegrees, so the refusal was narrowed rather than left as a
+    # stale no-op.
+    add_test(NAME app_render_view_front COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/render_view_front.png --view front)
+    add_test(NAME app_render_view_left COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/render_view_left.png --view left)
+    # It must CHANGE THE IMAGE. A --view that parsed, exited 0 and drew the
+    # front anyway is exactly the painted no-op the refusal existed to prevent,
+    # and it would pass a test that only checked the exit code.
+    add_test(NAME app_render_view_changes_the_image COMMAND mh_png_compare
+             ${CMAKE_CURRENT_BINARY_DIR}/render_view_front.png
+             ${CMAKE_CURRENT_BINARY_DIR}/render_view_left.png
+             --min-differing 10000)
+    set_tests_properties(app_render_view_changes_the_image PROPERTIES
+        DEPENDS "app_render_view_front;app_render_view_left")
+
+    # TOP is still refused, and for the original reason rather than out of
+    # caution: a RenderRequest has a yaw and no pitch, so it really would do
+    # nothing. If this ever starts passing, pitch was plumbed and the message
+    # is now a lie.
+    add_test(NAME app_render_view_top_is_refused COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/render_view_top.png --view top)
+    set_tests_properties(app_render_view_top_is_refused PROPERTIES WILL_FAIL TRUE)
+
+    # THE UNIFICATION, ASSERTED. There was nearly a second table of view angles
+    # -- one for the CLI, one for the MCP server. They happened to agree, which
+    # is the only reason the duplicate could be deleted instead of reconciled;
+    # a drift would have put every `left` profile a half-turn out while every
+    # picture still looked like a correct render. Measured at 0 differing
+    # pixels, so the bar is tight on purpose.
+    add_test(NAME app_mcp_left_matches_cli_left COMMAND ${CMAKE_COMMAND}
+             -DMH_APP=$<TARGET_FILE:makehuman>
+             -DMH_COMPARE=$<TARGET_FILE:mh_png_compare>
+             -DMH_DIR=${CMAKE_CURRENT_BINARY_DIR}
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/mcp_cli_agree.cmake)
+
     # Which side is the LEFT side -- the one thing about the four views that can
     # be wrong while every image still looks right. See tests/mcp_views.cmake.
     add_test(NAME app_mcp_left_is_the_models_left COMMAND ${CMAKE_COMMAND}
@@ -3156,14 +3194,21 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION "--background-opacity takes a number from 0 to 1"
         FIXTURES_REQUIRED app_backdrop_fixture)
 
-    # ...and both flags are REFUSED under --render rather than ignored. --render
-    # draws its own fixed view and composites its backdrop unconditionally, so
-    # accepting them there would be a flag that does nothing while its help says
-    # otherwise.
-    add_test(NAME app_view_refused_with_render COMMAND makehuman --view left
+    # --background-side is still REFUSED under --render rather than ignored:
+    # --render composites its backdrop unconditionally, so accepting it would
+    # be a flag that does nothing while its help says otherwise.
+    #
+    # --view USED TO BE REFUSED HERE TOO, on the reasoning that --render "draws
+    # its own fixed view". That stopped being true when RenderRequest gained
+    # yawDegrees, so the test changed with the behaviour rather than the
+    # behaviour being bent to keep the test -- see app_render_view_left. What
+    # survives is the half that is still true: a RenderRequest has no pitch, so
+    # top and bottom really would do nothing and are still refused.
+    add_test(NAME app_background_side_refused_with_render COMMAND makehuman
+             --background-side left
              --render ${CMAKE_CURRENT_BINARY_DIR}/never.png)
-    set_tests_properties(app_view_refused_with_render PROPERTIES
-        PASS_REGULAR_EXPRESSION "steer the viewport")
+    set_tests_properties(app_background_side_refused_with_render PROPERTIES
+        PASS_REGULAR_EXPRESSION "steers the viewport")
 
     # A name that is not one of the six is REFUSED, not defaulted to front. A
     # typo that silently means "front" is the painted no-op this codebase keeps

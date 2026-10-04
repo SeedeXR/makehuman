@@ -1524,6 +1524,18 @@ constexpr std::array<AxisView, 6> kAxisViews{{
 }};
 constexpr const char* kSideNames = "expected front, back, left, right, top or bottom";
 
+// THE FOUR HORIZONTAL ENTRIES ABOVE ARE ALSO THE MCP SERVER'S VIEWS, and there
+// is deliberately no second table. One was written, from angles MEASURED by
+// widening `armslegs/l-upperarm-scale-horiz-decr|incr` and seeing which half of
+// a front render moved -- 863 pixels on the screen RIGHT, so the model's left
+// faces the viewer's right. It agreed with this table exactly (its 270 is this
+// one's -90), which is the only reason the duplicate could be deleted rather
+// than reconciled. A copy that had drifted would have put every `left` profile
+// a half-turn out while every picture still looked like a correct render.
+[[nodiscard]] constexpr bool isHorizontal(const AxisView& v) {
+    return v.pitch == 0.0F;
+}
+
 [[nodiscard]] const AxisView* findAxisView(const QString& name) {
     for (const AxisView& v : kAxisViews) {
         if (name.compare(QLatin1String(v.name), Qt::CaseInsensitive) == 0) return &v;
@@ -4819,11 +4831,34 @@ int main(int argc, char** argv) {
     // ignored, which is the same rule `--view sideways` already obeys: a flag
     // that silently does nothing is the painted no-op this codebase keeps
     // finding.
-    if (parser.isSet(renderOpt) && (parser.isSet(viewOpt) || parser.isSet(backgroundSideOpt))) {
+    // `--background-side` still steers only the VIEWPORT, so it is still
+    // refused. `--view` no longer is: `RenderRequest` carries `yawDegrees`
+    // since the MCP server learned to photograph a character from four sides,
+    // so `--render --view left` now draws a left profile instead of refusing.
+    //
+    // TOP AND BOTTOM ARE STILL REFUSED, and for the original reason rather than
+    // out of caution: a `RenderRequest` has a yaw and no pitch, so those two
+    // really would do nothing. Refused rather than ignored, which is the rule
+    // this file keeps: a flag that silently does nothing is the painted no-op
+    // this codebase keeps finding.
+    if (parser.isSet(renderOpt) && parser.isSet(backgroundSideOpt)) {
         std::fprintf(stderr,
-                     "--view and --background-side steer the viewport; --render "
-                     "draws its own fixed view\n");
+                     "--background-side steers the viewport; --render composites its "
+                     "own backdrop\n");
         return 1;
+    }
+    if (parser.isSet(renderOpt) && parser.isSet(viewOpt)) {
+        const AxisView* axis = findAxisView(parser.value(viewOpt));
+        if (axis == nullptr) {
+            std::fprintf(stderr, "unknown --view \"%s\"; %s\n",
+                         parser.value(viewOpt).toStdString().c_str(), kSideNames);
+            return 1;
+        }
+        if (!isHorizontal(*axis)) {
+            std::fprintf(stderr, "--render cannot look from %s: it draws with a yaw and no pitch\n",
+                         axis->name);
+            return 1;
+        }
     }
 
     // Resolved HERE, once, and not at the viewport: the headless `--save` path
@@ -7275,6 +7310,17 @@ int main(int argc, char** argv) {
     // renders the same scene the viewport would, via buildScene().
 
     if (parser.isSet(renderOpt)) {
+        // The yaw has been plumbed since the MCP server learned to photograph a
+        // character from four sides; the CLI simply could not ask for it, so
+        // `--render` always produced a front view and a script wanting a
+        // profile had to drive the MCP server instead.
+        float yaw = 0.0F;
+        if (parser.isSet(viewOpt)) {
+            // Already validated above, including the refusal of top and bottom
+            // under --render: a RenderRequest carries yaw and no pitch.
+            const AxisView* axis = findAxisView(parser.value(viewOpt));
+            yaw                  = axis == nullptr ? 0.0F : axis->yaw;
+        }
         // The CLI's own defaults, unchanged: 1024 square, and whatever
         // --transparent and --shading said.
         const mh::ui::RenderRequest req{
@@ -7283,6 +7329,7 @@ int main(int argc, char** argv) {
             .transparent = parser.isSet(transparentOpt) || parser.isSet(backgroundOpt),
             .shading     = shading,
             .wireframe   = parser.isSet(wireframeOpt),
+            .yawDegrees  = yaw,
             .lighting    = lighting};
         if (const std::string err = renderTo(parser.value(renderOpt).toStdString(), req);
             !err.empty()) {
@@ -7300,33 +7347,6 @@ int main(int argc, char** argv) {
     // Tools close over that state rather than shelling out to this same binary.
     // A subprocess per call would pay the 1,280-target load every time and turn
     // an iterative "adjust, look, adjust" loop into something too slow to use.
-    // The four angles a creator supplies reference photographs from.
-    //
-    // THE YAW VALUES WERE MEASURED, NOT DERIVED, and the first reading was
-    // wrong. Reading the nose direction off a 256 px contact sheet gave the
-    // opposite of what a crop of the same two heads showed; a sign convention
-    // read off a matrix is how `--look-at` reported a correct mapping as
-    // inverted across three measurements.
-    //
-    // What settled it needs no bookkeeping at all: widening
-    // `armslegs/l-upperarm-scale-horiz-decr|incr` changed 804 pixels in the
-    // screen-RIGHT half of a front render and 0 in the left, so the model's
-    // LEFT faces the viewer's RIGHT -- which is what "facing you, their left
-    // hand is on your right" says. From there the sides follow: at yaw 270 the
-    // nose points screen-left, so the model's left faces the camera, so that
-    // is the LEFT view.
-    //
-    // `app_mcp_left_is_the_models_left` pins that measurement, not the angles,
-    // because a flipped left and right would be silently plausible in every
-    // other respect.
-    struct McpView {
-        std::string_view name;
-        float yawDegrees;
-    };
-
-    static constexpr std::array<McpView, 4> kMcpViews{
-        {{"front", 0.0F}, {"right", 90.0F}, {"back", 180.0F}, {"left", 270.0F}}};
-
     // Above this, `render` returns a path instead of the image. A 2048 PNG is
     // hundreds of thousands of tokens of base64 and says no more than the 512.
     constexpr int kMcpInlineLimit = 1024;
@@ -7364,7 +7384,7 @@ int main(int argc, char** argv) {
         "hip/hip-scale-horiz-decr|incr"};
 
     struct McpReference {
-        std::string view;   ///< one of kMcpViews, or empty for a closeup
+        std::string view;   ///< a horizontal kAxisViews name, or empty for a closeup
         std::string label;  ///< what a closeup shows
         std::string path;
         mh::ui::Silhouette outline;
@@ -7489,10 +7509,9 @@ int main(int argc, char** argv) {
                          {"size", mh::mcp::Json{{"type", "integer"}}},
                          {"path", mh::mcp::Json{{"type", "string"}}}}}},
             .call = [&](const mh::mcp::Json& args) {
-                const auto view = args.value("view", std::string{"front"});
-                const auto* yaw = std::ranges::find_if(
-                    kMcpViews, [&](const McpView& v) { return v.name == view; });
-                if (yaw == std::ranges::end(kMcpViews)) {
+                const auto view     = args.value("view", std::string{"front"});
+                const AxisView* yaw = findAxisView(QString::fromStdString(view));
+                if (yaw == nullptr || !isHorizontal(*yaw)) {
                     throw mh::mcp::ToolError("view must be front, back, left or right, not \"" +
                                              view + "\"");
                 }
@@ -7513,7 +7532,7 @@ int main(int argc, char** argv) {
                                                 .transparent = false,
                                                 .shading     = shading,
                                                 .wireframe   = false,
-                                                .yawDegrees  = yaw->yawDegrees,
+                                                .yawDegrees  = yaw->yaw,
                                                 .lighting    = lighting};
                 if (const std::string err = renderTo(path, req); !err.empty()) {
                     // A render failure is the CALLER's problem to route around
@@ -7525,7 +7544,7 @@ int main(int argc, char** argv) {
                 // The metadata block comes FIRST so a client that renders only
                 // text still says which view and which file this was.
                 mh::mcp::Json note{{"view", view},
-                                   {"yawDegrees", yaw->yawDegrees},
+                                   {"yawDegrees", yaw->yaw},
                                    {"path", path},
                                    {"width", size},
                                    {"height", size}};
@@ -7581,12 +7600,11 @@ int main(int argc, char** argv) {
                 if (!args.contains("reference")) {
                     throw mh::mcp::ToolError("compare_to_reference needs a reference image path");
                 }
-                const auto refPath  = args.at("reference").get<std::string>();
-                const auto view     = args.value("view", std::string{"front"});
-                const int tolerance = args.value("tolerance", 30);
-                const auto* chosen  = std::ranges::find_if(
-                    kMcpViews, [&](const McpView& v) { return v.name == view; });
-                if (chosen == std::ranges::end(kMcpViews)) {
+                const auto refPath     = args.at("reference").get<std::string>();
+                const auto view        = args.value("view", std::string{"front"});
+                const int tolerance    = args.value("tolerance", 30);
+                const AxisView* chosen = findAxisView(QString::fromStdString(view));
+                if (chosen == nullptr || !isHorizontal(*chosen)) {
                     throw mh::mcp::ToolError("view must be front, back, left or right, not \"" +
                                              view + "\"");
                 }
@@ -7610,7 +7628,7 @@ int main(int argc, char** argv) {
                                                 .transparent = true,
                                                 .shading     = shading,
                                                 .wireframe   = false,
-                                                .yawDegrees  = chosen->yawDegrees,
+                                                .yawDegrees  = chosen->yaw,
                                                 .lighting    = lighting};
                 const auto rendered = renderImage(req);
                 if (!rendered) throw mh::mcp::ToolError("cannot render: " + rendered.error());
@@ -7654,9 +7672,8 @@ int main(int argc, char** argv) {
             int scored   = 0;
             for (const McpReference& ref : references) {
                 if (ref.view.empty()) continue;
-                const auto* chosen = std::ranges::find_if(
-                    kMcpViews, [&](const McpView& v) { return v.name == ref.view; });
-                if (chosen == std::ranges::end(kMcpViews)) continue;
+                const AxisView* chosen = findAxisView(QString::fromStdString(ref.view));
+                if (chosen == nullptr || !isHorizontal(*chosen)) continue;
                 const int width =
                     std::clamp(static_cast<int>(std::lround(static_cast<double>(height) *
                                                             ref.outline.mask.width() /
@@ -7667,7 +7684,7 @@ int main(int argc, char** argv) {
                                                 .transparent = true,
                                                 .shading     = shading,
                                                 .wireframe   = false,
-                                                .yawDegrees  = chosen->yawDegrees,
+                                                .yawDegrees  = chosen->yaw,
                                                 .lighting    = lighting};
                 const auto img = renderImage(req);
                 if (!img) continue;
@@ -7709,9 +7726,9 @@ int main(int argc, char** argv) {
                         "give a view (front, back, left, right) for a full-body shot, or a "
                         "label for a closeup");
                 }
-                if (!view.empty() && std::ranges::find_if(kMcpViews, [&](const McpView& v) {
-                                         return v.name == view;
-                                     }) == std::ranges::end(kMcpViews)) {
+                const AxisView* named =
+                    view.empty() ? nullptr : findAxisView(QString::fromStdString(view));
+                if (!view.empty() && (named == nullptr || !isHorizontal(*named))) {
                     throw mh::mcp::ToolError("view must be front, back, left or right, not \"" +
                                              view + "\"");
                 }
@@ -7790,7 +7807,8 @@ int main(int argc, char** argv) {
                                                  {"path", r.path},
                                                  {"coverage", r.outline.coverage}});
                 }
-                for (const McpView& v : kMcpViews) {
+                for (const AxisView& v : kAxisViews) {
+                    if (!isHorizontal(v)) continue;  // a RenderRequest has no pitch
                     if (std::ranges::none_of(
                             references, [&](const McpReference& r) { return r.view == v.name; })) {
                         missing.push_back(std::string(v.name));

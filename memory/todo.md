@@ -10752,9 +10752,26 @@ survival across client updates.
       TRANSPARENT clear has the same RGB as the background, so the colour
       distance called the whole frame empty. Alpha is the mask when the clear
       is transparent.
-- [ ] **`--render` does not expose `view`.** The yaw is plumbed and the MCP
-      tool uses it; the CLI flag was left alone deliberately, as nothing has
-      asked for it.
+- [x] **`--render --view` now works, and a SECOND VIEW TABLE was deleted**
+      (2026-10-04). The flag was not missing — it existed and `--render`
+      REFUSED it, on the reasoning that "`--render` draws its own fixed view".
+      That reasoning went stale the moment `RenderRequest` gained
+      `yawDegrees`; the refusal was narrowed rather than left as a lie.
+      **`top` and `bottom` are still refused**, now for the original reason
+      rather than out of caution: a `RenderRequest` carries a yaw and no pitch,
+      so those two really would do nothing.
+      **The find that mattered**: going to add the option turned up
+      `kAxisViews`, a six-entry table from the View menu that had been there
+      all along — and the MCP's independently MEASURED angles agreed with it
+      exactly (its 270 is that table's −90). So `kMcpViews` was deleted rather
+      than reconciled, 29 lines gone, one table left. A drift between them
+      would have put every `left` profile a half-turn out while every picture
+      still looked like a correct render.
+      Gated: `app_render_view_changes_the_image` (a `--view` that parsed and
+      drew the front anyway would pass an exit-code test),
+      `app_render_view_top_is_refused`, and
+      `app_mcp_left_matches_cli_left`, which compares PIXELS — measured at 0
+      differing, and controlled at 80,443 when pointed at the wrong side.
 
 
 ## Body-shape controls — they all exist; the gap is DISCOVERY (asked 2026-09-10)
