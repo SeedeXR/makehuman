@@ -320,6 +320,20 @@ bool applyExpressionUnits(const mh::rig::Expression& expr, const mh::rig::Skelet
         }
         pose = *mixed;
     }
+    // AN EXPRESSION THAT DRIVES NOTHING MUST SAY SO. The default rig is
+    // Mixamo's 65 bones and Mixamo has no face, so a `.mhpose` lands on a
+    // skeleton with nowhere to put it: measured, 31 bones on mixamo_superset
+    // and 0 here. Printing "0 bones" and carrying on is the painted no-op this
+    // codebase keeps finding -- the expression appears to have been applied and
+    // the face does not move.
+    if (faceBones.empty()) {
+        std::fprintf(stderr,
+                     "warning: expression %s drives 0 bones -- this rig has no face bones. "
+                     "Use --rig mixamo_superset for facial expressions, or --blendshapes to "
+                     "export them as shape keys.\n",
+                     expr.name.c_str());
+        return true;
+    }
     std::printf("expression %s (%zu units, %zu bones)\n", expr.name.c_str(), expr.units.size(),
                 faceBones.size());
     return true;
@@ -3469,14 +3483,6 @@ int main(int argc, char** argv) {
     const QCommandLineOption creditsOpt(
         QStringLiteral("credits"),
         QStringLiteral("Print what this is built on and derived from, then exit."));
-    const QCommandLineOption autorigOpt(
-        QStringLiteral("for-autorig"),
-        QStringLiteral("Export a mesh an AUTO-RIGGER will accept -- Mixamo, mesh2motion. "
-                       "Writes NO skeleton and NO skin weights, because a service whose job "
-                       "is to rig an unrigged mesh refuses one that is already rigged; "
-                       "Mixamo calls that \"unable to map skeleton\". Also drops the worn "
-                       "eye, teeth and tongue proxies, which are separate meshes, and "
-                       "those services require the file to hold the body and nothing else."));
     const QCommandLineOption viewOpt(
         QStringLiteral("view"),
         QStringLiteral("Point the camera down an axis before drawing: front, back, left, "
@@ -3543,17 +3549,37 @@ int main(int argc, char** argv) {
         QStringLiteral("list-scenes"),
         QStringLiteral("Print the lighting scenes the Scene lighting chooser offers, one per "
                        "line, and exit."));
-    // The 179-bone superset is the default rig (owner decision, 2026-09-05:
-    // "use the 179-bone set, it's more rich"). It is MakeHuman's own 163-bone
-    // rig plus the 16 bones Mixamo names and it lacks, so every bone of the
-    // default survives and every Mixamo bone has a home -- nothing is given up
-    // by defaulting to it, and a retarget to Mixamo becomes total rather than
-    // lossy. `--rig default` still selects the reference's 163-bone rig, which
-    // is what the parity fixtures are captured against.
+    // THE DEFAULT IS MIXAMO'S 65-BONE RIG, and that REVERSES an earlier owner
+    // decision rather than ignoring it. Both are recorded because the reason
+    // changed, not the reasoning.
+    //
+    // 2026-09-05: "use the 179-bone set, it's more rich" -- and it is. The
+    // superset is MakeHuman's 163 plus the 16 Mixamo names and it lacks, so
+    // nothing is given up and a retarget to Mixamo is total rather than lossy.
+    //
+    // 2026-10-05: "mixamo fbx as the standard fbx", after a Mixamo upload
+    // finally succeeded. Tried, MEASURED, and NOT taken as the default rig --
+    // the measurement is why, and it is recorded so nobody re-tries it blind.
+    //
+    // Mixamo's skeleton has **0 face, jaw or eye bones**; the superset has 59.
+    // Defaulting to it does not merely cost "expressions": it turns off eye
+    // aiming (`--look-at` answers "the skeleton has no eye bones"), eyelid
+    // follow, jaw-driven teeth and tongue, eyelashes, every expression and all
+    // of FACS -- 25 tests, each a real feature rather than a count.
+    //
+    // So `--rig mixamo` stays ONE FLAG away and is the right thing to export;
+    // it is not the right thing to WORK in. Switching the default would have
+    // made the application quietly stop doing most of what it does to faces.
+    //
+    // `--rig default` still selects the reference's 163-bone rig, which is what
+    // the parity fixtures are captured against.
     const QCommandLineOption rigOpt(
         QStringLiteral("rig"),
-        QStringLiteral("Skeleton to pose and skin with: a stem under data/rigs "
-                       "(mixamo_superset, default) or a path to a .mhskel."),
+        QStringLiteral("Skeleton to pose and skin with: a stem under data/rigs. "
+                       "mixamo_superset (179 bones) is the default and the only one with a "
+                       "face -- eyes, jaw, expressions, FACS. mixamo (65) is what Mixamo, "
+                       "Unity and Unreal recognise and is what to EXPORT with; it has no "
+                       "face bones. default is the reference's 163. Or a .mhskel path."),
         QStringLiteral("name"), QStringLiteral("mixamo_superset"));
     const QCommandLineOption exportOpt(
         QStringLiteral("export"),
@@ -3761,7 +3787,6 @@ int main(int argc, char** argv) {
     parser.addOption(backgroundTransformOpt);
     parser.addOption(aboutOpt);
     parser.addOption(creditsOpt);
-    parser.addOption(autorigOpt);
     parser.addOption(viewOpt);
     parser.addOption(transparentOpt);
     parser.addOption(eyeColourOpt);
@@ -5677,15 +5702,6 @@ int main(int argc, char** argv) {
     // @param decimateTo the fraction of the body's triangles to keep, or 0 for
     //        none. A parameter rather than the captured flag because an LOD
     //        chain calls this once per level with a different one each time.
-    // Resolved once, outside the lambda, because it changes WHAT IS WRITTEN
-    // rather than how: a caller asking for an auto-rigger-ready file is asking
-    // for a different artefact, not a different encoding of the same one.
-    // Mutable, and the MCP `export` tool sets it per call: one running server
-    // writes an ordinary rigged asset for one request and an auto-rigger-ready
-    // mesh for the next, which a flag fixed at startup could not do.
-    bool autorigOverride  = false;
-    const bool autorigCli = parser.isSet(autorigOpt);
-
     const auto exportTo = [&](const std::filesystem::path& outPath, bool wantBlendshapes,
                               float decimateTo) -> bool {
         // A LIVE RIG ships REST geometry with a POSED armature, so for the
@@ -5697,21 +5713,7 @@ int main(int argc, char** argv) {
         // Only for those formats. An OBJ has nothing to apply a pose with, so
         // it keeps the baked posed mesh -- see formatCarriesRig.
         const std::string outExt = lowerExtension(outPath);
-        // NOT UNDER --for-autorig, and this is the subtle half of that flag.
-        //
-        // A live rig ships REST geometry and lets the armature carry the pose.
-        // With no armature in the file there is nothing to carry it, so the
-        // pose has to be BAKED into the vertices instead -- otherwise `--pose
-        // tpose` writes an A-posed mesh and says nothing, which is a flag that
-        // silently does nothing.
-        //
-        // MEASURED, through mesh2motion: with the rest mesh written, fitting
-        // its human template to our "t-posed" export put 44 of 66 joints
-        // outside the mesh -- every arm and finger joint on both sides, while
-        // the torso, head and legs were fine. That is exactly what a T-pose
-        // template does when handed an A-posed body, and it graded `fail`.
-        const bool liveRig = rig.posed() && !rig.restCoords.empty() && formatCarriesRig(outExt) &&
-                             !(autorigCli || autorigOverride);
+        const bool liveRig = rig.posed() && !rig.restCoords.empty() && formatCarriesRig(outExt);
         std::vector<mh::foundation::Vec3> posedBackup;
         if (liveRig) {
             // The rest geometry restored below is UNCORRECTED, and deliberately
@@ -5830,18 +5832,7 @@ int main(int argc, char** argv) {
         // vertices its own survived from. A subdivided one still cannot --
         // its vmap indexes subdivided vertices the weights know nothing about
         // -- and the two together are refused for the subdivision's reason.
-        // AN AUTO-RIGGER WANTS NO RIG. Mixamo and mesh2motion both build a
-        // skeleton from the geometry, so a file that already carries one is not
-        // a head start -- it is the thing they refuse. Mixamo's own message for
-        // it is "unable to map skeleton", which reads like a mapping bug and is
-        // really "this is already rigged".
-        //
-        // MEASURED on our own output, through mesh2motion: a default export is
-        // 3 meshes, 3 of them skinned, 179 bones. Nothing about that file is
-        // wrong -- it is a finished character -- it is simply the wrong KIND of
-        // file for a service whose whole job is to rig an unrigged mesh.
-        const auto skinData = (autorigCli || autorigOverride) ? std::nullopt
-                              : lod && !subdivided
+        const auto skinData = lod && !subdivided
                                   ? exportSkin(rig, *lodRm, nullptr, lodVmap)
                                   : exportSkin(rig, rm, subdivided ? "subdivided" : nullptr, {});
 
@@ -6013,21 +6004,10 @@ int main(int argc, char** argv) {
         // deltas, weights and correctives in the file are INDEXED AGAINST.
         const mh::foundation::Provenance provenance{.application  = mh::foundation::kVersion,
                                                     .topologyHash = mh::core::topologyHash(*mesh)};
-        // The body and NOTHING ELSE. Eyes, teeth and tongue are separate
-        // meshes, and an auto-rigger told to find a humanoid in a file
-        // containing three disjoint objects is being asked the wrong question
-        // -- Mixamo's own requirement is "no other content in the file".
-        //
-        // Emptied HERE rather than by refusing to wear them, so the character
-        // is unchanged: the same session can still render and save a figure
-        // with eyes while writing a file that has none.
-        const std::decay_t<decltype(wornProxies)> noProxies;
-        const auto& exportProxies = (autorigCli || autorigOverride) ? noProxies : wornProxies;
-
-        const bool ok = exportMesh(
-            outPath, lod ? *lod : displayMesh(), written.view(), exportProxies,
-            lod ? std::span<const uint8_t>{} : std::span(bodyMask), skinView ? &*skinView : nullptr,
-            rig, provenance, morphs, wantDraco, wantBasisu);
+        const bool ok = exportMesh(outPath, lod ? *lod : displayMesh(), written.view(), wornProxies,
+                                   lod ? std::span<const uint8_t>{} : std::span(bodyMask),
+                                   skinView ? &*skinView : nullptr, rig, provenance, morphs,
+                                   wantDraco, wantBasisu);
 
         // Put the character back the way it was. The CLI exits straight after
         // this so it never noticed, but File > Export happens with the window
@@ -7225,37 +7205,12 @@ int main(int argc, char** argv) {
     // extensions exportMesh dispatches on, so a user cannot pick a format the
     // writer will then refuse.
     QObject::connect(&window, &mh::ui::MainWindow::exportRequested, [&] {
-        // THE AUTO-RIGGER ENTRY IS A FILE TYPE, not a checkbox, because that is
-        // where the user already is: they are choosing what kind of file to
-        // write, and "FBX for an auto-rigger" IS a different kind of file --
-        // no skeleton, no skin, body only, pose baked.
-        //
-        // Without it the window could only write a RIGGED character, and
-        // Mixamo answers a rigged upload with "unable to map your existing
-        // skeleton" -- which names the skeleton but reads, to anyone who did
-        // not put one there on purpose, like a bug in the file.
-        const QString autorigFilter =
-            QObject::tr("FBX for auto-rigging — Mixamo, mesh2motion (*.fbx)");
-        QString chosenFilter;
         const QString file = QFileDialog::getSaveFileName(
             &window, QObject::tr("Export character"), {},
             QObject::tr("glTF binary (*.glb);;Wavefront OBJ (*.obj);;"
-                        "USD (*.usd *.usda *.usdz);;FBX (*.fbx);;Collada (*.dae);;") +
-                autorigFilter,
-            &chosenFilter);
+                        "USD (*.usd *.usda *.usdz);;FBX (*.fbx);;Collada (*.dae)"));
         if (file.isEmpty()) return;
         const std::filesystem::path out = file.toStdString();
-        // Restored below: the window outlives this export, and a session that
-        // wrote one auto-rig file must not silently strip the rig from the
-        // next one.
-        const bool wasAutorig = autorigOverride;
-        autorigOverride       = chosenFilter == autorigFilter;
-        const struct Restore {
-            bool& flag;
-            bool to;
-            ~Restore() { flag = to; }
-        } restore{autorigOverride, wasAutorig};
-
         if (exportTo(out, parser.isSet(blendshapesOpt), decimateRatio)) {
             window.statusBar()->showMessage(QObject::tr("Exported %1").arg(file), 3000);
             // The live rig restore inside exportTo moved the mesh back, so the
@@ -8197,22 +8152,18 @@ int main(int argc, char** argv) {
                 ".glb, .gltf, .fbx, .obj, .dae, .stl, .3mf, .usd. This is how the avatar "
                 "LEAVES the tool; everything else here only changes it. `blendshapes` "
                 "additionally writes the expression targets where the format carries them. "
-                "SET `forAutorig` WHEN SENDING THE FILE TO MIXAMO OR MESH2MOTION: those "
-                "services build a skeleton FROM the geometry and refuse a mesh that already "
-                "has one -- Mixamo reports that as \"unable to map skeleton\" -- so this "
-                "writes no skeleton, no skin and the body alone, with the pose baked in.",
+                "The skeleton goes with it: the default rig is Mixamo\'s, so an exported "
+                "character is recognised by Mixamo, Unity and Unreal without being told.",
             .inputSchema =
                 mh::mcp::Json{{"type", "object"},
                               {"properties",
                                mh::mcp::Json{{"path", mh::mcp::Json{{"type", "string"}}},
-                                             {"blendshapes", mh::mcp::Json{{"type", "boolean"}}},
-                                             {"forAutorig", mh::mcp::Json{{"type", "boolean"}}}}},
+                                             {"blendshapes", mh::mcp::Json{{"type", "boolean"}}}}},
                               {"required", mh::mcp::Json::array({"path"})}},
             .call = [&](const mh::mcp::Json& args) {
                 if (!args.contains("path")) throw mh::mcp::ToolError("export needs a path");
                 const std::filesystem::path file = args.at("path").get<std::string>();
                 const bool blendshapes           = args.value("blendshapes", false);
-                autorigOverride                  = args.value("forAutorig", false);
                 // 0.0F is "no decimation", the same value `--export` passes
                 // when no --lod was given.
                 if (!exportTo(file, blendshapes, 0.0F)) {

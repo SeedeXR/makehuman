@@ -10483,6 +10483,49 @@ GPU here, or Colab) and it comes back to the owner first.
 
 ## M12 — the MCP agent interface (owner asked 2026-10-03)
 
+- [x] **MIXAMO WORKS** (owner confirmed 2026-10-05), the auto-rig path is
+      REMOVED, and the Mixamo rig was NOT made the default — because it was
+      measured first.
+      `--rig mixamo --pose tpose --export x.fbx` uploaded to Mixamo
+      successfully. Owner also checked the file in Blender, where it renders
+      correctly, concluding the mesh2motion preview collapse is mesh2motion's
+      problem and not our file. Good isolation — that is the right test.
+      **Removed**: `--for-autorig`, the MCP `forAutorig` argument, the GUI
+      "FBX for auto-rigging" file type, `tools/check_autorig_export.py` and its
+      gate. One path now, not two.
+      **`--rig mixamo` as the DEFAULT was tried and REVERTED.** Owner asked for
+      "mixamo fbx as the standard fbx"; making it the default rig fails 25
+      tests, and they are features rather than counts: Mixamo's skeleton has
+      **0 face, jaw or eye bones** against the superset's **59**, so eye aiming
+      (`--look-at` answers "the skeleton has no eye bones"), eyelid follow,
+      jaw-driven teeth and tongue, eyelashes, every expression and all of FACS
+      stop working. Recorded at the option so nobody re-tries it blind.
+      An expression that drives 0 bones now WARNS and names the fix, instead of
+      printing "0 bones" and carrying on — the painted no-op this file keeps
+      finding.
+      **Still open, if the owner wants the standard export without the cost**:
+      convert to the 65-bone rig AT EXPORT TIME, so the session keeps the face
+      rig and the FBX is still Mixamo's. `make_mixamo_rig.py` already does the
+      bone and weight merge offline; doing it per export is the work.
+
+- [x] **The app "freezing" is the MACHINE, not the app** (2026-10-05).
+      Measured: idle **0% CPU**, RSS falling 190 → 90 MB, 47 MB at rest; 315
+      edits plus 15 renders in **256 ms total** with no growth; a slider edit is
+      0–2 ms and a full scene rebuild ~13 ms.
+      The machine: **`/System/Volumes/Data` 98% full** (416 of 460 GB, 10 GB
+      free), **swap 7.7 of 9.2 GB used**, 90M pageins, a 1.2 GB VM resident.
+      That thrashing beachballs everything, and it is the same pressure that
+      emptied our build trees five times in one day.
+      **It also corrects a memory file I had written wrongly**: I ruled disk
+      out after reading `df -h /` at 55%, which is the SEALED system volume.
+      Always read `/System/Volumes/Data`.
+      Reclaimable here: Docker **14 GB**, `~/Library/Caches` 2 GB, our own
+      `build/` 2.4 GB.
+      **One real packaging gap found while measuring**: the INSTALLED bundle has
+      no Qt `offscreen` platform plugin, so `QT_QPA_PLATFORM=offscreen` fails
+      there though it works from the build tree. Harmless for the MCP server,
+      which uses the default platform. Not yet fixed.
+
 - [x] **One universal FBX: `--rig mixamo`, one flag** (2026-10-05). Owner asked
       why there were two flavours and wanted one file auto-detected everywhere.
       There is now one, and the second flavour is a fallback rather than a

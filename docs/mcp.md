@@ -122,98 +122,29 @@ export {"path": "character.fbx", "blendshapes": true}
 export {"path": "character.fbx", "forAutorig": true}    # for Mixamo
 ```
 
-#### "Sorry, unable to map your existing skeleton"
-
-That message means Mixamo **found a skeleton** in the file and could not map
-it — it is Mixamo's skeleton-MAPPING path, not its auto-rigger. A file with no
-skeleton takes a different route entirely: Mixamo asks you to place markers on
-the chin, wrists, elbows, knees and groin.
-
-So the answer is to upload a file with **no** skeleton. Three ways:
-
-| from | how |
-|---|---|
-| the app | File ▸ Export, file type **"FBX for auto-rigging — Mixamo, mesh2motion"** |
-| the CLI | `makehuman --for-autorig --pose tpose --export character.fbx` |
-| MCP | `export {"path": "character.fbx", "forAutorig": true}` |
-
-**Or keep the rig, and give Mixamo one it can map.** There are now two Mixamo
-paths, and which you want depends on whether you value our rig or Mixamo's:
+#### Sending a character to Mixamo
 
 ```
-makehuman --rig mixamo --rig-names mixamo --pose tpose \
-          --eyes none --teeth none --tongue none --export character.fbx
+makehuman --rig mixamo --pose tpose --export character.fbx
 ```
 
-`--rig mixamo` is the **65 bones Mixamo actually uses**, in Mixamo's own
-hierarchy, fitted to our base mesh. With `--rig-names mixamo` every one of them
-is written under Mixamo's name and **nothing is left over**, so Mixamo maps the
-whole skeleton instead of refusing it.
+One flag. `--rig mixamo` is the **65 bones Mixamo uses**, in Mixamo's own
+hierarchy, fitted to our base mesh, and it writes Mixamo's names by itself.
+Confirmed working on a real Mixamo upload, 2026-10-05.
 
-**`--rig-names mixamo` on `mixamo_superset` is not a substitute** — and that is
-why this rig exists. The superset is 179 bones; the renaming covers the 65 that
-have a Mixamo counterpart and leaves `spine05`, `pelvis.L`, `upperleg02.L` and
-every face bone under native names, because Mixamo has nowhere to put them.
-Mixamo is then handed a half-mappable skeleton, which is exactly what "unable
-to map your existing skeleton" means.
+**Export with it; do not WORK in it.** Mixamo's skeleton has **0 face, jaw or
+eye bones** against the default superset's 59, so on that rig `--look-at`
+answers "the skeleton has no eye bones" and expressions drive nothing. The app
+says so rather than failing quietly.
 
 | rig | bones | for |
 |---|---|---|
-| `mixamo_superset` (default) | 179 | ours — every MakeHuman bone, **face expressions** |
-| `mixamo` | 65 | **universal** — Mixamo, Unity Humanoid, Unreal, mesh2motion |
+| `mixamo_superset` (default) | 179 | working — eyes, jaw, expressions, FACS |
+| `mixamo` | 65 | exporting — Mixamo, Unity Humanoid, Unreal |
 | `default` | 163 | the original MakeHuman skeleton |
 
-#### Why there is no single "universal" rig
-
-`--rig mixamo` is as close as it gets, and one flag is enough — it writes
-Mixamo's names automatically. Verified by three independent readers: assimp
-sees one 1.66 m character with UVs and a 65-bone skin, mesh2motion loads all 65
-bones and one mesh, and the file carries **exactly** Mixamo's 65 names with no
-leftovers.
-
-What it cannot also be is OUR rig. Expressions here are **bone-driven**: the
-same `.mhpose` drives **31 bones** on `mixamo_superset` and **0** on `mixamo`,
-because Mixamo's skeleton has no face. That is a property of Mixamo's rig, not
-a defect in ours, and no single skeleton is both. Use `mixamo_superset` while
-you are building a face, and `mixamo` when you are handing the character on —
-or `--blendshapes`, which ships the expressions as shape keys every DCC reads.
-
-#### Sending a character to Mixamo or mesh2motion
-
-Use **`forAutorig: true`** (or `--for-autorig` on the CLI). Without it the
-upload fails, and the error does not say why: Mixamo reports **"unable to map
-skeleton"**, which reads like a mapping bug and actually means *this mesh is
-already rigged*.
-
-Those services **build** a skeleton from the geometry, so an ordinary export is
-not a head start — it is the thing they refuse. A default export is 3 meshes,
-all skinned, 179 bones; `forAutorig` writes **one mesh, no skeleton, no skin
-weights**, and bakes the pose into the vertices.
-
-That last part is not a detail. A rigged format ships *rest* geometry and lets
-the armature carry the pose — but with no armature there is nothing to carry
-it, so the pose has to be baked. Measured through mesh2motion: with the rest
-mesh, fitting its human template to a supposedly T-posed export put **44 of 66
-joints outside the mesh** — every arm and finger joint, both sides — and graded
-`fail`. With the pose baked, the same flow ranks `human` first at **0.999 with
-zero joints off-mesh** and grades `pass`.
-
-Pair it with `--pose tpose`; most auto-riggers expect a T-pose.
-
-### Judging a face
-
-The fit works from outlines and sees no nose, so facial detail is yours to set.
-At `framing: full` a face is about forty pixels across in a 512 px render,
-which is not enough to judge one:
-
-```
-render {"framing": "head"}      # head and shoulders
-render {"framing": "torso"}
-render {"distance": 6, "panY": -6.5}   # any other closeup
-```
-
-`full`, `head` and `torso` are measured framings; `distance` and `panY`
-override them for a closeup of any area a name does not cover.
+`--blendshapes` carries expressions as shape keys, which travels further than
+any face rig.
 
 ### What the fit can and cannot do
 

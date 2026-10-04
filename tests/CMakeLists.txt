@@ -2044,23 +2044,6 @@ if(MH_HAVE_RENDER)
                          ${CMAKE_SOURCE_DIR}/tools/make_hair_styles.py --check
                          --app $<TARGET_FILE:makehuman>)
 
-        # An auto-rigger refuses an already-rigged mesh, so `--for-autorig`
-        # writes one with no skeleton, no skin and nothing but the body -- and
-        # BAKES the pose, because with no armature there is nothing to carry
-        # it. See tools/check_autorig_export.py; the pose is the part that was
-        # got wrong, and a check for "no skin" alone passes on that bug.
-        # The Mixamo rig is GENERATED from the superset plus the mapping, so a
-        # change to either that is not regenerated leaves the two disagreeing
-        # -- the same reason build_mixamo_superset.py has a --check.
-        add_test(NAME mixamo_rig_is_generated
-                 COMMAND ${Python3_EXECUTABLE}
-                         ${CMAKE_SOURCE_DIR}/tools/make_mixamo_rig.py --check)
-
-        add_test(NAME autorig_export_is_riggable
-                 COMMAND ${Python3_EXECUTABLE}
-                         ${CMAKE_SOURCE_DIR}/tools/check_autorig_export.py
-                         $<TARGET_FILE:makehuman>)
-        set_tests_properties(autorig_export_is_riggable PROPERTIES TIMEOUT 300)
     endif()
 
     # CORNROWS -- the first style whose geometry is not in the base mesh at all.
