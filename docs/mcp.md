@@ -119,7 +119,30 @@ changes it.
 ```
 export {"path": "character.glb"}
 export {"path": "character.fbx", "blendshapes": true}
+export {"path": "character.fbx", "forAutorig": true}    # for Mixamo
 ```
+
+#### Sending a character to Mixamo or mesh2motion
+
+Use **`forAutorig: true`** (or `--for-autorig` on the CLI). Without it the
+upload fails, and the error does not say why: Mixamo reports **"unable to map
+skeleton"**, which reads like a mapping bug and actually means *this mesh is
+already rigged*.
+
+Those services **build** a skeleton from the geometry, so an ordinary export is
+not a head start — it is the thing they refuse. A default export is 3 meshes,
+all skinned, 179 bones; `forAutorig` writes **one mesh, no skeleton, no skin
+weights**, and bakes the pose into the vertices.
+
+That last part is not a detail. A rigged format ships *rest* geometry and lets
+the armature carry the pose — but with no armature there is nothing to carry
+it, so the pose has to be baked. Measured through mesh2motion: with the rest
+mesh, fitting its human template to a supposedly T-posed export put **44 of 66
+joints outside the mesh** — every arm and finger joint, both sides — and graded
+`fail`. With the pose baked, the same flow ranks `human` first at **0.999 with
+zero joints off-mesh** and grades `pass`.
+
+Pair it with `--pose tpose`; most auto-riggers expect a T-pose.
 
 ### Judging a face
 

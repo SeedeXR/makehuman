@@ -10483,6 +10483,42 @@ GPU here, or Colab) and it comes back to the owner first.
 
 ## M12 — the MCP agent interface (owner asked 2026-10-03)
 
+- [x] **Mixamo and mesh2motion refused our FBX — FIXED 2026-10-04.** Owner
+      reported both failing; Mixamo's message is *"unable to map skeleton"*,
+      which reads like a mapping bug and means **this mesh is already rigged**.
+      **Reproduced through mesh2motion's own MCP tools** rather than guessed: a
+      default export loads as **3 meshes, 3 skinned, 179 bones**, and grades
+      `fail`. Nothing about that file is wrong — it is a finished character —
+      it is the wrong KIND of file for a service whose job is to rig an
+      unrigged mesh. Mixamo also requires "no other content in the file", and
+      eyes/teeth/tongue are separate meshes.
+      `--for-autorig` (and `forAutorig` on the MCP `export` tool, settable
+      per call so one server can write both kinds) writes no skeleton, no skin
+      and the body alone.
+      **THE SUBTLE HALF, which I got wrong first and the first gate missed.** A
+      rigged format ships REST geometry and lets the armature carry the pose.
+      With no armature there is nothing to carry it, so `--pose tpose` wrote an
+      A-posed mesh and said nothing — a flag that silently does nothing.
+      Fitting a T-pose template to it put **44 of 66 joints outside the mesh**:
+      every arm and finger joint, both sides, while torso, head and legs were
+      fine. `liveRig` now excludes the autorig case so the pose is BAKED.
+      **End-to-end, measured through mesh2motion:**
+
+      | | before | after |
+      |---|---|---|
+      | template rank for `human` | 6th of 17 | **1st** |
+      | score | 0.333 | **0.999** |
+      | joints off mesh | 44 of 66 | **0** |
+      | grade | `fail` | **`pass`** |
+
+      Gated by `autorig_export_is_riggable` (`tools/check_autorig_export.py`),
+      which checks all three properties AND carries a control of its own: it
+      fails if an ORDINARY export has no skin or one mesh, so it cannot pass on
+      a build whose exporter simply stopped writing rigs. Controlled three
+      ways — skin not suppressed → "wrote 1 skin(s)"; proxies kept → "wrote 3
+      meshes"; pose not baked → the pose message. **A check for "no skin" alone
+      passes on the pose bug**, which is why the position comparison is there.
+
 - [x] **The server can KEEP a character now, and frame a face** (2026-10-04).
       Two gaps the tool list made obvious: `get_parameters` had **no inverse**,
       so a model could snapshot a character and never restore it — "iterate

@@ -3433,6 +3433,14 @@ int main(int argc, char** argv) {
     const QCommandLineOption creditsOpt(
         QStringLiteral("credits"),
         QStringLiteral("Print what this is built on and derived from, then exit."));
+    const QCommandLineOption autorigOpt(
+        QStringLiteral("for-autorig"),
+        QStringLiteral("Export a mesh an AUTO-RIGGER will accept -- Mixamo, mesh2motion. "
+                       "Writes NO skeleton and NO skin weights, because a service whose job "
+                       "is to rig an unrigged mesh refuses one that is already rigged; "
+                       "Mixamo calls that \"unable to map skeleton\". Also drops the worn "
+                       "eye, teeth and tongue proxies, which are separate meshes, and "
+                       "those services require the file to hold the body and nothing else."));
     const QCommandLineOption viewOpt(
         QStringLiteral("view"),
         QStringLiteral("Point the camera down an axis before drawing: front, back, left, "
@@ -3717,6 +3725,7 @@ int main(int argc, char** argv) {
     parser.addOption(backgroundTransformOpt);
     parser.addOption(aboutOpt);
     parser.addOption(creditsOpt);
+    parser.addOption(autorigOpt);
     parser.addOption(viewOpt);
     parser.addOption(transparentOpt);
     parser.addOption(eyeColourOpt);
@@ -5615,6 +5624,15 @@ int main(int argc, char** argv) {
     // @param decimateTo the fraction of the body's triangles to keep, or 0 for
     //        none. A parameter rather than the captured flag because an LOD
     //        chain calls this once per level with a different one each time.
+    // Resolved once, outside the lambda, because it changes WHAT IS WRITTEN
+    // rather than how: a caller asking for an auto-rigger-ready file is asking
+    // for a different artefact, not a different encoding of the same one.
+    // Mutable, and the MCP `export` tool sets it per call: one running server
+    // writes an ordinary rigged asset for one request and an auto-rigger-ready
+    // mesh for the next, which a flag fixed at startup could not do.
+    bool autorigOverride  = false;
+    const bool autorigCli = parser.isSet(autorigOpt);
+
     const auto exportTo = [&](const std::filesystem::path& outPath, bool wantBlendshapes,
                               float decimateTo) -> bool {
         // A LIVE RIG ships REST geometry with a POSED armature, so for the
@@ -5626,7 +5644,21 @@ int main(int argc, char** argv) {
         // Only for those formats. An OBJ has nothing to apply a pose with, so
         // it keeps the baked posed mesh -- see formatCarriesRig.
         const std::string outExt = lowerExtension(outPath);
-        const bool liveRig = rig.posed() && !rig.restCoords.empty() && formatCarriesRig(outExt);
+        // NOT UNDER --for-autorig, and this is the subtle half of that flag.
+        //
+        // A live rig ships REST geometry and lets the armature carry the pose.
+        // With no armature in the file there is nothing to carry it, so the
+        // pose has to be BAKED into the vertices instead -- otherwise `--pose
+        // tpose` writes an A-posed mesh and says nothing, which is a flag that
+        // silently does nothing.
+        //
+        // MEASURED, through mesh2motion: with the rest mesh written, fitting
+        // its human template to our "t-posed" export put 44 of 66 joints
+        // outside the mesh -- every arm and finger joint on both sides, while
+        // the torso, head and legs were fine. That is exactly what a T-pose
+        // template does when handed an A-posed body, and it graded `fail`.
+        const bool liveRig = rig.posed() && !rig.restCoords.empty() && formatCarriesRig(outExt) &&
+                             !(autorigCli || autorigOverride);
         std::vector<mh::foundation::Vec3> posedBackup;
         if (liveRig) {
             // The rest geometry restored below is UNCORRECTED, and deliberately
@@ -5745,7 +5777,18 @@ int main(int argc, char** argv) {
         // vertices its own survived from. A subdivided one still cannot --
         // its vmap indexes subdivided vertices the weights know nothing about
         // -- and the two together are refused for the subdivision's reason.
-        const auto skinData = lod && !subdivided
+        // AN AUTO-RIGGER WANTS NO RIG. Mixamo and mesh2motion both build a
+        // skeleton from the geometry, so a file that already carries one is not
+        // a head start -- it is the thing they refuse. Mixamo's own message for
+        // it is "unable to map skeleton", which reads like a mapping bug and is
+        // really "this is already rigged".
+        //
+        // MEASURED on our own output, through mesh2motion: a default export is
+        // 3 meshes, 3 of them skinned, 179 bones. Nothing about that file is
+        // wrong -- it is a finished character -- it is simply the wrong KIND of
+        // file for a service whose whole job is to rig an unrigged mesh.
+        const auto skinData = (autorigCli || autorigOverride) ? std::nullopt
+                              : lod && !subdivided
                                   ? exportSkin(rig, *lodRm, nullptr, lodVmap)
                                   : exportSkin(rig, rm, subdivided ? "subdivided" : nullptr, {});
 
@@ -5917,10 +5960,21 @@ int main(int argc, char** argv) {
         // deltas, weights and correctives in the file are INDEXED AGAINST.
         const mh::foundation::Provenance provenance{.application  = mh::foundation::kVersion,
                                                     .topologyHash = mh::core::topologyHash(*mesh)};
-        const bool ok = exportMesh(outPath, lod ? *lod : displayMesh(), written.view(), wornProxies,
-                                   lod ? std::span<const uint8_t>{} : std::span(bodyMask),
-                                   skinView ? &*skinView : nullptr, rig, provenance, morphs,
-                                   wantDraco, wantBasisu);
+        // The body and NOTHING ELSE. Eyes, teeth and tongue are separate
+        // meshes, and an auto-rigger told to find a humanoid in a file
+        // containing three disjoint objects is being asked the wrong question
+        // -- Mixamo's own requirement is "no other content in the file".
+        //
+        // Emptied HERE rather than by refusing to wear them, so the character
+        // is unchanged: the same session can still render and save a figure
+        // with eyes while writing a file that has none.
+        const std::decay_t<decltype(wornProxies)> noProxies;
+        const auto& exportProxies = (autorigCli || autorigOverride) ? noProxies : wornProxies;
+
+        const bool ok = exportMesh(
+            outPath, lod ? *lod : displayMesh(), written.view(), exportProxies,
+            lod ? std::span<const uint8_t>{} : std::span(bodyMask), skinView ? &*skinView : nullptr,
+            rig, provenance, morphs, wantDraco, wantBasisu);
 
         // Put the character back the way it was. The CLI exits straight after
         // this so it never noticed, but File > Export happens with the window
@@ -8064,17 +8118,23 @@ int main(int argc, char** argv) {
                 "Write the character as a 3D asset -- the format follows the extension: "
                 ".glb, .gltf, .fbx, .obj, .dae, .stl, .3mf, .usd. This is how the avatar "
                 "LEAVES the tool; everything else here only changes it. `blendshapes` "
-                "additionally writes the expression targets where the format carries them.",
+                "additionally writes the expression targets where the format carries them. "
+                "SET `forAutorig` WHEN SENDING THE FILE TO MIXAMO OR MESH2MOTION: those "
+                "services build a skeleton FROM the geometry and refuse a mesh that already "
+                "has one -- Mixamo reports that as \"unable to map skeleton\" -- so this "
+                "writes no skeleton, no skin and the body alone, with the pose baked in.",
             .inputSchema =
                 mh::mcp::Json{{"type", "object"},
                               {"properties",
                                mh::mcp::Json{{"path", mh::mcp::Json{{"type", "string"}}},
-                                             {"blendshapes", mh::mcp::Json{{"type", "boolean"}}}}},
+                                             {"blendshapes", mh::mcp::Json{{"type", "boolean"}}},
+                                             {"forAutorig", mh::mcp::Json{{"type", "boolean"}}}}},
                               {"required", mh::mcp::Json::array({"path"})}},
             .call = [&](const mh::mcp::Json& args) {
                 if (!args.contains("path")) throw mh::mcp::ToolError("export needs a path");
                 const std::filesystem::path file = args.at("path").get<std::string>();
                 const bool blendshapes           = args.value("blendshapes", false);
+                autorigOverride                  = args.value("forAutorig", false);
                 // 0.0F is "no decimation", the same value `--export` passes
                 // when no --lod was given.
                 if (!exportTo(file, blendshapes, 0.0F)) {
