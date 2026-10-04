@@ -10124,7 +10124,15 @@ GPU here, or Colab) and it comes back to the owner first.
       **STILL OPEN**: a model LEARNED from data, which needs a table of body
       measurements across thousands of people -- megabytes, not scans -- and
       the same licence audit before use.
-- [ ] Image/scan → parameters fitting
+- [~] **Image → parameters fitting: DONE for images, not for scans**
+      (2026-10-04). `fit_to_references` searches the eight outline-driving
+      body parameters against front/back/left/right photographs and applies the
+      result; `app_mcp_fit_recovers_a_character` rebuilds a known character
+      from its own renders and checks the recovered VALUES, not the score.
+      Measured: 4 passes reach 0.92 with a mean parameter error of 0.10.
+      **Still open**: SCAN fitting (a mesh, not a photograph), and faces — an
+      outline cannot see a nose, so facial detail is set by eye from the
+      closeups.
 - [x] Guardrails: no MetaHuman-derived data, ever — ENFORCED, not merely intended: `project_context.md` §4.3, plus CI's "Forbidden dependencies absent" step (`.github/workflows/ci.yml`), plus the recorded refusal of MetaHuman DNA Calibration. A standing rule restated as a checkbox. (`project_context.md` §4.3)
 
 ## Versioning — ONE source of truth (2026-09-07)
@@ -10961,10 +10969,31 @@ the app warns. Overriding is correct (a constraint wins); the silence was not.
 
 Tracked in full in `project_context.md` §8. Each becomes a regression test.
 
-- [ ] Tangent computation (3 separate bugs, `core/module3d.py:411,429,1212`)
-- [ ] FBX 10× unit error at every scale but decimetre
-- [ ] FBX forged Creator string and fixed fake FileId
-- [ ] Collada morph controller `NameError`
+**AUDITED 2026-10-04 against the live tree. Most of these were already closed
+and the boxes were simply stale — a todo that claims seven open defects when
+two are open sends the next session hunting work that does not exist.**
+
+- [x] Tangent computation (3 separate bugs, `core/module3d.py:411,429,1212`) —
+      `tests/unit/test_tangents.cpp`, **8 cases**, whose header states the three
+      independent ways the reference is wrong.
+- [x] FBX 10× unit error at every scale but decimetre — gated in
+      `tests/golden/test_fbx_writer.cpp`: a child at rest y=2 and posed (5,3) in
+      decimetres must appear as **20, 50 and 30** centimetres in the file, so a
+      collapsed or unconverted transform fails.
+- [x] FBX forged Creator string — we write `"MakeHuman C++ FBX writer"` plus a
+      provenance stamp. The reference forged an Autodesk string; we do not.
+- [~] **FBX fixed `FileId` — STILL FIXED, deliberately, and it is not the
+      reference's bug.** `FbxWriter.cpp:44-55`: the footer id is an unsolved
+      obfuscation of `FileId` and `CreationTime`, and a mismatched footer makes
+      the file read as 1 mesh / 21,833 vertices. So a known-consistent triple
+      is adopted from assimp's own OUTPUT (data from a BSD-3-Clause tool, not
+      code). The note says to compute it and delete the constant if the
+      obfuscation is ever worked out. A knowing divergence with a reason, not
+      an oversight.
+- [x] Collada morph controller `NameError` — **not ported, so it cannot be
+      carried over.** Collada goes out through assimp (`src/io/SceneIO.cpp`),
+      not a hand-written writer; there is no morph-controller code of ours for
+      the bug to live in.
 - [x] `.mhscene` is a Python pickle → replace with JSON (RCE vector).
       **DONE 2026-09-24** (`4de47f64`, `a73743e5`). The three shipped
       `.mhscene` files really were pickles -- protocol 2, `cmaterial\nColor`
@@ -10981,6 +11010,11 @@ Tracked in full in `project_context.md` §8. Each becomes a regression test.
       run: without the check it reports `malformed (... illegal number)`.
       The pickles stay on disk as the converter's input; the safety is the
       refusal, not their absence.
-- [ ] `AnimationTrack.sparsify` assigns to a read-only property
-- [ ] `.mhp` pose loader always logs an error
-- [ ] Bare `except: pass` swallowing export failures
+- [x] `AnimationTrack.sparsify` assigns to a read-only property — **not
+      ported.** No `sparsify` anywhere in `src/` or `include/`.
+- [x] `.mhp` pose loader always logs an error — **not ported.** We read `.bvh`
+      and `.mhpose`; there is no `.mhp` loader.
+- [x] Bare `except: pass` swallowing export failures — **cannot exist here.**
+      The writers return `std::expected` / an error string and the callers
+      check it; there is no construct in this port that silently discards a
+      failure the way a bare `except` does.
