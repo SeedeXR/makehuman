@@ -172,3 +172,5 @@ resources/branding/AppIcon.iconset/
 # machine-specific artefact under review for no benefit.
 *.mhcorr
 *.mhcorr.tmp
+
+mixamo-asset/

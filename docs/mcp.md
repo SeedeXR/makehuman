@@ -122,6 +122,47 @@ export {"path": "character.fbx", "blendshapes": true}
 export {"path": "character.fbx", "forAutorig": true}    # for Mixamo
 ```
 
+#### "Sorry, unable to map your existing skeleton"
+
+That message means Mixamo **found a skeleton** in the file and could not map
+it — it is Mixamo's skeleton-MAPPING path, not its auto-rigger. A file with no
+skeleton takes a different route entirely: Mixamo asks you to place markers on
+the chin, wrists, elbows, knees and groin.
+
+So the answer is to upload a file with **no** skeleton. Three ways:
+
+| from | how |
+|---|---|
+| the app | File ▸ Export, file type **"FBX for auto-rigging — Mixamo, mesh2motion"** |
+| the CLI | `makehuman --for-autorig --pose tpose --export character.fbx` |
+| MCP | `export {"path": "character.fbx", "forAutorig": true}` |
+
+**Or keep the rig, and give Mixamo one it can map.** There are now two Mixamo
+paths, and which you want depends on whether you value our rig or Mixamo's:
+
+```
+makehuman --rig mixamo --rig-names mixamo --pose tpose \
+          --eyes none --teeth none --tongue none --export character.fbx
+```
+
+`--rig mixamo` is the **65 bones Mixamo actually uses**, in Mixamo's own
+hierarchy, fitted to our base mesh. With `--rig-names mixamo` every one of them
+is written under Mixamo's name and **nothing is left over**, so Mixamo maps the
+whole skeleton instead of refusing it.
+
+**`--rig-names mixamo` on `mixamo_superset` is not a substitute** — and that is
+why this rig exists. The superset is 179 bones; the renaming covers the 65 that
+have a Mixamo counterpart and leaves `spine05`, `pelvis.L`, `upperleg02.L` and
+every face bone under native names, because Mixamo has nowhere to put them.
+Mixamo is then handed a half-mappable skeleton, which is exactly what "unable
+to map your existing skeleton" means.
+
+| rig | bones | for |
+|---|---|---|
+| `mixamo_superset` (default) | 179 | ours — every MakeHuman bone, face included |
+| `mixamo` | 65 | Mixamo — maps whole, animations retarget back |
+| `default` | 163 | the original MakeHuman skeleton |
+
 #### Sending a character to Mixamo or mesh2motion
 
 Use **`forAutorig: true`** (or `--for-autorig` on the CLI). Without it the

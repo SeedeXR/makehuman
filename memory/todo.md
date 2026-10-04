@@ -10483,6 +10483,32 @@ GPU here, or Colab) and it comes back to the owner first.
 
 ## M12 — the MCP agent interface (owner asked 2026-10-03)
 
+- [x] **Mixamo refused it AGAIN, and the window was the reason**
+      (2026-10-04). Owner's screenshot: *"Sorry, unable to map your existing
+      skeleton."* That is Mixamo's skeleton-MAPPING path — it found a rig and
+      could not map it — **not** the auto-rigger, which instead asks for
+      markers on chin, wrists, elbows, knees. So the uploaded file still had
+      its 179 bones.
+      **Why: `--for-autorig` was reachable from the CLI and from MCP, and NOT
+      FROM THE WINDOW.** File ▸ Export always wrote a rigged character, so
+      anyone exporting the way the app invites them to got exactly the file
+      Mixamo rejects. Added as a FILE TYPE in the save dialog — "FBX for
+      auto-rigging — Mixamo, mesh2motion" — because that is where the user
+      already is, choosing what kind of file to write, and this IS a different
+      kind of file. The flag is restored after the export so one auto-rig save
+      does not silently strip the rig from the next one.
+      **`--rig-names mixamo` is NOT a substitute, measured**: it renames what
+      it can (`Hips`, `Spine`, `LeftUpLeg`) but ours is a 179-bone superset, so
+      `spine05`, `pelvis.L`, `upperleg02.L` and every face bone keep native
+      names. Mixamo sees a half-mappable skeleton — exactly the complaint.
+      Two FBX conventions also corrected while looking, both real deviations
+      from every other writer and neither the cause: the Geometry node had an
+      EMPTY NAME (`objectName("", "Geometry")`, hardcoded), and the Material's
+      shading model was `""` where readers switch on "Phong"/"Lambert".
+      **Not confirmed against Mixamo itself** — that needs a browser upload.
+      Maya was asked for an independent verdict and never answered: `mayapy`
+      hung past 20 minutes, twice, and both runs were killed.
+
 - [x] **Mixamo and mesh2motion refused our FBX — FIXED 2026-10-04.** Owner
       reported both failing; Mixamo's message is *"unable to map skeleton"*,
       which reads like a mapping bug and means **this mesh is already rigged**.

@@ -416,7 +416,12 @@ Node materialNode(int64_t id, const std::string& name, const foundation::Materia
     Node m("Material");
     m.addI64(id);
     m.addString(objectName(desc != nullptr && !desc->name.empty() ? desc->name : name, "Material"));
-    m.addString("");
+    // The SHADING MODEL, which was an empty string. FBX readers switch on this
+    // to decide how to build the material, and an empty value is not one of the
+    // cases they switch on. "Phong" is what the properties below actually
+    // describe -- there is a SpecularColor and a Shininess -- so this is the
+    // honest answer rather than the safe-looking one.
+    m.addString("Phong");
     Node v("Version");
     v.addI32(102);
     m.add(std::move(v));
@@ -857,10 +862,16 @@ Node definitions() {
 /// `~i`. Without it a reader has no way to know where one face stops, and every
 /// face after the first lands on the wrong vertices.
 Node geometry(int64_t id, const foundation::RenderView& mesh, const Transform& xf,
-              size_t vertsPerPolygon) {
+              size_t vertsPerPolygon, std::string_view name) {
     Node g("Geometry");
     g.addI64(id);
-    g.addString(objectName("", "Geometry"));
+    // NAMED. This was an empty string, and every other writer -- Maya's,
+    // Blender's, assimp's -- puts the mesh's name here. The specification does
+    // not require one, which is why nothing complained: assimp, Blender and
+    // mesh2motion all read the file regardless. But an importer that builds
+    // its scene graph by name has nothing to key on, and a nameless object is
+    // the kind of thing a stricter reader rejects without saying why.
+    g.addString(objectName(name, "Geometry"));
     g.addString("Mesh");
 
     std::vector<double> coords;
@@ -1117,7 +1128,7 @@ std::expected<FbxWriteResult, FbxWriteError> writeFbxScene(const std::filesystem
         id.geometry = allocate();
         id.material = allocate();
         id.model    = allocate();
-        objects.add(geometry(id.geometry, entry.mesh, xf, kVertsPerPolygon));
+        objects.add(geometry(id.geometry, entry.mesh, xf, kVertsPerPolygon, entry.name));
         objects.add(materialNode(id.material, entry.name + "_material", entry.material));
         objects.add(model(id.model, entry.name));
 

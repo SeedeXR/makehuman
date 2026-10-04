@@ -672,7 +672,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 16 \\[.*Scene lighting.*Eyebrows.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 16 \\[.*Scene lighting.*Eyebrows.*\\] \\(skin materials: 9, rigs: 3\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # The rig had no picker either: two ship, --rig has always chosen between
@@ -2049,6 +2049,13 @@ if(MH_HAVE_RENDER)
         # BAKES the pose, because with no armature there is nothing to carry
         # it. See tools/check_autorig_export.py; the pose is the part that was
         # got wrong, and a check for "no skin" alone passes on that bug.
+        # The Mixamo rig is GENERATED from the superset plus the mapping, so a
+        # change to either that is not regenerated leaves the two disagreeing
+        # -- the same reason build_mixamo_superset.py has a --check.
+        add_test(NAME mixamo_rig_is_generated
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_SOURCE_DIR}/tools/make_mixamo_rig.py --check)
+
         add_test(NAME autorig_export_is_riggable
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_SOURCE_DIR}/tools/check_autorig_export.py
@@ -6142,7 +6149,7 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION
             # The group NAMES sit between the count and the counts now; both halves
             # of what this case cared about are still pinned.
-            "asset groups: 16 \\[.*Scene lighting.*Eyebrows.*\\] \\(skin materials: 9, rigs: 2\\)"
+            "asset groups: 16 \\[.*Scene lighting.*Eyebrows.*\\] \\(skin materials: 9, rigs: 3\\)"
         SKIP_REGULAR_EXPRESSION "cannot render")
 
     # Refused rather than silently defaulted to brown, which would make a typo

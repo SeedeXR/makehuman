@@ -504,6 +504,32 @@ the same discipline §5.1 already applies to `nlohmann/json` — and cached
 outside the repository. A build or a test that cannot reach it SKIPS rather
 than fails.
 
+### 5.2d Mixamo's X Bot — an ORACLE, 2026-10-04
+
+The owner downloaded `X Bot.fbx` from Mixamo and put it in `mixamo-asset/` so
+that this port could be made to interoperate with Mixamo's auto-rigger. It is
+used the way Blender, Maya and the FBX SDK are used in §5.2: **read, never
+linked, never redistributed.**
+
+**What was taken from it:** 65 bone NAMES and their parent-child order. That is
+an interface, not expression — the same standing as a file format or an API
+signature — and it is what Mixamo must see in order to map an uploaded
+skeleton at all.
+
+**What was NOT taken:** no geometry, no vertex weights, no animation, no
+texture, no material. `data/rigs/mixamo.mhskel` places its joints from OUR base
+mesh's helper geometry via `mixamo_superset`, so the rig follows our character
+and shares nothing of X Bot's body.
+
+**It is gitignored** (`.gitignore`: `mixamo-asset/`), by the owner, before any
+of this work began — so the asset cannot be committed or shipped. It is
+therefore unreadable at build time, which is why `tools/make_mixamo_rig.py`
+carries the hierarchy as a baked literal with its provenance recorded rather
+than parsing the file.
+
+Adobe's terms let a Mixamo user use the characters in their projects; they do
+not let anyone redistribute the asset. Nothing here redistributes it.
+
 ### 5.3 The Autodesk FBX SDK — why it is not used
 
 The SDK **is** free of charge, and version 2020.3.9 is installed on the

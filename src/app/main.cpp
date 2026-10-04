@@ -7172,12 +7172,37 @@ int main(int argc, char** argv) {
     // extensions exportMesh dispatches on, so a user cannot pick a format the
     // writer will then refuse.
     QObject::connect(&window, &mh::ui::MainWindow::exportRequested, [&] {
+        // THE AUTO-RIGGER ENTRY IS A FILE TYPE, not a checkbox, because that is
+        // where the user already is: they are choosing what kind of file to
+        // write, and "FBX for an auto-rigger" IS a different kind of file --
+        // no skeleton, no skin, body only, pose baked.
+        //
+        // Without it the window could only write a RIGGED character, and
+        // Mixamo answers a rigged upload with "unable to map your existing
+        // skeleton" -- which names the skeleton but reads, to anyone who did
+        // not put one there on purpose, like a bug in the file.
+        const QString autorigFilter =
+            QObject::tr("FBX for auto-rigging — Mixamo, mesh2motion (*.fbx)");
+        QString chosenFilter;
         const QString file = QFileDialog::getSaveFileName(
             &window, QObject::tr("Export character"), {},
             QObject::tr("glTF binary (*.glb);;Wavefront OBJ (*.obj);;"
-                        "USD (*.usd *.usda *.usdz);;FBX (*.fbx);;Collada (*.dae)"));
+                        "USD (*.usd *.usda *.usdz);;FBX (*.fbx);;Collada (*.dae);;") +
+                autorigFilter,
+            &chosenFilter);
         if (file.isEmpty()) return;
         const std::filesystem::path out = file.toStdString();
+        // Restored below: the window outlives this export, and a session that
+        // wrote one auto-rig file must not silently strip the rig from the
+        // next one.
+        const bool wasAutorig = autorigOverride;
+        autorigOverride       = chosenFilter == autorigFilter;
+        const struct Restore {
+            bool& flag;
+            bool to;
+            ~Restore() { flag = to; }
+        } restore{autorigOverride, wasAutorig};
+
         if (exportTo(out, parser.isSet(blendshapesOpt), decimateRatio)) {
             window.statusBar()->showMessage(QObject::tr("Exported %1").arg(file), 3000);
             // The live rig restore inside exportTo moved the mesh back, so the
