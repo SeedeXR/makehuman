@@ -515,6 +515,25 @@ if(MH_HAVE_RENDER)
              -DMH_DIR=${CMAKE_CURRENT_BINARY_DIR}
              -P ${CMAKE_CURRENT_SOURCE_DIR}/mcp_cli_agree.cmake)
 
+    # The server must be able to KEEP a character, not only build one.
+    # See tests/mcp_session_state.cmake.
+    add_test(NAME app_mcp_keeps_a_character COMMAND ${CMAKE_COMMAND}
+             -DMH_APP=$<TARGET_FILE:makehuman>
+             -DMH_DIR=${CMAKE_CURRENT_BINARY_DIR}
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/mcp_session_state.cmake)
+    set_tests_properties(app_mcp_keeps_a_character PROPERTIES TIMEOUT 300)
+
+    # `framing` must CHANGE THE PICTURE. The whole point is that a face is
+    # about forty pixels across at full framing, so a framing argument that
+    # parsed and rendered the same body would leave the one job it has undone.
+    add_test(NAME app_mcp_framing_full COMMAND makehuman
+             --render ${CMAKE_CURRENT_BINARY_DIR}/framing_full.png)
+    add_test(NAME app_mcp_framing_head COMMAND ${CMAKE_COMMAND}
+             -DMH_APP=$<TARGET_FILE:makehuman>
+             -DMH_COMPARE=$<TARGET_FILE:mh_png_compare>
+             -DMH_DIR=${CMAKE_CURRENT_BINARY_DIR}
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/mcp_framing.cmake)
+
     # Which side is the LEFT side -- the one thing about the four views that can
     # be wrong while every image still looks right. See tests/mcp_views.cmake.
     add_test(NAME app_mcp_left_is_the_models_left COMMAND ${CMAKE_COMMAND}

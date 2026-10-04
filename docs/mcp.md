@@ -82,6 +82,9 @@ file descriptor so a stray `printf` cannot corrupt the stream.
 | `list_references` | What is registered, and which views are still missing. |
 | `compare_to_reference` | Score the character against one photograph. |
 | `fit_to_references` | Search the body parameters for the best match, and apply it. |
+| `set_parameters` | Restore a whole character from a `get_parameters` vector. |
+| `save` / `load` | Write and read a `.mhm` — the durable form. |
+| `export` | Write the avatar as .glb, .fbx, .obj, .dae, .stl, .3mf or .usd. |
 
 ## Building a character from photographs
 
@@ -97,6 +100,41 @@ fit_to_references {"passes": 4}
 render          {"view": "front"}      → look at it
 set_slider      ...                    → adjust by eye
 ```
+
+### Keeping a character, and getting it out
+
+`get_parameters` and `set_parameters` are a pair: snapshot before a risky
+change, restore if it was wrong. The vector is only meaningful against **the
+same build** — it is positional, and `set_parameters` refuses a wrong length
+rather than applying it off-by-one.
+
+`save` / `load` write a `.mhm`, which is the durable form: modifiers by **name**,
+plus proxies, skeleton and materials. `load` resets to defaults first, so a
+modifier the file does not mention goes back to its default rather than keeping
+whatever the session left.
+
+`export` is how the avatar **leaves** the tool — everything else here only
+changes it.
+
+```
+export {"path": "character.glb"}
+export {"path": "character.fbx", "blendshapes": true}
+```
+
+### Judging a face
+
+The fit works from outlines and sees no nose, so facial detail is yours to set.
+At `framing: full` a face is about forty pixels across in a 512 px render,
+which is not enough to judge one:
+
+```
+render {"framing": "head"}      # head and shoulders
+render {"framing": "torso"}
+render {"distance": 6, "panY": -6.5}   # any other closeup
+```
+
+`full`, `head` and `torso` are measured framings; `distance` and `panY`
+override them for a closeup of any area a name does not cover.
 
 ### What the fit can and cannot do
 

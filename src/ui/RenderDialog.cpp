@@ -21,6 +21,10 @@ render::RenderSettings renderSettingsFor(const RenderRequest& request,
     s.wireframe             = request.wireframe;
     s.lighting              = request.lighting;
     s.camera.yawDegrees     = request.yawDegrees;
+    // Zero means "keep the Camera's own default" -- see the header.
+    if (request.distance > 0.0F) s.camera.distance = request.distance;
+    s.camera.panX = request.panX;
+    s.camera.panY = request.panY;
     // `grid` is deliberately NOT set; see the header.
     return s;
 }

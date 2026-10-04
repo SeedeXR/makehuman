@@ -43,6 +43,21 @@ struct RenderRequest {
     /// Default 0 leaves every existing render facing front, unchanged.
     float yawDegrees{0.0F};
 
+    /// How far the camera sits, in mesh units, and where it is panned to.
+    ///
+    /// Zero `distance` means "leave the Camera's own default", which is what
+    /// every existing caller wants and is why this is not simply `45`: a
+    /// default written here would have to be kept in step with
+    /// `render::Camera`, and the day they drifted every render would move.
+    ///
+    /// These exist for FRAMING A FACE. The body fit works from outlines and
+    /// cannot see a nose, so facial detail is set by eye -- and the eye in
+    /// question was being handed a 512-pixel full-body render in which a face
+    /// is about forty pixels across.
+    float distance{0.0F};
+    float panX{0.0F};
+    float panY{0.0F};
+
     /// The PBR rig, so a production render is lit the way the viewport is.
     /// Defaults to the built-in studio setup, leaving every existing render
     /// unchanged. Not in the dialog for the same reason `wireframe` is not: it

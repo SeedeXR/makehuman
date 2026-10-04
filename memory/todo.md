@@ -10483,6 +10483,32 @@ GPU here, or Colab) and it comes back to the owner first.
 
 ## M12 — the MCP agent interface (owner asked 2026-10-03)
 
+- [x] **The server can KEEP a character now, and frame a face** (2026-10-04).
+      Two gaps the tool list made obvious: `get_parameters` had **no inverse**,
+      so a model could snapshot a character and never restore it — "iterate
+      until satisfied" had no way back to a better earlier state; and nothing
+      could leave the session at all, no `.mhm` and no exported asset, in a
+      tool whose purpose is building an avatar. The CLI had `--save`,
+      `--load`, `--export` and `--set-parameters` all along.
+      Added `set_parameters` (refuses a wrong length rather than applying it
+      off-by-one down the whole vector), `save`, `load` and `export`.
+      Measured: round trip **identical** over 343 values, GLB 2,138,944 bytes,
+      an unknown extension refused.
+      **`render` gained `framing`** — full / head / torso, plus raw
+      `distance`/`panY` for a closeup of any other area, which the owner's
+      brief asks for by name. It exists because the fit works from OUTLINES and
+      sees no nose, so faces are set by eye — and the eye was being handed a
+      512 px full-body render in which a face is ~40 px across.
+      **The numbers were measured and the first guess was backwards**: positive
+      `panY` pans DOWN, so the opening sweep produced nine renders of shins.
+      `head` is distance 9, not 8, because the crown margin was measured —
+      5 px at 8, 23 px at 9, 38 px at 10 in a 320 px render.
+      Gated by `app_mcp_keeps_a_character` and `app_mcp_framing_head`, both
+      controlled. **The first version of the state gate was GREEN ON BROKEN
+      CODE**: it only disturbed a slider the `.mhm` contains, so deleting
+      `resetToDefaults` changed nothing it could see. It now also disturbs a
+      slider the file never mentions, which only the reset can restore.
+
 The owner's instruction: an MCP server that builds an avatar from a
 description, renders it, compares, and iterates until the creator is
 satisfied; later, builds a character from reference images (front, back,

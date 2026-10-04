@@ -7358,6 +7358,32 @@ int main(int argc, char** argv) {
     // Fitting renders smaller. An outline does not need 512 px and the search
     // pays for every probe: at 256 a pass over the default parameters against
     // four views is a few seconds rather than half a minute.
+    // Named framings for `render`. THE NUMBERS ARE MEASURED, not chosen, and the
+    // first guess was backwards: `panY` POSITIVE pans DOWN the body, so a sweep
+    // of +6 to +8 returned nine pictures of shins. It is a pan in EYE space and
+    // tracks the screen rather than the model.
+    //
+    // `distance` is in mesh units against a figure about 17 dm tall; 0 keeps
+    // the Camera's own default, which is what `full` wants and is why it is not
+    // written here as 45 -- a copy of that default would have to be kept in
+    // step with `render::Camera`.
+    //
+    // `head` is 9 and not 8 because the margin was MEASURED rather than eyed:
+    // in a 320-pixel render the crown sits 5 px from the top edge at distance
+    // 8, 23 px at 9 and 38 px at 10. 8 clips on a taller skull.
+    //
+    // These exist because the body fit works from OUTLINES and cannot see a
+    // nose, so facial detail is set by eye -- and the eye was being given a
+    // 512-pixel full-body render in which a face is about forty pixels across.
+    struct McpFraming {
+        std::string_view name;
+        float distance;
+        float panY;
+    };
+
+    static constexpr std::array<McpFraming, 3> kFramings{
+        {{"full", 0.0F, 0.0F}, {"head", 9.0F, -6.5F}, {"torso", 16.0F, -5.0F}}};
+
     constexpr int kMcpFitHeight = 256;
 
     // A closeup above this is left on disk. 4 MB of PNG is already more base64
@@ -7497,7 +7523,13 @@ int main(int argc, char** argv) {
                 "the reference photograph you are matching. `size` is pixels per side, "
                 "64..4096, default 512; the image is returned inline up to 1024 and by "
                 "path only above that, because a large PNG costs more to read than it "
-                "tells you. `path` is optional and defaults to a temporary file.",
+                "tells you. "
+                "`framing` is full (default), head or torso -- USE head WHEN JUDGING A "
+                "FACE, because at full framing a face is about forty pixels across, and "
+                "the body fit cannot help you there at all: it works from outlines and "
+                "sees no nose. `distance` and `panY` override the named framing for a "
+                "closeup of any other area. "
+                "`path` is optional and defaults to a temporary file.",
             .inputSchema =
                 mh::mcp::Json{
                     {"type", "object"},
@@ -7527,12 +7559,26 @@ int main(int argc, char** argv) {
                            ("makehuman-mcp-" + view + "-" + std::to_string(size) + ".png"))
                               .string();
 
+                const auto framing = args.value("framing", std::string{"full"});
+                const auto* shot   = std::ranges::find_if(
+                    kFramings, [&](const McpFraming& f) { return f.name == framing; });
+                if (shot == std::ranges::end(kFramings)) {
+                    throw mh::mcp::ToolError("framing must be full, head or torso, not \"" +
+                                             framing + "\"");
+                }
+                // Raw overrides win, because the owner's brief asks for closeups
+                // of ANY key area and three names cannot cover "any".
+                const auto distance = args.value("distance", shot->distance);
+                const auto panY     = args.value("panY", shot->panY);
+
                 const mh::ui::RenderRequest req{.width       = size,
                                                 .height      = size,
                                                 .transparent = false,
                                                 .shading     = shading,
                                                 .wireframe   = false,
                                                 .yawDegrees  = yaw->yaw,
+                                                .distance    = distance,
+                                                .panY        = panY,
                                                 .lighting    = lighting};
                 if (const std::string err = renderTo(path, req); !err.empty()) {
                     // A render failure is the CALLER's problem to route around
@@ -7921,6 +7967,127 @@ int main(int argc, char** argv) {
                 return mh::mcp::Json{{"scoreBefore", before}, {"scoreAfter", after},
                                      {"views", viewCount},    {"renders", renders},
                                      {"passes", passes},      {"parameters", std::move(moved)}};
+            }});
+
+        server.add(mh::mcp::Tool{
+            .name = "set_parameters",
+            .description =
+                "Restore a whole character from a vector produced by get_parameters. "
+                "THE INVERSE OF get_parameters, and what makes an iterative session "
+                "recoverable: snapshot before a risky change, and come back to it if the "
+                "change was wrong. The length must match list_parameters exactly.",
+            .inputSchema =
+                mh::mcp::Json{
+                    {"type", "object"},
+                    {"properties",
+                     mh::mcp::Json{
+                         {"values", mh::mcp::Json{{"type", "array"},
+                                                  {"items", mh::mcp::Json{{"type", "number"}}}}}}},
+                    {"required", mh::mcp::Json::array({"values"})}},
+            .call = [&](const mh::mcp::Json& args) {
+                if (!args.contains("values") || !args.at("values").is_array()) {
+                    throw mh::mcp::ToolError("set_parameters needs an array of values");
+                }
+                const auto values = args.at("values").get<std::vector<float>>();
+                const auto space  = mh::core::ParameterSpace::of(human);
+                if (values.size() != space.parameters().size()) {
+                    // The length is the whole safety check: a vector from a
+                    // different build would otherwise be applied off-by-one
+                    // down its entire length and produce a plausible stranger.
+                    throw mh::mcp::ToolError("expected " +
+                                             std::to_string(space.parameters().size()) +
+                                             " values, got " + std::to_string(values.size()));
+                }
+                const uint32_t applied = space.fromVector(values, human);
+                rebuild();
+                return mh::mcp::Json{{"applied", applied},
+                                     {"parameters", space.parameters().size()}};
+            }});
+
+        server.add(mh::mcp::Tool{
+            .name        = "save",
+            .description = "Write the character to a .mhm file. This is the durable form -- "
+                           "a parameter vector is only meaningful against the same build, "
+                           "while a .mhm carries the modifiers by NAME, plus the proxies, "
+                           "the skeleton and the materials.",
+            .inputSchema =
+                mh::mcp::Json{
+                    {"type", "object"},
+                    {"properties", mh::mcp::Json{{"path", mh::mcp::Json{{"type", "string"}}}}},
+                    {"required", mh::mcp::Json::array({"path"})}},
+            .call = [&](const mh::mcp::Json& args) {
+                if (!args.contains("path")) throw mh::mcp::ToolError("save needs a path");
+                const std::filesystem::path file = args.at("path").get<std::string>();
+                // No window here, so no framing to record -- the same reason
+                // `--save` passes nullopt.
+                const mh::core::MhmFile doc = documentNow(file, std::nullopt);
+                if (const auto ok = mh::core::saveMhm(file, doc); !ok) {
+                    throw mh::mcp::ToolError("cannot save " + file.string() + ": " +
+                                             ok.error().message());
+                }
+                return mh::mcp::Json{{"path", file.string()}, {"modifiers", doc.modifiers.size()}};
+            }});
+
+        server.add(mh::mcp::Tool{
+            .name        = "load",
+            .description = "Read a character back from a .mhm file, replacing the current "
+                           "one. Reports how many modifiers applied and how many the file "
+                           "named that this build does not know.",
+            .inputSchema =
+                mh::mcp::Json{
+                    {"type", "object"},
+                    {"properties", mh::mcp::Json{{"path", mh::mcp::Json{{"type", "string"}}}}},
+                    {"required", mh::mcp::Json::array({"path"})}},
+            .call = [&](const mh::mcp::Json& args) {
+                if (!args.contains("path")) throw mh::mcp::ToolError("load needs a path");
+                const std::filesystem::path file = args.at("path").get<std::string>();
+                const auto loaded                = mh::core::loadMhm(file);
+                if (!loaded) {
+                    throw mh::mcp::ToolError("cannot load " + file.string() + ": " +
+                                             loaded.error().message());
+                }
+                // Reset first, as the reference does (human.py:1486) and as
+                // `--load` does: a modifier the file does not mention must go
+                // back to its DEFAULT, not keep whatever the session left.
+                human.resetToDefaults();
+                uint32_t unknown       = 0;
+                const uint32_t applied = mh::core::applyMhm(*loaded, human, &unknown);
+                document               = *loaded;
+                rebuild();
+                return mh::mcp::Json{
+                    {"path", file.string()}, {"applied", applied}, {"unknown", unknown}};
+            }});
+
+        server.add(mh::mcp::Tool{
+            .name = "export",
+            .description =
+                "Write the character as a 3D asset -- the format follows the extension: "
+                ".glb, .gltf, .fbx, .obj, .dae, .stl, .3mf, .usd. This is how the avatar "
+                "LEAVES the tool; everything else here only changes it. `blendshapes` "
+                "additionally writes the expression targets where the format carries them.",
+            .inputSchema =
+                mh::mcp::Json{{"type", "object"},
+                              {"properties",
+                               mh::mcp::Json{{"path", mh::mcp::Json{{"type", "string"}}},
+                                             {"blendshapes", mh::mcp::Json{{"type", "boolean"}}}}},
+                              {"required", mh::mcp::Json::array({"path"})}},
+            .call = [&](const mh::mcp::Json& args) {
+                if (!args.contains("path")) throw mh::mcp::ToolError("export needs a path");
+                const std::filesystem::path file = args.at("path").get<std::string>();
+                const bool blendshapes           = args.value("blendshapes", false);
+                // 0.0F is "no decimation", the same value `--export` passes
+                // when no --lod was given.
+                if (!exportTo(file, blendshapes, 0.0F)) {
+                    throw mh::mcp::ToolError(
+                        "cannot export " + file.string() +
+                        "; the reason is on the server's stderr log. An unknown extension "
+                        "is the usual cause.");
+                }
+                std::error_code ec;
+                const auto size = std::filesystem::file_size(file, ec);
+                return mh::mcp::Json{{"path", file.string()},
+                                     {"bytes", ec ? 0 : static_cast<uint64_t>(size)},
+                                     {"blendshapes", blendshapes}};
             }});
 
         return server.run(std::cin, *mcpOut);
