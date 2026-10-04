@@ -164,11 +164,14 @@ not yet the same thing:
   against a known subject on a cluttered scene, MoGe's mask scores IoU 0.154
   and the corner-colour rule it was supposed to replace scores 0.159 — no
   better.
-- Its **metric depth** is the genuinely useful part, because it is the one
-  thing `fit_to_references` says it cannot know. But the exported graph is
-  `forward()` only: recovering focal length and shift, and reprojecting, has to
-  be written in C++ and validated against the Python reference first. A subtle
-  error there yields confidently wrong depth, which is worse than none.
+- Its **metric depth** is implemented (`foundation::recoverFocalShift`) and the
+  solve is validated against cameras we chose, to 1–3%. The model behind it is
+  not. Measured against real Wikimedia Commons photographs where EXIF gives the
+  true field of view exactly, MoGe's camera estimate is wrong by **+31% to
+  +510%**, regressing toward a normal lens whatever the real one was. At the
+  most favourable real measurement that puts a 1.75 m person at about 1.32 m.
+  So it is not wired into the fit, and `metric` means *recovered*, not
+  *accurate*.
 
 If you want to experiment: `tools/fetch_moge.sh` downloads the model (134 MB,
 SHA256-pinned, cached outside the repository and never committed), then

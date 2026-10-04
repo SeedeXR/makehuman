@@ -488,6 +488,15 @@ fails on real photographs; it proves the claim was never evidenced. Pinned by
 `test_moge.cpp`, including a deliberately NEGATIVE assertion, so the belief
 cannot return without someone being told.
 
+**Settled on real photographs, 2026-10-04.** The doubt left by that fixture —
+a collage of rectangles is not a photograph — was closed with Wikimedia
+Commons images from full-frame bodies, where EXIF gives the true field of view
+exactly. On photographs OF PEOPLE the mask reports coverage **1.000**, the
+whole frame, three times out of four; and the camera estimate is wrong by
+**+31% to +510%**, regressing toward a normal lens. Two real photographs are
+worse than our own renders. Those images are CC BY-SA: used locally for a
+measurement, **never committed and never redistributed**.
+
 **How the model is obtained.** NOT committed. 141 MB against a `data/` tree of
 152 MB would roughly double the distribution for a feature most characters
 never use. It is fetched on first use from a pinned URL with a pinned SHA256 —

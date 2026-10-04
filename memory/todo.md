@@ -10681,13 +10681,37 @@ survival across client updates.
       `app`/ctest pins the FALL, never the value, so it will not go red when
       MoGe improves.
 
-- [ ] **Does MoGe do better on REAL photographs?** Unmeasured and unmeasurable
-      here — the bias above was measured on renders of a figure in a void,
-      which is the worst case for monocular FOV estimation. A real reference
-      photograph has floors, walls and perspective cues. If someone supplies
-      four real photographs of a person, re-run the crop series on those before
-      deciding metric depth is useless. That is the one experiment that would
-      change the verdict.
+- [x] **Does MoGe do better on REAL photographs? MEASURED 2026-10-04 — NO,
+      IT IS WORSE.** The owner asked for this to be settled rather than left
+      hanging, and it is settled.
+      **How, without needing anyone's own photographs**: Wikimedia Commons
+      images shot on full-frame bodies, where EXIF focal length gives the TRUE
+      vertical field of view exactly (36×24 mm, no sensor lookup). That is real
+      ground truth, which a GENERATED image could never provide — an image with
+      no camera has no true FOV to compare against.
+
+      | subject | true FOV | MoGe | error |
+      |---|---|---|---|
+      | cathedral interior | 4.6° | 21.0° | +359% |
+      | street | 17.5° | 26.2° | +50% |
+      | building | 22.6° | 33.8° | +49% |
+      | building, wide | 61.9° | 50.7° | −18% |
+      | **footballer, 400 mm** | 5.2° | 25.5° | **+394%** |
+      | **footballer, 400 mm** | 5.2° | 31.4° | **+510%** |
+      | **footballer, 400 mm** | 5.2° | 25.5° | **+395%** |
+      | **fisherman, 63 mm** | 21.6° | 28.3° | **+31%** |
+
+      It regresses hard toward a normal lens. **Two real photographs are WORSE
+      than the 30° render was**, so the void-background excuse is dead.
+      At the most favourable real measurement (+31%) the recovered focal is low
+      by 1.32× and inferred size scales with focal, so a **1.75 m person
+      measures 1.32 m**. Not usable for stature.
+      **And it settles the mask question too**: coverage was **1.000** — the
+      whole frame — on three of four real photographs OF PEOPLE. The mask is
+      not a person segmenter on real input either, which was the doubt left
+      open when the first refutation used a synthetic collage.
+      Images are CC BY-SA: measured locally, **not committed, not
+      redistributed**; the method is in `Session.h` so it can be repeated.
 
 - [ ] **The two routes that need no model at all, still open.**
       (a) Accept a depth map the CREATOR supplies; a recent phone already

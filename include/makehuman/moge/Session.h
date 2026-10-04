@@ -19,12 +19,12 @@
 //     ui::silhouetteOf's corner rule         IoU 0.159
 //
 // All three are poor, and MoGe is **no better than the corner rule it was
-// supposed to rescue**. The fixture was a collage of coloured rectangles
-// rather than a photograph, so this does not prove MoGe fails on real photos
-// either -- it proves only that the claim was never evidenced. Nothing here
-// should be wired into a scoring path until it is measured on real
-// photographs, and `test_moge.cpp` pins these numbers so the claim cannot
-// quietly come back.
+// supposed to rescue**. That fixture was a collage of rectangles rather than a
+// photograph -- but the doubt it left has since been settled the other way: on
+// real Commons photographs OF PEOPLE the mask reports a coverage of **1.000**,
+// the whole frame, three times out of four. It is not a person segmenter on
+// real input either. `test_moge.cpp` pins this so the claim cannot quietly
+// come back.
 //
 // METRIC DEPTH IS NOW IMPLEMENTED, AND MEASURED, AND YOU SHOULD READ THIS
 // BEFORE BELIEVING IT.
@@ -51,11 +51,38 @@
 // red the day the model improves.) A subject floating on a flat background offers no scene
 // cues, so the model falls back toward a normal-lens prior.
 //
-// **So metric depth from this is NOT trustworthy as an absolute stature**, on
-// this kind of input, which was the one reason to want it. It is not wired
-// into `fit_to_references` and must not be until it is measured on real
-// photographs, which have the scene context these renders lack. `metric` below
-// means RECOVERED, not ACCURATE.
+// IT WAS THEN MEASURED ON REAL PHOTOGRAPHS, AND THEY ARE WORSE, NOT BETTER.
+//
+// The obvious objection to the figures above is that a body in a void is the
+// worst case for monocular camera estimation, and a real photograph has floors
+// and walls to reason from. So: Wikimedia Commons photographs from full-frame
+// bodies, where EXIF focal length gives the TRUE vertical field of view
+// exactly. Scenes first --
+//
+//     true  4.6   17.5   22.6   61.9
+//     MoGe 21.0   26.2   33.8   50.7
+//
+// -- and then photographs of PEOPLE, which is the actual use case:
+//
+//     true  5.2    5.2    5.2   21.6
+//     MoGe 25.5   31.4   25.5   28.3
+//
+// Errors of +31% to +510%. The model regresses hard toward a normal lens: it
+// overestimates every long lens and underestimates the wide one. Two of the
+// real photographs are WORSE than the 30-degree render was.
+//
+// What +31% costs, at the most favourable real measurement: the recovered
+// focal is low by a factor of 1.32, and inferred size scales with focal, so a
+// person 1.75 m tall measures about 1.32 m.
+//
+// **So metric depth from this is NOT trustworthy as an absolute stature.** It
+// is not wired into `fit_to_references` and must not be. `metric` below means
+// RECOVERED, not ACCURATE. The hypothesis that real photographs would rescue
+// it has been tested and refused, not left hanging.
+//
+// (Those photographs are CC BY-SA. They were measured locally and are NOT
+// committed and NOT redistributed; the method is written down here so the
+// measurement can be repeated rather than taken on trust.)
 //
 // LICENCE. MoGe's code and weights are MIT (LICENSING.md 5.2c), chosen by the
 // owner with the training-data concern recorded there rather than waved away.
