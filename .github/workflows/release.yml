@@ -1,0 +1,148 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Cut a release when a version tag is pushed.
+#
+# SEPARATE FROM ci.yml ON PURPOSE. CI proves the tree is good on every push and
+# must stay fast; this builds a shippable artefact and runs only for a tag, so
+# the two have different triggers, different costs and different failure
+# meanings. A red CI says "do not merge"; a red release says "the tag did not
+# ship".
+#
+# WHAT IT PUBLISHES. The disk image, and a source archive. The source archive is
+# not ceremony: this project is AGPL-3.0, and section 13 obliges us to offer the
+# corresponding source to anyone who receives the binary (LICENSING.md 6).
+# Attaching it to the same release is the simplest way to be sure the offer is
+# always met, for exactly the code that built the binary beside it.
+name: Release
+
+on:
+  push:
+    tags:
+      # Two forms, deliberately: v2.0.0 for a release and v2.0.0-rc1 for a
+      # candidate, so a candidate can be built and handed round without
+      # inventing a separate pipeline for it.
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+  # So a release can be rehearsed, or rebuilt, without moving a tag. A tag that
+  # has to be deleted and re-pushed to fix a workflow typo is a tag someone has
+  # already fetched.
+  workflow_dispatch:
+
+permissions:
+  contents: write          # the release upload needs it; nothing else does
+
+jobs:
+  release:
+    name: dmg + source
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the source archive should carry the real history
+
+      - run: brew install ninja assimp qt
+
+      # THE TAG MUST MATCH /VERSION. One source of truth is the rule this
+      # project already follows everywhere else, and a tag that disagrees with
+      # the version compiled into the binary produces a release nobody can
+      # reason about afterwards. Checked FIRST, before anything expensive.
+      - name: The tag must match VERSION
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          tag="${tag%%-*}"          # v2.0.0-rc1 is still version 2.0.0
+          file="$(tr -d '[:space:]' < VERSION)"
+          if [ "$tag" != "$file" ]; then
+            echo "tag $GITHUB_REF_NAME says $tag, VERSION says $file" >&2
+            echo "update VERSION, or tag the commit that already has it" >&2
+            exit 1
+          fi
+          echo "version $file"
+
+      - name: Configure
+        run: >-
+          cmake --preset macos-arm64-release
+          -DCMAKE_PREFIX_PATH="$(brew --prefix qt)"
+          -DMH_REQUIRE_RENDER=ON
+
+      - name: Build
+        run: cmake --build --preset macos-arm64-release -j
+
+      # THE TESTS GATE THE RELEASE. ci.yml runs them on the branch, but a tag
+      # can point at any commit -- including one that never went through a pull
+      # request. A release is the one artefact a user cannot re-run the suite
+      # on, so it is run here rather than assumed.
+      - name: Test
+        run: ctest --preset macos-arm64-release --output-on-failure
+
+      - name: Build the disk image
+        run: cmake --build --preset macos-arm64-release --target dmg
+
+      # Said separately as well as inside the target: a packaging step that
+      # signs without checking is how an invalid signature once survived into a
+      # package. Ad-hoc, so it needs no Apple Developer membership and claims
+      # no notarisation.
+      - name: The packaged bundle must carry a valid signature
+        run: codesign --verify --deep --strict build/macos-arm64-release/dmg/MakeHuman.app
+
+      # THE SHIPPED APP MUST SPEAK MCP, checked on the PACKAGED bundle rather
+      # than the build tree. The bundle resolves its data and shaders out of
+      # Contents/Resources, so this is the first point the shipped layout is
+      # exercised -- and an app that does not know `--mcp` reports nothing more
+      # useful to a client than "the server failed to start".
+      - name: The packaged app must answer MCP
+        run: |
+          reply=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"ping"}' \
+            | env -i HOME="$HOME" PATH=/usr/bin:/bin \
+              build/macos-arm64-release/dmg/MakeHuman.app/Contents/MacOS/makehuman --mcp \
+              2>/dev/null || true)
+          case "$reply" in
+            *'"result"'*) echo "MCP server answers" ;;
+            *) echo "the packaged app does not answer MCP: ${reply:-<nothing>}" >&2; exit 1 ;;
+          esac
+
+      - name: Stage the artefacts
+        run: |
+          mkdir -p output
+          cp build/macos-arm64-release/MakeHuman.dmg "output/MakeHuman-${GITHUB_REF_NAME}.dmg"
+          # The corresponding source, for AGPL section 13. `git archive` takes
+          # the tagged tree exactly, with no build droppings and no .git.
+          git archive --format=tar.gz --prefix="makehuman-${GITHUB_REF_NAME}/" \
+            -o "output/makehuman-${GITHUB_REF_NAME}-source.tar.gz" HEAD
+          # Checksums, because a disk image downloaded over HTTP is worth being
+          # able to verify.
+          cd output && shasum -a 256 * > SHA256SUMS && cat SHA256SUMS
+
+      # Kept even when the release step is skipped (a manual run on a branch),
+      # so a rehearsal still produces something to look at.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: makehuman-${{ github.ref_name }}
+          path: output/
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          # A candidate is marked as a pre-release rather than quietly
+          # presented as a finished one.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: |
+            output/MakeHuman-${{ github.ref_name }}.dmg
+            output/makehuman-${{ github.ref_name }}-source.tar.gz
+            output/SHA256SUMS
+          body: |
+            MakeHuman ${{ github.ref_name }} — C++23 / Qt6 / Metal.
+
+            **`MakeHuman-${{ github.ref_name }}.dmg`** — macOS arm64, signed
+            ad-hoc. macOS will quarantine anything downloaded; clear it with
+            `xattr -dr com.apple.quarantine /Applications/MakeHuman.app`.
+
+            The same binary is also an **MCP server** — `makehuman --mcp` —
+            so an LLM client can build, photograph, score and export a
+            character. See `docs/mcp.md`.
+
+            **`makehuman-${{ github.ref_name }}-source.tar.gz`** is the
+            corresponding source for this binary, offered under AGPL-3.0
+            section 13.

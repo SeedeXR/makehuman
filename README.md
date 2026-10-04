@@ -69,6 +69,35 @@ ctest --preset macos-arm64-debug --output-on-failure
 
 Presets: `macos-arm64-debug`, `macos-arm64-release`, `macos-arm64-asan`.
 
+### Installing
+
+```bash
+scripts/install.sh          # build, package, install to /Applications
+scripts/install.sh --help   # --no-install, --force, --prefix, --preset
+```
+
+One command for the whole trip. The disk image is left in `output/`, which is
+gitignored, so a build never leaves anything to commit. The script **verifies
+the installed app answers MCP** before reporting success — an app that does not
+know `--mcp` still launches and runs perfectly, while every MCP client reports
+nothing more useful than "the server failed to start".
+
+### Releasing
+
+Push a tag:
+
+```bash
+git tag v2.0.0 && git push origin v2.0.0
+```
+
+`.github/workflows/release.yml` builds, **runs the full suite**, packages,
+checks the signature and the MCP server on the *packaged* bundle, then publishes
+the DMG, a source archive and `SHA256SUMS`. The tag must match `/VERSION`, and
+that is checked before anything expensive runs. A tag with a suffix —
+`v2.0.0-rc1` — publishes as a pre-release. The source archive is not ceremony:
+AGPL-3.0 section 13 obliges us to offer the corresponding source to anyone who
+receives the binary.
+
 ## Layout
 
 ```

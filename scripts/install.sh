@@ -1,14 +1,23 @@
 #!/bin/sh
-# Build MakeHuman, put the disk image in output/, and install the app.
+# Build MakeHuman and its MCP server, put the disk image in output/, and
+# install the app.
 #
 # One command for the whole trip: configure, compile, package, and drop
 # MakeHuman.app into /Applications. The disk image is kept in `output/`, which
 # is gitignored, so a build never leaves anything to commit.
 #
+# THE MCP SERVER IS THE SAME BINARY, not a second build product: `makehuman
+# --mcp` speaks JSON-RPC over stdio instead of opening a window (docs/mcp.md).
+# That is why there is nothing extra to compile -- and exactly why this script
+# PROVES it afterwards. An installed app that does not know `--mcp` is the
+# failure this project actually hit: every MCP client reports only "the server
+# failed to start", and the app itself launches and runs perfectly.
+#
 #   scripts/install.sh                 build, package, install
 #   scripts/install.sh --no-install    build and package only
 #   scripts/install.sh --force         replace an existing installation
 #   scripts/install.sh --prefix DIR    install somewhere other than /Applications
+#   scripts/install.sh --preset NAME   build with a preset other than release
 #
 # WHY THE QUARANTINE FLAG COMES OFF. The app is signed AD-HOC -- free, no Apple
 # Developer membership, which the owner has declined -- so Gatekeeper has no
@@ -33,7 +42,7 @@ while [ $# -gt 0 ]; do
         --force) FORCE=1 ;;
         --prefix) shift; PREFIX=${1:?--prefix needs a directory} ;;
         --preset) shift; PRESET=${1:?--preset needs a name} ;;
-        -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
     esac
     shift
@@ -102,4 +111,31 @@ else
     exit 1
 fi
 
+# THE MCP SERVER MUST ANSWER FROM THE INSTALLED BUNDLE. Not from the build
+# tree, which is where it was last seen working: the bundle resolves its data
+# and shaders out of Contents/Resources, so this is the first moment the
+# shipped layout is exercised at all.
+#
+# `ping` is the probe because the protocol answers it BEFORE initialize -- so a
+# single line in and a single line out is a complete, valid exchange, and a
+# server that is merely slow to negotiate cannot be mistaken for a dead one.
+#
+# env -i: a client launches this with its own environment, not the shell's. A
+# check that passed only because the developer's PATH or QT_QPA_PLATFORM
+# happened to be set would be worth nothing.
+echo "==> checking the MCP server"
+PROBE='{"jsonrpc":"2.0","id":1,"method":"ping"}'
+REPLY=$(printf '%s\n' "$PROBE" | env -i HOME="$HOME" PATH=/usr/bin:/bin \
+    "$DEST/Contents/MacOS/makehuman" --mcp 2>/dev/null || true)
+case "$REPLY" in
+    *'"result"'*)
+        echo "==> MCP server answers (register it with: docs/mcp.md)" ;;
+    *)
+        echo "the installed app does not answer MCP." >&2
+        echo "it replied: ${REPLY:-<nothing>}" >&2
+        echo "\"Unknown option 'mcp'\" means an older app is installed at $DEST." >&2
+        exit 1 ;;
+esac
+
 echo "    open it with:  open -a MakeHuman"
+echo "    drive it from an LLM client:  see docs/mcp.md"
