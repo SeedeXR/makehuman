@@ -458,9 +458,45 @@ const mh::rig::RetargetMap* retargetTable() {
 /// Loaded once. A non-injective table would drop pairs, so the collision count
 /// is checked and reported here rather than discarded -- a dropped pair means a
 /// bone exports under another bone's name, which looks like valid output.
+/// The naming the EXPORT speaks, when it differs from the one the IMPORT does.
+///
+/// Empty means "whatever `--rig-names` says", which is the ordinary case.
+///
+/// THE TWO DIRECTIONS GENUINELY DIFFER FOR THE MIXAMO RIG. Its bones are
+/// stored under NATIVE names, because `data/poses/tpose.bvh` and every shipped
+/// animation name native joints -- a Mixamo-named rig is driven by none of
+/// them, and the app says so: "drives 0 of 65 bones". But the whole point of
+/// that rig is to hand Mixamo a skeleton it recognises, which means writing
+/// Mixamo's names. Native in, Mixamo out.
+///
+/// Setting `--rig-names` globally instead would rename the incoming pose too
+/// and put the character back at rest -- the exact bug this separation exists
+/// to avoid, which was measured before it was fixed.
+std::string& exportNamesRef() {
+    static std::string names;
+    return names;
+}
+
 const mh::rig::RetargetMap* exportNameTable() {
     static const std::optional<mh::rig::RetargetMap> table = [] {
         std::optional<mh::rig::RetargetMap> none;
+        // An export-only naming wins; otherwise follow --rig-names.
+        if (!exportNamesRef().empty()) {
+            const auto path = dataDir() / "rigs" / (exportNamesRef() + "_retarget.json");
+            auto map        = mh::rig::loadRetargetMap(path);
+            if (!map) {
+                std::fprintf(stderr, "warning: cannot load the %s naming for export: %s\n",
+                             exportNamesRef().c_str(), map.error().message().c_str());
+                return none;
+            }
+            size_t clashes = 0;
+            auto flipped   = mh::rig::invertRetargetMap(*map, &clashes);
+            if (clashes > 0) {
+                std::fprintf(stderr, "warning: %s exports %zu bones under a shared name\n",
+                             exportNamesRef().c_str(), clashes);
+            }
+            return std::optional<mh::rig::RetargetMap>{std::move(flipped)};
+        }
         const mh::rig::RetargetMap* forward = retargetTable();
         if (forward == nullptr) return none;  // native: our own names
         size_t collisions = 0;
@@ -3963,6 +3999,23 @@ int main(int argc, char** argv) {
 
     // Set once, before anything loads a skeleton.
     setRigName(parser.value(rigOpt).toStdString());
+
+    // THE MIXAMO RIG EXPORTS UNDER MIXAMO'S NAMES, without being asked.
+    //
+    // It exists for one reason -- so Mixamo, and anything else that recognises
+    // that skeleton, can map an uploaded character -- and a rig that needed a
+    // second flag to do its only job would be a trap. `--rig mixamo` is now
+    // the whole instruction.
+    //
+    // IMPORT is deliberately left alone: the bones are stored natively so
+    // `--pose` and every shipped animation still drive them. See
+    // `exportNamesRef`.
+    //
+    // An explicit `--rig-names` still wins, so this is a default rather than a
+    // decision taken away.
+    if (rigNameRef() == "mixamo" && !parser.isSet(rigNamesOpt)) {
+        exportNamesRef() = "mixamo";
+    }
 
     auto mesh = mh::core::loadObj(dataDir() / "3dobjs" / "base.obj");
     if (!mesh) {

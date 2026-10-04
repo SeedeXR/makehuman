@@ -159,9 +159,24 @@ to map your existing skeleton" means.
 
 | rig | bones | for |
 |---|---|---|
-| `mixamo_superset` (default) | 179 | ours — every MakeHuman bone, face included |
-| `mixamo` | 65 | Mixamo — maps whole, animations retarget back |
+| `mixamo_superset` (default) | 179 | ours — every MakeHuman bone, **face expressions** |
+| `mixamo` | 65 | **universal** — Mixamo, Unity Humanoid, Unreal, mesh2motion |
 | `default` | 163 | the original MakeHuman skeleton |
+
+#### Why there is no single "universal" rig
+
+`--rig mixamo` is as close as it gets, and one flag is enough — it writes
+Mixamo's names automatically. Verified by three independent readers: assimp
+sees one 1.66 m character with UVs and a 65-bone skin, mesh2motion loads all 65
+bones and one mesh, and the file carries **exactly** Mixamo's 65 names with no
+leftovers.
+
+What it cannot also be is OUR rig. Expressions here are **bone-driven**: the
+same `.mhpose` drives **31 bones** on `mixamo_superset` and **0** on `mixamo`,
+because Mixamo's skeleton has no face. That is a property of Mixamo's rig, not
+a defect in ours, and no single skeleton is both. Use `mixamo_superset` while
+you are building a face, and `mixamo` when you are handing the character on —
+or `--blendshapes`, which ships the expressions as shape keys every DCC reads.
 
 #### Sending a character to Mixamo or mesh2motion
 

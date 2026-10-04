@@ -10483,6 +10483,36 @@ GPU here, or Colab) and it comes back to the owner first.
 
 ## M12 — the MCP agent interface (owner asked 2026-10-03)
 
+- [x] **One universal FBX: `--rig mixamo`, one flag** (2026-10-05). Owner asked
+      why there were two flavours and wanted one file auto-detected everywhere.
+      There is now one, and the second flavour is a fallback rather than a
+      parallel path.
+      `--rig mixamo` now writes Mixamo's names BY ITSELF. It needed `--rig
+      mixamo --rig-names mixamo` before, which is a rig that requires a second
+      flag to do its only job.
+      **Import and export naming had to be SEPARATED to do it** —
+      `exportNamesRef()`. The bones are stored NATIVELY because `tpose.bvh` and
+      every shipped animation name native joints; setting `--rig-names`
+      globally would rename the incoming pose too and leave the character at
+      rest, which is the bug that was measured ("drives 0 of 65 bones") before
+      it was fixed. Native in, Mixamo out.
+      **Verified by three independent readers**: assimp — 1.6594 m, UVs,
+      materials, 65-bone skin; mesh2motion — 65 bones, 1 mesh, 0 over the
+      influence limit; and the file carries EXACTLY Mixamo's 65 names, zero
+      leftovers, counted by LimbNode rather than by model name.
+      **WHY NO SINGLE RIG CAN BE BOTH, measured rather than argued**: the same
+      `.mhpose` drives **31 bones** on `mixamo_superset` and **0** on `mixamo`.
+      Expressions here are bone-driven and Mixamo's skeleton has no face. So
+      the default stays the superset; `mixamo` is for handing the character on,
+      and `--blendshapes` carries expressions as shape keys for DCCs.
+      **The oracles the owner offered were both unusable, and that is a real
+      gap**: `mayapy` CRASHES on this machine (writes a crash report, not a
+      hang) — tried with ADP/CIP/CER disabled; and the FBX SDK ships only
+      headers, libs and samples, so using it means LINKING, which
+      `LICENSING.md` §5.2 forbids until hard rule 6 is changed. assimp is the
+      cleared stand-in and is already described there as "an independent reader
+      validating the formats we write ourselves".
+
 - [x] **Mixamo refused it AGAIN, and the window was the reason**
       (2026-10-04). Owner's screenshot: *"Sorry, unable to map your existing
       skeleton."* That is Mixamo's skeleton-MAPPING path — it found a rig and
