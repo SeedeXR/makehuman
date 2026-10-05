@@ -2902,38 +2902,15 @@ std::string lowerExtension(const std::filesystem::path& path) {
     return ext;
 }
 
-/// Whether a format is **verified** to carry a live rig.
-///
-/// Only these get rest geometry with a posed armature. Everything else keeps
-/// the baked posed mesh, which is the safe answer: a format that cannot apply
-/// the pose would otherwise export a character standing in a pose nobody asked
-/// for.
-///
-/// **Measured in Blender, 2026-09-05, not assumed from the format's spec:**
-///   * `.glb`  — rest 1.0516 m wide, evaluated **1.6863** — matches our own
-///     baked answer (16.8628 dm) exactly. The rig deforms.
-///   * `.usda` — same, 1.6863. `usdchecker` clean.
-///   * `.fbx`  — **used to fail, and no longer does.** assimp's writer emitted
-///     no bind pose, so its own SDK log said "The imported scene has no initial
-///     binding position (Bind Pose) for the skin. The plug-in will compute one
-///     automatically" -- Maya then took the current pose as the bind pose and
-///     the file was a statue. `io::writeFbxScene` writes the bind pose, and
-///     **Maya reports it as `live_rig: true`** (rest 169.455, deformed 249.455
-///     on the harness fixture). So .fbx joined this list the moment the writer
-///     changed.
-///   * `.dae`  — **unverified**: Blender 5.2 removed its Collada importer, so
-///     there is no third party here to check it with. Still assimp's writer, so
-///     it is excluded rather than assumed to work.
-///
-/// **Getting this list wrong is not a missing feature, it is a double
-/// transform.** A format in the list gets REST geometry and a posed armature; a
-/// format out of it gets BAKED geometry. Leave a format out while its writer
-/// also writes the pose and the consumer applies the deformation twice --
-/// measured, when .fbx was switched to our writer before this line was updated:
-/// Maya evaluated the body to 440 x 328 x 267 cm.
-bool formatCarriesRig(std::string_view ext) {
-    return ext == ".glb" || ext == ".usd" || ext == ".usda" || ext == ".usdz" || ext == ".fbx";
-}
+// `formatCarriesRig` stood here until 2026-10-05. It listed the formats whose
+// consumers were MEASURED to deform a live rig correctly -- .glb and .usda both
+// evaluating to 1.6863 m against our own baked 16.8628 dm, and .fbx joining them
+// once `io::writeFbxScene` started writing a bind pose (before that, assimp's
+// writer emitted none, Maya computed one from the current pose, and the file was
+// a statue). The list is gone because the distinction is: every format now ships
+// the posed geometry with a matching bind, so there is nothing for a consumer to
+// apply and nothing to get wrong per format. The measurements are kept here
+// because they are what proved those writers work at all.
 
 /// The body's skin for export, or nothing when there is no rig to export.
 ///
@@ -2984,11 +2961,28 @@ std::optional<mh::rig::SkinData> exportSkin(const PoseRig& rig, const mh::core::
                      "exporting without a skeleton\n");
         return std::nullopt;
     }
-    // `globalRest` stays the BIND pose; the posed globals ride alongside it.
-    // Overwriting globalRest here -- which this did until 2026-09-05 -- made the
-    // bind pose equal the pose, so the mesh arrived exactly as it looked on
-    // screen and every consumer's skinning was a no-op.
-    if (rig.posed()) skin.globalPose = rig.globalPose;
+    // THE BIND POSE IS THE POSE THAT WAS ASKED FOR. Owner decision 2026-10-05,
+    // reversing 2026-09-05, which had made `globalRest` stay at rest so the
+    // consumer computed the deformation and our LBS could be checked by a third
+    // party. The cost of that was the thing the owner asked about: `--pose
+    // tpose` produced a file whose BIND pose was still the A-pose, and a
+    // retargeter reads the bind pose. Measured with the Autodesk FBX SDK, Maya
+    // 2027 and Blender 5.2, all three agreeing -- bind -37.65 degrees, evaluated
+    // 0.08. The T-pose was real but it was riding on an A-posed bind.
+    //
+    // BOTH are set, rather than clearing `globalPose`: the deformation is then
+    // provably identity at the bind instead of implied by an empty vector, and
+    // nothing downstream has to special-case a missing pose -- `reduceSkin`
+    // reads both arrays per joint.
+    //
+    // This only works because the exported GEOMETRY is the posed geometry; the
+    // rest-geometry restore that used to stand in `exportTo` is gone. Changing
+    // one without the other is a double transform, and it has been measured:
+    // Maya evaluated the body to 440 x 328 x 267 cm.
+    if (rig.posed()) {
+        skin.globalRest = rig.globalPose;
+        skin.globalPose = rig.globalPose;
+    }
 
     finishExportSkin(skin);
     std::printf("skin: %zu joints, %u influences/vertex\n", skin.globalRest.size(),
@@ -5783,62 +5777,27 @@ int main(int argc, char** argv) {
     //        chain calls this once per level with a different one each time.
     const auto exportTo = [&](const std::filesystem::path& outPath, bool wantBlendshapes,
                               float decimateTo) -> bool {
-        // A LIVE RIG ships REST geometry with a POSED armature, so for the
-        // formats that carry a skeleton the mesh goes back to its unposed
-        // positions before it is written. Normals and tangents are recomputed
-        // with it: they belong to the geometry in the file, and the posed ones
-        // would light a rest mesh as though it were still bent.
+        // THE EXPORTED GEOMETRY IS THE POSED GEOMETRY, and the bind pose is
+        // the pose that produced it -- see `exportSkin`, where `globalRest` is
+        // set from the posed globals. The two are one decision: geometry posed
+        // with a rest bind, or rest geometry with a posed bind, are both
+        // coherent, and MIXING them is a double transform. Measured when that
+        // happened once before: Maya evaluated the body to 440 x 328 x 267 cm.
         //
-        // Only for those formats. An OBJ has nothing to apply a pose with, so
-        // it keeps the baked posed mesh -- see formatCarriesRig.
+        // Until 2026-10-05 this restored `rig.restCoords` for the formats that
+        // carry a skeleton, so a live rig shipped rest geometry and the consumer
+        // computed the deformation. That made our LBS checkable by a third
+        // party, which is why it was chosen (owner, 2026-09-05), and it is what
+        // the owner reversed: `--pose tpose` wrote a file whose BIND pose was
+        // still the A-pose, so every retargeter that reads the bind pose -- the
+        // normal thing for one to read -- saw an A-posed character.
         const std::string outExt = lowerExtension(outPath);
-        const bool liveRig = rig.posed() && !rig.restCoords.empty() && formatCarriesRig(outExt);
-        std::vector<mh::foundation::Vec3> posedBackup;
-        if (liveRig) {
-            // The rest geometry restored below is UNCORRECTED, and deliberately
-            // so: `rig.restCoords` is captured before the correctives run, and
-            // a pose-space corrective is not a rest shape -- baked into the
-            // rest mesh it would put this pose's bulge on every pose the
-            // consumer sets afterwards. None of glTF, FBX or UsdSkel has a
-            // pose-driven shape to carry it in instead.
-            //
-            // So the DEFORMATION genuinely cannot travel in this file. Saying
-            // nothing was the part that was wrong: the app printed "correctives:
-            // N poses" and then wrote a file with none of them in it. Measured:
-            // the .glb is byte-identical to one exported without --correctives
-            // (app_correctives_live_rig_unchanged pins that, against a manifest
-            // with no wrinkle in it).
-            //
-            // A WRINKLE SHEET is the exception, and the message says so: it
-            // reaches every format, baked into the material's normal map by
-            // `bakeWrinkleBeside`, because a texture has somewhere to go in
-            // these formats and a pose-driven vertex delta does not.
-            // The warning that used to stand here said the corrective could not
-            // travel in a live-rig file. It no longer can't: every fired
-            // corrective is written as a shape key at the weight the RBF gave
-            // it, so the deformation is in the file, named, and adjustable.
-            // Deleted rather than softened, on the explicit instruction of the
-            // gate that caught it (`app_correctives_live_rig_unchanged`, whose
-            // comment said "when this one fails, DELETE the warning -- do not
-            // weaken it"). That gate is now inverted to pin the new truth.
-            // Kept so the interactive path can undo this; see the restore below.
-            posedBackup.assign(mesh->coord().begin(), mesh->coord().end());
-            if (!mesh->changeCoords(std::vector<mh::foundation::Vec3>(rig.restCoords))) {
-                std::fprintf(stderr, "cannot restore the rest mesh for a live rig\n");
-                return false;
-            }
-            mesh->calcNormals();
-            mesh->calcVertexTangents();
-            std::printf("live rig: rest geometry + posed armature (%zu joints)\n",
-                        rig.globalPose.size());
+        if (rig.posed()) {
+            std::printf("baked pose into the bind (%zu joints)\n", rig.globalPose.size());
         }
 
         for (auto& [group, worn] : wornProxies)
             refitProxy(worn, *mesh);
-
-        // After the restore, so the render mesh carries the vertices that will
-        // be written rather than the ones that were on screen.
-        if (liveRig) rm.refreshPositions(displayMesh());
 
         // The LOD, if one was asked for. Built HERE and not earlier for two
         // reasons: the live-rig swap above decides which vertices get written,
@@ -6000,79 +5959,52 @@ int main(int argc, char** argv) {
             }
         }
 
-        // Every FIRED corrective, as a shape key at the weight the RBF gave it.
+        // A FIRED CORRECTIVE TRAVELS BAKED, and no longer also as a shape key.
         //
-        // NOT gated on --blendshapes, deliberately. That flag chooses whether
-        // the 34 MODELLING keys ride along; a corrective is a deformation the
-        // user explicitly asked for with --correctives, and dropping it would
-        // silently lose what they exported the pose to keep. None of glTF, FBX
-        // or UsdSkel has a pose-driven shape, so a blend shape at a fixed
-        // weight is the honest approximation: right at this pose, adjustable
-        // rather than invisible, and plainly a snapshot of one frame.
+        // It was both until 2026-10-05, and that was right while a live rig
+        // shipped REST geometry: the base had no corrective in it, the key put
+        // the deformation back, and it stayed separable in a DCC. Baking the
+        // bind pose removes the base the key was measured against. MEASURED on
+        // the nowrinkle fixture at tpose: the corrective moves the baked
+        // positions by 0.0488 and the key was still written at weight 0.981, so
+        // a consumer computing `base + w * delta` applied it TWICE. No gate
+        // caught it -- one asserts the key is announced, another that the file
+        // differs, and a doubled deformation satisfies both.
         //
-        // The deltas are baked into the exported positions either way. The key
-        // is what makes them SEPARABLE in a DCC -- without it the deformation
-        // is welded into the mesh with no way to dial it back.
-        std::vector<std::vector<mh::foundation::Vec3>> correctiveDeltas;
-        if (gCorrectives != nullptr && !subdivided) {
-            const auto& blob         = gCorrectives->blob;
-            const auto poseWeights   = gCorrectives->runtime.weights();
-            const auto vmapForExport = lod ? std::span<const uint32_t>(lodVmap) : rm.vmap();
-            // The SAME threshold the runtime applies (`kNegligible`,
-            // src/rig/CorrectiveRuntime.cpp:93), not a second policy invented
-            // here. It is chosen against what a float vertex can represent, so
-            // nothing it drops could have moved anything.
-            //
-            // Matching matters: the exported POSITIONS already have every
-            // corrective the runtime applied baked in, so a stricter threshold
-            // here would bake a deformation and then omit the key that explains
-            // it. On MAGNITUDE, because an RBF weight can be negative --
-            // extrapolation past an example pose is real deformation, and a
-            // bare `< threshold` would silently drop all of it.
-            std::vector<mh::foundation::Vec3> scratch;
-            // RESERVED, and that is a lifetime guarantee rather than a
-            // micro-optimisation: `morphs` holds a `std::span` into
-            // `correctiveDeltas.back()`, so a reallocation part-way through the
-            // loop would leave every span already pushed dangling. At most
-            // `poseCount` entries are ever added, so this capacity is never
-            // exceeded. Same reason `shapeDeltas` above reserves.
-            correctiveDeltas.reserve(blob.poseCount);
-            // Bounded by ALL THREE parallel arrays, not just poseCount. The
-            // blob reader validates their extents, so a short one should be
-            // impossible -- which is exactly why indexing past it would be an
-            // unreadable crash in a release build rather than a failure anyone
-            // could diagnose.
+        // SUBTRACTING THE DELTA BACK OUT WAS TRIED AND IS WRONG. The deltas are
+        // authored in REST space; the runtime applies them through skinning, so
+        // what is sitting in the baked positions is `M * (w * delta)` and not
+        // `w * delta`. Measured, subtracting the unrotated delta left 0.0157 dm
+        // of error -- about 1.6 mm, silent, and worse than not shipping the key
+        // because the geometry would simply be wrong.
+        //
+        // KEEPING THE KEY NEEDS THE DELTAS ROTATED INTO POSE SPACE, per vertex,
+        // through the same skinning matrix. That is a real piece of work and it
+        // is the follow-up; it is not something to half-do here. Writing the key
+        // at weight 0 instead would render correctly but mean "dial this up to
+        // add a second copy of what you can already see", which is a worse lie.
+        //
+        // The deformation is NOT lost: it is in the exported positions, applied
+        // exactly once. What is lost is being able to dial it back in a DCC.
+        if (gCorrectives != nullptr) {
+            std::printf(
+                "correctives baked into the exported positions, applied once; "
+                "no shape keys while the bind pose is the posed character\n");
+            // Each FIRED corrective is still named with its weight. The key no
+            // longer travels, but which correctives fired and how hard is the
+            // part a user can act on -- and a NEGATIVE weight is the case worth
+            // printing, because an RBF extrapolating past an example pose
+            // returns one and it is real deformation, not noise. Magnitude, not
+            // value: a bare `< threshold` silently drops all of it.
+            const auto& blob       = gCorrectives->blob;
+            const auto poseWeights = gCorrectives->runtime.weights();
             for (size_t i = 0;
                  i < blob.poseCount && i < poseWeights.size() && i < blob.poseNames.size(); ++i) {
                 if (std::abs(poseWeights[i]) < 1e-6) continue;
-                if (i >= blob.deltas.size() || blob.deltas[i].empty()) continue;
-                // Same two steps the 34 take: expand the sparse BASE-indexed
-                // delta onto render vertices through the vmap, then move it
-                // through the export compaction. Skipping either puts every
-                // delta past the first dropped vertex on the wrong vertex.
-                if (!mh::core::expandTargetToRenderVertices(blob.deltas[i], vmapForExport,
-                                                            mesh->vertexCount(), scratch)) {
-                    std::fprintf(stderr,
-                                 "warning: corrective `%.*s` indexes a vertex this mesh does not "
-                                 "have; exporting without it\n",
-                                 static_cast<int>(blob.poseNames[i].size()),
-                                 blob.poseNames[i].data());
-                    continue;
-                }
-                correctiveDeltas.push_back(
-                    mh::io::compactDeltas(scratch, written.remap, written.coord.size()));
-                morphs.push_back({std::string(blob.poseNames[i]), correctiveDeltas.back(),
-                                  static_cast<float>(poseWeights[i])});
-                std::printf("corrective `%.*s` exported as a shape key at %.3f\n",
+                std::printf("corrective `%.*s` baked at %.6f\n",
                             static_cast<int>(blob.poseNames[i].size()), blob.poseNames[i].data(),
                             poseWeights[i]);
             }
-        } else if (gCorrectives != nullptr && subdivided) {
-            // Same reason the 34 are refused above: the deltas index the BASE
-            // mesh and a subdivided vmap names vertices past its count.
-            std::fprintf(stderr,
-                         "a subdivided mesh cannot carry corrective shape keys; the deformation "
-                         "is still baked into the exported positions\n");
         }
 
         // An EMPTY mask when decimating: the mask is already baked into the
@@ -6088,20 +6020,8 @@ int main(int argc, char** argv) {
                                    skinView ? &*skinView : nullptr, rig, provenance, morphs,
                                    wantDraco, wantBasisu);
 
-        // Put the character back the way it was. The CLI exits straight after
-        // this so it never noticed, but File > Export happens with the window
-        // open: leaving the body in its REST pose after exporting a live rig
-        // would look like the export had un-posed the model.
-        if (!posedBackup.empty()) {
-            // Cannot fail: it is the vertex array this mesh was carrying a
-            // moment ago, so the size already matches.
-            (void)mesh->changeCoords(std::move(posedBackup));
-            mesh->calcNormals();
-            mesh->calcVertexTangents();
-            for (auto& [group, worn] : wornProxies)
-                refitProxy(worn, *mesh);
-            rm.refreshPositions(displayMesh());
-        }
+        // Nothing to put back. The export no longer swaps the character's
+        // vertices, so File > Export leaves the window exactly as it found it.
         return ok;
     };
 

@@ -780,17 +780,23 @@ if(MH_HAVE_RENDER)
         SKIP_REGULAR_EXPRESSION "cannot render"
         FIXTURES_REQUIRED app_skin_mhm)
 
-    # The LIVE RIG path, which is the one File > Export shares with --export and
-    # the only one that mutates the character on its way out: the mesh goes back
-    # to its rest positions before writing, and is restored afterwards. `.obj`
-    # cannot carry a rig, so app_rig_superset below does NOT reach this branch
-    # and .glb is needed to exercise it at all.
+    # INVERTED 2026-10-05. It pinned the live-rig path: the mesh went back to its
+    # rest positions before writing and was restored afterwards, so a rigged file
+    # shipped REST geometry with a POSED armature. That is reversed -- the bind
+    # pose is now the pose that was asked for, measured in the Autodesk FBX SDK,
+    # Maya 2027 and Blender 5.2 as bind 0.08 degrees for `--pose tpose` where it
+    # used to read -37.65.
+    #
+    # NOT a weakened test: it is the same seam from the other side. The export no
+    # longer mutates the character at all, so the FAIL pattern that guarded the
+    # restore is replaced by one that catches the restore COMING BACK -- if any
+    # future change reintroduces rest geometry, this goes red.
     add_test(NAME app_live_rig_export COMMAND makehuman
              --rig mixamo_superset --pose tpose
              --export ${CMAKE_CURRENT_BINARY_DIR}/app_live_rig.glb)
     set_tests_properties(app_live_rig_export PROPERTIES
-        PASS_REGULAR_EXPRESSION "live rig: rest geometry \\+ posed armature"
-        FAIL_REGULAR_EXPRESSION "cannot restore the rest mesh;export failed")
+        PASS_REGULAR_EXPRESSION "baked pose into the bind \\(179 joints\\)"
+        FAIL_REGULAR_EXPRESSION "rest geometry;cannot restore the rest mesh;export failed")
 
     # ... and the restore puts the RIGHT vertices back.
     #
@@ -1127,7 +1133,8 @@ if(MH_HAVE_RENDER)
              --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/nowrinkle.json
              --export ${CMAKE_CURRENT_BINARY_DIR}/corr_live/pose.glb)
     set_tests_properties(app_correctives_live_rig_exports_the_key PROPERTIES
-        PASS_REGULAR_EXPRESSION "corrective .arm_out. exported as a shape key"
+        PASS_REGULAR_EXPRESSION "corrective .arm_out. baked at"
+        FAIL_REGULAR_EXPRESSION "exported as a shape key"
         FIXTURES_REQUIRED app_corr_live_clean
         FIXTURES_SETUP app_corr_live_on)
     add_test(NAME app_correctives_live_rig_baseline COMMAND makehuman
@@ -1174,22 +1181,36 @@ if(MH_HAVE_RENDER)
              --export ${CMAKE_CURRENT_BINARY_DIR}/corr_neg/pose.usda)
     set_tests_properties(app_correctives_negative_weight PROPERTIES
         FIXTURES_REQUIRED app_corr_neg_clean FIXTURES_SETUP app_corr_neg)
-    add_test(NAME app_correctives_negative_weight_survives COMMAND ${CMAKE_COMMAND}
-             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/corr_neg/pose.usda
-             "-DKEYS=\"rest\";\"arm_out\""
-             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    # MOVED 2026-10-05 from the file to the app's output. The property is
+    # unchanged and is still the only case that says it: an RBF extrapolating
+    # past an example pose returns a NEGATIVE coefficient, that is real
+    # deformation, and the export must act on it rather than drop it. It used to
+    # be checked by finding the shape key in the .usda; with the bind pose baked
+    # there is no key, so it is checked where it is now observable. The value is
+    # the one this gate always carried: `rest` at -0.000112, magnitude 1.12e-4,
+    # a hundred times the 1e-6 threshold -- a plain `< 1e-6` still drops it and
+    # still fails here.
+    add_test(NAME app_correctives_negative_weight_survives COMMAND makehuman
+             --rig mixamo_superset --pose benchmark
+             --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/nowrinkle.json
+             --export ${CMAKE_CURRENT_BINARY_DIR}/corr_neg/survives.usda)
     set_tests_properties(app_correctives_negative_weight_survives PROPERTIES
+        PASS_REGULAR_EXPRESSION "corrective .rest. baked at -0\\."
         FIXTURES_REQUIRED app_corr_neg)
 
     # ...and the key is NAMED, because a shape key a DCC cannot identify is not
     # much better than no key. glTF puts targetNames in the JSON chunk, which is
     # plain text near the head of the GLB.
-    add_test(NAME app_correctives_live_rig_names_the_pose COMMAND ${CMAKE_COMMAND}
-             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/corr_live/pose.glb
-             "-DKEYS=arm_out"
-             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    # MOVED 2026-10-05 with the one above, for the same reason: glTF targetNames
+    # carried the name while the key existed. A corrective a user cannot identify
+    # is still barely better than an anonymous one, so the name is asserted where
+    # it now appears.
+    add_test(NAME app_correctives_live_rig_names_the_pose COMMAND makehuman
+             --rig mixamo_superset --pose tpose
+             --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/nowrinkle.json
+             --export ${CMAKE_CURRENT_BINARY_DIR}/corr_live/named.glb)
     set_tests_properties(app_correctives_live_rig_names_the_pose PROPERTIES
-        FIXTURES_REQUIRED "app_corr_live_on")
+        PASS_REGULAR_EXPRESSION "corrective .arm_out. baked at 0\\.98")
 
     # THE SECOND CONSUMER, through the application. The shipped fixture is a
     # version 2 manifest now: `arm_out` names a crease sheet, `rest` names none

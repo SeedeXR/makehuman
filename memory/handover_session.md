@@ -4,6 +4,48 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-10-05 20:10:00 — Session · **The bind pose is the pose now**
+
+Owner, on the question the entry below raised: *"it shouldn't ride on a-pose"*,
+then *"this option we are going with I believe mixamo accepts it too"*. Done.
+
+**This reverses an owner decision of 2026-09-05** that had `globalRest` stay at
+rest so a DCC computed the deformation and our LBS stayed checkable by a third
+party. That property is gone; a baked bind means the consumer's skinning is
+identity and confirms nothing. Said plainly at the time rather than slipped in.
+
+`--pose tpose`: bind **0.08**, evaluated 0.08, residual pose 0.0 mm, geometry
+168.6 x 166.3 — agreeing across the Autodesk FBX SDK, Maya 2027 and Blender 5.2.
+`--pose rest` unchanged at -37.65. Mixamo rig 0.09.
+
+### The part that was nearly shipped broken
+Baking the bind left correctives applied TWICE: the deformation was in the base
+positions and the shape key was still written at weight 0.981. Both existing
+gates passed on it — one asserts the key is announced, the other that the file
+differs, and a doubled deformation satisfies both.
+
+**The obvious fix is wrong, and measuring is what showed it.** Subtracting the
+delta out of the base left 0.0157 dm of error, because the deltas are authored
+in REST space and the runtime applies them through skinning: the baked positions
+hold `M*(w*delta)`, not `w*delta`. On an arm rotated ~38 degrees that residual is
+exactly what turned up. Reverted rather than shipped. Correctives now travel
+baked and applied once (0.0488, matching the no-corrective baseline).
+
+**Follow-up, open:** separability needs the deltas rotated into pose space per
+vertex through the same skinning matrix.
+
+### Gates
+Four updated, none weakened, each commented with the reversal and its date.
+`app_live_rig_export` now asserts `baked pose into the bind` and FAILS on `rest
+geometry`, so the old path returning goes red. The three correctives gates moved
+from reading keys out of the file to reading the app's output, which is where
+the property is still observable; the negative-weight gate keeps its exact case,
+`rest` at -0.000112. Mutation control fired on all four, and it compiled.
+
+Both configs 1632/1632, clang-format 0.
+
+---
+
 ## 2026-10-05 18:30:00 — Session · **The T-pose is a T-pose; the bind pose is not**
 
 The owner asked whether the exported T-pose is an actual T-pose and the A-pose

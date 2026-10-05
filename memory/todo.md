@@ -10510,6 +10510,28 @@ GPU here, or Colab) and it comes back to the owner first.
       **Shipped `9f21b55f`; CI run 37290876321 ALL 11 JOBS GREEN** (TSan
       included, 110 min). Both configs 1625/1625 locally, clang-format 0.
 
+- [x] **The bind pose IS the pose you asked for** (2026-10-05, owner: "it
+      shouldn't ride on a-pose"). REVERSES the 2026-09-05 decision that made a
+      rigged export ship REST geometry with a POSED armature so a third party
+      could check our LBS. Measured after: bind **0.08** and evaluated 0.08 for
+      `--pose tpose`, agreeing in the Autodesk FBX SDK, Maya 2027 and Blender
+      5.2, with 0.0 mm residual pose. `--pose rest` unchanged at -37.65.
+      Geometry, bind and evaluated all agree, so there is no double transform.
+      `formatCarriesRig` and the rest-geometry restore are gone; File > Export
+      no longer mutates the character on its way out.
+
+      **THE CORRECTIVE TRAP, which no gate caught.** With the bind baked, a
+      corrective sat in the base positions AND was still written as a shape key
+      at weight 0.981, so a consumer computing `base + w*delta` applied it
+      TWICE. Subtracting the delta back out was tried and is WRONG: the deltas
+      are rest-space and the runtime applies them through skinning, so the baked
+      positions hold `M*(w*delta)`. Measured residual 0.0157 dm. Correctives now
+      travel baked and applied once.
+      **OPEN, and the follow-up:** keeping correctives separable in a DCC needs
+      every delta rotated into pose space per vertex through the same skinning
+      matrix. Until then `--correctives` deformation cannot be dialled back by
+      the consumer -- it is in the geometry, named in the output, not editable.
+
 - [x] **The exported T-pose IS a T-pose, and the A-pose IS an A-pose**
       (2026-10-05, owner asked). Measured, not assumed, in every format we
       write, against four independent readers.
