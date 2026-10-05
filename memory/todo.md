@@ -10521,10 +10521,35 @@ GPU here, or Colab) and it comes back to the owner first.
       Always read `/System/Volumes/Data`.
       Reclaimable here: Docker **14 GB**, `~/Library/Caches` 2 GB, our own
       `build/` 2.4 GB.
-      **One real packaging gap found while measuring**: the INSTALLED bundle has
-      no Qt `offscreen` platform plugin, so `QT_QPA_PLATFORM=offscreen` fails
-      there though it works from the build tree. Harmless for the MCP server,
-      which uses the default platform. Not yet fixed.
+- [x] **CI's dmg job went red with no packaging change** (2026-10-04) —
+      macdeployqt rewrites install names inside the dylibs it copies, which
+      invalidates the signatures Homebrew shipped, then CHECKS those signatures
+      and fails on `libbrotlicommon`. It aborts on damage it just did, to
+      signatures this build replaces moments later. The dmg job passed on every
+      run until `b8895a52`, which touched no packaging code — the runner's Qt
+      had moved.
+      Its own verification is no longer allowed to stop the build (`|| true`).
+      **The gate did not move**: our ad-hoc re-sign and
+      `codesign --verify --deep --strict` are a separate command and still fail
+      the target. Controlled — a single corrupted byte in the bundle makes it
+      exit 1, an intact bundle exits 0.
+
+- [x] **The packaged app can run headless now** (2026-10-05). macdeployqt
+      bundles only the platform plugin needed to open a WINDOW -- cocoa -- which
+      is right for an app that is only double-clicked and wrong for this one:
+      the same binary is an MCP server and a batch renderer, and those run over
+      ssh, in CI and on machines with no window server. The installed bundle
+      answered "Could not find the Qt platform plugin \"offscreen\"" while the
+      build tree, which sees Qt's own plugin directory, worked.
+      `libqoffscreen.dylib` is now copied in **BEFORE** macdeployqt runs, so the
+      tool rewrites its install names with everything else. Copied afterwards it
+      would still name `/opt/homebrew` and load only on the build machine --
+      the exact class of bug `tools/audit_runtime_paths.py` exists for.
+      Verified: 0 Homebrew references in the deployed plugin, and the packaged
+      binary renders a real 1024x1024 character under `env -i` with
+      `QT_QPA_PLATFORM=offscreen`. Gated in BOTH workflows by RENDERING rather
+      than by listing the file, since a present-but-unrelocated plugin passes a
+      file check. Controlled: removing the plugin fails the gate.
 
 - [x] **One universal FBX: `--rig mixamo`, one flag** (2026-10-05). Owner asked
       why there were two flavours and wanted one file auto-detected everywhere.

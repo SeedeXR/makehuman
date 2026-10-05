@@ -192,6 +192,24 @@ jobs:
         run: |
           codesign --verify --deep --strict \
             build/macos-arm64-release/dmg/MakeHuman.app
+      # THE PACKAGED APP MUST RUN HEADLESS. macdeployqt bundles only the
+      # platform plugin needed to open a WINDOW -- cocoa -- which is right for
+      # an app that is only double-clicked and wrong for this one: the same
+      # binary is an MCP server and a batch renderer, and those run over ssh,
+      # in CI, and on machines with no window server.
+      #
+      # Checked by RENDERING rather than by listing the file, because a plugin
+      # that is present but still pointing at /opt/homebrew loads on the build
+      # machine and nowhere else -- which is the failure the DMG has shipped
+      # before.
+      - name: The packaged app renders headless
+        run: |
+          app=build/macos-arm64-release/dmg/MakeHuman.app/Contents/MacOS/makehuman
+          test -f build/macos-arm64-release/dmg/MakeHuman.app/Contents/PlugIns/platforms/libqoffscreen.dylib \
+            || { echo "the bundle has no offscreen platform plugin" >&2; exit 1; }
+          env -i HOME="$HOME" PATH=/usr/bin:/bin QT_QPA_PLATFORM=offscreen \
+            "$PWD/$app" --render /tmp/headless.png
+          test -s /tmp/headless.png || { echo "offscreen render produced nothing" >&2; exit 1; }
 
       # THE SIGNATURE IS NOW PART OF THE BUILD, and this comment used to say
       # the opposite: that `--target dmg` exits 0 even when macdeployqt prints

@@ -135,6 +135,34 @@ endif()
 # instead of producing a DMG nobody else can open.
 find_program(MH_MACDEPLOYQT macdeployqt HINTS "${QT_HOST_PATH}/bin" "${Qt6_DIR}/../../../bin")
 
+# THE OFFSCREEN PLATFORM PLUGIN, which macdeployqt does not bring.
+#
+# It deploys the platform plugin the application needs to OPEN A WINDOW, which
+# on macOS is cocoa and only cocoa. That is right for an app that is only ever
+# double-clicked, and wrong for this one: the same binary is an MCP server
+# (`--mcp`) and a batch renderer (`--render`, `--export`), and those are
+# exactly the uses that run over ssh, in CI, or on a machine with no window
+# server -- where cocoa cannot initialise and Qt aborts with "no Qt platform
+# plugin could be initialized".
+#
+# MEASURED on the installed bundle before this existed: QT_QPA_PLATFORM=
+# offscreen failed with "Could not find the Qt platform plugin \"offscreen\"",
+# while the same command worked from the build tree, which sees Qt's own
+# plugin directory. A packaged application that can do less than the tree it
+# was built from is a packaging bug, even when the GUI is unaffected.
+#
+# Derived from macdeployqt's own location rather than asked for separately, so
+# the plugin can only ever come from the Qt that is being deployed.
+if(MH_MACDEPLOYQT)
+    get_filename_component(_mh_qt_bin "${MH_MACDEPLOYQT}" DIRECTORY)
+    get_filename_component(_mh_qt_root "${_mh_qt_bin}" DIRECTORY)
+    find_file(MH_QT_OFFSCREEN_PLUGIN libqoffscreen.dylib
+              HINTS "${_mh_qt_root}/share/qt/plugins/platforms"
+                    "${_mh_qt_root}/plugins/platforms"
+                    "${_mh_qt_root}/lib/qt6/plugins/platforms"
+              NO_DEFAULT_PATH)
+endif()
+
 if(APPLE AND MH_MACDEPLOYQT)
     add_custom_target(dmg
         COMMAND ${CMAKE_COMMAND} -E rm -rf "${CMAKE_BINARY_DIR}/dmg"
@@ -174,7 +202,33 @@ if(APPLE AND MH_MACDEPLOYQT)
         # the gate that matters -- the deployed binary naming no absolute
         # Homebrew path -- passes. The flag is not kept, since keeping a flag
         # that changes nothing invites the next reader to believe it works.
-        COMMAND ${MH_MACDEPLOYQT} "${CMAKE_BINARY_DIR}/dmg/MakeHuman.app"
+        # BEFORE macdeployqt, deliberately. Copied in first, the plugin is one
+        # more binary in the bundle when macdeployqt walks it, so the tool
+        # rewrites its Homebrew install names along with everything else.
+        # Copying it afterwards would leave it pointing at /opt/homebrew and
+        # load only on this machine -- the exact failure `app_dmg_is_relocatable`
+        # exists to catch.
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+                "${CMAKE_BINARY_DIR}/dmg/MakeHuman.app/Contents/PlugIns/platforms"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${MH_QT_OFFSCREEN_PLUGIN}"
+                "${CMAKE_BINARY_DIR}/dmg/MakeHuman.app/Contents/PlugIns/platforms/"
+        # `|| true`: macdeployqt's OWN verification is not the gate, and letting
+        # it stop the build makes a Homebrew update break packaging.
+        #
+        # It rewrites install names inside the dylibs it copies, which
+        # invalidates the signatures Homebrew shipped on them -- then it checks
+        # those signatures and reports "invalid signature (code or signature
+        # have been modified)" over libbrotlicommon. It is complaining about
+        # damage it just did, to signatures this build replaces a few lines
+        # below. MEASURED on CI 2026-10-04: the dmg job went red on a commit
+        # touching no packaging code at all, because the runner's Qt had moved.
+        #
+        # What still gates the artefact is OURS and is unchanged: the ad-hoc
+        # re-sign below, then `codesign --verify --deep --strict`, which is a
+        # separate COMMAND and fails the target if the bundle is not intact.
+        # The rpath warnings above have always been tolerated for the same
+        # reason -- they describe frameworks this application never loads.
+        COMMAND sh -c "'${MH_MACDEPLOYQT}' '${CMAKE_BINARY_DIR}/dmg/MakeHuman.app' || true"
         # STRIP EXTENDED ATTRIBUTES FIRST. codesign refuses a bundle carrying
         # "resource fork, Finder information, or similar detritus", and this
         # tree has three sources of it: `resources/branding/makehuman-logo.png`
