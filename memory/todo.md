@@ -10483,6 +10483,31 @@ GPU here, or Colab) and it comes back to the owner first.
 
 ## M12 — the MCP agent interface (owner asked 2026-10-03)
 
+- [x] **`--export-rig mixamo`: keep the face, export Mixamo's skeleton**
+      (2026-10-05). This is the answer to "mixamo fbx as the standard fbx"
+      WITHOUT the cost that made the default-rig version unshippable.
+      The session stays on the 179-bone rig — the expression still drove **31
+      face bones** — and the FILE is cut to Mixamo's **65** on the way out,
+      under Mixamo's names, zero leftovers, every mesh on the same skeleton.
+      Confirmed by assimp (1.6594 m, UVs, materials) and mesh2motion (65 bones,
+      3 meshes, 0 over the influence limit).
+      `mh::rig::reduceSkin` does it: pure data, 8 unit tests on a hand-built
+      4-bone rig where the answer is known by construction — no character, no
+      `.mhskel`, no weights file.
+      **Bones with no counterpart are NOT dropped.** Their influence goes to the
+      nearest mapped ancestor; dropping it would leave a ring of torso weighted
+      to nothing, which renders as a collapsed waist rather than as an error.
+      Weights are summed where several collapse onto one, truncated to the
+      influence budget strongest-first, and renormalised.
+      **ONE helper, two callers.** The body reduced and the worn proxies did
+      not, first time, so the writer got a file with a 65-bone body beside
+      179-bone eyes and teeth and wrote NOTHING — with no message naming the
+      mismatch. `finishExportSkin` is now the single path, and
+      `app_export_rig_reduces_every_skin` asserts `teeth skin: 65 joints` and
+      fails on any `skin: 179 joints`.
+      Both gates controlled, and the first control attempt did not compile
+      (`unused function`) so it controlled nothing — redone.
+
 - [x] **MIXAMO WORKS** (owner confirmed 2026-10-05), the auto-rig path is
       REMOVED, and the Mixamo rig was NOT made the default — because it was
       measured first.

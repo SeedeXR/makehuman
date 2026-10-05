@@ -58,6 +58,7 @@
 #include "makehuman/rig/Facs.h"
 #include "makehuman/rig/PoseUnits.h"
 #include "makehuman/rig/PosedMesh.h"
+#include "makehuman/rig/ReduceSkin.h"
 #include "makehuman/rig/RetargetMap.h"
 #include "makehuman/rig/Skeleton.h"
 #include "makehuman/rig/Skinning.h"
@@ -489,6 +490,31 @@ const mh::rig::RetargetMap* retargetTable() {
 std::string& exportNamesRef() {
     static std::string names;
     return names;
+}
+
+/// Which skeleton the EXPORT should be cut down to, or empty for "the working
+/// one". Named like `--rig-names`, and for the same reason: what a file says
+/// and what the session works in are different questions.
+std::string& exportRigRef() {
+    static std::string rig;
+    return rig;
+}
+
+/// The table `--export-rig` reduces through, loaded once.
+const mh::rig::RetargetMap* exportRigTable() {
+    static const std::optional<mh::rig::RetargetMap> table = [] {
+        std::optional<mh::rig::RetargetMap> none;
+        if (exportRigRef().empty()) return none;
+        const auto path = dataDir() / "rigs" / (exportRigRef() + "_retarget.json");
+        auto map        = mh::rig::loadRetargetMap(path);
+        if (!map) {
+            std::fprintf(stderr, "warning: cannot load --export-rig %s: %s\n",
+                         exportRigRef().c_str(), map.error().message().c_str());
+            return none;
+        }
+        return std::optional<mh::rig::RetargetMap>{std::move(*map)};
+    }();
+    return table ? &*table : nullptr;
 }
 
 const mh::rig::RetargetMap* exportNameTable() {
@@ -2801,6 +2827,40 @@ bool inspectFile(const std::filesystem::path& path) {
 }
 
 /// A skin for everything worn, derived from the body's.
+/// The post-processing every exported skin gets, in one place.
+///
+/// ONE PLACE because there are two callers -- the body and each worn proxy --
+/// and they must not drift. They already had: the body learned to reduce to a
+/// smaller skeleton and the proxies did not, so an export carried a 65-bone
+/// body beside 179-bone eyes and teeth. Nothing warned about the mismatch; the
+/// writer was handed a file with two skeletons in it and wrote none.
+///
+/// REDUCE BEFORE RENAMING. The retarget map is written target -> source, so the
+/// reduction needs the source's own names; renaming first would leave it
+/// looking for bones that no longer answer to that.
+void finishExportSkin(mh::rig::SkinData& skin) {
+    // This is what lets the session keep OUR rig -- 179 bones, 59 of them in
+    // the face, which is what eye aiming, the jaw, expressions and FACS are
+    // driven by -- while the file carries THEIRS. Switching the WORKING rig to
+    // Mixamo's was tried and fails 25 tests, every one of them a feature.
+    if (!exportRigRef().empty()) {
+        if (const mh::rig::RetargetMap* table = exportRigTable(); table != nullptr) {
+            if (auto smaller = mh::rig::reduceSkin(skin, *table)) {
+                skin = std::move(*smaller);
+            } else {
+                // Refused rather than silently exported with the working rig: a
+                // caller who asked for a Mixamo file and got a 179-bone one
+                // finds out at the upload, not here.
+                std::fprintf(stderr,
+                             "cannot reduce this rig to %s; it names none of that "
+                             "skeleton's bones. Exporting with the working rig.\n",
+                             exportRigRef().c_str());
+            }
+        }
+    }
+    applyExportNames(skin);
+}
+
 ///
 /// A live-rig export ships REST geometry and lets the consumer pose it, so an
 /// entry with no skin simply stays where it was while the body moves. Measured
@@ -2825,7 +2885,7 @@ std::vector<mh::rig::SkinData> wornSkins(const PoseRig& rig,
                          name.c_str());
         } else {
             if (rig.posed()) skin.globalPose = rig.globalPose;
-            applyExportNames(skin);
+            finishExportSkin(skin);
             std::printf("%s skin: %zu joints, %u influences/vertex\n", name.c_str(),
                         skin.globalRest.size(), static_cast<unsigned>(skin.influences));
         }
@@ -2929,7 +2989,8 @@ std::optional<mh::rig::SkinData> exportSkin(const PoseRig& rig, const mh::core::
     // bind pose equal the pose, so the mesh arrived exactly as it looked on
     // screen and every consumer's skinning was a no-op.
     if (rig.posed()) skin.globalPose = rig.globalPose;
-    applyExportNames(skin);
+
+    finishExportSkin(skin);
     std::printf("skin: %zu joints, %u influences/vertex\n", skin.globalRest.size(),
                 static_cast<unsigned>(skin.influences));
     return skin;
@@ -3483,6 +3544,16 @@ int main(int argc, char** argv) {
     const QCommandLineOption creditsOpt(
         QStringLiteral("credits"),
         QStringLiteral("Print what this is built on and derived from, then exit."));
+    const QCommandLineOption exportRigOpt(
+        QStringLiteral("export-rig"),
+        QStringLiteral("Write the file under a DIFFERENT skeleton from the one being worked "
+                       "in: mixamo cuts the 179-bone rig down to the 65 Mixamo recognises, "
+                       "merging the weights of every bone it lacks into the nearest one it "
+                       "has. The session keeps its face bones -- eyes, jaw, expressions, "
+                       "FACS -- while the exported character is one Mixamo, Unity and "
+                       "Unreal can map."),
+        QStringLiteral("naming"));
+    parser.addOption(exportRigOpt);
     const QCommandLineOption viewOpt(
         QStringLiteral("view"),
         QStringLiteral("Point the camera down an axis before drawing: front, back, left, "
@@ -4040,6 +4111,14 @@ int main(int argc, char** argv) {
     // decision taken away.
     if (rigNameRef() == "mixamo" && !parser.isSet(rigNamesOpt)) {
         exportNamesRef() = "mixamo";
+    }
+
+    // `--export-rig mixamo` implies Mixamo NAMES too: a file cut down to
+    // Mixamo's skeleton and then written under our names would be recognised
+    // by nothing, which is the one thing it exists to avoid.
+    if (parser.isSet(exportRigOpt)) {
+        exportRigRef() = parser.value(exportRigOpt).toStdString();
+        if (!parser.isSet(rigNamesOpt)) exportNamesRef() = exportRigRef();
     }
 
     auto mesh = mh::core::loadObj(dataDir() / "3dobjs" / "base.obj");

@@ -31,6 +31,7 @@ add_executable(mh_tests
     unit/test_surface_stretch.cpp
     unit/test_parameter_space.cpp
     unit/test_focal_shift.cpp
+    unit/test_reduce_skin.cpp
     unit/test_mcp_server.cpp
     unit/test_topology_hash.cpp
     unit/test_provenance.cpp
@@ -557,6 +558,29 @@ if(MH_HAVE_RENDER)
              -DMH_DIR=${CMAKE_CURRENT_BINARY_DIR}
              -P ${CMAKE_CURRENT_SOURCE_DIR}/mcp_fit.cmake)
     set_tests_properties(app_mcp_fit_recovers_a_character PROPERTIES TIMEOUT 300)
+
+    # --export-rig: the session keeps OUR rig, the file carries THEIRS.
+    #
+    # Both halves are asserted, because either alone is satisfiable by a bug.
+    # "the file has 65 bones" passes if the WORKING rig was switched to Mixamo's
+    # -- which costs the whole face pipeline -- and "expressions still work"
+    # passes if the reduction silently did nothing.
+    add_test(NAME app_export_rig_keeps_the_face COMMAND makehuman
+             --export-rig mixamo
+             --expression ${MH_DATA_DIR}/expressions/afraid.mhpose
+             --export ${CMAKE_CURRENT_BINARY_DIR}/export_rig.fbx)
+    set_tests_properties(app_export_rig_keeps_the_face PROPERTIES
+        PASS_REGULAR_EXPRESSION "expression Afraid \\(13 units, 31 bones\\)")
+
+    # EVERY skin, not just the body's. The body reduced and the worn proxies did
+    # not, once, and the writer was handed a file with two different skeletons
+    # in it and wrote none -- with nothing in the output naming the mismatch.
+    add_test(NAME app_export_rig_reduces_every_skin COMMAND makehuman
+             --export-rig mixamo
+             --export ${CMAKE_CURRENT_BINARY_DIR}/export_rig2.fbx)
+    set_tests_properties(app_export_rig_reduces_every_skin PROPERTIES
+        PASS_REGULAR_EXPRESSION "teeth skin: 65 joints"
+        FAIL_REGULAR_EXPRESSION "skin: 179 joints")
 
     add_test(NAME app_smoke COMMAND makehuman
              --load ${CMAKE_CURRENT_SOURCE_DIR}/golden/mhm/reference_save.mhm

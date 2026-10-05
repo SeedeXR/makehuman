@@ -146,6 +146,21 @@ says so rather than failing quietly.
 `--blendshapes` carries expressions as shape keys, which travels further than
 any face rig.
 
+#### Keeping the face AND exporting Mixamo's skeleton
+
+```
+makehuman --export-rig mixamo --export character.fbx
+```
+
+The session stays on the 179-bone rig — eyes, jaw, expressions and FACS all
+work — and the FILE is cut down to Mixamo's 65 on the way out, under Mixamo's
+names. Bones Mixamo lacks are not dropped: their influence is merged into the
+nearest bone it has, so no band of the body ends up weighted to nothing.
+
+Measured on one export: the expression drove **31 face bones**, and the file
+came out with **exactly Mixamo's 65** and no leftovers, every mesh — body, eyes
+and teeth — skinned to the same skeleton.
+
 ### What the fit can and cannot do
 
 It moves the **eight parameters that change the body's outline**. Everything
