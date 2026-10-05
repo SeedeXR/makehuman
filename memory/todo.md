@@ -10507,6 +10507,8 @@ GPU here, or Colab) and it comes back to the owner first.
       fails on any `skin: 179 joints`.
       Both gates controlled, and the first control attempt did not compile
       (`unused function`) so it controlled nothing — redone.
+      **Shipped `9f21b55f`; CI run 37290876321 ALL 11 JOBS GREEN** (TSan
+      included, 110 min). Both configs 1625/1625 locally, clang-format 0.
 
 - [x] **MIXAMO WORKS** (owner confirmed 2026-10-05), the auto-rig path is
       REMOVED, and the Mixamo rig was NOT made the default — because it was

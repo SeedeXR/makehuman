@@ -4,6 +4,76 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-10-05 14:45:00 — Session · **The face stays; the file carries Mixamo's skeleton**
+
+`--export-rig mixamo` shipped as `9f21b55f`. **CI run 37290876321: all 11 jobs
+green**, TSan included. Both configs 1625/1625 locally, clang-format exit 0.
+
+### What shipped
+    makehuman --export-rig mixamo --export character.fbx
+
+This is the answer to the owner's "mixamo fbx as the standard fbx" WITHOUT the
+cost that made the default-rig version unshippable (that attempt broke 25 tests
+and left 0 of 59 face bones). The session stays on the 179-bone rig — the
+expression still drives **31 face bones** — and the FILE is reduced to Mixamo's
+**65** on the way out, under Mixamo's names. Two independent readers confirm it:
+assimp sees one 1.6594 m character with UVs and materials; mesh2motion sees 65
+bones across 3 meshes with 0 over the influence limit.
+
+`mh::rig::reduceSkin` (`src/rig/ReduceSkin.cpp`) is pure data — 8 unit tests on
+a hand-built 4-bone rig where the answer is known by construction, so a failure
+cannot be ambiguous between "the maths is wrong" and "the data moved".
+
+### Bones with no counterpart are NOT dropped
+`spine04` is not a Mixamo bone, and the band of torso it holds still has to be
+driven by something. Its influence goes to the nearest mapped ancestor. Dropping
+it instead leaves a ring of vertices weighted to nothing, which a consumer
+renders as a collapsed waist rather than as an error. Weights are summed where
+several bones collapse onto one, truncated strongest-first to the influence
+budget, and renormalised — an under-weighted vertex shrinks toward the origin
+under linear blend skinning.
+
+### Three things measured, not reasoned
+**ONE helper, two callers — and it took the bug to get there.** The body learned
+to reduce and the worn proxies did not, so an export carried a 65-bone body
+beside 179-bone eyes and teeth. The writer was handed a file with two skeletons
+and wrote NO FILE, with nothing in the output naming the mismatch.
+`finishExportSkin` is the single path now.
+
+**Both gates assert BOTH halves on purpose.** "The file has 65 bones" passes if
+the working rig was switched, which costs the whole face pipeline; "expressions
+still work" passes if the reduction silently did nothing. Either alone is
+satisfiable by a bug.
+
+**The first control attempt did not compile** (`unused function`), so it
+controlled nothing. Redone, and it then fired correctly.
+
+### My mistake this session, recorded
+I ran `git checkout-index -f -a`, which reverted every tracked file to HEAD and
+destroyed uncommitted `main.cpp` and CMakeLists edits. That violates the
+standing rule — restore from a backup, never git-checkout. Recovered from
+`$SP/main6.backup`, re-applied the CMake edits by hand; the two full sweeps are
+what proves the recovery was complete.
+
+### A stale memory file cost an hour of false alarm
+`memory/ci-tsan-job-takes-70-minutes.md` said TSan takes 72-97 min. Measured
+across five runs it is **99-110** (ca8a60ff 105 · b8895a52 99 · 8fbb37e4 105 ·
+05575919 99 · 9f21b55f 110). Build is ~3 min; `Test` is ~100. Acting on the
+stale figure I was about to call a normal job hung. Corrected — and my FIRST
+correction (98-105) was itself low, which is the point: re-measure, don't
+re-remember. Also learned: `gh` reports an **empty string, not null**, for an
+unfinished job's conclusion, so `select(.conclusion == null)` silently matches
+nothing and reads exactly like "no unfinished jobs".
+
+### Still with the owner — not mine to decide
+Four hair styles = "full"? · `DUTY` in `make_hair_alpha.py` · eyebrow thickness
+(9 mm proud, ~4x anatomical) · the two-level tab bar (Stage 3's tabs are
+reverted and NOT restored; `AssetGroup::category` was kept, so restoring is
+cheap). **And the disk**: the app freezing was never the app — the Data volume
+was 98% full with swap at 84% and 90M pageins, and Docker holds 14 GB.
+
+---
+
 ## 2026-10-03 23:30:00 — Session · **The score went up while the answer got worse**
 
 Continues the entry below. The MCP server grew the rest of the loop the owner
