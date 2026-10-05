@@ -1133,8 +1133,7 @@ if(MH_HAVE_RENDER)
              --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/nowrinkle.json
              --export ${CMAKE_CURRENT_BINARY_DIR}/corr_live/pose.glb)
     set_tests_properties(app_correctives_live_rig_exports_the_key PROPERTIES
-        PASS_REGULAR_EXPRESSION "corrective .arm_out. baked at"
-        FAIL_REGULAR_EXPRESSION "exported as a shape key"
+        PASS_REGULAR_EXPRESSION "corrective .arm_out. exported as a pose-space shape key"
         FIXTURES_REQUIRED app_corr_live_clean
         FIXTURES_SETUP app_corr_live_on)
     add_test(NAME app_correctives_live_rig_baseline COMMAND makehuman
@@ -1181,36 +1180,64 @@ if(MH_HAVE_RENDER)
              --export ${CMAKE_CURRENT_BINARY_DIR}/corr_neg/pose.usda)
     set_tests_properties(app_correctives_negative_weight PROPERTIES
         FIXTURES_REQUIRED app_corr_neg_clean FIXTURES_SETUP app_corr_neg)
-    # MOVED 2026-10-05 from the file to the app's output. The property is
-    # unchanged and is still the only case that says it: an RBF extrapolating
-    # past an example pose returns a NEGATIVE coefficient, that is real
-    # deformation, and the export must act on it rather than drop it. It used to
-    # be checked by finding the shape key in the .usda; with the bind pose baked
-    # there is no key, so it is checked where it is now observable. The value is
-    # the one this gate always carried: `rest` at -0.000112, magnitude 1.12e-4,
-    # a hundred times the 1e-6 threshold -- a plain `< 1e-6` still drops it and
-    # still fails here.
-    add_test(NAME app_correctives_negative_weight_survives COMMAND makehuman
-             --rig mixamo_superset --pose benchmark
-             --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/nowrinkle.json
-             --export ${CMAKE_CURRENT_BINARY_DIR}/corr_neg/survives.usda)
+    # BACK IN THE FILE 2026-10-05, after a detour. It briefly asserted the app's
+    # output instead, while a baked bind pose meant no key was written at all;
+    # the key now travels again, in POSE SPACE, so the stronger assertion is
+    # available once more. The property never changed: an RBF extrapolating past
+    # an example pose returns a NEGATIVE coefficient, that is real deformation,
+    # and it has to reach the file rather than be thresholded away. `rest` comes
+    # out at -0.000112, a hundred times the 1e-6 cut -- a plain `< 1e-6` still
+    # drops it and still fails here.
+    add_test(NAME app_correctives_negative_weight_survives COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/corr_neg/pose.usda
+             "-DKEYS=\"rest\";\"arm_out\""
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
     set_tests_properties(app_correctives_negative_weight_survives PROPERTIES
-        PASS_REGULAR_EXPRESSION "corrective .rest. baked at -0\\."
         FIXTURES_REQUIRED app_corr_neg)
 
     # ...and the key is NAMED, because a shape key a DCC cannot identify is not
     # much better than no key. glTF puts targetNames in the JSON chunk, which is
     # plain text near the head of the GLB.
-    # MOVED 2026-10-05 with the one above, for the same reason: glTF targetNames
-    # carried the name while the key existed. A corrective a user cannot identify
-    # is still barely better than an anonymous one, so the name is asserted where
-    # it now appears.
-    add_test(NAME app_correctives_live_rig_names_the_pose COMMAND makehuman
+    # ...and the key is NAMED, because a shape key a DCC cannot identify is not
+    # much better than no key. glTF puts targetNames in the JSON chunk, which is
+    # plain text near the head of the GLB.
+    add_test(NAME app_correctives_live_rig_names_the_pose COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/corr_live/pose.glb
+             "-DKEYS=arm_out"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_correctives_live_rig_names_the_pose PROPERTIES
+        FIXTURES_REQUIRED "app_corr_live_on")
+
+    # AND IT OPENS AT THE RBF'S WEIGHT, which is the half that was silently
+    # missing. A key present but opening at zero is the failure this catches:
+    # the deformation is in the file, named, inspectable -- and invisible, so
+    # the character imports uncorrected.
+    #
+    # TEXT USD, and the first attempt at this gate is why. It grepped the GLB
+    # for "0.98" and PASSED with the weight forced to 0.0 -- those two bytes
+    # occur somewhere in a megabyte of binary vertex data, so the gate asserted
+    # nothing at all. `.usda` writes `blendShapeWeights = [0.0020731706,
+    # 0.9806317]` as plain text, and the full-precision value is what makes the
+    # match mean something.
+    #
+    # THE SAME PROPERTY IN FBX IS NOT GATED HERE and was verified out of band,
+    # because there the value is a binary double: Autodesk's own SDK read
+    # `arm_out` at 98.063171% and Maya 2027 imported it at 0.980632. Before
+    # `blendShapeChannel` learned to write DeformPercent as a Properties70
+    # entry as well as a bare node, both read ZERO while Blender read it
+    # correctly -- the file carried the weight and the SDK could not see it.
+    add_test(NAME app_correctives_weight_export COMMAND makehuman
              --rig mixamo_superset --pose tpose
              --correctives ${CMAKE_CURRENT_SOURCE_DIR}/correctives/nowrinkle.json
-             --export ${CMAKE_CURRENT_BINARY_DIR}/corr_live/named.glb)
-    set_tests_properties(app_correctives_live_rig_names_the_pose PROPERTIES
-        PASS_REGULAR_EXPRESSION "corrective .arm_out. baked at 0\\.98")
+             --export ${CMAKE_CURRENT_BINARY_DIR}/corr_live/weights.usda)
+    set_tests_properties(app_correctives_weight_export PROPERTIES
+        FIXTURES_SETUP app_corr_weight)
+    add_test(NAME app_correctives_open_at_the_rbf_weight COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_CURRENT_BINARY_DIR}/corr_live/weights.usda
+             "-DKEYS=blendShapeWeights;0.9806317"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+    set_tests_properties(app_correctives_open_at_the_rbf_weight PROPERTIES
+        FIXTURES_REQUIRED app_corr_weight)
 
     # THE SECOND CONSUMER, through the application. The shipped fixture is a
     # version 2 manifest now: `arm_out` names a crease sheet, `rest` names none

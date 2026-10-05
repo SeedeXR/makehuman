@@ -10510,6 +10510,41 @@ GPU here, or Colab) and it comes back to the owner first.
       **Shipped `9f21b55f`; CI run 37290876321 ALL 11 JOBS GREEN** (TSan
       included, 110 min). Both configs 1625/1625 locally, clang-format 0.
 
+- [x] **Correctives can be dialled back again, in pose space** (2026-10-05,
+      owner: "fix the correctives so they can be dialled back, do it properly").
+      Closes the follow-up the entry below opened.
+
+      A corrective's delta is authored in REST space and the exported base is
+      now POSED. The delta is carried across by RE-SKINNING rather than by a
+      hand-rolled blend: `skinPositions` -- the same function that posed the
+      character -- is called on the rest mesh and on the rest mesh plus that
+      corrective at FULL magnitude, and the difference is the corrective in the
+      posed frame. No matrix convention is re-derived, which matters because
+      this codebase is row-major with column vectors. The base then has
+      `w * posedDelta` subtracted, so the key restores it at the RBF's weight.
+
+      **EXACT, not approximately:** a consumer's `base + sum(w*target)` matches
+      the known-good baked geometry to **1.2e-7**, 0 of 43,551 components over
+      0.1 mm. FBX SDK `arm_out` 98.063171%, Maya 2027 0.980632, Blender 5.2
+      0.980632 in BOTH .glb and .fbx.
+
+      **A SECOND BUG, found only because the owner asked for Maya and the SDK.**
+      Both read `deform 0.000000%` while Blender read the weights correctly:
+      `blendShapeChannel` wrote `DeformPercent` as a bare node only, and
+      Autodesk's reader wants a `Properties70` entry. The weight was in the file
+      and the SDK could not see it, so Maya imported an UNCORRECTED character.
+      It predates today and was invisible until the bind was baked, because the
+      corrective used to be in the geometry whatever the channel said. Both
+      spellings are written now.
+
+      **THE FIRST GATE FOR THIS WAS WORTHLESS** and the control is the only
+      reason I know: it grepped the GLB for `0.98`, and with the weight forced
+      to 0.0 it still PASSED -- those bytes occur by chance in a megabyte of
+      binary vertex data. Replaced with a text-`.usda` assertion on the
+      full-precision `blendShapeWeights = [0.0020731706, 0.9806317]`, which does
+      fail under that mutation. FBX's deform percent stays verified out of band,
+      because there the value is a binary double.
+
 - [x] **The bind pose IS the pose you asked for** (2026-10-05, owner: "it
       shouldn't ride on a-pose"). REVERSES the 2026-09-05 decision that made a
       rigged export ship REST geometry with a POSED armature so a third party

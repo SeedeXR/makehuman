@@ -779,6 +779,23 @@ Node blendShapeChannel(int64_t id, const std::string& name, float weight) {
     Node v("Version");
     v.addI32(100);
     c.add(std::move(v));
+    // TWICE, because the two readers that matter do not look in the same place.
+    //
+    // Blender reads the bare `DeformPercent` node below. Autodesk's own SDK
+    // reads the PROPERTY, and with only the node present
+    // `FbxBlendShapeChannel::DeformPercent.Get()` returns 0 -- measured on our
+    // own output: the SDK listed both channels and both at `deform 0.000000%`,
+    // and Maya then imported the targets at 0.0. The weights were in the file
+    // and the character still came in uncorrected, which is the same class of
+    // failure the comment above describes.
+    //
+    // It only became visible when the bind pose was baked (2026-10-05) and the
+    // base stopped carrying the deformation itself: before that Maya showed a
+    // correct character for the wrong reason, because the corrective was in the
+    // geometry whatever the channel said.
+    Node props("Properties70");
+    props.add(doubleProperty("DeformPercent", static_cast<double>(weight) * 100.0));
+    c.add(std::move(props));
     Node percent("DeformPercent");
     percent.addF64(static_cast<double>(weight) * 100.0);
     c.add(std::move(percent));

@@ -5880,7 +5880,7 @@ int main(int argc, char** argv) {
         // on the default character: 21,833 vertices, 14,517 referenced, 7,316
         // written for nothing -- and a consumer that bounds the buffer sees the
         // hidden helper cages rather than the body.
-        const auto compact = mh::io::compactUnusedVertices(rm.view());
+        auto compact = mh::io::compactUnusedVertices(rm.view());
         // Not announced when a LOD is being written: this describes `rm`, the
         // full-resolution mesh, which is not what is about to be exported. The
         // line would name a vertex count no consumer of the file will see.
@@ -5895,7 +5895,7 @@ int main(int argc, char** argv) {
         // two writes attributes whose vertex count does not match the mesh.
         // glTF catches that and no other format would; it caught both of these
         // while they were being written.
-        const mh::io::CompactedMesh& written = lod ? *lodCompact : compact;
+        mh::io::CompactedMesh& written = lod ? *lodCompact : compact;
 
         // The skin's joints and weights are per RENDER vertex, so they move
         // with them or every vertex past the first dropped one is weighted to
@@ -5959,52 +5959,119 @@ int main(int argc, char** argv) {
             }
         }
 
-        // A FIRED CORRECTIVE TRAVELS BAKED, and no longer also as a shape key.
+        // A FIRED CORRECTIVE TRAVELS AS A SHAPE KEY IN POSE SPACE.
         //
-        // It was both until 2026-10-05, and that was right while a live rig
-        // shipped REST geometry: the base had no corrective in it, the key put
-        // the deformation back, and it stayed separable in a DCC. Baking the
-        // bind pose removes the base the key was measured against. MEASURED on
-        // the nowrinkle fixture at tpose: the corrective moves the baked
-        // positions by 0.0488 and the key was still written at weight 0.981, so
-        // a consumer computing `base + w * delta` applied it TWICE. No gate
-        // caught it -- one asserts the key is announced, another that the file
-        // differs, and a doubled deformation satisfies both.
+        // The deltas are authored against the REST mesh, and the runtime applies
+        // them there, BEFORE skinning -- so what ends up in the exported
+        // positions is `R_v * (w * delta)`, the delta carried through that
+        // vertex's blended skinning matrix, not the delta itself. While a rigged
+        // export shipped rest geometry that did not matter: base and key were
+        // both rest-space and agreed. With the bind pose baked (2026-10-05) the
+        // base is POSED, and the two spaces stopped agreeing.
         //
-        // SUBTRACTING THE DELTA BACK OUT WAS TRIED AND IS WRONG. The deltas are
-        // authored in REST space; the runtime applies them through skinning, so
-        // what is sitting in the baked positions is `M * (w * delta)` and not
-        // `w * delta`. Measured, subtracting the unrotated delta left 0.0157 dm
-        // of error -- about 1.6 mm, silent, and worse than not shipping the key
-        // because the geometry would simply be wrong.
+        // Two wrong answers were tried first, and both are cheap to repeat:
+        //   * leaving the key alone double-applied the corrective, because a
+        //     consumer computes `base + w * delta` and the base already had it.
+        //     MEASURED: 0.0488 of deformation shipped twice.
+        //   * subtracting the raw delta out of the base left 0.0157 -- about
+        //     1.6 mm -- because it subtracts `w * delta` where `R_v * (w *
+        //     delta)` is what is actually sitting there. On an arm rotated ~38
+        //     degrees that residual is most of the corrective.
         //
-        // KEEPING THE KEY NEEDS THE DELTAS ROTATED INTO POSE SPACE, per vertex,
-        // through the same skinning matrix. That is a real piece of work and it
-        // is the follow-up; it is not something to half-do here. Writing the key
-        // at weight 0 instead would render correctly but mean "dial this up to
-        // add a second copy of what you can already see", which is a worse lie.
+        // So the delta is carried into pose space the only way that cannot
+        // disagree with the runtime: by RE-SKINNING. `skinPositions` is the
+        // same function that posed the character, called twice -- once on the
+        // rest mesh and once on the rest mesh plus this corrective at FULL
+        // magnitude -- and the difference is that corrective expressed in the
+        // posed frame. No matrix convention is re-derived here, which matters
+        // because this codebase stores row-major with column vectors and a
+        // hand-rolled blend that got it backwards would look plausible.
         //
-        // The deformation is NOT lost: it is in the exported positions, applied
-        // exactly once. What is lost is being able to dial it back in a DCC.
-        if (gCorrectives != nullptr) {
-            std::printf(
-                "correctives baked into the exported positions, applied once; "
-                "no shape keys while the bind pose is the posed character\n");
-            // Each FIRED corrective is still named with its weight. The key no
-            // longer travels, but which correctives fired and how hard is the
-            // part a user can act on -- and a NEGATIVE weight is the case worth
-            // printing, because an RBF extrapolating past an example pose
-            // returns one and it is real deformation, not noise. Magnitude, not
-            // value: a bare `< threshold` silently drops all of it.
-            const auto& blob       = gCorrectives->blob;
-            const auto poseWeights = gCorrectives->runtime.weights();
-            for (size_t i = 0;
-                 i < blob.poseCount && i < poseWeights.size() && i < blob.poseNames.size(); ++i) {
+        // The base then has `w * posedDelta` taken out of it, so it becomes the
+        // posed-but-uncorrected character, and the key puts it back at the
+        // RBF's weight. Both of the owner's decisions stand: the bind pose is
+        // the pose (2026-10-05) and a corrective stays separable in a DCC
+        // (2026-09-14).
+        std::vector<std::vector<mh::foundation::Vec3>> correctiveDeltas;
+        if (gCorrectives != nullptr && !subdivided && !rig.restCoords.empty()) {
+            const auto& blob         = gCorrectives->blob;
+            const auto poseWeights   = gCorrectives->runtime.weights();
+            const auto vmapForExport = lod ? std::span<const uint32_t>(lodVmap) : rm.vmap();
+
+            // The pose that produced these positions. Rebuilt rather than
+            // captured so it cannot drift from what `poseMesh` used.
+            const auto skinning = mh::rig::computeSkinningMatrices(rig.skeleton, rig.localPose);
+            std::vector<mh::foundation::Vec3> posedRest;
+            std::vector<mh::foundation::Vec3> posedPlus;
+            std::vector<mh::foundation::Vec3> restPlus;
+            std::vector<mh::foundation::Vec3> scratch;
+            const bool haveBase =
+                mh::rig::skinPositions(rig.restCoords, rig.weights, skinning, posedRest);
+            if (!haveBase) {
+                std::fprintf(stderr,
+                             "cannot re-skin the rest mesh to place corrective shape keys; "
+                             "the deformation is still baked into the exported positions\n");
+            }
+            correctiveDeltas.reserve(blob.poseCount);
+            for (size_t i = 0; haveBase && i < blob.poseCount && i < poseWeights.size() &&
+                               i < blob.poseNames.size();
+                 ++i) {
+                // MAGNITUDE, because an RBF extrapolating past an example pose
+                // returns a negative coefficient and that is real deformation.
                 if (std::abs(poseWeights[i]) < 1e-6) continue;
-                std::printf("corrective `%.*s` baked at %.6f\n",
+                if (i >= blob.deltas.size() || blob.deltas[i].empty()) continue;
+                const auto& target = blob.deltas[i];
+                if (target.maxVertexIndex >= rig.restCoords.size()) {
+                    std::fprintf(stderr,
+                                 "warning: corrective `%.*s` indexes a vertex this mesh does not "
+                                 "have; exporting without its key\n",
+                                 static_cast<int>(blob.poseNames[i].size()),
+                                 blob.poseNames[i].data());
+                    continue;
+                }
+                // FULL magnitude, not the weight: the key is a unit shape and
+                // the weight travels beside it, which is what lets a DCC dial
+                // it. Scaling here would bake the weight into the shape twice.
+                restPlus.assign(rig.restCoords.begin(), rig.restCoords.end());
+                for (size_t k = 0; k < target.verts.size() && k < target.offsets.size(); ++k)
+                    restPlus[target.verts[k]] += target.offsets[k];
+                if (!mh::rig::skinPositions(restPlus, rig.weights, skinning, posedPlus)) {
+                    std::fprintf(stderr, "warning: corrective `%.*s` could not be re-skinned\n",
+                                 static_cast<int>(blob.poseNames[i].size()),
+                                 blob.poseNames[i].data());
+                    continue;
+                }
+                // Dense, per MESH vertex, then gathered through the vmap the
+                // same way `expandTargetToRenderVertices` does it -- vmap[rv]
+                // names the mesh vertex, so a seam's copies all pick up the
+                // same delta.
+                scratch.assign(vmapForExport.size(), mh::foundation::Vec3{});
+                for (size_t rv = 0; rv < vmapForExport.size(); ++rv) {
+                    const uint32_t mv = vmapForExport[rv];
+                    if (mv < posedPlus.size() && mv < posedRest.size())
+                        scratch[rv] = posedPlus[mv] - posedRest[mv];
+                }
+                correctiveDeltas.push_back(
+                    mh::io::compactDeltas(scratch, written.remap, written.coord.size()));
+                const auto& delta = correctiveDeltas.back();
+                const auto weight = static_cast<float>(poseWeights[i]);
+                // Out of the base, so the key is not a second copy of it.
+                for (size_t v = 0; v < written.coord.size() && v < delta.size(); ++v) {
+                    mh::foundation::Vec3 scaled = delta[v];
+                    scaled *= weight;
+                    written.coord[v] -= scaled;
+                }
+                morphs.push_back({std::string(blob.poseNames[i]), delta, weight});
+                std::printf("corrective `%.*s` exported as a pose-space shape key at %.6f\n",
                             static_cast<int>(blob.poseNames[i].size()), blob.poseNames[i].data(),
                             poseWeights[i]);
             }
+        } else if (gCorrectives != nullptr && subdivided) {
+            // Same reason the 34 are refused above: the deltas index the BASE
+            // mesh and a subdivided vmap names vertices past its count.
+            std::fprintf(stderr,
+                         "a subdivided mesh cannot carry corrective shape keys; the deformation "
+                         "is still baked into the exported positions\n");
         }
 
         // An EMPTY mask when decimating: the mask is already baked into the

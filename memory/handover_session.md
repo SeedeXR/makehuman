@@ -4,6 +4,48 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-10-05 21:40:00 — Session · **Correctives dial back again, and Maya found the second bug**
+
+Owner: *"fix the correctives so they can be dialled back, do it properly and
+ensure to verify in maya, autodesk fbx sdk, blender etc"*. Done, and asking for
+those three readers is what found the second defect.
+
+### The fix
+Rest-space delta, posed base. Carried across by RE-SKINNING -- `skinPositions`
+called on the rest mesh and on the rest mesh plus the corrective at full
+magnitude; the difference is that corrective in the posed frame. Deliberately
+not a hand-rolled blend: row-major storage with column vectors means a wrong
+convention looks plausible and renders almost right. The base has
+`w * posedDelta` taken out, the key puts it back at the RBF's weight.
+
+Consumer reconstruction vs the known-good baked geometry: **1.2e-7**, 0 of
+43,551 components over 0.1 mm. Not "close" -- float rounding.
+
+### The second bug, which only Maya and the SDK could show
+With pose-space keys working, Autodesk's SDK read both channels at
+**deform 0.000000%** and Maya imported them at **0.0**, while Blender read
+0.980632 correctly. `blendShapeChannel` wrote `DeformPercent` as a bare node
+only; the SDK wants a `Properties70` entry. The weight was in the file and
+Autodesk could not see it, so Maya would have shown an uncorrected character.
+
+It predates this session and was INVISIBLE until the bind was baked, because the
+corrective used to sit in the geometry whatever the channel said -- Maya was
+right for the wrong reason. Both spellings are written now; Blender unchanged.
+
+### My first gate for it asserted nothing
+It grepped the GLB for `0.98`. The control forced the weight to 0.0 and the gate
+still PASSED: two bytes like that occur by chance in a megabyte of binary vertex
+data. Replaced with a text-`.usda` assertion on the full-precision
+`blendShapeWeights = [0.0020731706, 0.9806317]`, which fails under the same
+mutation. Both controls compiled, so both controlled something.
+
+Three gates that had been moved to asserting log lines are back to asserting the
+FILE, because the key travels again.
+
+Both configs 1634/1634, clang-format 0.
+
+---
+
 ## 2026-10-05 20:10:00 — Session · **The bind pose is the pose now**
 
 Owner, on the question the entry below raised: *"it shouldn't ride on a-pose"*,
