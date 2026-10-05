@@ -4,6 +4,89 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-10-05 18:30:00 — Session · **The T-pose is a T-pose; the bind pose is not**
+
+The owner asked whether the exported T-pose is an actual T-pose and the A-pose
+an actual A-pose, across FBX, GLB and the rest, verified against the Autodesk
+FBX SDK, Maya and Blender. Answer: **yes in every format — and FBX, GLB and USD
+keep the A-pose as the BIND pose even when you ask for a T-pose.**
+
+### How it was measured
+Arm angle from horizontal, shoulder to wrist, against the character's **own** up
+axis taken from root→head. That was deliberate: MakeHuman is Y-up, Blender is
+Z-up, and the FBX and glTF importers disagree about which way they fix that, so
+"is Y the height" is not a question worth answering. Measured this way a T-pose
+reads ~0° whichever way the file is oriented.
+
+| format | rest | tpose | how the pose is carried |
+|---|---|---|---|
+| FBX | -37.65 | **0.08** | bind stays A, pose on the skeleton |
+| GLB | -37.65 | **0.08** | bind stays A, pose on the skeleton |
+| USD | A | **T** | bind stays A, pose on the skeleton |
+| OBJ / STL | A | **T** | baked into the vertices |
+| DAE | A | **T** | baked into vertices AND skeleton |
+
+**Four readers, agreeing to the hundredth of a degree** on `tpose.fbx` (bind
+-37.65, evaluated 0.08): Blender 5.2, Autodesk FBX SDK 2020.3.9, Maya 2027
+headless, with assimp confirming mesh and bone counts. Rendered and looked at:
+a clean A and a clean T.
+
+### What is the owner's to decide
+In the rigged formats the T-pose is a pose ON an A-posed bind. A viewport or an
+engine shows a true T-pose; a retargeter reading the bind pose sees an A-pose.
+The baked formats disagree with that convention. Mixamo accepts what we emit
+today, so nothing is broken — but making `--pose` set the bind pose would change
+files that currently work, so it is not a decision to take quietly.
+
+### Two tools I had written off, wrongly
+**`mayapy` works headless.** An earlier entry recorded Maya as unusable because
+it crashes; that is the GUI. `maya.standalone.initialize()` succeeds, loads
+`fbxmaya`, and imports fine — which is what made the Maya half of this possible.
+
+**The FBX SDK is installed** at `/Applications/Autodesk/FBX SDK/2020.3.9`. It was
+built against ONLY in the scratchpad — never in CMake, never in `LICENSING.md`,
+nothing committed — so hard rule 6 still holds. Reading our own output with it
+is measurement, not a dependency. It is the only thing that can read the file's
+`FbxPose` bind record directly, which is the whole question here.
+
+### Two claims I made and had to withdraw
+**The GLB does not contain a stray mesh.** I reported an `Icosphere` in it as a
+bug. The GLB's own JSON chunk has exactly three meshes — body, eyes, teeth.
+Blender's glTF importer generates that sphere and assigns it to all 179 bones as
+a `custom_shape`, because unlike the FBX importer it has no bone-length concept.
+The owner said as much ("icosphere are like bones to fbx in blender") and was
+right. I should have read the file before blaming it.
+
+**`git check-ignore` exits 0 on a NEGATION too.** Checking that the new helper
+was not gitignored, it printed `.gitignore:79:!tests/**` and exited 0, which I
+read as "ignored". That pattern un-ignores the directory. The decisive evidence
+was `git status` listing the file as `??` at all, and then `git add` staging it
+as `A`. An ignored file never appears in either.
+
+### The gate
+`tests/obj_pose_shape.cmake` measures armspan/height in fixed point — CMake has
+integer arithmetic and nothing else — and asserts the band. **633/1000 A-pose,
+1013/1000 T-pose**, reproducing the Blender figures through an unrelated parser.
+Controls all fire: the T-pose gate fed the A-pose file fails, the A-pose gate fed
+the T-pose file fails, `files_differ` fed one file twice fails. That first
+control is the point — every pre-existing pose test compares two exports and
+counts moved vertices, which a pose that silently stopped applying passes
+trivially by moving nothing in both.
+
+OBJ on purpose: none of the four readers can run in CI, so the gate re-expresses
+the same fact in something CMake can measure unaided. The rigged formats cannot
+be gated this way at all — their vertex blocks are byte-identical between poses
+— so `app_export_pose_reaches_the_fbx` asserts only that the pose reaches the
+file (measured: 3997 differing bytes, all skeleton).
+
+### Disk, again
+The build tree had been wiped a **sixth** time when this session started, and
+free space fell to 2.8 GiB mid-run before the suite's artifacts were released
+and it recovered to 7.1. Docker's 14 GB is still the thing standing between the
+owner and a comfortable margin. Still theirs to act on.
+
+---
+
 ## 2026-10-05 14:45:00 — Session · **The face stays; the file carries Mixamo's skeleton**
 
 `--export-rig mixamo` shipped as `9f21b55f`. **CI run 37290876321: all 11 jobs

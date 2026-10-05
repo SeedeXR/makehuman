@@ -582,6 +582,60 @@ if(MH_HAVE_RENDER)
         PASS_REGULAR_EXPRESSION "teeth skin: 65 joints"
         FAIL_REGULAR_EXPRESSION "skin: 179 joints")
 
+    # IS THE T-POSE ACTUALLY A T-POSE? Nothing asserted that until now: every
+    # pose gate measured which vertices MOVED relative to another export, which
+    # a pose that silently stopped being applied passes trivially by moving
+    # nothing in both. These measure the shape itself, so the claim is about the
+    # character rather than about a difference.
+    #
+    # Verified once, out of band, against three readers that agree to the
+    # hundredth of a degree on the arm's angle from horizontal -- Blender 5.2,
+    # Autodesk's own FBX SDK 2020.3.9, and Maya 2027 headless: the A-pose
+    # exports at -37.65 and the T-pose at 0.08. None of those three can run in
+    # CI (no Blender on the runner, and the FBX SDK is forbidden as a dependency
+    # by hard rule 6), so the gate re-expresses the same fact in the one
+    # measurement CMake can make unaided -- armspan over height, 0.634 against
+    # 1.014. The bands below do not touch.
+    add_test(NAME app_export_apose_obj COMMAND makehuman
+             --pose rest --export ${CMAKE_CURRENT_BINARY_DIR}/pose_apose.obj)
+    set_tests_properties(app_export_apose_obj PROPERTIES FIXTURES_SETUP app_export_apose_obj)
+    add_test(NAME app_export_tpose_obj COMMAND makehuman
+             --pose tpose --export ${CMAKE_CURRENT_BINARY_DIR}/pose_tpose.obj)
+    set_tests_properties(app_export_tpose_obj PROPERTIES FIXTURES_SETUP app_export_tpose_obj)
+
+    add_test(NAME app_exported_apose_is_an_apose COMMAND ${CMAKE_COMMAND}
+             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/pose_apose.obj
+             -DMIN_RATIO=500 -DMAX_RATIO=750 -DLABEL=A-pose
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_pose_shape.cmake)
+    set_tests_properties(app_exported_apose_is_an_apose PROPERTIES
+        FIXTURES_REQUIRED app_export_apose_obj)
+    add_test(NAME app_exported_tpose_is_a_tpose COMMAND ${CMAKE_COMMAND}
+             -DOBJ=${CMAKE_CURRENT_BINARY_DIR}/pose_tpose.obj
+             -DMIN_RATIO=950 -DMAX_RATIO=1100 -DLABEL=T-pose
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_pose_shape.cmake)
+    set_tests_properties(app_exported_tpose_is_a_tpose PROPERTIES
+        FIXTURES_REQUIRED app_export_tpose_obj)
+
+    # The rigged formats cannot be gated the same way: FBX, glTF and USD write
+    # the mesh at the A-pose bind and carry the requested pose on the skeleton,
+    # so their vertex blocks are byte-identical whichever pose is asked for and
+    # a bounding box sees nothing. What must still hold is that the pose reaches
+    # the file AT ALL -- measured, the two FBX exports differ in 3997 bytes, all
+    # of them skeleton. If --pose stopped reaching the FBX writer the two would
+    # come out identical, which is exactly what this catches.
+    add_test(NAME app_export_fbx_apose COMMAND makehuman
+             --pose rest --export ${CMAKE_CURRENT_BINARY_DIR}/pose_apose.fbx)
+    set_tests_properties(app_export_fbx_apose PROPERTIES FIXTURES_SETUP app_export_fbx_apose)
+    add_test(NAME app_export_fbx_tpose COMMAND makehuman
+             --pose tpose --export ${CMAKE_CURRENT_BINARY_DIR}/pose_tpose.fbx)
+    set_tests_properties(app_export_fbx_tpose PROPERTIES FIXTURES_SETUP app_export_fbx_tpose)
+    add_test(NAME app_export_pose_reaches_the_fbx COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/pose_apose.fbx
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/pose_tpose.fbx
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_export_pose_reaches_the_fbx PROPERTIES
+        FIXTURES_REQUIRED "app_export_fbx_apose;app_export_fbx_tpose")
+
     add_test(NAME app_smoke COMMAND makehuman
              --load ${CMAKE_CURRENT_SOURCE_DIR}/golden/mhm/reference_save.mhm
              --set macrodetails/Gender=1.0

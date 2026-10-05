@@ -10510,6 +10510,67 @@ GPU here, or Colab) and it comes back to the owner first.
       **Shipped `9f21b55f`; CI run 37290876321 ALL 11 JOBS GREEN** (TSan
       included, 110 min). Both configs 1625/1625 locally, clang-format 0.
 
+- [x] **The exported T-pose IS a T-pose, and the A-pose IS an A-pose**
+      (2026-10-05, owner asked). Measured, not assumed, in every format we
+      write, against four independent readers.
+
+      Arm angle from horizontal, shoulder to wrist, measured against the
+      character's OWN up axis (root to head) so no importer's axis convention
+      can skew it. **0 degrees is a true T-pose.**
+
+      | format | `--pose rest` | `--pose tpose` | how the pose is carried |
+      |---|---|---|---|
+      | FBX | -37.65 | **0.08** | bind stays A, pose on the skeleton |
+      | GLB | -37.65 | **0.08** | bind stays A, pose on the skeleton |
+      | USD | A | **T** | bind stays A, pose on the skeleton |
+      | OBJ | A | **T** | baked into the vertices |
+      | STL | A | **T** | baked into the vertices |
+      | DAE | A | **T** | baked into vertices AND skeleton |
+
+      Mixamo rig: bind -41.52, evaluated 0.09 -- same shape. The two A-pose
+      figures differ because `LeftArm`->`LeftHand` and `upperarm01.L`->`wrist.L`
+      are different endpoints on the same body, not because the body differs.
+
+      **Agreeing to the hundredth of a degree on `tpose.fbx`** (bind -37.65,
+      evaluated 0.08): Blender 5.2, **Autodesk FBX SDK 2020.3.9**, and **Maya
+      2027 headless**. assimp confirms mesh and bone counts. Rendered and
+      looked at: a clean A and a clean T, no collapsed geometry.
+
+      **THE ONE THING THAT IS THE OWNER'S CALL.** In FBX/GLB/USD, `--pose
+      tpose` leaves the BIND pose at the A-pose; the T-pose rides on top. A
+      viewport or engine shows a true T-pose, but a retargeter that reads the
+      bind pose sees an A-pose. DAE/OBJ/STL bake instead, so their rest state
+      IS the requested pose. That is two defensible conventions used
+      inconsistently across our own writers. Mixamo accepts it today (owner
+      confirmed), so nothing is broken -- but if `--pose` should also set the
+      bind pose for the rigged formats, that changes files that currently work
+      and needs saying so first.
+
+      **Maya mangles our bone names.** `upperarm01.L` imports as
+      `upperarm01FBXASC046L` -- Maya forbids `.` and encodes it. Every dotted
+      bone in the 179-bone default rig is affected; the Mixamo rig is dot-free
+      and comes through clean. Another quiet argument for it as the interchange
+      default.
+
+      **Units and axis are right**: the FBX declares 1 cm/unit and the mesh
+      measures 165.9 units = 1.659 m, Y-up. No sign of the 10x error listed in
+      project_context.md section 8 as a Python-reference defect.
+
+      **`docs/formats/` has no export doc**, and `src/app/main.cpp:2924` calls
+      `.dae` unverified because Blender 5.2 dropped Collada. Still true of
+      Blender -- but assimp reads it and its XML measures directly, which is how
+      it was checked here. That comment could be narrowed.
+
+      Gated by `tests/obj_pose_shape.cmake`: armspan/height, in fixed point,
+      **633/1000 for the A-pose and 1013/1000 for the T-pose**. Bands 500-750
+      and 950-1100 do not touch. OBJ on purpose -- none of the three readers
+      above can run in CI (no Blender on the runner; the FBX SDK is forbidden as
+      a dependency by hard rule 6), so the gate re-expresses the same fact in
+      the one measurement CMake can make unaided. The rigged side cannot be
+      gated this way at all, because FBX/GLB/USD vertex blocks are
+      byte-identical between poses, so `app_export_pose_reaches_the_fbx` asserts
+      only that the pose reaches the file.
+
 - [x] **MIXAMO WORKS** (owner confirmed 2026-10-05), the auto-rig path is
       REMOVED, and the Mixamo rig was NOT made the default — because it was
       measured first.
