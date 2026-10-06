@@ -10536,6 +10536,55 @@ GPU here, or Colab) and it comes back to the owner first.
       Both controlled: the first fails on the real stale brow, the second on the
       eyelash mesh.
 
+- [x] **Hair: a texture split, full coverage, four coil styles, strand brows**
+      (2026-10-06).
+
+      **THE TEXTURE SPLIT.** One sheet cannot serve a shell and a tube. 52
+      strands is right for the afro's cap and a coil's card, which have many
+      samples across `u`; `ridge`, `loc_tube` and `knot_mesh` sweep SIX OR
+      SEVEN facets, so 52 lands ~8 per facet and aliases. RENDERED: cornrows
+      nearly vanished, locs read as threads, knots speckled. The original
+      8-strand sheet said this and I deleted the reasoning with the value.
+      `materials/hair_tube.mhmat` carries seven.
+
+      **COVERAGE WAS POISSON CLUMPING.** Independent root sampling leaves
+      holes: a bald crown, a bare patch above the ear, a gap in the back.
+      Stratified per triangle now, 900 clumps / 230 guides, and
+      `the afro covers the scalp rather than clumping` passes with ZERO empty
+      angular cells.
+
+      **TWO PHYSICAL DEFECTS the coverage work exposed.** `coil()` swings
+      perpendicular to the centreline so half of every turn went INWARD --
+      1,615 afro vertices inside the skull, deepest 0.257 dm. The centreline is
+      lifted by `radius * amplitude(t)`, making the coil tangent to the skin.
+      Drooping tips re-entered at the ears and nape; `push_outside` lifts them
+      back out against a binned skull radius.
+
+      **FOUR STYLES FROM ONE ENGINE**: `coils`, `afro` (coil-based, replacing
+      the shell), `lowcut`, `wisps`. The shell afro is retired -- a shell has no
+      hairs in its geometry, so no texture makes it read as hair close up.
+
+      **THE BROW IS AN ALGORITHM NOW**, not a shape: 660 hairs, each its own
+      card, with a DIRECTION FIELD -- near-vertical at the head (78 deg),
+      flattening through the arch (18 -> 4), turning down at the tail (-22) --
+      and each hair leaning off that mean so upper and lower sets interleave.
+      Its thickness profile is MEASURED off the owner's reference sheet
+      (licensed stock art, gitignored, used as a ruler): length:thickness
+      5.6:1, peak at t 0.40..0.50, table in the generator. The symmetric lens
+      it replaced was too thin at the head and clubbed at the tail.
+      **The hairs were SUB-PIXEL at 0.22 mm** -- which is why 660 of them still
+      read as sparse -- and are 0.8 mm now.
+
+- [ ] **OPEN: the binding moves afro vertices by up to 0.229 dm.**
+      `the afro grows out of the head, never into it` measures 773 vertices
+      inside the skull when the proxy is fitted through `fitProxy`, while
+      reading `data/hair/afro.obj` directly measures 305 with a deepest
+      excursion of 0.054 dm. Same rule, same scalp samples, same asset. The
+      difference is the BINDING, and it is not explained. The gate's bar is set
+      to catch a generator growing hair inward (which puts thousands there),
+      not to certify the last few hundred -- this entry is what that comment
+      defers to.
+
 - [x] **Curly-Cue coiled hair ships as `coils`, the fifth style** (2026-10-06).
       `tools/coiled_hair.py` (AGPL, owner's call) implements phase locking,
       switchbacks with their amplitude pinch, and the loosely-guided root

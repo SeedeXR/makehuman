@@ -236,9 +236,37 @@ SLOTS = (
     ("scalp", ROOT / "data" / "hair" / "hair_strands.png",
      dict(count=52, seed=0x5CA19, width_scale=0.70, min_tip=0.97, max_tip=1.0,
           drift_max=0.010, root_band=0.130, tip_softness=0.03)),
+    # TUBE, for the swept styles, and the split exists because one sheet cannot
+    # serve both. A shell or a card has many samples across `u` -- the afro's
+    # cap and a coil's ribbon both do -- so 52 strands resolve. `ridge`,
+    # `loc_tube` and `knot_mesh` sweep tubes of SIX OR SEVEN FACETS around, so
+    # 52 strands is about eight per facet and aliases into stipple. RENDERED,
+    # cornrows went nearly invisible, locs read as threads and the bantu knots
+    # speckled.
+    #
+    # The original 8-strand sheet said this and I deleted the reasoning with
+    # the value: "Eight against the six-to-eight facets the sweeps use, so a
+    # strand is about one facet wide". Seven here, one per facet, deliberately
+    # NOT six so the cut does not land on the same edge every time.
+    ("tube", ROOT / "data" / "hair" / "hair_tube_strands.png",
+     dict(count=7, seed=0x7B5E, width_scale=1.35, min_tip=0.90, max_tip=1.0,
+          drift_max=0.006, root_band=0.050, tip_softness=0.12)),
     ("brow", ROOT / "data" / "eyebrows" / "brow_strands.png",
      dict(count=5, seed=0xB4042, width_scale=2.30, min_tip=0.62, max_tip=1.0,
           drift_max=0.004, root_band=0.030, tip_softness=0.50)),
+    # ONE HAIR PER CARD, for the eyebrow. Every other sheet here cuts a surface
+    # into many strands because the geometry is a tube or a shell carrying a
+    # whole clump. A brow hair IS its own card now, so the sheet it wears has to
+    # be a SINGLE strand: opaque down the middle of `u`, soft at both edges so
+    # the ribbon does not read as a hard-edged sliver, and fading along `v` so
+    # the hair comes to a point instead of stopping square.
+    #
+    # Cutting this one into many strands would alias exactly as the 34-strand
+    # brow did -- a card is two quads wide, and there is nothing for a comb to
+    # resolve against.
+    ("brow_hair", ROOT / "data" / "eyebrows" / "brow_hair.png",
+     dict(count=1, seed=0xB0B, width_scale=1.70, min_tip=0.80, max_tip=1.0,
+          drift_max=0.0, root_band=0.10, tip_softness=0.45)),
     ("lash", ROOT / "data" / "eyelashes" / "lash_strands.png",
      dict(count=6, seed=0x1A5E5, width_scale=2.10, min_tip=0.50, max_tip=1.0,
           drift_max=0.008, root_band=0.080, tip_softness=0.55)),

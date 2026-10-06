@@ -4,6 +4,64 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-10-06 (evening) — Session · **Four styles, a measured brow, and fifteen findings**
+
+Texture split, full scalp coverage, four coil styles including a coil-based
+afro, and an eyebrow built from a direction field. `/code-review` then returned
+FIFTEEN findings on it, four of them serious enough to have shipped real harm.
+
+### The four I would not have caught
+**I deleted a documented licensing safeguard.** `LICENSING.md` section 5.5 says
+in as many words: "It is gitignored (`.gitignore`: `mixamo-asset/`), by the
+owner, before any of this work began -- so the asset cannot be committed or
+shipped." When the folder moved under `references/` I removed that line and
+replaced it with nothing. A re-download plus `git add -A` would have put a
+non-redistributable Adobe asset into history permanently. Restored, with both
+paths and the quote.
+
+**My blanket `references/` ignore achieved nothing and set a trap.** Seven
+Mixamo clips there are TRACKED at the owner's direction, so the rule does not
+untrack them; and with no leading slash it swallows any future `references`
+directory at any depth -- the same trap this repo already records for
+`mixamo_superset.mhskel`. Now a NAMED ignore for the stock-art folder only, and
+`/tmp/` with the slash.
+
+**THE AFRO'S UUID CHANGED and would have orphaned every saved .mhm.** Moving it
+from `write_style` to `write_bound_style` silently minted a uuid5 in place of
+`8f2c1d4a-hair-afro`. `write_bound_style`'s OWN COMMENT forbids this -- "changing
+an asset's identity orphans every .mhm that already references it, and that is
+a migration, not a generator fix" -- and the move performed that migration by
+accident. A `uuid_override` keeps the old identity.
+
+**My brow density was INVERTED while the comment claimed otherwise.**
+`0.5-0.5*cos(pi*t)` has zero derivative at both ends, so it piles hairs at the
+head and tail: deciles [20553, ..., 6472, ..., 20647], 3.2x denser at the ends
+than through the arch -- exactly where the MEASURED profile puts the brow's
+greatest thickness. Rejection-sampled against the profile now, 2.8x the other
+way.
+
+### The rest
+`--check` compared only the .obj, leaving every .mhclo ungated -- in the same
+change that altered one's UUID. The .mhclo banner still named the wrong
+generator. Six module constants went dead when the STYLES table took over, and
+I had "updated" two of them with fresh measurement prose that affects nothing.
+`skull_radii` binned the WHOLE BODY while its docstring said head (max 16.12 dm
+against the skull's 1.68). `obj_piece_count` required a trailing slash in its
+regex, so on a UV-less .obj it counted every face as its own piece and passed
+hardest on the input it should reject. And a test comment deferred its
+justification to a memory entry I had never written.
+
+### What the reference sheet actually bought
+Measured, not eyeballed: length:thickness 5.6:1 (mine was 8.7:1, a pencil
+line), peak at t 0.40..0.50, and a profile that rises steeply then tapers for
+the whole second half. And the finding I would have got wrong by instinct --
+"sparse" was never about hair COUNT. 660 hairs across 40 px is already many per
+column; each hair was 0.22 mm, SUB-PIXEL, and antialiasing erased it.
+
+Release 1655/1655.
+
+---
+
 ## 2026-10-06 (later still) — Session · **Lashes, and two maths errors the review found**
 
 Eyelashes done, `ridge()` done before them, and `/code-review` found two real

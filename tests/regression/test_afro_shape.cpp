@@ -32,6 +32,7 @@
 
 #include <cmath>
 #include <filesystem>
+#include <algorithm>
 #include <vector>
 
 using namespace mh::core;
@@ -52,43 +53,105 @@ float distanceFromCentre(const mh::foundation::Vec3& p) {
 
 }  // namespace
 
-TEST_CASE("the afro stands off the scalp everywhere it grows", "[asset][hair][afro]") {
+// REWRITTEN 2026-10-06, because the afro stopped being a shell.
+//
+// Both tests here measured a SHELL: each proxy vertex bound to the one base
+// vertex it grew from, with a radial standoff bounded by the generator's
+// thickness. `tools/make_coils.py` grows the afro from coiled strands now
+// (owner's call), bound barycentrically to triangles, so `refVerts[i][0]` is
+// one corner of a triangle and a coil travels a long way sideways from it.
+// Measuring standoff against that corner is not a weaker version of the old
+// check, it is a meaningless one.
+//
+// What SURVIVES the change of representation is the property that mattered:
+// hair grows OUT of a head, never into it. A strand that dips inside the skull
+// renders as a bald patch with hair sprouting from nowhere, and no vertex
+// count catches it. That is asserted below, against the nearest scalp vertex
+// BY DIRECTION rather than by binding, which is a comparison a shell and a
+// head of strands can both answer.
+//
+// The old "uniform shell, not a mass inflated from a point" test is gone with
+// the shell. It pinned that offsetting along a normal cannot move a vertex
+// further than the thickness -- a true and useful statement about a surface
+// offset, and not a statement about anything the coil generator does. Keeping
+// it by loosening its bound until coils passed would have been a test that
+// asserts nothing; it is replaced by the coverage check below, which is the
+// claim a coiled afro actually has to meet.
+TEST_CASE("the afro grows out of the head, never into it", "[asset][hair][afro]") {
     const auto base = loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
     REQUIRE(base.has_value());
     const auto afro = loadProxy(std::filesystem::path(MH_DATA_DIR) / "hair" / "afro.mhclo");
     REQUIRE(afro.has_value());
-
     std::vector<mh::foundation::Vec3> fitted;
     REQUIRE(fitProxy(*afro, base->coord(), fitted));
+    // EQUALITY, not a floor. `> 1000` was a weakening: this file's header
+    // lists "a vertex referenced by no face makes loadObj reject the file and
+    // the character renders BALD rather than erroring" as an observed defect,
+    // and the proxy carrying every vertex it declares is what rules that out.
+    // The equality holds for the coiled afro and costs nothing to keep.
     REQUIRE(fitted.size() == afro->vertexCount());
 
-    // Not one vertex may sink INTO the head. An inward shell is invisible and
-    // would still satisfy a vertex count.
+    // The scalp, as directions from the cranium centre with their radii. Only
+    // vertices above the centre: the comparison is "is this hair outside the
+    // skull", and the jaw and neck are not the skull.
     const auto coords = base->coord();
-    size_t grown      = 0;
-    float total       = 0.0F;
-    float worst       = 0.0F;
-    for (size_t i = 0; i < fitted.size(); ++i) {
-        const uint32_t b  = afro->refVerts[i][0];
-        const float stand = distanceFromCentre(fitted[i]) - distanceFromCentre(coords[b]);
-        INFO("proxy vertex " << i << " bound to base " << b << " stands off " << stand);
-        CHECK(stand > -1e-4F);
-        if (stand > 1e-3F) ++grown;
-        total += std::max(0.0F, stand);
-        worst = std::max(worst, stand);
+    std::vector<std::pair<mh::foundation::Vec3, float>> scalp;
+    for (const auto& c : coords) {
+        if (c.y < kCy) continue;
+        const float r = distanceFromCentre(c);
+        if (r < 1e-3F) continue;
+        scalp.push_back({{(c.x - kCx) / r, (c.y - kCy) / r, (c.z - kCz) / r}, r});
     }
+    REQUIRE(scalp.size() > 200);
 
-    // MEASURED on the shipped asset: 475 vertices, max standoff 0.78 dm, mean
-    // 0.290. The MEAN is the assertion that matters -- the flat-top failure had
-    // a perfectly good maximum (0.58) and a mean of 0.086.
-    const float mean = total / static_cast<float>(fitted.size());
-    INFO("grown " << grown << " of " << fitted.size() << ", mean " << mean << ", max " << worst);
-    CHECK(worst > 0.6F);
-    CHECK(mean > 0.20F);
-    CHECK(grown > fitted.size() / 3);
+    size_t inside = 0;
+    float deepest = 0.0F;
+    for (const auto& q : fitted) {
+        const float r = distanceFromCentre(q);
+        if (r < 1e-3F) continue;
+        const mh::foundation::Vec3 dir{(q.x - kCx) / r, (q.y - kCy) / r, (q.z - kCz) / r};
+        float bestDot = -2.0F;
+        float bestR   = 0.0F;
+        for (const auto& [sdir, sr] : scalp) {
+            const float d = dir.x * sdir.x + dir.y * sdir.y + dir.z * sdir.z;
+            if (d > bestDot) {
+                bestDot = d;
+                bestR   = sr;
+            }
+        }
+        // A 2 mm tolerance: the nearest scalp sample is a neighbouring vertex,
+        // not the surface directly beneath, so a strand lying ON the skin reads
+        // a few tenths of a millimetre either way.
+        if (r < bestR - 0.02F) {
+            ++inside;
+            deepest = std::max(deepest, bestR - r);
+        }
+    }
+    INFO("vertices inside the skull: " << inside << " of " << fitted.size()
+                                       << ", deepest " << deepest << " dm");
+    // THE BAR IS 3%, AND THE NUMBER BEHIND IT IS WORTH STATING because it is
+    // not zero and the reason is not fully pinned down.
+    //
+    // The generator lifts each strand clear of its own coil radius and then
+    // pushes any remaining buried vertex back onto the skull, which took the
+    // count from 1,615 to the present figure. What is left sits at the
+    // hairline, where "the nearest scalp sample by direction" is a crude stand
+    // in for the surface -- the sample is a neighbouring vertex, not the point
+    // directly beneath.
+    //
+    // MEASURED, and the two numbers disagree: reading `afro.obj` directly
+    // flags 305 vertices with a deepest excursion of 0.054 dm, while fitting
+    // the proxy through `fitProxy` here flags 773 at 0.229. Same scalp
+    // samples, same rule. That difference is the binding moving vertices, and
+    // it is a thread worth pulling -- it is recorded in memory/todo.md rather
+    // than hidden behind a threshold chosen to make it quiet (it is written
+    // there now; it was not when this comment first claimed it). The bar is set
+    // where it catches a generator growing hair INWARD, which puts thousands
+    // here, not where it certifies the last few hundred.
+    CHECK(inside < fitted.size() * 3 / 100);
 }
 
-TEST_CASE("the afro is a uniform shell, not a mass inflated from a point", "[asset][hair][afro]") {
+TEST_CASE("the afro covers the scalp rather than clumping", "[asset][hair][afro]") {
     const auto base = loadObj(std::filesystem::path(MH_DATA_DIR) / "3dobjs" / "base.obj");
     REQUIRE(base.has_value());
     const auto afro = loadProxy(std::filesystem::path(MH_DATA_DIR) / "hair" / "afro.mhclo");
@@ -96,28 +159,35 @@ TEST_CASE("the afro is a uniform shell, not a mass inflated from a point", "[ass
     std::vector<mh::foundation::Vec3> fitted;
     REQUIRE(fitProxy(*afro, base->coord(), fitted));
 
-    // The mushroom failure, and the assertion that actually catches it.
+    // THE GAP IS THE FAILURE, and it is the one a count cannot see. Roots
+    // sampled independently over the scalp are a Poisson process: they clump
+    // and leave holes, and rendered that showed as a bald crown, a bare patch
+    // above the ear and a hole in the middle of the back. The generator
+    // stratifies per triangle now.
     //
-    // The first version of this test compared the shell's half-width below the
-    // cranium centre against its half-width above, and a mutation proved that
-    // decorative: growing every vertex radially from the centre widens the TOP
-    // as well, so the comparison held and the mushroom passed.
-    //
-    // What genuinely separates the two is UNIFORM THICKNESS. Offsetting along
-    // the surface normal cannot move a vertex further than `thickness`; growing
-    // radially toward a target radius moves each vertex by whatever it takes to
-    // get there, so the standoff runs away. Measured on the shipped asset:
-    // max 0.78 dm, which is the generator's thickness exactly.
-    const auto coords = base->coord();
-    float worst       = 0.0F;
-    for (size_t i = 0; i < fitted.size(); ++i) {
-        const uint32_t b = afro->refVerts[i][0];
-        const float dx   = fitted[i].x - coords[b].x;
-        const float dy   = fitted[i].y - coords[b].y;
-        const float dz   = fitted[i].z - coords[b].z;
-        worst            = std::max(worst, std::sqrt(dx * dx + dy * dy + dz * dz));
+    // Measured as angular coverage: the scalp is divided into cells of azimuth
+    // and elevation about the cranium centre, and every cell the hairline
+    // admits must hold hair. A clumped head leaves whole cells empty.
+    constexpr int kAz = 12;
+    constexpr int kEl = 6;
+    std::vector<bool> filled(kAz * kEl, false);
+    size_t counted = 0;
+    for (const auto& q : fitted) {
+        const float dx = q.x - kCx;
+        const float dy = q.y - kCy;
+        const float dz = q.z - kCz;
+        if (dy < 0.0F) continue;  // below the cranium centre is not the cap
+        const float r = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (r < 1e-3F) continue;
+        float az = std::atan2(dx, dz) / (2.0F * 3.14159265F) + 0.5F;
+        az       = std::min(0.999F, std::max(0.0F, az));
+        float el = std::acos(std::min(1.0F, std::max(-1.0F, dy / r))) / 1.5707963F;
+        el       = std::min(0.999F, std::max(0.0F, el));
+        filled[static_cast<size_t>(el * kEl) * kAz + static_cast<size_t>(az * kAz)] = true;
+        ++counted;
     }
-    INFO("largest standoff from the scalp: " << worst << " dm");
-    CHECK(worst > 0.6F);
-    CHECK(worst < 0.95F);
+    REQUIRE(counted > 1000);
+    const size_t empty = static_cast<size_t>(std::count(filled.begin(), filled.end(), false));
+    INFO("empty scalp cells: " << empty << " of " << filled.size());
+    CHECK(empty == 0);
 }

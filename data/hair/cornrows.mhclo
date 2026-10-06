@@ -8,7 +8,7 @@ name Cornrows
 uuid 4b5dc18e-9362-52db-b9c3-beaa551cb9c7
 basemesh hm08
 obj_file cornrows.obj
-material materials/hair.mhmat
+material materials/hair_tube.mhmat
 z_depth 60
 verts 0
 248 246 980 0.41125 0.25280 0.33595 -0.08807 0.04785 0.08279

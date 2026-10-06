@@ -1,0 +1,25 @@
+# The swept styles' material: cornrows, locs and bantu knots.
+#
+# A SEPARATE SHEET FROM `hair.mhmat`, and the split is measured rather than
+# stylistic. `hair_strands.png` carries 52 strands, which is right for geometry
+# with many samples across `u` -- the afro's cap and a coil's card. These three
+# are swept TUBES of six or seven facets around, so 52 strands lands about
+# eight to a facet and aliases: rendered, cornrows nearly vanished, locs read
+# as threads, the knots speckled. `hair_tube_strands.png` carries seven, about
+# one per facet, which is what the original 8-strand sheet was sized for.
+#
+# Everything else matches `hair.mhmat`, so the three styles still read as the
+# same head of hair as the afro beside them.
+name Hair
+tag MakeHuman™
+ambientColor 0.04 0.03 0.02
+diffuseColor 0.28 0.19 0.13
+specularColor 0.6 0.6 0.6
+shininess 0.3
+opacity 1.0
+transparent True
+diffuseTexture ../hair_tube_strands.png
+backfaceCull True
+castShadows True
+receiveShadows True
+shader data/shaders/glsl/litsphere

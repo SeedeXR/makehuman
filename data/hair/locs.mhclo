@@ -8,7 +8,7 @@ name Locs
 uuid 57e9b597-b813-5eaf-a52a-ab3bc06f86ce
 basemesh hm08
 obj_file locs.obj
-material materials/hair.mhmat
+material materials/hair_tube.mhmat
 z_depth 60
 verts 0
 226 226 226 1.00000 0.00000 0.00000 -0.01628 0.03353 0.04691

@@ -173,5 +173,29 @@ resources/branding/AppIcon.iconset/
 *.mhcorr
 *.mhcorr.tmp
 
-mixamo-asset/
 hair_research/
+
+# RESTORED. LICENSING.md section 5.5 records this line as a safeguard the owner
+# put in place before any of the Mixamo work: "It is gitignored (.gitignore:
+# mixamo-asset/), by the owner, before any of this work began -- so the asset
+# cannot be committed or shipped." It was briefly deleted when the folder moved
+# under references/, which removed the safeguard without replacing it: a
+# re-download into the old path plus `git add -A` would have put a
+# non-redistributable Adobe asset into history permanently.
+mixamo-asset/
+references/mixamo-asset/
+
+# The eyebrow reference sheet is LICENSED STOCK ART, used here as a ruler --
+# `tools/make_eyebrow_hairs.py` measured its thickness profile and encoded the
+# numbers. The numbers are ours; the artwork is not, and must not ship.
+#
+# NAMED, not a blanket `references/`. Seven Mixamo animation clips under
+# references/ are TRACKED at the owner's explicit direction (LICENSING.md
+# section 5.5), so a blanket rule would not untrack them and would silently
+# swallow the next file added there -- which is the trap this file already
+# records for `mixamo_superset.mhskel`.
+references/different-shapes-colors-eyebrows-vector-illustrations-set/
+
+# Scratch renders. Leading slash: only the one at the repo root, not any
+# directory called `tmp` at any depth.
+/tmp/

@@ -2144,13 +2144,13 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_coils_worn COMMAND makehuman
              --hair coils --export ${CMAKE_CURRENT_BINARY_DIR}/hair/coils.obj)
     set_tests_properties(app_coils_worn PROPERTIES
-        PASS_REGULAR_EXPRESSION "wearing Coils \\(13440 verts\\) lit by skinmat_hair"
+        PASS_REGULAR_EXPRESSION "wearing Coils \\(28800 verts\\) lit by skinmat_hair"
         FAIL_REGULAR_EXPRESSION "export failed;cannot")
 
     add_test(NAME app_afro_worn COMMAND makehuman
              --hair afro --export ${CMAKE_CURRENT_BINARY_DIR}/hair/afro.obj)
     set_tests_properties(app_afro_worn PROPERTIES
-        PASS_REGULAR_EXPRESSION "wearing Afro \\(475 verts\\) lit by skinmat_hair"
+        PASS_REGULAR_EXPRESSION "wearing Afro \\(35200 verts\\) lit by skinmat_hair"
         FAIL_REGULAR_EXPRESSION "export failed;cannot"
         FIXTURES_SETUP app_afro_worn)
     # ...and it must be a DIFFERENT asset from the placeholder cage, not the
@@ -2213,6 +2213,16 @@ if(MH_HAVE_RENDER)
         add_test(NAME coils_asset_is_generated
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_SOURCE_DIR}/tools/make_coils.py --check
+                         --app $<TARGET_FILE:makehuman>)
+
+        # The brow has its own generator now -- `make_eyebrow_hairs.py`, which
+        # replaced the ridge -- and so it needs its own staleness gate. The old
+        # one sat BROKEN at head for want of exactly this, and nothing noticed
+        # because a generator nobody runs fails silently while its asset
+        # quietly stops moving.
+        add_test(NAME eyebrow_asset_is_generated
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_SOURCE_DIR}/tools/make_eyebrow_hairs.py --check
                          --app $<TARGET_FILE:makehuman>)
 
     endif()
@@ -3855,11 +3865,19 @@ if(MH_HAVE_RENDER)
 
     # THE REGRESSION GATE for the eyebrow binding, on the shipped asset rather
     # than on a fresh generator run, because `data/` is what the application
-    # loads. 0.050 dm is 5 mm: twice the real maximum of 2.4 mm and an order of
-    # magnitude below the 61.4 mm the scalp binding produced.
+    # loads.
+    #
+    # 0.050 -> 0.080 dm on 2026-10-06, and the reason is the brow, not the
+    # binding. That bar was "twice the real maximum of 2.4 mm" for a RIDGE
+    # lying along the skin. The brow is individual hairs now, each up to 9.5 mm
+    # long and leaving the face at an angle, so a tip legitimately sits several
+    # millimetres off it: measured on the shipped asset, mean 2.3 mm, p99 4.8,
+    # max 5.4. 8 mm clears that with room and is still an order of magnitude
+    # below the 61.4 mm the scalp binding produced -- which is the failure this
+    # gate exists to catch and the only one it needs to.
     add_test(NAME eyebrows_bound_to_the_face COMMAND ${CMAKE_COMMAND}
              -DMHCLO=${CMAKE_SOURCE_DIR}/data/eyebrows/eyebrows.mhclo
-             -DEXPECT=308 -DBAR=0.050
+             -DEXPECT=7920 -DBAR=0.080
              -P ${CMAKE_CURRENT_SOURCE_DIR}/check_eyebrow_binding.cmake)
 
     # THE BROW CAN CARRY A STRAND ALPHA, which is a claim about the shipped mesh
@@ -3877,7 +3895,9 @@ if(MH_HAVE_RENDER)
             ${CMAKE_SOURCE_DIR}/data/hair/cornrows.obj
             ${CMAKE_SOURCE_DIR}/data/hair/locs.obj
             ${CMAKE_SOURCE_DIR}/data/hair/bantu_knots.obj
-            ${CMAKE_SOURCE_DIR}/data/hair/coils.obj)
+            ${CMAKE_SOURCE_DIR}/data/hair/coils.obj
+            ${CMAKE_SOURCE_DIR}/data/hair/lowcut.obj
+            ${CMAKE_SOURCE_DIR}/data/hair/wisps.obj)
         get_filename_component(_mh_uv_name "${_mh_uv_obj}" NAME_WE)
         add_test(NAME ${_mh_uv_name}_carries_uvs COMMAND ${CMAKE_COMMAND}
                  -DOBJ=${_mh_uv_obj}
@@ -3891,9 +3911,17 @@ if(MH_HAVE_RENDER)
     # hair, and pointing a material at one changed the render not at all. The
     # brow's own uvs run 0..1 along the ridge, which is the property that makes
     # `brow_strands.png` mean anything.
-    add_test(NAME eyebrows_uvs_run_along_the_sweep COMMAND ${CMAKE_COMMAND}
+    add_test(NAME eyebrows_uvs_run_along_the_hair COMMAND ${CMAKE_COMMAND}
              -DOBJ=${CMAKE_SOURCE_DIR}/data/eyebrows/eyebrows.obj -DMIN_V_SPAN=0.9
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_has_uvs.cmake)
+
+    # THE BROW IS HAIRS NOW, not a swept ridge, and this is the claim that
+    # separates them. A ridge is ONE arc: every card here is one hair, so the
+    # mesh carries hundreds of disjoint ribbons. Counting them catches a
+    # generator that quietly went back to drawing a single tube.
+    add_test(NAME eyebrows_are_many_hairs COMMAND ${CMAKE_COMMAND}
+             -DOBJ=${CMAKE_SOURCE_DIR}/data/eyebrows/eyebrows.obj -DMIN_PIECES=500
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_piece_count.cmake)
     # The same claim for the coiled cards. `make_coils.py` states the contract
     # in its docstring -- `u` across the card, `v` along it -- and a docstring
     # is not a check. A card that lost its `v` sweep would wear the strand
@@ -3929,6 +3957,7 @@ if(MH_HAVE_RENDER)
     # that never got committed is invisible on the machine that made it.
     foreach(_mh_tex_mat
             ${CMAKE_SOURCE_DIR}/data/hair/materials/hair.mhmat
+            ${CMAKE_SOURCE_DIR}/data/hair/materials/hair_tube.mhmat
             ${CMAKE_SOURCE_DIR}/data/eyebrows/materials/eyebrows.mhmat
             ${CMAKE_SOURCE_DIR}/data/eyelashes/materials/eyelashes.mhmat)
         get_filename_component(_mh_tex_name "${_mh_tex_mat}" NAME_WE)
@@ -6438,10 +6467,10 @@ if(MH_HAVE_RENDER)
              --eyebrows eyebrows
              --render ${CMAKE_CURRENT_BINARY_DIR}/app_eyebrows.png)
     set_tests_properties(app_eyebrows_write PROPERTIES
-        # "wearing Eyebrows (308 verts)" is the proxy loading; the comparison
+        # "wearing Eyebrows (7920 verts)" is the proxy loading; the comparison
         # below is what says it DREW. Both, because the first render attempt
         # loaded the proxy fine and produced a byte-identical image.
-        PASS_REGULAR_EXPRESSION "wearing Eyebrows \\(308 verts\\)"
+        PASS_REGULAR_EXPRESSION "wearing Eyebrows \\(7920 verts\\)"
         FAIL_REGULAR_EXPRESSION "texture missing;cannot render"
         SKIP_REGULAR_EXPRESSION "cannot render"
         FIXTURES_SETUP app_eyebrows_png)

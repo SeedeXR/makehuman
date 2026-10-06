@@ -74,7 +74,17 @@ TEST_CASE("the shipped assets index by uuid", "[core][assetindex][golden]") {
     // every style it writes at the existing `materials/hair.mhmat`, so coils
     // adds a proxy and no material. Verified in the shipped .mhclo rather than
     // assumed from the failure message, which only ever says 41 != 40.
-    CHECK(idx.size() == 41);
+    // 41 -> 42 on 2026-10-06: `materials/hair_tube.mhmat`, and it is a
+    // MATERIAL with no proxy, so it moves the count by ONE. The swept styles
+    // need a seven-strand sheet where the shell and the cards want 52: a tube
+    // is six or seven facets around, so the dense sheet lands about eight
+    // strands to a facet and aliases -- rendered, cornrows nearly vanished.
+    // 42 -> 44 on 2026-10-06: `lowcut` and `wisps`, two more coiled styles
+    // from the same engine. TWO steps for two proxies and no materials -- all
+    // four coil styles share `materials/hair.mhmat`. The afro is now one of
+    // them rather than a shell, which changes its geometry entirely and not
+    // this count.
+    CHECK(idx.size() == 44);
     CHECK(idx.duplicateUuids().empty());
 
     // The eye proxy's UUID, as it appears in data/eyes/high-poly/high-poly.mhclo.

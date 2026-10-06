@@ -122,10 +122,18 @@ TEST_CASE("every shipped material parses", "[core][material][golden]") {
     // passes trivially when the loop finds none.
     //
     // 23 -> 24 on 2026-09-24: eyebrows, the first slot material NOT written by
-    // make_helper_proxies -- there is no eyebrow helper cage, so
-    // tools/make_eyebrows.py writes it beside the geometry it belongs to.
+    // make_helper_proxies -- there is no eyebrow helper cage, so the brow's own
+    // generator writes it beside the geometry it belongs to. That generator is
+    // tools/make_eyebrow_hairs.py since 2026-10-06; make_eyebrows.py, which it
+    // replaced, is deleted.
     // Re-baselined, not relaxed.
-    CHECK(ok == 24);
+    // 24 -> 25 on 2026-10-06: `data/hair/materials/hair_tube.mhmat`, a second
+    // hair material for the SWEPT styles. It is not a duplicate of
+    // `hair.mhmat` with a different name: a tube is six or seven facets
+    // around, so the 52-strand sheet the shell and the cards use lands about
+    // eight strands to a facet and aliases into stipple. Rendered, cornrows
+    // nearly vanished and the bantu knots speckled; this one carries seven.
+    CHECK(ok == 25);
 }
 
 TEST_CASE("booleans accept the reference's spellings", "[core][material]") {
