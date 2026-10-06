@@ -10567,14 +10567,35 @@ GPU here, or Colab) and it comes back to the owner first.
       `hair_styles_carry_uvs`. Asset index re-baselined 40 -> 41: ONE step,
       because `write_bound_style` reuses the existing `hair.mhmat`.
 
-- [ ] **`ridge()` SMEARS ITS TEXTURE ACROSS ONE FACET COLUMN.** It emits
-      `u = 0..5/6` with no duplicated seam ring, so the quad joining side 5 to
-      side 0 interpolates `u` the long way. MEASURED: 42 of 252 brow faces
-      (16.7%), cornrows 16.7%, locs 17.6% -- exactly one of six columns. It was
-      harmless while the brow had no texture and is not any more. The fix is the
-      one `write_style` documents: duplicate the seam vertices so each copy
-      carries its own `u`. It changes vertex counts on four assets and their
-      gates, which is why it is its own piece of work.
+- [x] **Every swept style closes its UV seam** (2026-10-06). `ridge`,
+      `loc_tube` and `knot_mesh` each emitted `u = 0..(n-1)/n` and wrapped with
+      a modulo, so the facet joining the last side to the first interpolated u
+      the LONG way and smeared the whole 256 px strand sheet across one column.
+      MEASURED before: brows 42 of 252 (16.7%), cornrows 16.7%, locs 608 of
+      3,448 (17.6%), bantu 60 of 1,008 (6.0%). After: **0.0% on all four.**
+
+      The fix is a duplicated closing vertex per ring -- same position, same
+      binding, u = 1.0 instead of 0.0 -- because a seam needs two coordinates
+      at one place and an .obj vertex carries one. Face counts are UNCHANGED
+      (2112, 3448, 1008, 252); only vertex counts grew: cornrows 2148 -> 2506,
+      locs 3720 -> 4369, bantu 1087 -> 1147, brows 264 -> 308.
+
+      **`the locs do not lie on top of each other` was STRENGTHENED, not
+      relaxed.** It asserted zero coincident vertices, and a seam duplicate IS
+      coincident by construction. It now counts pairs by INDEX GAP: a seam pair
+      is exactly LOC_SIDES apart, anything else is two ropes in one place --
+      the waste the test was written for, still failing. Measured on the
+      shipped asset: 637 pairs, every group size exactly 2, every gap exactly
+      5, no exceptions. Controlled by feeding it the wrong stride: 0 seam
+      pairs, 649 overlapping, both checks red.
+
+      `kSides` in the cornrow test is now `kSides` facets and `kRingStride =
+      kSides + 1`; reading rings at the old stride does not fail where it is
+      wrong, it silently measures the wrong rows.
+
+      **COILS IS NOT AFFECTED and must not be "fixed".** A card's `u` runs 0..1
+      across its width with no wrap, so a closed-tube seam metric flags 100% of
+      its faces as a FALSE POSITIVE.
 
 - [ ] **EYELASHES STILL HAVE NO STRAND ALPHA, and their UVs are why.** The mesh
       carries 250 of them and they are a BODY-ATLAS sliver inherited from the

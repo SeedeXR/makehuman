@@ -190,12 +190,40 @@ TEST_CASE("the locs do not lie on top of each other", "[asset][hair][locs]") {
         order[i] = i;
     const auto key = [&pts](size_t i) { return std::tuple{pts[i].x, pts[i].y, pts[i].z}; };
     std::sort(order.begin(), order.end(), [&key](size_t a, size_t b) { return key(a) < key(b); });
-    size_t coincident = 0;
+    // EVERY COINCIDENCE MUST BE A SEAM PAIR, which is a stronger statement than
+    // the plain "none at all" this made until 2026-10-06 -- and it had to
+    // change, because `loc_tube` now closes each ring with a duplicate of its
+    // first vertex. A tube has to: a seam needs two texture coordinates at one
+    // place, one ending at u = 1 and one starting at u = 0, and an .obj vertex
+    // carries exactly one. Without it the wrapping facet interpolated u the
+    // long way and smeared the whole strand sheet across it -- 608 of 3,448
+    // loc faces, 17.6%.
+    //
+    // So the pairs are counted by their INDEX GAP instead. `loc_tube` emits a
+    // ring as LOC_SIDES + 1 consecutive vertices, so a seam pair is exactly
+    // LOC_SIDES apart; anything else coinciding is two ropes in the same place,
+    // which is the waste this test was written for and which still fails.
+    // MEASURED on the shipped asset: 637 coincident pairs, every group of size
+    // exactly 2, and every gap exactly 5 -- no exceptions to sweep under.
+    constexpr size_t kLocSides = 5;
+    size_t seamPairs = 0;
+    size_t overlapping = 0;
     for (size_t i = 1; i < order.size(); ++i) {
-        if (key(order[i]) == key(order[i - 1])) ++coincident;
+        if (key(order[i]) != key(order[i - 1])) continue;
+        const size_t a = std::min(order[i], order[i - 1]);
+        const size_t b = std::max(order[i], order[i - 1]);
+        if (b - a == kLocSides) {
+            ++seamPairs;
+        } else {
+            ++overlapping;
+        }
     }
-    INFO("coincident vertices: " << coincident << " of " << pts.size());
-    CHECK(coincident == 0);
+    INFO("coincident: " << seamPairs << " seam pairs, " << overlapping
+                        << " overlapping, of " << pts.size() << " vertices");
+    CHECK(overlapping == 0);
+    // ...and the seams are really there, so a future change that drops the
+    // closing vertex cannot pass this by making the whole question disappear.
+    CHECK(seamPairs > 0);
 }
 
 TEST_CASE("every loc binding is inside its triangle", "[asset][hair][locs]") {

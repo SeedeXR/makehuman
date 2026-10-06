@@ -739,7 +739,22 @@ def ridge(path, stand=0.13, half=0.06, sides=6):
         sl = math.sqrt(sum(c * c for c in side)) or 1.0
         side = [c / sl for c in side]
         ring = []
-        for k in range(sides):
+        # `sides + 1` VERTICES PER RING, the last one a duplicate of the first.
+        #
+        # The ring closes, so the quad joining the last facet back to the first
+        # used to run from u = (sides-1)/sides straight to u = 0 -- the long way
+        # round -- and a texture sampled across it is the whole 256 px strand
+        # sheet squeezed and reversed into one facet column. MEASURED: 42 of
+        # 252 brow faces (16.7%, exactly one of six columns), cornrows 16.7%,
+        # locs 17.6%. It was harmless while these styles had no texture, and
+        # stopped being harmless the moment the brow wore one.
+        #
+        # A seam needs TWO coordinates at the same place -- one ending at 1.0
+        # and one starting at 0.0 -- which no single vertex can carry, because
+        # an .obj vertex has one `vt`. So the seam vertex is duplicated: same
+        # position, same binding, different u. `write_style` documents the same
+        # fix for the afro's unwrap; this is the sweep's version of it.
+        for k in range(sides + 1):
             a = 2.0 * math.pi * k / sides
             r = [p[j] + outward[j] * (stand * (0.55 + 0.45 * math.cos(a)))
                  + side[j] * (half * math.sin(a)) for j in range(3)]
@@ -757,8 +772,11 @@ def ridge(path, stand=0.13, half=0.06, sides=6):
     faces = []
     for i in range(len(rings) - 1):
         for k in range(sides):
-            a, b = rings[i][k], rings[i][(k + 1) % sides]
-            c, d = rings[i + 1][(k + 1) % sides], rings[i + 1][k]
+            # No modulo any more: the ring carries its own closing vertex, so
+            # the last facet reads `k + 1` like every other one. The modulo was
+            # the seam.
+            a, b = rings[i][k], rings[i][k + 1]
+            c, d = rings[i + 1][k + 1], rings[i + 1][k]
             faces.append([a, b, c, d])
     return out, faces, uvs
 
@@ -820,7 +838,17 @@ def knot_mesh(root, axis, base):
         radius = BANTU_RADIUS * math.sqrt(max(0.0, 1.0 - t * t))
         rise = BANTU_HEIGHT * t - BANTU_SINK
         twist = 0.45 * t
-        for seg in range(BANTU_SEGMENTS):
+        # BANTU_SEGMENTS + 1, the last a duplicate of the first: the seam fix
+        # `ridge` and `loc_tube` carry. The ring closes, so without a second
+        # coordinate at the same place the wrapping facet interpolates u from
+        # (n-1)/n back to 0 the long way and smears the strand sheet across it.
+        # Measured at 60 of 1,008 bantu faces, 6.0% -- lower than the sweeps
+        # only because a knot has more rings than it has facets around.
+        #
+        # EVERY INDEX BELOW STRIDES BY BANTU_SEGMENTS + 1 as a result, including
+        # the tip. Getting one of those wrong does not fail loudly; it stitches
+        # the knot to the wrong row.
+        for seg in range(BANTU_SEGMENTS + 1):
             a = 2.0 * math.pi * seg / BANTU_SEGMENTS + twist
             pts.append(tuple(root[i] + u[i] * radius * math.cos(a)
                              + v[i] * radius * math.sin(a) + axis[i] * rise
@@ -831,17 +859,17 @@ def knot_mesh(root, axis, base):
     pts.append(tuple(root[i] + axis[i] * BANTU_HEIGHT for i in range(3)))
     uvs.append((0.5, 1.0))
 
+    stride = BANTU_SEGMENTS + 1
     for ring in range(BANTU_RINGS - 1):
         for seg in range(BANTU_SEGMENTS):
-            nxt = (seg + 1) % BANTU_SEGMENTS
-            faces.append([base + ring * BANTU_SEGMENTS + seg,
-                          base + ring * BANTU_SEGMENTS + nxt,
-                          base + (ring + 1) * BANTU_SEGMENTS + nxt,
-                          base + (ring + 1) * BANTU_SEGMENTS + seg])
-    tip = base + BANTU_RINGS * BANTU_SEGMENTS
-    last = base + (BANTU_RINGS - 1) * BANTU_SEGMENTS
+            faces.append([base + ring * stride + seg,
+                          base + ring * stride + seg + 1,
+                          base + (ring + 1) * stride + seg + 1,
+                          base + (ring + 1) * stride + seg])
+    tip = base + BANTU_RINGS * stride
+    last = base + (BANTU_RINGS - 1) * stride
     for seg in range(BANTU_SEGMENTS):
-        faces.append([last + seg, last + (seg + 1) % BANTU_SEGMENTS, tip])
+        faces.append([last + seg, last + seg + 1, tip])
     return pts, faces, uvs
 
 
@@ -1135,7 +1163,12 @@ def loc_tube(path, base):
         sl = math.sqrt(sum(c * c for c in side)) or 1.0
         side = [c / sl for c in side]
         ring = []
-        for j in range(LOC_SIDES):
+        # `LOC_SIDES + 1`, the last a duplicate of the first: the same seam fix
+        # `ridge` carries, for the same reason. Without it the facet joining the
+        # last side back to the first interpolates u the long way and smears the
+        # whole strand sheet across it -- measured at 608 of 3,448 loc faces,
+        # 17.6%.
+        for j in range(LOC_SIDES + 1):
             ang = 2.0 * math.pi * j / LOC_SIDES
             ring.append(base + len(pts))
             pts.append(tuple(p[m] + out[m] * (LOC_HALF * math.cos(ang))
@@ -1148,8 +1181,8 @@ def loc_tube(path, base):
     faces = []
     for i in range(len(rings) - 1):
         for j in range(LOC_SIDES):
-            faces.append([rings[i][j], rings[i][(j + 1) % LOC_SIDES],
-                          rings[i + 1][(j + 1) % LOC_SIDES], rings[i + 1][j]])
+            faces.append([rings[i][j], rings[i][j + 1],
+                          rings[i + 1][j + 1], rings[i + 1][j]])
     return pts, faces, uvs
 
 

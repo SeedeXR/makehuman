@@ -51,6 +51,13 @@ namespace {
 
 /// The sweep's cross-section, `tools/make_hair_styles.py` `ridge(sides=...)`.
 constexpr size_t kSides = 6;
+// The ring STRIDE is one more than the number of facets, because `ridge` closes
+// each ring with a duplicate of its first vertex so the seam can carry u = 1
+// alongside u = 0. Six facets, seven vertices. Reading the mesh with a stride of
+// six after that change walks each successive ring one vertex further out of
+// step, which does not fail where it is wrong -- it silently measures the wrong
+// rows.
+constexpr size_t kRingStride = kSides + 1;
 
 /// Rows are concatenated, so a row boundary shows as a jump between
 /// consecutive ring centroids. MEASURED: within a row the gap is ~0.13 dm;
@@ -99,14 +106,14 @@ Fitted loadCornrows() {
     Fitted out{*proxy, {}, {}, {}};
     REQUIRE(fitProxy(*proxy, base->coord(), out.points));
     REQUIRE(out.points.size() == proxy->vertexCount());
-    REQUIRE(out.points.size() % kSides == 0);
+    REQUIRE(out.points.size() % kRingStride == 0);
     // Not redundant with the above, which 0 satisfies: a stripped or empty
     // .mhclo would otherwise leave `rings` empty, and the next test reads
     // `rings[end - 1]` with `end - 1 == SIZE_MAX`. An out-of-bounds read is not
     // a failing gate.
     REQUIRE(out.points.size() > 1000);
 
-    for (size_t i = 0; i < out.points.size(); i += kSides) {
+    for (size_t i = 0; i < out.points.size(); i += kRingStride) {
         Vec3 c{0.0F, 0.0F, 0.0F};
         for (size_t k = 0; k < kSides; ++k) {
             c.x += out.points[i + k].x;

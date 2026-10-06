@@ -2227,7 +2227,7 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_cornrows_worn COMMAND makehuman
              --hair cornrows --export ${CMAKE_CURRENT_BINARY_DIR}/hair/cornrows.obj)
     set_tests_properties(app_cornrows_worn PROPERTIES
-        PASS_REGULAR_EXPRESSION "wearing Cornrows \\(2148 verts\\) lit by skinmat_hair"
+        PASS_REGULAR_EXPRESSION "wearing Cornrows \\(2506 verts\\) lit by skinmat_hair"
         FAIL_REGULAR_EXPRESSION "export failed;cannot"
         FIXTURES_SETUP app_cornrows_worn)
     add_test(NAME app_cornrows_differ_from_afro COMMAND ${CMAKE_COMMAND}
@@ -3859,7 +3859,7 @@ if(MH_HAVE_RENDER)
     # magnitude below the 61.4 mm the scalp binding produced.
     add_test(NAME eyebrows_bound_to_the_face COMMAND ${CMAKE_COMMAND}
              -DMHCLO=${CMAKE_SOURCE_DIR}/data/eyebrows/eyebrows.mhclo
-             -DEXPECT=264 -DBAR=0.050
+             -DEXPECT=308 -DBAR=0.050
              -P ${CMAKE_CURRENT_SOURCE_DIR}/check_eyebrow_binding.cmake)
 
     # THE BROW CAN CARRY A STRAND ALPHA, which is a claim about the shipped mesh
@@ -6403,10 +6403,10 @@ if(MH_HAVE_RENDER)
              --eyebrows eyebrows
              --render ${CMAKE_CURRENT_BINARY_DIR}/app_eyebrows.png)
     set_tests_properties(app_eyebrows_write PROPERTIES
-        # "wearing Eyebrows (264 verts)" is the proxy loading; the comparison
+        # "wearing Eyebrows (308 verts)" is the proxy loading; the comparison
         # below is what says it DREW. Both, because the first render attempt
         # loaded the proxy fine and produced a byte-identical image.
-        PASS_REGULAR_EXPRESSION "wearing Eyebrows \\(264 verts\\)"
+        PASS_REGULAR_EXPRESSION "wearing Eyebrows \\(308 verts\\)"
         FAIL_REGULAR_EXPRESSION "texture missing;cannot render"
         SKIP_REGULAR_EXPRESSION "cannot render"
         FIXTURES_SETUP app_eyebrows_png)
