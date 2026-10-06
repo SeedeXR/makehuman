@@ -10536,17 +10536,36 @@ GPU here, or Colab) and it comes back to the owner first.
       Both controlled: the first fails on the real stale brow, the second on the
       eyelash mesh.
 
-- [ ] **THE CURLY-CUE COILED HAIR IS NOT STARTED.** Phase locking, period
-      skipping and switchbacks are all still to do; the afro is a shell wearing
-      a texture, not generated coiled geometry. The paper's method is
-      implementable from the published description -- Catmull-Rom strands
-      (3.1.1), a low-pass DFT for the guide centreline (3.2), phases that
-      converge from uncorrelated at the scalp to shared outward, and
-      switchbacks as a chirality reversal. **`hair_research/curlyCueCode/switchback_licensed`
-      IS GPL-3.0-or-later and must not be read or ported**; the sibling
-      `curlyCueGuidesToFull` is MIT. Decide where the maths lives first: AGPL
-      `core` or Apache `foundation`, because that choice is not reversible
-      cheaply.
+- [x] **Curly-Cue coiled hair ships as `coils`, the fifth style** (2026-10-06).
+      `tools/coiled_hair.py` (AGPL, owner's call) implements phase locking,
+      switchbacks with their amplitude pinch, and the loosely-guided root
+      region, WRITTEN FROM THE PAPER -- the authors' `switchbackGen.cpp` is
+      GPL-3.0 and was not read. Recorded in `LICENSING.md` §3.6.
+      `tools/make_coils.py` grows 420 clumps over 110 guides into hair CARDS:
+      6,300 faces, between cornrows (2,112) and locs (3,448).
+
+      **FOUR BUGS, each found by measuring and none by reasoning:**
+      * The Hermite parameter was divided by `loose` TWICE, driving it to
+        1/loose. A 0.61 dm span reached **11.24 dm** and the head rendered as
+        spikes. Pinned at 1.5x the chord (correct 0.87..0.91, bug 2.4..12).
+      * **The guide count IS the coverage.** Past the lock a strand's
+        centreline IS its guide's, so 14 guides put 420 strands on 14
+        centrelines -- a dozen tufts over bare scalp. 110 gives ~4 hairs a wisp.
+      * `cross(tangent, outward)` collapses at the CROWN, where hair grows
+        along outward. The crown went bald.
+      * **`across` was never sign-stabilised**, so a coiled tangent swinging
+        through `outward` flipped it and the quad became a bowtie:
+        **1,407 of 6,300 ribbon sides, 22.3%**, only 131 of them the crown
+        fallback. Caught by `/code-review`, not by me, and the maths self-test
+        was GREEN throughout -- which is why `coils_asset_is_generated` now
+        exists beside it.
+
+      Gated: `coiled_hair_geometry` (mutation-controlled three ways),
+      `coils_asset_is_generated` (controlled by perturbing the asset),
+      `app_coils_worn` (a broken proxy renders BALD, not red),
+      `coils_carries_uvs`, `coils_uvs_run_along_the_card`,
+      `hair_styles_carry_uvs`. Asset index re-baselined 40 -> 41: ONE step,
+      because `write_bound_style` reuses the existing `hair.mhmat`.
 
 - [ ] **`ridge()` SMEARS ITS TEXTURE ACROSS ONE FACET COLUMN.** It emits
       `u = 0..5/6` with no duplicated seam ring, so the quad joining side 5 to

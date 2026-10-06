@@ -4,6 +4,50 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-10-06 (later) — Session · **Coiled hair, and the review caught a fifth of it**
+
+`coils` ships: Curly-Cue's methods from the PAPER (the authors' switchback code
+is GPL-3.0 and was not read -- `LICENSING.md` §3.6), AGPL as the owner asked,
+420 clumps over 110 guides drawn as cards, 6,300 faces.
+
+### Four bugs, all found by measuring
+The Hermite parameter divided by `loose` twice (0.61 dm span reaching 11.24 dm,
+rendering as spikes). The guide count being the COVERAGE, not a quality knob --
+14 guides meant 420 strands on 14 centrelines and a dozen tufts over bare
+scalp. `cross(tangent, outward)` collapsing at the crown, where hair grows
+along outward, so the crown went bald. And sampling scalp VERTICES capping
+density at 237.
+
+### The one I did not find
+`/code-review` did: `across` was recomputed per sample and never
+sign-stabilised, so a coiled tangent swinging through `outward` flipped it and
+the ribbon quad became a bowtie -- **1,407 of 6,300, 22.3%**, of which only 131
+were the crown fallback. One line fixed it; flips went to 0 and the render
+visibly filled out.
+
+**THE MATHS SELF-TEST WAS GREEN THE WHOLE TIME.** It tests pure functions, and
+nothing ran the generator that makes the asset -- the identical shape of the
+`make_eyebrows.py` failure from earlier the same day. `make_coils.py --check`
+and `app_coils_worn` now exist for exactly that, the first controlled by
+perturbing the shipped asset, the second because a broken proxy renders BALD
+rather than erroring.
+
+Also from the review: `chirality_at` returned from inside its loop and dropped
+a second switchback landing within the first's blend window (22 of 420 strands
+ended on the wrong handedness while still carrying a pinch); the overshoot
+self-check used `int` where the function uses `round` and so skipped the
+furthest Hermite sample; `--app` worked only in the `=` form and silently fell
+back to the debug tree; and the asset's banner named a generator that does not
+touch it.
+
+### A test premise I had wrong
+I first asserted two hairs coalesce at t=0.25. It failed CORRECTLY: that is
+inside the loosely-guided region where hairs are MEANT to be out of phase, and
+that disorder is the spongy scalp layer the paper insists on. The property is
+that locking undoes it, sampled past the lock.
+
+---
+
 ## 2026-10-06 — Session · **The hair UVs never pointed along the hair**
 
 Owner asked for naturalistic hair, brows and lashes, grounded in the Curly-Cue

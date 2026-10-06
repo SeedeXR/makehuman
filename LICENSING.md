@@ -41,7 +41,7 @@ proprietary closed fork of it.
 | Bundled assets (base mesh, targets, proxies, materials, poses, rigs, UVs, litspheres) | **CC0-1.0** | `LICENSE.md` §C; `LICENSE.ASSETS.md`; per-file headers, e.g. `data/3dobjs/base.obj:3-4`, `data/targets/asym/asym-eye-6-l.target:3-4` |
 | UI images, icons, themes, GLSL shaders **written by the MakeHuman team** | **AGPL-3.0** | `LICENSE.md` §B explicitly includes "glsl shaders" and UI images; per-file headers, e.g. `data/shaders/glsl/litsphere_fragment_shader.txt:16` (`**Licensing:** AGPL3`) |
 | `data/shaders/glsl/xray_{vertex,fragment}_shader.txt` | **GPL-2.0-or-later** (MeshLab, © 2005, 2009 Visual Computing Lab, ISTI-CNR) | `data/shaders/glsl/xray_fragment_shader.txt:5-19` — see §3.4 |
-| `data/teeth/*`, `data/tongue/*`, `data/hair/*`, `data/clothes/*` (generated) | **CC0-1.0**, inherited | `tools/make_helper_proxies.py` derives each proxy's geometry from `data/3dobjs/base.obj`'s own `helper-*` groups, and `tools/make_hair_styles.py` derives `data/hair/afro.*`, `data/hair/cornrows.*` and `data/hair/bantu_knots.*` from that same file's `body` group and each matcap from `data/litspheres/skinmat_caucasian.png`. Both sources are CC0-1.0 bundled assets (row above), so the derivatives are too. Nothing here is authored from an outside asset, and nothing is MetaHuman-derived. |
+| `data/teeth/*`, `data/tongue/*`, `data/hair/*`, `data/clothes/*` (generated) | **CC0-1.0**, inherited | `tools/make_helper_proxies.py` derives each proxy's geometry from `data/3dobjs/base.obj`'s own `helper-*` groups, and `tools/make_hair_styles.py` derives `data/hair/afro.*`, `data/hair/cornrows.*`, `data/hair/bantu_knots.*` and `data/hair/locs.*` from that same file's `body` group, and `tools/make_coils.py` derives `data/hair/coils.*` from the same group's hair-bearing region (see §3.6 for where the coils' SHAPE comes from, which is a separate question from where their geometry does) and each matcap from `data/litspheres/skinmat_caucasian.png`. Both sources are CC0-1.0 bundled assets (row above), so the derivatives are too. Nothing here is authored from an outside asset, and nothing is MetaHuman-derived. |
 | `data/targets/faceunits/*` (52 files) | **CC0-1.0**, third party | The "Faceunits 01" pack from the MakeHuman community asset repository (`https://files.makehumancommunity.org/functional/faceunits01.zip`), contributed by **Mika Suominen**. NOT generated here, unlike the row above — these are somebody else's work, bundled. Every one of the 52 entries in the pack's own `packs/faceunits01.json` declares `"license": "CC0"` and `"type": "target"`; the site's asset-pack index lists Faceunits 01 under the CC0 functional packs. **The zip carries no LICENSE file**, so the CC0 evidence is that per-entry metadata plus the index. That metadata is therefore VENDORED VERBATIM at `data/targets/faceunits/PROVENANCE.json`, together with the zip's SHA-256 (`d113107bd7eb59f3af4df6fc0ec29bfcc593f496d0b336aec14f086a80ce7146`) and the date it was retrieved — because every other row here cites evidence a reader can OPEN, and a URL is not that. The `.target` files carry no header of their own, unlike the CC0 targets MakeHuman ships. They are ARKit blendshape names (`jawOpen`, `cheekPuff`, `eyeLookDownLeft`), which is the reason to have them. `tools/make_faceunits.py` derives their modifier and slider declarations from the files on disk and `--check` fails if the two drift. |
 | Output of the application | **Unencumbered** — project claims nothing | `LICENSE.md` §D |
 | `legacy/python/plugins/9_export_fbx/{encode_bin,data_types,fbx_utils_bin,fbx_binary}.py` | **GPL-2.0-or-later** (Blender 2.79, © Campbell Barton, Bastien Montagne) | `legacy/python/licenses/pyFbx-license.txt:1-20`; `legacy/python/plugins/9_export_fbx/encode_bin.py:21-23` |
@@ -145,6 +145,33 @@ direction.
 **Nothing is linked and nothing is a dependency**, so §5 has no row to gain.
 This section exists because "where did 30 rows of Action Units come from" is a
 provenance question, and this is the file the project answers those from.
+
+### 3.6 Curly-Cue is a method taken from a paper, not code taken from a repository
+
+`tools/coiled_hair.py` implements phase locking, switchbacks and the
+loosely-guided root region described in Wu, Shi, Darke and Kim, **"Curly-Cue:
+Geometric Methods for Highly Coiled Hair"**, SIGGRAPH Asia 2024
+(doi `10.1145/3680528.3687641`). It is AGPL-3.0-or-later like the rest of the
+application, which is the owner's decision of 2026-10-06 and which does not
+restrict selling the product — see §1.
+
+**The authors also publish code, and it was deliberately not read.**
+`switchbackGen.cpp` in their switchback generator is **GPL-3.0-or-later**
+(Copyright 2024 Haomiao Wu). Their sibling `curlyCueGuidesToFull` is MIT. Both
+were present on the machine while this was written, under a gitignored
+`hair_research/` directory, and neither was copied or consulted for its
+implementation.
+
+That distinction is the same one §3.5 draws for FACS, and it is load-bearing
+rather than decorative. An algorithm is not copyrightable; the expression of it
+is. Implementing from a published description is clean provenance. Reading
+someone's GPL source and then writing it "differently" is precisely the act
+that makes a derivative work arguable, so the published description is what was
+used — and had the GPL code been read, GPL-3.0 could never have entered the
+Apache-2.0 modules (§4) at all, whatever the AGPL side permits.
+
+Nothing from either repository is vendored, linked, or redistributed, and
+`hair_research/` is not tracked.
 
 ## 4. The Apache-2.0 clean-room boundary
 

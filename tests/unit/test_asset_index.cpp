@@ -68,7 +68,13 @@ TEST_CASE("the shipped assets index by uuid", "[core][assetindex][golden]") {
     // one-step bump here would have been the wrong number for the right
     // reason, so it was checked against both halves of the sum above rather
     // than read off the failure message.
-    CHECK(idx.size() == 40);
+    // 40 -> 41 on 2026-10-06: COILS, the fifth hair style and the first whose
+    // geometry is coiled strands rather than a shell or a sweep. ONE step, not
+    // two, and that is the half worth checking: `write_bound_style` points
+    // every style it writes at the existing `materials/hair.mhmat`, so coils
+    // adds a proxy and no material. Verified in the shipped .mhclo rather than
+    // assumed from the failure message, which only ever says 41 != 40.
+    CHECK(idx.size() == 41);
     CHECK(idx.duplicateUuids().empty());
 
     // The eye proxy's UUID, as it appears in data/eyes/high-poly/high-poly.mhclo.

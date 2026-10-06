@@ -2135,6 +2135,18 @@ if(MH_HAVE_RENDER)
     # The afro. `--hair afro` must actually WEAR it: a vertex referenced by no
     # face makes loadObj reject the proxy and the character renders BALD rather
     # than erroring (ObjReader.cpp:235-243), which no count check would catch.
+    # COILS MUST ACTUALLY WEAR. `app_afro_worn` exists because a vertex
+    # referenced by no face makes loadObj reject the proxy and the character
+    # renders BALD rather than erroring (ObjReader.cpp:235-243) -- no count
+    # check catches that. Coils ships 13,440 vertices and 6,300 faces and
+    # nothing was loading it; `test_asset_index.cpp` going 40 -> 41 proves only
+    # that the .mhclo is INDEXED.
+    add_test(NAME app_coils_worn COMMAND makehuman
+             --hair coils --export ${CMAKE_CURRENT_BINARY_DIR}/hair/coils.obj)
+    set_tests_properties(app_coils_worn PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Coils \\(13440 verts\\) lit by skinmat_hair"
+        FAIL_REGULAR_EXPRESSION "export failed;cannot")
+
     add_test(NAME app_afro_worn COMMAND makehuman
              --hair afro --export ${CMAKE_CURRENT_BINARY_DIR}/hair/afro.obj)
     set_tests_properties(app_afro_worn PROPERTIES
@@ -2168,6 +2180,39 @@ if(MH_HAVE_RENDER)
         add_test(NAME hair_assets_are_generated
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_SOURCE_DIR}/tools/make_hair_styles.py --check
+                         --app $<TARGET_FILE:makehuman>)
+
+        # THE COILED-HAIR GEOMETRY, checked as maths rather than as an asset.
+        # `tools/coiled_hair.py` implements the methods of Curly-Cue (SIGGRAPH
+        # Asia 2024) from the paper, and its properties are known by
+        # construction: a straight input stays straight, frames stay
+        # orthonormal, a hair carries its own phase at the root and the clump's
+        # once locked, a switchback reverses handedness and pinches the coil to
+        # a neck, and the loosely-guided region does not overshoot its chord.
+        #
+        # THAT LAST ONE IS NOT DECORATION. The Hermite parameter was divided by
+        # `loose` twice, driving it to 1/loose -- up to 4 -- so a cubic was
+        # evaluated far outside its interval. MEASURED: a strand whose root sat
+        # 0.61 dm from its guide reached 11.24 dm, and a head of them rendered
+        # as spikes several head-radii long. The check is bounded at 1.5x the
+        # chord, where correct code sits at 0.87..0.91 and the bug at 2.4..12.
+        #
+        # Run as a test rather than trusted: `make_eyebrows.py` sat BROKEN at
+        # head for want of exactly this, and nothing noticed because a
+        # generator nobody runs fails silently.
+        add_test(NAME coiled_hair_geometry
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_SOURCE_DIR}/tools/coiled_hair.py --selftest)
+
+        # AND THE GENERATOR, not only the maths it calls. `coiled_hair.py
+        # --selftest` tests pure functions and was GREEN while the shipped
+        # cards were self-intersecting bowties -- 1,407 of 6,300 ribbon sides
+        # flipped -- because nothing ran `make_coils.py`. That is the
+        # `make_eyebrows.py` failure exactly: a generator nobody runs fails
+        # silently and its asset quietly stops moving.
+        add_test(NAME coils_asset_is_generated
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_SOURCE_DIR}/tools/make_coils.py --check
                          --app $<TARGET_FILE:makehuman>)
 
     endif()
@@ -3831,7 +3876,8 @@ if(MH_HAVE_RENDER)
             ${CMAKE_SOURCE_DIR}/data/hair/afro.obj
             ${CMAKE_SOURCE_DIR}/data/hair/cornrows.obj
             ${CMAKE_SOURCE_DIR}/data/hair/locs.obj
-            ${CMAKE_SOURCE_DIR}/data/hair/bantu_knots.obj)
+            ${CMAKE_SOURCE_DIR}/data/hair/bantu_knots.obj
+            ${CMAKE_SOURCE_DIR}/data/hair/coils.obj)
         get_filename_component(_mh_uv_name "${_mh_uv_obj}" NAME_WE)
         add_test(NAME ${_mh_uv_name}_carries_uvs COMMAND ${CMAKE_COMMAND}
                  -DOBJ=${_mh_uv_obj}
@@ -3847,6 +3893,13 @@ if(MH_HAVE_RENDER)
     # `brow_strands.png` mean anything.
     add_test(NAME eyebrows_uvs_run_along_the_sweep COMMAND ${CMAKE_COMMAND}
              -DOBJ=${CMAKE_SOURCE_DIR}/data/eyebrows/eyebrows.obj -DMIN_V_SPAN=0.9
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_has_uvs.cmake)
+    # The same claim for the coiled cards. `make_coils.py` states the contract
+    # in its docstring -- `u` across the card, `v` along it -- and a docstring
+    # is not a check. A card that lost its `v` sweep would wear the strand
+    # texture sideways, which is the afro's original bug in a new place.
+    add_test(NAME coils_uvs_run_along_the_card COMMAND ${CMAKE_COMMAND}
+             -DOBJ=${CMAKE_SOURCE_DIR}/data/hair/coils.obj -DMIN_V_SPAN=0.9
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_has_uvs.cmake)
 
     add_test(NAME app_bind_points_missing_file COMMAND makehuman --bind-points /nope/nope.txt)
@@ -6567,7 +6620,7 @@ if(MH_HAVE_RENDER)
     # texture turns each tube into ribbons that run the way hair grows. Both
     # halves had to exist: UVs on the geometry, and a texture with alpha.
     add_test(NAME hair_styles_carry_uvs COMMAND ${CMAKE_COMMAND}
-             "-DOBJS=${CMAKE_SOURCE_DIR}/data/hair/afro.obj;${CMAKE_SOURCE_DIR}/data/hair/locs.obj;${CMAKE_SOURCE_DIR}/data/hair/cornrows.obj;${CMAKE_SOURCE_DIR}/data/hair/bantu_knots.obj"
+             "-DOBJS=${CMAKE_SOURCE_DIR}/data/hair/afro.obj;${CMAKE_SOURCE_DIR}/data/hair/locs.obj;${CMAKE_SOURCE_DIR}/data/hair/cornrows.obj;${CMAKE_SOURCE_DIR}/data/hair/bantu_knots.obj;${CMAKE_SOURCE_DIR}/data/hair/coils.obj"
              -P ${CMAKE_CURRENT_SOURCE_DIR}/check_hair_uvs.cmake)
     # The material must actually ASK for the texture and declare the alpha.
     # The eye material records why the flag matters: "without the flag the
