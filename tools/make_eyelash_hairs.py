@@ -38,24 +38,26 @@ BASE = ROOT / "data" / "3dobjs" / "base.obj"
 
 CAGES = (
     # group, upper?, hairs a side
-    ("helper-l-eyelashes-2", True, 150),
-    ("helper-r-eyelashes-2", True, 150),
+    ("helper-l-eyelashes-2", True, 120),
+    ("helper-r-eyelashes-2", True, 120),
     ("helper-l-eyelashes-1", False, 65),
     ("helper-r-eyelashes-1", False, 65),
 )
 
-# A real upper lid carries 90-160 lashes and a lower 70-80, so 150 and 65 are
-# inside the anatomy rather than chosen to look right at one framing -- 150 is
-# at the top of the upper range because a sparse lash line reads as gaps, the
-# same way the brow did. 430 hairs a face at 6 segments is 2,580 quads, against
-# the brow pair's 4,600.
+# A real upper lid carries 90-160 lashes and a lower 70-80, so 120 and 65 are
+# inside the anatomy rather than chosen to look right at one framing.
+#
+# 120 and not 150: at the top of the range, with cards 0.9 mm wide over a 32 mm
+# lid, the upper band overlapped about fourfold and read as a drawn LINE rather
+# than as lashes -- strong eyeliner, not hair. Coverage is the product of count
+# and width and both were high; this lowers one and `HALF_WIDTH` the other.
 SEGMENTS = 6
 
-# Half the width of one lash card, in dm. A lash is 0.1 mm across and this is
-# 0.9 mm, for the reason the brow records: a ribbon seen near edge-on shows a
-# fraction of its width and the alpha sheet eats the rest. Lashes are coarser
-# than brow hairs, which is why this is wider than the brow's 0.0052.
-HALF_WIDTH = 0.0045
+# 0.0036, down from 0.0045. A lash is 0.1 mm across and this is 0.7 mm, for the
+# reason the brow records: a ribbon seen near edge-on shows a fraction of its
+# width and the alpha sheet eats the rest. Narrower now that the band no longer
+# has to carry the density on its own.
+HALF_WIDTH = 0.0036
 
 # How far the tip curls away from the straight line the cage gives, as a
 # fraction of the lash's length. Upper lashes curl up and out; lower ones are

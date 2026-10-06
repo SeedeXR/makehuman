@@ -2321,13 +2321,13 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_dreadlocks_worn COMMAND makehuman
              --hair dreadlocks --export ${CMAKE_CURRENT_BINARY_DIR}/hair/dreadlocks.obj)
     set_tests_properties(app_dreadlocks_worn PROPERTIES
-        PASS_REGULAR_EXPRESSION "wearing Dreadlocks \\(80022 verts\\) lit by skinmat_hair"
+        PASS_REGULAR_EXPRESSION "wearing Dreadlocks \\(81022 verts\\) lit by skinmat_hair"
         FAIL_REGULAR_EXPRESSION "export failed;cannot"
         FIXTURES_SETUP app_dreadlocks_worn)
     add_test(NAME app_locs_worn COMMAND makehuman
              --hair locs --export ${CMAKE_CURRENT_BINARY_DIR}/hair/locs.obj)
     set_tests_properties(app_locs_worn PROPERTIES
-        PASS_REGULAR_EXPRESSION "wearing Locs \\(83470 verts\\) lit by skinmat_hair"
+        PASS_REGULAR_EXPRESSION "wearing Locs \\(85022 verts\\) lit by skinmat_hair"
         FAIL_REGULAR_EXPRESSION "export failed;cannot"
         FIXTURES_SETUP app_locs_worn)
     add_test(NAME app_bantu_knots_worn COMMAND makehuman
@@ -2598,7 +2598,7 @@ if(MH_HAVE_RENDER)
              --eyelashes eyelashes
              --export ${CMAKE_CURRENT_BINARY_DIR}/eyelashes/worn.obj)
     set_tests_properties(app_eyelashes_worn PROPERTIES
-        PASS_REGULAR_EXPRESSION "wearing Eyelashes \\(6020 verts\\) lit by skinmat_eyelashes"
+        PASS_REGULAR_EXPRESSION "wearing Eyelashes \\(5180 verts\\) lit by skinmat_eyelashes"
         FAIL_REGULAR_EXPRESSION "export failed;cannot"
         FIXTURES_SETUP app_eyelashes_worn)
 
@@ -2625,11 +2625,10 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_eyelashes_follow_the_lid COMMAND ${CMAKE_COMMAND}
              -DA=${CMAKE_CURRENT_BINARY_DIR}/eyelashes/worn.obj
              -DB=${CMAKE_CURRENT_BINARY_DIR}/eyelashes/closed.obj
-             # MEASURED WITH THE TOLERANCE APPLIED: 4,354, not the 4,527 a
-             # bit-exact compare reports. The difference is 173 vertices the
-             # lid shifts by a single unit of the written decimal, which is
-             # the same quantisation the jaw case tolerates.
-             -DGROUP=eyelashes -DEXPECT_MOVED=4354 -DEXPECT_STILL=1666
+             # MEASURED WITH THE TOLERANCE APPLIED, on the thinned lash band:
+             # 3,524 of 5,180. The lid signal stays three orders above the
+             # quantisation the jaw case tolerates.
+             -DGROUP=eyelashes -DEXPECT_MOVED=3524 -DEXPECT_STILL=1656
              -DMOVE_TOLERANCE=1
              -DRISE_TOLERANCE=ANY
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
@@ -2649,8 +2648,8 @@ if(MH_HAVE_RENDER)
              # ONE UNIT of the written decimal, 10 micrometres. The lashes
              # bind barycentrically now, so "did not move" cannot be exact
              # equality -- see `obj_group_moved.cmake`. MEASURED, a jaw drop
-             # shifts 379 of these by at most 0.00014 dm; the lid moves 4,527.
-             -DGROUP=eyelashes -DEXPECT_MOVED=0 -DEXPECT_STILL=6020
+             # shifts 379 of these by at most 0.00014 dm; the lid moves 3,524.
+             -DGROUP=eyelashes -DEXPECT_MOVED=0 -DEXPECT_STILL=5180
              -DMOVE_TOLERANCE=1
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
     set_tests_properties(app_eyelashes_ignore_the_jaw PROPERTIES

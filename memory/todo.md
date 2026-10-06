@@ -24,16 +24,50 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
       the cut applied to each sampled root so the edge does not follow mesh
       edges).
 
-### Open, and worth doing next
-- [ ] **The upper lash band reads heavy** — closer to a strong lash line than a
-      soft one. Thin it by lowering the count or the card width; the generator
-      makes this a one-constant change.
-- [ ] **Rope flyaways.** Locs and dreadlocks are clean tubes with a perfect
-      silhouette. Real ones shed stray hairs. This is the remaining gap between
-      ours and `references/sample-locks`.
-- [ ] **Hair animation / simulation** was asked for and is untouched. The long
-      hair binds rigidly to the cranium (bind box floored at y 7.60 so a jaw
-      drop leaves it alone), so it does not swing.
+### Closed 2026-10-07
+- [x] **The upper lash band no longer reads as eyeliner.** 150 -> 120 a side and
+      `HALF_WIDTH` 0.0045 -> 0.0036. Coverage is the PRODUCT of count and width
+      and both were at the top of their range; at 0.9 mm over a 32 mm lid the
+      band overlapped about fourfold and read as a drawn line.
+- [x] **Rope flyaways.** 125 strays on the dreadlocks, 0..4 a rope (0 is in the
+      list, so some ropes are clean), leaving the tube at an acute angle and
+      tapering out. 0.7 mm wide, NOT 1.2: they wear the rope's SOLID sheet --
+      one material for the asset -- so a wide one reads as a flat chip rather
+      than fibre.
+      - Their first version put 544 coincident vertex pairs in the asset.
+        `tangent x (0,1,0)` collapses for a rope hanging straight down, and the
+        `or 1.0` guard divided safely while leaving a ZERO vector, so the card
+        had no width and its two ribbon vertices landed on one point. Caught by
+        `the locs do not lie on top of each other`. Same degeneracy class as the
+        crown guard in `make_coils.card`.
+
+- [!] **HAIR CANNOT BE ANIMATED BY BINDING. This is architectural, measured, and
+      worth not rediscovering.**
+
+      The theory was good: `VertexWeights::proxyWeights` gives a proxy the skin
+      weights of the body vertices it binds to, so grading the binding down the
+      fall -- roots to the scalp, the hanging part to the torso -- should buy
+      secondary motion for free. It was implemented, and it bought nothing.
+
+      `Proxy.cpp:435` is why: `P = SUM w_k H[v_k] + M d`, where `M` is
+      `tmatrix.diagonal` -- a per-axis SCALE. **The offset from the bound
+      triangle is scaled and never ROTATED.** A proxy vertex therefore cannot
+      turn relative to the body however it is bound, so hair that hangs away
+      from the surface translates with it and keeps its orientation.
+
+      MEASURED on the banded version: root-to-tip distances changed by 0.0002 dm
+      of a 5.535 dm span under a T-pose. That is 0.0%, and a rigid shell is
+      0.0%. The bands were removed again rather than left as complexity that
+      earns nothing.
+
+      **What hair that swings actually needs**, in rough order of cost:
+      1. A bone chain per rope or per card group, skinned so the fall is driven
+         by its own bones rather than by the head. 96 locs means a chain each,
+         which is far past any Mixamo bone budget -- so this wants its own
+         optional hair rig, not an extension of `mixamo_superset`.
+      2. Export those bones (FBX/glTF already carry a skeleton), so the swing is
+         authored or simulated in Blender/Maya/Unreal rather than in-app.
+      3. In-app simulation only after that, and only if anyone wants it.
 - [ ] **25-34% of the loc scalp is still further than one rope-diameter from a
       rope.** MEASURED: rope count has diminishing returns here (80 -> 96 moved
       it 40% -> 34%) because the ropes comb BACK and converge on the rim. What

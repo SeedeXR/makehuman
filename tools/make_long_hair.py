@@ -96,6 +96,21 @@ MATERIAL = "materials/hair_card.mhmat"
 # 7.60 is the first floor at which a jaw drop leaves the hair alone, which is
 # the property the suite pins and which the identity-bound cage had for free.
 REGION = "-0.80,0.80,7.60,8.55,-0.45,1.50"
+# BINDING CANNOT ANIMATE HAIR, and this is where that was established rather
+# than assumed. The fall was bound in bands for a while -- roots to the scalp,
+# the back of the fall to the torso -- on the theory that a proxy inherits the
+# weights of what it binds to (`VertexWeights::proxyWeights`), so grading the
+# binding would buy secondary motion for free.
+#
+# It bought nothing, and `Proxy.cpp:435` says why: `P = SUM w_k H[v_k] + M d`,
+# where `M` is `tmatrix.diagonal` -- a per-axis SCALE. The offset from the
+# bound triangle is scaled and never ROTATED, so a proxy vertex cannot turn
+# relative to the body no matter what it binds to. MEASURED on the banded
+# version: root-to-tip distances changed by 0.0002 dm of a 5.535 dm span under
+# a T-pose, which is 0.0%. A rigid shell is 0.0%.
+#
+# So the bands came out again. Hair that swings needs BONES in the hair, or a
+# simulation; see `memory/todo.md`.
 # Half-width of the corridor in front of the cranium centre that hair may not
 # occupy. 0.55 dm clears the cheeks, so hair falls against the side of the head
 # rather than across the eyes.

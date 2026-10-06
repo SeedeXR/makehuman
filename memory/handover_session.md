@@ -4,6 +4,45 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-10-07 (morning) — Session · **The three open hair items, and one of them was a dead end worth keeping**
+
+Pushed `755414d4`, then worked the three items `todo.md` listed.
+
+**The lash band** read as eyeliner because coverage is the PRODUCT of count and
+width and both sat at the top of their range. 150 -> 120 a side, half-width
+0.0045 -> 0.0036. It reads as separate hairs now.
+
+**Flyaways** are in: 125 strays on the dreadlocks, 0..4 a rope with 0 in the
+list so some ropes stay clean. They wear the rope's SOLID sheet -- one material
+per asset -- so they are 0.7 mm wide, not 1.2: a wide opaque ribbon reads as a
+flat chip, not fibre.
+
+Their first version shipped **544 coincident vertex pairs**. `tangent x (0,1,0)`
+collapses for a rope hanging straight down, and my `or 1.0` guard divided safely
+while leaving a ZERO vector -- so the card had no width and its two ribbon
+vertices landed on one point. `the locs do not lie on top of each other` caught
+it. Same degeneracy class as the crown guard in `make_coils.card`, which I had
+already written once and did not transfer.
+
+### The one that matters: hair cannot be animated by binding
+
+I implemented graded binding -- roots to the scalp, the hanging part to the
+torso -- on the sound theory that `VertexWeights::proxyWeights` gives a proxy
+the weights of what it binds to. It bought NOTHING, and `Proxy.cpp:435` says
+why: `P = SUM w_k H[v_k] + M d` with `M = tmatrix.diagonal`, a per-axis SCALE.
+**The offset is scaled and never rotated**, so a proxy vertex cannot turn
+relative to the body however it is bound.
+
+MEASURED: root-to-tip distances changed 0.0002 dm of a 5.535 dm span under a
+T-pose -- 0.0%, and a rigid shell is 0.0%. I took the bands out again rather
+than leave complexity that earns nothing, and wrote the finding into the code
+and `todo.md` so nobody re-derives it. Hair that swings needs BONES in the
+hair, in its own optional rig -- 96 locs is far past any Mixamo bone budget.
+
+Both configs **1670/1670**.
+
+---
+
 ## 2026-10-07 (early hours) — Session · **Every shell in the tree became hair**
 
 Four assets were still SHEETS with a strand texture painted on. All four are

@@ -30,6 +30,7 @@ binding to base vertex b. Rest space is right: fitting runs before skinning
 import argparse
 import collections
 import math
+import random
 import sys
 import uuid
 from pathlib import Path
@@ -891,6 +892,17 @@ PILE = 1.6
 # half-width of the widest rope here, so the ring cannot show through where the
 # skull curves away.
 ROOT_SINK = 0.04
+# STRAY HAIRS. How many escape each rope, how many segments each is drawn with,
+# and half its width in dm. A loc sheds a handful, not a halo: 0 is in the list
+# so some ropes are clean, which is what stops the fuzz looking stamped on.
+FLYAWAY_COUNT = (0, 1, 2, 2, 3, 4)
+FLYAWAY_SEGMENTS = 3
+# 0.0035, not 0.006. These wear the rope's SOLID sheet -- the whole asset
+# carries one material -- so a stray is an opaque ribbon, not an alpha-cut
+# hair. At 1.2 mm across they read as flat chips crossing the dreads; at 0.7 mm
+# they read as fibre, which is the only thing this width has to achieve.
+FLYAWAY_HALF = 0.0035
+SEED_FLYAWAY = 20261007
 # Half-width of the zone in front of the cranium centre that counts as the
 # face. 0.55 dm, wider than the 0.5 the regression tests, so the margin lives
 # in the asset rather than only in the assertion.
@@ -1262,6 +1274,80 @@ def skull_radius(grid, direction, length):
     return grid[el * make_coils.AZ_BINS + min(make_coils.AZ_BINS - 1, az)]
 
 
+def flyaways(path, spec, base, rng):
+    """Stray hairs escaping a rope, as thin tapered cards.
+
+    WHY A ROPE NEEDS THEM. A loc is matted hair, not extruded cord, and the
+    thing that says so at a glance is the fuzz: hairs that worked loose and
+    stand off the bundle. Without them the silhouette is perfect, and a perfect
+    silhouette is what made these read as plastic in the first place -- the
+    lumpy radius fixed the SURFACE and left the outline machine-cut.
+
+    Each stray leaves the tube at a point along it, tilts away from the
+    tangent, and tapers to nothing. They are short: a hair that has escaped a
+    loc has escaped it by a centimetre or two, not by its own length.
+    """
+    pts, quads, uvs = [], [], []
+    inner = range(2, max(3, len(path) - 2))
+    for _ in range(rng.choice(FLYAWAY_COUNT)):
+        i = rng.choice(list(inner)) if len(inner) else 1
+        here = path[i]
+        nxt = path[min(i + 1, len(path) - 1)]
+        tangent = [nxt[k] - here[k] for k in range(3)]
+        tl = math.sqrt(sum(c * c for c in tangent)) or 1.0
+        tangent = [c / tl for c in tangent]
+        # Out of the rope, in a random direction about its axis.
+        # THE REFERENCE AXIS MUST NOT BE PARALLEL TO THE ROPE. A hanging loc
+        # runs straight down, so `tangent x (0,1,0)` collapses -- and `or 1.0`
+        # guards the division while leaving a ZERO vector, which makes a card of
+        # zero width whose two ribbon vertices land on the same point. MEASURED:
+        # 544 coincident adjacent pairs, which `the locs do not lie on top of
+        # each other` caught; every other shipped .obj has exactly zero.
+        up = (0.0, 1.0, 0.0)
+        if abs(tangent[1]) > 0.9:
+            up = (0.0, 0.0, 1.0)
+        side = [tangent[1] * up[2] - tangent[2] * up[1],
+                tangent[2] * up[0] - tangent[0] * up[2],
+                tangent[0] * up[1] - tangent[1] * up[0]]
+        sl = math.sqrt(sum(c * c for c in side))
+        if sl < 1e-6:
+            side, sl = [1.0, 0.0, 0.0], 1.0
+        side = [c / sl for c in side]
+        other = [tangent[1] * side[2] - tangent[2] * side[1],
+                 tangent[2] * side[0] - tangent[0] * side[2],
+                 tangent[0] * side[1] - tangent[1] * side[0]]
+        a = rng.uniform(0.0, 2.0 * math.pi)
+        out = [side[k] * math.cos(a) + other[k] * math.sin(a) for k in range(3)]
+        # Leaving at an acute angle, not perpendicular: a hair pulls out of the
+        # twist, it does not sprout at right angles to it.
+        lean = rng.uniform(0.35, 0.75)
+        grow = [out[k] + tangent[k] * lean for k in range(3)]
+        gl = math.sqrt(sum(c * c for c in grow)) or 1.0
+        grow = [c / gl for c in grow]
+        length = spec.half * rng.uniform(1.4, 3.0)
+        start = [here[k] + out[k] * spec.half * 0.7 for k in range(3)]
+        n = FLYAWAY_SEGMENTS
+        ring = []
+        for j in range(n + 1):
+            t = j / n
+            # A slight droop, so a stray curls rather than standing straight.
+            q = [start[k] + grow[k] * length * t for k in range(3)]
+            q[1] -= 0.25 * length * t * t
+            ring.append(q)
+        for j, q in enumerate(ring):
+            t = j / n
+            w = FLYAWAY_HALF * (1.0 - 0.9 * t)
+            pts.append(tuple(q[k] - side[k] * w for k in range(3)))
+            pts.append(tuple(q[k] + side[k] * w for k in range(3)))
+            uvs.append((0.0, t))
+            uvs.append((1.0, t))
+        off = base + len(pts) - 2 * (n + 1)
+        for j in range(n):
+            a0, b0 = off + 2 * j, off + 2 * j + 1
+            quads.append([a0, b0, b0 + 2, a0 + 2])
+    return pts, quads, uvs
+
+
 def locs(verts, body_faces, app_path, spec):
     """Ropes combed back over the scalp, then hanging down the back."""
     app = app_binary(app_path)
@@ -1446,6 +1532,13 @@ def locs(verts, body_faces, app_path, spec):
         allpts.extend(pts)
         allfaces.extend(fs)
         alluvs.extend(uv)
+        # ...and the hairs that escaped it. Seeded off the root index so the
+        # asset stays reproducible for the staleness gate.
+        fpts, fquads, fuvs = flyaways(path, spec, len(allpts),
+                                      random.Random(SEED_FLYAWAY + index))
+        allpts.extend(fpts)
+        allfaces.extend(fquads)
+        alluvs.extend(fuvs)
     return allpts, allfaces, roots, app, shortest, cap_binds, len(cap_binds), alluvs
 
 
