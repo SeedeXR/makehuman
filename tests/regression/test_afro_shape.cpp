@@ -30,9 +30,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
-#include <algorithm>
 #include <vector>
 
 using namespace mh::core;
@@ -127,8 +127,8 @@ TEST_CASE("the afro grows out of the head, never into it", "[asset][hair][afro]"
             deepest = std::max(deepest, bestR - r);
         }
     }
-    INFO("vertices inside the skull: " << inside << " of " << fitted.size()
-                                       << ", deepest " << deepest << " dm");
+    INFO("vertices inside the skull: " << inside << " of " << fitted.size() << ", deepest "
+                                       << deepest << " dm");
     // THE BAR IS 3%, AND THE NUMBER BEHIND IT IS WORTH STATING because it is
     // not zero and the reason is not fully pinned down.
     //

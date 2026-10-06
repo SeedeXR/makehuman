@@ -2902,6 +2902,36 @@ std::string lowerExtension(const std::filesystem::path& path) {
     return ext;
 }
 
+// HOISTED to file scope 2026-10-06 so `--framing` and the MCP `render` tool
+// read the SAME numbers. They were local to the MCP block, and a second copy
+// for the CLI is exactly the duplication this file already deleted once when
+// `kAxisViews` and `kMcpViews` drifted apart.
+// Named framings for a render. THE NUMBERS ARE MEASURED, not chosen, and the
+// first guess was backwards: `panY` POSITIVE pans DOWN the body, so a sweep
+// of +6 to +8 returned nine pictures of shins. It is a pan in EYE space and
+// tracks the screen rather than the model.
+//
+// `distance` is in mesh units against a figure about 17 dm tall; 0 keeps
+// the Camera's own default, which is what `full` wants and is why it is not
+// written here as 45 -- a copy of that default would have to be kept in
+// step with `render::Camera`.
+//
+// `head` is 9 and not 8 because the margin was MEASURED rather than eyed:
+// in a 320-pixel render the crown sits 5 px from the top edge at distance
+// 8, 23 px at 9 and 38 px at 10. 8 clips on a taller skull.
+//
+// These exist because the body fit works from OUTLINES and cannot see a
+// nose, so facial detail is set by eye -- and the eye was being given a
+// 512-pixel full-body render in which a face is about forty pixels across.
+struct McpFraming {
+    std::string_view name;
+    float distance;
+    float panY;
+};
+
+constexpr std::array<McpFraming, 3> kFramings{
+    {{"full", 0.0F, 0.0F}, {"head", 9.0F, -6.5F}, {"torso", 16.0F, -5.0F}}};
+
 // `formatCarriesRig` stood here until 2026-10-05. It listed the formats whose
 // consumers were MEASURED to deform a live rig correctly -- .glb and .usda both
 // evaluating to 1.6863 m against our own baked 16.8628 dm, and .fbx joining them
@@ -3553,6 +3583,27 @@ int main(int argc, char** argv) {
         QStringLiteral("Point the camera down an axis before drawing: front, back, left, "
                        "right, top or bottom -- the same six the View menu offers."),
         QStringLiteral("name"));
+    // HD RENDERS. `--render` was fixed at 1024 square, which puts a head at
+    // roughly 200 pixels and a brow at a dozen -- fine for "is the hair there",
+    // useless for judging whether it looks like hair. `RenderRequest` has
+    // carried `width`/`height` all along; only the CLI could not say so.
+    //
+    // SQUARE, one number. The viewport's aspect is the window's business and a
+    // production render has no window; a rectangle here would be two more
+    // numbers to get wrong for no gain anyone has asked for.
+    // WHICH FRAMING, reusing the table the MCP `render` tool measured rather
+    // than a second copy of the numbers. Resolution alone does not give a
+    // close-up: at 4096 square the whole brow is 166 pixels wide, because the
+    // default camera frames a 17 dm figure and a head is a small part of it.
+    const QCommandLineOption framingOpt(
+        QStringLiteral("framing"),
+        QStringLiteral("What --render frames: full (default), torso or head."),
+        QStringLiteral("name"), QStringLiteral("full"));
+    const QCommandLineOption renderSizeOpt(
+        QStringLiteral("render-size"),
+        QStringLiteral("Pixels on a side for --render. Default 1024; a close-up "
+                       "wants 2048 or more."),
+        QStringLiteral("pixels"), QStringLiteral("1024"));
     const QCommandLineOption renderOpt(
         QStringLiteral("render"),
         QStringLiteral("Production render to this PNG and exit. Needs a GPU but NO window, "
@@ -3846,6 +3897,8 @@ int main(int argc, char** argv) {
     parser.addOption(printParametersOpt);
     parser.addOption(setOpt);
     parser.addOption(renderOpt);
+    parser.addOption(renderSizeOpt);
+    parser.addOption(framingOpt);
     parser.addOption(backgroundOpt);
     parser.addOption(backgroundSideOpt);
     parser.addOption(backgroundOpacityOpt);
@@ -7474,15 +7527,40 @@ int main(int argc, char** argv) {
             const AxisView* axis = findAxisView(parser.value(viewOpt));
             yaw                  = axis == nullptr ? 0.0F : axis->yaw;
         }
-        // The CLI's own defaults, unchanged: 1024 square, and whatever
-        // --transparent and --shading said.
+        // The CLI's own defaults, unchanged apart from --render-size: 1024
+        // square, and whatever --transparent and --shading said.
+        bool sizeOk          = false;
+        const int renderSize = parser.value(renderSizeOpt).toInt(&sizeOk);
+        // REFUSED rather than clamped. A typo that silently renders at 1024
+        // when 4096 was asked for wastes the run and says nothing; and a
+        // negative or enormous value is an allocation, not a picture.
+        if (!sizeOk || renderSize < 64 || renderSize > 8192) {
+            std::fprintf(stderr, "--render-size wants 64..8192 pixels, not %s\n",
+                         parser.value(renderSizeOpt).toStdString().c_str());
+            return 1;
+        }
+        const std::string framingName = parser.value(framingOpt).toStdString();
+        const auto framing            = std::ranges::find_if(
+            kFramings, [&](const McpFraming& f) { return f.name == framingName; });
+        // NAMED, so a typo is an error rather than a silent full-body render
+        // that wastes the run and says nothing about why.
+        if (framing == kFramings.end()) {
+            std::string have;
+            for (const auto& f : kFramings)
+                have += (have.empty() ? "" : ", ") + std::string(f.name);
+            std::fprintf(stderr, "unknown --framing %s; have %s\n", framingName.c_str(),
+                         have.c_str());
+            return 1;
+        }
         const mh::ui::RenderRequest req{
-            .width       = 1024,
-            .height      = 1024,
+            .width       = renderSize,
+            .height      = renderSize,
             .transparent = parser.isSet(transparentOpt) || parser.isSet(backgroundOpt),
             .shading     = shading,
             .wireframe   = parser.isSet(wireframeOpt),
             .yawDegrees  = yaw,
+            .distance    = framing->distance,
+            .panY        = framing->panY,
             .lighting    = lighting};
         if (const std::string err = renderTo(parser.value(renderOpt).toStdString(), req);
             !err.empty()) {
@@ -7511,31 +7589,7 @@ int main(int argc, char** argv) {
     // Fitting renders smaller. An outline does not need 512 px and the search
     // pays for every probe: at 256 a pass over the default parameters against
     // four views is a few seconds rather than half a minute.
-    // Named framings for `render`. THE NUMBERS ARE MEASURED, not chosen, and the
-    // first guess was backwards: `panY` POSITIVE pans DOWN the body, so a sweep
-    // of +6 to +8 returned nine pictures of shins. It is a pan in EYE space and
-    // tracks the screen rather than the model.
-    //
-    // `distance` is in mesh units against a figure about 17 dm tall; 0 keeps
-    // the Camera's own default, which is what `full` wants and is why it is not
-    // written here as 45 -- a copy of that default would have to be kept in
-    // step with `render::Camera`.
-    //
-    // `head` is 9 and not 8 because the margin was MEASURED rather than eyed:
-    // in a 320-pixel render the crown sits 5 px from the top edge at distance
-    // 8, 23 px at 9 and 38 px at 10. 8 clips on a taller skull.
-    //
-    // These exist because the body fit works from OUTLINES and cannot see a
-    // nose, so facial detail is set by eye -- and the eye was being given a
-    // 512-pixel full-body render in which a face is about forty pixels across.
-    struct McpFraming {
-        std::string_view name;
-        float distance;
-        float panY;
-    };
-
-    static constexpr std::array<McpFraming, 3> kFramings{
-        {{"full", 0.0F, 0.0F}, {"head", 9.0F, -6.5F}, {"torso", 16.0F, -5.0F}}};
+    // The framings live at file scope now; see `kFramings`.
 
     constexpr int kMcpFitHeight = 256;
 

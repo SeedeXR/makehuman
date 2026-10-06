@@ -43,6 +43,9 @@
 #
 # A and B must be exports of the same character with the same topology.
 
+if(NOT DEFINED MOVE_TOLERANCE)
+    set(MOVE_TOLERANCE 0)
+endif()
 if(NOT DEFINED RISE_TOLERANCE)
     set(RISE_TOLERANCE 0)
 endif()
@@ -112,7 +115,32 @@ foreach(i IN LISTS indices)
     fixed_point("${CMAKE_MATCH_1}" xb)
     fixed_point("${CMAKE_MATCH_2}" yb)
     fixed_point("${CMAKE_MATCH_3}" zb)
-    if(xa EQUAL xb AND ya EQUAL yb AND za EQUAL zb)
+    # MOVE_TOLERANCE, in the same 1e-4 units, and it defaults to ZERO so every
+    # existing caller keeps an exact comparison.
+    #
+    # It exists for a BARYCENTRICALLY bound proxy. A proxy that binds by
+    # identity -- each vertex naming its own base vertex at weight (1, 0, 0) --
+    # reproduces positions bit for bit, so "did not move" really is equality.
+    # One that binds to a triangle recomputes them, and the writer emits four
+    # decimals, so the last digit can differ by one while nothing moved.
+    # MEASURED on the eyelashes after they became grown hairs: a jaw drop
+    # "moved" 379 of 6,020 vertices by at most 0.00014 dm -- 1.4 micrometres,
+    # one unit of the written decimal. The lid signal on the same asset is 4,527
+    # vertices, so a tolerance of one unit cannot hide anything anatomical.
+    math(EXPR dx "${xa} - ${xb}")
+    math(EXPR dy "${ya} - ${yb}")
+    math(EXPR dz "${za} - ${zb}")
+    if(dx LESS 0)
+        math(EXPR dx "0 - ${dx}")
+    endif()
+    if(dy LESS 0)
+        math(EXPR dy "0 - ${dy}")
+    endif()
+    if(dz LESS 0)
+        math(EXPR dz "0 - ${dz}")
+    endif()
+    if(dx LESS_EQUAL MOVE_TOLERANCE AND dy LESS_EQUAL MOVE_TOLERANCE
+       AND dz LESS_EQUAL MOVE_TOLERANCE)
         math(EXPR still "${still} + 1")
     else()
         math(EXPR moved "${moved} + 1")

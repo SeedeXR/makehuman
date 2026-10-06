@@ -52,9 +52,26 @@ OUT = ROOT / "data" / "hair"
 # 150 clumps rendered as separate wisps with scalp showing between them, and
 # 420 still left a bald crown and a gap at the back. A coiled head is a MASS;
 # the count has to cover the scalp before anything else about it reads.
-# 900 x 15 quads is 13,500 faces -- four times locs, and the price of a style
-# whose geometry IS the hair rather than a painted shell.
-SEGMENTS = 15
+# 900 x 36 quads is 32,400 faces -- ten times locs, and the price of a style
+# whose geometry IS the hair rather than a painted shell. It was 15 quads a
+# clump until the close-up showed what five samples a turn draws.
+# SAMPLES PER TURN of the helix, and this is the number that decides whether a
+# coil reads as a curl or as a zigzag. A card can only draw the polygon its
+# samples describe: at `n` samples a turn the ribbon is an n-gon, and the facet
+# it shows is `radius * (1 - cos(pi/n))` deep.
+#
+# This file used to carry a FIXED 15 segments and a comment claiming it
+# "resolves about three turns before the ribbon starts to alias into a zigzag".
+# RENDERED at head framing, three turns on fifteen segments IS the zigzag. The
+# shipped afro measured 5.0 samples per turn, a mean kink of 85 degrees between
+# consecutive segments and a worst of 137 -- not hair, a mass of bent wire.
+# The error was treating the segment count as a budget to be spent once, when
+# it is a SAMPLING RATE and the thing being sampled is `turns`.
+#
+# 12 puts the facet at 1 - cos(15 deg) = 3.4% of the coil radius: 0.4 mm on the
+# afro's 11.5 mm coil, below what the render resolves. At the old 5 it was 19%,
+# or 2.2 mm, which is what the eye was picking up.
+SAMPLES_PER_TURN = 12
 # A clump of coiled hair is a few millimetres across. 0.055 dm is 5.5 mm, which
 # at 150 clumps covers the scalp without the cards visibly overlapping.
 # How far the hair stands off the head, in dm. The afro's shell is 0.78 at the
@@ -84,6 +101,10 @@ GUIDE_CHOICES = 3
 # limitation this project already records.
 TAPER_FROM = 0.55
 
+# A card is two columns wide in `u`; the scalp's 52-strand sheet aliases across
+# it into a grid. See `materials/hair_card.mhmat`.
+CARD_MATERIAL = "materials/hair_card.mhmat"
+
 SEED = 20261006
 
 
@@ -97,7 +118,7 @@ class Style:
     """
 
     def __init__(self, stem, name, clumps, guides, length, turns, radius,
-                 half_width, droop, segments=SEGMENTS, uuid_override=""):
+                 half_width, droop, segments=0, uuid_override="", edge=None):
         self.stem = stem
         self.name = name
         self.clumps = clumps
@@ -107,7 +128,12 @@ class Style:
         self.radius = radius
         self.half_width = half_width
         self.droop = droop
-        self.segments = segments
+        # An optional cut applied to each sampled root: see `lineup_edge`.
+        self.edge = edge
+        # DERIVED from `turns`, because the segment count is the rate at which
+        # the helix is sampled and nothing else. A style is free to override it,
+        # but no style should have to know the sampling rule.
+        self.segments = segments or int(math.ceil(turns * SAMPLES_PER_TURN))
         # Only the afro has one: it existed before this generator and .mhm files
         # already name it. See `write_bound_style`.
         self.uuid_override = uuid_override
@@ -118,11 +144,58 @@ class Style:
 # without gaps, which rendering 150, 420 and 900 in turn is how the number was
 # found -- 420 still left a bald crown and a hole in the back.
 #
-# `turns` is bounded by the card, not by the hair. A ribbon cannot draw a coil
-# finer than its own segments, and 15 segments resolves about three turns
-# before the cards alias into a zigzag; at six they self-intersect into noise.
-# A LOW CUT gets more turns for its length because its coils are shorter, so
-# each one spans fewer segments.
+# `turns` is now FREE of the card. It used to be bounded by a fixed segment
+# count -- the comment here claimed fifteen segments carried three turns, and
+# the render showed three turns on fifteen segments aliasing into a zigzag at
+# 85 degrees a joint. The segment count is derived from `turns` instead
+# (`SAMPLES_PER_TURN`), so a style picks the hair it wants and pays for it in
+# vertices rather than in facets.
+# THE ROPE STYLES' SKULLCAP, grown rather than shelled. Locs and dreadlocks are
+# worn on a head OF HAIR and 41 ropes cannot cover a scalp 1.5 dm wide, so
+# something has to fill between them. That something used to be an offset copy
+# of the scalp with the strand sheet painted on, and it showed: a staircase
+# boundary along the mesh edges over the ear, a planar UV projection smearing
+# the sheet into vertical bands, and scalp colour coming through between them.
+#
+# This is a `lowcut` that stops even shorter. It is NOT exported as an asset of
+# its own -- `make_hair_styles` grows it and merges it into each rope style.
+# WIDE CARDS, and the width is doing the work rather than the count. MEASURED:
+# at half_width 0.042 the bed already covered the scalp -- worst gap 0.058 dm,
+# no bare spot anywhere -- and the scalp still read bright orange through it.
+# Coverage is not occlusion. The gap metric asks how far a scalp point is from
+# the nearest hair VERTEX; what the camera sees is how much solid angle the
+# ribbons actually block, and a thin ribbon seen near edge-on blocks almost
+# none. Widening 0.042 -> 0.075 is 79% more ribbon for exactly the same vertex
+# count, where raising the clump count to 2000 would have cost 30,000 vertices
+# to move the gap metric from 0.058 to 0.046 -- an improvement in the number
+# that was never the problem.
+# THE SHAPE-UP, which is what makes a clean cut clean. A barber squares the
+# hairline off: a straight horizontal line across the forehead and a sharp
+# corner where it meets the natural line at the temple. Everything behind the
+# temple is left alone, because that is what a line-up actually is -- the front
+# edge is cut, the rest of the head is not.
+#
+# MEASURED against the mesh rather than chosen: the natural front hairline sits
+# at y 7.939 (`hairline(0) = +12 degrees of elevation`), so a line at 7.93 sits
+# level with where the hair already starts instead of shaving the forehead
+# higher or dragging it down over the brow at 7.47.
+LINEUP_Y = 7.93
+# How far round the head the straight cut runs before handing back to the
+# natural hairline. 72 degrees reaches the temple and stops.
+LINEUP_AZIM = 72.0
+
+
+def lineup_edge(pos):
+    """True where a lined-up cut keeps hair: a straight front, natural behind."""
+    elev, azim = H.spherical(pos)
+    if abs(azim) <= LINEUP_AZIM:
+        return pos[1] >= LINEUP_Y
+    return elev >= H.hairline(azim)
+
+
+CAP_BED = Style("ropecap", "Rope cap", clumps=1400, guides=360, length=0.17,
+                turns=2.0, radius=0.026, half_width=0.075, droop=0.02)
+
 STYLES = (
     Style("coils", "Coils", clumps=900, guides=230, length=0.72, turns=3.0,
           radius=0.085, half_width=0.055, droop=0.30),
@@ -148,10 +221,29 @@ STYLES = (
     # is what makes a curl read as one object.
     Style("wisps", "Wisps", clumps=700, guides=90, length=1.15, turns=2.4,
           radius=0.140, half_width=0.075, droop=0.55),
+    # A CLEAN CUT: a short afro squared off at the front. The hair is a dense,
+    # even, low pile -- what reads is the EDGE, not the volume, so this leans on
+    # `lineup_edge` for the shape and keeps the coils tight and short enough
+    # that the surface stays flat instead of breaking into separate curls.
+    #
+    # The clump count is what it is BEFORE the cut: `lineup_edge` rejects every
+    # root in front of the line, so the style keeps roughly the share of the
+    # scalp that survives it. Asking for 2,600 is how ~2,000 land.
+    # `segments` is overridden rather than derived, and this is the one style
+    # where that is right. The derived rule (`SAMPLES_PER_TURN`) sizes the
+    # sampling to the CURL, which is correct when the curl is what you see --
+    # the afro's coils are 11.5 mm across and its facets showed. These are 4 mm
+    # and the hair is 26 mm long, so a coil covers a few pixels at head framing
+    # and no one can resolve its facets. Derived, it cost 152,460 vertices for a
+    # style whose whole point is a flat even pile; 16 brings it in line with the
+    # afro at 88,000 and changes nothing anybody can see.
+    Style("cleancut", "Clean cut", clumps=2600, guides=520, length=0.26,
+          turns=2.4, radius=0.040, half_width=0.062, droop=0.05,
+          segments=16, edge=lineup_edge),
 )
 
 
-def scalp_roots(verts, faces, count, rng):
+def scalp_roots(verts, faces, count, rng, edge=None):
     """Root positions spread over the hair-bearing scalp.
 
     SAMPLED ON THE SURFACE, not picked from the vertices, and the vertex
@@ -209,9 +301,19 @@ def scalp_roots(verts, faces, count, rng):
             r1, r2 = rng.random(), rng.random()
             sq = math.sqrt(r1)
             w0, w1, w2 = 1.0 - sq, sq * (1.0 - r2), sq * r2
-            roots.append((a[0] * w0 + b[0] * w1 + c[0] * w2,
-                          a[1] * w0 + b[1] * w1 + c[1] * w2,
-                          a[2] * w0 + b[2] * w1 + c[2] * w2))
+            q = (a[0] * w0 + b[0] * w1 + c[0] * w2,
+                 a[1] * w0 + b[1] * w1 + c[1] * w2,
+                 a[2] * w0 + b[2] * w1 + c[2] * w2)
+            # THE CUT IS APPLIED TO THE SAMPLED POINT, not to the region's
+            # vertices, and that is the whole reason a barber's line reads as
+            # one. Clipping the vertex region would make the edge follow mesh
+            # edges, which is a staircase at the mesh's own resolution -- the
+            # exact fault the rope styles' shell cap had along the temple. A
+            # point test puts the edge wherever the line says, as sharp as the
+            # root density allows.
+            if edge is not None and not edge(q):
+                continue
+            roots.append(q)
     if not roots:
         raise SystemExit("the hair-bearing region produced no roots")
     return roots
@@ -236,7 +338,35 @@ def guide_curve(root, droop, rng, length, segments):
     Four control points, which is the minimum `guided_centreline` accepts and
     enough for the single bend that hair makes -- out, over, down.
     """
-    d = outward(root)
+    # HAIR DOES NOT GROW PERPENDICULAR TO THE SCALP. It leaves the follicle at
+    # an acute angle, sweeping up and back over the skin, and at a hairline that
+    # is the whole reason the forehead is covered at all.
+    #
+    # Growing it radially left a MEASURED bare band. Counting hair vertices in
+    # front of each scalp point from the front camera, the strip at elevation
+    # +0..+15 -- the one just above the hairline -- averaged 10.6 with a minimum
+    # of ZERO, against 34..103 everywhere else on the same face. Radial growth
+    # there points the strand straight at the viewer, so a card is edge-on and
+    # occludes nothing, and no hair from above falls across it.
+    #
+    # `TILT` degrees DOWN the skull fixes it: the strand lies over the scalp
+    # instead of pointing out of it, so the band above the hairline is covered
+    # by the hair rooted in it. See `TILT` for the measurement, and for why the
+    # opposite sign -- which is what the anatomy argument suggested -- is worse.
+    radial = outward(root)
+    # The tangential direction up the skull: `up` with its radial part removed.
+    # A negative `TILT` then leans the strand the other way, down the skull.
+    # Degenerate only at the crown, where `radial` IS up -- and there a tilt has
+    # no meaning, so the strand keeps growing radially.
+    up = (0.0, 1.0, 0.0)
+    dot_up = C.dot(up, radial)
+    tang = C.sub(up, C.scale(radial, dot_up))
+    if C.length(tang) > 1e-3:
+        tang = C.normalise(tang)
+        a = math.radians(TILT)
+        d = C.normalise(C.add(C.scale(radial, math.cos(a)), C.scale(tang, math.sin(a))))
+    else:
+        d = radial
     tip = C.add(root, C.scale(d, length))
     tip = (tip[0], tip[1] - droop, tip[2])
     mid = C.add(root, C.scale(d, length * 0.55))
@@ -247,6 +377,33 @@ def guide_curve(root, droop, rng, length, segments):
         [root, near, C.add(mid, jitter(0.02)), C.add(tip, jitter(0.03))], segments
     )
 
+
+# How far off the surface normal a strand grows, in degrees, and NEGATIVE means
+# down the skull -- away from the crown, the way hair falls.
+#
+# The sign was the whole question and reasoning got it backwards. The argument
+# for tilting UP toward the crown was that hair sweeps up and back from a
+# hairline; measured, that made the bare band WORSE, because it carries each
+# strand's mass away from the strip its own root sits in. Tilting DOWN lays the
+# strand over that strip instead.
+#
+# MEASURED on the afro, hair vertices in front of each front-facing scalp point
+# in the band just above the hairline (elevation +0..+15):
+#
+#     TILT   mean   min
+#     +38     5.8     0     toward the crown -- worse than not tilting
+#       0    10.6     0     radial: the bare patch
+#     -25    54.8    15
+#     -38    58.5    39
+#     -50    63.8    39
+#
+# -38 and -50 both score higher than this, and both were REJECTED BY THE
+# RENDER rather than by the number: at 38 degrees the front curls hang over the
+# eyebrows and onto the face, which no afro does. -25 closes the bare patch --
+# the minimum goes from nothing to 15, the mean from 10.6 to 54.8 -- and keeps
+# the hairline where a hairline belongs. The occlusion count was the right
+# instrument for finding the fault and the wrong one for choosing the value.
+TILT = -25.0
 
 AZ_BINS, EL_BINS = 64, 32
 # Below this the mesh is jaw, neck and shoulder rather than skull. Measured on
@@ -288,7 +445,34 @@ def skull_radii(verts, faces):
     return grid
 
 
-def push_outside(points, grid, clearance=0.012):
+# How many samples at the root are drawn inside the head, and how deep the
+# first one goes. 0.035 dm is 3.5 mm -- more than the half-width of any card
+# this generator makes, so the open edge cannot peek back through the scalp on
+# a curved part of the skull.
+# How far a buried point has to sit outside the skull before this pass stops
+# moving it. One caller, one setting.
+CLEARANCE = 0.012
+ROOT_BURY = 2
+ROOT_DEPTH = 0.035
+
+
+def bury_root(points):
+    """Pull the first samples inside the skull, so the strand emerges from it.
+
+    Radially inward about the cranium centre, fading over `ROOT_BURY` samples
+    so the strand leaves the skin smoothly instead of kinking at the surface.
+    """
+    out = list(points)
+    for i in range(min(ROOT_BURY, len(out))):
+        depth = ROOT_DEPTH * (1.0 - i / float(ROOT_BURY))
+        d = C.sub(out[i], H.CENTRE)
+        r = C.length(d)
+        if r > 1e-6:
+            out[i] = C.add(out[i], C.scale(d, -depth / r))
+    return out
+
+
+def push_outside(points, grid, protect=0):
     """Move any point that sits inside the skull back out onto it.
 
     WHY THIS IS NEEDED AT ALL. A guide droops -- that is what stops an afro
@@ -302,7 +486,17 @@ def push_outside(points, grid, clearance=0.012):
     """
     out = []
     moved = 0
-    for q in points:
+    for i, q in enumerate(points):
+        # THE FIRST FEW SAMPLES ARE MEANT TO BE INSIDE. This pass exists to lift
+        # a drooping TIP out of the head; applied to the root it did the
+        # opposite of what anatomy wants, pinning every strand's first vertex
+        # `CLEARANCE` ABOVE the skin. MEASURED on the shipped assets: 100% of
+        # sampled roots sat outside, median 1.2 mm -- which is exactly this
+        # constant -- so each card's open root edge floated clear of the scalp
+        # and read as a cut stub rather than as hair growing out of a head.
+        if i < protect:
+            out.append(q)
+            continue
         dx, dy, dz = q[0] - H.CENTRE[0], q[1] - H.CENTRE[1], q[2] - H.CENTRE[2]
         r = math.sqrt(dx * dx + dy * dy + dz * dz)
         if r < 1e-6:
@@ -311,8 +505,8 @@ def push_outside(points, grid, clearance=0.012):
         az = int(((math.atan2(dx, dz) / (2.0 * math.pi) + 0.5) % 1.0) * AZ_BINS)
         el = int(min(0.999, max(0.0, math.acos(max(-1.0, min(1.0, dy / r))) / math.pi)) * EL_BINS)
         surface = grid[el * AZ_BINS + min(AZ_BINS - 1, az)]
-        if surface > 0.0 and r < surface + clearance:
-            k = (surface + clearance) / r
+        if surface > 0.0 and r < surface + CLEARANCE:
+            k = (surface + CLEARANCE) / r
             out.append((H.CENTRE[0] + dx * k, H.CENTRE[1] + dy * k, H.CENTRE[2] + dz * k))
             moved += 1
         else:
@@ -320,15 +514,27 @@ def push_outside(points, grid, clearance=0.012):
     return out, moved
 
 
-def card(centre, half_width):
+def card(centre, half_width, axis):
     """A coiled centreline widened into a ribbon of quads.
 
     The ribbon faces OUTWARD, not along the curve's own frame. A parallel frame
     is stable but arbitrary about the tangent, so using it directly lets
     neighbouring cards face randomly and the hair flickers between bright and
-    edge-on. Facing each quad away from the head is what makes a mass of cards
-    read as one surface.
+    edge-on.
 
+    OUTWARD FROM THE COIL'S OWN AXIS when `axis` is given -- the centreline the
+    helix was wrapped around -- and only from the HEAD when it is not. Facing
+    every quad away from the head is right for a shell and wrong for a coil,
+    because near the scalp a coil's own axis IS the outward direction: the
+    ribbon then lies flat in the plane of the helix and draws a flat spiral.
+    RENDERED from the side that is unmistakable -- the hair above the ear was a
+    field of flat discs, like rosettes pinned to the skull, instead of a mass of
+    tubes. Facing away from the axis instead makes the ribbon twist with the
+    helix, so a coil presents its width from every direction and reads round.
+
+    Where the helix has no width to speak of -- the root fade, and the neck of a
+    switchback -- the offset is too short to give a direction, and there the
+    head's own outward vector is still the best answer available.
     """
     pts, uvs = [], []
     frames = C.parallel_frames(centre)
@@ -339,7 +545,15 @@ def card(centre, half_width):
         nxt = centre[min(i + 1, n)]
         prv = centre[max(i - 1, 0)]
         tangent = C.normalise(C.sub(nxt, prv), (0.0, 1.0, 0.0))
-        out = outward(p)
+        out = ()
+        if axis:
+            radial = C.sub(p, axis[i])
+            # A tenth of a millimetre. Below that the offset is numerical noise
+            # and normalising it would point the card anywhere.
+            if C.length(radial) > 1e-3:
+                out = C.normalise(radial)
+        if not out:
+            out = outward(p)
         across = C.cross(tangent, out)
         # DEGENERATE AT THE CROWN, which is where the first version went bald.
         # A hair on top of the head grows ALONG the outward direction, so
@@ -378,12 +592,27 @@ def card(centre, half_width):
     return pts, quads, uvs
 
 
-def build(style, app_path=""):
+def grow(style):
+    """One style's GEOMETRY: (points, quads, uvs). No binder, no files.
+
+    Split out of `build` so a style that is not an asset of its own can use it.
+    The rope styles in `make_hair_styles` grow their skullcap with this: a cap
+    under locs or dreadlocks is short hair, and short hair here is the same
+    coiled cards every other style is made of. Before that it was an offset
+    SHELL of the scalp with a strand texture painted on, which is the approach
+    `derive()` already records as settled -- "no texture makes a shell read as
+    hair close up, because the geometry has no hairs in it". The shell cap was
+    the last of them.
+    """
     rng = random.Random(SEED)
     verts, faces = H.read_base()
-    roots = scalp_roots(verts, faces, style.clumps, rng)
+    roots = scalp_roots(verts, faces, style.clumps, rng, style.edge)
 
-    guide_roots = scalp_roots(verts, faces, style.guides, random.Random(SEED + 1))
+    # The guides take the SAME cut. A guide rooted outside the line would pull
+    # strands across it, and a clump locks to its guide past the lock point --
+    # so a cut that stopped at the roots would be undone by the next step.
+    guide_roots = scalp_roots(verts, faces, style.guides, random.Random(SEED + 1),
+                              style.edge)
     guides = [guide_curve(r, style.droop * rng.uniform(0.85, 1.15), rng, style.length,
                           style.segments) for r in guide_roots]
 
@@ -431,9 +660,15 @@ def build(style, app_path=""):
             clump_phase=rng.uniform(0.0, 2.0 * math.pi),
             switchbacks=backs,
         )
-        coiled, buried = push_outside(coiled, skull)
+        # BURY THE ROOT. A hair emerges FROM the skin; you never see the end of
+        # one. The strand's first samples are pulled inside the skull so the
+        # card's open edge is hidden by the scalp, and `protect` stops the pass
+        # below putting them straight back out.
+        coiled = bury_root(coiled)
+        coiled, buried = push_outside(coiled, skull, protect=ROOT_BURY)
         buried_total += buried
-        pts, quads, uvs = card(coiled, style.half_width * rng.uniform(0.8, 1.2))
+        pts, quads, uvs = card(coiled, style.half_width * rng.uniform(0.8, 1.2),
+                               axis=centre)
         base = len(allpts)
         allpts.extend(pts)
         alluvs.extend(uvs)
@@ -442,7 +677,11 @@ def build(style, app_path=""):
     print(f"{style.stem}: {len(allpts)} vertices, {len(allquads)} faces, "
           f"{len(roots)} clumps, {switchback_total} switchbacks, {len(guides)} guides, "
           f"{buried_total} vertices lifted out of the skull")
+    return allpts, allquads, alluvs
 
+
+def build(style, app_path=""):
+    allpts, allquads, alluvs = grow(style)
     binds = H.bind_points(app_path or H.app_binary(), allpts)
     if len(binds) != len(allpts):
         raise SystemExit(
@@ -462,6 +701,7 @@ def write_style(style, app, check):
         return 1
 
     obj, mhclo = H.write_bound_style(style.name, style.stem, pts, quads, binds, uvs,
+                                     material=CARD_MATERIAL,
                                      uuid_override=style.uuid_override)
     # `write_bound_style` stamps the sibling generator's banner on everything it
     # writes. Anyone refreshing this asset would run that tool, which does not

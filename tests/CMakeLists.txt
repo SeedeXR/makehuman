@@ -2141,16 +2141,62 @@ if(MH_HAVE_RENDER)
     # check catches that. Coils ships 13,440 vertices and 6,300 faces and
     # nothing was loading it; `test_asset_index.cpp` going 40 -> 41 proves only
     # that the .mhclo is INDEXED.
+    # --render-size and --framing, which exist because judging hair needs a
+    # picture of hair. At the default 1024 square a head is about 200 pixels and
+    # a brow a dozen; MEASURED, the whole brow spans 166 pixels even at 4096,
+    # because the camera frames a 17 dm figure. Resolution alone is not a
+    # close-up -- the framing is.
+    add_test(NAME app_render_size COMMAND makehuman
+             --render-size 256 --render ${CMAKE_CURRENT_BINARY_DIR}/rs.png)
+    set_tests_properties(app_render_size PROPERTIES
+        PASS_REGULAR_EXPRESSION "rendered .* \\(256x256")
+
+    # REFUSED, not clamped. A typo that silently renders at the default wastes
+    # the run and says nothing about why, and a huge value is an allocation
+    # rather than a picture.
+    add_test(NAME app_render_size_refused COMMAND makehuman
+             --render-size 99999 --render ${CMAKE_CURRENT_BINARY_DIR}/rs_bad.png)
+    set_tests_properties(app_render_size_refused PROPERTIES
+        # No WILL_FAIL: with PASS_REGULAR_EXPRESSION set, ctest ignores the
+        # exit code entirely and the regex decides. Adding WILL_FAIL inverts a
+        # successful match into a failure, which is how this first went red.
+        PASS_REGULAR_EXPRESSION "--render-size wants 64\\.\\.8192 pixels")
+
+    add_test(NAME app_render_framing_head COMMAND makehuman
+             --framing head --render-size 256
+             --render ${CMAKE_CURRENT_BINARY_DIR}/fr_head.png)
+    set_tests_properties(app_render_framing_head PROPERTIES
+        FIXTURES_SETUP app_fr_head)
+    add_test(NAME app_render_framing_full COMMAND makehuman
+             --framing full --render-size 256
+             --render ${CMAKE_CURRENT_BINARY_DIR}/fr_full.png)
+    set_tests_properties(app_render_framing_full PROPERTIES
+        FIXTURES_SETUP app_fr_full)
+    # ...and the two must DIFFER. Both commands succeed and both write a 256
+    # square PNG whether or not the framing reached the camera, so the only
+    # statement worth making is that it changed the picture.
+    add_test(NAME app_render_framing_moves_the_camera COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/fr_head.png
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/fr_full.png
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_render_framing_moves_the_camera PROPERTIES
+        FIXTURES_REQUIRED "app_fr_head;app_fr_full")
+
+    add_test(NAME app_render_framing_refused COMMAND makehuman
+             --framing nope --render ${CMAKE_CURRENT_BINARY_DIR}/fr_bad.png)
+    set_tests_properties(app_render_framing_refused PROPERTIES
+        PASS_REGULAR_EXPRESSION "unknown --framing nope; have full, head, torso")
+
     add_test(NAME app_coils_worn COMMAND makehuman
              --hair coils --export ${CMAKE_CURRENT_BINARY_DIR}/hair/coils.obj)
     set_tests_properties(app_coils_worn PROPERTIES
-        PASS_REGULAR_EXPRESSION "wearing Coils \\(28800 verts\\) lit by skinmat_hair"
+        PASS_REGULAR_EXPRESSION "wearing Coils \\(66600 verts\\) lit by skinmat_hair"
         FAIL_REGULAR_EXPRESSION "export failed;cannot")
 
     add_test(NAME app_afro_worn COMMAND makehuman
              --hair afro --export ${CMAKE_CURRENT_BINARY_DIR}/hair/afro.obj)
     set_tests_properties(app_afro_worn PROPERTIES
-        PASS_REGULAR_EXPRESSION "wearing Afro \\(35200 verts\\) lit by skinmat_hair"
+        PASS_REGULAR_EXPRESSION "wearing Afro \\(88000 verts\\) lit by skinmat_hair"
         FAIL_REGULAR_EXPRESSION "export failed;cannot"
         FIXTURES_SETUP app_afro_worn)
     # ...and it must be a DIFFERENT asset from the placeholder cage, not the
@@ -2225,6 +2271,26 @@ if(MH_HAVE_RENDER)
                          ${CMAKE_SOURCE_DIR}/tools/make_eyebrow_hairs.py --check
                          --app $<TARGET_FILE:makehuman>)
 
+        # THE EYELASHES, for the same reason and with the same history. They
+        # were the base mesh's four helper cages copied verbatim with a strand
+        # texture on them, which `make_helper_proxies.py` owned and gated. They
+        # are grown hairs now -- `make_eyelash_hairs.py` -- and ownership moved
+        # with them, so the gate has to move too or the asset stops being
+        # checked by anything at all.
+        add_test(NAME eyelash_asset_is_generated
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_SOURCE_DIR}/tools/make_eyelash_hairs.py --check
+                         --app $<TARGET_FILE:makehuman>)
+
+        # THE LONG HAIR, the last of the four shells to be grown instead. Same
+        # reason: `make_helper_proxies.py` used to own and gate it, ownership
+        # moved to `make_long_hair.py`, and a generated asset nothing checks
+        # stops being generated the first time somebody edits the output.
+        add_test(NAME long_hair_asset_is_generated
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_SOURCE_DIR}/tools/make_long_hair.py --check
+                         --app $<TARGET_FILE:makehuman>)
+
     endif()
 
     # CORNROWS -- the first style whose geometry is not in the base mesh at all.
@@ -2234,10 +2300,55 @@ if(MH_HAVE_RENDER)
     # clamping. `tests/regression/test_cornrows_shape.cpp` is where the SHAPE is
     # gated -- these two only establish that the app wears it and that it is its
     # own asset.
+    # DREADLOCKS, a style with no coverage at all until this. It ships from the
+    # same generator as locs through a `RopeStyle` block, so what has to be
+    # pinned is that it is its OWN asset rather than a second name for locs --
+    # a parameter block makes that failure cheap to introduce and invisible.
+    #
+    # The vertex count is pinned for a reason this session demonstrated: bantu
+    # knots went from 1,147 vertices to 70,622 when its cap changed and the
+    # whole suite stayed green, because nothing anywhere named its size.
+    # THE CLEAN CUT, whose whole point is its EDGE. `make_coils.lineup_edge`
+    # applies the cut to each sampled root rather than to the region's vertices,
+    # so the line does not follow the mesh; what is pinned here is that the
+    # style exists, is its own asset and keeps its size.
+    add_test(NAME app_cleancut_worn COMMAND makehuman
+             --hair cleancut --export ${CMAKE_CURRENT_BINARY_DIR}/hair/cleancut.obj)
+    set_tests_properties(app_cleancut_worn PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Clean cut \\(84286 verts\\) lit by skinmat_hair"
+        FAIL_REGULAR_EXPRESSION "export failed;cannot"
+        FIXTURES_SETUP app_cleancut_worn)
+    add_test(NAME app_dreadlocks_worn COMMAND makehuman
+             --hair dreadlocks --export ${CMAKE_CURRENT_BINARY_DIR}/hair/dreadlocks.obj)
+    set_tests_properties(app_dreadlocks_worn PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Dreadlocks \\(80022 verts\\) lit by skinmat_hair"
+        FAIL_REGULAR_EXPRESSION "export failed;cannot"
+        FIXTURES_SETUP app_dreadlocks_worn)
+    add_test(NAME app_locs_worn COMMAND makehuman
+             --hair locs --export ${CMAKE_CURRENT_BINARY_DIR}/hair/locs.obj)
+    set_tests_properties(app_locs_worn PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Locs \\(83470 verts\\) lit by skinmat_hair"
+        FAIL_REGULAR_EXPRESSION "export failed;cannot"
+        FIXTURES_SETUP app_locs_worn)
+    add_test(NAME app_bantu_knots_worn COMMAND makehuman
+             --hair bantu_knots --export ${CMAKE_CURRENT_BINARY_DIR}/hair/bantu_knots.obj)
+    set_tests_properties(app_bantu_knots_worn PROPERTIES
+        PASS_REGULAR_EXPRESSION "wearing Bantu knots \\(70622 verts\\) lit by skinmat_hair"
+        FAIL_REGULAR_EXPRESSION "export failed;cannot"
+        FIXTURES_SETUP app_bantu_knots_worn)
+    # Dreadlocks must not BE locs. Both come from one `RopeStyle` loop, so the
+    # cheap mistake is writing the same geometry under two names.
+    add_test(NAME app_dreadlocks_differ_from_locs COMMAND ${CMAKE_COMMAND}
+             -DA=${CMAKE_CURRENT_BINARY_DIR}/hair/dreadlocks.obj
+             -DB=${CMAKE_CURRENT_BINARY_DIR}/hair/locs.obj
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/files_differ.cmake)
+    set_tests_properties(app_dreadlocks_differ_from_locs PROPERTIES
+        FIXTURES_REQUIRED "app_dreadlocks_worn;app_locs_worn")
+
     add_test(NAME app_cornrows_worn COMMAND makehuman
              --hair cornrows --export ${CMAKE_CURRENT_BINARY_DIR}/hair/cornrows.obj)
     set_tests_properties(app_cornrows_worn PROPERTIES
-        PASS_REGULAR_EXPRESSION "wearing Cornrows \\(2506 verts\\) lit by skinmat_hair"
+        PASS_REGULAR_EXPRESSION "wearing Cornrows \\(2590 verts\\) lit by skinmat_hair"
         FAIL_REGULAR_EXPRESSION "export failed;cannot"
         FIXTURES_SETUP app_cornrows_worn)
     add_test(NAME app_cornrows_differ_from_afro COMMAND ${CMAKE_COMMAND}
@@ -2267,15 +2378,22 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_hair_ignores_the_jaw COMMAND ${CMAKE_COMMAND}
              -DA=${CMAKE_CURRENT_BINARY_DIR}/hair/worn.obj
              -DB=${CMAKE_CURRENT_BINARY_DIR}/hair/jaw_open.obj
-             -DGROUP=hair -DEXPECT_MOVED=0 -DEXPECT_STILL=428
+             # ONE UNIT of the written decimal. The hair binds barycentrically
+             # now rather than by identity, so "did not move" cannot be exact
+             # equality -- see `obj_group_moved.cmake`. MEASURED with the bind
+             # box floored at y 7.60, a jaw drop shifts nothing by more than
+             # 0.00014 dm.
+             -DGROUP=hair -DEXPECT_MOVED=0 -DEXPECT_STILL=30320
+             -DMOVE_TOLERANCE=1
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
     set_tests_properties(app_hair_ignores_the_jaw PROPERTIES
         FIXTURES_REQUIRED "app_hair_worn;app_hair_jaw_open")
     # ...and the positive half, because "nothing moved" on its own also
     # describes a proxy that is frozen, or absent. Under a T-pose every one of
-    # the 428 follows the body. Direction is deliberately not asserted here:
-    # measured, the cage falls 0.5698 at one end and rises 0.0957 at the other,
-    # which is the spine straightening while the shoulders come up.
+    # the 30,320 follows the body. Direction is deliberately not asserted here:
+    # measured, the cage fell 0.5698 at one end and rose 0.0957 at the other,
+    # which is the spine straightening while the shoulders come up. The cards
+    # that replaced it follow the cranium, so all 30,320 move together.
     add_test(NAME app_hair_tpose COMMAND makehuman
              --hair hair --pose tpose
              --export ${CMAKE_CURRENT_BINARY_DIR}/hair/tpose.obj)
@@ -2283,7 +2401,7 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_hair_follows_the_body COMMAND ${CMAKE_COMMAND}
              -DA=${CMAKE_CURRENT_BINARY_DIR}/hair/worn.obj
              -DB=${CMAKE_CURRENT_BINARY_DIR}/hair/tpose.obj
-             -DGROUP=hair -DEXPECT_MOVED=428 -DEXPECT_STILL=0
+             -DGROUP=hair -DEXPECT_MOVED=30320 -DEXPECT_STILL=0
              -DRISE_TOLERANCE=ANY
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
     set_tests_properties(app_hair_follows_the_body PROPERTIES
@@ -2480,7 +2598,7 @@ if(MH_HAVE_RENDER)
              --eyelashes eyelashes
              --export ${CMAKE_CURRENT_BINARY_DIR}/eyelashes/worn.obj)
     set_tests_properties(app_eyelashes_worn PROPERTIES
-        PASS_REGULAR_EXPRESSION "wearing Eyelashes \\(250 verts\\) lit by skinmat_eyelashes"
+        PASS_REGULAR_EXPRESSION "wearing Eyelashes \\(6020 verts\\) lit by skinmat_eyelashes"
         FAIL_REGULAR_EXPRESSION "export failed;cannot"
         FIXTURES_SETUP app_eyelashes_worn)
 
@@ -2507,7 +2625,12 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_eyelashes_follow_the_lid COMMAND ${CMAKE_COMMAND}
              -DA=${CMAKE_CURRENT_BINARY_DIR}/eyelashes/worn.obj
              -DB=${CMAKE_CURRENT_BINARY_DIR}/eyelashes/closed.obj
-             -DGROUP=eyelashes -DEXPECT_MOVED=142 -DEXPECT_STILL=108
+             # MEASURED WITH THE TOLERANCE APPLIED: 4,354, not the 4,527 a
+             # bit-exact compare reports. The difference is 173 vertices the
+             # lid shifts by a single unit of the written decimal, which is
+             # the same quantisation the jaw case tolerates.
+             -DGROUP=eyelashes -DEXPECT_MOVED=4354 -DEXPECT_STILL=1666
+             -DMOVE_TOLERANCE=1
              -DRISE_TOLERANCE=ANY
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
     set_tests_properties(app_eyelashes_follow_the_lid PROPERTIES
@@ -2523,7 +2646,12 @@ if(MH_HAVE_RENDER)
     add_test(NAME app_eyelashes_ignore_the_jaw COMMAND ${CMAKE_COMMAND}
              -DA=${CMAKE_CURRENT_BINARY_DIR}/eyelashes/worn.obj
              -DB=${CMAKE_CURRENT_BINARY_DIR}/eyelashes/jaw_open.obj
-             -DGROUP=eyelashes -DEXPECT_MOVED=0 -DEXPECT_STILL=250
+             # ONE UNIT of the written decimal, 10 micrometres. The lashes
+             # bind barycentrically now, so "did not move" cannot be exact
+             # equality -- see `obj_group_moved.cmake`. MEASURED, a jaw drop
+             # shifts 379 of these by at most 0.00014 dm; the lid moves 4,527.
+             -DGROUP=eyelashes -DEXPECT_MOVED=0 -DEXPECT_STILL=6020
+             -DMOVE_TOLERANCE=1
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_group_moved.cmake)
     set_tests_properties(app_eyelashes_ignore_the_jaw PROPERTIES
         FIXTURES_REQUIRED "app_eyelashes_worn;app_eyelashes_jaw_open")
@@ -3740,7 +3868,7 @@ if(MH_HAVE_RENDER)
     # to the cranium cap, which stops 50 degrees above the nape; 303 would mean
     # it had picked up `helper-hair` (138) and `joint-head-2` (8) as well.
     add_test(NAME app_spread_roots_clamped COMMAND ${CMAKE_COMMAND}
-             -DFLAG=--spread-roots -DARG=999 -DEXPECT=237 -DAPP=$<TARGET_FILE:makehuman>
+             -DFLAG=--spread-roots -DARG=999 -DEXPECT=262 -DAPP=$<TARGET_FILE:makehuman>
              -DBASE=${MH_DATA_DIR}/3dobjs/base.obj
              -P ${CMAKE_CURRENT_SOURCE_DIR}/check_roots.cmake)
     # Deterministic: a style that moved between runs could not be reviewed by
@@ -3877,7 +4005,7 @@ if(MH_HAVE_RENDER)
     # gate exists to catch and the only one it needs to.
     add_test(NAME eyebrows_bound_to_the_face COMMAND ${CMAKE_COMMAND}
              -DMHCLO=${CMAKE_SOURCE_DIR}/data/eyebrows/eyebrows.mhclo
-             -DEXPECT=7920 -DBAR=0.080
+             -DEXPECT=20880 -DBAR=0.080
              -P ${CMAKE_CURRENT_SOURCE_DIR}/check_eyebrow_binding.cmake)
 
     # THE BROW CAN CARRY A STRAND ALPHA, which is a claim about the shipped mesh
@@ -3894,6 +4022,8 @@ if(MH_HAVE_RENDER)
             ${CMAKE_SOURCE_DIR}/data/hair/afro.obj
             ${CMAKE_SOURCE_DIR}/data/hair/cornrows.obj
             ${CMAKE_SOURCE_DIR}/data/hair/locs.obj
+            ${CMAKE_SOURCE_DIR}/data/hair/dreadlocks.obj
+            ${CMAKE_SOURCE_DIR}/data/hair/cleancut.obj
             ${CMAKE_SOURCE_DIR}/data/hair/bantu_knots.obj
             ${CMAKE_SOURCE_DIR}/data/hair/coils.obj
             ${CMAKE_SOURCE_DIR}/data/hair/lowcut.obj
@@ -6463,20 +6593,27 @@ if(MH_HAVE_RENDER)
     # cases are what says the slot really reaches a render rather than merely
     # loading.
 
+    # AT HEAD FRAMING, which is new and is a strengthening rather than a
+    # convenience. A full-body 1024 render puts the brow band at 38x6 pixels,
+    # and once the brow became anatomically thin -- lower on the orbital rim,
+    # fading in at the head -- it differed from a bare face in 99 pixels
+    # against a bar of 100. Dropping the bar to 99 would have been weakening a
+    # gate to go green. Framing the head instead measures the brow where a
+    # viewer actually judges one, and the margin stops being a coin toss.
     add_test(NAME app_eyebrows_write COMMAND makehuman
-             --eyebrows eyebrows
+             --eyebrows eyebrows --framing head
              --render ${CMAKE_CURRENT_BINARY_DIR}/app_eyebrows.png)
     set_tests_properties(app_eyebrows_write PROPERTIES
-        # "wearing Eyebrows (7920 verts)" is the proxy loading; the comparison
+        # "wearing Eyebrows (20880 verts)" is the proxy loading; the comparison
         # below is what says it DREW. Both, because the first render attempt
         # loaded the proxy fine and produced a byte-identical image.
-        PASS_REGULAR_EXPRESSION "wearing Eyebrows \\(7920 verts\\)"
+        PASS_REGULAR_EXPRESSION "wearing Eyebrows \\(20880 verts\\)"
         FAIL_REGULAR_EXPRESSION "texture missing;cannot render"
         SKIP_REGULAR_EXPRESSION "cannot render"
         FIXTURES_SETUP app_eyebrows_png)
 
     add_test(NAME app_eyebrows_bare_write COMMAND makehuman
-             --eyebrows none
+             --eyebrows none --framing head
              --render ${CMAKE_CURRENT_BINARY_DIR}/app_eyebrows_none.png)
     set_tests_properties(app_eyebrows_bare_write PROPERTIES
         SKIP_REGULAR_EXPRESSION "cannot render"
@@ -6488,12 +6625,19 @@ if(MH_HAVE_RENDER)
     # viewport, and with a screaming-green matcap. The geometry was correct
     # throughout; it was simply below what the renderer resolves.
     #
-    # MEASURED at the shipped 0.090/0.080: 199 pixels in x 493..530, y 177..186
-    # -- the brow band of the face. The bar of 100 sits well under that and far
-    # above the nine pixels two identical renders differ by from MSAA alone.
+    # MEASURED at head framing on the strand brow: see the run below. The bar
+    # is set an order of magnitude under what it measures and far above the
+    # nine pixels two identical renders differ by from MSAA alone, so it
+    # catches a brow that stopped drawing without tracking every change to its
+    # density.
     add_test(NAME app_eyebrows_are_visible COMMAND mh_png_compare
              ${CMAKE_CURRENT_BINARY_DIR}/app_eyebrows_none.png
-             ${CMAKE_CURRENT_BINARY_DIR}/app_eyebrows.png --min-differing 100)
+             ${CMAKE_CURRENT_BINARY_DIR}/app_eyebrows.png --min-differing 2000)
+    # MEASURED at head framing on the current strand brow: 2881 of 1,048,576
+    # pixels differ, in a 214x43 band. The bar keeps 1.4x margin under that, so
+    # it catches a brow that stopped drawing without tracking every change to
+    # its density -- the count moved from 330 to 460 hairs a side while this
+    # bar stayed put, which is the property wanted.
     set_tests_properties(app_eyebrows_are_visible PROPERTIES
         FIXTURES_REQUIRED "app_eyebrows_png;app_eyebrows_none_png")
 
@@ -6504,7 +6648,12 @@ if(MH_HAVE_RENDER)
     # `app_render.png`: that one is written with --transparent, so the pair
     # would differ over the whole background and the case would be measuring
     # the alpha channel rather than the default.
-    add_test(NAME app_eyebrows_default_write COMMAND makehuman
+    # SAME FRAMING as its partner, or the pair differs over the whole image and
+    # measures the CAMERA rather than the default. That is the trap the comment
+    # above already records for --transparent, met again: moving one render of
+    # a pair to head framing and leaving the other at full made 500,082 pixels
+    # differ, none of them a brow.
+    add_test(NAME app_eyebrows_default_write COMMAND makehuman --framing head
              --render ${CMAKE_CURRENT_BINARY_DIR}/app_eyebrows_default.png)
     set_tests_properties(app_eyebrows_default_write PROPERTIES
         SKIP_REGULAR_EXPRESSION "cannot render"

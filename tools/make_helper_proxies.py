@@ -174,56 +174,12 @@ SLOTS = [
             "# base mesh's weights decide that, not this file."
         ),
     ),
-    Slot(
-        key="hair",
-        name="Hair",
-        uuid="3f8c21d5-6b04-4e79-9c52-1a7de0b46f38",
-        groups=("helper-hair",),
-        # Outermost of the three: it sits over the scalp, so it wins the depth
-        # fight against anything on the head rather than being buried in it.
-        z_depth=50,
-        # Dark brown. Hair is the one slot whose real colour a user will want to
-        # change, and this is the placeholder until the slot grows a colour
-        # chooser the way the eyes have one.
-        tint=(0.32, 0.22, 0.16),
-        material=(
-            "# THE STRAND TEXTURE THIS SLOT SPENT ITS LIFE ASKING FOR.\n"
-            "#\n"
-            "# This comment used to read: \"real hair needs an alpha-cut strand\n"
-            "# texture, which the cage geometry cannot stand in for\". The second\n"
-            "# half was wrong about the reason. The geometry could carry one\n"
-            "# perfectly well; what it could not do was MAP one, because the four\n"
-            "# generated styles had no UVs at all -- measured on an export, body\n"
-            "# 14,517 distinct UVs, eyes 808, teeth 136, hair ZERO.\n"
-            "#\n"
-            "# The sweeps emit UVs now (u around the tube, v along it) and\n"
-            "# tools/make_hair_alpha.py writes the texture, so both halves exist.\n"
-            "#\n"
-            "# `transparent True` is load-bearing and not cosmetic: the eye\n"
-            "# material records that \"without the flag the renderer discards that\n"
-            "# alpha and paints an opaque disc over the iris\". Here it would\n"
-            "# paint a solid tube with a stripe pattern on it.\n"
-            "name Hair\n"
-            "tag MakeHuman\u2122\n"
-            "ambientColor 0.04 0.03 0.02\n"
-            "diffuseColor 0.28 0.19 0.13\n"
-            "specularColor 0.6 0.6 0.6\n"
-            "shininess 0.3\n"
-            "opacity 1.0\n"
-            "transparent True\n"
-            "diffuseTexture ../hair_strands.png\n"
-            "backfaceCull True\n"
-            "castShadows True\n"
-            "receiveShadows True\n"
-            "shader data/shaders/glsl/litsphere\n"
-        ),
-        rationale=(
-            "# 272 of these vertices are dominated by `head` and 116 by\n"
-            "# spine01-03, because the cage covers hair falling down the BACK.\n"
-            "# So this proxy is NOT rigid with the head -- it follows the body,\n"
-            "# which is exactly what the identity fitting gives it for free."
-        ),
-    ),
+    # THE LONG HAIR IS NO LONGER MADE HERE EITHER. It was the `helper-hair`
+    # envelope copied verbatim -- 428 vertices, 198 faces -- with the 52-strand
+    # scalp sheet painted on, and it rendered as a flat faceted HOOD over the
+    # head and face. It was the last shell in the tree, after the afro, the rope
+    # styles' skullcap and the eyelashes; `tools/make_long_hair.py` lays cards
+    # over the same envelope now, so the silhouette is still the base mesh's.
     Slot(
         key="skirt",
         slot_key="clothes",
@@ -258,60 +214,19 @@ SLOTS = [
             "# of them; the skirt, not this, is the slot's zero case."
         ),
     ),
-    Slot(
-        key="eyelashes",
-        name="Eyelashes",
-        uuid="9d4f60b8-13ac-4e27-b5f1-08e7c62a3d95",
-        groups=("helper-l-eyelashes-1", "helper-l-eyelashes-2",
-                "helper-r-eyelashes-1", "helper-r-eyelashes-2"),
-        # Nearest the eye of anything in the head, and it must win the depth
-        # fight against the eye proxy it sits in front of.
-        z_depth=30,
-        # Near-black. Lashes read almost entirely as silhouette at this scale.
-        tint=(0.18, 0.16, 0.15),
-        strand_uvs=True,
-        material=(
-            "# THE ALPHA THIS FILE USED TO ASK FOR. It read: \"What they DO\n"
-            "# need and do not have is alpha, which is what would let\n"
-            "# individual hairs read against the eye white instead of a solid\n"
-            "# strip.\" Both halves exist now.\n"
-            "#\n"
-            "# The half that was missing was NOT the texture. The mesh already\n"
-            "# carried 250 uvs -- and they were a sliver of the BODY atlas,\n"
-            "# u 0.658..0.758 and v 0.927..0.985, inherited from the base mesh.\n"
-            "# A strand sheet sampled through a window that narrow is 0%\n"
-            "# opaque with a mean alpha of 8, so a first attempt at this\n"
-            "# pointed a material at one and made the lashes FAINTER and\n"
-            "# nothing else. `strand_uvs` authors uvs that run along the lash\n"
-            "# instead; see `strand_uvs()` in the generator.\n"
-            "#\n"
-            "# `transparent True` is load-bearing: without the flag the\n"
-            "# renderer discards the alpha and paints the solid strip this\n"
-            "# replaces, which is the trap the eye material records for its\n"
-            "# cornea disc.\n"
-            "name Eyelashes\n"
-            "tag MakeHuman\u2122\n"
-            "ambientColor 0.02 0.02 0.02\n"
-            "diffuseColor 0.12 0.11 0.10\n"
-            "specularColor 0.3 0.3 0.3\n"
-            "shininess 0.2\n"
-            "opacity 1.0\n"
-            "transparent True\n"
-            "diffuseTexture ../lash_strands.png\n"
-            "backfaceCull True\n"
-            "castShadows True\n"
-            "receiveShadows True\n"
-            "shader data/shaders/glsl/litsphere\n"
-        ),
-        rationale=(
-            "# Four cages, no vertex shared: 60 + 65 per side, 250 and 184\n"
-            "# faces in total. A FIFTH weighting shape -- the `-1` pair is\n"
-            "# dominated by orbicularis04 (49 of 60) and the `-2` pair by\n"
-            "# orbicularis03 (54 of 65), with 11 per cage falling to `head`.\n"
-            "# So this is the first proxy the EYELID drives: AU43 carries it\n"
-            "# and a jaw drop leaves it alone."
-        ),
-    ),
+    # THE EYELASHES ARE NO LONGER MADE HERE. They were these four helper cages
+    # copied verbatim with a strand texture painted on, and a cage is a flat
+    # SLAB: rendered at head framing it read as grey polygonal wedges above and
+    # below the eye with hard straight edges, running past the corners. The note
+    # this slot carried about alpha was answering the wrong question -- no
+    # texture makes a sheet read as hair, because the geometry has no hairs in
+    # it, which is the same finding `make_hair_styles.derive()` records for the
+    # afro and the rope styles' skullcap.
+    #
+    # `tools/make_eyelash_hairs.py` grows them as individual lashes now, from
+    # these same cages: the cage's margin edge is the lash line and the vector
+    # to its tip edge is the growth direction, so the shape is still the base
+    # mesh's and only the drawing changed.
     Slot(
         key="genitals",
         name="Genitals",

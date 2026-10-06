@@ -7,6 +7,41 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
 
 ---
 
+## HAIR — every shell is now grown geometry (2026-10-07)
+
+- [x] **No style in this tree is a sheet any more.** The afro went first; this
+      session did the rope/bantu skullcap, the eyelashes and the long `hair`
+      proxy. Each kept its CAGE as the shape source and changed only the
+      drawing. New tools: `make_eyelash_hairs.py`, `make_long_hair.py`; the
+      skullcap reuses `make_coils.grow(CAP_BED)`.
+- [x] **`make_helper_proxies.py` no longer owns eyelashes or hair.** Both slots
+      removed; ownership and the staleness gate moved with them. `hair.mhmat`
+      is now hand-maintained and says so — it is still a Materials-tab choice.
+- [x] **`hairlineElevation` fits all three measured anchors** (`Scalp.cpp`),
+      ear term -23 rather than the measured -25 because the region must stay one
+      walkable island. Region 237 -> 262 vertices.
+- [x] Two new styles: **dreadlocks** and **clean cut** (a lined-up short afro,
+      the cut applied to each sampled root so the edge does not follow mesh
+      edges).
+
+### Open, and worth doing next
+- [ ] **The upper lash band reads heavy** — closer to a strong lash line than a
+      soft one. Thin it by lowering the count or the card width; the generator
+      makes this a one-constant change.
+- [ ] **Rope flyaways.** Locs and dreadlocks are clean tubes with a perfect
+      silhouette. Real ones shed stray hairs. This is the remaining gap between
+      ours and `references/sample-locks`.
+- [ ] **Hair animation / simulation** was asked for and is untouched. The long
+      hair binds rigidly to the cranium (bind box floored at y 7.60 so a jaw
+      drop leaves it alone), so it does not swing.
+- [ ] **25-34% of the loc scalp is still further than one rope-diameter from a
+      rope.** MEASURED: rope count has diminishing returns here (80 -> 96 moved
+      it 40% -> 34%) because the ropes comb BACK and converge on the rim. What
+      covers the scalp between them is the cap bed, and that is working — ropes
+      alone occlude a mean of 1.5..5.8 per scalp point, ropes plus cap 64..168.
+
+---
+
 ## BLOCKED — the hourly cloud loop cannot push (owner action required)
 
 Added 2026-09-05 17:20. **The routine is firing correctly and doing real work.**

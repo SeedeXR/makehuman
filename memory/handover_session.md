@@ -4,6 +4,86 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-10-07 (early hours) — Session · **Every shell in the tree became hair**
+
+Four assets were still SHEETS with a strand texture painted on. All four are
+grown geometry now, and the finding that drove each one is the same sentence
+`make_hair_styles.derive()` has carried since the afro stopped being a shell:
+*no texture makes a shell read as hair close up, because the geometry has no
+hairs in it.*
+
+| was a shell | now | tool |
+|---|---|---|
+| rope/bantu skullcap | coiled cards | `make_coils.grow(CAP_BED)` |
+| eyelashes (4 helper cages, 250 v) | 430 lashes, 6,020 v | `make_eyelash_hairs.py` |
+| long hair (`helper-hair`, 428 v) | 700 cards, 30,320 v | `make_long_hair.py` |
+| (afro, earlier) | coiled cards | `make_coils.py` |
+
+**In every case the CAGE stayed the source of truth.** The lash cage's margin
+edge is the lash line and the vector to its tip edge is the growth direction;
+the hair envelope's surface is walked down to lay the cards. The silhouette is
+still the base mesh's -- only the drawing changed.
+
+### Measured, not eyeballed
+* **Roots were 100% exposed**, median 1.2 mm clear of the skin -- and the cause
+  was `push_outside`'s own `clearance=0.012`, which is exactly that number. The
+  pass exists to lift a drooping TIP out of the head; applied to the root it
+  pinned every strand above the scalp. It skips the first samples now and roots
+  sit 3.8 mm UNDER the skin. The afro's "vertices lifted out of the skull" fell
+  271 -> 7: most of those lifts WERE the bug.
+* **Ropes floated free.** The crossing lift was linear in the stack, which
+  reaches 5, so the worst rope rode 0.770 dm (locs) and 1.055 (dreadlocks) off
+  the scalp -- more than the head's radius. Real ropes NEST; the pile saturates
+  now, maxima 0.346 and 0.455.
+* **The hairline was 3 degrees high.** `Scalp.h` has recorded forehead +9,
+  ears -25, nape -50 all along while the formula returned +12 and -19. A cos^2
+  term fits all three; the ear term is -23 rather than -25 because the region
+  must be ONE walkable island and the mesh fragments below -23 (measured by
+  walking its adjacency: one island to -23, two vertices cut off at -24, eight
+  at -25).
+* **Rope count came from the scalp**: 5.526 dm^2 of hair-bearing area, and a loc
+  is the GATHERED hair of a section ~2.4 cm square, so 96 of them. Pitch is the
+  section size, NOT the rope's diameter -- which is why 47 ropes left a third of
+  the scalp bare while the diameter already matched the photographs.
+
+### Four wrong theories, each killed by a measurement
+The rectangular stubs over the crown were blamed on the lift being linear, then
+on anchor arithmetic, then on the cap-bed cards (dead when 387 of the 400 most
+isolated vertices turned out to be rope tubes, though ropes are 10% of the
+mesh), then on lift step-jumps. The cause was mine: the buried anchor stepped
+straight down the radial, so the rope turned ~93 degrees to lie along the scalp.
+39 of 47 ropes kinked at ring 1. An oblique entry brings it to 50.
+
+### Things I claimed that were wrong
+* "The eyelashes were the last slab in the tree." They were not -- `hair.obj`
+  still was, and it rendered as a faceted HOOD over the face. The owner asked
+  me to check the claim and it did not survive.
+* `obj_group_moved.cmake`'s docstring said an azimuth filter on the rim
+  "excluded exactly 0 of the 41 rim vertices, so it was a knob that did nothing
+  and is gone". True only while the rim stopped at -25 degrees.
+* `check_roots.cmake` bounded the body group at vertex 12157. That was never
+  the group's extent -- it is 0..13379 -- only the highest index that happened
+  to fall in the old, smaller region. It called an ordinary scalp vertex a
+  helper cage the first time the region moved.
+
+### A tolerance that is NOT a weakened test
+`obj_group_moved.cmake` gained `MOVE_TOLERANCE`, **defaulting to 0** so every
+existing caller keeps a bit-exact compare. Identity-bound proxies reproduce
+positions bit for bit; barycentric ones recompute, and the writer emits four
+decimals. Measured, a jaw drop "moved" 379 of 6,020 lash vertices by at most
+0.00014 dm -- one unit of the last digit. The lid signal on the same asset is
+4,354, so one unit cannot hide anything anatomical. For the long hair the same
+property was preserved outright by flooring the bind box at y 7.60, measured
+against 6.95 (12,360 moved) and 7.30 (9,881).
+
+### Gates
+Both configs **1670/1670**. clang-format 0. Every generated asset regenerates
+BYTE-IDENTICAL after each refactor (hashed before and after, 38 files).
+Three new staleness gates -- eyebrow, eyelash, long hair -- each mutation-tested
+by appending one vertex and watching it fail.
+
+---
+
 ## 2026-10-06 (evening) — Session · **Four styles, a measured brow, and fifteen findings**
 
 Texture split, full scalp coverage, four coil styles including a coil-based

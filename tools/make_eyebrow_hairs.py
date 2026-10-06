@@ -75,20 +75,55 @@ BIND_REGION = (f"{-REGION_X},{REGION_X},{REGION_Y0},{REGION_Y1},"
 # out single hairs, so the count has to exceed the anatomy to survive being
 # drawn at a dozen pixels. 330 a side is 6,600 faces for the pair, against the
 # ridge's 252 and the afro's 16,500 beside it.
-HAIRS = 330
-SEGMENTS = 5
+# 580 a side, up from 330. The references read as a MASS with a clean outline,
+# not as countable hairs: at 330 the body was a thin smear with skin showing
+# through it at head framing. 580 is 11,600 faces for the pair.
+HAIRS = 580
+# 8, not 5. A bowed hair drawn with five segments is four straight facets, and
+# at this width the corners between them are visible -- which is the other half
+# of why the brow read as sticks. Eight costs 3,680 vertices on the pair and
+# makes the arc read as a curve.
+SEGMENTS = 8
 
-# A brow hair is 4..10 mm. In decimetres that is 0.04..0.10, and the head of
-# the brow carries the longest.
-LEN_HEAD = 0.095
+# A brow hair is 4..10 mm, so 0.04..0.10 dm -- and WHERE the long ones sit was
+# backwards. This file had the head carrying the longest hairs, tapering
+# monotonically to the tail. Every reference in
+# `references/.../eye-brow-pictures` -- two drawn sheets, two photographs --
+# shows the opposite: the head's hairs are SHORT and fan out, the longest hairs
+# are in the body sweeping toward the tail, and the tail's converge to a point.
+#
+# That inversion is what "the beginning is messy" was. Long hairs at the head,
+# steep and splayed, leave the brow's outline and read as a spray of loose
+# bristles over the nose bridge. Nothing else about the brow had to change.
+LEN_HEAD = 0.052
+LEN_PEAK = 0.104
 LEN_TAIL = 0.045
+# Where along the brow the longest hairs sit, measured off the sheets: just
+# inboard of the arch, around a third of the way out.
+LEN_PEAK_AT = 0.38
 # Half the width of one hair, in dm. A real brow hair is about 0.1 mm, and
 # drawing it at that scale is why the first attempts looked sparse despite
 # carrying 660 of them: at 0.22 mm a hair is SUB-PIXEL in a 1024 render, so
 # antialiasing averages it into the skin and most of the brow disappears. 0.8
 # mm is wider than anatomy and is what makes a hair survive being drawn -- the
 # same reason a hair card in any real-time groom is far wider than a hair.
-HALF_WIDTH = 0.0040
+# 0.0062, up from 0.0040. The references read as a SOLID dark shape that
+# happens to be made of hairs; ours read as hairs that happen to be near each
+# other, because the body never closed up. The fix is WIDTH, not count -- the
+# same thing the rope styles' skullcap needed on the same day. A wider ribbon
+# occludes more for exactly the same vertex count, where another 200 hairs a
+# side would have cost 4,800 vertices to close the same gaps.
+#
+# Still far under a real hair's apparent width at this framing: a brow hair is
+# about 0.1 mm and this is 1.0 mm, because a ribbon seen near edge-on shows a
+# fraction of its width and the alpha sheet eats the rest.
+#
+# Backed off from 0.0062 once the hairs lay DOWN. At that width, standing off
+# the skin, each one was its own visible stick; lying along the surface they
+# overlap, so the mass closes up at a width that no longer draws the eye to any
+# single hair. Density is carried by the count instead, which is what should
+# have carried it.
+HALF_WIDTH = 0.0052
 # Half the brow's thickness at its widest, in dm. MEASURED from the reference
 # as length : thickness = 5.6 : 1; this arc runs about 0.40 dm, so the full
 # thickness is 0.071 and half of it is this. The first version used 0.023,
@@ -158,8 +193,17 @@ def flow(t, lean):
     degrees above horizontal, and the tail falls 10 to 25 degrees below it.
     """
     if t < 0.22:
-        # The head: nearly vertical, fanning slightly outward as it goes.
-        deg = 78.0 - 60.0 * (t / 0.22)
+        # The head: STEEP AND SWEPT, not vertical. Measured off
+        # `references/.../eye-brow-pictures` -- two drawn sheets and two
+        # photographs agree that the inner hairs rise at roughly 45 to 60
+        # degrees and ALREADY LEAN TOWARD THE TAIL. None of the four has a
+        # vertical hair in it.
+        #
+        # 78 degrees was close enough to vertical that the head read as a spray
+        # standing clear of the brow's own outline: "the beginning is messy and
+        # not clean like the references". Rendered at head framing it is a
+        # cowlick, and it is the first thing the eye lands on.
+        deg = 62.0 - 44.0 * (t / 0.22)
     elif t < 0.62:
         # The body: flattening through the arch.
         deg = 18.0 - 14.0 * ((t - 0.22) / 0.40)
@@ -210,20 +254,37 @@ def hair(tris, t, across, lean, rng):
     grow = (direction[0] / dl, direction[1] / dl, 0.0)
     # Mirror the growth for the right brow later; here x is the LEFT side, where
     # outward is +x.
-    length = (LEN_HEAD + (LEN_TAIL - LEN_HEAD) * t) * rng.uniform(0.75, 1.25)
-    # THE HEAD TUFT. In the reference the inner hairs stand clear of the body's
-    # outline -- a spray of long, near-vertical hairs that is the first thing
-    # reading as "brow" rather than "smudge". Inside the first eighth they grow
-    # half again as long.
-    if t < 0.12:
-        length *= 1.0 + 0.55 * (1.0 - t / 0.12)
+    # Two straight ramps rather than a curve: the measurement is three points
+    # and fitting anything smoother to it would be invention.
+    if t < LEN_PEAK_AT:
+        base = LEN_HEAD + (LEN_PEAK - LEN_HEAD) * (t / LEN_PEAK_AT)
+    else:
+        base = LEN_PEAK + (LEN_TAIL - LEN_PEAK) * ((t - LEN_PEAK_AT) / (1.0 - LEN_PEAK_AT))
+    # 0.82..1.18, not 0.75..1.25. The long tail of that spread was a quarter
+    # again the mean, and those are precisely the hairs that cleared the
+    # outline and read as strays.
+    length = base * rng.uniform(0.82, 1.18)
+    # NO TUFT MULTIPLIER. There used to be one here growing the first eighth by
+    # half again, on the reading that the reference's head "stands clear of the
+    # body's outline". The length profile above now carries the head's length
+    # directly, and the fan comes from `lean` spreading the hairs apart, which
+    # is what the sheets actually show. A second length rule on top of the
+    # profile only put the spray back.
 
     pts = []
     for i in range(SEGMENTS + 1):
         s = i / SEGMENTS
-        # A hair bows: it leaves the skin, then lies back toward it. Without the
-        # bow every hair is a straight spine and the brow reads as bristles.
-        lift = math.sin(s * math.pi) * 0.25 + s * 0.35
+        # A hair bows: it leaves the skin, then lies back DOWN toward it. The
+        # second term used to be `+ s * 0.35`, which is not a bow -- it is a
+        # ramp, and it lifted the tip further off the face the longer the hair
+        # got. Every hair therefore ended standing clear of the skin, and a brow
+        # of them read as "sticks put on sand": separate rigid spines planted in
+        # the surface rather than hair lying along it.
+        #
+        # Now the arc peaks mid-hair and the tip SETTLES, finishing nearer the
+        # skin than it started climbing. That is what makes neighbouring hairs
+        # overlap into a mass instead of standing apart.
+        lift = math.sin(s * math.pi) * 0.30 - s * 0.12
         along = C.scale(grow, length * s)
         out = C.scale(normal, length * lift * 0.45)
         pts.append(C.add(C.add(root, along), out))
@@ -289,7 +350,26 @@ def build(app_path=""):
         across = rng.uniform(-1.0, 1.0)
         # Upper hairs comb DOWN and lower ones comb UP, so the two sets
         # interleave through the middle instead of lying parallel.
-        lean = -22.0 * across + rng.uniform(-7.0, 7.0)
+        # THE HEAD IS THE TIDIEST PART OF A BROW, and a constant jitter made it
+        # the opposite. The same +/-7 degrees reads as texture on the flat body
+        # and as a scribble on hairs that are steep -- which is the other half
+        # of why the beginning looked messy. Tapered, so the head is combed and
+        # the tail keeps the scatter the references show there.
+        lean = -22.0 * across + rng.uniform(-7.0, 7.0) * (0.35 + 0.65 * t)
+        # THE OUTLINE IS COMBED, THE INTERIOR IS NOT. In the references the
+        # brow's top edge is a smooth swept line and the loose, crossing hairs
+        # are all INSIDE it -- an edge hair that stands up is a stray, and a
+        # brow drawn with a hundred of them reads as ragged however good its
+        # shape is. Rendered at head framing that was the last thing separating
+        # this from the sheets: the mass was right and the silhouette was
+        # spiky.
+        #
+        # Hairs near the upper edge (`across` toward +1) get their lean pulled
+        # down toward the brow's own direction, so they lie along the outline
+        # instead of crossing it. Interior hairs are untouched, because the
+        # interleaving they give is what stops the brow reading as painted.
+        if across > 0.45:
+            lean -= 16.0 * ((across - 0.45) / 0.55)
         strand = hair(tris, t, across, lean, rng)
         _p, normal, _d = surface_at(tris, *arc_point(t))
         hp, hq, hu = ribbon(strand, HALF_WIDTH * rng.uniform(0.7, 1.4), normal)

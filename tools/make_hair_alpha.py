@@ -248,9 +248,22 @@ SLOTS = (
     # the value: "Eight against the six-to-eight facets the sweeps use, so a
     # strand is about one facet wide". Seven here, one per facet, deliberately
     # NOT six so the cut does not land on the same edge every time.
+    # 11 STRANDS, AND THE NUMBER IS COPRIME WITH THE FACET COUNT ON PURPOSE.
+    # The ropes were 5-sided and carried 7 strands; widening them to 7 sides for
+    # a rounder silhouette would have put exactly ONE strand on each facet, so
+    # every facet drew the same thing and the tube read as corduroy. 11 over 7
+    # never repeats around the tube.
+    #
+    # This is the third time the strand count had to be matched to what the
+    # geometry can resolve -- after the 34-strand brow on a 6-facet ridge and
+    # the 52-strand sheet on a card two columns wide. The rule is the same every
+    # time: the count follows the mesh, not the hair.
     ("tube", ROOT / "data" / "hair" / "hair_tube_strands.png",
-     dict(count=7, seed=0x7B5E, width_scale=1.35, min_tip=0.90, max_tip=1.0,
-          drift_max=0.006, root_band=0.050, tip_softness=0.12)),
+     # 0.86, not 1.35: the generator's own coverage gate refused 11 strands at
+     # the old width at 77.6% opaque, which is a solid ribbon rather than
+     # strands. Narrowed by 7/11 so eleven of them cover what seven did.
+     dict(count=11, seed=0x7B5E, width_scale=0.86, min_tip=0.90, max_tip=1.0,
+          drift_max=0.006, root_band=0.050, tip_softness=0.12, solid=True)),
     ("brow", ROOT / "data" / "eyebrows" / "brow_strands.png",
      dict(count=5, seed=0xB4042, width_scale=2.30, min_tip=0.62, max_tip=1.0,
           drift_max=0.004, root_band=0.030, tip_softness=0.50)),
@@ -264,13 +277,61 @@ SLOTS = (
     # Cutting this one into many strands would alias exactly as the 34-strand
     # brow did -- a card is two quads wide, and there is nothing for a comb to
     # resolve against.
+    # CARD, for the coiled styles. A coil card spans u 0..1 with exactly TWO
+    # columns and renders a few pixels wide, so the 52-strand scalp sheet
+    # squeezes fifty-two strands across it and aliases -- RENDERED at head
+    # framing the hair showed a grid/moire pattern and `wisps` read as strips of
+    # tape. It only ever looked right because every earlier render was
+    # full-body, where a card is sub-pixel and the whole question is invisible.
+    #
+    # FOUR strands, because a card stands for a small clump rather than one
+    # hair: enough to break the ribbon's edge, few enough that two of them land
+    # on a pixel instead of eight. This is the same mistake as the 34-strand
+    # brow and the 52-strand tube, met a third time -- the strand count has to
+    # match what the GEOMETRY can resolve, never what the hair is really like.
+    ("card", ROOT / "data" / "hair" / "hair_card_strands.png",
+     dict(count=4, seed=0xCA2D, width_scale=1.25, min_tip=0.72, max_tip=1.0,
+          drift_max=0.004, root_band=0.055, tip_softness=0.40)),
     ("brow_hair", ROOT / "data" / "eyebrows" / "brow_hair.png",
      dict(count=1, seed=0xB0B, width_scale=1.70, min_tip=0.80, max_tip=1.0,
           drift_max=0.0, root_band=0.10, tip_softness=0.45)),
+    # ONE HAIR PER CARD, like the brow. The eyelashes used to be a SHEET -- the
+    # base mesh's helper cages -- and six strands across it was the right answer
+    # for a sheet. They are individual lashes now, each on its own card two
+    # columns wide in `u`, and six strands across two columns is the same
+    # aliasing that shredded the afro and striped the tubes. Fourth time.
     ("lash", ROOT / "data" / "eyelashes" / "lash_strands.png",
-     dict(count=6, seed=0x1A5E5, width_scale=2.10, min_tip=0.50, max_tip=1.0,
-          drift_max=0.008, root_band=0.080, tip_softness=0.55)),
+     dict(count=1, seed=0x1A5E5, width_scale=1.60, min_tip=0.80, max_tip=1.0,
+          drift_max=0.0, root_band=0.10, tip_softness=0.45)),
 )
+
+
+def solidify(px):
+    """Turn an alpha-cut sheet into an OPAQUE one, strands shading it instead.
+
+    A ROPE IS NOT A CARD, and that is the distinction this exists for. On a card
+    or a shell the alpha holes are the gaps between hairs at the silhouette, and
+    cutting them is the whole point. A loc is a solid object: cutting 41% of its
+    surface into holes makes every rope see-through, so a head of them reads as
+    stacked sheets of cellophane -- which is exactly what the close-up showed,
+    and what no amount of lumpiness in the geometry could fix.
+
+    So the strand pattern moves from alpha to LUMINANCE. The sheet becomes fully
+    opaque and the strands darken it instead, which is what a photograph of a
+    loc actually shows: fibre running along it, not holes through it.
+    """
+    # How dark the gaps go: not to black, because the gaps between fibres on a
+    # real rope are shadowed rather than empty. One caller, one value.
+    floor = 0.45
+    out = bytearray(px)
+    for i in range(0, len(out), 4):
+        a = out[i + 3] / 255.0
+        lum = out[i] / 255.0 if out[i + 3] else 1.0
+        shade = floor + (1.0 - floor) * a * lum
+        v = int(max(0.0, min(1.0, shade)) * 255.0)
+        out[i] = out[i + 1] = out[i + 2] = v
+        out[i + 3] = 255
+    return out
 
 
 def write_slot(name, path, cfg):
@@ -290,6 +351,21 @@ def write_slot(name, path, cfg):
             f"{name}: {coverage:.1f}% opaque is outside the 8..75% a strand "
             f"texture should land in -- it will read as a solid ribbon or as nothing"
         )
+
+    if cfg.get("solid"):
+        px = solidify(px)
+        # The gate above still ran, on the sheet BEFORE it was solidified --
+        # that is deliberate, because the strand layout is what it checks and
+        # solidifying would make every sheet read as 100% and the check
+        # vacuous. What a solid sheet needs instead is that it still VARIES:
+        # a uniform one is a plastic rope again, which is the bug being fixed.
+        lo = min(px[i] for i in range(0, len(px), 4))
+        hi = max(px[i] for i in range(0, len(px), 4))
+        if hi - lo < 40:
+            raise ValueError(
+                f"{name}: solid sheet spans only {hi - lo}/255 of luminance -- "
+                f"it will read as a plain cylinder"
+            )
 
     try:
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -34,7 +34,11 @@ inline constexpr float kCraniumZ = 0.50F;
 /// cranium centre, measured from the FRONT (+z).
 ///
 /// MEASURED on the base mesh: forehead ~+9 degrees in this frame, brow -13,
-/// ears -25, nape -50.
+/// ears -25, nape -50. The formula passes through the forehead and the nape
+/// exactly and stops 2 degrees short of the ears, because the region has to be
+/// one walkable island and the base mesh fragments below -23. An earlier
+/// single-cosine form matched only the nape, and sat 3 degrees high at the
+/// forehead -- a taller forehead than the mesh's own anatomy.
 [[nodiscard]] float hairlineElevation(float azimuthDeg);
 
 /// Body-group vertices at or above the hairline.

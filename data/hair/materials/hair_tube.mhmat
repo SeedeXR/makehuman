@@ -1,3 +1,16 @@
+# THE ROPE MATERIAL: locs, dreadlocks, cornrows and bantu knots.
+#
+# `transparent False`, and that is the point of it. The sheet this wears used to
+# be alpha-cut like every other strand texture here, which meant 41% of each
+# rope's surface was HOLES. On a card or a shell those holes are the gaps
+# between hairs at the silhouette and cutting them is the whole technique; on a
+# rope they make the thing see-through, and a head of forty-one of them read as
+# stacked sheets of cellophane. Lumpy geometry could not fix that, because it
+# was never the geometry.
+#
+# `tools/make_hair_alpha.py` now writes this sheet SOLID (`solid=True`): the
+# strand pattern shades the rope instead of perforating it, which is what a
+# photograph of a loc shows -- fibre running along it, not light through it.
 # The swept styles' material: cornrows, locs and bantu knots.
 #
 # A SEPARATE SHEET FROM `hair.mhmat`, and the split is measured rather than
@@ -17,7 +30,7 @@ diffuseColor 0.28 0.19 0.13
 specularColor 0.6 0.6 0.6
 shininess 0.3
 opacity 1.0
-transparent True
+transparent False
 diffuseTexture ../hair_tube_strands.png
 backfaceCull True
 castShadows True

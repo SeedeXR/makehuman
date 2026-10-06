@@ -143,7 +143,7 @@ TEST_CASE("the locs are cut level", "[asset][hair][locs]") {
     // Stated as a property of the point cloud rather than per rope, because
     // rope lengths differ: if every rope reaches the floor, its whole bottom
     // ring sits there, so the number of vertices at the lowest height is a
-    // multiple of the ropes. MEASURED on the shipped asset: 41 ropes x 5 sides
+    // multiple of the ropes. MEASURED on the shipped asset: 41 ropes x 7 sides
     // = 205, though one rope is stacked clear of a crossing and ends a step
     // short. A ragged style has a handful.
     const auto pts = loadLocs();
@@ -205,9 +205,12 @@ TEST_CASE("the locs do not lie on top of each other", "[asset][hair][locs]") {
     // which is the waste this test was written for and which still fails.
     // MEASURED on the shipped asset: 637 coincident pairs, every group of size
     // exactly 2, and every gap exactly 5 -- no exceptions to sweep under.
-    constexpr size_t kLocSides = 5;
-    size_t seamPairs = 0;
-    size_t overlapping = 0;
+    // 7 since the ropes were widened from five sides: a five-sided tube shows
+    // as a pentagon in a close-up, which was part of why locs read as moulded
+    // plastic rather than as matted hair.
+    constexpr size_t kLocSides = 7;
+    size_t seamPairs           = 0;
+    size_t overlapping         = 0;
     for (size_t i = 1; i < order.size(); ++i) {
         if (key(order[i]) != key(order[i - 1])) continue;
         const size_t a = std::min(order[i], order[i - 1]);
@@ -218,8 +221,8 @@ TEST_CASE("the locs do not lie on top of each other", "[asset][hair][locs]") {
             ++overlapping;
         }
     }
-    INFO("coincident: " << seamPairs << " seam pairs, " << overlapping
-                        << " overlapping, of " << pts.size() << " vertices");
+    INFO("coincident: " << seamPairs << " seam pairs, " << overlapping << " overlapping, of "
+                        << pts.size() << " vertices");
     CHECK(overlapping == 0);
     // ...and the seams are really there, so a future change that drops the
     // closing vertex cannot pass this by making the whole question disappear.

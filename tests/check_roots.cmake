@@ -50,14 +50,26 @@ foreach(line IN LISTS lines)
         message(FATAL_ERROR "\"${line}\" does not name a cap vertex (lowest is 226)")
     endif()
     # ...and an upper bound, which is what separates the BODY scalp from the
-    # helper cages sitting above it. MEASURED: body cap vertices run 226..12157,
-    # while every `helper-hair` (138) and `joint-head-2` (8) vertex above
-    # y=7.75 is >= 14566. Height alone cannot tell them apart -- both sit on
-    # the cranium -- so without this a root on the long-hair envelope, the one
-    # source `memory/todo.md` says never to use, reads as a good root.
-    if(index GREATER 12157)
+    # helper cages sitting above it. Height alone cannot tell them apart -- both
+    # sit on the cranium -- so without this a root on the long-hair envelope,
+    # the one source `memory/todo.md` says never to use, reads as a good root.
+    #
+    # 13379 IS THE BODY GROUP'S LAST VERTEX, re-measured. This said 12157, which
+    # was never the body group's extent at all: it was the highest index that
+    # happened to fall in the region when the region was smaller. Fitting
+    # `hairlineElevation` to the measured anatomy brought vertex 12159 in -- a
+    # perfectly ordinary body-scalp vertex -- and this gate called it a helper
+    # cage. A bound that encodes an accident of today's region rather than the
+    # property it claims to test will do that the first time the region moves.
+    #
+    # MEASURED on the shipped base mesh: the body group is vertices 0..13379,
+    # contiguous, sharing no vertex with any other group; every non-body vertex
+    # is >= 13380, and every `helper-hair` (138) and `joint-head-2` (8) vertex
+    # above y=7.75 is >= 14566. So the real boundary still catches what this
+    # was written to catch.
+    if(index GREATER 13379)
         message(FATAL_ERROR "\"${line}\" names vertex ${index}, a helper cage rather "
-                            "than the body scalp (body cap ends at 12157)")
+                            "than the body scalp (the body group ends at 13379)")
     endif()
     if(index IN_LIST indices)
         message(FATAL_ERROR "vertex ${index} was printed twice")
@@ -74,8 +86,13 @@ foreach(line IN LISTS lines)
     endif()
     # ...and the vertex is on the scalp rather than merely somewhere on the body.
     # MEASURED on the shipped base mesh, the hair-bearing region's box is
-    # x -0.7521..0.7521, y 6.9890..8.4913, z -0.3916..1.3948.
-    if(y LESS 6.98 OR y GREATER 8.50 OR z LESS -0.40 OR z GREATER 1.40
+    # x -0.7521..0.7521, y 6.9890..8.4913, z -0.3916..1.4454.
+    #
+    # The z bound moved from 1.3948 when `hairlineElevation` was fitted to the
+    # forehead, the ears and the nape instead of the nape alone: the region now
+    # reaches 5 mm further down the forehead, which is the whole point of the
+    # fit. x and y did not move -- the sides and the crown were already right.
+    if(y LESS 6.98 OR y GREATER 8.50 OR z LESS -0.40 OR z GREATER 1.45
        OR x LESS -0.76 OR x GREATER 0.76)
         message(FATAL_ERROR "root \"${line}\" is outside the hair-bearing scalp")
     endif()

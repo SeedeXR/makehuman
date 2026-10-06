@@ -33,6 +33,7 @@ import math
 import sys
 import uuid
 from pathlib import Path
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parent.parent
 BASE = ROOT / "data" / "3dobjs" / "base.obj"
@@ -60,7 +61,9 @@ CENTRE = (0.0, 7.75, 0.50)
 # used `14 + 20*cos(theta)` in a frame 0.2 dm too low and put every style in a
 # band across the crown that read as a headband.
 def hairline(azim_deg: float) -> float:
-    return -19.0 + 31.0 * math.cos(math.radians(azim_deg))
+    """MIRRORS `mh::core::hairlineElevation`. `hairline_matches_app` gates it."""
+    c = math.cos(math.radians(azim_deg))
+    return -23.0 + 29.5 * c + 2.5 * c * c
 
 
 def read_base():
@@ -83,166 +86,10 @@ def spherical(v):
             math.degrees(math.atan2(dx, dz)))
 
 
-def afro(verts, faces, thickness=0.78, edge_deg=20.0, skirt_deg=12.0):
-    """A rounded shell standing off the scalp: the afro silhouette.
-
-    Every hair-bearing vertex is pushed out along its own surface NORMAL by
-    `thickness`, so the shell is a uniform-depth copy of the skull. An earlier
-    version grew each vertex RADIALLY from the cranium centre and rendering it
-    settled the matter: radial growth only yields a ball if the source is
-    already a sphere, and the scalp is not -- low vertices sit far from the
-    centre horizontally, so they pushed sideways and the result was a
-    wide-brimmed mushroom cap. A normal offset follows the head, which from the
-    front reads as the round halo an afro actually is.
-
-    The offset holds FULL volume across the scalp and eases off only in the
-    last `edge_deg` degrees before the hairline, so the shell meets the skin
-    tangentially at the edge without losing body anywhere else. MEASURED: a
-    single mesh edge changes the hairline margin by a median of 7.2 degrees
-    (p90 14.4), so a band narrower than that collapses the whole taper into one
-    face -- rendering it at 9 degrees produced dark jagged spikes fanning
-    around the face. 30 degrees spans about four rows of vertices. A first version
-    eased over the whole scalp -- `margin/deepest` -- and rendering it settled
-    the matter: mean offset 0.086 dm, 18 px of added height, no added width,
-    and it read as a flat-top sitting too far back with a bare forehead. Volume
-    has to be near-constant or it is not an afro.
-    """
-    margin = {}
-    for i, v in enumerate(verts):
-        elev, azim = spherical(v)
-        m = elev - hairline(azim)
-        # A SKIRT of vertices below the hairline is kept in the patch with zero
-        # growth. Without it the shell's rim IS the region boundary, and that
-        # boundary is a ragged polyline of whichever vertices happened to fall
-        # inside -- which rendered as serrations along the hairline. With it the
-        # grown part ends inside the patch and the rim lies flat on the skin.
-        if m > -skirt_deg:
-            margin[i] = m
-    if not margin:
-        return [], [], {}
-
-    # Only whole faces, and only the vertices those faces use: `loadObj`
-    # REJECTS a vertex referenced by no face (src/core/ObjReader.cpp:235-243),
-    # and the whole proxy then fails to load -- which renders as a bald head
-    # rather than as an error any gate would catch.
-    keep = [f for f in faces if all(v in margin for v in f)]
-    used = sorted({v for f in keep for v in f})
-
-    # Area-weighted vertex normals over the kept patch, flipped outward: the
-    # base mesh's winding is not assumed, it is CHECKED against the direction
-    # away from the cranium centre.
-    normal = {b: [0.0, 0.0, 0.0] for b in used}
-    for f in keep:
-        a, bb, c = verts[f[0]], verts[f[1]], verts[f[2]]
-        u = (bb[0] - a[0], bb[1] - a[1], bb[2] - a[2])
-        w = (c[0] - a[0], c[1] - a[1], c[2] - a[2])
-        n = (u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0])
-        for v in f:
-            for k in range(3):
-                normal[v][k] += n[k]
-
-    placed = {}
-    for b in used:
-        n = normal[b]
-        ln = math.sqrt(sum(t * t for t in n))
-        x, y, z = verts[b]
-        out = (x - CENTRE[0], y - CENTRE[1], z - CENTRE[2])
-        if ln < 1e-9:
-            placed[b] = (0.0, 0.0, 0.0)
-            continue
-        n = [t / ln for t in n]
-        if sum(n[k] * out[k] for k in range(3)) < 0.0:
-            n = [-t for t in n]
-        # smoothstep over a NARROW band at the hairline only.
-        t = min(1.0, max(0.0, margin[b]) / edge_deg)
-        ease = t * t * (3.0 - 2.0 * t)
-        grow = thickness * ease
-        placed[b] = (n[0] * grow, n[1] * grow, n[2] * grow)
-    return used, keep, placed
 
 
-def cap_uvs(points):
-    """Crown-radial UVs for a scalp cap: `u` azimuth, `v` angle from the whorl.
-
-    THE SAME UNWRAP `write_style` USES, and it exists because the bantu and loc
-    caps were still projecting x/z after the afro's was fixed. That projection
-    makes `u` left-to-right and `v` front-to-back, so a strand texture draws
-    hair from the face to the nape and a tip fade eats the back of the head --
-    rendered on the afro, the crown went bald and the rest hung in strings.
-    Two caps wearing the same `hair_strands.png` with the old mapping would
-    show the same artefact between the ropes and under the knots.
-
-    `u` wraps, so the seam is put at the NAPE: at azimuth 0 it runs down the
-    forehead, and a triangle straddling it interpolates `u` the long way and
-    smears the whole texture across itself.
-    """
-    out = []
-    reach = 1.0
-    polars = []
-    for q in points:
-        dx, dy, dz = q[0] - CENTRE[0], q[1] - CENTRE[1], q[2] - CENTRE[2]
-        polars.append((math.degrees(math.atan2(math.hypot(dx, dz), dy)),
-                       math.atan2(dx, dz)))
-    reach = max((pa for pa, _ in polars), default=1.0) or 1.0
-    for polar, azim in polars:
-        out.append(((azim / (2.0 * math.pi) + 0.5) % 1.0, min(1.0, polar / reach)))
-    return out
 
 
-def write_style(name, stem, used, keep, placed, verts):
-    index = {b: i for i, b in enumerate(used)}
-    obj = [BANNER,
-           f"# {name}: {len(used)} vertices, {len(keep)} faces.", "g " + stem]
-    pos = []
-    for b in used:
-        x, y, z = verts[b]
-        d = placed[b]
-        pos.append((x + d[0], y + d[1], z + d[2]))
-        obj.append("v {:.6f} {:.6f} {:.6f}".format(*pos[-1]))
-    # CROWN-RADIAL, because a strand texture needs to know which way the hair
-    # GROWS and a planar projection cannot say.
-    #
-    # This used to project x/z over the cap's extent, which is a reasonable
-    # unwrap for a skullcap and the wrong one for hair: it makes `u`
-    # left-to-right and `v` front-to-back, so a texture whose strands run along
-    # `v` draws them from the face to the nape, and a tip fade at v=1 eats the
-    # back of the head. RENDERED and looked at, that is exactly what happened --
-    # the crown went bald and the rest hung in strings.
-    #
-    # Hair leaves a scalp from the whorl and travels outward and down, so `v`
-    # is the angle away from straight up about the cranium centre, normalised
-    # over the cap's own reach, and `u` is the azimuth around it. Strands then
-    # run root-to-tip the way they grow, and the tip fade lands on the hem
-    # where the silhouette wants breaking up.
-    #
-    # `u` IS THE AZIMUTH AND THEREFORE WRAPS, which is why the strand texture
-    # wraps its own distance calculation: without that there is a seam down the
-    # back where u=0.999 meets u=0.001.
-    for u, v in cap_uvs(pos):
-        obj.append(f"vt {u:.6f} {v:.6f}")
-    for f in keep:
-        obj.append("f " + " ".join(f"{index[v] + 1}/{index[v] + 1}" for v in f))
-
-    mhclo = [
-        BANNER,
-        "#",
-        "# A shell standing off the BODY scalp. Each vertex binds to the base",
-        "# vertex it grew from, with a world-space offset: the fit declares no",
-        "# scale form, so TMatrix::diagonal is (1,1,1) and the offset applies",
-        "# unchanged (src/core/Proxy.cpp:82-84, 423-441).",
-        f"name {name}",
-        f"uuid 8f2c1d4a-hair-{stem}",
-        "basemesh hm08",
-        f"obj_file {stem}.obj",
-        "material materials/hair.mhmat",
-        "z_depth 60",
-        "verts 0",
-    ]
-    for b in used:
-        d = placed[b]
-        mhclo.append(f"{b} {b} {b} 1.00000 0.00000 0.00000 "
-                     f"{d[0]:.5f} {d[1]:.5f} {d[2]:.5f}")
-    return "\n".join(obj) + "\n", "\n".join(mhclo) + "\n"
 
 
 def write_bound_style(name, stem, points, faces, bindings, uvs=None,
@@ -373,16 +220,16 @@ def derive(verts, faces, app_path=""):
     it cannot be run. A generator that silently ships fewer styles than it
     claims is exactly the failure `--check` exists to catch.
     """
-    # THE AFRO IS NO LONGER WRITTEN HERE. It was a SHELL -- one offset copy of
-    # the scalp, 475 vertices, with the hair painted on by an alpha -- and no
+    # NO STYLE IN THIS TREE IS A SHELL ANY MORE. The afro went first -- one
+    # offset copy of the scalp with the hair painted on by an alpha, and no
     # texture makes a shell read as hair close up, because the geometry has no
-    # hairs in it. `tools/make_coils.py` grows it from coiled strands now
-    # (owner's call, 2026-10-06), reaching the same 0.78 dm envelope at the
-    # crown that this produced.
+    # hairs in it. The skullcaps under the rope styles and the bantu knots were
+    # the last two, and they are grown from coiled cards now as well.
     #
-    # `afro()` and `write_style()` stay: `write_style` is what gives a cap its
-    # crown-radial unwrap, and both are still the reference for how a shell is
-    # cut from the body mesh if a shell style is ever wanted again.
+    # `afro()`, `write_style()` and `cap_uvs()` went WITH them. They had been
+    # kept as "the reference for how a shell is cut from the body mesh if a
+    # shell style is ever wanted again" -- 156 lines with no caller, retained
+    # against a need nobody has. Git remembers them; this file does not need to.
     wanted = {}
 
     pts, fs, rows, app, cuvs = cornrows(verts, faces, app_path)
@@ -411,31 +258,39 @@ def derive(verts, faces, app_path=""):
     wanted["bantu_knots.obj"] = bobj
     wanted["bantu_knots.mhclo"] = bmhclo
 
-    lpts, lfs, lroots, _, lshort, lcap, lncap, luvs = locs(verts, faces, app_path)
-    # A rope of two rings is not a loc. The failure this names is real and was
-    # MEASURED: before `LOC_SCALP_BOTTOM` existed the crown apex read as a shelf
-    # and EVERY rope stopped at ZERO steps. Observed range with the style as it
-    # ships is 7..26, so the bar sits between the disaster and the shortest real
-    # rope. It was 8 while I was guessing, which is one step below nothing --
-    # crossing-stacking then shortened one rope to 7 and tripped it.
-    if lshort < 5:
-        raise RuntimeError(f"the shortest loc is {lshort} steps")
-    # Only the ROPE points go to the binder; the cap already carries its own
-    # bindings, one per base vertex it grew from.
-    lbinds = lcap + bind_points(app, lpts[lncap:])
-    if not lpts or len(lbinds) != len(lpts):
-        raise RuntimeError(f"{len(lbinds)} bindings for {len(lpts)} loc points")
-    lobj, lmhclo = write_bound_style("Locs", "locs", lpts, lfs, lbinds, luvs,
-                                      material=TUBE_MATERIAL)
-    wanted["locs.obj"] = lobj
-    wanted["locs.mhclo"] = lmhclo
+    # BOTH ROPE STYLES, from one generator. Locs and dreadlocks differ only in
+    # the `RopeStyle` block, so writing them in a loop is what keeps a fix to
+    # the hang or the shelf rule from reaching one and missing the other.
+    ropes = {}
+    for spec in (LOCS, DREADS):
+        lpts, lfs, lroots, _, lshort, lcap, lncap, luvs = locs(verts, faces, app_path, spec)
+        # A rope of two rings is not a loc. The failure this names is real and
+        # was MEASURED: before `LOC_SCALP_BOTTOM` existed the crown apex read as
+        # a shelf and EVERY rope stopped at ZERO steps. Observed range with the
+        # style as it ships is 7..26, so the bar sits between the disaster and
+        # the shortest real rope. It was 8 while I was guessing, which is one
+        # step below nothing -- crossing-stacking then shortened one rope to 7
+        # and tripped it.
+        if lshort < 5:
+            raise RuntimeError(f"the shortest {spec.stem} rope is {lshort} steps")
+        # Only the ROPE points go to the binder; the cap already carries its own
+        # bindings, one per base vertex it grew from.
+        lbinds = lcap + bind_points(app, lpts[lncap:])
+        if not lpts or len(lbinds) != len(lpts):
+            raise RuntimeError(f"{len(lbinds)} bindings for {len(lpts)} {spec.stem} points")
+        lobj, lmhclo = write_bound_style(spec.name, spec.stem, lpts, lfs, lbinds, luvs,
+                                         material=TUBE_MATERIAL)
+        wanted[f"{spec.stem}.obj"] = lobj
+        wanted[f"{spec.stem}.mhclo"] = lmhclo
+        ropes[spec.stem] = (len(lpts), len(lfs), len(lroots), lshort)
 
     summary = (f"cornrows: {len(pts)} vertices, {len(fs)} faces\n"
-               f"locs: {len(lpts)} vertices, {len(lfs)} faces, {len(lroots)} ropes, "
-               f"shortest {lshort} steps\n"
+               + "".join(f"{k}: {v[0]} vertices, {v[1]} faces, {v[2]} ropes, "
+                         f"shortest {v[3]} steps\n" for k, v in ropes.items())
+               + (
                f"bantu knots: {len(bpts)} vertices, {len(bfs)} faces, "
                f"{len(roots)} roots, closest pair "
-               f"{min(math.dist(a, b) for i, a in enumerate(roots) for b in roots[i + 1:]):.4f} dm")
+               f"{min(math.dist(a, b) for i, a in enumerate(roots) for b in roots[i + 1:]):.4f} dm"))
     return wanted, summary
 
 
@@ -750,7 +605,7 @@ def trace_row(tris, x, t0=0.0, t1=250.0, samples=70, max_dist=0.04):
     return out
 
 
-def ridge(path, stand=0.13, half=0.06, sides=6):
+def ridge(path):
     """A rounded ridge swept along one path: the braid itself.
 
     The frame is the path TANGENT and the true SURFACE NORMAL. A first version
@@ -763,10 +618,33 @@ def ridge(path, stand=0.13, half=0.06, sides=6):
     The ring is pushed fully clear of the skin (`0.55 + 0.45*cos`), because a
     section centred on the surface buries half of itself in the head.
     """
+    # One caller, one setting, so the cross-section is written here rather
+    # than passed in: how far the braid stands off the scalp, its half-width,
+    # and how many facets it is drawn with.
+    stand, half, sides = 0.13, 0.06, 6
     pts = [p for p, _n, _d in path]
     normals = [n for _p, n, _d in path]
     out, rings, uvs = [], [], []
+    last = len(pts) - 1
     for i, p in enumerate(pts):
+        # THE TAIL COMES TO A POINT. The sweep used to carry one cross-section
+        # from the hairline to the nape and stop, so a row ended on a full-size
+        # OPEN ring -- a blunt square face hanging off the back of the head,
+        # which is exactly how it rendered. A braid tapers out; it does not get
+        # cut off.
+        #
+        # Both ends are scaled, not just the tail: a cornrow also starts thin
+        # where it is first gathered at the hairline. The tail runs out over the
+        # last fifth to a fifth of its width, and the head eases in over the
+        # first twentieth.
+        f = i / last if last else 0.0
+        if f > 0.80:
+            taper = 1.0 - 0.80 * ((f - 0.80) / 0.20)
+        elif f < 0.05:
+            taper = 0.55 + 0.45 * (f / 0.05)
+        else:
+            taper = 1.0
+        ring_stand, ring_half = stand * taper, half * taper
         nxt = pts[min(i + 1, len(pts) - 1)]
         prv = pts[max(i - 1, 0)]
         t = [nxt[k] - prv[k] for k in range(3)]
@@ -796,8 +674,8 @@ def ridge(path, stand=0.13, half=0.06, sides=6):
         # fix for the afro's unwrap; this is the sweep's version of it.
         for k in range(sides + 1):
             a = 2.0 * math.pi * k / sides
-            r = [p[j] + outward[j] * (stand * (0.55 + 0.45 * math.cos(a)))
-                 + side[j] * (half * math.sin(a)) for j in range(3)]
+            r = [p[j] + outward[j] * (ring_stand * (0.55 + 0.45 * math.cos(a)))
+                 + side[j] * (ring_half * math.sin(a)) for j in range(3)]
             ring.append(len(out))
             out.append(tuple(r))
             # UV, and the whole point of it: a strand texture has to run ALONG
@@ -944,23 +822,18 @@ def bantu(verts, body_faces, app_path=""):
         raise RuntimeError(f"{len(roots)} of {BANTU_KNOTS} roots clear the hairline "
                            f"by {BANTU_INSET_DEG:.0f} deg (spread {len(spread)})")
 
-    # The cap first, so the knots sit ON it. Each of its vertices binds to the
-    # base vertex it grew from with a world offset -- the same one-line-per-
-    # vertex form `--bind-points` emits, which is why the two can share one
-    # .mhclo.
-    used, keep, placed = afro(verts, body_faces, thickness=BANTU_CAP)
-    cap = {b: i for i, b in enumerate(used)}
-    allpts = [tuple(verts[b][i] + placed[b][i] for i in range(3)) for b in used]
-    allfaces = [[cap[v] for v in f] for f in keep]
-    # The CAP's own UVs. It is cut from the base mesh, whose scalp already has
-    # a parameterisation, but these vertices are re-indexed here and the base
-    # UVs do not survive that. A planar projection over the cap's extent is
-    # enough for a strand texture: the cap is a skullcap under the style, and
-    # what has to line up is the braids and knots on top of it.
-    alluvs = cap_uvs(allpts)
-    cap_binds = [f"{b} {b} {b} 1.00000 0.00000 0.00000 "
-                 f"{placed[b][0]:.5f} {placed[b][1]:.5f} {placed[b][2]:.5f}"
-                 for b in used]
+    # The cap first, so the knots sit ON it -- GROWN, for the reasons the rope
+    # styles' cap records in `locs()`. Bantu knots carried the same offset-shell
+    # skullcap with the same three faults: a staircase boundary along the mesh
+    # edges, a planar UV projection smearing the sheet into bands, and scalp
+    # reading through between them. Same fix, same generator.
+    import make_coils  # noqa: PLC0415 -- `make_coils` imports this module
+
+    allpts, allfaces, alluvs = make_coils.grow(make_coils.CAP_BED)
+    # The shell could bind each vertex to the base vertex it grew from, because
+    # it WAS that vertex pushed outwards. A card root sits wherever it sits, so
+    # the cap goes through the same barycentric binder as the knots.
+    cap_binds = []
 
     for root in roots:
         # The knot's AXIS, not its placement: placement is the surface walk
@@ -1008,9 +881,38 @@ def bantu(verts, body_faces, app_path=""):
 #  * The shelf rule is what stops the flinging. CONTROL, rule removed: max
 #    radius 2.763 dm. With it: 1.433.
 
-LOC_HALF = 0.06
-LOC_SIDES = 5
-LOC_STANDOFF = LOC_HALF + 0.02
+# `LOC_HALF`, `LOC_SIDES` and `LOC_STANDOFF` used to live here. They are
+# per-style now and belong to `RopeStyle` below, because dreadlocks differ from
+# locs in exactly those three and in nothing else.
+# How tall the crossing pile is allowed to get, in rope diameters, as the
+# saturating curve in `locs()` approaches its limit.
+PILE = 1.6
+# How far under the skin a rope's anchor ring sits, in dm. 4 mm clears the
+# half-width of the widest rope here, so the ring cannot show through where the
+# skull curves away.
+ROOT_SINK = 0.04
+# Half-width of the zone in front of the cranium centre that counts as the
+# face. 0.55 dm, wider than the 0.5 the regression tests, so the margin lives
+# in the asset rather than only in the assertion.
+FACE_KEEPOUT = 0.55
+# How far the buried anchor runs back along the rope for each unit it sinks.
+#
+# MEASURED, sweeping it against the two properties it trades off -- the kink at
+# the first ring, which is what draws a stub, and whether the buried anchor of a
+# temple-rooted rope wanders far enough forward to trip `no loc hangs across the
+# face`:
+#
+#     run   over the face   ring-1 turn (median / max)
+#     1.5         5            35.4 / 86.2
+#     1.0         0            50.4 / 67.2
+#     0.7         0            58.8 / 98.3
+#     0.4         0            73.1 / 101.6
+#
+# 1.0 is not a compromise between the two, it is best on BOTH of the ones that
+# matter: no face vertices, and the lowest worst-case turn of the four. The
+# median rises from 1.5, but the median was never the thing that drew a stub.
+ANCHOR_RUN = 1.0
+
 LOC_STEP = 0.15
 # Shoulder-length. The shoulder line is y 5.0..5.5 (`memory/todo.md`).
 LOC_FLOOR = 5.85
@@ -1032,7 +934,81 @@ LOC_REAR_ELEV = -25.0
 # dm wide. RENDERED without it, the crown showed as bare red scalp between the
 # ropes. Reuses `afro`'s shell at a fraction of its thickness, so the cap is
 # proven geometry rather than new.
-LOC_CAP = 0.09
+
+
+class RopeStyle(NamedTuple):
+    """A rope style: locs, dreadlocks, anything else swept as a tube.
+
+    The two shipped styles differ only in how thick the rope is, how lumpy, how
+    far it hangs and how many facets it is drawn with. Everything else -- the
+    comb over the scalp, the hang, the shelf rule that keeps ropes off the arms
+    -- is the same physics and stays shared, so this is a parameter block
+    rather than a second generator.
+    """
+
+    name: str
+    stem: str
+    half: float
+    sides: int
+    lump: float
+    floor: float
+    cap: float
+    # How far down the head the rim reaches, in degrees of elevation. The rim
+    # is where a rope leaves the scalp and starts to hang, and because every
+    # exit must be a distinct MESH VERTEX -- `comb_back` walks a geodesic
+    # between two of them -- the rim's size IS the rope count.
+    rim_elev: float
+
+    @property
+    def standoff(self) -> float:
+        """How far clear of the scalp the rope rides: its own radius plus 2 mm."""
+        return self.half + 0.02
+
+
+# WHY THE ROPES LOOKED PLASTIC, which is the whole reason this block exists.
+# `loc_tube` swept a CONSTANT-RADIUS five-sided tube: a uniform extrusion with
+# a flawless silhouette, which is exactly what a moulded plastic cord looks
+# like. Nothing about the geometry said "fibre", so no material could.
+#
+# Three measured properties of real matted hair replace it:
+#  * The diameter VARIES along the rope. A loc mats unevenly and runs roughly
+#    +/-25% about its mean over a scale of a few centimetres. `lump` is that
+#    fraction, applied as two sines at incommensurate frequencies so the bumps
+#    never repeat along a rope or line up between ropes.
+#  * It TAPERS at the tip, where the ends are loose rather than matted, and it
+#    is slightly thinner where it leaves the scalp.
+#  * Five sides shows as a pentagon in a close-up. Seven reads round at the
+#    same cost per ring that the lumps already pay for.
+# HOW MANY ROPES, derived from the scalp rather than chosen. A loc is the
+# GATHERED hair of a scalp section, compressed -- so the spacing is the section
+# size, not the rope's own diameter, which is why 47 ropes left a third of the
+# scalp bare while the rope diameter itself already matched the photographs.
+#
+# MEASURED: the hair-bearing region is 5.526 dm^2 (553 cm^2). A medium loc comes
+# off a section about 2.4 cm square, which tiles that area 96 times; a thicker
+# dreadlock takes about 3.0 cm, which tiles it 61 times. Both are inside the
+# 40..150 a real head carries.
+#
+# The count is reached by lowering the rim, because the exits have to be real
+# vertices. Rope count alone has DIMINISHING RETURNS on bare scalp -- measured,
+# 80 -> 96 ropes moved it only 40% -> 34% -- because the ropes are combed back
+# and converge toward the rim rather than spreading over the crown. What
+# actually covers the scalp between them is the grown cap bed: measured from the
+# front camera, the ropes alone occlude a mean of 1.5..5.8 hair vertices per
+# scalp point with a minimum of ZERO, while ropes plus cap give 64..168 with a
+# minimum of 9. The count is set from the anatomy; the cover comes from the cap. MEASURED exits by elevation cut: -25 gives 47, -20 gives 61, -15
+# gives 80, -10 gives 90, -8 gives 96 -- which is the section-derived target
+# for locs exactly. The deeper rim also lets ropes leave down the SIDES
+# of the head rather than only the back, which is what the references show --
+# locs fall beside the face, not just behind the ears.
+LOCS = RopeStyle("Locs", "locs", half=0.06, sides=7, lump=0.26, floor=5.85,
+                 cap=0.09, rim_elev=-8.0)
+# DREADLOCKS are locs grown out: thicker rope, more irregular, hanging past the
+# shoulder. Same 41 exits, because the rim is what decides how many ropes can
+# leave the head -- a dreadlock head carrying 40-odd ropes is typical, and the
+# crossing-stack already handles their being packed tighter than locs.
+DREADS = RopeStyle("Dreadlocks", "dreadlocks", half=0.085, sides=7, lump=0.34,
+                   floor=4.90, cap=0.10, rim_elev=-20.0)
 
 
 def scalp_region(app):
@@ -1052,16 +1028,30 @@ def scalp_region(app):
     return reg
 
 
-def scalp_rim(region):
+def scalp_rim(region, cut=LOC_REAR_ELEV):
     """The region's lower edge: where a rope leaves the head and starts to hang.
 
     The elevation cut alone is what keeps the forehead out, and that is
-    measured rather than hoped: the hairline sits at +12 degrees of elevation
-    at the front, so NO region vertex below -25 is on the face side. An azimuth
-    filter was written here as well and excluded exactly 0 of the 41 rim
-    vertices, so it was a knob that did nothing and is gone.
+    measured rather than hoped: the hairline sits at +9 degrees of elevation
+    at the front. The elevation cut is per style, because the rim's size is the
+    rope count -- every exit has to be a distinct mesh vertex.
     """
-    rim = [(i, p) for i, p in region.items() if spherical(p)[0] < LOC_REAR_ELEV]
+    # AND NOT OVER THE FACE. A rope hangs DOWN from its exit, so an exit in
+    # front of the cranium centre near the midline drops a rope across the
+    # forehead and the eyes.
+    #
+    # The docstring above used to record that an azimuth filter here "excluded
+    # exactly 0 of the 41 rim vertices, so it was a knob that did nothing and is
+    # gone". That was true only while the rim stopped at -25 degrees, where
+    # nothing frontal qualified. Lowering it to reach the sides -- which is what
+    # gets the rope count up to what the scalp actually carries -- brings
+    # frontal vertices in, and MEASURED without this clause they put 15 loc
+    # vertices and 3 dreadlock vertices over the face.
+    #
+    # 0.55 dm rather than the 0.5 the regression tests, so the margin is in the
+    # asset and not just in the assertion.
+    rim = [(i, p) for i, p in region.items()
+           if spherical(p)[0] < cut and not (p[2] > CENTRE[2] and abs(p[0]) < FACE_KEEPOUT)]
     if not rim:
         raise RuntimeError("the scalp region has no rim below the hairline")
     return rim
@@ -1146,7 +1136,7 @@ def torso_profile(tris, floor, ceil_):
     return rows
 
 
-def loc_hang(start, profile):
+def loc_hang(start, profile, standoff):
     """The free leg: a plumb line from the rim, pushed out by what is under it.
 
     No drift limit and no smoothing. `running` is simply the largest thing the
@@ -1169,7 +1159,7 @@ def loc_hang(start, profile):
     for y, sec in reversed(profile):
         if y > start[1]:
             continue
-        needed = sec[k] + LOC_STANDOFF if sec[k] else 0.0
+        needed = sec[k] + standoff if sec[k] else 0.0
         if y >= LOC_SCALP_BOTTOM:
             running = max(running, needed)
         elif needed > running:
@@ -1181,8 +1171,39 @@ def loc_hang(start, profile):
     return path
 
 
-def loc_tube(path, base):
-    """A five-sided tube swept along one path."""
+def rope_radius(spec, s, phase):
+    """The rope's half-width at arc fraction @p s, as a fraction of `spec.half`.
+
+    TWO SINES AT INCOMMENSURATE FREQUENCIES, which is the cheapest thing that
+    does not repeat: 6.3 and 15.7 cycles over the rope share no common period,
+    so a bump never lands twice in the same place and no two ropes -- each given
+    its own `phase` -- bump together. A single sine reads as a string of beads.
+
+    The taper at the tip is where a rope stops being matted: the last sixth
+    runs out to a point. At the scalp it is slightly
+    thinner too, over the first twelfth, because a loc is thinnest where it is
+    newest.
+    """
+    lump = (0.62 * math.sin(2.0 * math.pi * 6.3 * s + phase)
+            + 0.38 * math.sin(2.0 * math.pi * 15.7 * s + phase * 1.7))
+    # THE FLOOR BELONGS TO THE LUMPS AND NOTHING ELSE. A rope that pinches to
+    # nothing mid-length is a bead necklace, not a loc -- but this clamp used to
+    # wrap the tip taper too, which is why the taper could never finish. It held
+    # the last ring at 30% of full width, so every rope ended on an open ring a
+    # third of its own diameter across. That ring is the blunt cut end the tips
+    # rendered as, the same fault the cornrow tails had.
+    r = max(0.30, 1.0 + spec.lump * lump)
+    if s > 0.84:
+        # To 6%, which reads as a point -- and applied AFTER the floor, so it
+        # can actually get there.
+        r *= 1.0 - 0.94 * ((s - 0.84) / 0.16)
+    if s < 0.08:
+        r *= 0.72 + 0.28 * (s / 0.08)
+    return r
+
+
+def loc_tube(path, base, spec, phase):
+    """A tube swept along one path, lumpy along its length like matted hair."""
     ax, az = BODY_AXIS
     pts, rings, uvs = [], [], []
     for i, p in enumerate(path):
@@ -1199,34 +1220,53 @@ def loc_tube(path, base):
         sl = math.sqrt(sum(c * c for c in side)) or 1.0
         side = [c / sl for c in side]
         ring = []
-        # `LOC_SIDES + 1`, the last a duplicate of the first: the same seam fix
+        # `sides + 1`, the last a duplicate of the first: the same seam fix
         # `ridge` carries, for the same reason. Without it the facet joining the
         # last side back to the first interpolates u the long way and smears the
         # whole strand sheet across it -- measured at 608 of 3,448 loc faces,
         # 17.6%.
-        for j in range(LOC_SIDES + 1):
-            ang = 2.0 * math.pi * j / LOC_SIDES
+        half = spec.half * rope_radius(spec, i / float(max(1, len(path) - 1)), phase)
+        for j in range(spec.sides + 1):
+            ang = 2.0 * math.pi * j / spec.sides
             ring.append(base + len(pts))
-            pts.append(tuple(p[m] + out[m] * (LOC_HALF * math.cos(ang))
-                             + side[m] * (LOC_HALF * math.sin(ang))
+            pts.append(tuple(p[m] + out[m] * (half * math.cos(ang))
+                             + side[m] * (half * math.sin(ang))
                              for m in range(3)))
             # v runs ALONG the loc so the strand streaks hang with it; u goes
             # around. See `ridge` for the same convention.
-            uvs.append((j / float(LOC_SIDES), i / float(max(1, len(path) - 1))))
+            uvs.append((j / float(spec.sides), i / float(max(1, len(path) - 1))))
         rings.append(ring)
     faces = []
     for i in range(len(rings) - 1):
-        for j in range(LOC_SIDES):
+        for j in range(spec.sides):
             faces.append([rings[i][j], rings[i][j + 1],
                           rings[i + 1][j + 1], rings[i + 1][j]])
     return pts, faces, uvs
 
 
-def locs(verts, body_faces, app_path=""):
+def skull_radius(grid, direction, length):
+    """The skull's radius from the cranium centre along `direction`.
+
+    The same binning `make_coils.push_outside` walks, read here so a rope's
+    anchor can be sunk below the surface wherever it ends up rather than only
+    where it started.
+    """
+    import make_coils  # noqa: PLC0415 -- `make_coils` imports this module
+
+    if length < 1e-6:
+        return 0.0
+    dx, dy, dz = direction
+    az = int(((math.atan2(dx, dz) / (2.0 * math.pi) + 0.5) % 1.0) * make_coils.AZ_BINS)
+    el = int(min(0.999, max(0.0, math.acos(max(-1.0, min(1.0, dy / length))) / math.pi))
+             * make_coils.EL_BINS)
+    return grid[el * make_coils.AZ_BINS + min(make_coils.AZ_BINS - 1, az)]
+
+
+def locs(verts, body_faces, app_path, spec):
     """Ropes combed back over the scalp, then hanging down the back."""
     app = app_binary(app_path)
     region = scalp_region(app)
-    rim = scalp_rim(region)
+    rim = scalp_rim(region, spec.rim_elev)
     # The COUNT is the rim's, not a number somebody liked: one loc per exit is
     # exactly as many ropes as can hang without lying on top of each other.
     # MEASURED on the shipped mesh, the rim holds 41 vertices.
@@ -1243,58 +1283,209 @@ def locs(verts, body_faces, app_path=""):
     # off the arms.
     tris = [tuple(verts[v] for v in (f[0], f[k], f[k + 1]))
             for f in body_faces for k in range(1, len(f) - 1)]
-    profile = torso_profile(tris, LOC_FLOOR, 8.6)
+    profile = torso_profile(tris, spec.floor, 8.6)
 
-    # The cap first, so the ropes sit ON it. Each of its vertices binds to the
-    # base vertex it grew from with a world offset -- the same one-line-per-
-    # vertex form `--bind-points` emits, which is why the two share one .mhclo.
-    used, keep, placed = afro(verts, body_faces, thickness=LOC_CAP)
-    cap = {b: i for i, b in enumerate(used)}
-    allpts = [tuple(verts[b][i] + placed[b][i] for i in range(3)) for b in used]
+    # THE CAP FIRST, so the ropes sit ON it -- and it is GROWN, not shelled.
+    #
+    # It used to be `afro()` at a fraction of its thickness: one offset copy of
+    # the scalp with the strand sheet painted on. Rendered at head framing that
+    # failed three ways at once, and all three are properties of a shell rather
+    # than of the texture on it. Its boundary was a raw staircase along the mesh
+    # edges, plainly visible over the ear. Its UVs were a planar projection, so
+    # the sheet smeared into vertical bands. And between those bands the scalp
+    # read straight through, because a smooth surface has no hairs in it to
+    # occlude anything.
+    #
+    # `derive()` already recorded the general form of this when the afro stopped
+    # being a shell: "no texture makes a shell read as hair close up, because
+    # the geometry has no hairs in it". The cap was the last shell in the tree.
+    # It is now a bed of very short coiled cards from the same generator every
+    # other style uses -- hair that is actually there, fading out at its edge
+    # instead of ending on a staircase, each card carrying its own 0..1 UV.
+    #
+    # Deferred import: `make_coils` imports THIS module, so a top-level import
+    # here would be a cycle. By the time a rope style is being generated both
+    # modules are loaded and this is a dictionary lookup.
+    import make_coils  # noqa: PLC0415 -- see above
+
+    allpts, allfaces, alluvs = make_coils.grow(make_coils.CAP_BED)
+    # The skull's radius by direction, for sinking each rope's anchor below it.
+    skull = make_coils.skull_radii(verts, body_faces)
     # How many ropes have already passed through each scalp vertex.
     crossings = collections.defaultdict(int)
-    allfaces = [[cap[v] for v in f] for f in keep]
-    # The CAP's own UVs. It is cut from the base mesh, whose scalp already has
-    # a parameterisation, but these vertices are re-indexed here and the base
-    # UVs do not survive that. A planar projection over the cap's extent is
-    # enough for a strand texture: the cap is a skullcap under the style, and
-    # what has to line up is the braids and knots on top of it.
-    alluvs = cap_uvs(allpts)
-    cap_binds = [f"{b} {b} {b} 1.00000 0.00000 0.00000 "
-                 f"{placed[b][0]:.5f} {placed[b][1]:.5f} {placed[b][2]:.5f}"
-                 for b in used]
+    # No separate cap bindings any more. The shell could bind each vertex to the
+    # base vertex it grew from, because it WAS that vertex pushed outwards; a
+    # card root sits wherever it sits, so the cap goes through the same
+    # barycentric binder as the ropes. One path instead of two.
+    cap_binds = []
     shortest = 10 ** 9
     for index, pos in roots:
         scalp = comb_back(app, index, pos, exits[index])
+        # A ROPE CAN BE ROOTED ON THE RIM. The comb walks a geodesic from the
+        # root to its exit, so a root that already sits at its exit has nothing
+        # to walk and comes back empty -- and `loc_hang` was then handed
+        # `lifted[-1]` of an empty list. It never happened while the hairline
+        # sat at +12/-19 degrees, because no root was that far back; fitting it
+        # to the measured anatomy lowered the region at the temples and put
+        # roots on the rim for the first time. The rope simply starts where it
+        # is and hangs.
+        if not scalp:
+            scalp = [pos]
         # The scalp leg lies ON the head, so it is lifted clear of the skin by
         # the rope's own half width -- a path centred on the surface buries half
         # the tube, which is the mistake `ridge` records.
-        lifted = []
+        # THE LIFT, PER SCALP VERTEX.
+        #
+        # Where two ropes cross, the later one passes OVER the earlier. That is
+        # what happens on a real head, and it is also the only thing that stood
+        # between this asset and the rest of the tree: MEASURED, every other
+        # shipped .obj -- base, tights, cornrows, bantu knots, both eye meshes,
+        # skirt, afro, eyelashes, tongue, genitals, teeth -- has EXACTLY ZERO
+        # coincident vertex positions, and locs had 13.1% without this.
+        #
+        # THE PILE SATURATES; it does not grow a rope-diameter a layer. This was
+        # `stack * 2.0 * spec.half`, dead linear, and the stack reaches 5 where
+        # many combed paths share a scalp vertex. At that depth the linear form
+        # lifted a rope 0.770 dm off the scalp for locs and 1.055 for
+        # dreadlocks -- more than the head's own radius, which is what read as
+        # ropes floating free of the head. Real ropes NEST, settling into the
+        # gap between the two below rather than balancing on one, so the pile
+        # rises far slower than its diameter per layer and flattens as it
+        # deepens. The curve stays STRICTLY increasing, which the stacking
+        # exists for: every rope through a shared vertex keeps its own height,
+        # so no two vertices land in the same place.
+        raw = []
         for q in scalp:
-            d = [q[i] - CENTRE[i] for i in range(3)]
-            ln = math.sqrt(sum(t * t for t in d)) or 1.0
-            # Where two ropes cross, the later one passes OVER the earlier, one
-            # rope-diameter further out. That is what happens on a real head,
-            # and it is also the only thing that stood between this asset and
-            # the rest of the tree: MEASURED, every other shipped .obj -- base,
-            # tights, cornrows, bantu knots, both eye meshes, skirt, afro,
-            # eyelashes, tongue, genitals, teeth -- has EXACTLY ZERO coincident
-            # vertex positions, and locs had 13.1% without this. Ropes rooted at
-            # the front must travel back across ropes rooted mid-scalp, so the
-            # geodesics genuinely share runs of scalp vertices.
             stack = crossings[q]
             crossings[q] = stack + 1
-            lift = LOC_CAP + LOC_STANDOFF + stack * 2.0 * LOC_HALF
+            raw.append(spec.cap + spec.standoff
+                       + PILE * (1.0 - math.exp(-stack / 2.0)) * 2.0 * spec.half)
+        lifted = []
+        for q, lift in zip(scalp, raw):
+            d = [q[i] - CENTRE[i] for i in range(3)]
+            ln = math.sqrt(sum(t * t for t in d)) or 1.0
             lifted.append(tuple(q[i] + d[i] / ln * lift for i in range(3)))
-        path = lifted + loc_hang(lifted[-1], profile)
+        # THE ROPE STARTS INSIDE THE HEAD. Its first ring was lifted clear of
+        # the scalp by `cap + standoff` before anything else happened, so the
+        # open end of the tube -- a full-size ring, 7 facets wide -- sat in the
+        # air above the skin and rendered as a cut stub. A loc is anchored in
+        # the scalp; the end of one is never visible.
+        #
+        # One sample, radially inside the skull, is enough: the tube then runs
+        # from under the skin up to where the rope rides, and the scalp hides
+        # the cap. It costs one ring a rope.
+        # FROM THE SCALP POINT, not by subtracting the lift. The first version
+        # took `lifted[0]` and walked back `cap + standoff + ROOT_SINK` -- which
+        # ignores the crossing pile, so every rope with a stack above zero kept
+        # its anchor ABOVE the skin by exactly the pile height. Those are the
+        # rectangular stubs that stood out of the mass over the crown: full-size
+        # open rings, left hanging in the air by an arithmetic shortcut.
+        #
+        # `scalp[0]` is the root on the surface and owes nothing to the lift, so
+        # sinking from it is right for every rope whatever it crosses.
+        # THE ANCHOR ENTERS AT AN ACUTE ANGLE, like a follicle. The first
+        # version stepped straight down the radial from under the skin to the
+        # rope's first sample, and the rope then had to turn through a right
+        # angle to lie along the scalp: MEASURED, 39 of the 47 ropes kinked at
+        # ring 1 with a median turn of 92.9 degrees and a worst of 123. A tube
+        # bending that hard draws an elbow with a squared face on it -- those
+        # are the stubs, and they were mine.
+        #
+        # Continuing the rope's own direction BACKWARDS and sinking as it goes
+        # makes the entry oblique instead. The buried run is longer than it is
+        # deep, so the turn at ring 1 becomes shallow; none of it is visible,
+        # because all of it is inside the skull.
+        drop = raw[0] + ROOT_SINK
+        back = [lifted[0][i] - lifted[1][i] for i in range(3)] if len(lifted) > 1 else [0.0, 1.0, 0.0]
+        bl = math.sqrt(sum(c * c for c in back)) or 1.0
+        rad = [lifted[0][i] - CENTRE[i] for i in range(3)]
+        rl = math.sqrt(sum(c * c for c in rad)) or 1.0
+        anchor = tuple(lifted[0][i] + back[i] / bl * (ANCHOR_RUN * drop)
+                       - rad[i] / rl * drop
+                       for i in range(3))
+        # AND THEN CLAMPED UNDER THE SKIN WHEREVER IT LANDED. Running backwards
+        # along the rope means running toward the FACE for a rope rooted at the
+        # front hairline, and the skull falls away there -- so an anchor that is
+        # buried at its own root can surface over the forehead a few centimetres
+        # on. MEASURED: five loc vertices over the face, which the regression
+        # `no loc hangs across the face` caught.
+        #
+        # Taking the skull's radius in the anchor's OWN direction and sinking to
+        # `ROOT_SINK` below it makes the burial a property of where the point is
+        # rather than of where it came from.
+        # AND IT MAY NOT LAND OVER THE FACE. The anchor is buried and invisible,
+        # so where exactly it sits does not matter -- but it is still geometry
+        # in the asset, and `no loc hangs across the face` counts geometry. With
+        # the rim lowered to carry 80 ropes there are roots far enough forward
+        # that the backward run puts the anchor over the temple: MEASURED, three
+        # anchor rings, 15 vertices.
+        #
+        # Walking it back in -z is free precisely because nothing can see it.
+        # The RING, not just its centre: the tube spreads `spec.half` about the
+        # path, so parking the centre a hair behind the line still leaves half a
+        # ring in front of it. MEASURED after the first attempt at this: seven
+        # anchor vertices left at z 0.50..0.54 with the centre at 0.49.
+        if anchor[2] > CENTRE[2] and abs(anchor[0]) < FACE_KEEPOUT:
+            anchor = (anchor[0], anchor[1], CENTRE[2] - spec.half - 0.02)
+        ad = [anchor[i] - CENTRE[i] for i in range(3)]
+        ar = math.sqrt(sum(c * c for c in ad)) or 1.0
+        surface = skull_radius(skull, ad, ar)
+        if surface > 0.0 and ar > surface - ROOT_SINK:
+            k = (surface - ROOT_SINK) / ar
+            anchor = tuple(CENTRE[i] + ad[i] * k for i in range(3))
+        path = [anchor] + lifted + loc_hang(lifted[-1], profile, spec.standoff)
         shortest = min(shortest, len(path))
         if len(path) < 3:
             continue
-        pts, fs, uv = loc_tube(path, len(allpts))
+        # Each rope gets its OWN lump phase, derived from its root index, so
+        # the bumps are stable across runs (the generator must be
+        # reproducible for the staleness gate) and never line up between
+        # neighbouring ropes.
+        pts, fs, uv = loc_tube(path, len(allpts), spec,
+                               phase=(index * 2.399963) % (2.0 * math.pi))
         allpts.extend(pts)
         allfaces.extend(fs)
         alluvs.extend(uv)
     return allpts, allfaces, roots, app, shortest, cap_binds, len(cap_binds), alluvs
+
+
+def relax_row_start(path):
+    """Smooth the first few samples of a row. Everything after is untouched.
+
+    A ROW STARTS ON THE FOREHEAD, where the skull turns over hardest, and the
+    trace steps straight into that curvature. MEASURED on the shipped asset
+    after the hairline was fitted to the mesh's own anatomy: rows 1 and 4 turned
+    41.4 degrees between ring centroids at RING 1 -- the first step -- against a
+    worst of 25.7 anywhere else on any row. It is a kink at the hairline, which
+    is the one place on a braid nobody can miss.
+
+    It is the START that needs this and nothing else: the figures above are per
+    ring, and every turn past the third sample was already inside the old range.
+    Smoothing the whole path would move rows that were never wrong, so this
+    touches four points and stops.
+    """
+    # Four points, half weight at the first: one caller, one setting, so they
+    # are written here rather than passed in.
+    points, strength = 4, 0.5
+    if len(path) < points + 2:
+        return path
+    # A sample is `(position, normal, distance)` -- `trace_row`'s shape. Only
+    # the POSITION moves; the normal is the surface's and still correct there,
+    # and the distance is diagnostic.
+    out = list(path)
+    for i in range(1, points):
+        prev, nxt = out[i - 1][0], path[i + 1][0]
+        here = out[i][0]
+        mid = tuple((prev[k] + nxt[k]) * 0.5 for k in range(3))
+        # Fading with distance from the start: 0.50, 0.375, 0.25, then nothing.
+        # It does NOT reach zero -- there is a step of a quarter weight at the
+        # fourth sample -- and that is accepted rather than hidden, because a
+        # quarter of a half-step correction is far below the 41-degree kink
+        # being removed and well inside the per-ring turns the gate allows.
+        w = strength * (1.0 - (i - 1) / float(points))
+        moved = tuple(here[k] * (1.0 - w) + mid[k] * w for k in range(3))
+        out[i] = (moved,) + tuple(out[i][1:])
+    return out
 
 
 def cornrows(verts, body_faces, app_path=""):
@@ -1323,7 +1514,7 @@ def cornrows(verts, body_faces, app_path=""):
     allpts, allfaces, alluvs, traced = [], [], [], 0
     for i in range(CORNROW_ROWS):
         u = (2.0 * i + 1.0) / CORNROW_ROWS - 1.0
-        path = trace_row(tris, CENTRE[0] + half * u)
+        path = relax_row_start(trace_row(tris, CENTRE[0] + half * u))
         if len(path) < 3:
             print(f"cornrows: row {i} traced {len(path)} samples -- dropped", file=sys.stderr)
             continue

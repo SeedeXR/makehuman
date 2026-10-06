@@ -84,7 +84,9 @@ TEST_CASE("the shipped assets index by uuid", "[core][assetindex][golden]") {
     // four coil styles share `materials/hair.mhmat`. The afro is now one of
     // them rather than a shell, which changes its geometry entirely and not
     // this count.
-    CHECK(idx.size() == 44);
+    // 47: `hair_card.mhmat` (the coil styles' own strand sheet) plus the
+    // dreadlocks and clean-cut proxies.
+    CHECK(idx.size() == 47);
     CHECK(idx.duplicateUuids().empty());
 
     // The eye proxy's UUID, as it appears in data/eyes/high-poly/high-poly.mhclo.

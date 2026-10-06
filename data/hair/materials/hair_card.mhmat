@@ -1,0 +1,29 @@
+# The coiled styles' material: afro, coils, lowcut and wisps.
+#
+# A THIRD SHEET, and the split is measured rather than tidy-minded. The three
+# hair materials differ only in how many strands their texture carries, because
+# that number has to match what the geometry can resolve:
+#
+#   hair.mhmat       52 strands -- a SHELL or cap, many samples across `u`
+#   hair_tube.mhmat   7 strands -- a swept TUBE, six or seven facets around
+#   hair_card.mhmat   4 strands -- a CARD, exactly two columns in `u`
+#
+# A coil card spans u 0..1 with two vertices and draws a few pixels wide.
+# Pointing the 52-strand sheet at it squeezed fifty-two strands across that
+# span: rendered at head framing the hair showed a grid/moire pattern and the
+# wisps style read as strips of tape. It had looked fine for as long as every
+# render was full-body, where a card is sub-pixel and nothing about it is
+# visible -- which is the argument for being able to render a close-up at all.
+name Hair
+tag MakeHuman™
+ambientColor 0.04 0.03 0.02
+diffuseColor 0.28 0.19 0.13
+specularColor 0.6 0.6 0.6
+shininess 0.3
+opacity 1.0
+transparent True
+diffuseTexture ../hair_card_strands.png
+backfaceCull False
+castShadows True
+receiveShadows True
+shader data/shaders/glsl/litsphere

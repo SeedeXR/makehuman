@@ -199,3 +199,4 @@ references/different-shapes-colors-eyebrows-vector-illustrations-set/
 # Scratch renders. Leading slash: only the one at the repo root, not any
 # directory called `tmp` at any depth.
 /tmp/
+sample-locks/

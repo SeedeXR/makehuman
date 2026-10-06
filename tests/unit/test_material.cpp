@@ -133,7 +133,11 @@ TEST_CASE("every shipped material parses", "[core][material][golden]") {
     // around, so the 52-strand sheet the shell and the cards use lands about
     // eight strands to a facet and aliases into stipple. Rendered, cornrows
     // nearly vanished and the bantu knots speckled; this one carries seven.
-    CHECK(ok == 25);
+    // 26 since `data/hair/materials/hair_card.mhmat` joined the two that were
+    // already here. The three hair materials differ only in how many strands
+    // their texture carries, because that has to match what the geometry can
+    // resolve: 52 for a shell, 7 for a tube, 4 for a card.
+    CHECK(ok == 26);
 }
 
 TEST_CASE("booleans accept the reference's spellings", "[core][material]") {
