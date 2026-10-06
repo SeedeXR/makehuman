@@ -37,6 +37,7 @@ rather than a script.
 """
 import argparse
 import io
+import math
 import sys
 from pathlib import Path
 
@@ -56,7 +57,7 @@ class Slot:
     """One helper-cage proxy: which groups it is cut from, and how it looks."""
 
     def __init__(self, key, name, uuid, groups, z_depth, tint, material, rationale,
-                 slot_key=None):
+                 slot_key=None, strand_uvs=False):
         self.key = key                # the asset stem, and what --<slot> takes
         # The chooser directory and the .mhm slot. Defaults to `key`, because
         # for the first three slots one cage WAS one garment. Clothes is the
@@ -70,6 +71,9 @@ class Slot:
         self.tint = tint              # matcap tint, linear multipliers on luminance
         self.material = material      # the .mhmat body, minus the generated header
         self.rationale = rationale    # why this shape, in the .mhclo header
+        # Author UVs that run ALONG the hair instead of inheriting the base
+        # mesh's atlas coordinates. Only the lashes need it: see `strand_uvs`.
+        self.strand_uvs = strand_uvs
 
     @property
     def out(self):
@@ -265,11 +269,26 @@ SLOTS = [
         z_depth=30,
         # Near-black. Lashes read almost entirely as silhouette at this scale.
         tint=(0.18, 0.16, 0.15),
+        strand_uvs=True,
         material=(
-            "# No texture, and lashes are the slot where that costs least: at\n"
-            "# this scale they are silhouette, not surface. What they DO need\n"
-            "# and do not have is alpha, which is what would let individual\n"
-            "# hairs read against the eye white instead of a solid strip.\n"
+            "# THE ALPHA THIS FILE USED TO ASK FOR. It read: \"What they DO\n"
+            "# need and do not have is alpha, which is what would let\n"
+            "# individual hairs read against the eye white instead of a solid\n"
+            "# strip.\" Both halves exist now.\n"
+            "#\n"
+            "# The half that was missing was NOT the texture. The mesh already\n"
+            "# carried 250 uvs -- and they were a sliver of the BODY atlas,\n"
+            "# u 0.658..0.758 and v 0.927..0.985, inherited from the base mesh.\n"
+            "# A strand sheet sampled through a window that narrow is 0%\n"
+            "# opaque with a mean alpha of 8, so a first attempt at this\n"
+            "# pointed a material at one and made the lashes FAINTER and\n"
+            "# nothing else. `strand_uvs` authors uvs that run along the lash\n"
+            "# instead; see `strand_uvs()` in the generator.\n"
+            "#\n"
+            "# `transparent True` is load-bearing: without the flag the\n"
+            "# renderer discards the alpha and paints the solid strip this\n"
+            "# replaces, which is the trap the eye material records for its\n"
+            "# cornea disc.\n"
             "name Eyelashes\n"
             "tag MakeHuman\u2122\n"
             "ambientColor 0.02 0.02 0.02\n"
@@ -277,7 +296,8 @@ SLOTS = [
             "specularColor 0.3 0.3 0.3\n"
             "shininess 0.2\n"
             "opacity 1.0\n"
-            "transparent False\n"
+            "transparent True\n"
+            "diffuseTexture ../lash_strands.png\n"
             "backfaceCull True\n"
             "castShadows True\n"
             "receiveShadows True\n"
@@ -350,6 +370,91 @@ SLOTS = [
         ),
     ),
 ]
+
+
+def strand_uvs(verts, groups):
+    """UVs that run along a lash rather than across somebody else's atlas.
+
+    WHAT WAS WRONG BEFORE ANY OF THIS. These proxies inherit `vt` straight from
+    the base mesh, so the lashes carried 250 texture coordinates that LOOK like
+    everything a strand texture needs and are a sliver of the body atlas:
+    u 0.658..0.758, v 0.927..0.985. A strand sheet sampled through a window
+    that narrow never varies along the hair -- measured, 0% opaque with a mean
+    alpha of 8 -- so pointing a lash material at one made the lashes fainter
+    and nothing else.
+
+    PER CAGE, NOT PER SIDE, and the first version of this got that wrong while
+    its own docstring claimed otherwise. The base mesh carries four disjoint
+    cages: `-1` is the LOWER lash (y 7.2029..7.2751) and `-2` the UPPER
+    (7.2785..7.3624). Grouping by the sign of x fitted ONE axis to both of an
+    eye's lashes, so the projection ran tip-to-tip instead of root-to-tip.
+    MEASURED: the lower lash came out v 0.000..0.246 with its tip at v=0.018 --
+    backwards, wearing the solid root band at its tips -- and the upper
+    0.239..1.000, never sampling the root band at all, which is gaps against
+    the eye white at the lid line.
+
+    So each cage is projected and normalised on its own:
+
+      * `u` ACROSS the strip, so each lash hair becomes its own strand of the
+        texture. That is the x axis here -- measured, a side spans 0.32 dm in x
+        against 0.16 and 0.11 in y and z, so x is unambiguously the long way.
+      * `v` ALONG the hair, from the lid out to the tip. The direction is the
+        cage's own principal axis in the y-z plane, found rather than assumed,
+        and then ORIENTED: v = 0 at whichever end sits nearer the lid. An upper
+        lash sweeps up and out and a lower one down and out, so a fixed "up"
+        runs one of them tips-first.
+
+    The lid line is taken as the centroid of BOTH cages on that side, which is
+    where they meet -- roughly y 7.276 on the shipped mesh. It needs no
+    knowledge of the eye proxy, which is a different asset entirely.
+    """
+    per_group = {}
+    side_members = {}
+    for g in groups:
+        _, _, gfaces = read_base((g,))
+        members = sorted({v for vi, _ in gfaces for v in vi})
+        if not members:
+            raise SystemExit(f"no geometry in {g}; the lash cages moved")
+        per_group[g] = members
+        side = verts[members[0]][0] > 0
+        side_members.setdefault(side, []).extend(members)
+
+    lid = {}
+    for side, members in side_members.items():
+        lid[side] = (sum(verts[b][1] for b in members) / len(members),
+                     sum(verts[b][2] for b in members) / len(members))
+
+    out = {}
+    for g, members in per_group.items():
+        side = verts[members[0]][0] > 0
+        xs = [verts[b][0] for b in members]
+        span_x = (max(xs) - min(xs)) or 1.0
+
+        cy = sum(verts[b][1] for b in members) / len(members)
+        cz = sum(verts[b][2] for b in members) / len(members)
+        # The lash direction: from the cage centroid to its furthest vertex in
+        # the y-z plane. A full PCA says the same thing for a strip this simple
+        # and would need numpy, which CI does not have.
+        far = max(members, key=lambda b: (verts[b][1] - cy) ** 2 + (verts[b][2] - cz) ** 2)
+        dy, dz = verts[far][1] - cy, verts[far][2] - cz
+        norm = math.hypot(dy, dz) or 1.0
+        dy, dz = dy / norm, dz / norm
+
+        proj = {b: (verts[b][1] - cy) * dy + (verts[b][2] - cz) * dz for b in members}
+        lo = min(proj.values())
+        hi = max(proj.values())
+        reach = (hi - lo) or 1.0
+        # ORIENT IT: whichever end is nearer the lid becomes v = 0.
+        ly, lz = lid[side]
+        near_lo = min(members, key=lambda b: abs(proj[b] - lo))
+        near_hi = min(members, key=lambda b: abs(proj[b] - hi))
+        d_lo = (verts[near_lo][1] - ly) ** 2 + (verts[near_lo][2] - lz) ** 2
+        d_hi = (verts[near_hi][1] - ly) ** 2 + (verts[near_hi][2] - lz) ** 2
+        flip = d_hi < d_lo
+        for b in members:
+            v = (proj[b] - lo) / reach
+            out[b] = ((verts[b][0] - min(xs)) / span_x, 1.0 - v if flip else v)
+    return out
 
 
 def read_base(wanted):
@@ -431,6 +536,18 @@ def build(slot) -> tuple[dict[str, bytes], str]:
     local = {base: i for i, base in enumerate(used)}
     used_t = sorted({t for _, ti in faces for t in ti if t >= 0})
     local_t = {base: i for i, base in enumerate(used_t)}
+
+    # AUTHORED UVS REPLACE THE TABLE rather than forking the writer below.
+    # These are positional, one per vertex, so the texture coordinate for a
+    # vertex IS that vertex -- which means re-keying the table by vertex index
+    # and pointing every face's `vt` at its own `v`. The alternative, an
+    # `if authored:` in both the `vt` loop and the face loop, says the same
+    # thing twice and leaves two places to get out of step.
+    if slot.strand_uvs:
+        texcoords = strand_uvs(verts, slot.groups)
+        used_t = used
+        local_t = local
+        faces = [(vi, vi) for vi, _ in faces]
 
     obj = ["# Generated by tools/make_helper_proxies.py from the base mesh's",
            f"# {', '.join(slot.groups)} geometry. Do not edit by hand; re-run it.",

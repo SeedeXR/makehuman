@@ -3902,6 +3902,41 @@ if(MH_HAVE_RENDER)
              -DOBJ=${CMAKE_SOURCE_DIR}/data/hair/coils.obj -DMIN_V_SPAN=0.9
              -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_has_uvs.cmake)
 
+    # THE LASHES, which is the gate that used to FAIL and was the evidence for
+    # fixing them. Their 250 uvs were inherited from the base mesh and sat in a
+    # sliver of the body atlas -- u 0.658..0.758, v 0.927..0.985 -- so a strand
+    # texture sampled through them never varied along the hair: 0% opaque,
+    # mean alpha 8, and a material pointed at one changed the render not at
+    # all. `make_helper_proxies.strand_uvs()` authors them along the lash now,
+    # and this is the check that says so.
+    add_test(NAME eyelashes_uvs_run_along_the_lash COMMAND ${CMAKE_COMMAND}
+             -DOBJ=${CMAKE_SOURCE_DIR}/data/eyelashes/eyelashes.obj -DMIN_V_SPAN=0.9
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_has_uvs.cmake)
+
+    # ...and the material has to ASK for it. A mesh that can carry an alpha and
+    # a material that declares none is the state this slot sat in for its whole
+    # life, with its own comment describing the gap as if it were a decision.
+    add_test(NAME eyelash_material_cuts_alpha COMMAND ${CMAKE_COMMAND}
+             -DFILE=${CMAKE_SOURCE_DIR}/data/eyelashes/materials/eyelashes.mhmat
+             "-DKEYS=transparent True;diffuseTexture ../lash_strands.png"
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/file_contains.cmake)
+
+    # ...AND THE TEXTURE HAS TO BE THERE. `Material.cpp` contributes a channel
+    # "only when its texture exists", so a `diffuseTexture` naming a missing
+    # file is dropped SILENTLY: the material loads, the render quietly falls
+    # back to untextured, and the grep above stays green. These three textures
+    # are generated into `data/` by `make_hair_alpha.py`, and a generated file
+    # that never got committed is invisible on the machine that made it.
+    foreach(_mh_tex_mat
+            ${CMAKE_SOURCE_DIR}/data/hair/materials/hair.mhmat
+            ${CMAKE_SOURCE_DIR}/data/eyebrows/materials/eyebrows.mhmat
+            ${CMAKE_SOURCE_DIR}/data/eyelashes/materials/eyelashes.mhmat)
+        get_filename_component(_mh_tex_name "${_mh_tex_mat}" NAME_WE)
+        add_test(NAME ${_mh_tex_name}_textures_exist COMMAND ${CMAKE_COMMAND}
+                 -DMHMAT=${_mh_tex_mat}
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/material_texture_exists.cmake)
+    endforeach()
+
     add_test(NAME app_bind_points_missing_file COMMAND makehuman --bind-points /nope/nope.txt)
     set_tests_properties(app_bind_points_missing_file PROPERTIES
         PASS_REGULAR_EXPRESSION "cannot read the points")

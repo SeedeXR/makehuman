@@ -155,6 +155,34 @@ def afro(verts, faces, thickness=0.78, edge_deg=20.0, skirt_deg=12.0):
     return used, keep, placed
 
 
+def cap_uvs(points):
+    """Crown-radial UVs for a scalp cap: `u` azimuth, `v` angle from the whorl.
+
+    THE SAME UNWRAP `write_style` USES, and it exists because the bantu and loc
+    caps were still projecting x/z after the afro's was fixed. That projection
+    makes `u` left-to-right and `v` front-to-back, so a strand texture draws
+    hair from the face to the nape and a tip fade eats the back of the head --
+    rendered on the afro, the crown went bald and the rest hung in strings.
+    Two caps wearing the same `hair_strands.png` with the old mapping would
+    show the same artefact between the ropes and under the knots.
+
+    `u` wraps, so the seam is put at the NAPE: at azimuth 0 it runs down the
+    forehead, and a triangle straddling it interpolates `u` the long way and
+    smears the whole texture across itself.
+    """
+    out = []
+    reach = 1.0
+    polars = []
+    for q in points:
+        dx, dy, dz = q[0] - CENTRE[0], q[1] - CENTRE[1], q[2] - CENTRE[2]
+        polars.append((math.degrees(math.atan2(math.hypot(dx, dz), dy)),
+                       math.atan2(dx, dz)))
+    reach = max((pa for pa, _ in polars), default=1.0) or 1.0
+    for polar, azim in polars:
+        out.append(((azim / (2.0 * math.pi) + 0.5) % 1.0, min(1.0, polar / reach)))
+    return out
+
+
 def write_style(name, stem, used, keep, placed, verts):
     index = {b: i for i, b in enumerate(used)}
     obj = [BANNER,
@@ -184,28 +212,7 @@ def write_style(name, stem, used, keep, placed, verts):
     # `u` IS THE AZIMUTH AND THEREFORE WRAPS, which is why the strand texture
     # wraps its own distance calculation: without that there is a seam down the
     # back where u=0.999 meets u=0.001.
-    cap = []
-    for q in pos:
-        dx, dy, dz = q[0] - CENTRE[0], q[1] - CENTRE[1], q[2] - CENTRE[2]
-        radial = math.hypot(dx, dz)
-        # Angle from +y. atan2 rather than acos(dy/len): it stays well
-        # conditioned at the crown, where radial goes to zero.
-        cap.append((math.degrees(math.atan2(radial, dy)), math.atan2(dx, dz)))
-    reach = max((c[0] for c in cap), default=1.0) or 1.0
-    for polar, azim in cap:
-        # +0.5 PUTS THE SEAM AT THE NAPE. `atan2(dx, dz)` wraps at azimuth 0,
-        # which is the FRONT midline, and a triangle that straddles the wrap has
-        # `u` interpolated the long way round -- the whole texture smeared
-        # across it. RENDERED, that was a ragged vertical strip down the centre
-        # of the forehead, which I first misread as the polar singularity at the
-        # crown and tried to cover with a wider root band; widening it changed
-        # nothing, because the strip was never at the pole.
-        #
-        # The smear does not go away by moving it, it goes behind the head.
-        # Removing it needs the seam vertices DUPLICATED so each copy carries
-        # its own `u`, and this writer emits one `vt` per vertex.
-        u = (azim / (2.0 * math.pi) + 0.5) % 1.0
-        v = min(1.0, polar / reach)
+    for u, v in cap_uvs(pos):
         obj.append(f"vt {u:.6f} {v:.6f}")
     for f in keep:
         obj.append("f " + " ".join(f"{index[v] + 1}/{index[v] + 1}" for v in f))
@@ -258,10 +265,18 @@ def write_bound_style(name, stem, points, faces, bindings, uvs=None):
             obj.append(f"vt {u:.6f} {v:.6f}")
         for f in faces:
             obj.append("f " + " ".join(f"{i + 1}/{i + 1}" for i in f))
+    elif uvs:
+        # REFUSED, not reported. This printed to stderr, wrote the .obj with no
+        # `vt` and returned success -- and `make_eyebrows.py`, which had a copy
+        # of the same shape, is exactly how a slot sat at zero uvs through
+        # every run that "worked". Four callers go through this one (coils,
+        # cornrows, locs, bantu), so the guard belongs here rather than in the
+        # single path that happened to get debugged.
+        raise SystemExit(
+            f"{stem}: {len(uvs)} uvs for {len(points)} vertices -- refusing to "
+            f"write a mesh that cannot carry its strand alpha"
+        )
     else:
-        if uvs:
-            print(f"{stem}: {len(uvs)} uvs for {len(points)} vertices -- writing none",
-                  file=sys.stderr)
         for f in faces:
             obj.append("f " + " ".join(str(i + 1) for i in f))
     mhclo = [
@@ -917,11 +932,7 @@ def bantu(verts, body_faces, app_path=""):
     # UVs do not survive that. A planar projection over the cap's extent is
     # enough for a strand texture: the cap is a skullcap under the style, and
     # what has to line up is the braids and knots on top of it.
-    _cx = [q[0] for q in allpts] or [0.0]
-    _cz = [q[2] for q in allpts] or [0.0]
-    _sx = (max(_cx) - min(_cx)) or 1.0
-    _sz = (max(_cz) - min(_cz)) or 1.0
-    alluvs = [((q[0] - min(_cx)) / _sx, (q[2] - min(_cz)) / _sz) for q in allpts]
+    alluvs = cap_uvs(allpts)
     cap_binds = [f"{b} {b} {b} 1.00000 0.00000 0.00000 "
                  f"{placed[b][0]:.5f} {placed[b][1]:.5f} {placed[b][2]:.5f}"
                  for b in used]
@@ -1223,11 +1234,7 @@ def locs(verts, body_faces, app_path=""):
     # UVs do not survive that. A planar projection over the cap's extent is
     # enough for a strand texture: the cap is a skullcap under the style, and
     # what has to line up is the braids and knots on top of it.
-    _cx = [q[0] for q in allpts] or [0.0]
-    _cz = [q[2] for q in allpts] or [0.0]
-    _sx = (max(_cx) - min(_cx)) or 1.0
-    _sz = (max(_cz) - min(_cz)) or 1.0
-    alluvs = [((q[0] - min(_cx)) / _sx, (q[2] - min(_cz)) / _sz) for q in allpts]
+    alluvs = cap_uvs(allpts)
     cap_binds = [f"{b} {b} {b} 1.00000 0.00000 0.00000 "
                  f"{placed[b][0]:.5f} {placed[b][1]:.5f} {placed[b][2]:.5f}"
                  for b in used]

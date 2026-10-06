@@ -4,6 +4,51 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-10-06 (later still) — Session · **Lashes, and two maths errors the review found**
+
+Eyelashes done, `ridge()` done before them, and `/code-review` found two real
+errors in work I had already called finished.
+
+### The lash fix
+Their 250 uvs were a body-atlas sliver (v 0.927..0.985), so no strand texture
+could sample them. `strand_uvs()` authors them per cage, `u` across the lid and
+`v` along the hair, oriented so v = 0 is the lid.
+
+**My first version grouped by SIDE, not by cage, and the docstring claimed
+otherwise.** The lower lash came out v 0.000..0.246 with its tip at 0.018 --
+running backwards -- and the upper never reached the root band. A comment
+asserting something the code does not do is worse than no comment.
+
+**The alpha is a trade and the numbers say so**: 113 px against a bare face
+solid, 59 at a 39% cut, 65 shipped. At this scale lashes are a few pixels tall
+and cutting across them speckles, the same failure as the 34-strand brow.
+
+### Two errors in already-committed work
+**`coil()` multiplied the accumulated angle by the instantaneous chirality**,
+which retroactively mirrors every turn already laid down -- so a switchback was
+a JUMP, not a reversal. Measured on the generator's own grid: +1.40 to -1.59
+turns between consecutive samples, 2.99 turns inside one card segment, at 0.971
+of full radius. It is integrated now. The amplitude pinch also never landed,
+because `blend` (0.07 total) was narrower than the sample spacing (0.0667) and
+the profile exponent 0.6 FLATTENS the neck rather than sharpening it. Median
+narrowest sampled amplitude went 0.551 -> 0.175, and "never dips below half"
+went 59% -> 0%.
+
+The selftest missed both because it probed `amplitude_at(0.5)` exactly -- a
+point `coil()` never evaluates. It now samples on the real grid.
+
+**The loc and bantu CAPS still used the planar x/z unwrap** the afro's fix
+replaced, wearing the same texture. One `cap_uvs()` helper serves all three
+now; the afro regenerates byte-identical, which proves it was a refactor there.
+
+Also: the shared `write_bound_style` printed and wrote a uv-less .obj anyway
+where `make_eyebrows` had been hardened to refuse -- four callers with the
+failure mode that left the brow at zero uvs. It refuses now.
+
+Release 1650/1650.
+
+---
+
 ## 2026-10-06 (later) — Session · **Coiled hair, and the review caught a fifth of it**
 
 `coils` ships: Curly-Cue's methods from the PAPER (the authors' switchback code

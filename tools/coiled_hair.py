@@ -175,7 +175,18 @@ def phase_at(t, own_phase, clump_phase, lock_start, lock_end):
     return own_phase + delta * w
 
 
-def chirality_at(t, switchbacks, blend=0.035):
+# How much of the strand a switchback takes to reverse through.
+#
+# WIDE ENOUGH TO LAND ON THE SAMPLE GRID. At 0.035 the whole reversal spanned
+# 0.07 against a card's sample spacing of 1/15 = 0.0667, so the pinch fell
+# between samples and never appeared: measured over the real generation stream,
+# 59% of switchback strands never dipped below half radius, and the neck this
+# exists to draw was simply not in the mesh. 0.08 spans about two and a half
+# samples.
+BLEND = 0.08
+
+
+def chirality_at(t, switchbacks, blend=BLEND):
     """Handedness at `t`, reversing smoothly at each switchback.
 
     A switchback (helical perversion) is where a coil changes hand. Physically
@@ -203,7 +214,7 @@ def chirality_at(t, switchbacks, blend=0.035):
     return sign
 
 
-def amplitude_at(t, switchbacks, blend=0.035):
+def amplitude_at(t, switchbacks, blend=BLEND):
     """The coil's radius, pinched to zero at each switchback.
 
     This is the geometric content of a perversion: the helix cannot swap hands
@@ -214,7 +225,13 @@ def amplitude_at(t, switchbacks, blend=0.035):
     for s in switchbacks:
         d = abs(t - s)
         if d < blend:
-            a = min(a, (d / blend) ** 0.6)
+            # LINEAR to the neck. An exponent below 1 makes the pinch
+            # SHALLOWER near the centre, not sharper -- 0.4**0.6 is 0.577
+            # against a linear 0.4 -- so the coil recovered before the next
+            # sample and the neck never appeared: 0.591 at the closest sampled
+            # point where 0.5 is the bar. The physical shape is a coil that
+            # necks to nothing and opens out again, which is what this is.
+            a = min(a, d / blend)
     return a
 
 
@@ -284,11 +301,24 @@ def coil(centreline, radius, turns, own_phase, clump_phase,
     frames = parallel_frames(centreline)
     out = []
     n = len(centreline) - 1
+    # INTEGRATED, not multiplied. The twist is the running total of a SIGNED
+    # RATE, so a switchback changes the direction the coil winds from there on.
+    # Multiplying the accumulated angle by the instantaneous sign instead --
+    # `chirality_at(t) * turns * 2pi * t`, which is what this did -- mirrors
+    # every turn already laid down, so the hair does not reverse, it jumps.
+    # MEASURED on the generator's own grid with one switchback at t=0.5:
+    # consecutive samples at +1.40 and -1.59 turns, a 2.99-turn swing inside a
+    # single card segment, at 0.971 of full radius. That is the crease the
+    # amplitude pinch exists to prevent, drawn at full width.
+    twist = 0.0
+    prev_t = 0.0
     for i, p in enumerate(centreline):
         t = i / n if n else 0.0
+        twist += chirality_at(t, switchbacks) * turns * 2.0 * math.pi * (t - prev_t)
+        prev_t = t
         u, v, _ = frames[i]
         ph = phase_at(t, own_phase, clump_phase, lock_start, lock_end)
-        ang = ph + chirality_at(t, switchbacks) * turns * 2.0 * math.pi * t
+        ang = ph + twist
         amp = radius * amplitude_at(t, switchbacks) * min(1.0, t / ROOT_FADE)
         out.append(add(p, add(scale(u, math.cos(ang) * amp),
                               scale(v, math.sin(ang) * amp))))
@@ -332,6 +362,32 @@ def selftest() -> int:
     check("chirality after", chirality_at(0.9, (0.5,)) < -0.99, "did not reverse")
     check("amplitude pinches", amplitude_at(0.5, (0.5,)) < 1e-6, "no pinch at the switchback")
     check("amplitude recovers", amplitude_at(0.9, (0.5,)) > 0.99, "never reopened")
+
+    # ON THE SAMPLE GRID, which is where the previous two checks did not look.
+    # `amplitude_at(0.5, (0.5,)) < 1e-6` probes the switchback point exactly --
+    # a value `coil()` never evaluates -- so it passed while the shipped cards
+    # sailed through the reversal at full radius. These sample the way a card
+    # does and assert what the card actually sees.
+    grid = catmull_rom([(0, 0, 0), (0, 1, 0), (0, 2, 0), (0, 3, 0)], 5)
+    gn = len(grid) - 1
+    sampled = [amplitude_at(i / gn, (0.5,)) for i in range(gn + 1)]
+    check("the pinch lands on a sampled point", min(sampled) < 0.5,
+          f"narrowest sampled amplitude {min(sampled):.3f} -- the neck falls between samples")
+
+    turned = coil(grid, 0.1, 3, 0.0, 0.0, switchbacks=(0.5,))
+    centre = [grid[i] for i in range(len(grid))]
+    angles = []
+    for i, q in enumerate(turned):
+        d = sub(q, centre[i])
+        angles.append(math.atan2(d[2], d[0]))
+    steps = []
+    for i in range(1, len(angles)):
+        step = abs((angles[i] - angles[i - 1] + math.pi) % (2.0 * math.pi) - math.pi)
+        steps.append(step)
+    # Three turns over 15 spans is 0.4 pi a span; a reversal that JUMPS instead
+    # of turning shows up as a step far larger than that.
+    check("no jump at the switchback", max(steps) < 1.6,
+          f"largest per-sample twist step {max(steps):.2f} rad -- the coil jumped rather than reversed")
 
     # Two hairs a half-period apart must NOT cancel: this is the failure the
     # paper opens with, and the reason phase is blended rather than position.

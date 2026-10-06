@@ -216,17 +216,22 @@ def png(width, height, rgba):
 # are staggered and fade over half their length. That is the part of a brow a
 # viewer actually reads.
 #
-# THERE IS NO LASH SLOT, and that is a finding rather than an omission.
-# `data/eyelashes/eyelashes.obj` carries 250 uvs, which looks like everything a
-# strand texture needs -- and they are a sliver of the BODY atlas, u
-# 0.658..0.758 and v 0.927..0.985, inherited from the base mesh by
-# `make_helper_proxies.py`. Sampled through that window this texture is 0%
-# opaque with a mean alpha of 8, so pointing a lash material at one makes the
-# lashes fainter and nothing else. It was written, shipped and measured before
-# that was noticed.
+# LASH, and it took re-authoring the mesh's UVs to earn this slot back. The
+# lashes carried 250 of them inherited from the BODY atlas -- u 0.658..0.758,
+# v 0.927..0.985 -- so the first attempt at a lash texture sampled a window 0%
+# opaque with a mean alpha of 8 and made the lashes fainter and nothing else.
+# `make_helper_proxies.strand_uvs()` now runs `u` across the lid and `v` along
+# the hair, which is what makes this file's output mean anything there.
 #
-# Giving lashes real hairs needs their UVs re-authored to run along the lash,
-# which is a change to the helper-proxy generator and not to this file.
+# WIDE AND OVERLAPPING, like the brow and for the same measured reason. The
+# anatomy argues for sparseness -- lashes ARE separate hairs and the gaps are
+# the thing -- but the render does not resolve them: a lash strip is a few
+# pixels tall in a 1024 frame, and a 39% texture cut it into speckle that
+# differed from a BARE FACE in 59 px where the solid strip managed 113. It read
+# worse, exactly as 34 narrow strands on a six-sided brow ridge did.
+#
+# So the body stays solid and the alpha buys the one thing silhouette cannot:
+# the lash line THINS toward its outer tips instead of stopping square.
 SLOTS = (
     ("scalp", ROOT / "data" / "hair" / "hair_strands.png",
      dict(count=52, seed=0x5CA19, width_scale=0.70, min_tip=0.97, max_tip=1.0,
@@ -234,6 +239,9 @@ SLOTS = (
     ("brow", ROOT / "data" / "eyebrows" / "brow_strands.png",
      dict(count=5, seed=0xB4042, width_scale=2.30, min_tip=0.62, max_tip=1.0,
           drift_max=0.004, root_band=0.030, tip_softness=0.50)),
+    ("lash", ROOT / "data" / "eyelashes" / "lash_strands.png",
+     dict(count=6, seed=0x1A5E5, width_scale=2.10, min_tip=0.50, max_tip=1.0,
+          drift_max=0.008, root_band=0.080, tip_softness=0.55)),
 )
 
 

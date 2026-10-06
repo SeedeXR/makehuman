@@ -10597,15 +10597,33 @@ GPU here, or Colab) and it comes back to the owner first.
       across its width with no wrap, so a closed-tube seam metric flags 100% of
       its faces as a FALSE POSITIVE.
 
-- [ ] **EYELASHES STILL HAVE NO STRAND ALPHA, and their UVs are why.** The mesh
-      carries 250 of them and they are a BODY-ATLAS sliver inherited from the
-      base mesh -- u 0.658..0.758, v 0.927..0.985. A strand texture sampled
-      through that window is 0% opaque, mean alpha 8, so pointing a material at
-      one makes the lashes fainter and nothing else. It was written, shipped and
-      measured that way before `/code-review` caught it. Real lashes need the
-      UVs re-authored to run ALONG the lash, in `make_helper_proxies.py`.
-      **That file GENERATES `eyelashes.mhmat`** -- hand-editing it turned
-      `make_helper_proxies.py --check` red.
+- [x] **Eyelashes carry a strand alpha, after their UVs were re-authored**
+      (2026-10-06). The mesh's 250 uvs were a BODY-ATLAS sliver inherited from
+      the base mesh -- u 0.658..0.758, v 0.927..0.985 -- so a strand sheet
+      sampled through them was 0% opaque, mean alpha 8, and a first attempt at
+      a lash material made the lashes FAINTER and nothing else.
+      `make_helper_proxies.strand_uvs()` authors them per cage now.
+
+      **PER CAGE, NOT PER SIDE** -- and the first version got that wrong while
+      its own docstring claimed otherwise, which `/code-review` caught. The base
+      mesh has four disjoint cages: `-1` is the LOWER lash (y 7.2029..7.2751),
+      `-2` the UPPER (7.2785..7.3624). Fitting one axis to both of an eye's
+      lashes ran the projection tip-to-tip: the lower came out v 0.000..0.246
+      with its tip at 0.018, BACKWARDS, and the upper never sampled the root
+      band. Each cage is now projected on its own and oriented so v = 0 sits at
+      the lid. Both span 0.000..1.000.
+
+      **THE ALPHA IS A TRADE, measured.** Against a bare face the old solid
+      strip differs in 113 px, a 39%-cut texture in 59, the shipped wide-strand
+      version in 65. Lashes are a few pixels tall in a 1024 render, so cutting
+      across them SPECKLES exactly as 34 strands on a six-sided brow ridge did.
+      The body stays solid; the alpha buys a line that thins toward its tips.
+
+      Gated by `eyelashes_uvs_run_along_the_lash` (fails on the real pre-fix
+      asset, v 0.926935..0.985094), `eyelash_material_cuts_alpha`, and
+      `*_textures_exist` -- `Material.cpp` drops a missing texture channel
+      SILENTLY, so a generated PNG that never got committed ships as an
+      untextured material with nothing reported.
 
 - [x] **Correctives can be dialled back again, in pose space** (2026-10-05,
       owner: "fix the correctives so they can be dialled back, do it properly").
