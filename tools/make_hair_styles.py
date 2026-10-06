@@ -165,17 +165,48 @@ def write_style(name, stem, used, keep, placed, verts):
         d = placed[b]
         pos.append((x + d[0], y + d[1], z + d[2]))
         obj.append("v {:.6f} {:.6f} {:.6f}".format(*pos[-1]))
-    # A planar projection over the cap's own extent, for the same reason the
-    # swept styles get UVs: without a `vt` the strand texture has nowhere to
-    # map. The afro is a skullcap, so x/z is the natural plane -- it is viewed
-    # from outside the head, and a cylindrical unwrap would seam down the
-    # middle of the face.
-    xs = [q[0] for q in pos] or [0.0]
-    zs = [q[2] for q in pos] or [0.0]
-    sx = (max(xs) - min(xs)) or 1.0
-    sz = (max(zs) - min(zs)) or 1.0
+    # CROWN-RADIAL, because a strand texture needs to know which way the hair
+    # GROWS and a planar projection cannot say.
+    #
+    # This used to project x/z over the cap's extent, which is a reasonable
+    # unwrap for a skullcap and the wrong one for hair: it makes `u`
+    # left-to-right and `v` front-to-back, so a texture whose strands run along
+    # `v` draws them from the face to the nape, and a tip fade at v=1 eats the
+    # back of the head. RENDERED and looked at, that is exactly what happened --
+    # the crown went bald and the rest hung in strings.
+    #
+    # Hair leaves a scalp from the whorl and travels outward and down, so `v`
+    # is the angle away from straight up about the cranium centre, normalised
+    # over the cap's own reach, and `u` is the azimuth around it. Strands then
+    # run root-to-tip the way they grow, and the tip fade lands on the hem
+    # where the silhouette wants breaking up.
+    #
+    # `u` IS THE AZIMUTH AND THEREFORE WRAPS, which is why the strand texture
+    # wraps its own distance calculation: without that there is a seam down the
+    # back where u=0.999 meets u=0.001.
+    cap = []
     for q in pos:
-        obj.append(f"vt {(q[0] - min(xs)) / sx:.6f} {(q[2] - min(zs)) / sz:.6f}")
+        dx, dy, dz = q[0] - CENTRE[0], q[1] - CENTRE[1], q[2] - CENTRE[2]
+        radial = math.hypot(dx, dz)
+        # Angle from +y. atan2 rather than acos(dy/len): it stays well
+        # conditioned at the crown, where radial goes to zero.
+        cap.append((math.degrees(math.atan2(radial, dy)), math.atan2(dx, dz)))
+    reach = max((c[0] for c in cap), default=1.0) or 1.0
+    for polar, azim in cap:
+        # +0.5 PUTS THE SEAM AT THE NAPE. `atan2(dx, dz)` wraps at azimuth 0,
+        # which is the FRONT midline, and a triangle that straddles the wrap has
+        # `u` interpolated the long way round -- the whole texture smeared
+        # across it. RENDERED, that was a ragged vertical strip down the centre
+        # of the forehead, which I first misread as the polar singularity at the
+        # crown and tried to cover with a wider root band; widening it changed
+        # nothing, because the strip was never at the pole.
+        #
+        # The smear does not go away by moving it, it goes behind the head.
+        # Removing it needs the seam vertices DUPLICATED so each copy carries
+        # its own `u`, and this writer emits one `vt` per vertex.
+        u = (azim / (2.0 * math.pi) + 0.5) % 1.0
+        v = min(1.0, polar / reach)
+        obj.append(f"vt {u:.6f} {v:.6f}")
     for f in keep:
         obj.append("f " + " ".join(f"{index[v] + 1}/{index[v] + 1}" for v in f))
 

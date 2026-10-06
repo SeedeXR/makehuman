@@ -4,6 +4,61 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-10-06 — Session · **The hair UVs never pointed along the hair**
+
+Owner asked for naturalistic hair, brows and lashes, grounded in the Curly-Cue
+research. **The Curly-Cue work is not started.** What this session did is the
+layer underneath it, which turned out to be broken in three places.
+
+### Licence, first
+`hair_research/curlyCueCode/switchback_licensed/switchbackGen.cpp` is
+**GPL-3.0-or-later**. Owner's position: learn the approach, reimplement
+differently. The route taken is the PAPER, not the file -- a published
+description is clean provenance, whereas reading GPL source and then writing
+"differently" is what makes derivation arguable. The sibling
+`curlyCueGuidesToFull` is MIT. Nothing from either has entered the build.
+
+### Three real defects
+**`make_eyebrows.py` was DEAD at head** -- unpacking two values from a
+`ridge()` that returns three, failing every run, so `eyebrows.obj` sat frozen
+with zero `vt`. The brow could not carry an alpha, and the material's "no
+texture, deliberately" comment described the consequence as the design.
+
+**The afro's UVs did not follow hair growth.** Planar x/z: `u` left-right, `v`
+front-back. A strand texture drew hair from face to nape. Now crown-radial.
+
+**The UV seam ran down the forehead**, because `atan2(dx, dz)` wraps at
+azimuth 0. Moved to the nape. I first misread it as the polar singularity and
+widened the root band; that changed nothing, which is what ruled it out.
+
+### What I got wrong, and the render/review caught
+My first strand texture **shredded the afro into straw**. My first brow texture
+put 34 strands across a SIX-sided ridge and rendered as a **speckled
+checkerboard, worse than the blob it replaced** -- strands have to be fewer
+than the facets.
+
+**And I repeated the very bug I had just fixed.** I gave the eyelashes a strand
+material because "the mesh already has 250 uvs". They are a BODY-ATLAS sliver,
+v 0.927..0.985; the texture sampled there is 0% opaque. Worse, I hand-edited
+`eyelashes.mhmat`, which `make_helper_proxies.py` GENERATES, turning its
+`--check` gate red. Both reverted through the generator. Having UVs is not the
+property -- having uvs that MEAN the right thing is.
+
+**My own gate was wrong too.** "One `vt` per `v`" is not an OBJ rule: it would
+have failed the legal `hair.obj` (428/425) while PASSING the broken lash mesh.
+It now checks uvs exist and every face indexes one that does, with an optional
+span check; controlled against both the stale brow and the lash sliver.
+
+### Ponytail
+Three cuts, net -21 lines. The one worth recording: I hand-rolled a 64-bit LCG
+claiming `random`'s stream is not stable across Python versions. Python
+documents the opposite guarantee. `random.Random(seed).uniform()` replaced it,
+still byte-identical across runs.
+
+Both suites green at 1640. Nothing about the Curly-Cue geometry attempted.
+
+---
+
 ## 2026-10-05 21:40:00 — Session · **Correctives dial back again, and Maya found the second bug**
 
 Owner: *"fix the correctives so they can be dialled back, do it properly and

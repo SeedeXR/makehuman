@@ -10510,6 +10510,63 @@ GPU here, or Colab) and it comes back to the owner first.
       **Shipped `9f21b55f`; CI run 37290876321 ALL 11 JOBS GREEN** (TSan
       included, 110 min). Both configs 1625/1625 locally, clang-format 0.
 
+- [x] **Hair UVs follow the hair, and the brow generator runs again**
+      (2026-10-06, owner asked for naturalistic hair/brows/lashes from the
+      Curly-Cue research). **The Curly-Cue work itself is NOT done** -- see the
+      open item below.
+
+      **`tools/make_eyebrows.py` WAS DEAD AT HEAD.** `ridge()` grew a third
+      return value when the swept styles learned UVs; the brow caller still
+      unpacked two, so every run ended in `ValueError`. Nothing caught it, so
+      `eyebrows.obj` sat frozen with 264 vertices and ZERO `vt` -- which is why
+      the brow could not carry an alpha, and why its material's "no texture,
+      deliberately" read as a decision instead of a consequence.
+
+      **THE AFRO'S UVS DID NOT FOLLOW THE HAIR.** `write_style` projected x/z,
+      making `u` left-right and `v` front-back, so a strand texture drew hair
+      from face to nape. Now crown-radial: `u` azimuth, `v` angle from the
+      whorl. The seam moved to the nape -- at azimuth 0 it ran down the
+      FOREHEAD and smeared the texture there.
+
+      **STALE ITEM CORRECTED:** the brow is 2.2 mm, not "9 mm, 4x anatomical".
+      `make_eyebrows.py` records that the 9 mm figure came from a misdiagnosed
+      binding bug, since fixed.
+
+      Gated by `*_carries_uvs` (six assets) and `eyebrows_uvs_run_along_the_sweep`.
+      Both controlled: the first fails on the real stale brow, the second on the
+      eyelash mesh.
+
+- [ ] **THE CURLY-CUE COILED HAIR IS NOT STARTED.** Phase locking, period
+      skipping and switchbacks are all still to do; the afro is a shell wearing
+      a texture, not generated coiled geometry. The paper's method is
+      implementable from the published description -- Catmull-Rom strands
+      (3.1.1), a low-pass DFT for the guide centreline (3.2), phases that
+      converge from uncorrelated at the scalp to shared outward, and
+      switchbacks as a chirality reversal. **`hair_research/curlyCueCode/switchback_licensed`
+      IS GPL-3.0-or-later and must not be read or ported**; the sibling
+      `curlyCueGuidesToFull` is MIT. Decide where the maths lives first: AGPL
+      `core` or Apache `foundation`, because that choice is not reversible
+      cheaply.
+
+- [ ] **`ridge()` SMEARS ITS TEXTURE ACROSS ONE FACET COLUMN.** It emits
+      `u = 0..5/6` with no duplicated seam ring, so the quad joining side 5 to
+      side 0 interpolates `u` the long way. MEASURED: 42 of 252 brow faces
+      (16.7%), cornrows 16.7%, locs 17.6% -- exactly one of six columns. It was
+      harmless while the brow had no texture and is not any more. The fix is the
+      one `write_style` documents: duplicate the seam vertices so each copy
+      carries its own `u`. It changes vertex counts on four assets and their
+      gates, which is why it is its own piece of work.
+
+- [ ] **EYELASHES STILL HAVE NO STRAND ALPHA, and their UVs are why.** The mesh
+      carries 250 of them and they are a BODY-ATLAS sliver inherited from the
+      base mesh -- u 0.658..0.758, v 0.927..0.985. A strand texture sampled
+      through that window is 0% opaque, mean alpha 8, so pointing a material at
+      one makes the lashes fainter and nothing else. It was written, shipped and
+      measured that way before `/code-review` caught it. Real lashes need the
+      UVs re-authored to run ALONG the lash, in `make_helper_proxies.py`.
+      **That file GENERATES `eyelashes.mhmat`** -- hand-editing it turned
+      `make_helper_proxies.py --check` red.
+
 - [x] **Correctives can be dialled back again, in pose space** (2026-10-05,
       owner: "fix the correctives so they can be dialled back, do it properly").
       Closes the follow-up the entry below opened.

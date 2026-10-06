@@ -3817,6 +3817,38 @@ if(MH_HAVE_RENDER)
              -DEXPECT=264 -DBAR=0.050
              -P ${CMAKE_CURRENT_SOURCE_DIR}/check_eyebrow_binding.cmake)
 
+    # THE BROW CAN CARRY A STRAND ALPHA, which is a claim about the shipped mesh
+    # and not about the generator. `make_eyebrows.py` was dead at head -- it
+    # unpacked two values from a `ridge()` that returns three -- so the asset
+    # stayed frozen at 264 vertices with ZERO uvs, and the material's "no
+    # texture, deliberately" comment described the consequence as if it were the
+    # design. Neither half was visible on its own.
+    #
+    # Every generated style gets the same check: an .obj with no `vt` is a mesh
+    # that cannot hold hair, whatever the material points at.
+    foreach(_mh_uv_obj
+            ${CMAKE_SOURCE_DIR}/data/eyebrows/eyebrows.obj
+            ${CMAKE_SOURCE_DIR}/data/hair/afro.obj
+            ${CMAKE_SOURCE_DIR}/data/hair/cornrows.obj
+            ${CMAKE_SOURCE_DIR}/data/hair/locs.obj
+            ${CMAKE_SOURCE_DIR}/data/hair/bantu_knots.obj)
+        get_filename_component(_mh_uv_name "${_mh_uv_obj}" NAME_WE)
+        add_test(NAME ${_mh_uv_name}_carries_uvs COMMAND ${CMAKE_COMMAND}
+                 -DOBJ=${_mh_uv_obj}
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_has_uvs.cmake)
+    endforeach()
+
+    # THE BROW'S UVS MUST RUN ALONG THE SWEEP, not sit in a corner of someone
+    # else's atlas. Counting uvs is not enough and the eyelashes are why: they
+    # carry 250 of them, inherited from the base mesh, spanning v 0.927..0.985 --
+    # so a strand texture sampled through that window never changes along the
+    # hair, and pointing a material at one changed the render not at all. The
+    # brow's own uvs run 0..1 along the ridge, which is the property that makes
+    # `brow_strands.png` mean anything.
+    add_test(NAME eyebrows_uvs_run_along_the_sweep COMMAND ${CMAKE_COMMAND}
+             -DOBJ=${CMAKE_SOURCE_DIR}/data/eyebrows/eyebrows.obj -DMIN_V_SPAN=0.9
+             -P ${CMAKE_CURRENT_SOURCE_DIR}/obj_has_uvs.cmake)
+
     add_test(NAME app_bind_points_missing_file COMMAND makehuman --bind-points /nope/nope.txt)
     set_tests_properties(app_bind_points_missing_file PROPERTIES
         PASS_REGULAR_EXPRESSION "cannot read the points")

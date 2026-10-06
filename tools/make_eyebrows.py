@@ -113,20 +113,30 @@ def build(stand, half, sides, samples):
         raise SystemExit("no triangles in the brow region; the box is wrong")
 
     path = brow_path(tris, samples)
-    pts, quads = H.ridge(path, stand=stand, half=half, sides=sides)
+    # THREE VALUES. `ridge` grew a `uvs` return when the swept styles learned to
+    # carry a strand texture, and this caller was never updated -- so
+    # `make_eyebrows.py` has been DEAD at head, failing with "too many values to
+    # unpack", and `data/eyebrows/eyebrows.obj` is whatever the last successful
+    # run wrote. That is why it ships with zero `vt` lines while every swept
+    # style has them, and why the brow could not carry an alpha at all.
+    pts, quads, uvs = H.ridge(path, stand=stand, half=half, sides=sides)
 
     # The right brow is the left one mirrored in x. Mirroring the RESULT rather
     # than re-projecting keeps the pair identical, which is what a face wants;
     # re-running the projection would let floating point make them differ.
     n = len(pts)
     allpts = list(pts) + [(-x, y, z) for x, y, z in pts]
+    # The mirrored brow reuses the SAME uv per copied vertex: both brows are
+    # the same hairs seen from opposite sides, so flipping `u` would make the
+    # strand pattern run inward on one side and outward on the other.
+    alluvs = list(uvs) + list(uvs)
     # Winding flips under a mirror, so the copied quads are reversed or every
     # right-hand face points into the head.
     allquads = list(quads) + [tuple(reversed([i + n for i in q])) for q in quads]
-    return allpts, allquads, tris
+    return allpts, allquads, alluvs, tris
 
 
-def write_eyebrows(points, faces, bindings):
+def write_eyebrows(points, faces, uvs, bindings):
     """The .obj and .mhclo, in the contract `fitProxy` reads.
 
     Not `H.write_bound_style`: that one hardcodes `materials/hair.mhmat` and a
@@ -139,8 +149,24 @@ def write_eyebrows(points, faces, bindings):
     obj = [H.BANNER, f"# Eyebrows: {len(points)} vertices, {len(faces)} faces.", "g eyebrows"]
     for x, y, z in points:
         obj.append(f"v {x:.6f} {y:.6f} {z:.6f}")
-    for f in faces:
-        obj.append("f " + " ".join(str(i + 1) for i in f))
+    # `u` runs AROUND the ridge and `v` ALONG it, the same convention every
+    # swept style uses, so `brow_strands.png` cuts the ridge lengthwise into
+    # hairs that run the way the brow grows.
+    if uvs and len(uvs) == len(points):
+        for u, v in uvs:
+            obj.append(f"vt {u:.6f} {v:.6f}")
+        for f in faces:
+            obj.append("f " + " ".join(f"{i + 1}/{i + 1}" for i in f))
+    else:
+        # REFUSED, and this used to only SAY so: it printed to stderr, wrote the
+        # .obj without any `vt` anyway, and returned 0. A tool that reports
+        # success while shipping a degraded asset is the same silent staleness
+        # the rest of this change exists to stop -- it is how the brow sat at
+        # zero uvs through every run that "worked".
+        raise SystemExit(
+            f"eyebrows: {len(uvs)} uvs for {len(points)} vertices -- refusing to "
+            f"write a mesh that cannot carry its strand alpha"
+        )
 
     mhclo = [
         H.BANNER,
@@ -201,7 +227,7 @@ def main() -> int:
         elif key == "--samples":
             samples = int(value)
 
-    pts, quads, _tris = build(stand, half, sides, samples)
+    pts, quads, uvs, _tris = build(stand, half, sides, samples)
     app = H.app_binary()
     binds = H.bind_points(app, pts, region=BIND_REGION)
     if len(binds) != len(pts):
@@ -220,7 +246,7 @@ def main() -> int:
     import make_helper_proxies as P
 
     (DATA / "eyebrows" / "skinmat_eyebrows.png").write_bytes(P.make_litsphere((0.22, 0.15, 0.11)))
-    obj, mhclo = write_eyebrows(pts, quads, binds)
+    obj, mhclo = write_eyebrows(pts, quads, uvs, binds)
     (DATA / "eyebrows" / "eyebrows.obj").write_text(obj)
     (DATA / "eyebrows" / "eyebrows.mhclo").write_text(mhclo)
     print(f"eyebrows: {len(pts)} vertices, {len(quads)} faces "
