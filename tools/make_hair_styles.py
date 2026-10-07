@@ -276,7 +276,7 @@ def derive(verts, faces, app_path=""):
             raise RuntimeError(f"the shortest {spec.stem} rope is {lshort} steps")
         # Only the ROPE points go to the binder; the cap already carries its own
         # bindings, one per base vertex it grew from.
-        lbinds = lcap + bind_points(app, lpts[lncap:])
+        lbinds = lcap + graded_binds(app, lpts[lncap:])
         if not lpts or len(lbinds) != len(lpts):
             raise RuntimeError(f"{len(lbinds)} bindings for {len(lpts)} {spec.stem} points")
         lobj, lmhclo = write_bound_style(spec.name, spec.stem, lpts, lfs, lbinds, luvs,
@@ -1272,6 +1272,56 @@ def skull_radius(grid, direction, length):
     el = int(min(0.999, max(0.0, math.acos(max(-1.0, min(1.0, dy / length))) / math.pi))
              * make_coils.EL_BINS)
     return grid[el * make_coils.AZ_BINS + min(make_coils.AZ_BINS - 1, az)]
+
+
+# WHERE HAIR BINDS IS WHICH BONES DRIVE IT, and hair that hangs past the
+# shoulders must not hang off the skull alone.
+#
+# A proxy inherits the skin weights of the body vertices it binds to
+# (`VertexWeights::proxyWeights`). Bound to the scalp, every vertex of a fall
+# carries the head bone: MEASURED against `mixamo_superset_weights.mhw`, 97.9%
+# of the locs' weight and 97.5% of the long hair's sat on `head`. Nothing in
+# the rig was missing -- the spine and chest bones are right there in the 65
+# the export already carries. The hair simply never told the rig it hangs.
+#
+# So the binding is graded by height, and the SAME helper does it for every
+# style that falls, which is what keeps one fix from reaching locs and missing
+# the long hair.
+#
+#   above `BAND_Y`         -- the scalp, so the roots follow the skull.
+#   below it and BEHIND    -- the back, so the fall follows the torso.
+#   below it and IN FRONT  -- the scalp again: hair beside the face must never
+#                             bind to the cheek, or a jaw drop drags it.
+BAND_Y = 7.00
+# The FLOOR is 7.60 and that is measured, not rounded: the scalp region reaches
+# down to y 6.9890, but its lower part still shifts a little when the jaw drops
+# and the hair inherits whatever it binds to. Measured on the long hair, the
+# first floor at which a jaw drop leaves it alone -- 6.95 moved 12,360 vertices,
+# 7.30 moved 9,881, 7.60 moves none. Set to 7.40 here for one run and three loc
+# vertices beside the temple started moving again.
+SCALP_BOX = "-0.80,0.80,7.60,8.55,-0.45,1.50"
+# The CEILING is 6.60, below the jaw's reach. Higher than that and the band
+# contains triangles the jaw drives; measured, eight vertices beside the ear
+# moved with it, and the property is "a jaw drop leaves the hair alone".
+BACK_BOX = "-1.60,1.60,1.60,6.60,-1.20,0.50"
+
+
+def graded_binds(app, pts, scalp_box=SCALP_BOX):
+    """Bind each point to the part of the body its own height hangs against."""
+    bands = {}
+    for i, p in enumerate(pts):
+        key = scalp_box if (p[1] >= BAND_Y or p[2] >= CENTRE[2]) else BACK_BOX
+        bands.setdefault(key, []).append(i)
+    out = [None] * len(pts)
+    for region, idx in bands.items():
+        got = bind_points(app, [pts[i] for i in idx], region)
+        if len(got) != len(idx):
+            raise RuntimeError(f"{len(got)} bindings for {len(idx)} points in {region}")
+        for at, line in zip(idx, got):
+            out[at] = line
+    if any(b is None for b in out):
+        raise RuntimeError("a hair point was never bound")
+    return out
 
 
 def flyaways(path, spec, base, rng):

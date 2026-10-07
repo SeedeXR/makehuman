@@ -2291,6 +2291,16 @@ if(MH_HAVE_RENDER)
                          ${CMAKE_SOURCE_DIR}/tools/make_long_hair.py --check
                          --app $<TARGET_FILE:makehuman>)
 
+        # HAIR THAT HANGS MUST NOT BE WELDED TO THE SKULL. A proxy inherits the
+        # skin weights of what it binds to, so binding a waist-length fall to
+        # the scalp puts every one of its vertices on the `head` bone -- the rig
+        # can express the swing, the hair just never says it hangs. MEASURED
+        # before `graded_binds`: 97.5% of the long hair's weight and 97.9% of
+        # the locs' sat on `head`.
+        add_test(NAME hair_is_not_welded_to_the_skull
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_SOURCE_DIR}/tools/check_hair_bones.py)
+
     endif()
 
     # CORNROWS -- the first style whose geometry is not in the base mesh at all.

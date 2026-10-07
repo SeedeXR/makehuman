@@ -41,33 +41,57 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
         `the locs do not lie on top of each other`. Same degeneracy class as the
         crown guard in `make_coils.card`.
 
-- [!] **HAIR CANNOT BE ANIMATED BY BINDING. This is architectural, measured, and
-      worth not rediscovering.**
+- [x] **THE HAIR WAS WELDED TO THE SKULL, and the shared rig already had what it
+      needed.** Owner's call: "use shared rigs for better optimization".
 
-      The theory was good: `VertexWeights::proxyWeights` gives a proxy the skin
-      weights of the body vertices it binds to, so grading the binding down the
-      fall -- roots to the scalp, the hanging part to the torso -- should buy
-      secondary motion for free. It was implemented, and it bought nothing.
+      A proxy inherits the skin weights of the body vertices it binds to
+      (`VertexWeights::proxyWeights`), so WHERE hair binds decides which bones
+      drive it. Binding a waist-length fall to the scalp put it all on ONE bone.
+      MEASURED against `mixamo_superset_weights.mhw`:
 
-      `Proxy.cpp:435` is why: `P = SUM w_k H[v_k] + M d`, where `M` is
-      `tmatrix.diagonal` -- a per-axis SCALE. **The offset from the bound
-      triangle is scaled and never ROTATED.** A proxy vertex therefore cannot
-      turn relative to the body however it is bound, so hair that hangs away
-      from the surface translates with it and keeps its orientation.
+          weight on `head`      before    after
+          long hair              97.5%    66.9%
+          locs (ropes only)      97.9%    59.9%
+          dreadlocks (ropes)     97.9%    49.1%
 
-      MEASURED on the banded version: root-to-tip distances changed by 0.0002 dm
-      of a 5.535 dm span under a T-pose. That is 0.0%, and a rigid shell is
-      0.0%. The bands were removed again rather than left as complexity that
-      earns nothing.
+      `make_hair_styles.graded_binds` is now SHARED by every falling style --
+      roots to the scalp, the fall to the back, anything in front of the cranium
+      centre back to the scalp so a jaw drop cannot drag hair beside the face.
+      Dreadlocks now carry spine01 at 21.6% and neck01 at 17.0%. No new bones:
+      the spine and neck were already among the 65 the export carries.
 
-      **What hair that swings actually needs**, in rough order of cost:
-      1. A bone chain per rope or per card group, skinned so the fall is driven
-         by its own bones rather than by the head. 96 locs means a chain each,
-         which is far past any Mixamo bone budget -- so this wants its own
-         optional hair rig, not an extension of `mixamo_superset`.
-      2. Export those bones (FBX/glTF already carry a skeleton), so the swing is
-         authored or simulated in Blender/Maya/Unreal rather than in-app.
-      3. In-app simulation only after that, and only if anyone wants it.
+      Gated by `hair_is_not_welded_to_the_skull` (`tools/check_hair_bones.py`),
+      floors measured with margin, mutation-tested: welding the locs back to one
+      region gives 0.0% below the neck and the gate fails.
+
+      **A CLAIM I HAD TO RETRACT.** The previous entry here said "hair cannot be
+      animated by binding" and cited `Proxy.cpp:435` -- `P = SUM w_k H[v_k] + M d`
+      with `M = tmatrix.diagonal`, an unrotated per-axis scale. That line is
+      real but governs `fitProxy`, which fits REST geometry to the body's SHAPE.
+      Posing is a separate pass that skins the fitted vertices by their bones,
+      and bones rotate. The evidence was `--pose tpose` and `--pose-unit`, and
+      neither could have shown anything: the export ships rest geometry by
+      design (`main.cpp`, `wornSkins`), so the test was BLIND, not negative. I
+      deleted working code on it. Corrected in the code and here.
+
+### Still open
+- [ ] **Dedicated hair bones**, if deliberate control is wanted beyond what the
+      body rig gives. Designed and measured, not built: clustering the 96 locs
+      by their whole path (best-of-12-seed k-means, not azimuth -- azimuth
+      barely improves with more chains) gives
+
+          K chains x 5 bones     worst rope-to-chain distance
+            4  ( 20 bones)              2.26 dm
+            6  ( 30 bones)              1.59
+            8  ( 40 bones)              1.40
+           10  ( 50 bones)              1.13
+           16  ( 80 bones)              1.00
+
+      K=10 is the knee: 50 bones against 480 for one chain per rope, a 10x
+      reduction. It belongs in its OWN optional rig -- mixamo is 65 bones and
+      tolerates ~65-70, so 50 more cannot go on it. Note `Skeleton.cpp:39`: a
+      joint's position is the mean of a cloud of BASE-MESH vertices, so hair
+      bones must be anchored to body vertices down the back.
 - [ ] **25-34% of the loc scalp is still further than one rope-diameter from a
       rope.** MEASURED: rope count has diminishing returns here (80 -> 96 moved
       it 40% -> 34%) because the ropes comb BACK and converge on the rim. What

@@ -96,21 +96,25 @@ MATERIAL = "materials/hair_card.mhmat"
 # 7.60 is the first floor at which a jaw drop leaves the hair alone, which is
 # the property the suite pins and which the identity-bound cage had for free.
 REGION = "-0.80,0.80,7.60,8.55,-0.45,1.50"
-# BINDING CANNOT ANIMATE HAIR, and this is where that was established rather
-# than assumed. The fall was bound in bands for a while -- roots to the scalp,
-# the back of the fall to the torso -- on the theory that a proxy inherits the
-# weights of what it binds to (`VertexWeights::proxyWeights`), so grading the
-# binding would buy secondary motion for free.
+# WHERE A VERTEX BINDS IS WHICH BONES DRIVE IT. A proxy inherits the skin
+# weights of the body vertices it binds to (`VertexWeights::proxyWeights`), and
+# the export carries that: 65 joints at 4 influences a vertex.
 #
-# It bought nothing, and `Proxy.cpp:435` says why: `P = SUM w_k H[v_k] + M d`,
-# where `M` is `tmatrix.diagonal` -- a per-axis SCALE. The offset from the
-# bound triangle is scaled and never ROTATED, so a proxy vertex cannot turn
-# relative to the body no matter what it binds to. MEASURED on the banded
-# version: root-to-tip distances changed by 0.0002 dm of a 5.535 dm span under
-# a T-pose, which is 0.0%. A rigid shell is 0.0%.
+# Bound entirely to the scalp, the whole fall therefore hangs off ONE bone.
+# MEASURED against `mixamo_superset_weights.mhw`: 97.5% of the long hair's
+# weight was on `head`, and 97.9% of the locs'. Hair welded to the skull cannot
+# swing with the body however it is posed -- not because the rig cannot express
+# it, but because nothing told the rig the hair hangs past the shoulders.
 #
-# So the bands came out again. Hair that swings needs BONES in the hair, or a
-# simulation; see `memory/todo.md`.
+# A CORRECTION I OWE THIS FILE. An earlier version of this comment claimed
+# "binding cannot animate hair" and cited `Proxy.cpp:435` -- `P = SUM w_k H[v_k]
+# + M d` with `M = tmatrix.diagonal`, an unrotated per-axis scale. That line is
+# real, but it governs `fitProxy`, which fits REST geometry to the body's
+# SHAPE. Posing is a separate pass that skins the fitted vertices by their
+# bones, and bones rotate. The claim was tested with `--pose tpose` and
+# `--pose-unit`, and neither could have shown the effect: the export ships rest
+# geometry by design (`main.cpp`, `wornSkins`), so the test was blind, not
+# negative.
 # Half-width of the corridor in front of the cranium centre that hair may not
 # occupy. 0.55 dm clears the cheeks, so hair falls against the side of the head
 # rather than across the eyes.
@@ -361,7 +365,8 @@ def main() -> int:
 
     pts, quads, uvs = build()
     app = args.app or H.app_binary()
-    binds = H.bind_points(app, pts, REGION)
+    # The SAME grading the rope styles use; see `make_hair_styles.graded_binds`.
+    binds = H.graded_binds(app, pts, REGION)
     if len(binds) != len(pts):
         raise SystemExit(f"{len(binds)} bindings for {len(pts)} hair points")
     # ITS OLD IDENTITY, kept. The style shipped as this uuid and saved .mhm

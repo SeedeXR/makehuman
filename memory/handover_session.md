@@ -4,6 +4,62 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-10-07 (midday) — Session · **The hair was welded to the skull, and I had to retract a claim to find it**
+
+Owner: "use shared rigs for better optimization for the locs."
+
+**The measurement that mattered.** A proxy inherits the skin weights of the
+body vertices it binds to, so WHERE hair binds decides which bones drive it.
+Against `mixamo_superset_weights.mhw`, weight on the single `head` bone:
+
+| | before | after |
+|---|---|---|
+| long hair | 97.5% | 66.9% |
+| locs (ropes only) | 97.9% | 59.9% |
+| dreadlocks (ropes only) | 97.9% | 49.1% |
+
+`make_hair_styles.graded_binds` is SHARED by every falling style now. No new
+bones were needed -- spine and neck were already among the 65 the export
+carries. Dreadlocks now take spine01 at 21.6%, neck01 at 17.0%.
+
+Gated by `hair_is_not_welded_to_the_skull`, floors measured with margin and
+MUTATION-TESTED: welding the locs back to one region gives 0.0% below the neck
+and the gate fails with the reason spelled out.
+
+### I retracted a claim from the previous entry, and deleted working code on it
+
+That entry said "hair cannot be animated by binding", citing `Proxy.cpp:435`:
+`P = SUM w_k H[v_k] + M d`, `M = tmatrix.diagonal`, an unrotated per-axis
+scale. The line is real -- and it governs `fitProxy`, which fits REST geometry
+to the body's SHAPE. **Posing is a separate pass** that skins the fitted
+vertices by their bones, and bones rotate.
+
+Worse, the evidence could not have shown the effect either way. I tested with
+`--pose tpose` and `--pose-unit`, and the export ships REST geometry by design
+(`main.cpp`, `wornSkins`) -- zero vertices move under a pose unit because none
+are meant to. **The test was blind, not negative**, and I removed a graded
+binding that was doing exactly what was wanted.
+
+What made it visible was asking a different question: not "did anything move?"
+but "which bones own this vertex?". The second question needs no pose at all.
+
+### Dedicated hair bones: designed, measured, NOT built
+Clustering the 96 locs by their whole path (best-of-12-seed k-means; azimuth
+grouping barely improves with more chains, 1.47 -> 1.35 dm from K=6 to 16):
+
+    K x 5 bones   worst rope-to-chain distance
+      4 ( 20)            2.26 dm
+     10 ( 50)            1.13
+     16 ( 80)            1.00
+
+K=10 is the knee -- 50 bones against 480 for one chain per rope. It needs its
+OWN rig (mixamo is 65 and tolerates ~65-70), and `Skeleton.cpp:39` means hair
+joints must be anchored to clouds of BASE-MESH vertices down the back.
+
+Both configs green.
+
+---
+
 ## 2026-10-07 (morning) — Session · **The three open hair items, and one of them was a dead end worth keeping**
 
 Pushed `755414d4`, then worked the three items `todo.md` listed.
