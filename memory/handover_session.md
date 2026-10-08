@@ -4,6 +4,82 @@ Newest entry first. Every entry carries a `YYYY-MM-DD HH:MM:SS` timestamp.
 
 ---
 
+## 2026-10-08 16:45:28 — Session · **MakeHuman was "starting by itself": it was us, four times over**
+
+Owner: "makehuman seems to be starting by itself", then "fix it so it doesn't
+show in the dock".
+
+**It was not a cron job, a launch agent or a login item** -- all four checked
+and all four clean (`crontab -l`: none; no `/etc/cron.d`; nothing under
+`~/Library/LaunchAgents`, `/Library/LaunchAgents`, `/Library/LaunchDaemons`
+mentions MakeHuman; login items are Cloudflare WARP and FigmaAgent). The
+owner's `~/.claude.json` registers this app as an MCP server, so **every
+`claude` session starts one** -- four sessions, four processes, each parented
+to a `claude` pid and started within 3 s of it.
+
+**Why they were VISIBLE is our bug.** `lsappinfo` reported `type="Foreground"`
+for every one: Dock icon, Cmd-Tab entry, menu bar, for a server that opens no
+window. `main.cpp` constructs `QApplication` before it has parsed a single
+argument, and on macOS that transforms the process into a foreground
+application. By the time `--mcp` is read, the icon is already there.
+
+**The fix** is `src/app/MacDock.mm` -- `setActivationPolicy:Accessory` on the
+`--mcp` path only, with the policy READ BACK from `NSApp` so what is reported
+is what the system says, not what the setter was asked for.
+
+Two fixes considered and rejected, both recorded in the file so they are not
+re-proposed:
+
+- `LSUIElement` in `Info.plist` -- applies to the BUNDLE, and the same bundle
+  is the real GUI application, which must keep its icon.
+- `QT_QPA_PLATFORM=offscreen` -- disables the RHI, and `render` needs a real
+  Metal device. `Accessory` keeps the window-server connection; `Prohibited`
+  would not, which is why it is not that.
+
+**MEASURED on ONE binary, both ways:**
+
+| | stderr | `lsappinfo` |
+|---|---|---|
+| with the fix | `dock icon hidden` | `type="UIElement"` |
+| mutation (policy call removed) | `dock icon NOT hidden` | `type="Foreground"` |
+
+The mutation compiled (`grep -c " error"` = 0), so it was a real control.
+
+### The review found three things I had wrong
+
+1. **The gate was a whole file where two lines would do.** I wrote a 44-line
+   `tests/mcp_dock.cmake` that starts a SECOND server purely to read one line
+   of its stderr. The assertion now lives in `tests/mcp_session.cmake`, which
+   already runs `--mcp` and already captures stderr: two lines instead of a
+   file and a process.
+
+   The review argued the folded version is also STRONGER, because that session
+   does real work and so observes the policy after the window server has been
+   touched. **I checked that before writing it into the comment, and it is not
+   true**: `tests/golden/mcp/session.jsonl` drives ping, initialize,
+   tools/list, set_slider and health -- no render -- and the server prints the
+   policy ONCE, at startup, so both placements observe exactly the same moment.
+   The real gain is one process and 44 fewer lines. A policy that changes later
+   is covered by neither, which the comment now says.
+2. **My CMake comment stated a cost that does not exist.** It claimed a
+   top-level `project(LANGUAGES OBJCXX)` would make every directory "pay a
+   compiler probe". `enable_language` probes once per project and caches it, so
+   the two are identical in cost. The call is in fact a NO-OP today -- `src/ui`
+   enables OBJCXX and is added one line before `src/app` -- and is kept only as
+   defence against that order changing. The comment now says that.
+3. **I nearly shipped an unrelated whitespace change** and a comment wedged
+   between an existing comment block and the test it describes. Both reverted.
+
+### Still open, deliberately
+
+`--render`, `--export` and the other windowless batch paths are STILL
+foreground applications -- same root cause, one line up from any flag. Measured
+after the fix. Left out of this commit because the owner asked for the server
+that starts by itself, and widening it touches the paths the render tests
+depend on. Recorded in `todo.md`.
+
+---
+
 ## 2026-10-07 (midday) — Session · **The hair was welded to the skull, and I had to retract a claim to find it**
 
 Owner: "use shared rigs for better optimization for the locs."

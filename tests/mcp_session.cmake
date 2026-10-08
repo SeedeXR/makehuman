@@ -51,4 +51,34 @@ foreach(expected
     endif()
 endforeach()
 
-message(STATUS "mcp session: 6 responses, stdout clean")
+# AND THE SERVER IS NOT IN THE DOCK.
+#
+# One `--mcp` is started per client session and nobody launches one by hand,
+# yet they were registering with macOS as FOREGROUND applications: a few open
+# sessions put several MakeHuman icons in the Dock and in Cmd-Tab that nobody
+# started. Measured with `lsappinfo`, which reported `type="Foreground"` for
+# every one of them, and `type="UIElement"` once this was fixed.
+#
+# ASSERTED HERE rather than in a test of its own because this run already
+# starts a server and already captures its stderr. A separate test would be a
+# second process for no more information: the server reports the policy once,
+# at startup, so starting one specially to read that line observes exactly what
+# this line observes. Two lines beat a 44-line script that proves the same
+# thing.
+#
+# What is NOT covered either way is a policy that changes LATER. Qt transforms
+# the process when it builds a window, and --mcp builds none; a render through
+# the server was measured to leave it at UIElement. If a tool is ever added
+# that opens a real window, this assertion will not notice.
+#
+# The string is what the system reports when read back from NSApp, not what
+# the setter was asked for -- see src/app/MacDock.mm. The failing report reads
+# "dock icon NOT hidden", which does not match this.
+if(NOT err MATCHES "--mcp: dock icon hidden")
+    message(FATAL_ERROR
+        "the MCP server did not leave the Dock -- it registers as a foreground "
+        "application and shows an icon nobody asked for.\n"
+        "Expected 'dock icon hidden' on stderr; got:\n${err}")
+endif()
+
+message(STATUS "mcp session: 6 responses, stdout clean, not in the dock")

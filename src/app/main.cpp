@@ -3305,6 +3305,13 @@ bool exportMesh(const std::filesystem::path& path, const mh::core::Mesh& mesh,
 
 }  // namespace
 
+// Defined in MacDock.mm, which is Objective-C++ so this one cannot be. Returns
+// what macOS reports the activation policy to be afterwards, not what it was
+// asked to make it.
+namespace mh::app {
+bool hideFromDock();
+}  // namespace mh::app
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
 
@@ -4028,6 +4035,18 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "--mcp: cannot reopen stdout\n");
             return 1;
         }
+
+        // OUT OF THE DOCK. A server with no window had been registering as a
+        // foreground application -- one Dock icon and one Cmd-Tab entry per
+        // client session, none of which anybody launched. See MacDock.mm for
+        // why this is a runtime call and not an Info.plist key.
+        //
+        // The line names what the SYSTEM reports after the change, not what
+        // was asked for, and it is not fatal: a server that still has an icon
+        // is cosmetically wrong, and killing it over that would turn a
+        // cosmetic fault into a broken session.
+        std::fprintf(stderr, "--mcp: dock icon %s\n",
+                     mh::app::hideFromDock() ? "hidden" : "NOT hidden");
     }
 
     // An unrecognised model is refused rather than defaulted: silently falling

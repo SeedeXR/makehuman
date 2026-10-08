@@ -75,6 +75,18 @@ Legend: `[ ]` open · `[x]` done · `[~]` in progress · `[!]` blocked ·
       deleted working code on it. Corrected in the code and here.
 
 ### Still open
+- [ ] **Every windowless CLI run still registers as a FOREGROUND application.**
+      `--mcp` was fixed 2026-10-08 (`src/app/MacDock.mm`), but the cause is one
+      line up from any flag: `main.cpp` builds a `QApplication` BEFORE it parses
+      an argument, and on macOS that transforms the process. MEASURED after the
+      fix: `makehuman --render out.png` still reports `type="Foreground"` to
+      `lsappinfo` for its whole run, so a ctest sweep flashes a Dock icon per
+      `--render`/`--export` test and a long `--fit-to-references` leaves one up
+      for minutes. The guard belongs wherever it is known that no window will be
+      created -- NOT in every branch. Deliberately left out of the --mcp commit:
+      the owner asked for the server that starts by itself, and widening it
+      touches the batch paths the render tests depend on, so it needs its own
+      verification. `--screenshot` is NOT in this set: it does build a window.
 - [ ] **Dedicated hair bones**, if deliberate control is wanted beyond what the
       body rig gives. Designed and measured, not built: clustering the 96 locs
       by their whole path (best-of-12-seed k-means, not azimuth -- azimuth

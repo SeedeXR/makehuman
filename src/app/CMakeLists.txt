@@ -3,13 +3,24 @@
 # The application is AGPL: it links mh::core. Keeping the load here is what lets
 # mh_ui and mh_render stay Apache-2.0 -- they only ever see a plain RenderView.
 
-add_executable(makehuman main.cpp)
+# Objective-C++, the same way src/ui/CMakeLists.txt already enables it for
+# Motion.mm. The call is a NO-OP as the tree stands -- src/ui is added one line
+# before src/app, so the language is already on by the time this is read -- and
+# it is here as defence against that order changing, not as a saving: the probe
+# runs once per project and is cached, so naming OBJCXX in the top-level
+# project(LANGUAGES) would cost exactly the same.
+enable_language(OBJCXX)
+
+# MacDock.mm is Objective-C++ because the only way to stop the --mcp server
+# appearing in the Dock is an AppKit call. See that file for why the Info.plist
+# key is the wrong fix.
+add_executable(makehuman main.cpp MacDock.mm)
 # mh::rig for posing, mh::io for the writers. Both are the legal direction:
 # this executable is AGPL, mh::io is Apache-2.0.
 # mh::core is NOT listed: mh::rig PUBLIC-links it since PosedMesh, so naming it
 # here too makes the linker see libmh_core.a twice and warn -- the same trap the
 # comment above records for libmh_io.a.
-target_link_libraries(makehuman PRIVATE mh::mcp mh::rig mh::ui mh::warnings)
+target_link_libraries(makehuman PRIVATE mh::mcp mh::rig mh::ui mh::warnings "-framework AppKit")
 target_compile_definitions(makehuman PRIVATE
     MH_DATA_DIR="${MH_DATA_DIR}"
     MH_SHADER_DIR="${CMAKE_BINARY_DIR}/shaders"
